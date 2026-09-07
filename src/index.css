@@ -553,51 +553,9 @@ html.__janosik-ready *::after {
  * Keyframe animations, so they are unaffected by the transition
  * kill-switch / global color-only transition rule above.
  * -------------------------------------------------------------------------- */
-.janosik-icon-data,
 .janosik-icon-restore,
 .janosik-icon-trash {
   transform-origin: center;
-}
-.janosik-data-btn:hover .janosik-icon-data {
-  animation: none;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .janosik-data-btn .janosik-icon-data,
-  .janosik-data-btn .janosik-icon-data path:nth-child(2),
-  .janosik-data-btn .janosik-icon-data path:nth-child(3) {
-    transition-property: transform;
-    transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
-    will-change: transform;
-  }
-  /* cloud: lifts first, cycle-arrow follows with a slight stagger */
-  .janosik-data-btn .janosik-icon-data {
-    transition-duration: 220ms;
-  }
-  .janosik-data-btn .janosik-icon-data path:nth-child(2) {
-    transition-duration: 260ms;
-    transition-delay: 40ms;
-  }
-  .janosik-data-btn .janosik-icon-data path:nth-child(3) {
-    transition-duration: 300ms;
-    transition-delay: 40ms;
-  }
-  .janosik-data-btn:hover .janosik-icon-data {
-    transform: translateY(-1px);
-  }
-  /* the little restore arrow stretches down, the cycle arc rotates — the
-   * “one step of sync” gesture */
-  .janosik-data-btn:hover .janosik-icon-data path:nth-child(2) {
-    transform: translateY(1.5px);
-  }
-  .janosik-data-btn:hover .janosik-icon-data path:nth-child(3) {
-    transform: rotate(14deg);
-  }
-  /* tactile click feedback */
-  .janosik-data-btn:active .janosik-icon-data {
-    transition-duration: 90ms;
-    transition-delay: 0ms;
-    transform: scale(0.9);
-  }
 }
 
 .janosik-restore-btn:hover .janosik-icon-restore {

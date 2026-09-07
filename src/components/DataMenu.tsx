@@ -126,13 +126,11 @@ export function DataMenu() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="janosik-data-btn"
                 aria-label={t("data.tooltip")}
               >
-                {/* Cloud + restore-cycle: the recognizable "backup" symbol
-                 * (same as OneDrive/iCloud sync badges). On hover the cloud
-                 * lifts and the cycle-arrow takes one step (see CSS). */}
-                <CloudBackup className="janosik-icon-data h-5 w-5" />
+                {/* Cloud + restore-cycle: the recognizable “backup” symbol
+                 * (same as OneDrive/iCloud sync badges). Intentionally static. */}
+                <CloudBackup className="h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
