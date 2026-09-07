@@ -47,6 +47,16 @@ const mdComponents: Components = {
       {children}
     </h4>
   ),
+  h5: ({ children }) => (
+    <h5 className="mb-1 mt-2 text-[13px] font-semibold leading-snug text-foreground first:mt-0">
+      {children}
+    </h5>
+  ),
+  h6: ({ children }) => (
+    <h6 className="mb-1 mt-2 text-xs font-semibold leading-snug text-foreground first:mt-0">
+      {children}
+    </h6>
+  ),
   p: ({ children }) => (
     <p className="my-1.5 text-sm leading-relaxed text-foreground/90 first:mt-0 last:mb-0">
       {children}
@@ -72,6 +82,14 @@ const mdComponents: Components = {
     >
       {children}
     </a>
+  ),
+  img: ({ src, alt }) => (
+    <img
+      src={src}
+      alt={alt ?? ""}
+      loading="lazy"
+      className="my-2 block max-h-64 max-w-full rounded-lg border border-border/50 object-contain first:mt-0 last:mb-0"
+    />
   ),
   code: ({ children }) => (
     <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.85em] text-foreground">
@@ -173,6 +191,21 @@ export function MarkdownView({
                 h4: ({ children }) => (
                   <span className="mr-1 font-medium text-muted-foreground/90">
                     {children}
+                  </span>
+                ),
+                h5: ({ children }) => (
+                  <span className="mr-1 font-medium text-muted-foreground/90">
+                    {children}
+                  </span>
+                ),
+                h6: ({ children }) => (
+                  <span className="mr-1 font-medium text-muted-foreground/90">
+                    {children}
+                  </span>
+                ),
+                img: ({ alt }) => (
+                  <span className="mr-1 italic text-muted-foreground/90">
+                    {alt ? `🖼 ${alt}` : "🖼 image"}
                   </span>
                 ),
                 pre: ({ children }) => (
