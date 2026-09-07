@@ -166,9 +166,7 @@ export function ColumnView({
         <footer className="px-2 pb-2">
           <CardComposer
             labels={board.labels}
-            onSubmit={(title, labelIds) =>
-              addCard(column.id, title, labelIds)
-            }
+            onSubmit={(title, labelIds) => addCard(column.id, title, labelIds)}
           />
         </footer>
       </section>

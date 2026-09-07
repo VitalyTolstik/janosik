@@ -61,6 +61,30 @@ describe("boardReducer — columns", () => {
   });
 });
 
+describe("boardReducer — board", () => {
+  it("renames the board title", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "RENAME_BOARD",
+      title: "Launch 2.0",
+    });
+    expect(board.title).toBe("Launch 2.0");
+  });
+
+  it("trims the title and rejects empty names", () => {
+    const trimmed = reduceBoard(freshBoard(), {
+      type: "RENAME_BOARD",
+      title: "  Launch 2.0  ",
+    });
+    expect(trimmed.title).toBe("Launch 2.0");
+
+    const empty = reduceBoard(freshBoard(), {
+      type: "RENAME_BOARD",
+      title: "   ",
+    });
+    expect(empty.title).toBe("Product Launch");
+  });
+});
+
 describe("boardReducer — cards", () => {
   it("adds a card to the end of a column", () => {
     const board = reduceBoard(freshBoard(), {

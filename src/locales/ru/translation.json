@@ -39,6 +39,8 @@
   "lang.tooltip": "Сменить язык",
 
   "board.noBoard": "Доски пока нет.",
+  "board.editTitleAria": "Название доски",
+  "board.editTitleHint": "Нажмите, чтобы переименовать доску",
 
   "composer.add": "Добавить карточку",
   "composer.placeholder": "Введите название карточки…",
