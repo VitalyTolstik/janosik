@@ -67,6 +67,7 @@ interface BoardContextValue {
   dispatch: (action: BoardAction) => void;
   /* Convenience actions */
   addColumn: (title: string) => void;
+  renameBoard: (title: string) => void;
   renameColumn: (columnId: string, title: string) => void;
   deleteColumn: (columnId: string) => void;
   addCard: (columnId: string, title: string, labelIds?: string[]) => void;
@@ -247,6 +248,7 @@ function createBoardActions(
 ): Pick<
   BoardContextValue,
   | "addColumn"
+  | "renameBoard"
   | "renameColumn"
   | "deleteColumn"
   | "addCard"
@@ -262,6 +264,8 @@ function createBoardActions(
 > {
   return {
     addColumn: (title: string) => dispatch({ type: "ADD_COLUMN", title }),
+    renameBoard: (title: string) =>
+      dispatch({ type: "RENAME_BOARD", title }),
     renameColumn: (columnId: string, title: string) =>
       dispatch({ type: "RENAME_COLUMN", columnId, title }),
     deleteColumn: (columnId: string) =>

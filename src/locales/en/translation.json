@@ -39,6 +39,8 @@
   "lang.tooltip": "Change language",
 
   "board.noBoard": "No board yet.",
+  "board.editTitleAria": "Board title",
+  "board.editTitleHint": "Click to rename the board",
 
   "composer.add": "Add a card",
   "composer.placeholder": "Enter a title for this card…",

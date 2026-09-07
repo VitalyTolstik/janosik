@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
@@ -67,5 +67,36 @@ describe("BoardSection", () => {
     renderBoard();
 
     expect(screen.getByRole("heading", { name: "Empty" })).toBeInTheDocument();
+  });
+
+  it("renames the board inline (click title → Enter)", () => {
+    renderBoard();
+
+    // The title is a clickable button; click it to start editing.
+    const title = screen.getByRole("heading", { name: "Product Launch" });
+    fireEvent.click(title);
+    const input = screen.getByRole("textbox", { name: "Board title" });
+    expect(input).toHaveValue("Product Launch");
+
+    fireEvent.change(input, { target: { value: "Launch 2.0" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // Editing ends and the new name shows on the board.
+    expect(
+      screen.getByRole("heading", { name: "Launch 2.0" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Board title" })).toBeNull();
+  });
+
+  it("cancels the rename with Escape", () => {
+    renderBoard();
+    fireEvent.click(screen.getByRole("heading", { name: "Product Launch" }));
+    const input = screen.getByRole("textbox", { name: "Board title" });
+    fireEvent.change(input, { target: { value: "Renamed" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(
+      screen.getByRole("heading", { name: "Product Launch" }),
+    ).toBeInTheDocument();
   });
 });
