@@ -1,6 +1,7 @@
-import { Check, Palette } from "lucide-react";
+import { Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { PaletteIcon } from "@/components/ui/palette-icon";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,12 +36,10 @@ export function BackgroundSwitcher() {
             <Button
               variant="ghost"
               size="icon"
-              className="janosik-palette-btn relative"
               aria-label={t("bg.aria")}
               aria-haspopup="menu"
             >
-              <Palette className="janosik-icon-palette h-5 w-5" />
-              <span className="janosik-palette-drop" aria-hidden />
+              <PaletteIcon size={20} />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>

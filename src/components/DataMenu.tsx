@@ -1,6 +1,6 @@
 import { useRef } from "react";
+import { ArchiveIcon } from "@/components/ui/archive-icon";
 import {
-  CloudBackup,
   Download,
   HardDriveDownload,
   RotateCcw,
@@ -130,7 +130,7 @@ export function DataMenu() {
               >
                 {/* Cloud + restore-cycle: the recognizable “backup” symbol
                  * (same as OneDrive/iCloud sync badges). Intentionally static. */}
-                <CloudBackup className="h-5 w-5" />
+                <ArchiveIcon size={20} />
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
