@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import {
-  Archive,
+  CloudBackup,
   Download,
   HardDriveDownload,
   RotateCcw,
@@ -128,7 +128,9 @@ export function DataMenu() {
                 size="icon"
                 aria-label={t("data.tooltip")}
               >
-                <Archive className="h-5 w-5" />
+                {/* Cloud + restore-cycle: the recognizable “backup” symbol
+                 * (same as OneDrive/iCloud sync badges). Intentionally static. */}
+                <CloudBackup className="h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
@@ -166,20 +168,20 @@ export function DataMenu() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6"
+                  className="janosik-restore-btn h-6 w-6"
                   aria-label={t("data.restore")}
                   onClick={() => handleRestore(backup.id)}
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  <RotateCcw className="janosik-icon-restore h-3.5 w-3.5" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                  className="janosik-delete-btn h-6 w-6 text-muted-foreground hover:text-destructive"
                   aria-label={t("data.deleteBackup")}
                   onClick={() => handleDeleteBackup(backup.id)}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="janosik-icon-trash h-3.5 w-3.5" />
                 </Button>
               </div>
             ))

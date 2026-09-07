@@ -39,6 +39,8 @@
   "lang.tooltip": "Сменить язык",
 
   "board.noBoard": "Доски пока нет.",
+  "board.editTitleAria": "Название доски",
+  "board.editTitleHint": "Нажмите, чтобы переименовать доску",
 
   "composer.add": "Добавить карточку",
   "composer.placeholder": "Введите название карточки…",
@@ -110,6 +112,9 @@
   "card.titlePlaceholder": "Название карточки",
   "card.descriptionLabel": "Описание",
   "card.descriptionPlaceholder": "Добавьте более подробное описание…",
+  "card.markdownHint": "Поддерживается Markdown",
+  "card.modeEdit": "Правка",
+  "card.modePreview": "Просмотр",
   "card.labelLabel": "Метка",
   "card.columnLabel": "Колонка",
   "card.moveTo": "Переместить в колонку",

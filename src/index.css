@@ -545,3 +545,73 @@ html.__janosik-ready *::after {
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Data & backup micro-interactions — same understated character as the
+ * palette/language/sun buttons: the archive drawer gets nudged, the
+ * restore arrow spins, the delete bin shakes about the deletion.
+ * Keyframe animations, so they are unaffected by the transition
+ * kill-switch / global color-only transition rule above.
+ * -------------------------------------------------------------------------- */
+.janosik-icon-restore,
+.janosik-icon-trash {
+  transform-origin: center;
+}
+
+.janosik-restore-btn:hover .janosik-icon-restore {
+  animation: janosik-restore-spin 2s linear infinite;
+}
+@keyframes janosik-restore-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.janosik-icon-trash {
+  transform-origin: 50% 25%;
+}
+.janosik-delete-btn:hover .janosik-icon-trash {
+  animation: janosik-trash-shake 0.6s ease-in-out infinite;
+}
+@keyframes janosik-trash-shake {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  20% {
+    transform: rotate(-10deg);
+  }
+  40% {
+    transform: rotate(9deg);
+  }
+  60% {
+    transform: rotate(-6deg);
+  }
+  80% {
+    transform: rotate(4deg);
+  }
+}
+/* Board-title pencil — the Tailwind transition-opacity utility is
+ * outranked by the global html.__janosik-ready color-only rule above
+ * (0,1,0 vs 0,1,1 specificity), so it gets its own more specific
+ * declarations: fade in + a small playful tilt on hover (as if the
+ * pencil is being picked up), both GPU-cheap and reduced-motion safe. */
+html.__janosik-ready .group .janosik-title-pencil {
+  opacity: 0;
+  transition:
+    opacity 180ms ease,
+    transform 240ms ease;
+}
+html.__janosik-ready .group:hover .janosik-title-pencil {
+  opacity: 0.75;
+  transform: translateX(1px) rotate(-14deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .janosik-icon-restore,
+  .janosik-icon-trash {
+    animation: none;
+  }
+  html.__janosik-ready .group .janosik-title-pencil {
+    transition: none;
+    transform: none;
+  }
+}

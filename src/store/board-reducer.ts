@@ -27,10 +27,17 @@ export interface DeleteColumnAction {
   columnId: string;
 }
 
+export interface RenameBoardAction {
+  type: "RENAME_BOARD";
+  title: string;
+}
+
 export interface AddCardAction {
   type: "ADD_CARD";
   columnId: string;
   title: string;
+  /** Labels to attach to the new card right away (from the composer). */
+  labelIds?: string[];
 }
 
 export interface UpdateCardAction {
@@ -108,6 +115,7 @@ export type BoardAction =
   | AddColumnAction
   | RenameColumnAction
   | DeleteColumnAction
+  | RenameBoardAction
   | AddCardAction
   | UpdateCardAction
   | DeleteCardAction
@@ -162,6 +170,12 @@ function deleteColumn(board: Board, action: DeleteColumnAction): Board {
   };
 }
 
+function renameBoard(board: Board, action: RenameBoardAction): Board {
+  const title = action.title.trim();
+  if (!title || title === board.title) return board;
+  return { ...board, title };
+}
+
 function addCard(board: Board, action: AddCardAction): Board {
   const column = board.columns.find((c) => c.id === action.columnId);
   if (!column) return board;
@@ -169,7 +183,7 @@ function addCard(board: Board, action: AddCardAction): Board {
   const newCard: Card = {
     id: createId(),
     title: action.title,
-    labelIds: [],
+    labelIds: action.labelIds ?? [],
     createdAt: now,
     updatedAt: now,
   };
@@ -349,6 +363,10 @@ export function boardReducer(
       return commit(state, renameColumn(board, action));
     case "DELETE_COLUMN":
       return commit(state, deleteColumn(board, action));
+    case "RENAME_BOARD": {
+      const next = renameBoard(board, action);
+      return next === board ? state : commit(state, next);
+    }
     case "ADD_CARD":
       return commit(state, addCard(board, action));
     case "UPDATE_CARD": {
