@@ -129,11 +129,32 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                 id="card-title-input"
                 autoFocus
                 value={card.title}
-                onChange={(e) => updateCard(card.id, e.target.value)}
+                onChange={(e) =>
+                  updateCard(card.id, { title: e.target.value })
+                }
                 onFocus={(e) => e.target.select()}
                 rows={3}
                 className="resize-none break-words"
                 placeholder={t("card.titlePlaceholder")}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="card-description-input"
+                className="text-xs font-medium text-muted-foreground"
+              >
+                {t("card.descriptionLabel")}
+              </label>
+              <Textarea
+                id="card-description-input"
+                value={card.description ?? ""}
+                onChange={(e) =>
+                  updateCard(card.id, { description: e.target.value })
+                }
+                rows={4}
+                className="resize-none break-words"
+                placeholder={t("card.descriptionPlaceholder")}
               />
             </div>
 

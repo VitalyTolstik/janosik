@@ -286,3 +286,82 @@ describe("boardReducer — MOVE_COLUMN", () => {
     expect(unknown.columns).toEqual(board.columns);
   });
 });
+
+describe("boardReducer — UPDATE_CARD patch", () => {
+  it("updates only the title when description is not provided", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "UPDATE_CARD",
+      cardId: "card-2", // a card without a seed description
+      title: "New title",
+    });
+    expect(board.cards["card-2"].title).toBe("New title");
+    expect(board.cards["card-2"].description).toBeUndefined();
+  });
+
+  it("updates only the description when title is not provided", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      description: "Detailed notes",
+    });
+    expect(board.cards["card-1"].title).toBe("Design the new onboarding flow");
+    expect(board.cards["card-1"].description).toBe("Detailed notes");
+  });
+
+  it("clears an existing description with an empty string", () => {
+    const withDesc = reduceBoard(freshBoard(), {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      description: "Some notes",
+    });
+    expect(withDesc.cards["card-1"].description).toBe("Some notes");
+
+    const cleared = reduceBoard(withDesc, {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      description: "",
+    });
+    expect(cleared.cards["card-1"].description).toBeUndefined();
+  });
+
+  it("is a no-op when nothing changes", () => {
+    const board = freshBoard();
+    const next = reduceBoard(board, {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      title: board.cards["card-1"].title,
+    });
+    expect(next).toEqual(board);
+  });
+});
+
+describe("boardReducer — RESTORE_BOARD and IMPORT_BOARDS", () => {
+  it("restores an exact board snapshot and keeps other boards", () => {
+    const seed = freshBoard();
+    const restored: Board = {
+      ...seed,
+      title: "Restored",
+      updatedAt: 1234, // untouched by restore
+    };
+    const two = [seed, { ...seed, id: "board-2", title: "Second" }];
+    const next = boardReducer(two, { type: "RESTORE_BOARD", board: restored });
+    expect(next[0].title).toBe("Restored");
+    expect(next[0].updatedAt).toBe(1234);
+    expect(next[1]?.id).toBe("board-2");
+  });
+
+  it("imports a completely new state", () => {
+    const seed = freshBoard();
+    const imported: Board = {
+      ...seed,
+      id: "board-imported",
+      title: "Imported",
+    };
+    const next = boardReducer([seed], {
+      type: "IMPORT_BOARDS",
+      boards: [imported],
+    });
+    expect(next).toHaveLength(1);
+    expect(next[0].id).toBe("board-imported");
+  });
+});

@@ -1,6 +1,7 @@
-import { Moon, Sun } from "lucide-react";
+import { Moon, Redo2, Sun, Undo2 } from "lucide-react";
 
 import { BackgroundSwitcher } from "@/components/BackgroundSwitcher";
+import { DataMenu } from "@/components/DataMenu";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,11 +11,13 @@ import {
 } from "@/components/ui/tooltip";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
+import { useBoard } from "@/store/BoardContext";
 
-/** Header: brand, language switcher and the dark/light theme toggle. */
+/** Header: brand, background/language switchers, undo/redo, data and theme. */
 export function Header() {
   const { theme, toggleTheme } = useTheme();
   const { t } = useI18n();
+  const { undo, redo, canUndo, canRedo } = useBoard();
   const isDark = theme === "dark";
 
   return (
@@ -76,6 +79,38 @@ export function Header() {
       <div className="flex items-center gap-0.5">
         <BackgroundSwitcher />
         <LanguageSwitcher />
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t("undo.aria")}
+              disabled={!canUndo}
+              onClick={undo}
+            >
+              <Undo2 className="h-5 w-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t("undo.tooltip")}</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t("redo.aria")}
+              disabled={!canRedo}
+              onClick={redo}
+            >
+              <Redo2 className="h-5 w-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t("redo.tooltip")}</TooltipContent>
+        </Tooltip>
+
+        <DataMenu />
 
         <Tooltip>
           <TooltipTrigger asChild>

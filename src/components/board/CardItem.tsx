@@ -47,6 +47,11 @@ export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
       <p className="break-words text-sm leading-snug text-foreground/90">
         {card.title}
       </p>
+      {card.description ? (
+        <p className="mt-1.5 line-clamp-2 break-words text-xs leading-relaxed text-muted-foreground/90">
+          {card.description}
+        </p>
+      ) : null}
     </article>
   );
 }

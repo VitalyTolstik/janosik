@@ -13,14 +13,19 @@ function card(
   title: string,
   labelIds: string[],
   order: number,
+  description?: string,
 ): Card {
-  return {
+  const result: Card = {
     id,
     title,
     labelIds,
     createdAt: now - order * 60_000,
     updatedAt: now - order * 60_000,
   };
+  if (description !== undefined) {
+    result.description = description;
+  }
+  return result;
 }
 
 function column(id: string, title: string, cardIds: string[]): Column {
@@ -48,6 +53,7 @@ export function createSeedBoard(): Board {
       "Design the new onboarding flow",
       ["label-design"],
       1,
+      "Guided first-run flow for new users — tooltips, a demo board and a gentle intro to drag & drop.",
     ),
     "card-2": card("card-2", "Set up CI/CD pipeline", ["label-dev"], 2),
     "card-3": card(
@@ -55,11 +61,12 @@ export function createSeedBoard(): Board {
       "Write unit tests for the reducer",
       ["label-done"],
       3,
+      "Cover move logic, CRUD actions and label cascades with Vitest.",
     ),
     // Demo of multiple labels on one card.
     "card-4": card(
       "card-4",
-      "Investigate flaky e2e suite",
+      "Investigate flaky test suite",
       ["label-blocked", "label-dev"],
       4,
     ),
