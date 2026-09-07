@@ -146,7 +146,7 @@ export function MarkdownView({
       className={cn(
         // Base prose-ish typography; tokens only (no hardcoded colors).
         "min-w-0 text-left",
-        preview && "line-clamp-2 overflow-hidden",
+        preview && "line-clamp-3 overflow-hidden",
         className,
       )}
     >
@@ -156,7 +156,7 @@ export function MarkdownView({
           ...mdComponents,
           // In preview mode blocks stay blocks (so the snippet reads like
           // Markdown: margins + a visible heading ladder), but compact —
-          // small sizes, tight spacing — and clipped by line-clamp-2 on
+          // small sizes, tight spacing — and clipped by line-clamp-3 on
           // the root. Images collapse to a placeholder so a big picture
           // can't blow up the two-line snippet.
           ...(preview

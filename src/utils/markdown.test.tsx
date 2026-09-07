@@ -165,19 +165,21 @@ describe("MarkdownView", () => {
   it("renders safely in preview mode (snippet)", () => {
     render(<MarkdownView preview>**Bold** snippet</MarkdownView>);
     expect(screen.getByText("Bold").tagName).toBe("STRONG");
-    const wrapper = document.querySelector(".line-clamp-2");
+    const wrapper = document.querySelector(".line-clamp-3");
     expect(wrapper).not.toBeNull();
     expect(wrapper).toHaveTextContent("Bold snippet");
   });
 
   it("keeps a heading size ladder and block layout in preview mode", () => {
     render(
-      <MarkdownView preview>{"# Big title\n\n## Smaller\n\nplain paragraph"}</MarkdownView>,
+      <MarkdownView preview>
+        {"# Big title\n\n## Smaller\n\nplain paragraph"}
+      </MarkdownView>,
     );
     // Headings stay real headings in the snippet…
-    expect(
-      screen.getByRole("heading", { level: 1 }),
-    ).toHaveTextContent("Big title");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "Big title",
+    );
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
       "Smaller",
     );

@@ -58,14 +58,14 @@ function ColorSwatches({
           aria-label={color}
           onClick={() => onPick(color)}
           className={cn(
-            "flex h-6 w-6 items-center justify-center rounded-full transition-transform hover:scale-110",
+            "flex h-5 w-5 items-center justify-center rounded-full transition-transform hover:scale-110",
             LABEL_COLOR_DOT[color],
             value === color &&
               "ring-2 ring-ring ring-offset-1 ring-offset-background",
           )}
         >
           {value === color ? (
-            <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
+            <Check className="h-3 w-3 text-white" strokeWidth={3} />
           ) : null}
         </button>
       ))}
@@ -135,7 +135,7 @@ export function LabelPicker({
                 aria-pressed={isSelected}
                 onClick={() => onToggle(label.id)}
                 className={cn(
-                  "inline-flex h-7 items-center gap-1.5 rounded-l-full border border-r-0 px-2.5 text-xs font-medium transition-colors",
+                  "inline-flex h-6 items-center gap-1.5 rounded-l-full border border-r-0 px-2 text-[11px] font-medium transition-colors",
                   isSelected
                     ? "border-foreground/40 bg-hover"
                     : "border-border hover:border-foreground/30 hover:bg-hover",
@@ -144,7 +144,7 @@ export function LabelPicker({
                 <span
                   aria-hidden
                   className={cn(
-                    "h-2.5 w-2.5 shrink-0 rounded-full",
+                    "h-2 w-2 shrink-0 rounded-full",
                     LABEL_COLOR_DOT[label.color],
                   )}
                 />
@@ -156,13 +156,13 @@ export function LabelPicker({
                     type="button"
                     aria-label={t("label.rename")}
                     className={cn(
-                      "flex h-7 w-6 items-center justify-center rounded-r-full border transition-colors",
+                      "flex h-6 w-5 items-center justify-center rounded-r-full border transition-colors",
                       isSelected
                         ? "border-foreground/40 bg-hover"
                         : "border-border hover:border-foreground/30 hover:bg-hover",
                     )}
                   >
-                    <EllipsisVertical className="h-3.5 w-3.5 text-muted-foreground" />
+                    <EllipsisVertical className="h-3 w-3 text-muted-foreground" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-48">
@@ -235,9 +235,9 @@ export function LabelPicker({
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus className="h-3 w-3" />
           {t("label.new")}
         </button>
       )}
