@@ -563,33 +563,40 @@ html.__janosik-ready *::after {
 }
 @media (prefers-reduced-motion: no-preference) {
   .janosik-data-btn .janosik-icon-data,
+  .janosik-data-btn .janosik-icon-data path:nth-child(2),
   .janosik-data-btn .janosik-icon-data path:nth-child(3) {
     transition-property: transform;
     transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
     will-change: transform;
   }
-  /* cloud: lifts first, then the cycle arc starts to turn */
+  /* cloud: lifts first, cycle-arrow follows with a slight stagger */
   .janosik-data-btn .janosik-icon-data {
     transition-duration: 220ms;
+  }
+  .janosik-data-btn .janosik-icon-data path:nth-child(2) {
+    transition-duration: 260ms;
+    transition-delay: 40ms;
+  }
+  .janosik-data-btn .janosik-icon-data path:nth-child(3) {
+    transition-duration: 300ms;
+    transition-delay: 40ms;
   }
   .janosik-data-btn:hover .janosik-icon-data {
     transform: translateY(-1px);
   }
-  /* the restore arc rotates in place, like a sync spinner — no drift */
-  .janosik-data-btn:hover .janosik-icon-data path:nth-child(3),
-  .janosik-data-btn[data-state="open"] .janosik-icon-data path:nth-child(3) {
-    animation: janosik-sync-spin 2s linear infinite;
+  /* the little restore arrow stretches down, the cycle arc rotates — the
+   * “one step of sync” gesture */
+  .janosik-data-btn:hover .janosik-icon-data path:nth-child(2) {
+    transform: translateY(1.5px);
+  }
+  .janosik-data-btn:hover .janosik-icon-data path:nth-child(3) {
+    transform: rotate(14deg);
   }
   /* tactile click feedback */
   .janosik-data-btn:active .janosik-icon-data {
     transition-duration: 90ms;
     transition-delay: 0ms;
     transform: scale(0.9);
-  }
-}
-@keyframes janosik-sync-spin {
-  to {
-    transform: rotate(360deg);
   }
 }
 
