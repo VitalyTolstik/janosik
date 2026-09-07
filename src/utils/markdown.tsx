@@ -28,22 +28,22 @@ interface MarkdownViewProps {
 
 const mdComponents: Components = {
   h1: ({ children }) => (
-    <h1 className="mb-1.5 mt-3 text-base font-bold text-foreground first:mt-0">
+    <h1 className="mb-1.5 mt-3.5 text-xl font-bold leading-tight text-foreground first:mt-0">
       {children}
     </h1>
   ),
   h2: ({ children }) => (
-    <h2 className="mb-1.5 mt-3 text-[15px] font-bold text-foreground first:mt-0">
+    <h2 className="mb-1.5 mt-3 text-lg font-bold leading-tight text-foreground first:mt-0">
       {children}
     </h2>
   ),
   h3: ({ children }) => (
-    <h3 className="mb-1 mt-2.5 text-sm font-bold text-foreground first:mt-0">
+    <h3 className="mb-1 mt-2.5 text-base font-bold leading-snug text-foreground first:mt-0">
       {children}
     </h3>
   ),
   h4: ({ children }) => (
-    <h4 className="mb-1 mt-2 text-sm font-semibold text-foreground first:mt-0">
+    <h4 className="mb-1 mt-2 text-sm font-semibold leading-snug text-foreground first:mt-0">
       {children}
     </h4>
   ),

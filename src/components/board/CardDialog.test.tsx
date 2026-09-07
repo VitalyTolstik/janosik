@@ -52,9 +52,7 @@ describe("CardDialog Markdown toggle", () => {
     ) as HTMLTextAreaElement;
     expect(textarea).toBeInTheDocument();
     expect(textarea.value).toContain("**tooltips**");
-    expect(
-      within(dialog).getByText("Markdown supported"),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText("Markdown supported")).toBeInTheDocument();
 
     // Switch to preview → formatted bold + a checked task item.
     fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));

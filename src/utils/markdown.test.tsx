@@ -30,13 +30,32 @@ describe("MarkdownView", () => {
     render(
       <MarkdownView>
         {
-          "# Heading\n\n- item one\n- item two\n\n[link to site](https://example.com)"
+          "# H1\n\n## H2\n\n### H3\n\n- item one\n- item two\n\n[link to site](https://example.com)"
         }
       </MarkdownView>,
     );
+    // Heading levels map to real elements…
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-      "Heading",
+      "H1",
     );
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
+      "H2",
+    );
+    expect(screen.getByRole("heading", { level: 3 })).toHaveTextContent(
+      "H3",
+    );
+    // …with a visible size ladder (h1 > h2 > h3) — not all the same size.
+    const h1Class = screen.getByRole("heading", { level: 1 }).className;
+    const h2Class = screen.getByRole("heading", { level: 2 }).className;
+    const h3Class = screen.getByRole("heading", { level: 3 }).className;
+    expect(h1Class).toContain("text-xl");
+    expect(h2Class).toContain("text-lg");
+    expect(h3Class).toContain("text-base");
+    expect(
+      h1Class.includes("text-xl") &&
+        h2Class.includes("text-lg") &&
+        h3Class.includes("text-base"),
+    ).toBe(true);
     expect(screen.getByText("item one")).toBeInTheDocument();
     expect(screen.getByText("item two")).toBeInTheDocument();
     const link = screen.getByRole("link", { name: "link to site" });
