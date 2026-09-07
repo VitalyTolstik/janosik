@@ -25,10 +25,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
-import {
-  parseExport,
-  serializeExport,
-} from "@/utils/board-serialization";
+import { parseExport, serializeExport } from "@/utils/board-serialization";
 import {
   createBackup,
   deleteBackup,
