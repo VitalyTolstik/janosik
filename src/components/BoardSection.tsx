@@ -1,9 +1,8 @@
-import { SquareKanban } from "lucide-react";
+import { SquareKanban, SquarePen } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import { FilterBar } from "@/components/board/FilterBar";
 import { DndBoard } from "@/components/board/DndBoard";
-import { SquarePenIcon } from "@/components/ui/square-pen-icon";
 import { useBoardBackground } from "@/hooks/use-board-background";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -115,12 +114,10 @@ export function BoardSection() {
               className="flex cursor-pointer items-center gap-1.5 text-xl font-semibold tracking-tight text-foreground outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/40"
             >
               {board.title}
-              <span className="inline-flex shrink-0 items-center opacity-0 group-hover:opacity-75">
-                <SquarePenIcon
-                  size={16}
-                  className="inline-flex items-center justify-center text-muted-foreground"
-                />
-              </span>
+              <SquarePen
+                size={16}
+                className="shrink-0 text-muted-foreground"
+              />
             </h2>
           )}
         </div>

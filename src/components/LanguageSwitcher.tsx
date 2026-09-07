@@ -24,11 +24,7 @@ export function LanguageSwitcher() {
       <DropdownMenu>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t("lang.aria")}
-            >
+            <Button variant="ghost" size="icon" aria-label={t("lang.aria")}>
               <LanguagesIcon size={20} />
             </Button>
           </DropdownMenuTrigger>
