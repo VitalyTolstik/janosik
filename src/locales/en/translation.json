@@ -39,6 +39,8 @@
   "lang.tooltip": "Change language",
 
   "board.noBoard": "No board yet.",
+  "board.editTitleAria": "Board title",
+  "board.editTitleHint": "Click to rename the board",
 
   "composer.add": "Add a card",
   "composer.placeholder": "Enter a title for this card…",
@@ -111,6 +113,9 @@
   "card.titlePlaceholder": "Card title",
   "card.descriptionLabel": "Description",
   "card.descriptionPlaceholder": "Add a more detailed description…",
+  "card.markdownHint": "Markdown supported",
+  "card.modeEdit": "Edit",
+  "card.modePreview": "Preview",
   "card.labelLabel": "Label",
   "card.columnLabel": "Column",
   "card.moveTo": "Move to column",

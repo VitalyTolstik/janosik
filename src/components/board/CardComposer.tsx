@@ -1,13 +1,17 @@
 import { Plus } from "lucide-react";
-import { useState, type KeyboardEvent } from "react";
+import { useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import { LABEL_COLOR_DOT, type Label } from "@/types/kanban";
 
 interface CardComposerProps {
-  /** Called with the trimmed title when the user commits. */
-  onSubmit: (title: string) => void;
+  /** Called with the trimmed title and the labels picked before adding. */
+  onSubmit: (title: string, labelIds?: string[]) => void;
+  /** Board labels to offer inline — picked before the card is created. */
+  labels?: Label[];
   placeholder?: string;
 }
 
@@ -15,22 +19,43 @@ interface CardComposerProps {
  * Inline composer for creating a card inside a column.
  * Idle state shows a subtle "+ Add a card" row; clicking swaps it for a
  * textarea. Enter commits, Shift+Enter inserts a newline, Escape cancels.
+ * Below the input, board labels appear as compact toggle chips — tap one
+ * to attach it to the card being created (styled like the dialog picker
+ * but mini, since this is the quick-add row).
  * After commit the composer stays open for rapid entry of several cards.
  */
-export function CardComposer({ onSubmit, placeholder }: CardComposerProps) {
+export function CardComposer({
+  onSubmit,
+  labels,
+  placeholder,
+}: CardComposerProps) {
   const { t } = useI18n();
   const [composing, setComposing] = useState(false);
   const [title, setTitle] = useState("");
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
+  // The composer's own region — blur inside it (label chips, buttons) is
+  // not a cancel, only focus leaving the whole composer is.
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const reset = () => {
     setTitle("");
+    setSelectedLabels([]);
     setComposing(false);
   };
 
   const commit = () => {
     const trimmed = title.trim();
-    if (trimmed) onSubmit(trimmed);
+    if (trimmed) onSubmit(trimmed, selectedLabels);
     setTitle("");
+    setSelectedLabels([]);
+  };
+
+  const toggleLabel = (labelId: string) => {
+    setSelectedLabels((prev) =>
+      prev.includes(labelId)
+        ? prev.filter((id) => id !== labelId)
+        : [...prev, labelId],
+    );
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -40,6 +65,15 @@ export function CardComposer({ onSubmit, placeholder }: CardComposerProps) {
     } else if (event.key === "Escape") {
       reset();
     }
+  };
+
+  const handleBlur = (event: FocusEvent<HTMLTextAreaElement>) => {
+    // Blur fires when focus moves to a label chip or an action button
+    // inside the composer — that must NOT close it. Only reset when focus
+    // leaves the composer entirely (relatedTarget outside or null).
+    const next = event.relatedTarget;
+    if (next && rootRef.current?.contains(next as Node)) return;
+    reset();
   };
 
   if (!composing) {
@@ -56,17 +90,53 @@ export function CardComposer({ onSubmit, placeholder }: CardComposerProps) {
   }
 
   return (
-    <div className="space-y-1.5">
+    <div ref={rootRef} className="space-y-1.5">
       <Textarea
         autoFocus
         value={title}
         onChange={(event) => setTitle(event.target.value)}
         onKeyDown={handleKeyDown}
-        onBlur={reset}
+        onBlur={handleBlur}
         placeholder={placeholder ?? t("composer.placeholder")}
         rows={2}
         className="min-h-0 resize-none"
       />
+      {labels && labels.length > 0 ? (
+        <div
+          className="flex flex-wrap items-center gap-1"
+          data-testid="composer-labels"
+          // Clicking a chip (or the gap between chips) must not move focus
+          // out of the textarea — keep it inside the composer.
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          {labels.map((label) => {
+            const isSelected = selectedLabels.includes(label.id);
+            return (
+              <button
+                key={label.id}
+                type="button"
+                aria-pressed={isSelected}
+                onClick={() => toggleLabel(label.id)}
+                className={cn(
+                  "inline-flex h-5 items-center gap-1 rounded-full border px-1.5 text-[10px] font-medium transition-colors",
+                  isSelected
+                    ? "border-primary/50 bg-primary/10 text-foreground"
+                    : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground",
+                )}
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                    LABEL_COLOR_DOT[label.color],
+                  )}
+                />
+                {label.name}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       <div className="flex items-center gap-2">
         <Button
           size="sm"

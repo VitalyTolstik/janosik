@@ -61,6 +61,30 @@ describe("boardReducer — columns", () => {
   });
 });
 
+describe("boardReducer — board", () => {
+  it("renames the board title", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "RENAME_BOARD",
+      title: "Launch 2.0",
+    });
+    expect(board.title).toBe("Launch 2.0");
+  });
+
+  it("trims the title and rejects empty names", () => {
+    const trimmed = reduceBoard(freshBoard(), {
+      type: "RENAME_BOARD",
+      title: "  Launch 2.0  ",
+    });
+    expect(trimmed.title).toBe("Launch 2.0");
+
+    const empty = reduceBoard(freshBoard(), {
+      type: "RENAME_BOARD",
+      title: "   ",
+    });
+    expect(empty.title).toBe("Product Launch");
+  });
+});
+
 describe("boardReducer — cards", () => {
   it("adds a card to the end of a column", () => {
     const board = reduceBoard(freshBoard(), {
@@ -72,6 +96,30 @@ describe("boardReducer — cards", () => {
     expect(done).toBeDefined();
     expect(done?.cardIds.at(-1)).toBeDefined();
     expect(board.cards[done?.cardIds.at(-1) ?? ""]?.title).toBe("Ship it");
+  });
+
+  it("attaches labels to a card created with labelIds", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "ADD_CARD",
+      columnId: "col-done",
+      title: "Buy milk",
+      labelIds: ["label-urgent", "label-later"],
+    });
+    const done = board.columns.find((c) => c.id === "col-done");
+    const id = done?.cardIds.at(-1) ?? "";
+    const card = board.cards[id];
+    expect(card).toBeDefined();
+    expect(card?.labelIds).toEqual(["label-urgent", "label-later"]);
+  });
+
+  it("creates a card without labels when labelIds is omitted", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "ADD_CARD",
+      columnId: "col-done",
+      title: "No labels",
+    });
+    const done = board.columns.find((c) => c.id === "col-done");
+    expect(board.cards[done?.cardIds.at(-1) ?? ""]?.labelIds).toEqual([]);
   });
 
   it("updates a card title", () => {

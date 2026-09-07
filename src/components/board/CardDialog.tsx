@@ -1,6 +1,13 @@
-import { useState } from "react";
-import { ArrowRightLeft, CalendarClock, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  ArrowRightLeft,
+  CalendarClock,
+  Eye,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { LabelPicker } from "@/components/board/LabelPicker";
 import { formatDate, useI18n } from "@/i18n";
@@ -23,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { useBoard } from "@/store/BoardContext";
 import { createId } from "@/utils/id";
+import { MarkdownView } from "@/utils/markdown";
 import type { LabelColor } from "@/types/kanban";
 
 interface CardDialogProps {
@@ -49,6 +57,15 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
   } = useBoard();
   const { t, lang } = useI18n();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Edit / preview toggle for the Markdown description. Reset whenever the
+  // dialog opens for a card so a fresh view starts in edit mode.
+  const [descriptionMode, setDescriptionMode] = useState<"edit" | "preview">(
+    "edit",
+  );
+
+  useEffect(() => {
+    setDescriptionMode("edit");
+  }, [cardId, open]);
 
   if (!board || !cardId) {
     // Dialog stays closed when there's nothing to show.
@@ -109,7 +126,7 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader className="pr-8">
             <DialogTitle className="text-base">
               {t("card.detailsTitle")}
@@ -138,22 +155,66 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="card-description-input"
-                className="text-xs font-medium text-muted-foreground"
-              >
-                {t("card.descriptionLabel")}
-              </label>
-              <Textarea
-                id="card-description-input"
-                value={card.description ?? ""}
-                onChange={(e) =>
-                  updateCard(card.id, { description: e.target.value })
-                }
-                rows={4}
-                className="resize-none break-words"
-                placeholder={t("card.descriptionPlaceholder")}
-              />
+              <div className="flex items-center justify-between gap-2">
+                <label
+                  htmlFor="card-description-input"
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  {t("card.descriptionLabel")}
+                </label>
+                {/* Edit / Preview toggle — Markdown is rendered in preview. */}
+                <div className="flex items-center gap-0.5 rounded-lg border border-border/70 bg-muted/40 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setDescriptionMode("edit")}
+                    aria-pressed={descriptionMode === "edit"}
+                    aria-label={t("card.modeEdit")}
+                    className={cn(
+                      "flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-colors",
+                      descriptionMode === "edit"
+                        ? "bg-card text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Pencil className="h-3 w-3" />
+                    {t("card.modeEdit")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDescriptionMode("preview")}
+                    aria-pressed={descriptionMode === "preview"}
+                    aria-label={t("card.modePreview")}
+                    className={cn(
+                      "flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-colors",
+                      descriptionMode === "preview"
+                        ? "bg-card text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Eye className="h-3 w-3" />
+                    {t("card.modePreview")}
+                  </button>
+                </div>
+              </div>
+              {descriptionMode === "edit" ? (
+                <Textarea
+                  id="card-description-input"
+                  value={card.description ?? ""}
+                  onChange={(e) =>
+                    updateCard(card.id, { description: e.target.value })
+                  }
+                  rows={12}
+                  className="min-h-[220px] resize-none break-words font-mono text-[13px] leading-relaxed"
+                  placeholder={t("card.descriptionPlaceholder")}
+                />
+              ) : (
+                <div className="max-h-96 overflow-y-auto rounded-lg border border-border/70 bg-muted/20 p-3">
+                  <MarkdownView>{card.description ?? ""}</MarkdownView>
+                </div>
+              )}
+              <p className="text-[11px] leading-relaxed text-muted-foreground/70">
+                {t("card.markdownHint")}
+              </p>
             </div>
 
             <div className="space-y-1.5">
