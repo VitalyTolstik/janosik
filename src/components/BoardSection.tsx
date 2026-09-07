@@ -115,10 +115,10 @@ export function BoardSection() {
               className="flex cursor-pointer items-center gap-1.5 text-xl font-semibold tracking-tight text-foreground outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/40"
             >
               {board.title}
-              <span className="opacity-0 group-hover:opacity-75">
+              <span className="inline-flex shrink-0 items-center opacity-0 group-hover:opacity-75">
                 <SquarePenIcon
-                  size={14}
-                  className="text-muted-foreground"
+                  size={16}
+                  className="inline-flex items-center justify-center text-muted-foreground"
                 />
               </span>
             </h2>
