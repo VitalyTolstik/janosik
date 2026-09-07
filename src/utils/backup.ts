@@ -136,7 +136,9 @@ export async function loadBackup(id: number): Promise<BoardState | null> {
     const tx = db.transaction(STORE_NAME, "readonly");
     const done = transactionDone(tx);
     const record = await requestResult(
-      tx.objectStore(STORE_NAME).get(id) as IDBRequest<BackupRecord | undefined>,
+      tx.objectStore(STORE_NAME).get(id) as IDBRequest<
+        BackupRecord | undefined
+      >,
     );
     await done;
     if (!record) return null;

@@ -40,7 +40,9 @@ describe("board serialization", () => {
   });
 
   it("rejects payloads that are not a Janosik export", () => {
-    expect(() => parseExport(JSON.stringify({ app: "other", boards: [] }))).toThrow();
+    expect(() =>
+      parseExport(JSON.stringify({ app: "other", boards: [] })),
+    ).toThrow();
   });
 
   it("rejects unknown future schema versions", () => {

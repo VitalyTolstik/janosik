@@ -197,7 +197,10 @@ function updateCard(board: Board, action: UpdateCardAction): Board {
         ? action.description
         : undefined;
 
-  if (title === target.title && (description ?? "") === (target.description ?? "")) {
+  if (
+    title === target.title &&
+    (description ?? "") === (target.description ?? "")
+  ) {
     return board;
   }
   return {

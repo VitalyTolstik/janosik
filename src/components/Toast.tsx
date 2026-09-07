@@ -95,9 +95,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   : "border-border/80",
               )}
             >
-              <Icon
-                className={cn("mt-0.5 h-4 w-4 shrink-0", meta.iconClass)}
-              />
+              <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", meta.iconClass)} />
               <p className="flex-1 text-sm leading-snug text-foreground">
                 {item.message}
               </p>
