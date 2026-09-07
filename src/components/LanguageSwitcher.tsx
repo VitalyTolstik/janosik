@@ -1,6 +1,7 @@
-import { Languages, Check } from "lucide-react";
+import { Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { LanguagesIcon } from "@/components/ui/languages-icon";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,10 +27,9 @@ export function LanguageSwitcher() {
             <Button
               variant="ghost"
               size="icon"
-              className="janosik-lang-btn"
               aria-label={t("lang.aria")}
             >
-              <Languages className="janosik-icon-lang h-5 w-5" />
+              <LanguagesIcon size={20} />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
