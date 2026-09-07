@@ -36,12 +36,25 @@ export interface AddCardAction {
 export interface UpdateCardAction {
   type: "UPDATE_CARD";
   cardId: string;
-  title: string;
+  /** Partial patch — set only the fields that changed. */
+  title?: string;
+  description?: string;
 }
 
 export interface DeleteCardAction {
   type: "DELETE_CARD";
   cardId: string;
+}
+
+export interface RestoreBoardAction {
+  type: "RESTORE_BOARD";
+  /** Full board snapshot to restore (undo/redo). */
+  board: Board;
+}
+
+export interface ImportBoardsAction {
+  type: "IMPORT_BOARDS";
+  boards: BoardState;
 }
 
 export interface ToggleCardLabelAction {
@@ -104,7 +117,9 @@ export type BoardAction =
   | SetLabelColorAction
   | DeleteLabelAction
   | MoveCardAction
-  | MoveColumnAction;
+  | MoveColumnAction
+  | RestoreBoardAction
+  | ImportBoardsAction;
 
 /** Initial state: the seed board (used when localStorage is empty). */
 export function initialBoardState(): BoardState {
@@ -172,13 +187,27 @@ function addCard(board: Board, action: AddCardAction): Board {
 function updateCard(board: Board, action: UpdateCardAction): Board {
   const target = board.cards[action.cardId];
   if (!target) return board;
+
+  const title = action.title ?? target.title;
+  // Empty description means "no description" — drop the field entirely.
+  const description =
+    action.description === undefined
+      ? target.description
+      : action.description.trim()
+        ? action.description
+        : undefined;
+
+  if (title === target.title && (description ?? "") === (target.description ?? "")) {
+    return board;
+  }
   return {
     ...board,
     cards: {
       ...board.cards,
       [action.cardId]: {
         ...target,
-        title: action.title,
+        title,
+        description,
         updatedAt: Date.now(),
       },
     },
@@ -319,8 +348,10 @@ export function boardReducer(
       return commit(state, deleteColumn(board, action));
     case "ADD_CARD":
       return commit(state, addCard(board, action));
-    case "UPDATE_CARD":
-      return commit(state, updateCard(board, action));
+    case "UPDATE_CARD": {
+      const next = updateCard(board, action);
+      return next === board ? state : commit(state, next);
+    }
     case "DELETE_CARD":
       return commit(state, deleteCard(board, action));
     case "TOGGLE_CARD_LABEL": {
@@ -351,6 +382,11 @@ export function boardReducer(
       const next = moveColumn(board, action);
       return next === board ? state : commit(state, next);
     }
+    case "RESTORE_BOARD":
+      // Undo/redo restores an exact snapshot — keep its timestamps untouched.
+      return [action.board, ...state.slice(1)];
+    case "IMPORT_BOARDS":
+      return action.boards;
     default:
       return state;
   }

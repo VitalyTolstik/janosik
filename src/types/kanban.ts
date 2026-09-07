@@ -89,6 +89,8 @@ export interface Label {
 export interface Card {
  id: string;
  title: string;
+ /** Optional multi-line notes. Omitted (not empty) when unset. */
+ description?: string;
  /** References to labels defined on the board; empty when unlabeled. */
  labelIds: string[];
  createdAt: number;
