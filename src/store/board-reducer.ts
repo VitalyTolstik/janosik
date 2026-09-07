@@ -31,6 +31,8 @@ export interface AddCardAction {
   type: "ADD_CARD";
   columnId: string;
   title: string;
+  /** Labels to attach to the new card right away (from the composer). */
+  labelIds?: string[];
 }
 
 export interface UpdateCardAction {
@@ -169,7 +171,7 @@ function addCard(board: Board, action: AddCardAction): Board {
   const newCard: Card = {
     id: createId(),
     title: action.title,
-    labelIds: [],
+    labelIds: action.labelIds ?? [],
     createdAt: now,
     updatedAt: now,
   };
