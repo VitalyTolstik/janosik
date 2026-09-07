@@ -6,7 +6,6 @@ A premium, offline-first **Kanban board** — Trello-class drag & drop with a Sp
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)](https://vite.dev)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38bdf8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
-[![Tests](https://img.shields.io/badge/tests-103%20passing-10b981?logo=vitest&logoColor=white)](https://vitest.dev)
 
 > **Janosik** is a single-user, fully client-side board. All data lives in your browser (`localStorage`) with JSON export/import and automatic `IndexedDB` backups — **no server required**.
 
