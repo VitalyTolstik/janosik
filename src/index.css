@@ -353,7 +353,10 @@
  *   • language — sways, and the glyph strokes pulse alternately (as if the
  *                two letter stacks are "switching tongues");
  *   • sun      — sways and its rays flicker in alternation;
- *   • moon     — rolls slowly through phases (the crescent turns).
+ *   • moon     — rolls slowly through phases (the crescent turns);
+ *   • data     — the archive sways, like a drawer being nudged;
+ *   • restore  — the recovery arrow spins on hover;
+ *   • delete   — the bin shakes nervously about the deletion.
  * All GPU-cheap (transform/opacity) and disabled under reduced motion.
  * -------------------------------------------------------------------------- */
 .janosik-icon-palette,
@@ -501,16 +504,94 @@
   }
 }
 
+/* --- Data & backups: archive sways, restore spins, delete shakes --- */
+.janosik-icon-data,
+.janosik-icon-restore,
+.janosik-icon-trash {
+  transform-origin: center;
+}
+.janosik-data-btn:hover .janosik-icon-data {
+  animation: janosik-data-sway 2.8s ease-in-out infinite;
+}
+@keyframes janosik-data-sway {
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-5deg);
+  }
+  75% {
+    transform: rotate(5deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+.janosik-restore-btn:hover .janosik-icon-restore {
+  animation: janosik-restore-spin 2s linear infinite;
+}
+@keyframes janosik-restore-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.janosik-icon-trash {
+  transform-origin: 50% 25%;
+}
+.janosik-delete-btn:hover .janosik-icon-trash {
+  animation: janosik-trash-shake 0.6s ease-in-out infinite;
+}
+@keyframes janosik-trash-shake {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  20% {
+    transform: rotate(-10deg);
+  }
+  40% {
+    transform: rotate(9deg);
+  }
+  60% {
+    transform: rotate(-6deg);
+  }
+  80% {
+    transform: rotate(4deg);
+  }
+}
+
+/* --- Board-title pencil: eases in next to the title with a small tilt.
+ *     Scoped under html.__janosik-ready so it outranks the global
+ *     transition kill-switch below (transition-all is otherwise replaced
+ *     by the color-only shorthand, which made it pop in instantly). --- */
+html.__janosik-ready .janosik-title-pencil {
+  opacity: 0;
+  transform: translateX(-3px) rotate(-12deg);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+html.__janosik-ready .group:hover .janosik-title-pencil {
+  opacity: 0.65;
+  transform: translateX(0) rotate(0deg);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .janosik-icon-palette,
   .janosik-icon-lang,
   .janosik-icon-sun,
-  .janosik-icon-moon {
+  .janosik-icon-moon,
+  .janosik-icon-data,
+  .janosik-icon-restore,
+  .janosik-icon-trash {
     animation: none;
   }
   .janosik-palette-drop {
     animation: none;
     display: none;
+  }
+  html.__janosik-ready .janosik-title-pencil {
+    transform: none; /* keep only the opacity fade */
   }
 }
 
