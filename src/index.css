@@ -1,0 +1,526 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+ * Design tokens — dark theme is the :root default, light theme is activated
+ * via the `.light` class on <html> (or `.dark` override block below).
+ * Every token maps to the palette defined in AGENT.md via CSS variables.
+ * ------------------------------------------------------------------------- */
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* App background (dark theme = brand background) */
+  --background: #0a0a0f;
+  /* Cards / columns surface */
+  --card: #14141e;
+  /* Elevated surfaces, menus, dialogs */
+  --surface: #1a1a26;
+  /* Hover accents */
+  --hover: #1e1e2e;
+  /* Primary text */
+  --foreground: #e8e8f0;
+  /* Secondary text */
+  --muted-foreground: #8888a0;
+  /* Brand accent */
+  --primary: #7c3aed;
+  --primary-foreground: #ffffff;
+  /* Secondary accent */
+  --secondary: #06b6d4;
+  --secondary-foreground: #06121a;
+  /* Success / Done */
+  --success: #10b981;
+  /* Warning / In progress */
+  --warning: #f59e0b;
+  /* Danger / High */
+  --danger: #ef4444;
+  /* Extended label palette — matching premium shades in dark mode */
+  --blue: #4f8df0;
+  --indigo: #818cf8;
+  --pink: #f472b6;
+  --teal: #2dd4bf;
+  --orange: #fb923c;
+  --slate: #94a3b8;
+  --yellow: #eab308;
+  --fuchsia: #d946ef;
+  --brown: #92400e;
+  /* Borders & dividers */
+  --border: #2a2a3a;
+  --input: #2a2a3a;
+  --ring: #7c3aed;
+  /* Selection accent for the board-background picker — the brand label
+   * violet, tuned per theme: deeper in dark, lighter in light. */
+  --janosik-brand-accent: #6d28d9;
+}
+
+.light {
+  --background: #f4f5f6;
+  --card: #ffffff;
+  --surface: #fbfbfc;
+  --hover: #eaecee;
+  --foreground: #1a1a24;
+  --muted-foreground: #5c5c70;
+  --primary: #6d28d9;
+  --primary-foreground: #ffffff;
+  --secondary: #0891b2;
+  --secondary-foreground: #ffffff;
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
+  /* Extended label palette — in light mode */
+  --blue: #2563eb;
+  --indigo: #4f46e5;
+  --pink: #db2777;
+  --teal: #0d9488;
+  --orange: #ea580c;
+  --slate: #475569;
+  --yellow: #eab308;
+  --fuchsia: #c026d3;
+  --brown: #78350f;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #6d28d9;
+  --janosik-brand-accent: #8b5cf6;
+}
+
+/* Rarely-used shadcn aliases, resolved from the tokens above. */
+:root {
+  --popover: var(--surface);
+  --popover-foreground: var(--foreground);
+  --muted: var(--hover);
+  --accent: var(--hover);
+  --accent-foreground: var(--foreground);
+  --destructive: var(--danger);
+  --destructive-foreground: #ffffff;
+  --card-foreground: var(--foreground);
+  --primary-foreground-alt: #ffffff;
+  --radius: 0.625rem;
+}
+
+@theme inline {
+  /* Wordmark display font (self-hosted via Fontsource) — Space Grotesk
+   * gives the brand name its distinctive premium face. */
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-surface: var(--surface);
+  --color-hover: var(--hover);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-blue: var(--blue);
+  --color-indigo: var(--indigo);
+  --color-pink: var(--pink);
+  --color-teal: var(--teal);
+  --color-orange: var(--orange);
+  --color-slate: var(--slate);
+  --color-yellow: var(--yellow);
+  --color-fuchsia: var(--fuchsia);
+  --color-brown: var(--brown);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  /* Entry animation for cards (subtle rise + fade). */
+  --animate-card-in: card-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  @keyframes card-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Base styles
+ * ------------------------------------------------------------------------- */
+
+@layer base {
+  * {
+    @apply border-border;
+    /* Smooth color transitions when switching theme */
+    transition:
+      background-color 150ms ease,
+      border-color 150ms ease,
+      color 150ms ease;
+  }
+
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Native scrollbars tinted to the theme (light/bare on Windows). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  *::-webkit-scrollbar {
+    height: 10px;
+    width: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+    background-clip: content-box;
+    border: 2px solid transparent;
+    border-radius: 999px;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 30%, transparent);
+  }
+
+  /* Utility: hide scrollbars for horizontal column strips (keep scrollable). */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* -----------------------------------------------------------------------
+   * Board background presets — applied to the board <main> so the backdrop
+   * sits behind the column strip. Patterns (dots / grid) are flat-color + a
+   * CSS tile so columns stay readable; dark/light variants follow the theme.
+   * ------------------------------------------------------------------------ */
+  .janosik-bg-flat {
+    background-color: #0d0d16;
+  }
+  .light .janosik-bg-flat {
+    background-color: #eef0f3;
+  }
+  /* Warm paper: cream in light theme, dark kraft in dark theme, with a
+   * fine noise grain (SVG turbulence) so it reads as real paper. */
+  .janosik-bg-paper {
+    background-color: #1b1b24;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+    background-blend-mode: overlay;
+  }
+  .light .janosik-bg-paper {
+    background-color: #f7f1e3;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+    background-blend-mode: multiply;
+  }
+  .janosik-bg-dots {
+    background-color: #0d0d16;
+    background-image: radial-gradient(
+      circle,
+      rgb(255 255 255 / 0.09) 1.2px,
+      transparent 1.2px
+    );
+    background-size: var(--janosik-dots-size, 22px) var(--janosik-dots-size, 22px);
+  }
+  .light .janosik-bg-dots {
+    background-color: #eef0f3;
+    background-image: radial-gradient(
+      circle,
+      rgb(26 26 36 / 0.12) 1.2px,
+      transparent 1.2px
+    );
+  }
+  .janosik-bg-grid {
+    background-color: #0d0d16;
+    background-image:
+      linear-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(255 255 255 / 0.05) 1px, transparent 1px);
+    background-size: var(--janosik-grid-size, 28px) var(--janosik-grid-size, 28px);
+  }
+  .light .janosik-bg-grid {
+    background-color: #eef0f3;
+    background-image:
+      linear-gradient(rgb(26 26 36 / 0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(26 26 36 / 0.07) 1px, transparent 1px);
+  }
+  /* Compact tiles for the picker previews (36×24 px tiles) — the dense
+   * pattern makes dots / grid legible at a glance. Must follow the base
+   * classes so the custom property wins in the cascade. */
+  .janosik-bg-dots-sm {
+    --janosik-dots-size: 9px;
+  }
+  .janosik-bg-grid-sm {
+    --janosik-grid-size: 12px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * App logo — the Janosik feather. Idle: a faint breeze drift. On hover (the
+ * brand area carries Tailwind's `group` class): a wider, gentler sway plus a
+ * twinkling sparkle near the feather's tip. Pure CSS, GPU-cheap.
+ * -------------------------------------------------------------------------- */
+.janosik-feather {
+  /* the quill — the feather pivots from its base */
+  transform-origin: 5px 18px;
+  animation: janosik-feather-idle 7s ease-in-out infinite;
+}
+.janosik-sparkle {
+  opacity: 0;
+  transform: scale(0.3) rotate(0deg);
+}
+.group:hover .janosik-feather {
+  animation: janosik-feather-sway 2.2s ease-in-out infinite;
+}
+.group:hover .janosik-sparkle {
+  animation: janosik-sparkle-twinkle 1.8s ease-in-out infinite;
+}
+@keyframes janosik-feather-idle {
+  0%,
+  100% {
+    transform: rotate(-2deg);
+  }
+  50% {
+    transform: rotate(2.5deg);
+  }
+}
+@keyframes janosik-feather-sway {
+  0%,
+  100% {
+    transform: rotate(-7deg) scale(1.02);
+  }
+  50% {
+    transform: rotate(7deg) scale(1.06);
+  }
+}
+@keyframes janosik-sparkle-twinkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.3) rotate(0deg);
+  }
+  12% {
+    opacity: 1;
+    transform: scale(1) rotate(24deg);
+  }
+  28% {
+    opacity: 0.65;
+    transform: scale(0.75) rotate(8deg);
+  }
+  44% {
+    opacity: 1;
+    transform: scale(1.12) rotate(32deg);
+  }
+  62% {
+    opacity: 0;
+    transform: scale(0.45) rotate(0deg);
+  }
+}
+/* Respect users who prefer reduced motion — no sway, no twinkle. */
+@media (prefers-reduced-motion: reduce) {
+  .janosik-feather {
+    animation: none;
+  }
+  .janosik-sparkle {
+    animation: none;
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Header icon micro-interactions — each header tool icon gets its own
+ * character on hover, in the same understated style as the feather:
+ *   • palette  — sways, and a little paint drop floats up off its edge;
+ *   • language — sways, and the glyph strokes pulse alternately (as if the
+ *                two letter stacks are "switching tongues");
+ *   • sun      — sways and its rays flicker in alternation;
+ *   • moon     — rolls slowly through phases (the crescent turns).
+ * All GPU-cheap (transform/opacity) and disabled under reduced motion.
+ * -------------------------------------------------------------------------- */
+.janosik-icon-palette,
+.janosik-icon-lang,
+.janosik-icon-sun,
+.janosik-icon-moon {
+  transform-origin: center;
+}
+
+/* --- Palette: gentle sway + a paint drop floats up --- */
+.janosik-palette-btn:hover .janosik-icon-palette {
+  animation: janosik-palette-sway 2.4s ease-in-out infinite;
+}
+.janosik-palette-drop {
+  position: absolute;
+  left: 62%;
+  top: 55%;
+  width: 6px;
+  height: 9px;
+  border-radius: 9999px 9999px 9999px 2px;
+  background: var(--primary);
+  opacity: 0;
+  pointer-events: none;
+}
+.janosik-palette-btn:hover .janosik-palette-drop {
+  animation: janosik-drop-float 2.4s ease-in-out infinite;
+}
+@keyframes janosik-palette-sway {
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-6deg);
+  }
+  75% {
+    transform: rotate(6deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+@keyframes janosik-drop-float {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.4);
+  }
+  30% {
+    opacity: 1;
+    transform: translate(2px, -8px) scale(1);
+  }
+  60% {
+    opacity: 0.9;
+    transform: translate(3px, -12px) scale(0.85) rotate(30deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(5px, -18px) scale(0.5) rotate(60deg);
+  }
+}
+
+/* --- Language: sway + strokes alternately pulse ("switching tongues") --- */
+.janosik-lang-btn:hover .janosik-icon-lang {
+  animation: janosik-lang-sway 3s ease-in-out infinite;
+}
+.janosik-lang-btn:hover .janosik-icon-lang > path:nth-child(-n + 4) {
+  animation: janosik-lang-blink 1.6s ease-in-out infinite;
+}
+.janosik-lang-btn:hover .janosik-icon-lang > path:nth-child(n + 5) {
+  animation: janosik-lang-blink 1.6s ease-in-out 0.8s infinite;
+}
+@keyframes janosik-lang-sway {
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-5deg);
+  }
+  75% {
+    transform: rotate(5deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+@keyframes janosik-lang-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* --- Sun: sway + rays flicker in alternation --- */
+.janosik-theme-btn:hover .janosik-icon-sun {
+  animation: janosik-sun-sway 2.6s ease-in-out infinite;
+}
+.janosik-theme-btn:hover .janosik-icon-sun > path {
+  animation: janosik-ray-flicker 1.3s ease-in-out infinite;
+}
+.janosik-theme-btn:hover .janosik-icon-sun > path:nth-child(even) {
+  animation-delay: 0.65s;
+}
+@keyframes janosik-sun-sway {
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-10deg);
+  }
+  75% {
+    transform: rotate(10deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+@keyframes janosik-ray-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* --- Moon: slow phase roll (the crescent turns) --- */
+.janosik-theme-btn:hover .janosik-icon-moon {
+  animation: janosik-moon-phase 3.4s ease-in-out infinite;
+}
+@keyframes janosik-moon-phase {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  25% {
+    transform: rotate(-28deg) scale(1.02);
+  }
+  75% {
+    transform: rotate(28deg) scale(1.02);
+  }
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .janosik-icon-palette,
+  .janosik-icon-lang,
+  .janosik-icon-sun,
+  .janosik-icon-moon {
+    animation: none;
+  }
+  .janosik-palette-drop {
+    animation: none;
+    display: none;
+  }
+}
+
+/* Re-enable transitions once the preflight kill-switch style is removed in
+ * main.tsx (it waits for the `ready` class we add after first paint). */
+html.__janosik-ready *,
+html.__janosik-ready *::before,
+html.__janosik-ready *::after {
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
