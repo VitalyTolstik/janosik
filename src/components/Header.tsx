@@ -1,8 +1,10 @@
-import { Moon, Redo2, Sun, Undo2 } from "lucide-react";
-
 import { BackgroundSwitcher } from "@/components/BackgroundSwitcher";
 import { DataMenu } from "@/components/DataMenu";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { ArrowLeftIcon } from "@/components/ui/arrow-left-icon";
+import { ArrowRightIcon } from "@/components/ui/arrow-right-icon";
+import { MoonIcon } from "@/components/ui/moon-icon";
+import { SunDimIcon } from "@/components/ui/sun-dim-icon";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -89,7 +91,7 @@ export function Header() {
               disabled={!canUndo}
               onClick={undo}
             >
-              <Undo2 className="h-5 w-5" />
+              <ArrowLeftIcon size={20} />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{t("undo.tooltip")}</TooltipContent>
@@ -104,7 +106,7 @@ export function Header() {
               disabled={!canRedo}
               onClick={redo}
             >
-              <Redo2 className="h-5 w-5" />
+              <ArrowRightIcon size={20} />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{t("redo.tooltip")}</TooltipContent>
@@ -117,15 +119,10 @@ export function Header() {
             <Button
               variant="ghost"
               size="icon"
-              className="janosik-theme-btn"
               aria-label={t("theme.aria")}
               onClick={toggleTheme}
             >
-              {isDark ? (
-                <Sun className="janosik-icon-sun h-5 w-5" />
-              ) : (
-                <Moon className="janosik-icon-moon h-5 w-5" />
-              )}
+              {isDark ? <SunDimIcon size={20} /> : <MoonIcon size={20} />}
             </Button>
           </TooltipTrigger>
           <TooltipContent>

@@ -3,10 +3,10 @@ import { useMemo, useRef, useState } from "react";
 
 import { FilterBar } from "@/components/board/FilterBar";
 import { DndBoard } from "@/components/board/DndBoard";
+import { SquarePenIcon } from "@/components/ui/square-pen-icon";
 import { useBoardBackground } from "@/hooks/use-board-background";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { Pencil } from "lucide-react";
 import { useBoard } from "@/store/BoardContext";
 import { boardBackgroundById } from "@/types/board-background";
 import {
@@ -115,7 +115,12 @@ export function BoardSection() {
               className="flex cursor-pointer items-center gap-1.5 text-xl font-semibold tracking-tight text-foreground outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/40"
             >
               {board.title}
-              <Pencil className="janosik-title-pencil h-3.5 w-3.5 text-muted-foreground" />
+              <span className="opacity-0 group-hover:opacity-75">
+                <SquarePenIcon
+                  size={14}
+                  className="text-muted-foreground"
+                />
+              </span>
             </h2>
           )}
         </div>

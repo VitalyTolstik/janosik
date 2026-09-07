@@ -346,174 +346,6 @@
   }
 }
 
-/* ---------------------------------------------------------------------------
- * Header icon micro-interactions — each header tool icon gets its own
- * character on hover, in the same understated style as the feather:
- *   • palette  — sways, and a little paint drop floats up off its edge;
- *   • language — sways, and the glyph strokes pulse alternately (as if the
- *                two letter stacks are "switching tongues");
- *   • sun      — sways and its rays flicker in alternation;
- *   • moon     — rolls slowly through phases (the crescent turns).
- * All GPU-cheap (transform/opacity) and disabled under reduced motion.
- * -------------------------------------------------------------------------- */
-.janosik-icon-palette,
-.janosik-icon-lang,
-.janosik-icon-sun,
-.janosik-icon-moon {
-  transform-origin: center;
-}
-
-/* --- Palette: gentle sway + a paint drop floats up --- */
-.janosik-palette-btn:hover .janosik-icon-palette {
-  animation: janosik-palette-sway 2.4s ease-in-out infinite;
-}
-.janosik-palette-drop {
-  position: absolute;
-  left: 62%;
-  top: 55%;
-  width: 6px;
-  height: 9px;
-  border-radius: 9999px 9999px 9999px 2px;
-  background: var(--primary);
-  opacity: 0;
-  pointer-events: none;
-}
-.janosik-palette-btn:hover .janosik-palette-drop {
-  animation: janosik-drop-float 2.4s ease-in-out infinite;
-}
-@keyframes janosik-palette-sway {
-  0% {
-    transform: rotate(0deg);
-  }
-  25% {
-    transform: rotate(-6deg);
-  }
-  75% {
-    transform: rotate(6deg);
-  }
-  100% {
-    transform: rotate(0deg);
-  }
-}
-@keyframes janosik-drop-float {
-  0% {
-    opacity: 0;
-    transform: translate(0, 0) scale(0.4);
-  }
-  30% {
-    opacity: 1;
-    transform: translate(2px, -8px) scale(1);
-  }
-  60% {
-    opacity: 0.9;
-    transform: translate(3px, -12px) scale(0.85) rotate(30deg);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(5px, -18px) scale(0.5) rotate(60deg);
-  }
-}
-
-/* --- Language: sway + strokes alternately pulse ("switching tongues") --- */
-.janosik-lang-btn:hover .janosik-icon-lang {
-  animation: janosik-lang-sway 3s ease-in-out infinite;
-}
-.janosik-lang-btn:hover .janosik-icon-lang > path:nth-child(-n + 4) {
-  animation: janosik-lang-blink 1.6s ease-in-out infinite;
-}
-.janosik-lang-btn:hover .janosik-icon-lang > path:nth-child(n + 5) {
-  animation: janosik-lang-blink 1.6s ease-in-out 0.8s infinite;
-}
-@keyframes janosik-lang-sway {
-  0% {
-    transform: rotate(0deg);
-  }
-  25% {
-    transform: rotate(-5deg);
-  }
-  75% {
-    transform: rotate(5deg);
-  }
-  100% {
-    transform: rotate(0deg);
-  }
-}
-@keyframes janosik-lang-blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
-}
-
-/* --- Sun: sway + rays flicker in alternation --- */
-.janosik-theme-btn:hover .janosik-icon-sun {
-  animation: janosik-sun-sway 2.6s ease-in-out infinite;
-}
-.janosik-theme-btn:hover .janosik-icon-sun > path {
-  animation: janosik-ray-flicker 1.3s ease-in-out infinite;
-}
-.janosik-theme-btn:hover .janosik-icon-sun > path:nth-child(even) {
-  animation-delay: 0.65s;
-}
-@keyframes janosik-sun-sway {
-  0% {
-    transform: rotate(0deg);
-  }
-  25% {
-    transform: rotate(-10deg);
-  }
-  75% {
-    transform: rotate(10deg);
-  }
-  100% {
-    transform: rotate(0deg);
-  }
-}
-@keyframes janosik-ray-flicker {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
-/* --- Moon: slow phase roll (the crescent turns) --- */
-.janosik-theme-btn:hover .janosik-icon-moon {
-  animation: janosik-moon-phase 3.4s ease-in-out infinite;
-}
-@keyframes janosik-moon-phase {
-  0% {
-    transform: rotate(0deg) scale(1);
-  }
-  25% {
-    transform: rotate(-28deg) scale(1.02);
-  }
-  75% {
-    transform: rotate(28deg) scale(1.02);
-  }
-  100% {
-    transform: rotate(0deg) scale(1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .janosik-icon-palette,
-  .janosik-icon-lang,
-  .janosik-icon-sun,
-  .janosik-icon-moon {
-    animation: none;
-  }
-  .janosik-palette-drop {
-    animation: none;
-    display: none;
-  }
-}
-
 /* Re-enable transitions once the preflight kill-switch style is removed in
  * main.tsx (it waits for the `ready` class we add after first paint). */
 html.__janosik-ready *,
@@ -547,9 +379,8 @@ html.__janosik-ready *::after {
 }
 
 /* ---------------------------------------------------------------------------
- * Data & backup micro-interactions — same understated character as the
- * palette/language/sun buttons: the archive drawer gets nudged, the
- * restore arrow spins, the delete bin shakes about the deletion.
+ * Data backup menu micro-interactions — the restore arrow spins, the
+ * delete bin shakes about the deletion.
  * Keyframe animations, so they are unaffected by the transition
  * kill-switch / global color-only transition rule above.
  * -------------------------------------------------------------------------- */
@@ -590,28 +421,9 @@ html.__janosik-ready *::after {
     transform: rotate(4deg);
   }
 }
-/* Board-title pencil — the Tailwind transition-opacity utility is
- * outranked by the global html.__janosik-ready color-only rule above
- * (0,1,0 vs 0,1,1 specificity), so it gets its own more specific
- * declarations: fade in + a small playful tilt on hover (as if the
- * pencil is being picked up), both GPU-cheap and reduced-motion safe. */
-html.__janosik-ready .group .janosik-title-pencil {
-  opacity: 0;
-  transition:
-    opacity 180ms ease,
-    transform 240ms ease;
-}
-html.__janosik-ready .group:hover .janosik-title-pencil {
-  opacity: 0.75;
-  transform: translateX(1px) rotate(-14deg);
-}
 @media (prefers-reduced-motion: reduce) {
   .janosik-icon-restore,
   .janosik-icon-trash {
     animation: none;
-  }
-  html.__janosik-ready .group .janosik-title-pencil {
-    transition: none;
-    transform: none;
   }
 }
