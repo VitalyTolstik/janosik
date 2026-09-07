@@ -126,10 +126,9 @@ export function DataMenu() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="janosik-data-btn"
                 aria-label={t("data.tooltip")}
               >
-                <Archive className="janosik-icon-data h-5 w-5" />
+                <Archive className="h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
@@ -167,20 +166,20 @@ export function DataMenu() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="janosik-restore-btn h-6 w-6"
+                  className="h-6 w-6"
                   aria-label={t("data.restore")}
                   onClick={() => handleRestore(backup.id)}
                 >
-                  <RotateCcw className="janosik-icon-restore h-3.5 w-3.5" />
+                  <RotateCcw className="h-3.5 w-3.5" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="janosik-delete-btn h-6 w-6 text-muted-foreground hover:text-destructive"
+                  className="h-6 w-6 text-muted-foreground hover:text-destructive"
                   aria-label={t("data.deleteBackup")}
                   onClick={() => handleDeleteBackup(backup.id)}
                 >
-                  <Trash2 className="janosik-icon-trash h-3.5 w-3.5" />
+                  <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>
             ))
