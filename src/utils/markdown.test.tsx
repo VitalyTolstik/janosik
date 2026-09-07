@@ -98,6 +98,20 @@ describe("MarkdownView", () => {
     expect(block).toHaveTextContent("const x = 1;");
   });
 
+  it("renders raw single newlines as line breaks (plain-text friendly)", () => {
+    // A plain-text description with Enter newlines must stay multi-line —
+    // remark-breaks converts each soft break into a <br> (like Trello/Notion),
+    // so writing "line one\nline two" isn't collapsed into one line.
+    const { container } = render(
+      <MarkdownView>{"line one\nline two\nline three"}</MarkdownView>,
+    );
+    const para = screen.getByText(/line one/);
+    expect(para.tagName).toBe("P");
+    expect(para).toHaveTextContent("line one");
+    expect(container.querySelectorAll("br")).toHaveLength(2);
+    expect(container.textContent).toContain("line three");
+  });
+
   it("renders images with alt, and blocks javascript: image URLs", () => {
     const { container } = render(
       <MarkdownView>
