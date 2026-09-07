@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import {
+  Archive,
   Download,
   HardDriveDownload,
   RotateCcw,
@@ -128,34 +129,7 @@ export function DataMenu() {
                 className="janosik-data-btn"
                 aria-label={t("data.tooltip")}
               >
-                {/* Archive cabinet — on hover the drawer slides open and the
-                 * papers inside lift out in a short cascade (see index.css:
-                 * .janosik-data-papers / .janosik-data-drawer). */}
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="janosik-icon-data h-5 w-5"
-                  aria-hidden
-                >
-                  {/* cabinet body + mouth */}
-                  <path d="M4 7.5v10a2.5 2.5 0 0 0 2.5 2.5h11a2.5 2.5 0 0 0 2.5-2.5v-10" />
-                  <path d="M4 11h16" />
-                  {/* papers — lift out of the opening on hover */}
-                  <g className="janosik-data-papers">
-                    <path d="M8.5 11V8.5" />
-                    <path d="M12 11V7.5" />
-                    <path d="M15.5 11V8" />
-                  </g>
-                  {/* drawer front + handle — slides open on hover */}
-                  <g className="janosik-data-drawer">
-                    <rect x="5.5" y="12.5" width="13" height="5" rx="1.2" />
-                    <path d="M9.5 15h5" />
-                  </g>
-                </svg>
+                <Archive className="janosik-icon-data h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
