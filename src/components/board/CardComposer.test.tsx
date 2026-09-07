@@ -45,12 +45,14 @@ describe("CardComposer", () => {
     // Select "Urgent" then "Design" — order of click defines the ids.
     fireEvent.click(screen.getByRole("button", { name: "Urgent" }));
     fireEvent.click(screen.getByRole("button", { name: "Design" }));
-    expect(
-      screen.getByRole("button", { name: "Urgent" }),
-    ).toHaveAttribute("aria-pressed", "true");
-    expect(
-      screen.getByRole("button", { name: "Design" }),
-    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Design" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /Add card/i }));
     expect(onSubmit).toHaveBeenCalledWith("New card", ["l2", "l1"]);
@@ -84,5 +86,33 @@ describe("CardComposer", () => {
     fireEvent.change(textbox, { target: { value: "Second" } });
     fireEvent.click(screen.getByRole("button", { name: /Add card/i }));
     expect(onSubmit).toHaveBeenLastCalledWith("Second", []);
+  });
+
+  it("does not close when focus moves to a label chip (regression)", () => {
+    const onSubmit = renderComposer();
+    openAndType("Bug fix");
+    const textarea = screen.getByPlaceholderText(/Enter a title/i);
+    const chip = screen.getByRole("button", { name: "Design" });
+
+    // Real browsers fire blur when the chip takes focus — the composer
+    // must stay open and keep the typed title.
+    fireEvent.blur(textarea, { relatedTarget: chip });
+    expect(screen.getByPlaceholderText(/Enter a title/i)).toBeInTheDocument();
+    expect(chip).toBeInTheDocument();
+
+    // The chip still toggles, and the card is created with the label.
+    fireEvent.click(chip);
+    fireEvent.click(screen.getByRole("button", { name: /Add card/i }));
+    expect(onSubmit).toHaveBeenCalledWith("Bug fix", ["l1"]);
+  });
+
+  it("closes when focus leaves the composer entirely", () => {
+    renderComposer();
+    openAndType("Draft");
+    const textarea = screen.getByPlaceholderText(/Enter a title/i);
+
+    // Focus moved outside the composer (body / another element) → cancel.
+    fireEvent.blur(textarea, { relatedTarget: document.body });
+    expect(screen.queryByPlaceholderText(/Enter a title/i)).toBeNull();
   });
 });

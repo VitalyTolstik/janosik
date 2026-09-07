@@ -1,5 +1,10 @@
 import { Plus } from "lucide-react";
-import { useState, type KeyboardEvent } from "react";
+import {
+  useRef,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+} from "react";
 
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
@@ -33,6 +38,9 @@ export function CardComposer({
   const [composing, setComposing] = useState(false);
   const [title, setTitle] = useState("");
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
+  // The composer's own region — blur inside it (label chips, buttons) is
+  // not a cancel, only focus leaving the whole composer is.
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const reset = () => {
     setTitle("");
@@ -64,6 +72,15 @@ export function CardComposer({
     }
   };
 
+  const handleBlur = (event: FocusEvent<HTMLTextAreaElement>) => {
+    // Blur fires when focus moves to a label chip or an action button
+    // inside the composer — that must NOT close it. Only reset when focus
+    // leaves the composer entirely (relatedTarget outside or null).
+    const next = event.relatedTarget;
+    if (next && rootRef.current?.contains(next as Node)) return;
+    reset();
+  };
+
   if (!composing) {
     return (
       <button
@@ -78,13 +95,13 @@ export function CardComposer({
   }
 
   return (
-    <div className="space-y-1.5">
+    <div ref={rootRef} className="space-y-1.5">
       <Textarea
         autoFocus
         value={title}
         onChange={(event) => setTitle(event.target.value)}
         onKeyDown={handleKeyDown}
-        onBlur={reset}
+        onBlur={handleBlur}
         placeholder={placeholder ?? t("composer.placeholder")}
         rows={2}
         className="min-h-0 resize-none"
@@ -93,6 +110,9 @@ export function CardComposer({
         <div
           className="flex flex-wrap items-center gap-1"
           data-testid="composer-labels"
+          // Clicking a chip (or the gap between chips) must not move focus
+          // out of the textarea — keep it inside the composer.
+          onMouseDown={(event) => event.preventDefault()}
         >
           {labels.map((label) => {
             const isSelected = selectedLabels.includes(label.id);
