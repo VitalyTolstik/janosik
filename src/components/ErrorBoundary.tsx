@@ -83,7 +83,9 @@ function ErrorFallback({ message }: { message: string }) {
           <h1 className="font-display text-lg font-semibold tracking-tight">
             {t("error.title")}
           </h1>
-          <p className="text-sm text-muted-foreground">{t("error.description")}</p>
+          <p className="text-sm text-muted-foreground">
+            {t("error.description")}
+          </p>
           {message ? (
             <p className="mx-auto max-w-[16rem] truncate font-mono text-xs text-muted-foreground/70">
               {message}

@@ -129,9 +129,7 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                 id="card-title-input"
                 autoFocus
                 value={card.title}
-                onChange={(e) =>
-                  updateCard(card.id, { title: e.target.value })
-                }
+                onChange={(e) => updateCard(card.id, { title: e.target.value })}
                 onFocus={(e) => e.target.select()}
                 rows={3}
                 className="resize-none break-words"
