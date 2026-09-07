@@ -126,7 +126,7 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader className="pr-8">
             <DialogTitle className="text-base">
               {t("card.detailsTitle")}
@@ -203,12 +203,12 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                   onChange={(e) =>
                     updateCard(card.id, { description: e.target.value })
                   }
-                  rows={6}
-                  className="resize-none break-words font-mono text-[13px]"
+                  rows={12}
+                  className="min-h-[220px] resize-none break-words font-mono text-[13px] leading-relaxed"
                   placeholder={t("card.descriptionPlaceholder")}
                 />
               ) : (
-                <div className="max-h-56 overflow-y-auto rounded-lg border border-border/70 bg-muted/20 p-3">
+                <div className="max-h-96 overflow-y-auto rounded-lg border border-border/70 bg-muted/20 p-3">
                   <MarkdownView>{card.description ?? ""}</MarkdownView>
                 </div>
               )}
