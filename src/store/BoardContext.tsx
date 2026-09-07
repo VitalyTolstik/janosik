@@ -264,8 +264,7 @@ function createBoardActions(
 > {
   return {
     addColumn: (title: string) => dispatch({ type: "ADD_COLUMN", title }),
-    renameBoard: (title: string) =>
-      dispatch({ type: "RENAME_BOARD", title }),
+    renameBoard: (title: string) => dispatch({ type: "RENAME_BOARD", title }),
     renameColumn: (columnId: string, title: string) =>
       dispatch({ type: "RENAME_COLUMN", columnId, title }),
     deleteColumn: (columnId: string) =>
