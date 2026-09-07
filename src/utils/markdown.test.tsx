@@ -33,15 +33,13 @@ describe("MarkdownView", () => {
   it("renders all six heading levels with a size ladder", () => {
     render(
       <MarkdownView>
-        {
-          "# H1\n\n## H2\n\n### H3\n\n#### H4\n\n##### H5\n\n###### H6"
-        }
+        {"# H1\n\n## H2\n\n### H3\n\n#### H4\n\n##### H5\n\n###### H6"}
       </MarkdownView>,
     );
     for (const level of [1, 2, 3, 4, 5, 6]) {
-      expect(
-        screen.getByRole("heading", { level }).textContent,
-      ).toBe(`H${level}`);
+      expect(screen.getByRole("heading", { level }).textContent).toBe(
+        `H${level}`,
+      );
     }
     // Visible size ladder — the classes must strictly decrease.
     const sizeOf = (level: number) =>
@@ -139,7 +137,9 @@ describe("MarkdownView", () => {
     const literal = screen.getByText("*not italic*");
     expect(literal.tagName).toBe("P");
 
-    const { container } = render(<MarkdownView>{"\\`not code\\`"}</MarkdownView>);
+    const { container } = render(
+      <MarkdownView>{"\\`not code\\`"}</MarkdownView>,
+    );
     expect(container.textContent).toBe("`not code`");
     expect(container.querySelector("code")).toBeNull();
   });
@@ -170,9 +170,32 @@ describe("MarkdownView", () => {
     expect(wrapper).toHaveTextContent("Bold snippet");
   });
 
+  it("keeps a heading size ladder and block layout in preview mode", () => {
+    render(
+      <MarkdownView preview>{"# Big title\n\n## Smaller\n\nplain paragraph"}</MarkdownView>,
+    );
+    // Headings stay real headings in the snippet…
+    expect(
+      screen.getByRole("heading", { level: 1 }),
+    ).toHaveTextContent("Big title");
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
+      "Smaller",
+    );
+    // …and the compact ladder keeps them visibly different sizes.
+    const h1Class = screen.getByRole("heading", { level: 1 }).className;
+    const h2Class = screen.getByRole("heading", { level: 2 }).className;
+    expect(h1Class).toContain("text-sm");
+    expect(h2Class).toContain("text-[13px]");
+    // Blocks are not flattened to inline — the paragraph is a <p>.
+    const para = screen.getByText("plain paragraph");
+    expect(para.tagName).toBe("P");
+  });
+
   it("renders an image as an inline alt placeholder in preview mode", () => {
     render(
-      <MarkdownView preview>{"![Cover](https://example.com/cover.jpg)"}</MarkdownView>,
+      <MarkdownView preview>
+        {"![Cover](https://example.com/cover.jpg)"}
+      </MarkdownView>,
     );
     // No <img> in the card snippet — just a compact placeholder, so the
     // 2-line clamp can't be blown up by a large image.

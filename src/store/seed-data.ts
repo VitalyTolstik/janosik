@@ -85,7 +85,7 @@ export function createSeedBoard(): Board {
         "",
         "```ts",
         "function hello(name: string) {",
-        '  console.log(`Hi, ${name}!`);',
+        "  console.log(`Hi, ${name}!`);",
         "}",
         "```",
         "",

@@ -154,64 +154,67 @@ export function MarkdownView({
         remarkPlugins={[remarkGfm]}
         components={{
           ...mdComponents,
-          // In preview mode keep every block tight so the clamp reads
-          // like a continuous snippet instead of stacked paragraphs.
+          // In preview mode blocks stay blocks (so the snippet reads like
+          // Markdown: margins + a visible heading ladder), but compact —
+          // small sizes, tight spacing — and clipped by line-clamp-2 on
+          // the root. Images collapse to a placeholder so a big picture
+          // can't blow up the two-line snippet.
           ...(preview
             ? {
                 p: ({ children }) => (
-                  <p className="my-0.5 inline text-xs leading-relaxed text-muted-foreground/90">
+                  <p className="my-1 text-xs leading-relaxed text-muted-foreground/90 first:mt-0 last:mb-0">
                     {children}
                   </p>
                 ),
                 ul: ({ children }) => (
-                  <ul className="my-0.5 inline list-disc pl-4 text-xs text-muted-foreground/90">
+                  <ul className="my-1 list-disc space-y-0 pl-4 text-xs text-muted-foreground/90 first:mt-0 last:mb-0">
                     {children}
                   </ul>
                 ),
                 ol: ({ children }) => (
-                  <ol className="my-0.5 inline list-decimal pl-4 text-xs text-muted-foreground/90">
+                  <ol className="my-1 list-decimal space-y-0 pl-4 text-xs text-muted-foreground/90 first:mt-0 last:mb-0">
                     {children}
                   </ol>
                 ),
                 h1: ({ children }) => (
-                  <span className="mr-1 font-semibold text-muted-foreground/90">
+                  <h1 className="mb-0.5 mt-1.5 text-sm font-bold leading-snug text-foreground/90 first:mt-0">
                     {children}
-                  </span>
+                  </h1>
                 ),
                 h2: ({ children }) => (
-                  <span className="mr-1 font-semibold text-muted-foreground/90">
+                  <h2 className="mb-0.5 mt-1.5 text-[13px] font-bold leading-snug text-foreground/90 first:mt-0">
                     {children}
-                  </span>
+                  </h2>
                 ),
                 h3: ({ children }) => (
-                  <span className="mr-1 font-semibold text-muted-foreground/90">
+                  <h3 className="mb-0.5 mt-1 text-xs font-bold leading-snug text-foreground/90 first:mt-0">
                     {children}
-                  </span>
+                  </h3>
                 ),
                 h4: ({ children }) => (
-                  <span className="mr-1 font-medium text-muted-foreground/90">
+                  <h4 className="mb-0.5 mt-1 text-[11px] font-semibold leading-snug text-foreground/90 first:mt-0">
                     {children}
-                  </span>
+                  </h4>
                 ),
                 h5: ({ children }) => (
-                  <span className="mr-1 font-medium text-muted-foreground/90">
+                  <h5 className="mb-0.5 mt-1 text-[11px] font-semibold leading-snug text-foreground/90 first:mt-0">
                     {children}
-                  </span>
+                  </h5>
                 ),
                 h6: ({ children }) => (
-                  <span className="mr-1 font-medium text-muted-foreground/90">
+                  <h6 className="mb-0.5 mt-1 text-[11px] font-semibold leading-snug text-foreground/90 first:mt-0">
                     {children}
-                  </span>
+                  </h6>
                 ),
                 img: ({ alt }) => (
-                  <span className="mr-1 italic text-muted-foreground/90">
+                  <span className="my-1 block italic text-muted-foreground/90">
                     {alt ? `🖼 ${alt}` : "🖼 image"}
                   </span>
                 ),
                 pre: ({ children }) => (
-                  <span className="text-xs text-muted-foreground/90">
+                  <pre className="my-1 overflow-x-auto rounded bg-muted p-1.5 text-[11px] leading-relaxed first:mt-0 last:mb-0">
                     {children}
-                  </span>
+                  </pre>
                 ),
               }
             : {}),
