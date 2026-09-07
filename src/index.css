@@ -545,3 +545,82 @@ html.__janosik-ready *::after {
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Data & backup micro-interactions — same understated character as the
+ * palette/language/sun buttons: the archive drawer gets nudged, the
+ * restore arrow spins, the delete bin shakes about the deletion.
+ * Keyframe animations, so they are unaffected by the transition
+ * kill-switch / global color-only transition rule above.
+ * -------------------------------------------------------------------------- */
+.janosik-icon-data,
+.janosik-icon-restore,
+.janosik-icon-trash {
+  transform-origin: center;
+}
+.janosik-data-btn:hover .janosik-icon-data {
+  animation: janosik-data-sway 2.8s ease-in-out infinite;
+}
+@keyframes janosik-data-sway {
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-5deg);
+  }
+  75% {
+    transform: rotate(5deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+.janosik-restore-btn:hover .janosik-icon-restore {
+  animation: janosik-restore-spin 2s linear infinite;
+}
+@keyframes janosik-restore-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.janosik-icon-trash {
+  transform-origin: 50% 25%;
+}
+.janosik-delete-btn:hover .janosik-icon-trash {
+  animation: janosik-trash-shake 0.6s ease-in-out infinite;
+}
+@keyframes janosik-trash-shake {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  20% {
+    transform: rotate(-10deg);
+  }
+  40% {
+    transform: rotate(9deg);
+  }
+  60% {
+    transform: rotate(-6deg);
+  }
+  80% {
+    transform: rotate(4deg);
+  }
+}
+/* Board-title pencil — the Tailwind transition-opacity utility is
+ * outranked by the global html.__janosik-ready color-only rule above
+ * (0,1,0 vs 0,1,1 specificity), so it needs its own more specific
+ * declaration to fade in smoothly on hover. */
+html.__janosik-ready .group .janosik-title-pencil {
+  transition: opacity 200ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .janosik-icon-data,
+  .janosik-icon-restore,
+  .janosik-icon-trash {
+    animation: none;
+  }
+  html.__janosik-ready .group .janosik-title-pencil {
+    transition: none;
+  }
+}

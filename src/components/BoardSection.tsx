@@ -115,7 +115,7 @@ export function BoardSection() {
               className="flex cursor-pointer items-center gap-1.5 text-xl font-semibold tracking-tight text-foreground outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/40"
             >
               {board.title}
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground/0 transition-all group-hover:text-muted-foreground/70" />
+              <Pencil className="janosik-title-pencil h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity duration-200 group-hover:opacity-70" />
             </h2>
           )}
         </div>
