@@ -609,10 +609,18 @@ html.__janosik-ready *::after {
 }
 /* Board-title pencil — the Tailwind transition-opacity utility is
  * outranked by the global html.__janosik-ready color-only rule above
- * (0,1,0 vs 0,1,1 specificity), so it needs its own more specific
- * declaration to fade in smoothly on hover. */
+ * (0,1,0 vs 0,1,1 specificity), so it gets its own more specific
+ * declarations: fade in + a small playful tilt on hover (as if the
+ * pencil is being picked up), both GPU-cheap and reduced-motion safe. */
 html.__janosik-ready .group .janosik-title-pencil {
-  transition: opacity 200ms ease;
+  opacity: 0;
+  transition:
+    opacity 180ms ease,
+    transform 240ms ease;
+}
+html.__janosik-ready .group:hover .janosik-title-pencil {
+  opacity: 0.75;
+  transform: translateX(1px) rotate(-14deg);
 }
 @media (prefers-reduced-motion: reduce) {
   .janosik-icon-data,
@@ -622,5 +630,6 @@ html.__janosik-ready .group .janosik-title-pencil {
   }
   html.__janosik-ready .group .janosik-title-pencil {
     transition: none;
+    transform: none;
   }
 }
