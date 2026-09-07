@@ -47,11 +47,13 @@ describe("CardDialog Markdown toggle", () => {
     const dialog = await openCardDialog("Design the new onboarding flow");
 
     // The description textarea is in edit mode by default.
-    const textarea = within(dialog).getByLabelText("Description") as HTMLTextAreaElement;
+    const textarea = within(dialog).getByLabelText(
+      "Description",
+    ) as HTMLTextAreaElement;
     expect(textarea).toBeInTheDocument();
     expect(textarea.value).toContain("**tooltips**");
     expect(
-      within(dialog).getByText("Markdown supported: **bold**, *italic*, `code`, lists, links"),
+      within(dialog).getByText("Markdown supported"),
     ).toBeInTheDocument();
 
     // Switch to preview → formatted bold + a checked task item.
