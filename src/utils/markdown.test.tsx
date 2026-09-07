@@ -17,7 +17,9 @@ import { MarkdownView } from "@/utils/markdown";
 describe("MarkdownView", () => {
   it("renders bold, italic and inline code", () => {
     render(
-      <MarkdownView>**bold text** and *italic text* and `code text`</MarkdownView>,
+      <MarkdownView>
+        **bold text** and *italic text* and `code text`
+      </MarkdownView>,
     );
     expect(screen.getByText("bold text").tagName).toBe("STRONG");
     expect(screen.getByText("italic text").tagName).toBe("EM");
@@ -27,7 +29,9 @@ describe("MarkdownView", () => {
   it("renders lists, links and headings", () => {
     render(
       <MarkdownView>
-        {"# Heading\n\n- item one\n- item two\n\n[link to site](https://example.com)"}
+        {
+          "# Heading\n\n- item one\n- item two\n\n[link to site](https://example.com)"
+        }
       </MarkdownView>,
     );
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
@@ -45,7 +49,9 @@ describe("MarkdownView", () => {
   it("renders GFM task lists, tables and strikethrough", () => {
     render(
       <MarkdownView>
-        {"- [x] done item\n- [ ] todo item\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n~~old~~"}
+        {
+          "- [x] done item\n- [ ] todo item\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n~~old~~"
+        }
       </MarkdownView>,
     );
     // Two checkboxes: one checked, one unchecked.

@@ -111,7 +111,7 @@
   "card.titlePlaceholder": "Card title",
   "card.descriptionLabel": "Description",
   "card.descriptionPlaceholder": "Add a more detailed description…",
-  "card.markdownHint": "Markdown supported: **bold**, *italic*, `code`, lists, links",
+  "card.markdownHint": "Markdown supported",
   "card.modeEdit": "Edit",
   "card.modePreview": "Preview",
   "card.labelLabel": "Label",
