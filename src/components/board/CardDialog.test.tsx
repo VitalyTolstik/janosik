@@ -51,16 +51,16 @@ describe("CardDialog Markdown toggle", () => {
       "Description",
     ) as HTMLTextAreaElement;
     expect(textarea).toBeInTheDocument();
-    expect(textarea.value).toContain("**tooltips**");
+    expect(textarea.value).toContain("**bold**");
     expect(within(dialog).getByText("Markdown supported")).toBeInTheDocument();
 
-    // Switch to preview → formatted bold + a checked task item.
+    // Switch to preview → formatted bold + a checklist.
     fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
     expect(textarea).not.toBeInTheDocument();
-    const bold = within(dialog).getByText("tooltips");
+    const bold = within(dialog).getByText("bold");
     expect(bold.tagName).toBe("STRONG");
     const checks = within(dialog).getAllByRole("checkbox");
-    expect(checks).toHaveLength(2);
+    expect(checks).toHaveLength(3);
     expect(checks[0]).toBeChecked();
     expect(checks[1]).not.toBeChecked();
 
@@ -69,6 +69,6 @@ describe("CardDialog Markdown toggle", () => {
     const textareaAgain = within(dialog).getByLabelText(
       "Description",
     ) as HTMLTextAreaElement;
-    expect(textareaAgain.value).toContain("**tooltips**");
+    expect(textareaAgain.value).toContain("**bold**");
   });
 });
