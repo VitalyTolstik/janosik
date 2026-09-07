@@ -53,7 +53,7 @@ export function createSeedBoard(): Board {
       "Design the new onboarding flow",
       ["label-design"],
       1,
-      "Guided first-run flow for new users — tooltips, a demo board and a gentle intro to drag & drop.",
+      "Guided first-run flow for new users — **tooltips**, a demo board and a gentle intro to drag & drop.\n\n- interactive hints\n- [x] demo board\n- [ ] polished animations",
     ),
     "card-2": card("card-2", "Set up CI/CD pipeline", ["label-dev"], 2),
     "card-3": card(
