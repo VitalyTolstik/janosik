@@ -548,31 +548,45 @@ html.__janosik-ready *::after {
 
 /* ---------------------------------------------------------------------------
  * Data & backup micro-interactions — same understated character as the
- * palette/language/sun buttons: the archive drawer gets nudged, the
- * restore arrow spins, the delete bin shakes about the deletion.
- * Keyframe animations, so they are unaffected by the transition
- * kill-switch / global color-only transition rule above.
+ * palette/language/sun buttons, but told as a one-shot micro-scene instead
+ * of an endless loop: on hover the archive drawer slides open and the
+ * papers inside lift out in a short cascade, then everything settles.
+ * Per the premium-interaction playbook: transforms only, <400ms, a springy
+ * ease with a slight overshoot (the Linear/Raycast curve), staggered
+ * layers, and a tactile :active press. Restore / delete keep their
+ * keyframe spins / shakes (menu-only, unobtrusive).
+ * Rules are scoped under .janosik-data-btn so they outrank the global
+ * html.__janosik-ready color-only transition (0,2,0 vs 0,1,1).
  * -------------------------------------------------------------------------- */
-.janosik-icon-data,
 .janosik-icon-restore,
 .janosik-icon-trash {
   transform-origin: center;
 }
-.janosik-data-btn:hover .janosik-icon-data {
-  animation: janosik-data-sway 2.8s ease-in-out infinite;
-}
-@keyframes janosik-data-sway {
-  0% {
-    transform: rotate(0deg);
+@media (prefers-reduced-motion: no-preference) {
+  .janosik-data-btn .janosik-data-papers,
+  .janosik-data-btn .janosik-data-drawer {
+    transition-property: transform;
+    transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+    will-change: transform;
   }
-  25% {
-    transform: rotate(-5deg);
+  .janosik-data-btn .janosik-data-papers {
+    transition-duration: 240ms;
   }
-  75% {
-    transform: rotate(5deg);
+  /* drawer follows the papers — cascade */
+  .janosik-data-btn .janosik-data-drawer {
+    transition-duration: 320ms;
+    transition-delay: 50ms;
   }
-  100% {
-    transform: rotate(0deg);
+  .janosik-data-btn:hover .janosik-data-papers {
+    transform: translateY(-2px);
+  }
+  .janosik-data-btn:hover .janosik-data-drawer {
+    transform: translateY(2px);
+  }
+  /* tactile click feedback */
+  .janosik-data-btn:active .janosik-icon-data {
+    transform: scale(0.9);
+    transition: transform 90ms ease-out;
   }
 }
 .janosik-restore-btn:hover .janosik-icon-restore {
@@ -623,7 +637,6 @@ html.__janosik-ready .group:hover .janosik-title-pencil {
   transform: translateX(1px) rotate(-14deg);
 }
 @media (prefers-reduced-motion: reduce) {
-  .janosik-icon-data,
   .janosik-icon-restore,
   .janosik-icon-trash {
     animation: none;
