@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import {
-  Archive,
+  CloudBackup,
   Download,
   HardDriveDownload,
   RotateCcw,
@@ -129,7 +129,10 @@ export function DataMenu() {
                 className="janosik-data-btn"
                 aria-label={t("data.tooltip")}
               >
-                <Archive className="janosik-icon-data h-5 w-5" />
+                {/* Cloud + restore-cycle: the recognizable "backup" symbol
+                 * (same as OneDrive/iCloud sync badges). On hover the cloud
+                 * lifts and the cycle-arrow takes one step (see CSS). */}
+                <CloudBackup className="janosik-icon-data h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
