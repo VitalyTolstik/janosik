@@ -41,9 +41,7 @@ describe("createDebouncedLocalStoragePersistence", () => {
     vi.advanceTimersByTime(100);
     persistence.queueSave({ n: 3 });
     vi.advanceTimersByTime(400);
-    expect(localStorage.getItem("janosik-persist-test")).toBe(
-      '{"n":3}',
-    );
+    expect(localStorage.getItem("janosik-persist-test")).toBe('{"n":3}');
   });
 
   it("flush() writes pending data immediately", () => {

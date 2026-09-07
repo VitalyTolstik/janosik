@@ -45,7 +45,9 @@ const STORAGE_KEY = "janosik-boards";
 const SAVE_DEBOUNCE_MS = 400;
 const BACKUP_THROTTLE_MS = 60_000;
 
-function loadInitialState(persistence: DebouncedPersistence<BoardState>): BoardState {
+function loadInitialState(
+  persistence: DebouncedPersistence<BoardState>,
+): BoardState {
   // One-time brand migration (Vortex → Janosik) — read before the new key.
   migrateStorageKey("vortex-boards", STORAGE_KEY);
   const stored = persistence.load();
@@ -119,10 +121,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     historyRef.current = new BoardHistory();
   }
 
-  const [state, dispatchRaw] = useReducer(
-    boardReducer,
-    undefined,
-    () => loadInitialState(persistence),
+  const [state, dispatchRaw] = useReducer(boardReducer, undefined, () =>
+    loadInitialState(persistence),
   );
 
   // Latest committed state, readable from stable callbacks.
@@ -161,15 +161,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }, [persistence]);
 
   // Wrapper dispatch: record history, then apply (except internal restores).
-  const dispatch = useCallback(
-    (action: BoardAction) => {
-      if (action.type !== "RESTORE_BOARD") {
-        historyRef.current?.push(stateRef.current, action);
-      }
-      dispatchRaw(action);
-    },
-    [],
-  );
+  const dispatch = useCallback((action: BoardAction) => {
+    if (action.type !== "RESTORE_BOARD") {
+      historyRef.current?.push(stateRef.current, action);
+    }
+    dispatchRaw(action);
+  }, []);
 
   const undo = useCallback(() => {
     const history = historyRef.current;
@@ -288,7 +285,14 @@ function createBoardActions(
       fromColumnId: string,
       toColumnId: string,
       toIndex: number,
-    ) => dispatch({ type: "MOVE_CARD", cardId, fromColumnId, toColumnId, toIndex }),
+    ) =>
+      dispatch({
+        type: "MOVE_CARD",
+        cardId,
+        fromColumnId,
+        toColumnId,
+        toIndex,
+      }),
     moveColumn: (columnId: string, fromIndex: number, toIndex: number) =>
       dispatch({ type: "MOVE_COLUMN", columnId, fromIndex, toIndex }),
   };
