@@ -74,6 +74,30 @@ describe("boardReducer — cards", () => {
     expect(board.cards[done?.cardIds.at(-1) ?? ""]?.title).toBe("Ship it");
   });
 
+  it("attaches labels to a card created with labelIds", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "ADD_CARD",
+      columnId: "col-done",
+      title: "Buy milk",
+      labelIds: ["label-urgent", "label-later"],
+    });
+    const done = board.columns.find((c) => c.id === "col-done");
+    const id = done?.cardIds.at(-1) ?? "";
+    const card = board.cards[id];
+    expect(card).toBeDefined();
+    expect(card?.labelIds).toEqual(["label-urgent", "label-later"]);
+  });
+
+  it("creates a card without labels when labelIds is omitted", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "ADD_CARD",
+      columnId: "col-done",
+      title: "No labels",
+    });
+    const done = board.columns.find((c) => c.id === "col-done");
+    expect(board.cards[done?.cardIds.at(-1) ?? ""]?.labelIds).toEqual([]);
+  });
+
   it("updates a card title", () => {
     const board = reduceBoard(freshBoard(), {
       type: "UPDATE_CARD",

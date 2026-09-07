@@ -69,7 +69,7 @@ interface BoardContextValue {
   addColumn: (title: string) => void;
   renameColumn: (columnId: string, title: string) => void;
   deleteColumn: (columnId: string) => void;
-  addCard: (columnId: string, title: string) => void;
+  addCard: (columnId: string, title: string, labelIds?: string[]) => void;
   updateCard: (cardId: string, patch: CardPatch) => void;
   deleteCard: (cardId: string) => void;
   toggleCardLabel: (cardId: string, labelId: string) => void;
@@ -266,8 +266,8 @@ function createBoardActions(
       dispatch({ type: "RENAME_COLUMN", columnId, title }),
     deleteColumn: (columnId: string) =>
       dispatch({ type: "DELETE_COLUMN", columnId }),
-    addCard: (columnId: string, title: string) =>
-      dispatch({ type: "ADD_CARD", columnId, title }),
+    addCard: (columnId: string, title: string, labelIds?: string[]) =>
+      dispatch({ type: "ADD_CARD", columnId, title, labelIds }),
     updateCard: (cardId: string, patch: CardPatch) =>
       dispatch({ type: "UPDATE_CARD", cardId, ...patch }),
     deleteCard: (cardId: string) => dispatch({ type: "DELETE_CARD", cardId }),
