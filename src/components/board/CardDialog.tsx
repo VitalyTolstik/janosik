@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ArrowRightLeft, CalendarClock, Trash2 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { LabelPicker } from "@/components/board/LabelPicker";
 import { formatDate, useI18n } from "@/i18n";
