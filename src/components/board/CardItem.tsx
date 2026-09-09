@@ -1,6 +1,6 @@
+import { AlignLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LABEL_COLOR_CHIP, type Card, type Label } from "@/types/kanban";
-import { MarkdownView } from "@/utils/markdown";
 
 interface CardItemProps {
   card: Card;
@@ -49,9 +49,10 @@ export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
         {card.title}
       </p>
       {card.description ? (
-        <MarkdownView preview className="mt-1.5">
-          {card.description}
-        </MarkdownView>
+        <AlignLeft
+          aria-label="Has description"
+          className="mt-1.5 h-3.5 w-3.5 text-muted-foreground"
+        />
       ) : null}
     </article>
   );
