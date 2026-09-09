@@ -1,21 +1,17 @@
 {
   "common.cancel": "Отмена",
   "common.save": "Сохранить",
-
   "theme.aria": "Переключить тему",
   "theme.tooltipLight": "Переключить на светлую тему",
   "theme.tooltipDark": "Переключить на тёмную тему",
-
   "error.title": "Что-то пошло не так",
   "error.description": "Janosik столкнулся с непредвиденной ошибкой. Можно перезагрузить приложение или сбросить данные.",
   "error.reload": "Перезагрузить",
   "error.reset": "Сбросить данные",
-
   "undo.aria": "Отменить",
   "undo.tooltip": "Отменить (Ctrl+Z)",
   "redo.aria": "Повторить",
   "redo.tooltip": "Повторить (Ctrl+Shift+Z)",
-
   "data.tooltip": "Данные и бэкапы",
   "data.export": "Экспорт JSON",
   "data.import": "Импорт JSON",
@@ -32,21 +28,16 @@
   "data.backupFailed": "Не удалось сохранить резервную копию",
   "data.restoreSuccess": "Резервная копия восстановлена",
   "data.restoreFailed": "Не удалось восстановить эту резервную копию",
-
   "toast.saveError": "Не удалось сохранить изменения в локальное хранилище.",
-
   "lang.aria": "Сменить язык",
   "lang.tooltip": "Сменить язык",
-
   "board.noBoard": "Доски пока нет.",
   "board.editTitleAria": "Название доски",
   "board.editTitleHint": "Нажмите, чтобы переименовать доску",
-
   "composer.add": "Добавить карточку",
   "composer.placeholder": "Введите название карточки…",
   "composer.submit": "Добавить",
   "composer.hint": "Enter — добавить, Shift+Enter — новая строка",
-
   "column.add": "Добавить колонку",
   "column.placeholder": "Название колонки…",
   "column.empty": "Пока нет карточек",
@@ -61,7 +52,6 @@
   "column.deleteDescription_other": "«{{title}}» и {{count}} карточек будут удалены безвозвратно. Это действие нельзя отменить.",
   "column.renameDialogTitle": "Переименовать колонку",
   "column.renamePlaceholder": "Название колонки",
-
   "label.pickerClear": "Очистить",
   "label.pickerRemove": "Убрать метку",
   "label.new": "Новая метка",
@@ -73,7 +63,6 @@
   "label.delete": "Удалить метку",
   "label.deleteTitle": "Удалить эту метку?",
   "label.deleteDescription": "«{{name}}» будет удалена со всех карточек. Это действие нельзя отменить.",
-
   "filter.searchPlaceholder": "Поиск карточек по названию…",
   "filter.searchAria": "Поиск карточек",
   "filter.labels": "Метки",
@@ -95,14 +84,12 @@
   "filter.noMatch": "Нет карточек, подходящих под фильтр",
   "filter.dragDisabled": "Перетаскивание отключено, пока активен фильтр",
   "filter.reset": "Сбросить фильтры",
-
   "bg.tooltip": "Фон доски",
   "bg.aria": "Фон доски",
   "bg.flat": "Однотонный",
   "bg.paper": "Бумага",
   "bg.dots": "Точки",
   "bg.grid": "Клетка",
-
   "card.notFoundTitle": "Карточка",
   "card.notFoundDesc": "Эта карточка больше не существует.",
   "card.deletedDesc": "Эта карточка была удалена.",
@@ -112,9 +99,6 @@
   "card.titlePlaceholder": "Название карточки",
   "card.descriptionLabel": "Описание",
   "card.descriptionPlaceholder": "Добавьте более подробное описание…",
-  "card.markdownHint": "Поддерживается Markdown",
-  "card.modeEdit": "Правка",
-  "card.modePreview": "Просмотр",
   "card.labelLabel": "Метка",
   "card.columnLabel": "Колонка",
   "card.moveTo": "Переместить в колонку",
@@ -125,7 +109,6 @@
   "card.deleteTitle": "Удалить эту карточку?",
   "card.deleteDescription": "«{{title}}» будет удалена безвозвратно. Это действие нельзя отменить.",
   "card.deleteConfirm": "Удалить",
-
   "overlay.columnCardCount_one": "{{count}} карточка",
   "overlay.columnCardCount_few": "{{count}} карточки",
   "overlay.columnCardCount_many": "{{count}} карточек",
