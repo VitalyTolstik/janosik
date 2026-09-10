@@ -1,19 +1,17 @@
 import { format, parseISO } from "date-fns";
-import { CalendarDays, ChevronDown, Search, Tag, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import {
+  CalendarClock,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  Search,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -24,17 +22,26 @@ import { useI18n, type MessageKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { LABEL_COLOR_DOT, type Label, type LabelColor } from "@/types/kanban";
 import {
+  activeFacetCount,
   EMPTY_FILTER,
   isFilterActive,
   type CardFilter,
   type CreatedWindow,
+  type DueFilter,
 } from "@/utils/filter";
 
 const CREATED_LABEL_KEY: Record<CreatedWindow, MessageKey> = {
-  any: "filter.created",
+  any: "filter.anyTime",
   today: "filter.today",
   "7d": "filter.last7Days",
   "30d": "filter.last30Days",
+};
+
+const DUE_LABEL_KEY: Record<DueFilter, MessageKey> = {
+  any: "filter.dueAny",
+  overdue: "filter.dueOverdue",
+  soon: "filter.dueSoon",
+  none: "filter.dueNone",
 };
 
 /** Locale-aware "15 June 2025" label for a stored YYYY-MM-DD day. */
@@ -61,10 +68,79 @@ interface FilterBarProps {
   onChange: (next: CardFilter) => void;
 }
 
+/** Section title inside the filters popover. */
+function FilterSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="border-b border-border px-3 py-2 last:border-b-0">
+      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+interface OptionRowProps {
+  selected: boolean;
+  onSelect: () => void;
+  children: React.ReactNode;
+}
+
+/** Radio-style row (single-choice facets: due status, creation window). */
+function OptionRow({ selected, onSelect, children }: OptionRowProps) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      className={cn(
+        "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover",
+        selected ? "font-medium text-foreground" : "text-foreground/90",
+      )}
+    >
+      <span className="flex items-center gap-2">{children}</span>
+      {selected && <Check className="h-3.5 w-3.5 text-primary" />}
+    </button>
+  );
+}
+
+interface CheckRowProps {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  children: React.ReactNode;
+}
+
+/** Checkbox-style row (label facets: pick any combination). */
+function CheckRow({ checked, onCheckedChange, children }: CheckRowProps) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      onClick={() => onCheckedChange(!checked)}
+      className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-hover"
+    >
+      <span className="flex items-center gap-2">{children}</span>
+      <span
+        className={cn(
+          "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+          checked
+            ? "border-primary bg-primary text-primary-foreground"
+            : "border-border bg-transparent",
+        )}
+      >
+        {checked && <Check className="h-3 w-3" />}
+      </span>
+    </button>
+  );
+}
+
 /**
- * Board filter toolbar (Trello/Linear-style): free-text search by card name,
- * a multi-select label picker with an optional "no label" facet, a
- * creation-date window, result count, and a reset action.
+ * Board filter toolbar (Trello/Linear-style): free-text search by card name
+ * stays inline; the faceted filters (labels, due date, creation date) live
+ * behind a single "Filters" popover button, with a badge showing how many
+ * facets are active.
  *
  * - `/` or Ctrl/Cmd+K focuses the search input (outside of text fields).
  * - Esc in the search clears the query, a second Esc blurs.
@@ -79,8 +155,10 @@ export function FilterBar({
 }: FilterBarProps) {
   const { t, tp, lang } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [dayCalendarOpen, setDayCalendarOpen] = useState(false);
 
   const active = isFilterActive(filter);
+  const facetCount = activeFacetCount(filter);
   const query = filter.query;
 
   useEffect(() => {
@@ -155,138 +233,116 @@ export function FilterBar({
         )}
       </div>
 
-      {/* Label filter */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+      {/* Faceted filters (labels, due date, creation date) */}
+      <Popover>
+        <PopoverTrigger asChild>
           <Button
-            variant="outline"
+            variant={facetCount > 0 ? "secondary" : "outline"}
             size="sm"
-            aria-label={t("filter.labelsAria")}
+            aria-label={t("filter.filtersAria")}
           >
-            <Tag className="h-3.5 w-3.5" />
-            {t("filter.labels")}
-            {filter.labelIds.length > 0 && (
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            {t("filter.filters")}
+            {facetCount > 0 && (
               <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-semibold text-primary">
-                {filter.labelIds.length}
+                {facetCount}
               </span>
             )}
             <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
-          {labels.map((label) => (
-            <DropdownMenuCheckboxItem
-              key={label.id}
-              checked={filter.labelIds.includes(label.id)}
-              onCheckedChange={(checked) =>
-                toggleLabel(label.id, checked === true)
-              }
-            >
-              <span
-                className={cn(
-                  "mr-2 inline-block h-2.5 w-2.5 rounded-full",
-                  dotClass(label.color),
-                )}
-              />
-              {label.name}
-            </DropdownMenuCheckboxItem>
-          ))}
-          {labels.length > 0 && <DropdownMenuSeparator />}
-          <DropdownMenuCheckboxItem
-            checked={filter.noLabel}
-            onCheckedChange={(checked) =>
-              onChange({ ...filter, noLabel: checked === true })
-            }
-          >
-            <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full border border-dashed border-border bg-transparent" />
-            {t("filter.noLabel")}
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onSelect={() =>
-              onChange({ ...filter, labelIds: [], noLabel: false })
-            }
-          >
-            {t("label.pickerClear")}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      {/* Creation-date window */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            aria-label={t("filter.createdAria")}
-          >
-            <CalendarDays className="h-3.5 w-3.5" />
-            {t(CREATED_LABEL_KEY[filter.created])}
-            {filter.created !== "any" && (
-              <span className="ml-1 h-1.5 w-1.5 rounded-full bg-primary" />
-            )}
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuRadioGroup
-            value={filter.created}
-            onValueChange={(value) =>
-              onChange({
-                ...filter,
-                created: value as CreatedWindow,
-                // An exact day and a relative window are mutually exclusive.
-                createdOn: null,
-              })
-            }
-          >
-            <DropdownMenuRadioItem value="any">
-              {t("filter.anyTime")}
-            </DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="today">
-              {t("filter.today")}
-            </DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="7d">
-              {t("filter.last7Days")}
-            </DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="30d">
-              {t("filter.last30Days")}
-            </DropdownMenuRadioItem>
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      {/* Exact creation day (calendar) */}
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            variant={filter.createdOn ? "secondary" : "outline"}
-            size="sm"
-            aria-label={t("filter.dateAria")}
-          >
-            <CalendarDays className="h-3.5 w-3.5" />
-            {filter.createdOn
-              ? formatDay(filter.createdOn, lang)
-              : t("filter.onDate")}
-            {filter.createdOn && (
-              <span className="ml-1 h-1.5 w-1.5 rounded-full bg-primary" />
-            )}
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-          </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-auto p-0">
-          <Calendar
-            aria-label={t("filter.dateTitle")}
-            mode="single"
-            selected={filter.createdOn ? parseISO(filter.createdOn) : undefined}
-            onSelect={(day) =>
-              onChange({
-                ...filter,
-                createdOn: day ? format(day, "yyyy-MM-dd") : null,
-              })
-            }
-            autoFocus
-          />
+        <PopoverContent align="start" className="w-72 p-0">
+          <div role="radiogroup" aria-label={t("filter.dueAria")}>
+            <FilterSection title={t("filter.due")}>
+              {(["any", "overdue", "soon", "none"] as const).map((value) => (
+                <OptionRow
+                  key={value}
+                  selected={filter.due === value}
+                  onSelect={() => onChange({ ...filter, due: value })}
+                >
+                  <CalendarClock className="h-3.5 w-3.5 text-muted-foreground" />
+                  {t(DUE_LABEL_KEY[value])}
+                </OptionRow>
+              ))}
+            </FilterSection>
+          </div>
+          <FilterSection title={t("filter.labels")}>
+            <div className="max-h-44 overflow-y-auto">
+              {labels.map((label) => (
+                <CheckRow
+                  key={label.id}
+                  checked={filter.labelIds.includes(label.id)}
+                  onCheckedChange={(checked) => toggleLabel(label.id, checked)}
+                >
+                  <span
+                    className={cn(
+                      "inline-block h-2.5 w-2.5 rounded-full",
+                      dotClass(label.color),
+                    )}
+                  />
+                  {label.name}
+                </CheckRow>
+              ))}
+              <CheckRow
+                checked={filter.noLabel}
+                onCheckedChange={(checked) =>
+                  onChange({ ...filter, noLabel: checked })
+                }
+              >
+                <span className="inline-block h-2.5 w-2.5 rounded-full border border-dashed border-border bg-transparent" />
+                {t("filter.noLabel")}
+              </CheckRow>
+            </div>
+          </FilterSection>
+          <FilterSection title={t("filter.created")}>
+            <div role="radiogroup" aria-label={t("filter.createdAria")}>
+              {(["any", "today", "7d", "30d"] as const).map((value) => (
+                <OptionRow
+                  key={value}
+                  selected={filter.createdOn === null && filter.created === value}
+                  onSelect={() =>
+                    onChange({
+                      ...filter,
+                      created: value,
+                      // An exact day and a relative window are mutually exclusive.
+                      createdOn: null,
+                    })
+                  }
+                >
+                  <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                  {t(CREATED_LABEL_KEY[value])}
+                </OptionRow>
+              ))}
+              <OptionRow
+                selected={filter.createdOn !== null}
+                onSelect={() => setDayCalendarOpen((open) => !open)}
+              >
+                <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                {filter.createdOn
+                  ? formatDay(filter.createdOn, lang)
+                  : t("filter.onDate")}
+              </OptionRow>
+            </div>
+            {dayCalendarOpen && (
+              <div className="mt-2 border-t border-border pt-2">
+                <Calendar
+                  aria-label={t("filter.dateTitle")}
+                  mode="single"
+                  selected={
+                    filter.createdOn ? parseISO(filter.createdOn) : undefined
+                  }
+                  onSelect={(day) => {
+                    onChange({
+                      ...filter,
+                      createdOn: day ? format(day, "yyyy-MM-dd") : null,
+                    });
+                    if (day) setDayCalendarOpen(false);
+                  }}
+                  autoFocus
+                />
+              </div>
+            )}
+          </FilterSection>
         </PopoverContent>
       </Popover>
 
@@ -299,7 +355,10 @@ export function FilterBar({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onChange(EMPTY_FILTER)}
+            onClick={() => {
+              onChange(EMPTY_FILTER);
+              setDayCalendarOpen(false);
+            }}
           >
             <X className="h-3.5 w-3.5" />
             {t("filter.reset")}
@@ -307,9 +366,26 @@ export function FilterBar({
         </div>
       )}
 
-      {/* Selected labels + exact day as removable chips */}
-      {(selectedLabels.length > 0 || filter.noLabel || filter.createdOn) && (
+      {/* Selected labels, due status, and exact day as removable chips */}
+      {(selectedLabels.length > 0 ||
+        filter.noLabel ||
+        filter.createdOn ||
+        filter.due !== "any") && (
         <div className="flex w-full flex-wrap items-center gap-1.5">
+          {filter.due !== "any" && (
+            <span className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground">
+              <CalendarClock className="h-3 w-3 text-muted-foreground" />
+              {t(DUE_LABEL_KEY[filter.due])}
+              <button
+                type="button"
+                aria-label={t("label.pickerRemove")}
+                onClick={() => onChange({ ...filter, due: "any" })}
+                className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
           {selectedLabels.map((label) => (
             <span
               key={label.id}

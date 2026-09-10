@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Card } from "@/types/kanban";
 import {
+  activeFacetCount,
   createdDayRange,
   createdFromMs,
   EMPTY_FILTER,
@@ -44,6 +45,37 @@ describe("isFilterActive", () => {
     expect(isFilterActive({ ...EMPTY_FILTER, createdOn: "2025-06-15" })).toBe(
       true,
     );
+  });
+
+  it("is true when the due facet is set", () => {
+    expect(isFilterActive({ ...EMPTY_FILTER, due: "overdue" })).toBe(true);
+    expect(isFilterActive({ ...EMPTY_FILTER, due: "none" })).toBe(true);
+    expect(isFilterActive({ ...EMPTY_FILTER, due: "any" })).toBe(false);
+  });
+});
+
+describe("activeFacetCount", () => {
+  it("counts each independent facet", () => {
+    expect(activeFacetCount(EMPTY_FILTER)).toBe(0);
+    expect(activeFacetCount({ ...EMPTY_FILTER, query: "x" })).toBe(1);
+    // The whole label picker counts as one facet.
+    expect(
+      activeFacetCount({
+        ...EMPTY_FILTER,
+        labelIds: ["a", "b"],
+        noLabel: true,
+      }),
+    ).toBe(1);
+    expect(
+      activeFacetCount({
+        ...EMPTY_FILTER,
+        query: "x",
+        labelIds: ["a"],
+        created: "7d",
+        createdOn: "2025-06-15",
+        due: "soon",
+      }),
+    ).toBe(5);
   });
 });
 
@@ -161,6 +193,63 @@ describe("matchesCardFilter", () => {
     ).toBe(false);
   });
 
+  describe("due facet", () => {
+    const HOUR = 86_400_000 / 24;
+    const overdue = { ...card("d1", "T", []), dueDate: NOW - HOUR };
+    const soon = { ...card("d2", "T", []), dueDate: NOW + 23 * HOUR };
+    const atEdge = { ...card("d3", "T", []), dueDate: NOW + 24 * HOUR };
+    const later = { ...card("d4", "T", []), dueDate: NOW + 5 * 86_400_000 };
+    const noDue = card("d5", "T", []);
+
+    it("overdue matches only past deadlines", () => {
+      const filter = { ...EMPTY_FILTER, due: "overdue" } as CardFilter;
+      expect(matchesCardFilter(overdue, filter, NOW)).toBe(true);
+      expect(matchesCardFilter(soon, filter, NOW)).toBe(false);
+      expect(matchesCardFilter(later, filter, NOW)).toBe(false);
+      expect(matchesCardFilter(noDue, filter, NOW)).toBe(false);
+    });
+
+    it("soon matches deadlines within the next 24 hours (inclusive)", () => {
+      const filter = { ...EMPTY_FILTER, due: "soon" } as CardFilter;
+      expect(matchesCardFilter(soon, filter, NOW)).toBe(true);
+      expect(matchesCardFilter(atEdge, filter, NOW)).toBe(true);
+      expect(matchesCardFilter(overdue, filter, NOW)).toBe(false);
+      expect(matchesCardFilter(later, filter, NOW)).toBe(false);
+      expect(matchesCardFilter(noDue, filter, NOW)).toBe(false);
+    });
+
+    it("none matches only cards without a deadline", () => {
+      const filter = { ...EMPTY_FILTER, due: "none" } as CardFilter;
+      expect(matchesCardFilter(noDue, filter, NOW)).toBe(true);
+      expect(matchesCardFilter(overdue, filter, NOW)).toBe(false);
+      expect(matchesCardFilter(later, filter, NOW)).toBe(false);
+    });
+
+    it("any does not restrict the board", () => {
+      const filter = { ...EMPTY_FILTER, due: "any" } as CardFilter;
+      expect(matchesCardFilter(overdue, filter, NOW)).toBe(true);
+      expect(matchesCardFilter(noDue, filter, NOW)).toBe(true);
+    });
+
+    it("combines with the query facet (AND)", () => {
+      const named = { ...card("d6", "Pay rent", []), dueDate: NOW - HOUR };
+      expect(
+        matchesCardFilter(
+          named,
+          { ...EMPTY_FILTER, due: "overdue", query: "rent" },
+          NOW,
+        ),
+      ).toBe(true);
+      expect(
+        matchesCardFilter(
+          named,
+          { ...EMPTY_FILTER, due: "overdue", query: "milk" },
+          NOW,
+        ),
+      ).toBe(false);
+    });
+  });
+
   it("combines facets with AND", () => {
     const c = card("c6", "Buy milk", ["a"], NOW - 3 * 86_400_000);
     expect(
@@ -226,5 +315,21 @@ describe("filterCardIds", () => {
       { ...EMPTY_FILTER, createdOn: "2025-06-15" },
     );
     expect(result).toEqual({ col1: ["c5"] });
+  });
+
+  it("applies the due facet per column", () => {
+    const overdue = { ...card("c7", "Late task", ["a"]), dueDate: NOW - 1 };
+    const future = {
+      ...card("c8", "Future task", ["a"]),
+      dueDate: NOW + 5 * 86_400_000,
+    };
+    const columns = { col1: ["c7", "c8"] };
+    const result = filterCardIds(
+      columns,
+      { c7: overdue, c8: future },
+      { ...EMPTY_FILTER, due: "overdue" },
+      NOW,
+    );
+    expect(result).toEqual({ col1: ["c7"] });
   });
 });
