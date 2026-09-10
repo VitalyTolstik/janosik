@@ -3,6 +3,7 @@ import { ArrowRightLeft, CalendarClock, Trash2 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { CardChecklists } from "@/components/board/CardChecklists";
+import { CardDueDate } from "@/components/board/CardDueDate";
 import { LabelPicker } from "@/components/board/LabelPicker";
 import { DescriptionEditor } from "@/components/editor/DescriptionEditor";
 import { formatDate, useI18n } from "@/i18n";
@@ -177,6 +178,8 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                 onDelete={deleteLabel}
               />
             </div>
+
+            <CardDueDate cardId={card.id} dueDate={card.dueDate} />
 
             <CardChecklists cardId={card.id} checklists={card.checklists ?? []} />
 

@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -85,6 +91,66 @@ describe("CardDialog description editor", () => {
       "Description",
     ) as HTMLTextAreaElement;
     expect(editorAgain.value).toBe("Updated via MDXEditor");
+  });
+});
+
+describe("CardDialog due dates", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  /** Click a calendar day (by its day-of-month text) inside the popover. */
+  async function pickDay(
+    user: ReturnType<typeof userEvent.setup>,
+    day: string,
+  ) {
+    const target = [...document.querySelectorAll("button[data-day]")].find(
+      (b) => b.textContent === day,
+    );
+    expect(target).toBeDefined();
+    await user.click(target as HTMLElement);
+  }
+
+  it("sets a due date from the calendar and shows it on the card", async () => {
+    const user = userEvent.setup();
+    const dialog = await openCardDialog("Design the new onboarding flow");
+
+    // The trigger starts as a placeholder…
+    const trigger = within(dialog).getByTestId("due-date-trigger");
+    expect(trigger).toHaveTextContent("Set due date");
+
+    // …the popover with the calendar opens, picking a day applies it at once.
+    await user.click(trigger);
+    await pickDay(user, "15");
+
+    // The badge on the card shows the deadline…
+    await waitFor(() => {
+      expect(screen.getAllByTestId("card-due-badge").length).toBeGreaterThan(0);
+    });
+
+    // …and the trigger shows the full date, with a remove action available
+    // (the popover portals into <body>, outside the dialog element).
+    expect(
+      within(dialog).getByTestId("due-date-trigger"),
+    ).not.toHaveTextContent("Set due date");
+    expect(screen.getByTestId("due-date-remove")).toBeInTheDocument();
+  });
+
+  it("clears an existing due date", async () => {
+    const user = userEvent.setup();
+    const dialog = await openCardDialog("Design the new onboarding flow");
+
+    await user.click(within(dialog).getByTestId("due-date-trigger"));
+    await pickDay(user, "15");
+    await waitFor(() => {
+      expect(screen.getAllByTestId("card-due-badge").length).toBeGreaterThan(0);
+    });
+
+    await user.click(screen.getByTestId("due-date-remove"));
+    expect(screen.queryByTestId("card-due-badge")).not.toBeInTheDocument();
+    expect(within(dialog).getByTestId("due-date-trigger")).toHaveTextContent(
+      "Set due date",
+    );
   });
 });
 

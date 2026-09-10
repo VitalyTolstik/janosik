@@ -18,6 +18,9 @@ import type { BoardState } from "@/store/board-reducer";
  * normalizer only sanitizes the field when it is present but malformed
  * (e.g. a hand-edited import): non-arrays are dropped, items keep only
  * well-formed entries. This lets the rest of the app trust the shape.
+ *
+ * v4: `Card.dueDate` (TASK-4) — optional Unix timestamp; only a non-finite
+ * number (garbage from a hand-edited import) is dropped.
  */
 
 type LegacyCard = Card & { labelId?: unknown; labelIds?: unknown };
@@ -64,12 +67,20 @@ function toChecklists(value: unknown): Checklist[] | undefined {
   return checklists.length > 0 ? checklists : undefined;
 }
 
+/** A due date is either absent or a finite number; anything else is garbage. */
+function toDueDate(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
 function normalizeCard(card: LegacyCard): Card {
-  const { labelId, labelIds, checklists, ...rest } = card;
+  const { labelId, labelIds, checklists, dueDate, ...rest } = card;
   return {
     ...rest,
     labelIds: toLabelIds(labelIds ?? labelId),
     checklists: toChecklists(checklists),
+    dueDate: toDueDate(dueDate),
   };
 }
 
@@ -91,7 +102,8 @@ export function normalizeBoards(state: BoardState): BoardState {
     const needsFix = Object.values(board.cards).some((card) => {
       const legacy = card as LegacyCard;
       if (!Array.isArray(legacy.labelIds)) return true;
-      return !isChecklistsCurrent(legacy.checklists);
+      if (!isChecklistsCurrent(legacy.checklists)) return true;
+      return !isDueDateCurrent(legacy.dueDate);
     });
     return needsFix ? normalizeBoard(board) : board;
   });
@@ -122,4 +134,10 @@ function isChecklistsCurrent(value: unknown): boolean {
       })
     );
   });
+}
+
+/** True when the stored due date is `undefined` or a finite number. */
+function isDueDateCurrent(value: unknown): boolean {
+  return value === undefined ||
+    (typeof value === "number" && Number.isFinite(value));
 }
