@@ -64,6 +64,25 @@ function Column({
     }
   }, [selected]);
 
+  // The modal card dialog locks page scroll (Radix RemoveScroll), which
+  // preventDefaults wheel events over this portaled popover — at document
+  // level, on the bubble phase, i.e. AFTER any listener on the list itself
+  // has run, and the native scroll never fires. So listen on the document
+  // bubble phase too: when the default was suppressed for a wheel event
+  // over this column, scroll it manually (outside a modal nothing is
+  // prevented and the browser scrolls natively).
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.defaultPrevented && list.contains(e.target as Node)) {
+        list.scrollTop += e.deltaY;
+      }
+    };
+    document.addEventListener("wheel", onWheel, { passive: true });
+    return () => document.removeEventListener("wheel", onWheel);
+  }, []);
+
   return (
     <div
       ref={listRef}
