@@ -1,4 +1,5 @@
 import type { Card } from "@/types/kanban";
+import { dueStatus } from "@/utils/due-date";
 
 /**
  * Board filtering model, following the Trello/Linear conventions:
@@ -12,13 +13,17 @@ import type { Card } from "@/types/kanban";
  *   filters: today (since local midnight), last 7 days, last 30 days.
  * - `createdOn` — exact local day ("YYYY-MM-DD") the card was created on.
  *   When set it overrides `created` (the UI makes the two mutually
-exclusive).
+ exclusive).
+ * - `due` — deadline facet: overdue, due within the next 24 hours, or
+ *   cards without a deadline at all ("none" mirrors the `noLabel` facet).
  *
  * The facets combine with AND. Keeping this module pure (no React, no store)
  * makes the semantics unit-testable and reusable by other views later.
  */
 
 export type CreatedWindow = "any" | "today" | "7d" | "30d";
+
+export type DueFilter = "any" | "overdue" | "soon" | "none";
 
 export interface CardFilter {
  /** Substring of the card title; trimmed before matching. */
@@ -31,6 +36,8 @@ export interface CardFilter {
  created: CreatedWindow;
  /** Exact "YYYY-MM-DD" local day; overrides `created` when non-null. */
  createdOn: string | null;
+ /** Deadline facet; "any" disables the facet. */
+ due: DueFilter;
 }
 
 export const EMPTY_FILTER: CardFilter = {
@@ -39,6 +46,7 @@ export const EMPTY_FILTER: CardFilter = {
  noLabel: false,
  created: "any",
  createdOn: null,
+ due: "any",
 };
 
 /** True when at least one facet restricts the board. */
@@ -48,8 +56,24 @@ export function isFilterActive(filter: CardFilter): boolean {
   filter.labelIds.length > 0 ||
   filter.noLabel ||
   filter.created !== "any" ||
-  filter.createdOn !== null
+  filter.createdOn !== null ||
+  filter.due !== "any"
  );
+}
+
+/**
+ * Number of independently switchable facets currently set — drives the
+ * count badge on the filters button. The label list counts as one facet
+ * (plus one for "no label"), as it is a single picker in the UI.
+ */
+export function activeFacetCount(filter: CardFilter): number {
+ let count = 0;
+ if (filter.query.trim() !== "") count += 1;
+ if (filter.labelIds.length > 0 || filter.noLabel) count += 1;
+ if (filter.created !== "any") count += 1;
+ if (filter.createdOn !== null) count += 1;
+ if (filter.due !== "any") count += 1;
+ return count;
 }
 
 const DAY_MS = 86_400_000;
@@ -96,6 +120,23 @@ export function createdDayRange(createdOn: string): [number, number] | null {
  return [start.getTime(), start.getTime() + DAY_MS];
 }
 
+/** Whether a single card passes the `due` deadline facet. */
+function matchesDueFilter(
+ card: Card,
+ due: DueFilter,
+ now: number,
+): boolean {
+ switch (due) {
+  case "any":
+   return true;
+  case "none":
+   return card.dueDate === undefined;
+  case "overdue":
+  case "soon":
+   return card.dueDate !== undefined && dueStatus(card.dueDate, now) === due;
+ }
+}
+
 /** Whether a single card passes the filter (AND across facets). */
 export function matchesCardFilter(
  card: Card,
@@ -115,6 +156,8 @@ export function matchesCardFilter(
   if (!range) return false;
   if (card.createdAt < range[0] || card.createdAt >= range[1]) return false;
  }
+
+ if (!matchesDueFilter(card, filter.due, now)) return false;
 
  const hasSelected = card.labelIds.some((id) => filter.labelIds.includes(id));
  if (filter.noLabel) return card.labelIds.length === 0 || hasSelected;
