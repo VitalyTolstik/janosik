@@ -789,7 +789,9 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
 .mdxeditor.janosik-mdx .janosik-md-content li[class*="nestedListItem"] > ol {
   margin: 0.2rem 0;
 }
-/* Task-list items keep the library's custom checkbox (accent-colored). */
+/* Task-list checkboxes mirror the card checklist widget exactly:
+ * unchecked — transparent with a border token; checked — primary fill
+ * with a white check glyph (via mask so the color follows the tokens). */
 .mdxeditor.janosik-mdx
   .janosik-md-content
   li[class*="listItemChecked"]:before,
@@ -798,31 +800,24 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
   li[class*="listItemUnchecked"]:before {
   top: 0.2em;
   left: 0;
-  width: 0.95rem;
-  height: 0.95rem;
-  border: 1.5px solid var(--border);
-  border-radius: 5px;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  border-radius: 4px;
   background-color: transparent;
 }
-.mdxeditor.janosik-mdx
-  .janosik-md-content
-  li[class*="listItemUnchecked"]:before {
-  background-color: transparent;
-}
-/* Checked: no fill — a lucide check glyph in the brand violet. */
+/* Checked: filled with the brand color + a white check (same look as the
+ * card checklist's boxes). The mask keeps everything on the --primary
+ * token — no hardcoded colors, both themes stay correct. */
 .mdxeditor.janosik-mdx
   .janosik-md-content
   li[class*="listItemChecked"]:before {
-  border-color: color-mix(in oklab, var(--primary) 65%, transparent);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a78bfa' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+  border-color: var(--primary);
+  background-color: var(--primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
   background-size: 75%;
   background-position: center;
   background-repeat: no-repeat;
-}
-.light .mdxeditor.janosik-mdx
-  .janosik-md-content
-  li[class*="listItemChecked"]:before {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236d28d9' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
 }
 /* Align task checkboxes with the bullet/number markers of other lists:
  * hang the box in the same marker gutter (measured against the tokens'
