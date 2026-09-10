@@ -394,7 +394,8 @@ html.__janosik-ready *::after {
 }
 @keyframes janosik-restore-spin {
   to {
-    transform: rotate(360deg);
+    /* Counterclockwise — matching the RotateCcw glyph's direction. */
+    transform: rotate(-360deg);
   }
 }
 .janosik-icon-trash {
