@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArchiveIcon } from "@/components/ui/archive-icon";
 import {
   Check,
@@ -28,6 +28,7 @@ import {
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
 import { parseExport, serializeExport } from "@/utils/board-serialization";
+import { formatBackupTimestamp } from "@/utils/backup-timestamp";
 import {
   createBackup,
   deleteBackup,
@@ -45,15 +46,31 @@ import {
  * the menu opens, so restored/deleted entries always render accurately.
  */
 
-const MAX_VISIBLE_BACKUPS = 5;
-
 export function DataMenu() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const toast = useToast();
   const { boards, importBoards } = useBoard();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [backups, setBackups] = useState<BackupMeta[] | null>(null);
   const [confirmRestoreId, setConfirmRestoreId] = useState<number | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+
+  // Radix locks page scroll (RemoveScroll) and preventDefaults wheel events
+  // over the portaled menu at the document level — after any listener on the
+  // list itself, so the native scroll never fires. Listen on the document
+  // bubble phase and scroll the list manually when the default was
+  // suppressed (outside a lock nothing is prevented and the browser
+  // scrolls natively). Same workaround as the TimePicker columns.
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      const list = listRef.current;
+      if (e.defaultPrevented && list && list.contains(e.target as Node)) {
+        list.scrollTop += e.deltaY;
+      }
+    };
+    document.addEventListener("wheel", onWheel, { passive: true });
+    return () => document.removeEventListener("wheel", onWheel);
+  }, []);
 
   const refreshBackups = useCallback(async () => {
     try {
@@ -168,74 +185,91 @@ export function DataMenu() {
             {t("data.backupNow")}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel>{t("data.backupTitle")}</DropdownMenuLabel>
+          <DropdownMenuLabel>
+            {backups !== null && backups.length > 0
+              ? `${t("data.backupTitle")} · ${backups.length}`
+              : t("data.backupTitle")}
+          </DropdownMenuLabel>
           {backups === null || backups.length === 0 ? (
             <div className="px-2 py-1.5 text-xs text-muted-foreground">
               {t("data.backupEmpty")}
             </div>
           ) : (
-            backups.slice(0, MAX_VISIBLE_BACKUPS).map((backup) => {
-              const confirming = confirmRestoreId === backup.id;
-              return (
-                <div
-                  key={backup.id}
-                  className="rounded-md px-1 py-0.5"
-                >
-                  {confirming ? (
-                    <div className="flex items-center gap-1 rounded-md bg-hover px-1.5 py-1">
-                      <span className="flex-1 text-xs">
-                        {t("data.restoreConfirm")}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-success hover:text-success"
-                        aria-label={t("data.restoreConfirmYes")}
-                        onClick={() => {
-                          setConfirmRestoreId(null);
-                          void handleRestore(backup.id);
-                        }}
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-muted-foreground"
-                        aria-label={t("data.restoreConfirmCancel")}
-                        onClick={() => setConfirmRestoreId(null)}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <span className="flex-1 truncate text-xs text-muted-foreground">
-                        {new Date(backup.createdAt).toLocaleDateString()}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="janosik-restore-btn h-6 w-6"
-                        aria-label={t("data.restore")}
-                        onClick={() => setConfirmRestoreId(backup.id)}
-                      >
-                        <RotateCcw className="janosik-icon-restore h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="janosik-delete-btn h-6 w-6 text-muted-foreground hover:text-destructive"
-                        aria-label={t("data.deleteBackup")}
-                        onClick={() => void handleDeleteBackup(backup.id)}
-                      >
-                        <Trash2 className="janosik-icon-trash h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              );
-            })
+            <div
+              ref={listRef}
+              className="janosik-backup-list max-h-56 overflow-y-auto"
+            >
+              {backups.map((backup) => {
+                const confirming = confirmRestoreId === backup.id;
+                const timestamp = new Date(backup.createdAt).getTime();
+                return (
+                  <div
+                    key={backup.id}
+                    className="rounded-md px-1 py-0.5"
+                  >
+                    {confirming ? (
+                      <div className="flex items-center gap-1 rounded-md bg-hover px-1.5 py-1">
+                        <span className="flex-1 text-xs">
+                          {t("data.restoreConfirm")}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-success hover:text-success"
+                          aria-label={t("data.restoreConfirmYes")}
+                          onClick={() => {
+                            setConfirmRestoreId(null);
+                            void handleRestore(backup.id);
+                          }}
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground"
+                          aria-label={t("data.restoreConfirmCancel")}
+                          onClick={() => setConfirmRestoreId(null)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <span
+                          className="flex-1 truncate text-xs text-muted-foreground"
+                          title={new Date(backup.createdAt).toLocaleString()}
+                        >
+                          {formatBackupTimestamp(
+                            timestamp,
+                            Date.now(),
+                            lang,
+                          )}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="janosik-restore-btn h-6 w-6"
+                          aria-label={t("data.restore")}
+                          onClick={() => setConfirmRestoreId(backup.id)}
+                        >
+                          <RotateCcw className="janosik-icon-restore h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="janosik-delete-btn h-6 w-6 text-muted-foreground hover:text-destructive"
+                          aria-label={t("data.deleteBackup")}
+                          onClick={() => void handleDeleteBackup(backup.id)}
+                        >
+                          <Trash2 className="janosik-icon-trash h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
