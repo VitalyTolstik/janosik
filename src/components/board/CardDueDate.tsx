@@ -4,7 +4,7 @@ import { ru } from "react-day-picker/locale";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { Input } from "@/components/ui/input";
+import { TimePicker } from "@/components/board/TimePicker";
 import {
   Popover,
   PopoverContent,
@@ -92,14 +92,7 @@ export function CardDueDate({ cardId, dueDate }: CardDueDateProps) {
             onSelect={applyDate}
           />
           <div className="mt-1 flex items-center gap-2 border-t border-border/60 pt-2">
-            <Input
-              type="time"
-              value={time}
-              onChange={(e) => applyTime(e.target.value)}
-              aria-label={t("dueDate.timeLabel")}
-              className="h-8 w-28"
-              data-testid="due-date-time"
-            />
+            <TimePicker value={time} onChange={applyTime} />
             {due ? (
               <Button
                 variant="ghost"
