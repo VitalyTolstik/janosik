@@ -6,6 +6,8 @@ import {
   defaultI18n,
   formatDate,
   formatDateOnly,
+  formatTime,
+  is12HourLocale,
   type Lang,
   type MessageKey,
 } from "@/i18n/i18n";
@@ -60,4 +62,4 @@ export function useI18n(): I18nContextValue {
  return { lang, setLang, t, tp };
 }
 
-export { formatDate, formatDateOnly };
+export { formatDate, formatDateOnly, formatTime, is12HourLocale };
