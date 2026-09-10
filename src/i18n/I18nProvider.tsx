@@ -3,10 +3,11 @@ import type { ReactNode } from "react";
 import { I18nextProvider, useTranslation } from "react-i18next";
 
 import {
- defaultI18n,
- formatDate,
- type Lang,
- type MessageKey,
+  defaultI18n,
+  formatDate,
+  formatDateOnly,
+  type Lang,
+  type MessageKey,
 } from "@/i18n/i18n";
 
 /**
@@ -59,4 +60,4 @@ export function useI18n(): I18nContextValue {
  return { lang, setLang, t, tp };
 }
 
-export { formatDate };
+export { formatDate, formatDateOnly };

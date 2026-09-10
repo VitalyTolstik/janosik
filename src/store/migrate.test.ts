@@ -92,6 +92,40 @@ describe("normalizeBoards", () => {
     expect(next.cards["c1"].checklists).toEqual(checklists);
   });
 
+  it("keeps a valid dueDate and drops garbage", () => {
+    const due = 1700000000000;
+    const legacy = card({ labelIds: [], dueDate: due });
+    const dirty = card({ labelIds: [], dueDate: "next tuesday" });
+    const board = {
+      id: "b",
+      title: "B",
+      columns: [],
+      cards: { c1: legacy, c2: dirty },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+
+    const [next] = normalizeBoards([board]);
+    expect(next.cards["c1"].dueDate).toBe(due);
+    expect(next.cards["c2"].dueDate).toBeUndefined();
+  });
+
+  it("leaves boards without a dueDate untouched (same reference)", () => {
+    const current = {
+      id: "b",
+      title: "B",
+      columns: [],
+      cards: { c1: card({ labelIds: [] }) },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+
+    const [next] = normalizeBoards([current]);
+    expect(next).toBe(current);
+  });
+
   it("drops a malformed checklists field (not an array)", () => {
     const legacy = card({ labelIds: ["x"], checklists: "garbage" });
     const board = {

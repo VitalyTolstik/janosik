@@ -1,8 +1,9 @@
-import { AlignLeft, ListTodo } from "lucide-react";
+import { AlignLeft, CalendarClock, ListTodo } from "lucide-react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useI18n } from "@/i18n";
+import { useI18n, formatDate, formatDateOnly } from "@/i18n";
+import { dueStatus, type DueStatus } from "@/utils/due-date";
 import { LABEL_COLOR_CHIP, type Card, type Label } from "@/types/kanban";
 
 interface CardItemProps {
@@ -25,12 +26,16 @@ interface CardItemProps {
  * in the card dialog.
  */
 export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const hasDescription = Boolean(card.description?.trim());
   // Checklist progress summed across all of the card's checklists.
   const items = (card.checklists ?? []).flatMap((c) => c.items);
   const done = items.filter((item) => item.done).length;
   const total = items.length;
+
+  // Due-date badge state: overdue (red) / due within 24h (yellow) / later.
+  const hasDueDate = typeof card.dueDate === "number";
+  const status = hasDueDate ? dueStatus(card.dueDate as number) : null;
 
   return (
     <article
@@ -62,8 +67,35 @@ export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
       <p className="break-words text-sm leading-snug text-foreground/90">
         {card.title}
       </p>
-      {hasDescription || total > 0 ? (
-        <div className="mt-1.5 flex items-center gap-1.5">
+      {hasDescription || total > 0 || hasDueDate ? (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          {hasDueDate ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className={cn(
+                    "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
+                    status === "overdue" &&
+                      "border-danger/40 bg-danger/10 text-danger",
+                    status === "soon" &&
+                      "border-warning/40 bg-warning/10 text-warning",
+                    status === "later" &&
+                      "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-primary",
+                  )}
+                  data-testid="card-due-badge"
+                  data-due-status={status}
+                >
+                  <CalendarClock className="h-3.5 w-3.5" aria-hidden />
+                  {formatDateOnly(card.dueDate as number, lang)}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t(`dueDate.${status as DueStatus}`, {
+                  date: formatDate(card.dueDate as number, lang),
+                })}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
           {total > 0 ? (
             <Tooltip>
               <TooltipTrigger asChild>
