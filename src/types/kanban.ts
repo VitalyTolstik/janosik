@@ -80,21 +80,37 @@ export const LABEL_COLOR_DOT = {
 } satisfies Record<LabelColor, string>;
 
 export interface Label {
- id: string;
- /** Human-friendly name shown in the label picker, e.g. "Design". */
- name: string;
- color: LabelColor;
+  id: string;
+  /** Human-friendly name shown in the label picker, e.g. "Design". */
+  name: string;
+  color: LabelColor;
+}
+
+/** A single todo line inside a checklist. */
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+/** A named group of todo items ("subtasks") on a card. */
+export interface Checklist {
+  id: string;
+  title: string;
+  items: ChecklistItem[];
 }
 
 export interface Card {
- id: string;
- title: string;
- /** Optional multi-line notes. Omitted (not empty) when unset. */
- description?: string;
- /** References to labels defined on the board; empty when unlabeled. */
- labelIds: string[];
- createdAt: number;
- updatedAt: number;
+  id: string;
+  title: string;
+  /** Optional multi-line notes. Omitted (not empty) when unset. */
+  description?: string;
+  /** Optional subtask checklists. Omitted (not empty) when unset. */
+  checklists?: Checklist[];
+  /** References to labels defined on the board; empty when unlabeled. */
+  labelIds: string[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface Column {

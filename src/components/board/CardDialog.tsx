@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ArrowRightLeft, CalendarClock, Trash2 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
+import { CardChecklists } from "@/components/board/CardChecklists";
 import { LabelPicker } from "@/components/board/LabelPicker";
 import { DescriptionEditor } from "@/components/editor/DescriptionEditor";
 import { formatDate, useI18n } from "@/i18n";
@@ -171,6 +172,8 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                 onDelete={deleteLabel}
               />
             </div>
+
+            <CardChecklists cardId={card.id} checklists={card.checklists ?? []} />
 
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-medium text-muted-foreground">
