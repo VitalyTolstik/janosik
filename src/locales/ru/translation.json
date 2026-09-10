@@ -144,8 +144,6 @@
   "editor.toolbar.blockTypes.paragraph": "Абзац",
   "editor.toolbar.blockTypes.heading": "Заголовок {{level}}",
   "editor.toolbar.blockTypes.quote": "Цитата",
-  "editor.createLink.title": "Вставить ссылку",
-  "editor.createLink.titleTooltip": "Атрибут title, показывается при наведении",
   "editor.createLink.url": "URL",
   "editor.createLink.urlPlaceholder": "Выберите или вставьте URL",
   "editor.createLink.text": "Текст ссылки",
