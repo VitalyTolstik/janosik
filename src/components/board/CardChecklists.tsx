@@ -11,6 +11,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -148,6 +149,7 @@ function ChecklistCard({
 }: ChecklistCardProps) {
   const { t } = useI18n();
   const [newItem, setNewItem] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const done = checklist.items.filter((item) => item.done).length;
   const total = checklist.items.length;
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -191,7 +193,7 @@ function ChecklistCard({
             </DropdownMenuItem>
             <DropdownMenuItem
               className="text-destructive focus:text-destructive"
-              onClick={onDelete}
+              onClick={() => setConfirmDelete(true)}
             >
               <Trash2 className="h-3.5 w-3.5" />
               {t("checklist.delete")}
@@ -279,6 +281,21 @@ function ChecklistCard({
           className="h-8 border-none bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
         />
       </form>
+
+      {/* Deleting a checklist wipes its items — ask first (same pattern as
+          card/column/label deletion). */}
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={t("checklist.deleteTitle")}
+        description={t("checklist.deleteDescription", {
+          count: total,
+          title: checklist.title,
+        })}
+        confirmLabel={t("checklist.deleteConfirm")}
+        destructive
+        onConfirm={onDelete}
+      />
     </div>
   );
 }

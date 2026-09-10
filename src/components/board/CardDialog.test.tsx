@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
@@ -118,5 +119,44 @@ describe("CardDialog checklists", () => {
     const badges = screen.getAllByTestId("card-checklist-badge");
     expect(badges.length).toBeGreaterThan(0);
     expect(badges[0].textContent).toBe("1/1");
+  });
+
+  it("asks for confirmation before deleting a checklist", async () => {
+    const user = userEvent.setup();
+    const dialog = await openCardDialog("Design the new onboarding flow");
+
+    await user.click(within(dialog).getByText("Add checklist"));
+    const input = within(dialog).getByPlaceholderText("Add an item…");
+    fireEvent.change(input, { target: { value: "Draft the copy" } });
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
+
+    // Open the checklist menu and hit Delete.
+    await user.click(within(dialog).getByLabelText("Checklist actions"));
+    await user.click(await screen.findByText("Delete checklist"));
+
+    // The confirm dialog appears with the item count…
+    const confirm = await screen.findByRole("dialog", {
+      name: /Delete this checklist/i,
+    });
+    expect(
+      within(confirm).getByText(/1 item will be permanently deleted/),
+    ).toBeInTheDocument();
+
+    // …Cancel keeps the checklist…
+    await user.click(within(confirm).getByText("Cancel"));
+    expect(within(dialog).getByText("Draft the copy")).toBeInTheDocument();
+
+    // …and confirming removes it.
+    await user.click(within(dialog).getByLabelText("Checklist actions"));
+    await user.click(await screen.findByText("Delete checklist"));
+    const confirmAgain = await screen.findByRole("dialog", {
+      name: /Delete this checklist/i,
+    });
+    await user.click(
+      within(confirmAgain).getByText("Delete", { exact: true }),
+    );
+    expect(
+      within(dialog).queryByText("Draft the copy"),
+    ).not.toBeInTheDocument();
   });
 });
