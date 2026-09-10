@@ -1,5 +1,8 @@
+import { AlignLeft } from "lucide-react";
+
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { DescriptionPreview } from "@/components/editor/DescriptionPreview";
+import { useI18n } from "@/i18n";
 import { LABEL_COLOR_CHIP, type Card, type Label } from "@/types/kanban";
 
 interface CardItemProps {
@@ -16,8 +19,15 @@ interface CardItemProps {
  * A single card inside a column.
  * Hover uses border/shadow changes (no transform) so it stays compatible
  * with the drag layer that @dnd-kit applies on top of it.
+ *
+ * The description itself is not rendered on the front (Trello-style):
+ * a compact badge only signals that the card has one — full text lives
+ * in the card dialog.
  */
 export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
+  const { t } = useI18n();
+  const hasDescription = Boolean(card.description?.trim());
+
   return (
     <article
       onClick={onClick}
@@ -48,12 +58,20 @@ export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
       <p className="break-words text-sm leading-snug text-foreground/90">
         {card.title}
       </p>
-      {card.description ? (
-        <DescriptionPreview
-          snippet
-          value={card.description}
-          className="mt-1.5"
-        />
+      {hasDescription ? (
+        <div className="mt-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="inline-flex h-5 items-center rounded-md border border-border/60 bg-muted/50 px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary"
+                data-testid="card-description-badge"
+              >
+                <AlignLeft className="h-3.5 w-3.5" aria-hidden />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{t("card.hasDescription")}</TooltipContent>
+          </Tooltip>
+        </div>
       ) : null}
     </article>
   );

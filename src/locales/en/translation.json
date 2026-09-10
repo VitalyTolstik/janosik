@@ -113,6 +113,7 @@
   "card.titlePlaceholder": "Card title",
   "card.descriptionLabel": "Description",
   "card.descriptionPlaceholder": "Add a more detailed description…",
+  "card.hasDescription": "This card has a description",
   "card.labelLabel": "Label",
   "card.columnLabel": "Column",
   "card.moveTo": "Move to column",
