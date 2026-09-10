@@ -603,3 +603,69 @@ describe("boardReducer — checklists", () => {
     expect(next.cards["card-1"]).toBe(board.cards["card-1"]);
   });
 });
+
+describe("boardReducer — due dates", () => {
+  it("sets a due date and bumps the card's updatedAt", () => {
+    const seed = freshBoard();
+    const due = seed.cards["card-1"].createdAt + 86_400_000;
+    const next = reduceBoard(seed, {
+      type: "SET_CARD_DUE_DATE",
+      cardId: "card-1",
+      dueDate: due,
+    });
+    expect(next.cards["card-1"].dueDate).toBe(due);
+    expect(next.cards["card-1"].updatedAt).toBeGreaterThanOrEqual(
+      seed.cards["card-1"].updatedAt,
+    );
+  });
+
+  it("clears the due date by dropping the field entirely", () => {
+    const seed = freshBoard();
+    const withDue = reduceBoard(seed, {
+      type: "SET_CARD_DUE_DATE",
+      cardId: "card-1",
+      dueDate: 1234567890,
+    });
+    const cleared = reduceBoard(withDue, {
+      type: "SET_CARD_DUE_DATE",
+      cardId: "card-1",
+      dueDate: undefined,
+    });
+    expect(cleared.cards["card-1"].dueDate).toBeUndefined();
+    expect("dueDate" in cleared.cards["card-1"]).toBe(false);
+  });
+
+  it("setting the same due date is a no-op", () => {
+    const seed = freshBoard();
+    const due = 1234567890;
+    const withDue = reduceBoard(seed, {
+      type: "SET_CARD_DUE_DATE",
+      cardId: "card-1",
+      dueDate: due,
+    });
+    const again = reduceBoard(withDue, {
+      type: "SET_CARD_DUE_DATE",
+      cardId: "card-1",
+      dueDate: due,
+    });
+    expect(again.cards["card-1"]).toBe(withDue.cards["card-1"]);
+  });
+
+  it("ignores unknown cards and non-finite timestamps", () => {
+    const board = freshBoard();
+    const unknown = reduceBoard(board, {
+      type: "SET_CARD_DUE_DATE",
+      cardId: "no-such-card",
+      dueDate: 1234567890,
+    });
+    expect(unknown).toBe(board);
+
+    const garbage = reduceBoard(board, {
+      type: "SET_CARD_DUE_DATE",
+      cardId: "card-1",
+      dueDate: Number.NaN,
+    });
+    expect(garbage.cards["card-1"].dueDate).toBeUndefined();
+    expect("dueDate" in garbage.cards["card-1"]).toBe(false);
+  });
+});

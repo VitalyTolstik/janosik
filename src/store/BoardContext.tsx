@@ -102,6 +102,7 @@ interface BoardContextValue {
     checklistId: string,
     itemId: string,
   ) => void;
+  setCardDueDate: (cardId: string, dueDate?: number) => void;
   moveCard: (
     cardId: string,
     fromColumnId: string,
@@ -290,6 +291,7 @@ function createBoardActions(
   | "toggleChecklistItem"
   | "renameChecklistItem"
   | "deleteChecklistItem"
+  | "setCardDueDate"
   | "moveCard"
   | "moveColumn"
 > {
@@ -340,6 +342,8 @@ function createBoardActions(
       itemId: string,
     ) =>
       dispatch({ type: "DELETE_CHECKLIST_ITEM", cardId, checklistId, itemId }),
+    setCardDueDate: (cardId: string, dueDate?: number) =>
+      dispatch({ type: "SET_CARD_DUE_DATE", cardId, dueDate }),
     moveCard: (
       cardId: string,
       fromColumnId: string,
