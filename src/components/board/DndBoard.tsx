@@ -1,12 +1,16 @@
 import {
-  closestCorners,
+  closestCenter,
   DndContext,
   DragOverlay,
+  getFirstCollision,
   KeyboardSensor,
   MeasuringStrategy,
+  pointerWithin,
   PointerSensor,
+  rectIntersection,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
@@ -17,7 +21,7 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AddColumnControl } from "@/components/board/AddColumnControl";
 import { CardDialog } from "@/components/board/CardDialog";
@@ -86,6 +90,75 @@ export function DndBoard({
   // opens the card dialog.
   const suppressNextCardClickRef = useRef(false);
 
+  // Collision-detection memory, following dnd-kit's canonical
+  // MultipleContainers preset: remember the last matched droppable so a
+  // layout-shift frame (over === null right after a cross-column move) never
+  // makes the card "fall out" of the target column mid-drag.
+  const lastOverIdRef = useRef<string | null>(null);
+  const recentlyMovedRef = useRef(false);
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      recentlyMovedRef.current = false;
+    });
+  }, [draft]);
+
+  /**
+   * Collision detection optimized for kanban (columns of cards), following
+   * the official dnd-kit "Multiple Containers" recipe:
+   *
+   * - Column drag: only column droppables are candidates (closestCenter).
+   * - Card drag: prefer droppables under the POINTER (pointerWithin), fall
+   *   back to rect intersection, and finally to the last matched target.
+   *   A hit on a column body narrows to the closest CARD inside it (Trello
+   *   slots are decided between cards); an EMPTY column stays the target so
+   *   cards can be dropped into it.
+   */
+  const collisionDetectionStrategy = useCallback<CollisionDetection>(
+    (args) => {
+      const current = draftRef.current;
+      const columnIds = board ? board.columns.map((col) => col.id) : [];
+
+      if (current?.mode === "column") {
+        return closestCenter({
+          ...args,
+          droppableContainers: args.droppableContainers.filter((c) =>
+            columnIds.includes(String(c.id)),
+          ),
+        });
+      }
+
+      const pointerIntersections = pointerWithin(args);
+      const intersections =
+        pointerIntersections.length > 0
+          ? pointerIntersections
+          : rectIntersection(args);
+      let overId = getFirstCollision(intersections, "id");
+
+      if (overId != null) {
+        const columnCards = current?.mode === "card" ? current.columns[overId as string] : undefined;
+        if (columnCards && columnCards.length > 0) {
+          // Column body hit — resolve to its closest card instead.
+          overId = closestCenter({
+            ...args,
+            droppableContainers: args.droppableContainers.filter((c) =>
+              columnCards.includes(String(c.id)),
+            ),
+          })[0]?.id;
+        }
+        if (overId != null) {
+          lastOverIdRef.current = String(overId);
+          return [{ id: overId }];
+        }
+      }
+
+      if (recentlyMovedRef.current && current?.mode === "card") {
+        lastOverIdRef.current = current.activeCardId;
+      }
+      return lastOverIdRef.current ? [{ id: lastOverIdRef.current }] : [];
+    },
+    [board],
+  );
+
   const sensors = useSensors(
     useSensor(PointerSensor, POINTER_SENSOR_OPTIONS),
     useSensor(KeyboardSensor, KEYBOARD_SENSOR_OPTIONS),
@@ -96,6 +169,8 @@ export function DndBoard({
       if (!board || isFiltering) return;
       const id = event.active.id as string;
       const type = event.active.data.current?.type;
+      lastOverIdRef.current = null;
+      recentlyMovedRef.current = false;
 
       if (type === "column") {
         updateDraft({
@@ -171,20 +246,17 @@ export function DndBoard({
             );
       if (!toColId || fromColId === toColId) return;
 
-      // Cross-column hover (or a column body): decide before/after from the
-      // drag pointer, mirroring dnd-kit's own sortable logic — the dragged
-      // card's center vs the hovered card's center. Dropping below the last
-      // card's midpoint therefore inserts AFTER it → the card lands last in
-      // the column instead of second-to-last. (Measured with MeasuringStrategy
-      // Always so the rects are never stale during reorders.)
-      const activeRect = event.active.rect.current.translated;
-      const overRect = over.rect;
-      let insertAfter = false;
-      if (activeRect && overRect) {
-        insertAfter =
-          activeRect.top + activeRect.height / 2 >
-          overRect.top + overRect.height / 2;
-      }
+      // Cross-column hover (or a column body): insert next to the hovered
+      // card using dnd-kit's canonical MultipleContainers rule — the dragged
+      // card's TOP vs the hovered card's BOTTOM decides before/after. This
+      // matches Trello's slot behavior: hovering the upper part of a card
+      // inserts before it, past its bottom edge inserts after it (dropping
+      // below the last card therefore appends). Measured with
+      // MeasuringStrategy Always so the rects are never stale during
+      // reorders.
+      const translated = event.active.rect.current.translated;
+      const insertAfter =
+        translated != null && translated.top > over.rect.top + over.rect.height;
 
       const next = applyCardOver(
         current.columns,
@@ -193,6 +265,7 @@ export function DndBoard({
         insertAfter,
       );
       if (!next) return;
+      recentlyMovedRef.current = true;
       updateDraft({ ...current, columns: next });
     },
     [board, updateDraft],
@@ -223,45 +296,60 @@ export function DndBoard({
       }
 
       // ---- Commit card move ----
+      // Canonical MultipleContainers semantics: the final slot is derived
+      // from `over` at DROP time (arrayMove in the landed container), not
+      // from the draft. During a long auto-scrolled drag onDragOver stops
+      // firing while `over` stays the same card, so the draft alone can be
+      // one slot stale — dragEnd's arrayMove fixes exactly that.
       const cols = current.columns;
       const overId = event.over?.id as string | undefined;
-      const toColId = Object.keys(cols).find((colId) =>
-        cols[colId].includes(activeId),
-      );
-      if (!toColId) return;
-      const toIndex = cols[toColId].indexOf(activeId);
+      if (!overId) return; // no valid target — the draft is discarded anyway
+
+      const findCol = (id: string) =>
+        id in cols ? id : Object.keys(cols).find((c) => cols[c].includes(id));
+      const activeContainer = findCol(activeId);
+      const overContainer = findCol(overId);
+      if (!activeContainer || !overContainer) return;
 
       const fromColumn = board.columns.find((col) =>
         col.cardIds.includes(activeId),
       );
       if (!fromColumn) return;
-      const fromIndex = fromColumn.cardIds.indexOf(activeId);
 
-      // Same-column move: the draft never reordered the column, so the final
-      // position comes from the over card's slot (arrayMove semantics — the
-      // card lands AT the hovered card's index, which for the last card is
-      // the column's end). Dropping in the column's own empty bottom area
-      // (over = the column body) appends to the very end, like Trello.
-      if (fromColumn.id === toColId) {
-        if (overId === toColId) {
-          const lastIndex = fromColumn.cardIds.length - 1;
-          if (lastIndex !== fromIndex) {
-            moveCard(activeId, fromColumn.id, toColId, lastIndex);
-          }
-          return;
-        }
-        if (overId && overId !== activeId) {
-          const overIndex = fromColumn.cardIds.indexOf(overId);
-          if (overIndex !== -1 && overIndex !== fromIndex) {
-            moveCard(activeId, fromColumn.id, toColId, overIndex);
-          }
+      if (activeContainer === overContainer) {
+        // The card already sits in the landed column (same-column reorder —
+        // the draft never touched it — or an earlier cross-column hover).
+        // arrayMove into the hovered card's slot; `over` being the dragged
+        // card itself means the pointer rests on it → keep the draft slot
+        // (a plain click-style drop commits the cross-column entry slot).
+        const activeIndex = cols[activeContainer].indexOf(activeId);
+        const toIndex =
+          overId === activeId ? activeIndex : cols[overContainer].indexOf(overId);
+        if (toIndex !== -1) {
+          moveCard(activeId, fromColumn.id, activeContainer, toIndex);
         }
         return;
       }
 
-      // No-op when nothing actually changed.
-      if (fromIndex === toIndex) return;
-      moveCard(activeId, fromColumn.id, toColId, toIndex);
+      // The pointer crossed into another column without dragOver committing
+      // it (very fast flick). Insert with the canonical below-modifier.
+      const translated = event.active.rect.current.translated;
+      const overRect = event.over?.rect;
+      const insertAfter =
+        translated != null &&
+        overRect != null &&
+        translated.top > overRect.top + overRect.height;
+      const overItems = cols[overContainer];
+      const targetIndex =
+        overId in cols
+          ? overItems.length
+          : Math.max(0, overItems.indexOf(overId)) + (insertAfter ? 1 : 0);
+      moveCard(
+        activeId,
+        fromColumn.id,
+        overContainer,
+        Math.min(targetIndex, overItems.length),
+      );
     },
     [board, moveCard, moveColumn, updateDraft],
   );
@@ -302,7 +390,7 @@ export function DndBoard({
   return (
     <DndContext
       sensors={isFiltering ? [] : sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={collisionDetectionStrategy}
       measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
