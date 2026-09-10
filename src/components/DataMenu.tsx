@@ -1,11 +1,13 @@
-import { useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ArchiveIcon } from "@/components/ui/archive-icon";
 import {
+  Check,
   Download,
   HardDriveDownload,
   RotateCcw,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 
 import { useToast } from "@/components/Toast";
@@ -38,13 +40,28 @@ import {
  * Data & backups menu — export/import the board data as JSON, create a
  * manual backup copy, and restore or delete earlier automatic backups.
  * Export failures and import validation errors surface as toasts.
+ *
+ * The backup list is React state (not a ref) and is re-read every time
+ * the menu opens, so restored/deleted entries always render accurately.
  */
+
+const MAX_VISIBLE_BACKUPS = 5;
 
 export function DataMenu() {
   const { t } = useI18n();
   const toast = useToast();
   const { boards, importBoards } = useBoard();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [backups, setBackups] = useState<BackupMeta[] | null>(null);
+  const [confirmRestoreId, setConfirmRestoreId] = useState<number | null>(null);
+
+  const refreshBackups = useCallback(async () => {
+    try {
+      setBackups(await listBackups());
+    } catch {
+      setBackups([]);
+    }
+  }, []);
 
   const handleExport = () => {
     try {
@@ -77,6 +94,7 @@ export function DataMenu() {
   const handleBackupNow = async () => {
     try {
       await createBackup(boards);
+      await refreshBackups();
       toast.success(t("data.backupSaved"));
     } catch {
       toast.error(t("data.backupFailed"));
@@ -85,13 +103,16 @@ export function DataMenu() {
 
   const handleRestore = async (id: number) => {
     try {
-      const boards = await loadBackup(id);
-      if (boards) {
-        importBoards(boards);
-        toast.success(t("data.restoreSuccess"));
-      } else {
+      const restored = await loadBackup(id);
+      if (!restored) {
         toast.error(t("data.restoreFailed"));
+        return;
       }
+      // Safety net: snapshot the current state before it is overwritten.
+      await createBackup(boards);
+      importBoards(restored);
+      await refreshBackups();
+      toast.success(t("data.restoreSuccess"));
     } catch {
       toast.error(t("data.restoreFailed"));
     }
@@ -106,20 +127,16 @@ export function DataMenu() {
     }
   };
 
-  // The menu stays mounted once opened — a ref keeps the latest list.
-  const backupsRef = useRef<BackupMeta[] | null>(null);
-  const refreshBackups = async () => {
-    try {
-      backupsRef.current = await listBackups();
-    } catch {
-      backupsRef.current = [];
-    }
-  };
-  void refreshBackups();
-
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu
+        onOpenChange={(open) => {
+          if (open) {
+            setConfirmRestoreId(null);
+            void refreshBackups();
+          }
+        }}
+      >
         <Tooltip>
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
@@ -152,39 +169,73 @@ export function DataMenu() {
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>{t("data.backupTitle")}</DropdownMenuLabel>
-          {backupsRef.current === null || backupsRef.current.length === 0 ? (
+          {backups === null || backups.length === 0 ? (
             <div className="px-2 py-1.5 text-xs text-muted-foreground">
               {t("data.backupEmpty")}
             </div>
           ) : (
-            backupsRef.current.slice(0, 5).map((backup) => (
-              <div
-                key={backup.id}
-                className="flex items-center gap-1 px-1 py-0.5"
-              >
-                <span className="flex-1 truncate text-xs text-muted-foreground">
-                  {new Date(backup.createdAt).toLocaleDateString()}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="janosik-restore-btn h-6 w-6"
-                  aria-label={t("data.restore")}
-                  onClick={() => handleRestore(backup.id)}
+            backups.slice(0, MAX_VISIBLE_BACKUPS).map((backup) => {
+              const confirming = confirmRestoreId === backup.id;
+              return (
+                <div
+                  key={backup.id}
+                  className="rounded-md px-1 py-0.5"
                 >
-                  <RotateCcw className="janosik-icon-restore h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="janosik-delete-btn h-6 w-6 text-muted-foreground hover:text-destructive"
-                  aria-label={t("data.deleteBackup")}
-                  onClick={() => handleDeleteBackup(backup.id)}
-                >
-                  <Trash2 className="janosik-icon-trash h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ))
+                  {confirming ? (
+                    <div className="flex items-center gap-1 rounded-md bg-hover px-1.5 py-1">
+                      <span className="flex-1 text-xs">
+                        {t("data.restoreConfirm")}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-success hover:text-success"
+                        aria-label={t("data.restoreConfirmYes")}
+                        onClick={() => {
+                          setConfirmRestoreId(null);
+                          void handleRestore(backup.id);
+                        }}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground"
+                        aria-label={t("data.restoreConfirmCancel")}
+                        onClick={() => setConfirmRestoreId(null)}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <span className="flex-1 truncate text-xs text-muted-foreground">
+                        {new Date(backup.createdAt).toLocaleDateString()}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="janosik-restore-btn h-6 w-6"
+                        aria-label={t("data.restore")}
+                        onClick={() => setConfirmRestoreId(backup.id)}
+                      >
+                        <RotateCcw className="janosik-icon-restore h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="janosik-delete-btn h-6 w-6 text-muted-foreground hover:text-destructive"
+                        aria-label={t("data.deleteBackup")}
+                        onClick={() => void handleDeleteBackup(backup.id)}
+                      >
+                        <Trash2 className="janosik-icon-trash h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </DropdownMenuContent>
       </DropdownMenu>
