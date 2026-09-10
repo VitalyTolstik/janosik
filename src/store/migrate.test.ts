@@ -126,6 +126,42 @@ describe("normalizeBoards", () => {
     expect(next).toBe(current);
   });
 
+  it("keeps a valid cover and drops malformed ones", () => {
+    const cover = { type: "gradient", value: "sunset" };
+    const valid = card({ labelIds: [], cover });
+    const badShape = card({ labelIds: [], cover: "blue" });
+    const badValue = card({ labelIds: [], cover: { type: "color", value: "chartreuse" } });
+    const board = {
+      id: "b",
+      title: "B",
+      columns: [],
+      cards: { c1: valid, c2: badShape, c3: badValue },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+
+    const [next] = normalizeBoards([board]);
+    expect(next.cards["c1"].cover).toEqual(cover);
+    expect(next.cards["c2"].cover).toBeUndefined();
+    expect(next.cards["c3"].cover).toBeUndefined();
+  });
+
+  it("leaves boards without a cover untouched (same reference)", () => {
+    const current = {
+      id: "b",
+      title: "B",
+      columns: [],
+      cards: { c1: card({ labelIds: [] }) },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+
+    const [next] = normalizeBoards([current]);
+    expect(next).toBe(current);
+  });
+
   it("drops a malformed checklists field (not an array)", () => {
     const legacy = card({ labelIds: ["x"], checklists: "garbage" });
     const board = {
