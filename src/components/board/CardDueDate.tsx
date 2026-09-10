@@ -4,7 +4,10 @@ import { ru } from "react-day-picker/locale";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { TimePicker } from "@/components/board/TimePicker";
+import {
+  TimePickerPanel,
+  TimePickerTrigger,
+} from "@/components/board/TimePicker";
 import {
   Popover,
   PopoverContent,
@@ -52,6 +55,7 @@ export function CardDueDate({ cardId, dueDate }: CardDueDateProps) {
   const { setCardDueDate } = useBoard();
   const { t, lang } = useI18n();
   const [open, setOpen] = useState(false);
+  const [timeOpen, setTimeOpen] = useState(false);
   const [time, setTime] = useState(() =>
     typeof dueDate === "number" ? dueParts(dueDate).time : DEFAULT_TIME,
   );
@@ -77,7 +81,13 @@ export function CardDueDate({ cardId, dueDate }: CardDueDateProps) {
       <span className="text-xs font-medium text-muted-foreground">
         {t("dueDate.label")}
       </span>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setTimeOpen(false);
+        }}
+      >
         <PopoverTrigger asChild>
           <Button variant="outline" size="sm" data-testid="due-date-trigger">
             <CalendarClock className="h-3.5 w-3.5" />
@@ -86,7 +96,22 @@ export function CardDueDate({ cardId, dueDate }: CardDueDateProps) {
               : t("dueDate.set")}
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-auto p-3">
+        <PopoverContent align="end" className="relative w-auto p-3">
+          {/* The time wheel panel opens to the LEFT of the calendar inside
+              the same popover (no nested overlay): bottom edges aligned,
+              same card look, zero layout shift. */}
+          {timeOpen && (
+            <div
+              data-testid="due-time-panel"
+              className="absolute -bottom-px right-full mr-2 rounded-md border border-border bg-popover p-2 shadow-md animate-in fade-in slide-in-from-right-1"
+            >
+              <TimePickerPanel
+                value={time}
+                onChange={applyTime}
+                onConfirm={() => setTimeOpen(false)}
+              />
+            </div>
+          )}
           <Calendar
             mode="single"
             locale={lang.startsWith("ru") ? ru : undefined}
@@ -94,7 +119,11 @@ export function CardDueDate({ cardId, dueDate }: CardDueDateProps) {
             onSelect={applyDate}
           />
           <div className="mt-1 flex items-center gap-2 border-t border-border/60 pt-2">
-            <TimePicker value={time} onChange={applyTime} />
+            <TimePickerTrigger
+              value={time}
+              active={timeOpen}
+              onToggle={() => setTimeOpen((o) => !o)}
+            />
             {due ? (
               <Button
                 variant="ghost"
