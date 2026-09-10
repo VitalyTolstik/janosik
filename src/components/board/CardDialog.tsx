@@ -119,7 +119,12 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
             <DialogDescription>{t("card.detailsSubtitle")}</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-5">
+          {/* Scrollable body: the dialog caps itself to the viewport height
+              (see ui/dialog.tsx), so tall cards (long descriptions, many
+              checklists) scroll here while the header and the action footer
+              below stay reachable. The negative/positive margin pair keeps
+              the scrollbar at the dialog edge instead of inside the padding. */}
+          <div className="-mx-6 min-h-0 flex-1 space-y-5 overflow-y-auto px-6">
             <div className="space-y-1.5">
               <label
                 htmlFor="card-title-input"
@@ -211,7 +216,7 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
             </div>
           </div>
 
-          <DialogFooter className="mt-2">
+          <DialogFooter className="mt-2 shrink-0">
             <Button
               variant="ghost"
               className="text-destructive hover:bg-destructive/10 hover:text-destructive"
