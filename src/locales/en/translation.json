@@ -119,6 +119,8 @@
   "dueDate.set": "Set due date",
   "dueDate.remove": "Remove due date",
   "dueDate.timeLabel": "Time",
+  "dueDate.hoursLabel": "Hours",
+  "dueDate.minutesLabel": "Minutes",
   "dueDate.overdue": "Overdue · {{date}}",
   "dueDate.soon": "Due soon · {{date}}",
   "dueDate.later": "Due · {{date}}",

@@ -123,6 +123,8 @@
   "dueDate.set": "Установить срок",
   "dueDate.remove": "Убрать срок",
   "dueDate.timeLabel": "Время",
+  "dueDate.hoursLabel": "Часы",
+  "dueDate.minutesLabel": "Минуты",
   "dueDate.overdue": "Просрочено · {{date}}",
   "dueDate.soon": "Скоро · {{date}}",
   "dueDate.later": "Срок · {{date}}",
