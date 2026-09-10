@@ -1,4 +1,4 @@
-import { Paintbrush, X } from "lucide-react";
+import { Check, Paintbrush, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +26,7 @@ interface CardCoverPickerProps {
   cover?: CardCover;
 }
 
-/** Small rounded swatch rendering a solid color. */
+/** Small rounded swatch rendering a solid color (label-swatch scale). */
 function ColorSwatch({
   color,
   selected,
@@ -47,12 +47,14 @@ function ColorSwatch({
       title={label}
       onClick={onClick}
       className={cn(
-        "h-7 w-7 rounded-full transition-transform hover:scale-110",
+        "flex h-5 w-5 items-center justify-center rounded-full transition-transform hover:scale-110",
         selected &&
-          "ring-2 ring-primary ring-offset-2 ring-offset-popover scale-110",
+          "ring-2 ring-ring ring-offset-1 ring-offset-popover",
       )}
       style={{ background: COVER_COLOR_CSS[color] }}
-    />
+    >
+      {selected && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
+    </button>
   );
 }
 
@@ -77,9 +79,8 @@ function GradientSwatch({
       title={label}
       onClick={onClick}
       className={cn(
-        "h-9 w-14 rounded-md border border-border/60 transition-transform hover:scale-105",
-        selected &&
-          "ring-2 ring-primary ring-offset-2 ring-offset-popover scale-105",
+        "h-5 w-8 rounded-full transition-transform hover:scale-110",
+        selected && "ring-2 ring-ring ring-offset-1 ring-offset-popover",
       )}
       style={{ background: COVER_GRADIENT_CSS[gradient] }}
     />

@@ -173,14 +173,16 @@ export const COVER_COLOR_CSS: Record<CoverColor, string> = {
   slate: "var(--slate)",
 };
 
-/** Gradient presets as CSS backgrounds (135° diagonal, token endpoints). */
+/** Gradient presets as CSS backgrounds (135° diagonal, token endpoints).
+ *  Three stops with a clear hue shift so the gradient reads even at the
+ *  strip's 6px height. */
 export const COVER_GRADIENT_CSS: Record<CoverGradient, string> = {
-  sunset: "linear-gradient(135deg, var(--danger), var(--orange))",
-  ocean: "linear-gradient(135deg, var(--blue), var(--teal))",
-  forest: "linear-gradient(135deg, var(--success), var(--teal))",
-  candy: "linear-gradient(135deg, var(--pink), var(--fuchsia))",
-  grape: "linear-gradient(135deg, var(--indigo), var(--primary))",
-  steel: "linear-gradient(135deg, var(--slate), var(--muted-foreground))",
+  sunset: "linear-gradient(135deg, var(--yellow), var(--orange) 50%, var(--danger))",
+  ocean: "linear-gradient(135deg, var(--secondary), var(--blue) 50%, var(--indigo))",
+  forest: "linear-gradient(135deg, var(--success), var(--teal) 50%, var(--secondary))",
+  candy: "linear-gradient(135deg, var(--pink), var(--fuchsia) 50%, var(--primary))",
+  grape: "linear-gradient(135deg, var(--indigo), var(--primary) 50%, var(--fuchsia))",
+  steel: "linear-gradient(135deg, var(--slate), var(--muted-foreground) 50%, var(--secondary))",
 };
 
 /** CSS background for any cover shape (solid color or gradient). */
