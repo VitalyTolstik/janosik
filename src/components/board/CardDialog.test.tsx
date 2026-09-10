@@ -86,3 +86,37 @@ describe("CardDialog description editor", () => {
     expect(editorAgain.value).toBe("Updated via MDXEditor");
   });
 });
+
+describe("CardDialog checklists", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("adds a checklist with items and shows progress on the card", async () => {
+    const dialog = await openCardDialog("Design the new onboarding flow");
+
+    // Create a checklist via the section header button.
+    fireEvent.click(within(dialog).getByText("Add checklist"));
+    const checklistCard = within(dialog).getByText("Checklist").closest(
+      "[class*='rounded-lg border']",
+    );
+    expect(checklistCard).not.toBeNull();
+
+    // Add an item through the inline composer.
+    const input = within(checklistCard as HTMLElement).getByPlaceholderText(
+      "Add an item…",
+    );
+    fireEvent.change(input, { target: { value: "Draft the copy" } });
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
+    expect(within(dialog).getByText("Draft the copy")).toBeInTheDocument();
+
+    // Toggle it done — the progress counter and the card badge flip to 1/1.
+    fireEvent.click(within(dialog).getByText("Draft the copy")
+      .closest("li")!
+      .querySelector("button") as HTMLButtonElement);
+    expect(within(dialog).getByText("1 of 1 task")).toBeInTheDocument();
+    const badges = screen.getAllByTestId("card-checklist-badge");
+    expect(badges.length).toBeGreaterThan(0);
+    expect(badges[0].textContent).toBe("1/1");
+  });
+});

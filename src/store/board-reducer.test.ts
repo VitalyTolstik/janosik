@@ -413,3 +413,193 @@ describe("boardReducer — RESTORE_BOARD and IMPORT_BOARDS", () => {
     expect(next[0].id).toBe("board-imported");
   });
 });
+
+describe("boardReducer — checklists", () => {
+  /** Add a checklist to card-1 and return the board with its id resolved. */
+  function withChecklist(title = "Steps") {
+    const board = reduceBoard(freshBoard(), {
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      title,
+    });
+    const checklist = board.cards["card-1"].checklists?.[0];
+    expect(checklist).toBeDefined();
+    return { board, checklistId: checklist!.id };
+  }
+
+  it("adds a checklist to a card", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      title: "  Steps  ",
+    });
+    expect(board.cards["card-1"].checklists).toHaveLength(1);
+    expect(board.cards["card-1"].checklists?.[0].title).toBe("Steps");
+    expect(board.cards["card-1"].checklists?.[0].items).toEqual([]);
+  });
+
+  it("does not mutate the source card", () => {
+    const seed = freshBoard();
+    const next = reduceBoard(seed, {
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      title: "Steps",
+    });
+    expect(seed.cards["card-1"].checklists).toBeUndefined();
+    expect(next).not.toBe(seed);
+  });
+
+  it("rejects an empty checklist title", () => {
+    const next = reduceBoard(freshBoard(), {
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      title: "   ",
+    });
+    expect(next.cards["card-1"].checklists).toBeUndefined();
+  });
+
+  it("ignores checklists for unknown cards", () => {
+    const board = freshBoard();
+    const next = reduceBoard(board, {
+      type: "ADD_CHECKLIST",
+      cardId: "no-such-card",
+      title: "Steps",
+    });
+    expect(next).toBe(board);
+  });
+
+  it("renames a checklist", () => {
+    const { board, checklistId } = withChecklist();
+    const next = reduceBoard(board, {
+      type: "RENAME_CHECKLIST",
+      cardId: "card-1",
+      checklistId,
+      title: "Launch steps",
+    });
+    expect(next.cards["card-1"].checklists?.[0].title).toBe("Launch steps");
+  });
+
+  it("keeps the old title when the rename is empty", () => {
+    const { board, checklistId } = withChecklist();
+    const next = reduceBoard(board, {
+      type: "RENAME_CHECKLIST",
+      cardId: "card-1",
+      checklistId,
+      title: "   ",
+    });
+    expect(next.cards["card-1"].checklists?.[0].title).toBe("Steps");
+  });
+
+  it("deletes a checklist", () => {
+    const { board, checklistId } = withChecklist();
+    const next = reduceBoard(board, {
+      type: "DELETE_CHECKLIST",
+      cardId: "card-1",
+      checklistId,
+    });
+    // The field is dropped entirely once the last checklist is gone.
+    expect(next.cards["card-1"].checklists).toBeUndefined();
+  });
+
+  it("adds items and toggles them done", () => {
+    const { board, checklistId } = withChecklist();
+    const added = reduceBoard(board, {
+      type: "ADD_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId,
+      text: "Write docs",
+    });
+    const itemId = added.cards["card-1"].checklists?.[0].items[0].id ?? "";
+    expect(added.cards["card-1"].checklists?.[0].items).toEqual([
+      { id: itemId, text: "Write docs", done: false },
+    ]);
+
+    const toggled = reduceBoard(added, {
+      type: "TOGGLE_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId,
+      itemId,
+    });
+    expect(toggled.cards["card-1"].checklists?.[0].items[0].done).toBe(true);
+
+    const untoggled = reduceBoard(toggled, {
+      type: "TOGGLE_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId,
+      itemId,
+    });
+    expect(untoggled.cards["card-1"].checklists?.[0].items[0].done).toBe(false);
+  });
+
+  it("rejects an empty item text and unknown checklists", () => {
+    const { board, checklistId } = withChecklist();
+    const empty = reduceBoard(board, {
+      type: "ADD_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId,
+      text: "  ",
+    });
+    expect(empty.cards["card-1"].checklists?.[0].items).toEqual([]);
+
+    const unknown = reduceBoard(board, {
+      type: "ADD_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId: "no-such-checklist",
+      text: "Write docs",
+    });
+    expect(unknown.cards["card-1"].checklists?.[0].items).toEqual([]);
+  });
+
+  it("renames and deletes items", () => {
+    const { board, checklistId } = withChecklist();
+    const added = reduceBoard(board, {
+      type: "ADD_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId,
+      text: "Write docs",
+    });
+    const itemId = added.cards["card-1"].checklists?.[0].items[0].id ?? "";
+
+    const renamed = reduceBoard(added, {
+      type: "RENAME_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId,
+      itemId,
+      text: "Review docs",
+    });
+    expect(renamed.cards["card-1"].checklists?.[0].items[0].text).toBe(
+      "Review docs",
+    );
+
+    // Empty rename keeps the old text.
+    const empty = reduceBoard(renamed, {
+      type: "RENAME_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId,
+      itemId,
+      text: "",
+    });
+    expect(empty.cards["card-1"].checklists?.[0].items[0].text).toBe(
+      "Review docs",
+    );
+
+    const deleted = reduceBoard(renamed, {
+      type: "DELETE_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId,
+      itemId,
+    });
+    expect(deleted.cards["card-1"].checklists?.[0].items).toEqual([]);
+  });
+
+  it("toggling an unknown item is a no-op", () => {
+    const { board, checklistId } = withChecklist();
+    const next = reduceBoard(board, {
+      type: "TOGGLE_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId,
+      itemId: "no-such-item",
+    });
+    expect(next.cards["card-1"]).toBe(board.cards["card-1"]);
+  });
+});
