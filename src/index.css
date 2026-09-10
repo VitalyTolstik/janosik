@@ -507,6 +507,15 @@ body
   transform: translate(-50%, -50%) !important;
   max-width: calc(100vw - 2rem);
 }
+/* The library renders a Radix popover caret on the link dialog; once the
+ * dialog is centered it points at nothing, so it goes. */
+body
+  > .mdxeditor-popup-container
+  [data-radix-popper-content-wrapper]:has([class*="linkDialogPopoverContent"])
+  svg[class*="popoverArrow"] {
+  /* Radix pins `display: block` inline on the arrow svg. */
+  display: none !important;
+}
 
 /* Link dialog popup — a floating "inspector" card. */
 body > .mdxeditor-popup-container [class*="linkDialogPopoverContent"],

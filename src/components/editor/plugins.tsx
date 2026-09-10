@@ -60,7 +60,10 @@ const contentPlugins: RealmPlugin[] = [
 
 /** Toolbar + link dialog — edit mode only (read-only previews skip the UI). */
 const uiPlugins: RealmPlugin[] = [
-  linkDialogPlugin(),
+  // The "Link title" (HTML title attribute) field is noise for a kanban
+  // card — the dialog keeps URL + anchor text (anchor text only shows up
+  // when the cursor is collapsed, i.e. there is nothing to attach to).
+  linkDialogPlugin({ showLinkTitleField: false }),
   toolbarPlugin({
     toolbarClassName: "janosik-mdx-toolbar",
     toolbarContents: () => (

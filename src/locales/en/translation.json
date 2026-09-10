@@ -145,8 +145,6 @@
   "editor.toolbar.blockTypes.paragraph": "Paragraph",
   "editor.toolbar.blockTypes.heading": "Heading {{level}}",
   "editor.toolbar.blockTypes.quote": "Quote",
-  "editor.createLink.title": "Insert link",
-  "editor.createLink.titleTooltip": "The link's title attribute, shown on hover",
   "editor.createLink.url": "URL",
   "editor.createLink.urlPlaceholder": "Select or paste a URL",
   "editor.createLink.text": "Anchor text",
