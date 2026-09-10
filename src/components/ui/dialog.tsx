@@ -40,7 +40,10 @@ const DialogContent = React.forwardRef<
         // turns the dialog into the containing block for position:fixed
         // descendants, which silently misplaces library UI that anchors
         // to viewport coordinates (e.g. mdxeditor's link preview anchor).
-        "fixed inset-0 z-50 m-auto h-fit w-[calc(100vw-2rem)] max-w-lg grid grid-cols-[minmax(0,1fr)] gap-4 border bg-popover p-6 shadow-xl duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:rounded-xl",
+        // max-h keeps tall content on screen — dialogs that grow (e.g. card
+        // details with many checklists) scroll their body instead of pushing
+        // the footer out of the viewport.
+        "fixed inset-0 z-50 m-auto flex h-fit max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-lg flex-col gap-4 border bg-popover p-6 shadow-xl duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:rounded-xl",
         className,
       )}
       {...props}
