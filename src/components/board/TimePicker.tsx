@@ -15,16 +15,20 @@ const MINUTES = Array.from({ length: 60 }, (_, i) => i);
 /**
  * The hour labels shown in the picker's hour column. 24h locales read
  * 0–23; 12-hour locales read 12 AM, 1 AM … 11 PM (the internal value
- * stays 0–23 — 12h is a rendering concern only).
+ * stays 0–23 — 12h is a rendering concern only). The AM/PM suffix is
+ * kept separate so it renders as a small inline tag instead of a
+ * full-size second word.
  */
-function hourOptions(hour12: boolean): { value: number; label: string }[] {
+function hourOptions(
+  hour12: boolean,
+): { value: number; label: string; suffix?: string }[] {
   if (!hour12) {
     return HOURS_24.map((h) => ({ value: h, label: pad(h) }));
   }
   return HOURS_24.map((h) => {
     const suffix = h < 12 ? "AM" : "PM";
     const display = h % 12 === 0 ? 12 : h % 12;
-    return { value: h, label: `${display} ${suffix}` };
+    return { value: h, label: String(display), suffix };
   });
 }
 
@@ -34,7 +38,7 @@ function Column({
   onSelect,
   label,
 }: {
-  options: { value: number; label: string }[];
+  options: { value: number; label: string; suffix?: string }[];
   selected: number;
   onSelect: (value: number) => void;
   label: string;
@@ -80,7 +84,7 @@ function Column({
       className="snap-y overflow-y-auto rounded-md border border-border/60 bg-muted/30 p-1"
       style={{ height: ROWS_VISIBLE * ROW_H_PX }}
     >
-      {options.map(({ value, label: optionLabel }) => (
+      {options.map(({ value, label: optionLabel, suffix }) => (
         <button
           key={value}
           type="button"
@@ -89,13 +93,23 @@ function Column({
           data-value={value}
           onClick={() => onSelect(value)}
           className={cn(
-            "flex h-8 w-full snap-center items-center justify-center rounded-sm px-2 text-sm tabular-nums transition-colors",
+            "flex h-8 w-full snap-center items-center justify-center gap-1 rounded-sm px-2 text-sm tabular-nums whitespace-nowrap transition-colors",
             value === selected
               ? "bg-primary font-semibold text-primary-foreground"
               : "text-foreground/80 hover:bg-accent hover:text-accent-foreground",
           )}
         >
           {optionLabel}
+          {suffix && (
+            <span
+              className={cn(
+                "text-[10px] font-medium tracking-wide",
+                value === selected ? "text-primary-foreground/70" : "text-muted-foreground",
+              )}
+            >
+              {suffix}
+            </span>
+          )}
         </button>
       ))}
     </div>
