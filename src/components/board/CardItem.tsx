@@ -51,18 +51,15 @@ export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
         isDragging && "opacity-40",
       )}
     >
-      {/* Cover: a solid color renders as a slim top strip, a gradient as a
-          taller header band (Trello-style). Negative margins bleed it into
+      {/* Cover: a slim top strip — same height for colors and gradients
+          (matches the label chip row scale). Negative margins bleed it into
           the card padding; the card clips it (overflow-hidden). */}
       {card.cover ? (
         <div
           aria-hidden
           data-testid="card-cover"
           data-cover-type={card.cover.type}
-          className={cn(
-            "-mx-3 -mt-2.5 mb-2.5 w-[calc(100%+1.5rem)]",
-            card.cover.type === "gradient" ? "h-8" : "h-1.5",
-          )}
+          className="-mx-3 -mt-2.5 mb-2.5 h-1.5 w-[calc(100%+1.5rem)]"
           style={{ background: coverBackground(card.cover) }}
         />
       ) : null}
