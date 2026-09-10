@@ -556,6 +556,30 @@ body
   background: var(--hover);
   color: var(--foreground);
 }
+/* Preview popup action buttons (edit / copy / remove link) — sized like
+ * the rest of the editor chrome (library ships 24px icons in 32px tiles). */
+body
+  > .mdxeditor-popup-container
+  [class*="linkDialogPopoverContent"]
+  [class*="actionButton"] {
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+}
+body
+  > .mdxeditor-popup-container
+  [class*="linkDialogPopoverContent"]
+  [class*="actionButton"] svg {
+  width: 15px;
+  height: 15px;
+}
+body
+  > .mdxeditor-popup-container
+  [class*="linkDialogPopoverContent"]
+  [class*="actionButton"]:hover {
+  background: var(--hover);
+  color: var(--foreground);
+}
 body > .mdxeditor-popup-container [class*="dialogTitle"] {
   color: var(--foreground);
 }
