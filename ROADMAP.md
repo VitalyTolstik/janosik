@@ -62,7 +62,8 @@
 - Персистентность/данные: `src/utils/persistence.ts`, `src/utils/backup.ts`, `src/utils/board-serialization.ts`, `src/utils/storage.ts`.
 - Миграции/сид: `src/store/migrate.ts`, `src/store/seed-data.ts`.
 - Карточка UI: `src/components/board/CardItem.tsx`, `CardDialog.tsx`, `CardComposer.tsx`.
-- Описание карточки (MDXEditor): `src/components/editor/DescriptionEditor.tsx`, `DescriptionPreview.tsx`, `plugins.tsx`, `janosik-icons.tsx`, `editor-i18n.ts`.
+- Описание карточки (MDXEditor): `src/components/editor/DescriptionEditor.tsx`,
+  `plugins.tsx`, `janosik-icons.tsx`, `editor-i18n.ts`.
 - Шапка: `src/components/Header.tsx` (+ `DataMenu.tsx`, `BackgroundSwitcher.tsx`, `LanguageSwitcher.tsx`).
 - i18n: `src/locales/{en,ru}/translation.json`, типы из EN в `src/i18n/i18n.ts`.
 - Токены: `src/index.css` (`:root`/`.light`, `@theme inline`).
@@ -176,7 +177,10 @@ only mdxeditor from TASK 2
 - **Что сделано:**
   - `DescriptionEditor` (edit, тулбар: undo/redo, тип блока, bold/italic,
     strikethrough, inline code, bullet/numbered/checklist, link) и
-    `DescriptionPreview` (read-only, сниппет карточки с fade-обрезкой);
+    лицо карточки текст описания не показывает (как в Trello): если
+    описание есть — компактный бейдж с lucide-иконкой и тултипом
+    `card.hasDescription`, если нет — ничего; полный текст живёт в диалоге
+    карточки;
   - курируемый набор фич: заголовки, списки (включая `- [x]`), цитаты,
     ссылки, inline-код, `---`. Таблицы/код-блоки/картинки — плагины
     включены без кнопок, чтобы старые данные (сид/импорт) круглосуточно

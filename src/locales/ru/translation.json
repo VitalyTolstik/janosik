@@ -112,6 +112,7 @@
   "card.titlePlaceholder": "Название карточки",
   "card.descriptionLabel": "Описание",
   "card.descriptionPlaceholder": "Добавьте более подробное описание…",
+  "card.hasDescription": "У карточки есть описание",
   "card.labelLabel": "Метка",
   "card.columnLabel": "Колонка",
   "card.moveTo": "Переместить в колонку",
