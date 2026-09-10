@@ -496,22 +496,24 @@ body > .mdxeditor-popup-container {
   position: relative;
 }
 
-/* Link dialog — a centered modal-like card instead of an anchor popup
- * (the library anchors it to the selection, which reads as random). */
+/* Link EDIT form — a centered modal-like card (the plain popover felt
+ * detached from the card it belongs to). The preview popover is left
+ * anchored at the link itself — proximity is what makes it intuitive. */
 body
   > .mdxeditor-popup-container
-  [data-radix-popper-content-wrapper]:has([class*="linkDialogPopoverContent"]) {
+  [data-radix-popper-content-wrapper]:has([class*="linkDialogEditForm"]) {
   position: fixed !important;
   left: 50% !important;
   top: 50% !important;
   transform: translate(-50%, -50%) !important;
   max-width: calc(100vw - 2rem);
 }
-/* The library renders a Radix popover caret on the link dialog; once the
- * dialog is centered it points at nothing, so it goes. */
+/* The library renders a Radix popover caret on the edit dialog; once it is
+ * centered the caret points at nothing, so it goes (the anchored preview
+ * popover keeps its caret). */
 body
   > .mdxeditor-popup-container
-  [data-radix-popper-content-wrapper]:has([class*="linkDialogPopoverContent"])
+  [data-radix-popper-content-wrapper]:has([class*="linkDialogEditForm"])
   svg[class*="popoverArrow"] {
   /* Radix pins `display: block` inline on the arrow svg. */
   display: none !important;
@@ -542,12 +544,21 @@ body
   background: transparent;
   color: var(--muted-foreground);
 }
+/* The library's cancel control is text-only; the ✕ glyph is drawn with a
+ * lucide X mask so currentColor drives both states. */
 body
   > .mdxeditor-popup-container
   [class*="linkDialogPopoverContent"]
-  [class*="secondaryButton"] svg.lucide {
+  [class*="secondaryButton"]::before {
+  content: "";
+  display: block;
   width: 16px;
   height: 16px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18'/%3E%3Cpath d='m6 6 12 12'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18'/%3E%3Cpath d='m6 6 12 12'/%3E%3C/svg%3E")
+    center / contain no-repeat;
 }
 body
   > .mdxeditor-popup-container
