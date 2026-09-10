@@ -1,9 +1,11 @@
 import type {
   Board,
   Card,
+  CardCover,
   Checklist,
   ChecklistItem,
 } from "@/types/kanban";
+import { COVER_COLORS, COVER_GRADIENTS } from "@/types/kanban";
 import type { BoardState } from "@/store/board-reducer";
 
 /**
@@ -21,6 +23,9 @@ import type { BoardState } from "@/store/board-reducer";
  *
  * v4: `Card.dueDate` (TASK-4) — optional Unix timestamp; only a non-finite
  * number (garbage from a hand-edited import) is dropped.
+ *
+ * v5: `Card.cover` (TASK-5) — optional `{ type, value }`; only a pair the
+ * app can render survives, malformed shapes are dropped.
  */
 
 type LegacyCard = Card & { labelId?: unknown; labelIds?: unknown };
@@ -74,13 +79,34 @@ function toDueDate(value: unknown): number | undefined {
     : undefined;
 }
 
+/**
+ * A cover is either absent or a well-formed `{ type, value }` pair the app
+ * can render; malformed shapes (hand-edited imports) are dropped.
+ */
+function toCover(value: unknown): CardCover | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const c = value as Partial<CardCover>;
+  if (c.type === "color") {
+    return (COVER_COLORS as readonly string[]).includes(c.value as string)
+      ? { type: "color", value: c.value as (typeof COVER_COLORS)[number] }
+      : undefined;
+  }
+  if (c.type === "gradient") {
+    return (COVER_GRADIENTS as readonly string[]).includes(c.value as string)
+      ? { type: "gradient", value: c.value as (typeof COVER_GRADIENTS)[number] }
+      : undefined;
+  }
+  return undefined;
+}
+
 function normalizeCard(card: LegacyCard): Card {
-  const { labelId, labelIds, checklists, dueDate, ...rest } = card;
+  const { labelId, labelIds, checklists, dueDate, cover, ...rest } = card;
   return {
     ...rest,
     labelIds: toLabelIds(labelIds ?? labelId),
     checklists: toChecklists(checklists),
     dueDate: toDueDate(dueDate),
+    cover: toCover(cover),
   };
 }
 
@@ -103,7 +129,8 @@ export function normalizeBoards(state: BoardState): BoardState {
       const legacy = card as LegacyCard;
       if (!Array.isArray(legacy.labelIds)) return true;
       if (!isChecklistsCurrent(legacy.checklists)) return true;
-      return !isDueDateCurrent(legacy.dueDate);
+      if (!isDueDateCurrent(legacy.dueDate)) return true;
+      return !isCoverCurrent(legacy.cover);
     });
     return needsFix ? normalizeBoard(board) : board;
   });
@@ -140,4 +167,15 @@ function isChecklistsCurrent(value: unknown): boolean {
 function isDueDateCurrent(value: unknown): boolean {
   return value === undefined ||
     (typeof value === "number" && Number.isFinite(value));
+}
+
+/** True when the stored cover is `undefined` or a well-formed pair. */
+function isCoverCurrent(value: unknown): boolean {
+  if (value === undefined) return true;
+  const cover = toCover(value);
+  return (
+    cover !== undefined &&
+    cover.type === (value as CardCover).type &&
+    cover.value === (value as CardCover).value
+  );
 }
