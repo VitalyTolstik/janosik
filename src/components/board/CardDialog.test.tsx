@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -9,10 +9,30 @@ import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 
 /**
- * Integration test for the card description editor: opening a card shows an
- * editable Markdown textarea; the «Preview» toggle renders it as formatted
- * Markdown (bold, task list) and «Edit» brings the textarea back.
+ * Integration test for the card description editor (MDXEditor): opening a
+ * card shows the WYSIWYG editor seeded with the stored markdown; edits are
+ * streamed into the board state (and survive a dialog reopen).
+ *
+ * The real MDXEditor (Lexical) is stubbed — it needs a full browser layout
+ * engine; the editor itself is covered by the library's own test suite.
  */
+
+vi.mock("@/components/editor/DescriptionEditor", () => ({
+  DescriptionEditor: ({
+    value,
+    onChange,
+  }: {
+    value: string;
+    onChange: (markdown: string) => void;
+  }) => (
+    <textarea
+      aria-label="Description"
+      data-testid="description-editor"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  ),
+}));
 
 function renderBoard() {
   return render(
@@ -38,37 +58,31 @@ async function openCardDialog(title: string) {
   return dialog;
 }
 
-describe("CardDialog Markdown toggle", () => {
+describe("CardDialog description editor", () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it("opens with the textarea and the hint, and preview renders Markdown", async () => {
+  it("opens with the stored markdown and streams edits into the board", async () => {
     const dialog = await openCardDialog("Design the new onboarding flow");
 
-    // The description textarea is in edit mode by default.
-    const textarea = within(dialog).getByLabelText(
+    // The editor is seeded with the card's markdown.
+    const editor = within(dialog).getByLabelText(
       "Description",
     ) as HTMLTextAreaElement;
-    expect(textarea).toBeInTheDocument();
-    expect(textarea.value).toContain("**bold**");
-    expect(within(dialog).getByText("Markdown supported")).toBeInTheDocument();
+    expect(editor.value).toContain("**bold**");
 
-    // Switch to preview → formatted bold + a checklist.
-    fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
-    expect(textarea).not.toBeInTheDocument();
-    const bold = within(dialog).getByText("bold");
-    expect(bold.tagName).toBe("STRONG");
-    const checks = within(dialog).getAllByRole("checkbox");
-    expect(checks).toHaveLength(3);
-    expect(checks[0]).toBeChecked();
-    expect(checks[1]).not.toBeChecked();
+    // An edit reaches the board state…
+    fireEvent.change(editor, { target: { value: "Updated via MDXEditor" } });
+    expect(editor.value).toBe("Updated via MDXEditor");
 
-    // Back to edit → the live textarea is there again with same content.
-    fireEvent.click(within(dialog).getByRole("button", { name: "Edit" }));
-    const textareaAgain = within(dialog).getByLabelText(
+    // …and survives closing + reopening the dialog.
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    fireEvent.click(screen.getByText("Design the new onboarding flow"));
+    const reopened = await screen.findByRole("dialog");
+    const editorAgain = within(reopened).getByLabelText(
       "Description",
     ) as HTMLTextAreaElement;
-    expect(textareaAgain.value).toContain("**bold**");
+    expect(editorAgain.value).toBe("Updated via MDXEditor");
   });
 });

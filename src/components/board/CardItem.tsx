@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
+import { DescriptionPreview } from "@/components/editor/DescriptionPreview";
 import { LABEL_COLOR_CHIP, type Card, type Label } from "@/types/kanban";
-import { MarkdownView } from "@/utils/markdown";
 
 interface CardItemProps {
   card: Card;
@@ -49,9 +49,11 @@ export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
         {card.title}
       </p>
       {card.description ? (
-        <MarkdownView preview className="mt-1.5">
-          {card.description}
-        </MarkdownView>
+        <DescriptionPreview
+          snippet
+          value={card.description}
+          className="mt-1.5"
+        />
       ) : null}
     </article>
   );

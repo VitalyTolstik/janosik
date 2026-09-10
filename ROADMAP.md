@@ -37,7 +37,7 @@
 | Доска | одна доска (заголовок отображается, пока не редактируется), горизонтальная лента колонок |
 | Колонки | добавление, переименование (двойной клик), удаление с каскадом карточек, drag-перестановка |
 | Карточки | inline-композер, живое редактирование заголовка, удаление с подтверждением, перенос drag&drop внутри/между колонками, перенос через меню в диалоге |
-| Описание карточки | plain-text поле в диалоге, превью на карточке (`line-clamp-2`) |
+| Описание карточки | WYSIWYG MDX-редактор (MDXEditor) в диалоге, живое Markdown-превью на карточке (`line-clamp` + fade) |
 | Метки | 14 цветов, мульти-выбор, создание/переименование/перекраска/удаление (каскад со всех карточек) |
 | Фильтр | поиск по названию, метки (ANY + «без метки»), дата создания (сегодня/7/30 дней/точный день), хоткеи `/` и `Ctrl/Cmd+K`, счётчик совпадений, DnD выключен при активном фильтре |
 | Undo/redo | история 50 шагов с коалесцингом, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`, `Ctrl+Y`, кнопки в шапке |
@@ -52,8 +52,8 @@
 - **Модель** — `Board { columns[], cards: Record<string,Card>, labels[] }`, `Card { id, title, description?, labelIds[], createdAt, updatedAt }`. Нормализовано: перестановка = перестановка id-массивов. `Board[]` на верхнем уровне — мультидоски уже заложены, но используется только `[0]`.
 - **Состояние** — чистый `boardReducer` (15 экшенов) + `BoardContext` (дебаунс-персистентность, история, хоткеи, авто-бэкап). Компоненты вызывают типизированные удобные экшены.
 - **Персистентность** — интерфейс `DebouncedPersistence` поверх `localStorage`; позже бэкенд = второй адаптер `fetch` **без изменения reducer и UI**.
-- **UI** — shadcn/ui + Radix (dialog/dropdown/popover/tooltip/slot), dnd-kit, react-day-picker.
-- **Тесты** — 103 теста в 11 файлах (reducer, history, persistence, serialization, backup, dnd, filter, storage, migrate, i18n, интеграционный BoardSection).
+- **UI** — shadcn/ui + Radix (dialog/dropdown/popover/tooltip/slot), dnd-kit, react-day-picker, MDXEditor (описание карточки).
+- **Тесты** — 117 тестов в 13 файлах (reducer, history, persistence, serialization, backup, dnd, filter, storage, migrate, i18n, интеграционные BoardSection + CardDialog).
 
 ### 1.3. Ключи и точки интеграции
 
@@ -62,6 +62,7 @@
 - Персистентность/данные: `src/utils/persistence.ts`, `src/utils/backup.ts`, `src/utils/board-serialization.ts`, `src/utils/storage.ts`.
 - Миграции/сид: `src/store/migrate.ts`, `src/store/seed-data.ts`.
 - Карточка UI: `src/components/board/CardItem.tsx`, `CardDialog.tsx`, `CardComposer.tsx`.
+- Описание карточки (MDXEditor): `src/components/editor/DescriptionEditor.tsx`, `DescriptionPreview.tsx`, `plugins.tsx`, `janosik-icons.tsx`, `editor-i18n.ts`.
 - Шапка: `src/components/Header.tsx` (+ `DataMenu.tsx`, `BackgroundSwitcher.tsx`, `LanguageSwitcher.tsx`).
 - i18n: `src/locales/{en,ru}/translation.json`, типы из EN в `src/i18n/i18n.ts`.
 - Токены: `src/index.css` (`:root`/`.light`, `@theme inline`).
@@ -72,7 +73,7 @@
 
 1. **Одна доска из `Board[]`** — модель готова к мультидоскам, но UI/роутинга нет; `state[0]` везде.
 2. **Нет роутинга** — нет `react-router-dom`, нет deep-link на доску/карточку.
-3. **Карточка минимальна** — нет срока, чек-листа, обложки, активности; описание — plain text без Markdown. Главный разрыв с Trello/Linear/Jira.
+3. **Карточка минимальна** — нет срока, чек-листа, обложки, активности. Описание уже rich-text (MDXEditor, TASK-2); главный оставшийся разрыв с Trello/Linear/Jira — чек-листы и сроки.
 4. **Заголовок доски не редактируется**, нет создания/удаления/архивирования/дублирования доски.
 5. **Хранилище — только `localStorage`** (лимит ~5 МБ, одно устройство). Риск снят экспортом/бэкапами, но синхронизации нет (нужен бэкенд, §7).
 6. **Нет дублирования карточки/колонки**, нет сортировки внутри колонки.
@@ -93,8 +94,8 @@
 | Drag & drop | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Метки (мульти) | ✅ (14) | ✅ | ✅ | ✅ | ✅ |
 | Фильтр / поиск по доске | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Описание карточки | 🟡 (plain text) | ✅ | ✅ | ✅ | ✅ |
-| **Rich-редактор (жирный/курсив/код)** | ❌ | 🟡 | ✅ | ✅ | ✅ |
+| Описание карточки | ✅ (MDXEditor) | ✅ | ✅ | ✅ | ✅ |
+| **Rich-редактор (жирный/курсив/код)** | ✅ (MDXEditor) | 🟡 | ✅ | ✅ | ✅ |
 | Чек-листы (подзадачи) | ❌ | ✅ | ❌ | ✅ | ❌ |
 | Сроки (due dates) | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Обложка/цвет карточки | ❌ | ✅ | ✅ | ✅ | 🟡 |
@@ -117,7 +118,7 @@
 
 **🔴 Запрошено пользователем (приоритет №1):**
 
-1. **Rich-редактор карточки** — панель форматирования как в Jira: жирный, курсив, код, ссылка, списки + Markdown-рендер описания. (TASK-1, TASK-2)
+1. **Rich-редактор карточки** — реализовано: WYSIWYG-редактор MDXEditor с тулбаром вместо ручного Markdown (TASK-1 + TASK-2).
 2. **Чек-листы (todo-списки)** — подзадачи с прогрессом «2/5» на карточке. (TASK-3)
 
 **🟠 Классика канбана (быстрые победы):**
@@ -154,21 +155,55 @@
 
 ### Фаза A — Карточка и контент (акцент по запросу)
 
-#### TASK-1 — `card-markdown` · Markdown-рендер описания
+#### TASK-1 — `card-markdown` · Markdown-рендер описания ✅ (заменён TASK-2)
 
-- **Зачем:** описание сейчас plain-text; Markdown — база для rich-редактора.
-- **Что:** рендер `**жирный**`, `*курсив*`, `` `код` ``, списки, ссылки, заголовки в описании карточки. Переключатель «Редактировать / Просмотр» в `CardDialog`; превью-фрагмент на `CardItem`.
-- **Решение по рендереру (выбрано):** `react-markdown` + `remark-gfm` — безопасен по умолчанию (HTML из текста не выполняется), GFM: таблицы, `- [x]` чекбоксы, `~зачёркнуто~`. Новые зависимости + новый компонент `src/utils/markdown.tsx` (`MarkdownView`).
-- **Затрагивает:** `src/types/kanban.ts` (без изменений модели), `src/components/board/CardDialog.tsx`, `CardItem.tsx`, новый `src/utils/markdown.tsx`, `src/locales/*`, `package.json` (`react-markdown`, `remark-gfm`).
-- **DoD:** описание с Markdown рендерится в диалоге и на карточке; plain-text сохраняется как есть (обратная совместимость); **рендерер не выполняет HTML из текста (санитизация на границе ввода — импорт JSON/вставка)**: тест на инъекцию `<script>`/`<img onerror>`; тесты на рендерер; tsc/build/test зелёные.
+- **Статус:** ✅ был реализован (`react-markdown` + `remark-gfm`), затем
+  **рендерер полностью заменён** WYSIWYG-редактором MDXEditor — см. TASK-2.
+  Зависимости TASK-1 (`react-markdown`, `remark-gfm`, `remark-breaks`)
+  и `src/utils/markdown.tsx` удалены.
 
-#### TASK-2 — `card-editor-toolbar` · Панель форматирования (как в Jira)
+only mdxeditor from TASK 2
 
-- **Зачем:** кнопки жирный/курсив/код/ссылка/список вместо ручного ввода Markdown.
-- **Что:** тулбар над полем описания; вставка Markdown-синтаксиса в позицию курсора; undo внутри textarea остаётся нативным.
-- **Затрагивает:** `CardDialog.tsx` (компонент тулбара), `src/locales/*`, `src/index.css` (стили кнопок тулбара).
-- **Зависит:** TASK-1.
-- **DoD:** все кнопки вставляют корректный Markdown; работает выделение текста; tsc/build/test зелёные.
+#### TASK-2 — `card-mdx-editor` · WYSIWYG-редактор описания (MDXEditor)
+
+- **Статус:** ✅ реализовано (ветка `feature/TASK-2-mdx-description-editor`).
+- **Зачем:** кнопки форматирования вместо ручного ввода Markdown; живой
+  WYSIWYG вместо пары «textarea + превью».
+- **Решение (обновлено пользователем):** официальный `@mdxeditor/editor`
+  вместо самописного тулбара над textarea. react-markdown/remark-*
+  полностью удалены — MDXEditor используется и для редактирования, и для
+  read-only превью на карточке.
+- **Что сделано:**
+  - `DescriptionEditor` (edit, тулбар: undo/redo, тип блока, bold/italic,
+    strikethrough, inline code, bullet/numbered/checklist, link) и
+    `DescriptionPreview` (read-only, сниппет карточки с fade-обрезкой);
+  - курируемый набор фич: заголовки, списки (включая `- [x]`), цитаты,
+    ссылки, inline-код, `---`. Таблицы/код-блоки/картинки — плагины
+    включены без кнопок, чтобы старые данные (сид/импорт) круглосуточно
+    реэкспортировались без ошибок;
+  - безопасность: `suppressHtmlProcessing` — сырой HTML из текста
+    (импорт JSON/вставка) остаётся буквальным текстом, не исполняется;
+  - иконки заменены на lucide через официальный проп `iconComponentFor`;
+  - i18n: проп `translation` завязан на каталоги `editor.*` (en/ru);
+  - темы: все цвета редактора — на дизайн-токенах (`index.css`, блок
+    MDXEditor), тёмная/светлая работают автоматически, без классов
+    `dark-theme`; тулбар/контент переписаны под токены (Tailwind preflight
+    обнуляет типографику — она восстановлена явно);
+  - попапы (link dialog, dropdown типа блока) порталится в `document.body`
+    и поднимаются `z-index` над диалогом: центрирование диалога делает
+    `transform`, который ломает координаты `position: fixed` внутри него —
+    поэтому `overlayContainer` внутрь диалога передавать нельзя;
+  - диалог карточки расширен до `sm:max-w-3xl`, грид-трек `minmax(0,1fr)`
+    против переполнения на мобильных.
+- **Затрагивает:** `src/components/editor/*` (новое), `CardDialog.tsx`,
+  `CardItem.tsx`, `ui/dialog.tsx`, `src/index.css`, `src/locales/*`,
+  `package.json` (`+ @mdxeditor/editor`, `- react-markdown`, `- remark-gfm`,
+  `- remark-breaks`), тесты (`CardDialog.test.tsx` — MDXEditor стабится,
+  реальный редактор покрыт тестами библиотеки).
+- **DoD:** ✅ форматирование применяется/сериализуется в Markdown; чек-лист,
+  ссылка, списки, undo/redo работают; обе темы + RU/EN локаль тулбара;
+  ничего не вылезает за карточку/диалог на 390px; tsc/build/test зелёные;
+  dev-сервер 200.
 
 #### TASK-3 — `card-checklists` · Чек-листы (подзадачи)
 
