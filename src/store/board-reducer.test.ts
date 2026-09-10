@@ -669,3 +669,96 @@ describe("boardReducer — due dates", () => {
     expect("dueDate" in garbage.cards["card-1"]).toBe(false);
   });
 });
+
+describe("boardReducer — covers", () => {
+  it("sets a color cover and bumps the card's updatedAt", () => {
+    const seed = freshBoard();
+    const next = reduceBoard(seed, {
+      type: "SET_CARD_COVER",
+      cardId: "card-1",
+      cover: { type: "color", value: "teal" },
+    });
+    expect(next.cards["card-1"].cover).toEqual({
+      type: "color",
+      value: "teal",
+    });
+    expect(next.cards["card-1"].updatedAt).toBeGreaterThanOrEqual(
+      seed.cards["card-1"].updatedAt,
+    );
+  });
+
+  it("replaces a color with a gradient", () => {
+    const seed = freshBoard();
+    const colored = reduceBoard(seed, {
+      type: "SET_CARD_COVER",
+      cardId: "card-1",
+      cover: { type: "color", value: "red" },
+    });
+    const gradiented = reduceBoard(colored, {
+      type: "SET_CARD_COVER",
+      cardId: "card-1",
+      cover: { type: "gradient", value: "sunset" },
+    });
+    expect(gradiented.cards["card-1"].cover).toEqual({
+      type: "gradient",
+      value: "sunset",
+    });
+  });
+
+  it("clears the cover by dropping the field entirely", () => {
+    const seed = freshBoard();
+    const withCover = reduceBoard(seed, {
+      type: "SET_CARD_COVER",
+      cardId: "card-1",
+      cover: { type: "gradient", value: "ocean" },
+    });
+    const cleared = reduceBoard(withCover, {
+      type: "SET_CARD_COVER",
+      cardId: "card-1",
+      cover: undefined,
+    });
+    expect(cleared.cards["card-1"].cover).toBeUndefined();
+    expect("cover" in cleared.cards["card-1"]).toBe(false);
+  });
+
+  it("setting the same cover is a no-op", () => {
+    const seed = freshBoard();
+    const withCover = reduceBoard(seed, {
+      type: "SET_CARD_COVER",
+      cardId: "card-1",
+      cover: { type: "color", value: "blue" },
+    });
+    const again = reduceBoard(withCover, {
+      type: "SET_CARD_COVER",
+      cardId: "card-1",
+      cover: { type: "color", value: "blue" },
+    });
+    expect(again.cards["card-1"]).toBe(withCover.cards["card-1"]);
+  });
+
+  it("ignores unknown cards and malformed covers", () => {
+    const board = freshBoard();
+    const unknown = reduceBoard(board, {
+      type: "SET_CARD_COVER",
+      cardId: "no-such-card",
+      cover: { type: "color", value: "red" },
+    });
+    expect(unknown).toBe(board);
+
+    const badType = reduceBoard(board, {
+      type: "SET_CARD_COVER",
+      cardId: "card-1",
+      // @ts-expect-error — malformed payload from a hand-edited import.
+      cover: { type: "image", value: "x" },
+    });
+    expect("cover" in badType.cards["card-1"]).toBe(false);
+
+    const badValue = reduceBoard(board, {
+      type: "SET_CARD_COVER",
+      cardId: "card-1",
+      // @ts-expect-error — malformed payload from a hand-edited import.
+      cover: { type: "color", value: "chartreuse" },
+    });
+    expect("cover" in badValue.cards["card-1"]).toBe(false);
+  });
+});

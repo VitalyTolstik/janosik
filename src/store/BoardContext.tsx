@@ -16,7 +16,7 @@ import {
   type BoardState,
 } from "@/store/board-reducer";
 import { BoardHistory } from "@/store/history";
-import type { Board, Label } from "@/types/kanban";
+import type { Board, CardCover, Label } from "@/types/kanban";
 import { migrateStorageKey } from "@/utils/storage";
 import { normalizeBoards } from "@/store/migrate";
 import { createBackup } from "@/utils/backup";
@@ -103,6 +103,7 @@ interface BoardContextValue {
     itemId: string,
   ) => void;
   setCardDueDate: (cardId: string, dueDate?: number) => void;
+  setCardCover: (cardId: string, cover?: CardCover) => void;
   moveCard: (
     cardId: string,
     fromColumnId: string,
@@ -292,6 +293,7 @@ function createBoardActions(
   | "renameChecklistItem"
   | "deleteChecklistItem"
   | "setCardDueDate"
+  | "setCardCover"
   | "moveCard"
   | "moveColumn"
 > {
@@ -344,6 +346,8 @@ function createBoardActions(
       dispatch({ type: "DELETE_CHECKLIST_ITEM", cardId, checklistId, itemId }),
     setCardDueDate: (cardId: string, dueDate?: number) =>
       dispatch({ type: "SET_CARD_DUE_DATE", cardId, dueDate }),
+    setCardCover: (cardId: string, cover?: CardCover) =>
+      dispatch({ type: "SET_CARD_COVER", cardId, cover }),
     moveCard: (
       cardId: string,
       fromColumnId: string,

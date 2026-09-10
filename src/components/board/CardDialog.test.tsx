@@ -154,6 +154,49 @@ describe("CardDialog due dates", () => {
   });
 });
 
+describe("CardDialog cover", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("applies a gradient cover and renders it on the card", async () => {
+    const user = userEvent.setup();
+    const dialog = await openCardDialog("Design the new onboarding flow");
+
+    // The trigger starts as a placeholder…
+    expect(within(dialog).getByTestId("cover-trigger")).toHaveTextContent(
+      "Set cover",
+    );
+
+    // …picking a gradient applies it at once.
+    await user.click(within(dialog).getByTestId("cover-trigger"));
+    await user.click(await screen.findByRole("radio", { name: "Sunset" }));
+
+    // The gradient cover band appears on the card behind the dialog…
+    await waitFor(() => {
+      expect(
+        screen.getAllByTestId("card-cover").some(
+          (el) => el.getAttribute("data-cover-type") === "gradient",
+        ),
+      ).toBe(true);
+    });
+
+    // …and the trigger switches to the "change" state.
+    expect(within(dialog).getByTestId("cover-trigger")).toHaveTextContent(
+      "Change cover",
+    );
+
+    // Removing clears the cover.
+    await user.click(screen.getByTestId("cover-remove"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("card-cover")).not.toBeInTheDocument();
+    });
+    expect(within(dialog).getByTestId("cover-trigger")).toHaveTextContent(
+      "Set cover",
+    );
+  });
+});
+
 describe("CardDialog checklists", () => {
   beforeEach(() => {
     localStorage.clear();
