@@ -83,6 +83,18 @@ export function formatDate(timestamp: number, lang: string): string {
   }
 }
 
+/** Locale-aware short date-only formatter, e.g. "10 февр." — for badges. */
+export function formatDateOnly(timestamp: number, lang: string): string {
+  try {
+    return new Date(timestamp).toLocaleDateString(
+      lang.startsWith("ru") ? "ru-RU" : "en-US",
+      { day: "numeric", month: "short" },
+    );
+  } catch {
+    return new Date(timestamp).toLocaleDateString();
+  }
+}
+
 // Typed message keys — derived from the EN catalog (the source of truth for
 // key names); tsc then rejects unknown/misspelled keys everywhere. Plural
 // suffix keys (_one/_few/_many/_other) don't exist in code: you always call

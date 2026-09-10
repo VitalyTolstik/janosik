@@ -107,6 +107,8 @@ export interface Card {
   description?: string;
   /** Optional subtask checklists. Omitted (not empty) when unset. */
   checklists?: Checklist[];
+  /** Optional deadline as a Unix timestamp (ms). Omitted when unset. */
+  dueDate?: number;
   /** References to labels defined on the board; empty when unlabeled. */
   labelIds: string[];
   createdAt: number;

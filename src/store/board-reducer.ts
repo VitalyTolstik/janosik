@@ -146,6 +146,13 @@ export interface DeleteChecklistItemAction {
   itemId: string;
 }
 
+export interface SetCardDueDateAction {
+  type: "SET_CARD_DUE_DATE";
+  cardId: string;
+  /** Unix timestamp (ms), or `undefined` to clear the due date. */
+  dueDate?: number;
+}
+
 export interface MoveCardAction {
   type: "MOVE_CARD";
   cardId: string;
@@ -184,6 +191,7 @@ export type BoardAction =
   | ToggleChecklistItemAction
   | RenameChecklistItemAction
   | DeleteChecklistItemAction
+  | SetCardDueDateAction
   | MoveCardAction
   | MoveColumnAction
   | RestoreBoardAction
@@ -495,6 +503,31 @@ function deleteChecklistItem(
   );
 }
 
+/** Set (or clear) a card's due date — `undefined` drops the field entirely. */
+function setCardDueDate(board: Board, action: SetCardDueDateAction): Board {
+  const target = board.cards[action.cardId];
+  if (!target) return board;
+  const dueDate =
+    action.dueDate !== undefined && Number.isFinite(action.dueDate)
+      ? action.dueDate
+      : undefined;
+  if (dueDate === target.dueDate) return board;
+  const nextCard: Card = { ...target, updatedAt: Date.now() };
+  if (dueDate === undefined) {
+    // Drop the field entirely (no `dueDate: undefined` key left behind).
+    delete nextCard.dueDate;
+  } else {
+    nextCard.dueDate = dueDate;
+  }
+  return {
+    ...board,
+    cards: {
+      ...board.cards,
+      [action.cardId]: nextCard,
+    },
+  };
+}
+
 /** Move a card between (or within) columns, inserting at `toIndex`. */
 function moveCard(board: Board, action: MoveCardAction): Board {
   if (!board.cards[action.cardId]) return board;
@@ -613,6 +646,10 @@ export function boardReducer(
     case "DELETE_CHECKLIST_ITEM": {
       const next = deleteChecklistItem(board, action);
       return next ? commit(state, next) : state;
+    }
+    case "SET_CARD_DUE_DATE": {
+      const next = setCardDueDate(board, action);
+      return next === board ? state : commit(state, next);
     }
     case "MOVE_CARD": {
       const next = moveCard(board, action);
