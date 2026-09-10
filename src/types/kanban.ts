@@ -109,10 +109,87 @@ export interface Card {
   checklists?: Checklist[];
   /** Optional deadline as a Unix timestamp (ms). Omitted when unset. */
   dueDate?: number;
+  /** Optional decorative cover. Omitted when unset. */
+  cover?: CardCover;
   /** References to labels defined on the board; empty when unlabeled. */
   labelIds: string[];
   createdAt: number;
   updatedAt: number;
+}
+
+/**
+ * Card cover palette — solid colors reuse the label token hues (subset,
+ * minus `plain`/retired `amber` which are reserved for labels).
+ */
+export const COVER_COLORS = [
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "teal",
+  "cyan",
+  "blue",
+  "indigo",
+  "brand",
+  "fuchsia",
+  "pink",
+  "slate",
+] as const;
+
+export type CoverColor = (typeof COVER_COLORS)[number];
+
+/**
+ * Named gradient presets (Trello-style "cover art") — CSS values are
+ * composed from theme tokens, so every gradient adapts to both themes.
+ */
+export const COVER_GRADIENTS = [
+  "sunset",
+  "ocean",
+  "forest",
+  "candy",
+  "grape",
+  "steel",
+] as const;
+
+export type CoverGradient = (typeof COVER_GRADIENTS)[number];
+
+export type CardCover =
+  | { type: "color"; value: CoverColor }
+  | { type: "gradient"; value: CoverGradient };
+
+/** Solid token color behind a cover (the strip / gradient endpoint). */
+export const COVER_COLOR_CSS: Record<CoverColor, string> = {
+  red: "var(--danger)",
+  orange: "var(--orange)",
+  yellow: "var(--yellow)",
+  green: "var(--success)",
+  teal: "var(--teal)",
+  cyan: "var(--secondary)",
+  blue: "var(--blue)",
+  indigo: "var(--indigo)",
+  brand: "var(--primary)",
+  fuchsia: "var(--fuchsia)",
+  pink: "var(--pink)",
+  slate: "var(--slate)",
+};
+
+/** Gradient presets as CSS backgrounds (135° diagonal, token endpoints).
+ *  Three stops with a clear hue shift so the gradient reads even at the
+ *  strip's 6px height. */
+export const COVER_GRADIENT_CSS: Record<CoverGradient, string> = {
+  sunset: "linear-gradient(135deg, var(--yellow), var(--orange) 50%, var(--danger))",
+  ocean: "linear-gradient(135deg, var(--secondary), var(--blue) 50%, var(--indigo))",
+  forest: "linear-gradient(135deg, var(--success), var(--teal) 50%, var(--secondary))",
+  candy: "linear-gradient(135deg, var(--pink), var(--fuchsia) 50%, var(--primary))",
+  grape: "linear-gradient(135deg, var(--indigo), var(--primary) 50%, var(--fuchsia))",
+  steel: "linear-gradient(135deg, var(--slate), var(--muted-foreground) 50%, var(--secondary))",
+};
+
+/** CSS background for any cover shape (solid color or gradient). */
+export function coverBackground(cover: CardCover): string {
+  return cover.type === "color"
+    ? COVER_COLOR_CSS[cover.value]
+    : COVER_GRADIENT_CSS[cover.value];
 }
 
 export interface Column {

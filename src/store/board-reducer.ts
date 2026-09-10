@@ -1,8 +1,13 @@
 import type {
   Board,
   Card,
+  CardCover,
   Checklist,
   Label,
+} from "@/types/kanban";
+import {
+  COVER_COLORS,
+  COVER_GRADIENTS,
 } from "@/types/kanban";
 import { createId } from "@/utils/id";
 import { createSeedBoard } from "@/store/seed-data";
@@ -153,6 +158,13 @@ export interface SetCardDueDateAction {
   dueDate?: number;
 }
 
+export interface SetCardCoverAction {
+  type: "SET_CARD_COVER";
+  cardId: string;
+  /** New cover, or `undefined` to remove it. */
+  cover?: CardCover;
+}
+
 export interface MoveCardAction {
   type: "MOVE_CARD";
   cardId: string;
@@ -192,6 +204,7 @@ export type BoardAction =
   | RenameChecklistItemAction
   | DeleteChecklistItemAction
   | SetCardDueDateAction
+  | SetCardCoverAction
   | MoveCardAction
   | MoveColumnAction
   | RestoreBoardAction
@@ -528,6 +541,52 @@ function setCardDueDate(board: Board, action: SetCardDueDateAction): Board {
   };
 }
 
+/** A cover is valid when its type/value pair is one the app can render. */
+function isValidCover(cover: unknown): cover is CardCover {
+  if (typeof cover !== "object" || cover === null) return false;
+  const c = cover as Partial<CardCover>;
+  if (c.type === "color") {
+    return (COVER_COLORS as readonly string[]).includes(c.value as string);
+  }
+  if (c.type === "gradient") {
+    return (COVER_GRADIENTS as readonly string[]).includes(c.value as string);
+  }
+  return false;
+}
+
+/** Structural equality for covers (cheap, avoids a needless commit). */
+function isSameCover(a: CardCover | undefined, b: CardCover | undefined): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
+  return a.type === b.type && a.value === b.value;
+}
+
+/**
+ * Set (or clear) a card's cover — `undefined` drops the field entirely.
+ * A malformed `cover` (wrong type/value) is treated as removal so a
+ * hand-edited import cannot poison the render.
+ */
+function setCardCover(board: Board, action: SetCardCoverAction): Board {
+  const target = board.cards[action.cardId];
+  if (!target) return board;
+  const cover = isValidCover(action.cover) ? action.cover : undefined;
+  if (isSameCover(cover, target.cover)) return board;
+  const nextCard: Card = { ...target, updatedAt: Date.now() };
+  if (cover === undefined) {
+    // Drop the field entirely (no `cover: undefined` key left behind).
+    delete nextCard.cover;
+  } else {
+    nextCard.cover = cover;
+  }
+  return {
+    ...board,
+    cards: {
+      ...board.cards,
+      [action.cardId]: nextCard,
+    },
+  };
+}
+
 /** Move a card between (or within) columns, inserting at `toIndex`. */
 function moveCard(board: Board, action: MoveCardAction): Board {
   if (!board.cards[action.cardId]) return board;
@@ -649,6 +708,10 @@ export function boardReducer(
     }
     case "SET_CARD_DUE_DATE": {
       const next = setCardDueDate(board, action);
+      return next === board ? state : commit(state, next);
+    }
+    case "SET_CARD_COVER": {
+      const next = setCardCover(board, action);
       return next === board ? state : commit(state, next);
     }
     case "MOVE_CARD": {

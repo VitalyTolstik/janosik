@@ -4,7 +4,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { useI18n, formatDate, formatDateOnly, formatTime } from "@/i18n";
 import { dueStatus, type DueStatus } from "@/utils/due-date";
-import { LABEL_COLOR_CHIP, type Card, type Label } from "@/types/kanban";
+import { LABEL_COLOR_CHIP, coverBackground, type Card, type Label } from "@/types/kanban";
 
 interface CardItemProps {
   card: Card;
@@ -47,10 +47,22 @@ export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
     <article
       onClick={onClick}
       className={cn(
-        "group animate-card-in cursor-pointer rounded-lg border border-border/70 bg-card px-3 py-2.5 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
+        "group animate-card-in cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2.5 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
         isDragging && "opacity-40",
       )}
     >
+      {/* Cover: a slim top strip — same height for colors and gradients
+          (matches the label chip row scale). Negative margins bleed it into
+          the card padding; the card clips it (overflow-hidden). */}
+      {card.cover ? (
+        <div
+          aria-hidden
+          data-testid="card-cover"
+          data-cover-type={card.cover.type}
+          className="-mx-3 -mt-2.5 mb-2.5 h-1.5 w-[calc(100%+1.5rem)]"
+          style={{ background: coverBackground(card.cover) }}
+        />
+      ) : null}
       {labels.length > 0 ? (
         <div className="mb-1.5 flex flex-wrap items-center gap-1">
           {labels.map((label) => (
