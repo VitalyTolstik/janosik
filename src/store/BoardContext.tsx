@@ -78,6 +78,30 @@ interface BoardContextValue {
   renameLabel: (labelId: string, name: string) => void;
   setLabelColor: (labelId: string, color: Label["color"]) => void;
   deleteLabel: (labelId: string) => void;
+  addChecklist: (cardId: string, title: string) => void;
+  renameChecklist: (cardId: string, checklistId: string, title: string) => void;
+  deleteChecklist: (cardId: string, checklistId: string) => void;
+  addChecklistItem: (
+    cardId: string,
+    checklistId: string,
+    text: string,
+  ) => void;
+  toggleChecklistItem: (
+    cardId: string,
+    checklistId: string,
+    itemId: string,
+  ) => void;
+  renameChecklistItem: (
+    cardId: string,
+    checklistId: string,
+    itemId: string,
+    text: string,
+  ) => void;
+  deleteChecklistItem: (
+    cardId: string,
+    checklistId: string,
+    itemId: string,
+  ) => void;
   moveCard: (
     cardId: string,
     fromColumnId: string,
@@ -259,6 +283,13 @@ function createBoardActions(
   | "renameLabel"
   | "setLabelColor"
   | "deleteLabel"
+  | "addChecklist"
+  | "renameChecklist"
+  | "deleteChecklist"
+  | "addChecklistItem"
+  | "toggleChecklistItem"
+  | "renameChecklistItem"
+  | "deleteChecklistItem"
   | "moveCard"
   | "moveColumn"
 > {
@@ -283,6 +314,32 @@ function createBoardActions(
       dispatch({ type: "SET_LABEL_COLOR", labelId, color }),
     deleteLabel: (labelId: string) =>
       dispatch({ type: "DELETE_LABEL", labelId }),
+    addChecklist: (cardId: string, title: string) =>
+      dispatch({ type: "ADD_CHECKLIST", cardId, title }),
+    renameChecklist: (cardId: string, checklistId: string, title: string) =>
+      dispatch({ type: "RENAME_CHECKLIST", cardId, checklistId, title }),
+    deleteChecklist: (cardId: string, checklistId: string) =>
+      dispatch({ type: "DELETE_CHECKLIST", cardId, checklistId }),
+    addChecklistItem: (cardId: string, checklistId: string, text: string) =>
+      dispatch({ type: "ADD_CHECKLIST_ITEM", cardId, checklistId, text }),
+    toggleChecklistItem: (
+      cardId: string,
+      checklistId: string,
+      itemId: string,
+    ) => dispatch({ type: "TOGGLE_CHECKLIST_ITEM", cardId, checklistId, itemId }),
+    renameChecklistItem: (
+      cardId: string,
+      checklistId: string,
+      itemId: string,
+      text: string,
+    ) =>
+      dispatch({ type: "RENAME_CHECKLIST_ITEM", cardId, checklistId, itemId, text }),
+    deleteChecklistItem: (
+      cardId: string,
+      checklistId: string,
+      itemId: string,
+    ) =>
+      dispatch({ type: "DELETE_CHECKLIST_ITEM", cardId, checklistId, itemId }),
     moveCard: (
       cardId: string,
       fromColumnId: string,

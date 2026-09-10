@@ -1,4 +1,4 @@
-import { AlignLeft } from "lucide-react";
+import { AlignLeft, ListTodo } from "lucide-react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -27,6 +27,10 @@ interface CardItemProps {
 export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
   const { t } = useI18n();
   const hasDescription = Boolean(card.description?.trim());
+  // Checklist progress summed across all of the card's checklists.
+  const items = (card.checklists ?? []).flatMap((c) => c.items);
+  const done = items.filter((item) => item.done).length;
+  const total = items.length;
 
   return (
     <article
@@ -58,19 +62,42 @@ export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
       <p className="break-words text-sm leading-snug text-foreground/90">
         {card.title}
       </p>
-      {hasDescription ? (
-        <div className="mt-1.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                className="inline-flex h-5 items-center rounded-md border border-border/60 bg-muted/50 px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary"
-                data-testid="card-description-badge"
-              >
-                <AlignLeft className="h-3.5 w-3.5" aria-hidden />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>{t("card.hasDescription")}</TooltipContent>
-          </Tooltip>
+      {hasDescription || total > 0 ? (
+        <div className="mt-1.5 flex items-center gap-1.5">
+          {total > 0 ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className={cn(
+                    "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
+                    done === total
+                      ? "border-success/40 bg-success/10 text-success"
+                      : "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-primary",
+                  )}
+                  data-testid="card-checklist-badge"
+                >
+                  <ListTodo className="h-3.5 w-3.5" aria-hidden />
+                  {done}/{total}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t("checklist.badgeTooltip", { done, total })}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+          {hasDescription ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className="inline-flex h-5 items-center rounded-md border border-border/60 bg-muted/50 px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary"
+                  data-testid="card-description-badge"
+                >
+                  <AlignLeft className="h-3.5 w-3.5" aria-hidden />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{t("card.hasDescription")}</TooltipContent>
+            </Tooltip>
+          ) : null}
         </div>
       ) : null}
     </article>

@@ -68,4 +68,75 @@ describe("normalizeBoards", () => {
     const [next] = normalizeBoards([current]);
     expect(next).toBe(current);
   });
+
+  it("keeps well-formed checklists as-is", () => {
+    const checklists = [
+      {
+        id: "cl-1",
+        title: "Steps",
+        items: [{ id: "i1", text: "Do it", done: true }],
+      },
+    ];
+    const current = {
+      id: "b",
+      title: "B",
+      columns: [],
+      cards: { c1: card({ labelIds: [], checklists }) },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+
+    const [next] = normalizeBoards([current]);
+    expect(next).toBe(current);
+    expect(next.cards["c1"].checklists).toEqual(checklists);
+  });
+
+  it("drops a malformed checklists field (not an array)", () => {
+    const legacy = card({ labelIds: ["x"], checklists: "garbage" });
+    const board = {
+      id: "b",
+      title: "B",
+      columns: [],
+      cards: { c1: legacy },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+
+    const [next] = normalizeBoards([board]);
+    expect(next.cards["c1"].checklists).toBeUndefined();
+  });
+
+  it("filters malformed checklist entries and items", () => {
+    const legacy = card({
+      labelIds: ["x"],
+      checklists: [
+        {
+          id: "cl-1",
+          title: "Steps",
+          items: [{ id: "i1", text: "Keep", done: false }, "garbage", null],
+        },
+        "garbage",
+        { id: "cl-2", title: "Empty", items: [] },
+        { title: "no id", items: [] },
+      ],
+    });
+    const board = {
+      id: "b",
+      title: "B",
+      columns: [],
+      cards: { c1: legacy },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+
+    const [next] = normalizeBoards([board]);
+    expect(next.cards["c1"].checklists).toEqual([
+      { id: "cl-1", title: "Steps", items: [{ id: "i1", text: "Keep", done: false }] },
+      // Empty checklists are valid user data — only malformed entries drop.
+      { id: "cl-2", title: "Empty", items: [] },
+    ]);
+  });
 });

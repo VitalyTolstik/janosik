@@ -1,4 +1,9 @@
-import type { Board, Card, Label } from "@/types/kanban";
+import type {
+  Board,
+  Card,
+  Checklist,
+  Label,
+} from "@/types/kanban";
 import { createId } from "@/utils/id";
 import { createSeedBoard } from "@/store/seed-data";
 
@@ -93,6 +98,54 @@ export interface DeleteLabelAction {
   labelId: string;
 }
 
+export interface AddChecklistAction {
+  type: "ADD_CHECKLIST";
+  cardId: string;
+  title: string;
+}
+
+export interface RenameChecklistAction {
+  type: "RENAME_CHECKLIST";
+  cardId: string;
+  checklistId: string;
+  title: string;
+}
+
+export interface DeleteChecklistAction {
+  type: "DELETE_CHECKLIST";
+  cardId: string;
+  checklistId: string;
+}
+
+export interface AddChecklistItemAction {
+  type: "ADD_CHECKLIST_ITEM";
+  cardId: string;
+  checklistId: string;
+  text: string;
+}
+
+export interface ToggleChecklistItemAction {
+  type: "TOGGLE_CHECKLIST_ITEM";
+  cardId: string;
+  checklistId: string;
+  itemId: string;
+}
+
+export interface RenameChecklistItemAction {
+  type: "RENAME_CHECKLIST_ITEM";
+  cardId: string;
+  checklistId: string;
+  itemId: string;
+  text: string;
+}
+
+export interface DeleteChecklistItemAction {
+  type: "DELETE_CHECKLIST_ITEM";
+  cardId: string;
+  checklistId: string;
+  itemId: string;
+}
+
 export interface MoveCardAction {
   type: "MOVE_CARD";
   cardId: string;
@@ -124,6 +177,13 @@ export type BoardAction =
   | RenameLabelAction
   | SetLabelColorAction
   | DeleteLabelAction
+  | AddChecklistAction
+  | RenameChecklistAction
+  | DeleteChecklistAction
+  | AddChecklistItemAction
+  | ToggleChecklistItemAction
+  | RenameChecklistItemAction
+  | DeleteChecklistItemAction
   | MoveCardAction
   | MoveColumnAction
   | RestoreBoardAction
@@ -304,6 +364,137 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+/**
+ * Apply `fn` to a card's checklists and return a new board with the updated
+ * card (and a bumped `updatedAt`); `null` when the card doesn't exist.
+ * Callers turn a `null`/unchanged result into a reducer no-op.
+ */
+function patchChecklists(
+  board: Board,
+  cardId: string,
+  fn: (checklists: Checklist[]) => Checklist[] | null,
+): Board | null {
+  const target = board.cards[cardId];
+  if (!target) return null;
+  const checklists = fn(target.checklists ?? []);
+  if (checklists === null || checklists === (target.checklists ?? [])) {
+    return null;
+  }
+  // An empty list means "no checklists" — drop the field entirely.
+  const next = checklists.length > 0 ? checklists : undefined;
+  return {
+    ...board,
+    cards: {
+      ...board.cards,
+      [cardId]: { ...target, checklists: next, updatedAt: Date.now() },
+    },
+  };
+}
+
+/** Map over a checklist's items, or return `null` when it doesn't exist. */
+function mapChecklistItems(
+  checklists: Checklist[],
+  checklistId: string,
+  fn: (items: Checklist["items"]) => Checklist["items"] | null,
+): Checklist[] | null {
+  let changed = false;
+  const next = checklists.map((checklist) => {
+    if (checklist.id !== checklistId) return checklist;
+    const items = fn(checklist.items);
+    if (items === null || items === checklist.items) return checklist;
+    changed = true;
+    return { ...checklist, items };
+  });
+  return changed ? next : null;
+}
+
+function addChecklist(board: Board, action: AddChecklistAction): Board | null {
+  const title = action.title.trim();
+  if (!title) return null;
+  return patchChecklists(board, action.cardId, (checklists) => [
+    ...checklists,
+    { id: createId(), title, items: [] },
+  ]);
+}
+
+function renameChecklist(board: Board, action: RenameChecklistAction): Board | null {
+  const title = action.title.trim();
+  return patchChecklists(board, action.cardId, (checklists) => {
+    if (!title) return null;
+    const next = checklists.map((checklist) =>
+      checklist.id === action.checklistId
+        ? { ...checklist, title }
+        : checklist,
+    );
+    return next.some((c, i) => c !== checklists[i]) ? next : null;
+  });
+}
+
+function deleteChecklist(board: Board, action: DeleteChecklistAction): Board | null {
+  return patchChecklists(board, action.cardId, (checklists) =>
+    checklists.some((c) => c.id === action.checklistId)
+      ? checklists.filter((c) => c.id !== action.checklistId)
+      : null,
+  );
+}
+
+function addChecklistItem(
+  board: Board,
+  action: AddChecklistItemAction,
+): Board | null {
+  const text = action.text.trim();
+  if (!text) return null;
+  return patchChecklists(board, action.cardId, (checklists) =>
+    mapChecklistItems(checklists, action.checklistId, (items) => [
+      ...items,
+      { id: createId(), text, done: false },
+    ]),
+  );
+}
+
+function toggleChecklistItem(
+  board: Board,
+  action: ToggleChecklistItemAction,
+): Board | null {
+  return patchChecklists(board, action.cardId, (checklists) =>
+    mapChecklistItems(checklists, action.checklistId, (items) => {
+      const next = items.map((item) =>
+        item.id === action.itemId ? { ...item, done: !item.done } : item,
+      );
+      return next.some((item, i) => item !== items[i]) ? next : null;
+    }),
+  );
+}
+
+function renameChecklistItem(
+  board: Board,
+  action: RenameChecklistItemAction,
+): Board | null {
+  const text = action.text.trim();
+  if (!text) return null;
+  return patchChecklists(board, action.cardId, (checklists) =>
+    mapChecklistItems(checklists, action.checklistId, (items) => {
+      const next = items.map((item) =>
+        item.id === action.itemId ? { ...item, text } : item,
+      );
+      return next.some((item, i) => item !== items[i]) ? next : null;
+    }),
+  );
+}
+
+function deleteChecklistItem(
+  board: Board,
+  action: DeleteChecklistItemAction,
+): Board | null {
+  return patchChecklists(board, action.cardId, (checklists) =>
+    mapChecklistItems(checklists, action.checklistId, (items) =>
+      items.some((item) => item.id === action.itemId)
+        ? items.filter((item) => item.id !== action.itemId)
+        : null,
+    ),
+  );
+}
+
 /** Move a card between (or within) columns, inserting at `toIndex`. */
 function moveCard(board: Board, action: MoveCardAction): Board {
   if (!board.cards[action.cardId]) return board;
@@ -394,6 +585,34 @@ export function boardReducer(
     case "DELETE_LABEL": {
       const next = deleteLabel(board, action);
       return next === board ? state : commit(state, next);
+    }
+    case "ADD_CHECKLIST": {
+      const next = addChecklist(board, action);
+      return next ? commit(state, next) : state;
+    }
+    case "RENAME_CHECKLIST": {
+      const next = renameChecklist(board, action);
+      return next ? commit(state, next) : state;
+    }
+    case "DELETE_CHECKLIST": {
+      const next = deleteChecklist(board, action);
+      return next ? commit(state, next) : state;
+    }
+    case "ADD_CHECKLIST_ITEM": {
+      const next = addChecklistItem(board, action);
+      return next ? commit(state, next) : state;
+    }
+    case "TOGGLE_CHECKLIST_ITEM": {
+      const next = toggleChecklistItem(board, action);
+      return next ? commit(state, next) : state;
+    }
+    case "RENAME_CHECKLIST_ITEM": {
+      const next = renameChecklistItem(board, action);
+      return next ? commit(state, next) : state;
+    }
+    case "DELETE_CHECKLIST_ITEM": {
+      const next = deleteChecklistItem(board, action);
+      return next ? commit(state, next) : state;
     }
     case "MOVE_CARD": {
       const next = moveCard(board, action);
