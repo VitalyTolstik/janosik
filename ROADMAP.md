@@ -190,9 +190,16 @@ only mdxeditor from TASK 2
     плюс собственная санитизация `sanitizeMarkdownForImport`: у image-плагина
     MDXEditor есть `innerHTML`-сток (`MdastImageVisitor` для HTML-`<img>`,
     подтверждено PoC — `<img src=x onerror=…>` исполняется даже с
-    `suppressHtmlProcessing`), а прочий сырой HTML роняет импорт целиком;
-    HTML-теги вырезаются до подачи в редактор (код-блоки и inline-код
-    не трогаются); ссылки дополнительно защищены `@lexical/link`
+    `suppressHtmlProcessing`), а прочий сырой HTML роняет импорт целиком.
+    Санитайзер вырезает сырой HTML до подачи в редактор; инвариант —
+    «в AST после санитизации нет ни одного `html`-узла» — проверяется
+    дифференциально против настоящего remark-парсера: регрессионные
+    обходы (backtick в info-строке fence, пары бэктиков, escaped-бэктики,
+    продолжение html-блока) + 10 000 детерминированных fuzz-комбинаций;
+    HTML в fenced-блоках сохраняется (там он для remark — инертный текст),
+    в inline-коде — вырезается (fail-safe: точное зеркало парсинга
+    бэктиков в micromark невоспроизводимо, а ошибочная «защита» экранирует
+    живой тег); ссылки дополнительно защищены `@lexical/link`
     (протокол-allowlist, `javascript:` → `about:blank`);
   - иконки заменены на lucide через официальный проп `iconComponentFor`;
   - i18n: проп `translation` завязан на каталоги `editor.*` (en/ru);
