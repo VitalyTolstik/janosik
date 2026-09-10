@@ -427,3 +427,371 @@ html.__janosik-ready *::after {
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * MDXEditor — WYSIWYG card description editor (TASK-2).
+ *
+ * The `.janosik-mdx` companion class doubles selector specificity so these
+ * overrides always win over the library stylesheet, no matter the import
+ * order. All colors come from the design tokens above, so the editor (and
+ * its toolbar, popups, dialogs) follows the dark/light theme automatically.
+ * Popups (link dialog, select dropdowns) portal to document.body — they are
+ * themed and raised via the `body > .mdxeditor-popup-container` group below
+ * (a transform-centered dialog would distort fixed positioning, so the
+ * popups must live outside it; Radix layering keeps them above the dialog).
+ * Icons are lucide via the official `iconComponentFor` prop; only their
+ * geometry is tuned here.
+ * -------------------------------------------------------------------------- */
+.mdxeditor.janosik-mdx,
+body > .mdxeditor-popup-container {
+  /* Accent — the brand violet, matched to the Radix aliasing steps
+   * MDXEditor expects (bg ramp for toggles, solid for task checkboxes). */
+  --accentBase: transparent;
+  --accentBgSubtle: color-mix(in oklab, var(--primary) 12%, transparent);
+  --accentBg: color-mix(in oklab, var(--primary) 20%, transparent);
+  --accentBgHover: color-mix(in oklab, var(--primary) 28%, transparent);
+  --accentBgActive: color-mix(in oklab, var(--primary) 34%, transparent);
+  --accentLine: color-mix(in oklab, var(--primary) 38%, transparent);
+  --accentBorder: color-mix(in oklab, var(--primary) 45%, transparent);
+  --accentBorderHover: var(--primary);
+  --accentSolid: var(--primary);
+  --accentSolidHover: color-mix(in oklab, var(--primary) 85%, #fff);
+  --accentText: color-mix(in oklab, var(--primary) 60%, #fff);
+  --accentTextContrast: #ffffff;
+
+  /* Base — app surfaces, borders and text. */
+  --basePageBg: var(--surface);
+  --baseBase: transparent;
+  --baseBgSubtle: var(--surface);
+  --baseBg: var(--surface);
+  --baseBgHover: var(--hover);
+  --baseBgActive: var(--hover);
+  --baseLine: var(--border);
+  --baseBorder: var(--border);
+  --baseBorderHover: color-mix(in oklab, var(--foreground) 30%, transparent);
+  --baseSolid: var(--muted-foreground);
+  --baseSolidHover: var(--foreground);
+  --baseText: var(--muted-foreground);
+  --baseTextContrast: var(--foreground);
+
+  --font-body: inherit;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+
+  font-family: inherit;
+  color: var(--foreground);
+  background: transparent;
+}
+
+.light .mdxeditor.janosik-mdx,
+.light body > .mdxeditor-popup-container {
+  /* In light mode the violet is dark enough to read as text directly. */
+  --accentText: var(--primary);
+  --accentSolidHover: color-mix(in oklab, var(--primary) 90%, #000);
+}
+
+/* Popups live at body level: above the Radix dialog (z-50) and themed. */
+body > .mdxeditor-popup-container {
+  z-index: 60;
+  position: relative;
+}
+
+/* Link dialog popup — a floating "inspector" card. */
+body > .mdxeditor-popup-container [class*="linkDialogPopoverContent"],
+body > .mdxeditor-popup-container [class*="dialogContent"] {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--popover);
+  box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.45);
+  padding: 6px;
+}
+body > .mdxeditor-popup-container [class*="dialogTitle"] {
+  color: var(--foreground);
+}
+/* Text fields inside editor popups (link URL / anchor text). */
+body > .mdxeditor-popup-container [class*="textInput"] {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--hover);
+  color: var(--foreground);
+}
+body > .mdxeditor-popup-container [class*="textInput"]:focus {
+  border-color: color-mix(in oklab, var(--primary) 55%, var(--border));
+}
+body > .mdxeditor-popup-container [class*="textInput"]::placeholder {
+  color: var(--muted-foreground);
+}
+/* Dialog action buttons — Save / Cancel. */
+body > .mdxeditor-popup-container [class*="primaryButton"] {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: var(--radius-sm);
+}
+body > .mdxeditor-popup-container [class*="primaryButton"]:hover {
+  background: color-mix(in oklab, var(--primary) 88%, #fff);
+}
+body > .mdxeditor-popup-container [class*="secondaryButton"] {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--hover);
+  color: var(--foreground);
+}
+body > .mdxeditor-popup-container [class*="secondaryButton"]:hover {
+  background: var(--accentBg);
+  color: var(--accentText);
+}
+
+/* Block-type dropdown — an elevated menu floating over the dialog. */
+body > .mdxeditor-popup-container .mdxeditor-select-content {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--popover);
+  box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.5);
+  padding: 4px;
+}
+body > .mdxeditor-popup-container [role="option"] {
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  color: var(--foreground);
+}
+body > .mdxeditor-popup-container [role="option"][data-highlighted] {
+  background: var(--hover);
+}
+body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
+  background: var(--accentBg);
+  color: var(--accentText);
+}
+
+/* --- Edit mode chrome: a premium "field" around the whole editor. --- */
+.mdxeditor.janosik-mdx.janosik-mdx-edit {
+  font-size: 0.925rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+.mdxeditor.janosik-mdx.janosik-mdx-edit:focus-within {
+  border-color: color-mix(in oklab, var(--primary) 55%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary) 16%, transparent);
+}
+
+/* Toolbar: transparent strip over the surface with hairline separators. */
+.mdxeditor.janosik-mdx .janosik-mdx-toolbar {
+  gap: 1px;
+  padding: 5px 8px;
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--foreground);
+}
+.mdxeditor.janosik-mdx .janosik-mdx-toolbar div[role="separator"] {
+  height: 16px;
+  margin: 0 4px;
+  border-color: var(--border);
+}
+/* Active formatting toggles glow in the accent color. */
+.mdxeditor.janosik-mdx .janosik-mdx-toolbar [data-state="on"] {
+  color: var(--accentText);
+  background-color: var(--accentBg);
+  border-radius: var(--radius-sm);
+}
+/* The block-type select trigger — a quiet combobox inside the toolbar. */
+.mdxeditor.janosik-mdx .janosik-mdx-toolbar [role="combobox"] {
+  width: 8.75rem;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--hover);
+  color: var(--foreground);
+  font-size: var(--text-xs);
+}
+.mdxeditor.janosik-mdx .janosik-mdx-toolbar [role="combobox"]:hover {
+  border-color: var(--baseBorderHover);
+}
+
+/* Lucide icons: crisp 1em glyphs (toolbar inherits ~14px from the root). */
+.mdxeditor.janosik-mdx svg.lucide {
+  width: 1em;
+  height: 1em;
+}
+
+/* --- Content typography (Tailwind preflight zeroes it all out). --- */
+.mdxeditor.janosik-mdx .janosik-md-content {
+  min-height: 190px;
+  padding: 12px 14px 16px;
+  font-size: 0.925rem;
+  line-height: 1.65;
+  color: var(--foreground);
+  caret-color: var(--primary);
+  scroll-padding: 12px;
+}
+.mdxeditor.janosik-mdx .janosik-md-content > *:first-child {
+  margin-top: 0;
+}
+.mdxeditor.janosik-mdx .janosik-md-content h1,
+.mdxeditor.janosik-mdx .janosik-md-content h2,
+.mdxeditor.janosik-mdx .janosik-md-content h3,
+.mdxeditor.janosik-mdx .janosik-md-content h4,
+.mdxeditor.janosik-mdx .janosik-md-content h5,
+.mdxeditor.janosik-mdx .janosik-md-content h6 {
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+.mdxeditor.janosik-mdx .janosik-md-content h1 {
+  margin: 1rem 0 0.4rem;
+  font-size: 1.375rem;
+}
+.mdxeditor.janosik-mdx .janosik-md-content h2 {
+  margin: 0.9rem 0 0.35rem;
+  font-size: 1.15rem;
+}
+.mdxeditor.janosik-mdx .janosik-md-content h3 {
+  margin: 0.8rem 0 0.3rem;
+  font-size: 1rem;
+}
+.mdxeditor.janosik-mdx .janosik-md-content h4,
+.mdxeditor.janosik-mdx .janosik-md-content h5,
+.mdxeditor.janosik-mdx .janosik-md-content h6 {
+  margin: 0.7rem 0 0.25rem;
+  font-size: 0.925rem;
+}
+.mdxeditor.janosik-mdx .janosik-md-content p {
+  margin: 0.45rem 0;
+}
+.mdxeditor.janosik-mdx .janosik-md-content a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--primary) 40%, transparent);
+  text-underline-offset: 2px;
+}
+.mdxeditor.janosik-mdx .janosik-md-content a:hover {
+  text-decoration-color: var(--primary);
+}
+.mdxeditor.janosik-mdx .janosik-md-content ul {
+  margin: 0.45rem 0;
+  padding-left: 1.5rem;
+  list-style: disc;
+}
+.mdxeditor.janosik-mdx .janosik-md-content ol {
+  margin: 0.45rem 0;
+  padding-left: 1.5rem;
+  list-style: decimal;
+}
+.mdxeditor.janosik-mdx .janosik-md-content li {
+  margin: 0.2rem 0;
+}
+.mdxeditor.janosik-mdx .janosik-md-content li::marker {
+  color: var(--muted-foreground);
+}
+/* Nested lists: the library renders them as a marker-less wrapper <li>
+ * around the nested <ul> — the markers come from the inner list itself. */
+.mdxeditor.janosik-mdx .janosik-md-content li[class*="nestedListItem"] > ul,
+.mdxeditor.janosik-mdx .janosik-md-content li[class*="nestedListItem"] > ol {
+  margin: 0.2rem 0;
+}
+/* Task-list items keep the library's custom checkbox (accent-colored). */
+.mdxeditor.janosik-mdx
+  .janosik-md-content
+  li[class*="listItemChecked"]:before,
+.mdxeditor.janosik-mdx
+  .janosik-md-content
+  li[class*="listItemUnchecked"]:before {
+  border-radius: 5px;
+}
+.mdxeditor.janosik-mdx .janosik-md-content code {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--hover);
+  padding: 0.08em 0.35em;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+.mdxeditor.janosik-mdx .janosik-md-content pre {
+  margin: 0.6rem 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--hover);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+.mdxeditor.janosik-mdx .janosik-md-content pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+.mdxeditor.janosik-mdx .janosik-md-content blockquote {
+  margin: 0.6rem 0;
+  border-left: 2px solid var(--primary);
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--primary) 5%, transparent);
+  padding: 2px 12px;
+  color: var(--muted-foreground);
+}
+.mdxeditor.janosik-mdx .janosik-md-content hr {
+  margin: 0.9rem 0;
+  border-color: var(--border);
+}
+.mdxeditor.janosik-mdx .janosik-md-content img {
+  display: block;
+  max-width: min(100%, 420px);
+  max-height: 260px;
+  margin: 0.6rem 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.mdxeditor.janosik-mdx .janosik-md-content table {
+  margin: 0.6rem 0;
+}
+.mdxeditor.janosik-mdx .janosik-md-content th,
+.mdxeditor.janosik-mdx .janosik-md-content td {
+  text-align: left;
+}
+.mdxeditor.janosik-mdx .janosik-md-content input[type="checkbox"] {
+  accent-color: var(--primary);
+}
+
+/* --- Card-face snippet: compact, three lines, soft fade-out. --- */
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content {
+  min-height: 0;
+  padding: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  max-height: calc(0.8125rem * 1.5 * 3);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
+}
+/* The heading ladder collapses to the snippet's compact scale. */
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content h1,
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content h2,
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content h3,
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content h4,
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content h5,
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content h6 {
+  margin: 0.15rem 0 0.1rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content p,
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content ul,
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content ol,
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content blockquote,
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content pre {
+  margin: 0.1rem 0;
+}
+/* Rich runs (code/bold/links) stay muted on the card face. */
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content a,
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content code {
+  color: inherit;
+}
+.mdxeditor.janosik-mdx.janosik-md-snippet .janosik-md-content img {
+  display: none;
+}
