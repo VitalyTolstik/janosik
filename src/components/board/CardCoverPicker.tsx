@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Check, Paintbrush, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -99,13 +100,14 @@ function GradientSwatch({
 export function CardCoverPicker({ cardId, cover }: CardCoverPickerProps) {
   const { setCardCover } = useBoard();
   const { t } = useI18n();
+  const [open, setOpen] = useState(false);
 
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-xs font-medium text-muted-foreground">
         {t("card.coverLabel")}
       </span>
-      <Popover>
+      <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button variant="outline" size="sm" data-testid="cover-trigger">
             {cover ? (
@@ -174,7 +176,10 @@ export function CardCoverPicker({ cardId, cover }: CardCoverPickerProps) {
               variant="ghost"
               size="sm"
               className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => setCardCover(cardId, undefined)}
+              onClick={() => {
+                setOpen(false);
+                setCardCover(cardId, undefined);
+              }}
               data-testid="cover-remove"
             >
               <X className="h-3.5 w-3.5" />
