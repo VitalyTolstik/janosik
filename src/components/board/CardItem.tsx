@@ -2,7 +2,7 @@ import { AlignLeft, CalendarClock, ListTodo } from "lucide-react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useI18n, formatDate, formatDateOnly } from "@/i18n";
+import { useI18n, formatDate, formatDateOnly, formatTime } from "@/i18n";
 import { dueStatus, type DueStatus } from "@/utils/due-date";
 import { LABEL_COLOR_CHIP, type Card, type Label } from "@/types/kanban";
 
@@ -36,6 +36,12 @@ export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
   // Due-date badge state: overdue (red) / due within 24h (yellow) / later.
   const hasDueDate = typeof card.dueDate === "number";
   const status = hasDueDate ? dueStatus(card.dueDate as number) : null;
+  const dueTime = hasDueDate
+    ? formatTime(
+        `${String(new Date(card.dueDate as number).getHours()).padStart(2, "0")}:${String(new Date(card.dueDate as number).getMinutes()).padStart(2, "0")}`,
+        lang,
+      )
+    : "";
 
   return (
     <article
@@ -87,6 +93,8 @@ export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
                 >
                   <CalendarClock className="h-3.5 w-3.5" aria-hidden />
                   {formatDateOnly(card.dueDate as number, lang)}
+                  {" · "}
+                  {dueTime}
                 </span>
               </TooltipTrigger>
               <TooltipContent>

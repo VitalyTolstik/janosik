@@ -95,6 +95,42 @@ export function formatDateOnly(timestamp: number, lang: string): string {
   }
 }
 
+/**
+ * Whether the locale conventionally reads clocks as 12-hour (AM/PM).
+ * `ru` is 24-hour everywhere; `en` defaults to 12-hour (US convention —
+ * our main English audience). A future settings toggle can override this.
+ */
+export function is12HourLocale(lang: string): boolean {
+  return !lang.startsWith("ru");
+}
+
+/** "19:30" → { hour: 19, minute: 30 } (internal, always 24h). */
+export function parseTime(value: string): { hour: number; minute: number } {
+  const [hh, mm] = value.split(":").map((v) => Number.parseInt(v, 10));
+  return { hour: hh || 0, minute: mm || 0 };
+}
+
+/** { hour: 19, minute: 30 } → "19:30" (internal, always 24h). */
+export function composeTime(hour: number, minute: number): string {
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+/**
+ * Locale-aware time formatter for badges/triggers: "19:30" (ru) or
+ * "7:30 PM" (en). Format-only — the stored value stays a timestamp.
+ */
+export function formatTime(time: string, lang: string): string {
+  const { hour, minute } = parseTime(time);
+  try {
+    return new Date(2000, 0, 1, hour, minute).toLocaleTimeString(
+      lang.startsWith("ru") ? "ru-RU" : "en-US",
+      { hour: "numeric", minute: "2-digit" },
+    );
+  } catch {
+    return time;
+  }
+}
+
 // Typed message keys — derived from the EN catalog (the source of truth for
 // key names); tsc then rejects unknown/misspelled keys everywhere. Plural
 // suffix keys (_one/_few/_many/_other) don't exist in code: you always call

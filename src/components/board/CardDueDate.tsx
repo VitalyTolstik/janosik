@@ -10,7 +10,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { formatDate, useI18n } from "@/i18n";
+import { formatDateOnly, formatTime, useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
 
 interface CardDueDateProps {
@@ -81,7 +81,9 @@ export function CardDueDate({ cardId, dueDate }: CardDueDateProps) {
         <PopoverTrigger asChild>
           <Button variant="outline" size="sm" data-testid="due-date-trigger">
             <CalendarClock className="h-3.5 w-3.5" />
-            {due ? formatDate(dueDate as number, lang) : t("dueDate.set")}
+            {due
+              ? `${formatDateOnly(dueDate as number, lang)}, ${formatTime(due.time, lang)}`
+              : t("dueDate.set")}
           </Button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-auto p-3">
