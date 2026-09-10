@@ -496,14 +496,56 @@ body > .mdxeditor-popup-container {
   position: relative;
 }
 
+/* Link dialog — a centered modal-like card instead of an anchor popup
+ * (the library anchors it to the selection, which reads as random). */
+body
+  > .mdxeditor-popup-container
+  [data-radix-popper-content-wrapper]:has([class*="linkDialogPopoverContent"]) {
+  position: fixed !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  max-width: calc(100vw - 2rem);
+}
+
 /* Link dialog popup — a floating "inspector" card. */
 body > .mdxeditor-popup-container [class*="linkDialogPopoverContent"],
 body > .mdxeditor-popup-container [class*="dialogContent"] {
+  position: relative;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--popover);
-  box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.45);
+  box-shadow: 0 24px 64px -16px rgb(0 0 0 / 0.6);
   padding: 6px;
+}
+/* The Cancel control becomes the close ✕ in the top-right corner (it
+ * already carries the lucide X icon; the label text is hidden). */
+body
+  > .mdxeditor-popup-container
+  [class*="linkDialogPopoverContent"]
+  [class*="secondaryButton"] {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 5px;
+  font-size: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+body
+  > .mdxeditor-popup-container
+  [class*="linkDialogPopoverContent"]
+  [class*="secondaryButton"] svg.lucide {
+  width: 16px;
+  height: 16px;
+}
+body
+  > .mdxeditor-popup-container
+  [class*="linkDialogPopoverContent"]
+  [class*="secondaryButton"]:hover {
+  background: var(--hover);
+  color: var(--foreground);
 }
 body > .mdxeditor-popup-container [class*="dialogTitle"] {
   color: var(--foreground);
@@ -612,6 +654,16 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
   border-color: var(--baseBorderHover);
 }
 
+/* Button tooltips — an elevated dark chip (the library maps them to
+ * --baseText/--baseBase, which our token mapping renders unreadable). */
+body > .mdxeditor-popup-container [class*="tooltipContent"] {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--popover);
+  color: var(--foreground);
+  box-shadow: 0 8px 24px -8px rgb(0 0 0 / 0.5);
+}
+
 /* Lucide icons: crisp 1em glyphs (toolbar inherits ~14px from the root). */
 .mdxeditor.janosik-mdx svg.lucide {
   width: 1em;
@@ -700,7 +752,49 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
 .mdxeditor.janosik-mdx
   .janosik-md-content
   li[class*="listItemUnchecked"]:before {
+  top: 0.2em;
+  left: 0;
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 1.5px solid var(--border);
   border-radius: 5px;
+  background-color: transparent;
+}
+.mdxeditor.janosik-mdx
+  .janosik-md-content
+  li[class*="listItemUnchecked"]:before {
+  background-color: transparent;
+}
+/* Checked: no fill — a lucide check glyph in the brand violet. */
+.mdxeditor.janosik-mdx
+  .janosik-md-content
+  li[class*="listItemChecked"]:before {
+  border-color: color-mix(in oklab, var(--primary) 65%, transparent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a78bfa' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+  background-size: 75%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.light .mdxeditor.janosik-mdx
+  .janosik-md-content
+  li[class*="listItemChecked"]:before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236d28d9' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+/* Align task checkboxes with the bullet/number markers of other lists:
+ * hang the box in the same marker gutter (measured against the tokens'
+ * rem base) instead of the library's deeper indent. */
+.mdxeditor.janosik-mdx
+  .janosik-md-content
+  li[class*="listItemChecked"],
+.mdxeditor.janosik-mdx
+  .janosik-md-content
+  li[class*="listItemUnchecked"] {
+  margin-inline-start: -1.1rem;
+  padding-left: 1.3rem;
+  padding-right: 0;
+}
+.mdxeditor.janosik-mdx .janosik-md-content li[class*="listItemChecked"]:after {
+  display: none;
 }
 .mdxeditor.janosik-mdx .janosik-md-content code {
   border: 1px solid var(--border);
