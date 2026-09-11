@@ -1,4 +1,4 @@
-import { AlignLeft, CalendarClock, ListTodo } from "lucide-react";
+import { AlignLeft, CalendarClock, CopyPlus, ListTodo } from "lucide-react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,8 @@ interface CardItemProps {
   isDragging?: boolean;
   /** Fired on click — opens the card detail dialog. */
   onClick?: () => void;
+  /** Fired by the hover duplicate button — the dialog stays closed. */
+  onDuplicate?: () => void;
 }
 
 /**
@@ -25,7 +27,7 @@ interface CardItemProps {
  * a compact badge only signals that the card has one — full text lives
  * in the card dialog.
  */
-export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
+export function CardItem({ card, labels, isDragging, onClick, onDuplicate }: CardItemProps) {
   const { t, lang } = useI18n();
   const hasDescription = Boolean(card.description?.trim());
   // Checklist progress summed across all of the card's checklists.
@@ -47,10 +49,32 @@ export function CardItem({ card, labels, isDragging, onClick }: CardItemProps) {
     <article
       onClick={onClick}
       className={cn(
-        "group animate-card-in cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2.5 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
+        "group animate-card-in relative cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2.5 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
         isDragging && "opacity-40",
       )}
     >
+      {/* Hover duplicate (Trello quick-edit style): a compact icon in the
+          top-right corner, visible only while hovered. Hidden while dragging
+          and when there is nowhere to put the copy handler. */}
+      {onDuplicate && !isDragging ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={t("card.duplicate")}
+              className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 hover:text-foreground group-hover:opacity-100"
+              onClick={(e) => {
+                // Don't let the click open the card dialog.
+                e.stopPropagation();
+                onDuplicate();
+              }}
+            >
+              <CopyPlus className="h-3.5 w-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{t("card.duplicate")}</TooltipContent>
+        </Tooltip>
+      ) : null}
       {/* Cover: a slim top strip — same height for colors and gradients
           (matches the label chip row scale). Negative margins bleed it into
           the card padding; the card clips it (overflow-hidden). */}
