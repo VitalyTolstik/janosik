@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ChevronUp,
   ListPlus,
+  Plus,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -273,6 +274,22 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
     addCard(column.id, trimmed);
   };
 
+  /** Quick-add from the unscheduled panel: the card lands in the first
+   *  column with no due date, so it appears right in the panel. */
+  const createUnscheduledCard = (title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    const column = board.columns[0];
+    if (!column) return;
+    if (column.cardIds.length >= LIMITS.cardsPerColumn) {
+      toast.error(
+        t("limits.maxItems", { limit: LIMITS.cardsPerColumn }),
+      );
+      return;
+    }
+    addCard(column.id, trimmed);
+  };
+
   const chipDragStart = (event: React.DragEvent, cardId: string) => {
     event.dataTransfer.setData("text/plain", cardId);
     event.dataTransfer.effectAllowed = "move";
@@ -443,6 +460,10 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
           </button>
           {unscheduledOpen ? (
             <div className="flex-1 space-y-1 overflow-y-auto p-2" data-testid="unscheduled-list">
+              <UnscheduledComposer
+                disabled={board.columns.length === 0}
+                onCreate={createUnscheduledCard}
+              />
               {unscheduled.length === 0 ? (
                 <p className="px-1 text-[11px] text-muted-foreground/70">
                   {t("view.calendar.unscheduledEmpty")}
@@ -648,5 +669,66 @@ function DayComposer({ onSubmit }: { onSubmit: (title: string) => void }) {
         }}
       />
     </div>
+  );
+}
+
+/**
+ * Quick-add row at the top of the unscheduled panel (a dashed "+" button
+ * that expands into an input, LabelPicker-style). Created cards have no
+ * due date, so they show up right in the panel — ready to be dragged
+ * onto a day.
+ */
+function UnscheduledComposer({
+  disabled,
+  onCreate,
+}: {
+  disabled?: boolean;
+  onCreate: (title: string) => void;
+}) {
+  const { t } = useI18n();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        data-testid="unscheduled-add"
+        onClick={() => setEditing(true)}
+        className="flex w-full items-center gap-1 rounded-md border border-dashed border-border px-1.5 py-1 text-[11px] text-muted-foreground transition-colors enabled:hover:border-primary/40 enabled:hover:text-foreground disabled:opacity-50"
+      >
+        <Plus className="h-3 w-3" aria-hidden />
+        {t("composer.add")}
+      </button>
+    );
+  }
+
+  return (
+    <Input
+      autoFocus
+      value={draft}
+      maxLength={LIMITS.cardTitle}
+      data-testid="unscheduled-add-input"
+      aria-label={t("composer.add")}
+      placeholder={t("composer.placeholder")}
+      className="h-7 text-xs"
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && draft.trim()) {
+          onCreate(draft);
+          setDraft("");
+          setEditing(false);
+        }
+        if (e.key === "Escape") {
+          setDraft("");
+          setEditing(false);
+        }
+      }}
+      onBlur={() => {
+        setDraft("");
+        setEditing(false);
+      }}
+    />
   );
 }
