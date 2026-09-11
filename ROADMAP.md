@@ -5,8 +5,9 @@
 > `CURRENT_WORK_ITERATIONS.md` (они удалены). Любой ИИ-агент начинает работу
 > с чтения этого файла и `AGENT.md`.
 >
-> **Текущий фокус:** допиливание UI и новые фичи фронтенда (до TASK-12
-> включительно, см. §7), затем бэкенд. Обновлено: 2026-09.
+> **Текущий фокус:** бэкенд (§7) — TASK-22…27 по порядку. Фронтенд-добивка
+> TASK-13…18 (§6) не меняет модель данных — можно делать параллельно.
+> Обновлено: 2026-09.
 
 ---
 
@@ -15,12 +16,16 @@
 1. **Одна задача = одна ветка = один пулл-реквест.** Перед началом итерации
    создай ветку `feature/TASK-{номер}-{slug}`. Пушишь — человек делает ревью
    и мержит сам. **Не мержить свою работу самостоятельно.**
-2. **Иди строго по порядку §6.** Не прыгай на TASK-9, пока не сделан TASK-1,
-   если явно не сказано обратное.
+2. **Иди строго по порядку:** §7.7 — для бэкенд-задач (TASK-22…27),
+   §6 — для фронтенд-добивки (TASK-13…18). Не прыгай через задачи, если
+   явно не сказано обратное.
 3. **После мержа** — отметь задачу в §6 как `✅` и при необходимости обнови
    §1 (что сделано). Не переписывай весь файл.
 4. **Правила, которые нельзя нарушать:**
-   - Бэкенд не трогаем (NestJS/Prisma/SQL/auth — отложено, §7).
+   - Репозиторий — monorepo (см. §7.0): `ui/` (фронт), `backend/`,
+     `shared/` (общий контракт). Фронтенд-правила действуют для `ui/`.
+   - Бэкенд-стек зафиксирован (§7.1): NestJS/Prisma/PostgreSQL/JWT —
+     не менять без явного решения пользователя.
    - E2E-тесты (Playwright/Cypress) **исключены** — только Vitest + React Testing Library.
    - Каждая новая строка UI добавляется **синхронно** в `src/locales/en` и `src/locales/ru`.
    - Данные (названия карточек, колонок, досок) **не переводятся** — только UI-хром.
@@ -48,6 +53,9 @@
 | Оформление | тёмная/светлая темы с префлайтом (без мигания), 4 фона доски (solid/paper/dots/grid), `prefers-reduced-motion`, кастомные скроллбары |
 | i18n | en/ru, типобезопасные ключи, плюрализация |
 | Бренд | Space Grotesk (self-hosted), анимированный логотип «Перо Яношика», живые иконки шапки |
+| Мультидоски | свитчер/создание/переименование/архив/удаление, deep-links `/board/:id`, роутер |
+| Активность карточки | лента 8 типов событий, «Активность (n)», лимит 50/карточку (снимет БД — §7.3) |
+| Лимиты ввода | `LIMITS` на 14 полях + коллекциях, счётчики «осталось N», тултипы/тосты гвардов |
 
 ### 1.2. Архитектура (кратко)
 
@@ -55,7 +63,7 @@
 - **Состояние** — чистый `boardReducer` (30 экшенов) + `BoardContext` (дебаунс-персистентность, история, хоткеи, авто-бэкап). Компоненты вызывают типизированные удобные экшены.
 - **Персистентность** — интерфейс `DebouncedPersistence` поверх `localStorage`; позже бэкенд = второй адаптер `fetch` **без изменения reducer и UI**.
 - **UI** — shadcn/ui + Radix (dialog/dropdown/popover/tooltip/slot), dnd-kit, react-day-picker, MDXEditor (описание карточки).
-- **Тесты** — 187 тестов в 16 файлах (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, интеграционные BoardSection + CardDialog).
+- **Тесты** — 287 тестов в 23 файлах (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, интеграционные BoardSection + CardDialog + свитчер).
 
 ### 1.3. Ключи и точки интеграции
 
@@ -74,15 +82,15 @@
 
 ## 2. Недочёты (архитектурные и продуктовые)
 
-1. **Одна доска из `Board[]`** — модель готова к мультидоскам, но UI/роутинга нет; `state[0]` везде.
-2. **Нет роутинга** — нет `react-router-dom`, нет deep-link на доску/карточку.
+1. ~~**Одна доска из `Board[]`**~~ — снято TASK-7 (мультидоски + свитчер).
+2. ~~**Нет роутинга**~~ — снято TASK-7 (`/board/:id`, `?card=` deep-link).
 3. **Карточка минимальна** — нет срока, обложки, активности. Описание — rich-text (MDXEditor, TASK-2), чек-листы есть (TASK-3); из классики Trello/Linear/Jira остаются сроки и обложки.
 4. **Заголовок доски не редактируется**, нет создания/удаления/архивирования/дублирования доски.
-5. **Хранилище — только `localStorage`** (лимит ~5 МБ, одно устройство). Риск снят экспортом/бэкапами, но синхронизации нет (нужен бэкенд, §7).
+5. **Хранилище — только `localStorage`** (лимит ~5 МБ, одно устройство). Риск снят экспортом/бэкапами, синхронизацию даёт бэкенд (§7, TASK-25…27).
 6. **Нет дублирования карточки/колонки**, нет сортировки внутри колонки.
 7. **Поиск только по заголовку текущей доски** — не ищет по описанию и по другим доскам.
 8. **Фильтр меток — только ANY** (нет переключателя ANY/ALL).
-9. **Нет WIP-лимитов**, нет ленты активности, нет календарного вида, нет PWA/офлайн.
+9. **Нет WIP-лимитов** (TASK-13), нет календарного вида (TASK-14), нет PWA/офлайн (TASK-15).
 10. **Мелкое:** `updatedAt` обновляется на каждый символ при живом редактировании (шумит в timestamps, хотя сохранение уже дебаунсится).
 
 ---
@@ -140,7 +148,7 @@
 1. ~~Сортировка внутри колонки~~ — реализовано (TASK-9) · ~~расширенный поиск~~ — реализовано (TASK-10) · ~~палитра хоткеев~~ — реализовано (TASK-11) · ~~лента активности~~ — реализовано (TASK-12) · WIP-лимиты (TASK-13) · календарный вид (TASK-14) · PWA/офлайн (TASK-15).
 2. Добивка недочётов §2 и производительность: фильтр меток ANY/ALL (TASK-16) · тумблер 12h/24h (TASK-17) · тихий `updatedAt` (TASK-18) · код-сплит бандла (TASK-19) · ~~лимиты полей ввода и коллекций~~ — реализовано (TASK-20).
 
-**⚪ На будущее (не сейчас):** автоматизации, уведомления, вложения, встраиваемый снапшот доски (embed), рабочие пространства — всё требует бэкенда (§7).
+**⚪ На будущее (разблокируется бэкендом, §7.6):** автоматизации, уведомления, вложения, встраиваемый снапшот доски (embed), рабочие пространства.
 
 ---
 
@@ -506,6 +514,8 @@ only mdxeditor from TASK 2
 
 #### TASK-19 — `bundle-split` · Код-сплит и ускорение загрузки
 
+- **Статус:** 🔄 реализуется в рамках TASK-22 (§7.7): реструктуризация и
+  lazy-чанки (MDXEditor + day-picker) идут одним PR.
 - **Зачем:** бандл 1 354 KB raw / 418 KB gzip одним чанком; FCP 460 мс
   (CPU x4). Анализ показал: ~половину бандла дают MDXEditor+Lexical и
   day-picker, которые нужны только при открытии диалога/поповера —
@@ -594,42 +604,218 @@ only mdxeditor from TASK 2
 
 ---
 
-## 7. Бэкенд — старт после TASK-12
+## 7. Бэкенд — полный план (фаза активна)
 
-# ⚠️ ВНИМАНИЕ: ПОСЛЕ TASK-12 ПРИСТУПАЕМ К БЭКУ! ⚠️
+> Бэкенд-ядро: TASK-22 → 23 → 24 → 25 → 26 → 27 строго по порядку (§7.7).
+> Фронтенд-добивка TASK-13…18 параллельна — модель данных не меняет.
+> Продолжаем нумерацию TASK: бэкенд = TASK-22…27, формат веток прежний.
 
-**Точка старта зафиксирована: бэкенд начинаем после TASK-12 (`card-activity`).**
+### 7.0. Ключевые решения (зафиксированы, не пересматривать без явной причины)
 
-Обоснование: к этому моменту модель данных окончательно устоится —
-TASK-3/4/5 дали карточке `checklists`/`dueDate`/`cover` (уже в проде),
-TASK-7/8 добавят последние поля доски (архив), TASK-12 (лента активности)
-— последнее заметное изменение модели. Задачи TASK-13…19 (WIP-лимиты,
-календарь, PWA, ANY/ALL, тумблер времени, тихий updatedAt, код-сплит) модель **не меняют** —
-их можно делать до, после или параллельно с бэкендом.
+- **Monorepo, npm workspaces** — один репозиторий, три пакета:
+  - `ui/` — нынешний фронтенд (весь `src/`, vite, tsconfig, локали);
+  - `shared/` — пакет `@janosik/shared`, контракт UI↔API **без build-степа**
+    (TS-исходники, компилирует потребитель): модель `Board[]`,
+    `LIMITS`, envelope экспорта (`EXPORT_APP`/`schemaVersion`/`parseExport`),
+    ключи localStorage (`STORAGE_KEYS` — сейчас расползлись по 7 файлам);
+  - `backend/` — NestJS.
+  Корневые scripts: `npm run dev -w ui`, `npm test -w ui`, `npm test -w backend`.
+- **Синхронизация — whole-document.** `PUT /boards/:id/payload` принимает
+  весь `Board`-payload целиком (фронт шлёт debounce 400 мс — тот же ритм,
+  что localStorage). Оптимистичная блокировка: поле `revision` на доске,
+  устаревший payload → `409` с серверной версией, фронт подтягивает.
+  Single-user почти не даёт конфликтов; целостность документа важнее
+  гранулярного CRUD. Комментарии/вложения позже — отдельными таблицами
+  и endpoints (§7.6), поверх этой модели.
+- **ID:** id внутри payload остаются фронтовыми (`createId()`); сервер
+  генерирует только собственные (`cuid()`): `board.id`, `user.id`,
+  id событий. Схема БД не дублирует модель фронта в SQL-таблицы —
+  payload живёт в `Json`-колонке (TASK-12 активность — исключение,
+  она уходит в таблицу: лимит 50 снимается).
+- **Auth:** JWT access (15 мин, в памяти SPA) + refresh (30 дней,
+  httpOnly Secure SameSite=Strict cookie, ротация с детектом реюза).
+  Пароли — argon2id.
+- **Ошибки:** дефолтный envelope NestJS `{ statusCode, message, error }`;
+  `409` — конфликт ревизии, `413` — payload сверх лимитов, `401/403` — guard.
+- **Валидация — LIMITS как единый источник правды** (TASK-20): DTO
+  (`@Length`/`@Max`/`@ArrayMaxSize`) + серверный normalize/кламп из shared —
+  тот же код, что `migrate.ts` (вторая линия обороны как на фронте).
 
-**Итоговый порядок до бэка:** TASK-7 → 8 → 9 → 10 → 11 → 12 →
-**бэкенд** → 13…19 (добивка, возможна параллельно).
+### 7.1. Стек
 
-Когда начинается бэкенд (§7):
-- NestJS + Prisma + SQL + JWT-авторизация; схема копирует устоявшийся
-  payload `Board[]` (к этому моменту — финальная версия модели).
-- Фронтенд получает **второй адаптер** `DebouncedPersistence`
-  (`fetch` → `/api`), reducer/UI не трогаются.
-- Бэкенд разблокирует: комментарии, исполнителей, вложения, синхронизацию
-  устройств, embed-снапшот доски (публичная read-only HTML-страница без JS).
+| Слой | Выбор | Почему |
+| --- | --- | --- |
+| Framework | NestJS 11 | DI, модули, ValidationPipe, Jest+supertest из коробки; ROADMAP-решение подтверждено анализом |
+| БД / ORM | PostgreSQL 16 + Prisma | типобезопасные модели и миграции; `Json` под payload; dev — docker-compose |
+| Валидация | class-validator + class-transformer | DTO напрямую едят `LIMITS` из `@janosik/shared` |
+| Auth | @nestjs/jwt + argon2 | access + refresh с ротацией |
+| Тесты | Jest + supertest (e2e на тестовой БД) | встроены в NestJS; фронт-тесты Vitest не трогаются |
 
-**Пока бэкенда нет — эти пункты в задачи не добавлять.**
+Отвергнутые альтернативы: Fastify+Zod монолит (легче, но теряем структуру
+модулей и гварды), CRUD-таблицы на каждую сущность (гонки при
+офлайн-редактировании, двойной маппинг модели), tRPC (нет нужды —
+REST + OpenAPI-совместимость дешевле).
+
+### 7.2. Структура `backend/`
+
+```
+backend/
+├── prisma/                  # schema.prisma + migrations/ + seed
+├── src/
+│   ├── main.ts / app.module.ts
+│   ├── auth/                # module, controller, service, jwt-strategy, guards, DTO
+│   ├── users/               # профиль
+│   ├── boards/              # CRUD + payload-sync + import/export; DTO из LIMITS
+│   ├── activity/            # события, курсорная пагинация
+│   └── common/              # exception-фильтры, декораторы, normalize/clamp (shared)
+├── test/                    # e2e supertest (тестовая БД из docker-compose)
+└── docker-compose.yml       # postgres:16
+```
+
+### 7.3. База данных (Prisma)
+
+```prisma
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  passwordHash  String
+  displayName   String?
+  createdAt     DateTime       @default(now())
+  boards        Board[]
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique          // хранится только хеш
+  user      User      @relation(fields: [userId], references: [id])
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?                  // ротация; реюз revoked → отзыв всех сессий
+}
+
+model Board {
+  id            String    @id @default(cuid())
+  owner         User      @relation(fields: [ownerId], references: [id])
+  ownerId       String
+  title         String    @db.VarChar(100)  // LIMITS.boardTitle
+  archivedAt    DateTime?
+  schemaVersion Int       @default(1)       // envelope EXPORT_SCHEMA_VERSION
+  payload       Json                        // Board без title/archivedAt
+  revision      Int       @default(1)       // optimistic lock → 409
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  @@index([ownerId, updatedAt])
+}
+
+model ActivityEvent {
+  id        String   @id @default(cuid())
+  board     Board    @relation(fields: [boardId], references: [id])
+  boardId   String
+  cardId    String?
+  type      String                     // 8 типов TASK-12
+  actorId   String?
+  details   Json?                      // снапшот-детали (имя метки/колонки)
+  createdAt DateTime @default(now())
+  @@index([boardId, cardId, createdAt])
+}
+```
+
+Лимиты коллекций (чеклисты/метки/колонки/карточки) клампятся серверным
+normalize при import и payload-sync — БД доверяет только провалидированному
+документу.
+
+### 7.4. API — REST `/api/v1`
+
+**Auth (без guard):**
+
+| Метод | Путь | Тело/ответ |
+| --- | --- | --- |
+| POST | `/auth/register` | `{email, password}` → user + токены |
+| POST | `/auth/login` | → user + токены |
+| POST | `/auth/refresh` | cookie → новая пара токенов (ротация) |
+| POST | `/auth/logout` | отзыв refresh-токена |
+| GET | `/auth/me` | профиль |
+
+**Boards (JwtGuard):**
+
+| Метод | Путь | Тело/ответ |
+| --- | --- | --- |
+| GET | `/boards` | список: id, title, archivedAt, revision, updatedAt |
+| POST | `/boards` | создать (сразу с payload) |
+| GET | `/boards/:id` | полный payload + revision |
+| PUT | `/boards/:id/payload` | `{payload, revision, events[]?}` → `{revision+1, updatedAt}`; stale → `409` |
+| PATCH | `/boards/:id` | rename/archive без полного sync |
+| DELETE | `/boards/:id` | удалить |
+
+**Activity (JwtGuard):**
+
+| Метод | Путь | Ответ |
+| --- | --- | --- |
+| GET | `/boards/:id/activity?cursor&limit` | вся доска, курсорная пагинация |
+| GET | `/boards/:id/cards/:cardId/activity?cursor&limit` | лента карточки — замена `Card.activity` из payload, история целиком, «показать ещё» |
+
+**Данные (JwtGuard):**
+
+| Метод | Путь | Ответ |
+| --- | --- | --- |
+| POST | `/boards/import` | envelope `parseExport` → normalize + клампы → Board |
+| GET | `/boards/:id/export` | envelope JSON — тот же формат файла, что UI-экспорт |
+
+События активности прикрепляются к `PUT payload` как `events[]` — редьюсер
+их уже генерирует (TASK-12), сервер не гадает по diff. `Card.activity`
+из payload после TASK-27 игнорируется сервером (остаётся для офлайн-режима
+до TASK-15).
+
+### 7.5. Фронтенд-адаптер (TASK-27)
+
+- `HttpPersistence` — второй адаптер интерфейса `DebouncedPersistence`
+  (не меняется с TASK-13?): fetch + очередь + один retry после refresh на 401.
+- Первый логин: локальный `janosik-boards` (если есть) →
+  `POST /boards/import` → подтверждение пользователя → localStorage очищается.
+- Экран входа/регистрации (роут `/login`, HashRouter остаётся);
+  UI-хром через i18n (en/ru синхронно).
+- Офлайн-деградация: тост «нет сети, изменения не сохранены» (TASK-15/PWA
+  закроет полноценно позже).
+
+### 7.6. Разблокированные фичи (после TASK-27, по запросу — не запланированы)
+
+- **TASK-28+ комментарии** — `Comment`-таблица, `POST/GET /boards/:id/cards/:cardId/comments`.
+- Исполнители (`assigneeId` на карточке + UI-пикер).
+- Вложения (multipart upload, файловое хранилище, антивирус-вопрос).
+- **Embed-снапшот доски** — `GET /embed/:token`, публичный read-only SSR HTML без JS.
+- SSE/WebSocket push для синхронизации нескольких устройств в реальном времени.
+- Рабочие пространства (`Workspace`/`Member`, шаринг досок).
+
+### 7.7. Порядок итераций (строго по порядку)
+
+| # | TASK | Ветка | Суть | DoD (кратко) |
+| --- | --- | --- | --- | --- |
+| 1 | TASK-22 `monorepo-restructure` | `feature/TASK-22-monorepo` | `git mv` фронта в `ui/`, работаspaces, `@janosik/shared` (модель+LIMITS+envelope+STORAGE_KEYS), `SAVE_DEBOUNCE_MS` в константы, алиасы vite/tsconfig/vitest; **внутри — TASK-19**: lazy MDXEditor + day-picker | все 287 тестов зелёные в новом layout; initial JS ≤ ~700 KB raw (editor/day-picker — lazy-чанки); tsc/build зелёные |
+| 2 | TASK-23 `backend-scaffold` | `feature/TASK-23-backend-scaffold` | NestJS + Prisma + docker-compose(postgres:16), `/health`, модули-заглушки, общий tsconfig/ESLint | `/health` 200; e2e-пайплайн Jest работает; backend-команды DoD в AGENT.md |
+| 3 | TASK-24 `backend-auth` | `feature/TASK-24-backend-auth` | register/login/refresh/logout/me, argon2id, ротация refresh + детект реюза, JwtGuard | e2e: полный цикл auth + реюз revoked → отзыв всех сессий; guard-роуты отдают 401 |
+| 4 | TASK-25 `boards-sync` | `feature/TASK-25-boards-sync` | Board + CRUD + `PUT payload` c revision/409; серверный normalize + клампы LIMITS | e2e: sync-цикл, конфликт ревизии → 409, payload сверх лимитов клампится/отклоняется |
+| 5 | TASK-26 `activity-import-export` | `feature/TASK-26-activity-data` | ActivityEvent (events[] в PUT) + курсорная пагинация; import/export endpoints | e2e: события пишутся, лента без лимита 50, import/export round-trip с UI-файлом |
+| 6 | TASK-27 `http-persistence` | `feature/TASK-27-http-persistence` | `HttpPersistence`, экран login, миграция localStorage → сервер | UI полностью работает с сервера; первый логин переносит локальные данные; офлайн-тост; все фронт-тесты зелёные |
+
+После TASK-27 бэкенд-ядро готово → §7.6 открывается по запросу пользователя.
 
 ---
 
 ## 8. Definition of Done (для каждой задачи)
 
-Перед пушем ветки обязательны, иначе PR не готов:
+Перед пушем ветки обязательны, иначе PR не готов. После TASK-22
+(monorepo, §7.0) команды выполняются в пакете через `-w`:
 
 ```bash
-npm test                 # все тесты зелёные
-npx tsc -b --force       # 0 ошибок (команда без пайпа!)
-npm run build            # сборка зелёная
+# фронтенд (ui/)
+npm test -w ui              # все тесты зелёные
+npx tsc -b --force          # 0 ошибок (команда без пайпа!)
+npm run build -w ui         # сборка зелёная
+
+# бэкенд (backend/, с TASK-23)
+npm test -w backend         # unit + e2e (supertest, тестовая БД)
+npx tsc -b --force          # 0 ошибок
 ```
 
 Плюс:
@@ -638,4 +824,6 @@ npm run build            # сборка зелёная
 - типы ключей не сломаны (`tsc` ловит рассинхрон);
 - токены/цвета — только из `src/index.css`, без хардкода;
 - `prefers-reduced-motion` учтён для новых анимаций;
-- dev-сервер поднимается на `http://localhost:5199/` (HTTP 200).
+- dev-сервер поднимается на `http://localhost:5199/` (HTTP 200);
+- backend-задачи: `npx prisma migrate dev` применяется чисто, e2e против
+  тестовой БД из docker-compose, секреты — только в `.env` (в git не попадает).
