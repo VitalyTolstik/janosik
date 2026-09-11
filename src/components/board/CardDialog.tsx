@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowRightLeft, CalendarClock, CopyPlus, Trash2 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
@@ -62,6 +62,11 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
   const { t, lang } = useI18n();
   const toast = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Fires the "too long" toast once per crossing (not on every keystroke
+  // past the limit) and remounts the editor with the clamped markdown —
+  // otherwise the editor DOM keeps the oversized text the store rejected.
+  const [overflowTick, setOverflowTick] = useState(0);
+  const overLimitRef = useRef(false);
 
   if (!board || !cardId) {
     // Dialog stays closed when there's nothing to show.
@@ -188,18 +193,23 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                   editor surface can't take maxLength (contenteditable), so
                   oversized pastes are clamped here with a visible toast. */}
               <DescriptionEditor
-                key={card.id}
+                key={`${card.id}:${overflowTick}`}
                 value={card.description ?? ""}
                 onChange={(description) => {
                   if (description.length > LIMITS.description) {
-                    toast.error(
-                      t("limits.exceeded", { limit: LIMITS.description }),
-                    );
+                    if (!overLimitRef.current) {
+                      overLimitRef.current = true;
+                      toast.error(
+                        t("limits.exceeded", { limit: LIMITS.description }),
+                      );
+                    }
                     updateCard(card.id, {
                       description: description.slice(0, LIMITS.description),
                     });
+                    setOverflowTick((n) => n + 1);
                     return;
                   }
+                  overLimitRef.current = false;
                   updateCard(card.id, { description });
                 }}
                 placeholder={t("card.descriptionPlaceholder")}
