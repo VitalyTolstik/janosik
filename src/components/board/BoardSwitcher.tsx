@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useBoard } from "@/store/BoardContext";
-import { boardPath } from "@/store/BoardContext";
+import { routes } from "@/routes";
 import type { Board } from "@/types/kanban";
 
 /**
@@ -103,7 +103,7 @@ export function BoardSwitcher() {
 
   const openBoard = (target: Board) => {
     resetAndClose();
-    navigate(boardPath(target.id));
+    navigate(routes.board(target.id));
   };
 
   const handleCreate = () => {
@@ -115,7 +115,7 @@ export function BoardSwitcher() {
   const createBoard = (title: string) => {
     const id = addBoard(title);
     resetAndClose();
-    navigate(boardPath(id));
+    navigate(routes.board(id));
   };
 
   const handleDelete = (target: Board) => {
@@ -123,7 +123,7 @@ export function BoardSwitcher() {
     removeBoard(target.id);
     if (board?.id === target.id) {
       const remaining = boards.filter((b) => b.id !== target.id);
-      if (remaining[0]) navigate(boardPath(remaining[0].id), { replace: true });
+      if (remaining[0]) navigate(routes.board(remaining[0].id), { replace: true });
     }
   };
 

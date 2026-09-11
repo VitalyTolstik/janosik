@@ -10,6 +10,7 @@ import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { routes } from "@/routes";
 
 /**
  * `/` and any unknown URL render nothing for a frame — the BoardProvider
@@ -42,9 +43,9 @@ export default function App() {
                     <div className="flex min-h-screen flex-col bg-background text-foreground">
                       <Header />
                       <Routes>
-                        <Route path="/" element={<NoBoardRoute />} />
+                        <Route path={routes.home} element={<NoBoardRoute />} />
                         <Route
-                          path="/board/:boardId"
+                          path={routes.boardPattern}
                           element={<BoardSection />}
                         />
                         <Route path="*" element={<NoBoardRoute />} />
