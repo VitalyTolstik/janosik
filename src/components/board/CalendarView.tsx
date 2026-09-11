@@ -317,7 +317,14 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
             ))}
           </span>
         ) : null}
-        <span className="flex min-w-0 items-center gap-1 py-0.5 pr-1.5">
+        <span
+          className={cn(
+            "flex min-w-0 items-center gap-1 py-0.5 pr-1.5",
+            // Chips without a stripe start the title at the same offset as
+            // striped ones (stripe 3px + gap).
+            labels.length === 0 && "pl-[7px]",
+          )}
+        >
           {withTime ? (
             <span className="shrink-0 tabular-nums opacity-70">
               {formatTime(
@@ -582,7 +589,14 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
                                 ))}
                               </span>
                             ) : null}
-                            <span className="truncate">{entry.card.title}</span>
+                            <span
+                              className={cn(
+                                "truncate",
+                                entry.labels.length === 0 && "pl-[7px]",
+                              )}
+                            >
+                              {entry.card.title}
+                            </span>
                           </button>
                         ))
                       )}

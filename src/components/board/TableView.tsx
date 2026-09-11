@@ -566,6 +566,7 @@ function SortHeader({
         type="button"
         data-testid={`table-sort-${sortKey}`}
         aria-sort={isSorted ? (sort?.dir === 1 ? "ascending" : "descending") : "none"}
+        title={label}
         onClick={() => onCycle(sortKey)}
         className={cn(
           "inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide transition-colors hover:text-foreground",
@@ -573,8 +574,10 @@ function SortHeader({
         )}
       >
         {label}
-        <span aria-hidden className={cn("text-[10px]", !isSorted && "opacity-0")}>
-          {sort?.dir === 1 ? "▲" : "▼"}
+        {/* A neutral icon hints the header is sortable; it turns into the
+            direction arrow once sorted. */}
+        <span aria-hidden className="text-[10px]">
+          {isSorted ? (sort?.dir === 1 ? "▲" : "▼") : "↕"}
         </span>
       </button>
     </th>
