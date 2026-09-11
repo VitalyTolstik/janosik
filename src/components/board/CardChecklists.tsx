@@ -19,6 +19,11 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useBoard } from "@/store/BoardContext";
@@ -73,15 +78,29 @@ export function CardChecklists({ cardId, checklists }: CardChecklistsProps) {
         <span className="text-xs font-medium text-muted-foreground">
           {t("checklist.sectionLabel")}
         </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
-          onClick={() => addChecklist(cardId, t("checklist.defaultTitle"))}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          {t("checklist.add")}
-        </Button>
+        {/* Capped at LIMITS.checklistsPerCard — the disabled button
+            explains itself through the tooltip. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                disabled={checklists.length >= LIMITS.checklistsPerCard}
+                onClick={() => addChecklist(cardId, t("checklist.defaultTitle"))}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {t("checklist.add")}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          {checklists.length >= LIMITS.checklistsPerCard && (
+            <TooltipContent>
+              {t("limits.maxItems", { limit: LIMITS.checklistsPerCard })}
+            </TooltipContent>
+          )}
+        </Tooltip>
       </div>
 
       {checklists.map((checklist) => (
@@ -281,8 +300,10 @@ function ChecklistCard({
         <Input
           value={newItem}
           maxLength={LIMITS.checklistItem}
+          disabled={checklist.items.length >= LIMITS.itemsPerChecklist}
           onChange={(e) => setNewItem(e.target.value)}
           placeholder={t("checklist.itemPlaceholder")}
+          aria-label={t("checklist.itemPlaceholder")}
           className="h-8 border-none bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
         />
         <LimitCounter

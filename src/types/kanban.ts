@@ -163,6 +163,21 @@ export const LIMITS = {
   checklistItem: 200,
   /** Ephemeral search/filter queries (board filter, ⌘K, switcher). */
   query: 200,
+
+  /** Checklists per card. */
+  checklistsPerCard: 20,
+  /** Items per checklist. */
+  itemsPerChecklist: 100,
+  /** Labels attached to one card. */
+  labelsPerCard: 20,
+  /** Labels defined on one board. */
+  labelsPerBoard: 50,
+  /** Columns on one board. */
+  columnsPerBoard: 20,
+  /** Cards in one column. */
+  cardsPerColumn: 500,
+  /** Boards in the workspace (localStorage quota guard). */
+  boardsCount: 50,
 } as const;
 
 /** A board import larger than this (bytes) is rejected outright. */

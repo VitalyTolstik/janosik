@@ -364,6 +364,7 @@ interface ColumnShape {
 }
 
 function addColumn(board: Board, action: AddColumnAction): Board {
+  if (board.columns.length >= LIMITS.columnsPerBoard) return board;
   const newColumn: ColumnShape = {
     id: createId(),
     title: clampText(action.title.trim(), LIMITS.columnTitle),
@@ -403,6 +404,7 @@ function renameBoard(board: Board, action: RenameBoardAction): Board {
 function addCard(board: Board, action: AddCardAction): Board {
   const column = board.columns.find((c) => c.id === action.columnId);
   if (!column) return board;
+  if (column.cardIds.length >= LIMITS.cardsPerColumn) return board;
   const now = Date.now();
   const newCard: Card = {
     id: createId(),
@@ -483,6 +485,9 @@ function duplicateCard(board: Board, action: DuplicateCardAction): Board {
     col.cardIds.includes(source.id),
   );
   if (columnIndex === -1) return board;
+  if (board.columns[columnIndex].cardIds.length >= LIMITS.cardsPerColumn) {
+    return board;
+  }
   const now = Date.now();
   const copy: Card = {
     ...source,
@@ -522,6 +527,7 @@ function duplicateCard(board: Board, action: DuplicateCardAction): Board {
  * ids stay as-is — they are unique per card).
  */
 function duplicateColumn(board: Board, action: DuplicateColumnAction): Board {
+  if (board.columns.length >= LIMITS.columnsPerBoard) return board;
   const sourceIndex = board.columns.findIndex(
     (col) => col.id === action.columnId,
   );
@@ -569,6 +575,8 @@ function toggleCardLabel(board: Board, action: ToggleCardLabelAction): Board {
   // Ignore toggles for labels that no longer exist on the board.
   if (!board.labels.some((l) => l.id === action.labelId)) return board;
   const has = target.labelIds.includes(action.labelId);
+  // Adding is capped; removing a label is always allowed.
+  if (!has && target.labelIds.length >= LIMITS.labelsPerCard) return board;
   const labelIds = has
     ? target.labelIds.filter((id) => id !== action.labelId)
     : [...target.labelIds, action.labelId];
@@ -595,6 +603,7 @@ function addLabel(board: Board, action: AddLabelAction): Board {
   const { label } = action;
   // Guard against duplicate ids (e.g. double-submitted create).
   if (board.labels.some((l) => l.id === label.id)) return board;
+  if (board.labels.length >= LIMITS.labelsPerBoard) return board;
   return {
     ...board,
     labels: [
@@ -689,10 +698,11 @@ function mapChecklistItems(
 function addChecklist(board: Board, action: AddChecklistAction): Board | null {
   const title = clampText(action.title.trim(), LIMITS.checklistTitle);
   if (!title) return null;
-  return patchChecklists(board, action.cardId, (checklists) => [
-    ...checklists,
-    { id: createId(), title, items: [] },
-  ]);
+  return patchChecklists(board, action.cardId, (checklists) =>
+    checklists.length >= LIMITS.checklistsPerCard
+      ? null
+      : [...checklists, { id: createId(), title, items: [] }],
+  );
 }
 
 function renameChecklist(board: Board, action: RenameChecklistAction): Board | null {
@@ -723,10 +733,11 @@ function addChecklistItem(
   const text = clampText(action.text.trim(), LIMITS.checklistItem);
   if (!text) return null;
   return patchChecklists(board, action.cardId, (checklists) =>
-    mapChecklistItems(checklists, action.checklistId, (items) => [
-      ...items,
-      { id: createId(), text, done: false },
-    ]),
+    mapChecklistItems(checklists, action.checklistId, (items) =>
+      items.length >= LIMITS.itemsPerChecklist
+        ? null
+        : [...items, { id: createId(), text, done: false }],
+    ),
   );
 }
 
@@ -954,6 +965,7 @@ export function boardReducer(
 ): BoardState {
   // Array-level actions do not target a single board.
   if (action.type === "ADD_BOARD") {
+    if (state.length >= LIMITS.boardsCount) return state;
     return state.some((b) => b.id === action.board.id)
       ? state
       : [...state, action.board];

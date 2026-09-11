@@ -31,6 +31,7 @@ import { ColumnView } from "@/components/board/ColumnView";
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
 import { applyCardOver } from "@/utils/dnd";
+import { LIMITS } from "@/types/kanban";
 
 /**
  * Live draft while a drag is in progress. The store is only touched on drag
@@ -77,7 +78,7 @@ export function DndBoard({
   highlight,
 }: DndBoardProps) {
   const { board, addColumn, moveCard, moveColumn } = useBoard();
-  const { tp } = useI18n();
+  const { tp, t } = useI18n();
 
   const [draft, setDraftState] = useState<Draft | null>(null);
   // Ref mirror so event handlers always read the latest draft (state updates
@@ -524,7 +525,13 @@ export function DndBoard({
             );
           })}
         </SortableContext>
-        <AddColumnControl onSubmit={addColumn} />
+        <AddColumnControl
+          disabled={board.columns.length >= LIMITS.columnsPerBoard}
+          disabledReason={t("limits.maxItems", {
+            limit: LIMITS.columnsPerBoard,
+          })}
+          onSubmit={addColumn}
+        />
       </div>
 
       <DragOverlay>

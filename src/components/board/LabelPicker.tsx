@@ -19,6 +19,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/Toast";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import {
@@ -94,6 +100,7 @@ export function LabelPicker({
   onDelete,
 }: LabelPickerProps) {
   const { t } = useI18n();
+  const toast = useToast();
 
   const [creating, setCreating] = useState(false);
   const [draftName, setDraftName] = useState("");
@@ -135,7 +142,17 @@ export function LabelPicker({
               <button
                 type="button"
                 aria-pressed={isSelected}
-                onClick={() => onToggle(label.id)}
+                onClick={() => {
+                  if (!isSelected && selected.length >= LIMITS.labelsPerCard) {
+                    toast.error(
+                      t("limits.maxLabelsOnCard", {
+                        limit: LIMITS.labelsPerCard,
+                      }),
+                    );
+                    return;
+                  }
+                  onToggle(label.id);
+                }}
                 className={cn(
                   "inline-flex h-6 items-center gap-1.5 rounded-l-full border border-r-0 px-2 text-[11px] font-medium transition-colors",
                   isSelected
@@ -236,14 +253,26 @@ export function LabelPicker({
           </div>
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={() => setCreating(true)}
-          className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-        >
-          <Plus className="h-3 w-3" />
-          {t("label.new")}
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <button
+                type="button"
+                disabled={labels.length >= LIMITS.labelsPerBoard}
+                onClick={() => setCreating(true)}
+                className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors enabled:hover:border-primary/40 enabled:hover:text-foreground disabled:opacity-50"
+              >
+                <Plus className="h-3 w-3" />
+                {t("label.new")}
+              </button>
+            </span>
+          </TooltipTrigger>
+          {labels.length >= LIMITS.labelsPerBoard && (
+            <TooltipContent>
+              {t("limits.maxItems", { limit: LIMITS.labelsPerBoard })}
+            </TooltipContent>
+          )}
+        </Tooltip>
       )}
 
       <Dialog
