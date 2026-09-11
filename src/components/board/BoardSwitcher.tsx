@@ -157,28 +157,12 @@ export function BoardSwitcher() {
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
+          size="icon"
           aria-label={t("board.switcher.aria")}
           aria-expanded={open}
-          className="h-9 max-w-[220px] gap-2 px-2 text-foreground sm:max-w-[280px]"
+          className="h-8 w-6 shrink-0 text-muted-foreground hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 data-[state=open]:text-foreground"
         >
-          {board ? (
-            <span
-              aria-hidden
-              className={cn(
-                "flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold text-white shadow-sm",
-                boardColor(board.id),
-              )}
-            >
-              {boardInitial(board.title)}
-            </span>
-          ) : null}
-          <span className="truncate text-sm font-medium">
-            {board?.title ?? "Janosik"}
-          </span>
-          <ChevronDown
-            size={14}
-            className="shrink-0 text-muted-foreground transition-transform duration-150 group-data-[state=open]:rotate-180"
-          />
+          <ChevronDown size={16} className={open ? "rotate-180" : ""} />
         </Button>
       </PopoverTrigger>
       <PopoverContent
