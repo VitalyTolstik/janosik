@@ -10,6 +10,8 @@ interface SortableCardProps {
   labels: Label[];
   /** Filter/search query highlighted on the card front. */
   highlight?: string;
+  /** True when this card holds the j/k keyboard cursor (focus ring). */
+  isCursor?: boolean;
   /** Fired when the rendered card is clicked — opens the card dialog. */
   onCardClick?: () => void;
   /** Fired by the hover duplicate button on the card. */
@@ -21,7 +23,7 @@ interface SortableCardProps {
  * (the lift + gap animation while dragging) is applied to the wrapper div,
  * not to the CardItem itself, so the card keeps its own styling intact.
  */
-export function SortableCard({ card, labels, highlight, onCardClick, onCardDuplicate }: SortableCardProps) {
+export function SortableCard({ card, labels, highlight, isCursor, onCardClick, onCardDuplicate }: SortableCardProps) {
   const {
     attributes,
     listeners,
@@ -50,6 +52,7 @@ export function SortableCard({ card, labels, highlight, onCardClick, onCardDupli
         labels={labels}
         isDragging={isDragging}
         highlight={highlight}
+        isCursor={isCursor}
         onClick={onCardClick}
         onDuplicate={onCardDuplicate}
       />

@@ -4,6 +4,7 @@ import { BoardTitle } from "@/components/board/BoardTitle";
 import { DataMenu } from "@/components/DataMenu";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { ShortcutsDialog } from "@/components/ShortcutsDialog";
 import { ArrowLeftIcon } from "@/components/ui/arrow-left-icon";
 import { ArrowRightIcon } from "@/components/ui/arrow-right-icon";
 import { MoonIcon } from "@/components/ui/moon-icon";
@@ -88,6 +89,7 @@ export function Header() {
 
       <div className="flex items-center gap-0.5">
         <GlobalSearch />
+        <ShortcutsDialog />
         <BackgroundSwitcher />
         <LanguageSwitcher />
 

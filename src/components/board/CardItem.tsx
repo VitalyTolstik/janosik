@@ -21,6 +21,8 @@ interface CardItemProps {
    * with a snippet tooltip.
    */
   highlight?: string;
+  /** True when this card holds the j/k keyboard cursor (focus ring). */
+  isCursor?: boolean;
   /** Fired on click — opens the card detail dialog. */
   onClick?: () => void;
   /** Fired by the hover duplicate button — the dialog stays closed. */
@@ -70,7 +72,7 @@ function useClamped(): [
  * a compact badge only signals that the card has one — full text lives
  * in the card dialog.
  */
-export function CardItem({ card, labels, isDragging, highlight, onClick, onDuplicate }: CardItemProps) {
+export function CardItem({ card, labels, isDragging, highlight, isCursor, onClick, onDuplicate }: CardItemProps) {
   const [titleRef, titleClamped] = useClamped();
   const { t, lang } = useI18n();
   const hasDescription = Boolean(card.description?.trim());
@@ -112,9 +114,11 @@ export function CardItem({ card, labels, isDragging, highlight, onClick, onDupli
   return (
     <article
       onClick={onClick}
+      data-card-cursor={isCursor || undefined}
       className={cn(
         "group animate-card-in relative cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2.5 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
         isDragging && "opacity-40",
+        isCursor && "border-primary ring-2 ring-primary/60",
       )}
     >
       {/* Hover duplicate (Trello quick-edit style): a compact icon in the
