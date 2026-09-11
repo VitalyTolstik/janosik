@@ -8,7 +8,12 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { useLocation, useNavigate, matchPath } from "react-router-dom";
+import {
+  useLocation,
+  useNavigate,
+  useSearchParams,
+  matchPath,
+} from "react-router-dom";
 
 import {
   boardReducer,
@@ -174,10 +179,19 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   // The URL decides which board is active; archived boards are not active
   // (the redirect above sends the user to the first active one or `/`).
+  // Exception: an explicit `?card=` deep-link onto an archived board (a
+  // global-search hit) is a legitimate "view this archived card" request —
+  // closing the dialog drops the param and the redirect takes over again.
+  const [searchParams] = useSearchParams();
+  const cardParam = searchParams.get("card");
   const routeBoardId =
     matchPath(routes.boardPattern, location.pathname)?.params.boardId ?? null;
   const board = routeBoardId
-    ? state.find((b) => b.id === routeBoardId && !b.archivedAt)
+    ? state.find(
+        (b) =>
+          b.id === routeBoardId &&
+          (!b.archivedAt || (cardParam !== null && cardParam in b.cards)),
+      )
     : undefined;
 
   // Latest committed state, readable from stable callbacks.
@@ -202,12 +216,20 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       ? state.find((b) => b.id === routeBoardId)
       : undefined;
     if (routed && !routed.archivedAt) return;
+    // Viewing an archived board is allowed only via an explicit ?card=
+    // deep-link onto one of its cards (global search).
+    if (
+      routed?.archivedAt &&
+      cardParam !== null &&
+      cardParam in routed.cards
+    )
+      return;
     const firstActive = state.find((b) => !b.archivedAt);
     const target = firstActive ? routes.board(firstActive.id) : routes.home;
     if (location.pathname !== target) {
       navigate(target, { replace: true });
     }
-  }, [routeBoardId, state, location.pathname, navigate]);
+  }, [routeBoardId, state, location.pathname, navigate, cardParam]);
 
   // Debounced persistence + throttled auto-backup after every change.
   useEffect(() => {

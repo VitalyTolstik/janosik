@@ -2,6 +2,7 @@ import { BackgroundSwitcher } from "@/components/BackgroundSwitcher";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
 import { DataMenu } from "@/components/DataMenu";
+import { GlobalSearch } from "@/components/GlobalSearch";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ArrowLeftIcon } from "@/components/ui/arrow-left-icon";
 import { ArrowRightIcon } from "@/components/ui/arrow-right-icon";
@@ -86,6 +87,7 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-0.5">
+        <GlobalSearch />
         <BackgroundSwitcher />
         <LanguageSwitcher />
 
