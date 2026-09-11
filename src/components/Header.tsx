@@ -27,7 +27,9 @@ export function Header() {
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-md sm:px-6">
       <div className="flex items-center gap-2 sm:gap-3">
-        <div className="flex items-center gap-1.5">
+        {/* `group` re-enables the CSS hover animations (feather sway +
+            sparkle twinkle) that key off `.group:hover` in index.css. */}
+        <div className="group flex items-center gap-1.5">
           <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-secondary text-primary-foreground shadow-sm">
             <svg
               className="janosik-feather"
