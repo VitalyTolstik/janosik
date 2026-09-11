@@ -260,7 +260,7 @@ function SearchSection({
 }) {
   return (
     <div className="mb-1 last:mb-0">
-      <div className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-foreground">
         {title}
       </div>
       <div role="listbox" aria-label={title}>
