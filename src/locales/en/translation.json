@@ -263,5 +263,16 @@
   "editor.dialogControls.cancel": "Cancel",
   "editor.dialogControls.save": "Save",
   "editor.dialog.close": "Close",
-  "editor.codeBlock": "Code block"
+  "editor.codeBlock": "Code block",
+  "editor.toolbar.removeBold": "Remove bold",
+  "editor.toolbar.removeItalic": "Remove italic",
+  "editor.toolbar.removeStrikethrough": "Remove strikethrough",
+  "editor.toolbar.removeInlineCode": "Remove inline code",
+  "column.wipLimit": "WIP limit",
+  "column.wipLimitDialogTitle": "WIP limit for “{{title}}”",
+  "column.wipLimitPlaceholder": "No limit",
+  "column.wipLimitHint": "Maximum number of cards allowed in this column. Leave empty to remove the limit.",
+  "column.wipLimitRemove": "Remove limit",
+  "column.wipLimitReached": "WIP limit reached ({{limit}})",
+  "toast.wipLimitBlocked": "“{{title}}” is at its WIP limit ({{limit}}) — the card stays in its column."
 }

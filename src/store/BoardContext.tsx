@@ -125,6 +125,8 @@ interface BoardContextValue {
     toIndex: number,
   ) => void;
   moveColumn: (columnId: string, fromIndex: number, toIndex: number) => void;
+  /** Sets (or clears, `wipLimit === undefined`) a column's WIP limit. */
+  setColumnWipLimit: (columnId: string, wipLimit?: number) => void;
   /** Sorts a column's cards (createdAt / dueDate / title). */
   sortColumn: (columnId: string, sortBy: ColumnSortBy) => void;
   /* Board management (multi-board) */
@@ -453,6 +455,7 @@ function createBoardActions(
   | "duplicateColumn"
   | "moveCard"
   | "moveColumn"
+  | "setColumnWipLimit"
   | "sortColumn"
 > {
   return {
@@ -525,6 +528,8 @@ function createBoardActions(
       }),
     moveColumn: (columnId: string, fromIndex: number, toIndex: number) =>
       dispatch({ type: "MOVE_COLUMN", columnId, fromIndex, toIndex }),
+    setColumnWipLimit: (columnId: string, wipLimit?: number) =>
+      dispatch({ type: "SET_COLUMN_WIP_LIMIT", columnId, wipLimit }),
     sortColumn: (columnId: string, sortBy: ColumnSortBy) =>
       dispatch({ type: "SORT_COLUMN", columnId, sortBy }),
   };

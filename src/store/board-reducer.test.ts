@@ -6,6 +6,7 @@ import {
   type BoardAction,
 } from "@/store/board-reducer";
 import type { Board } from "@/types/kanban";
+import { LIMITS } from "@/types/kanban";
 
 /**
  * Tests for the pure board reducer — the core move logic (cards within and
@@ -1415,5 +1416,137 @@ describe("boardReducer — collection limits (TASK-20)", () => {
       },
     });
     expect(next).toHaveLength(L.boardsCount);
+  });
+});
+
+describe("boardReducer — SET_COLUMN_WIP_LIMIT (TASK-13)", () => {
+  it("sets a limit and keeps the omit-when-unset invariant on clear", () => {
+    const set = reduceBoard(freshBoard(), {
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: "col-backlog",
+      wipLimit: 2,
+    });
+    expect(set.columns[0].wipLimit).toBe(2);
+
+    const cleared = reduceBoard(set, {
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: "col-backlog",
+    });
+    expect(cleared.columns[0].wipLimit).toBeUndefined();
+    expect("wipLimit" in cleared.columns[0]).toBe(false);
+  });
+
+  it("clamps out-of-range values into 1…LIMITS.wipLimitMax", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: "col-backlog",
+      wipLimit: 10000,
+    });
+    expect(board.columns[0].wipLimit).toBe(LIMITS.wipLimitMax);
+
+    const board2 = reduceBoard(freshBoard(), {
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: "col-backlog",
+      wipLimit: -5,
+    });
+    expect(board2.columns[0].wipLimit).toBe(1);
+  });
+
+  it("is a no-op when the value or the column is unknown", () => {
+    const seed = freshBoard();
+    const board = reduceBoard(seed, {
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: "nope",
+      wipLimit: 3,
+    });
+    expect(board).toBe(seed);
+  });
+
+  it("blocks ADD_CARD at the limit but allows it again after clearing", () => {
+    let board = reduceBoard(freshBoard(), {
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: "col-done",
+      wipLimit: 1,
+    });
+    const blocked = reduceBoard(board, {
+      type: "ADD_CARD",
+      columnId: "col-done",
+      title: "One card too many",
+    });
+    expect(blocked.columns.find((c) => c.id === "col-done")?.cardIds).toEqual([
+      "card-3",
+    ]);
+
+    board = reduceBoard(board, {
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: "col-done",
+    });
+    const allowed = reduceBoard(board, {
+      type: "ADD_CARD",
+      columnId: "col-done",
+      title: "Fits now",
+    });
+    expect(allowed.columns.find((c) => c.id === "col-done")?.cardIds).toHaveLength(2);
+  });
+
+  it("blocks DUPLICATE_CARD at the limit", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: "col-done",
+      wipLimit: 1,
+    });
+    const next = reduceBoard(board, {
+      type: "DUPLICATE_CARD",
+      cardId: "card-3",
+    });
+    expect(next.columns.find((c) => c.id === "col-done")?.cardIds).toHaveLength(1);
+  });
+
+  it("blocks cross-column MOVE_CARD into a full column, allows within-column moves", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: "col-done",
+      wipLimit: 1,
+    });
+    const blocked = reduceBoard(board, {
+      type: "MOVE_CARD",
+      cardId: "card-1",
+      fromColumnId: "col-backlog",
+      toColumnId: "col-done",
+      toIndex: 1,
+    });
+    expect(blocked.columns.find((c) => c.id === "col-done")?.cardIds).toEqual([
+      "card-3",
+    ]);
+    expect(blocked.columns.find((c) => c.id === "col-backlog")?.cardIds).toContain(
+      "card-1",
+    );
+
+    const reordered = reduceBoard(board, {
+      type: "MOVE_CARD",
+      cardId: "card-1",
+      fromColumnId: "col-backlog",
+      toColumnId: "col-backlog",
+      toIndex: 0,
+    });
+    expect(reordered.columns.find((c) => c.id === "col-backlog")?.cardIds[0]).toBe(
+      "card-1",
+    );
+  });
+
+  it("keeps the limit on DUPLICATE_COLUMN", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: "col-done",
+      wipLimit: 1,
+    });
+    const next = reduceBoard(board, {
+      type: "DUPLICATE_COLUMN",
+      columnId: "col-done",
+      title: "Done copy",
+    });
+    const copy = next.columns.find((c) => c.title === "Done copy");
+    expect(copy?.wipLimit).toBe(1);
+    expect(copy?.cardIds).toHaveLength(1);
   });
 });
