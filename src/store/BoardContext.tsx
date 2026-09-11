@@ -104,6 +104,8 @@ interface BoardContextValue {
   ) => void;
   setCardDueDate: (cardId: string, dueDate?: number) => void;
   setCardCover: (cardId: string, cover?: CardCover) => void;
+  duplicateCard: (cardId: string, title?: string) => void;
+  duplicateColumn: (columnId: string, title?: string) => void;
   moveCard: (
     cardId: string,
     fromColumnId: string,
@@ -294,6 +296,8 @@ function createBoardActions(
   | "deleteChecklistItem"
   | "setCardDueDate"
   | "setCardCover"
+  | "duplicateCard"
+  | "duplicateColumn"
   | "moveCard"
   | "moveColumn"
 > {
@@ -348,6 +352,10 @@ function createBoardActions(
       dispatch({ type: "SET_CARD_DUE_DATE", cardId, dueDate }),
     setCardCover: (cardId: string, cover?: CardCover) =>
       dispatch({ type: "SET_CARD_COVER", cardId, cover }),
+    duplicateCard: (cardId: string, title?: string) =>
+      dispatch({ type: "DUPLICATE_CARD", cardId, title }),
+    duplicateColumn: (columnId: string, title?: string) =>
+      dispatch({ type: "DUPLICATE_COLUMN", columnId, title }),
     moveCard: (
       cardId: string,
       fromColumnId: string,

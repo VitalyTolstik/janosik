@@ -46,7 +46,8 @@ export function ColumnView({
   onCardClick,
   isFiltered = false,
 }: ColumnViewProps) {
-  const { board, addCard, renameColumn, deleteColumn } = useBoard();
+  const { board, addCard, renameColumn, deleteColumn, duplicateCard, duplicateColumn } =
+    useBoard();
   const { t, tp } = useI18n();
   const [renameOpen, setRenameOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -119,6 +120,12 @@ export function ColumnView({
             </span>
             <ColumnMenu
               onRename={() => setRenameOpen(true)}
+              onDuplicate={() =>
+                duplicateColumn(
+                  column.id,
+                  t("column.duplicateTitle", { title: column.title }),
+                )
+              }
               onDelete={() => setConfirmDelete(true)}
             />
             <GripVertical
@@ -153,6 +160,12 @@ export function ColumnView({
                         labels={labels}
                         onCardClick={
                           onCardClick ? () => onCardClick(card.id) : undefined
+                        }
+                        onCardDuplicate={() =>
+                          duplicateCard(
+                            card.id,
+                            t("card.duplicateTitle", { title: card.title }),
+                          )
                         }
                       />
                     </li>

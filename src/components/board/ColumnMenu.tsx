@@ -1,4 +1,4 @@
-import { EllipsisVertical, Pencil, Trash2 } from "lucide-react";
+import { CopyPlus, EllipsisVertical, Pencil, Trash2 } from "lucide-react";
 
 import { useI18n } from "@/i18n";
 import {
@@ -11,14 +11,15 @@ import {
 
 interface ColumnMenuProps {
   onRename: () => void;
+  onDuplicate: () => void;
   onDelete: () => void;
 }
 
 /**
- * Overflow menu on a column header: rename / delete. Stops pointer events
- * from bubbling up to the header's drag handle.
+ * Overflow menu on a column header: rename / duplicate / delete. Stops
+ * pointer events from bubbling up to the header's drag handle.
  */
-export function ColumnMenu({ onRename, onDelete }: ColumnMenuProps) {
+export function ColumnMenu({ onRename, onDuplicate, onDelete }: ColumnMenuProps) {
   const { t } = useI18n();
   return (
     <DropdownMenu>
@@ -36,6 +37,10 @@ export function ColumnMenu({ onRename, onDelete }: ColumnMenuProps) {
         <DropdownMenuItem onClick={onRename}>
           <Pencil className="h-4 w-4" />
           {t("column.rename")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onDuplicate}>
+          <CopyPlus className="h-4 w-4" />
+          {t("column.duplicate")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
