@@ -583,7 +583,7 @@ only mdxeditor from TASK 2
 
 #### TASK-21 — `editor-import-bug` · Импорт богатого маркдауна обрывается на код-блоке ✅
 
-- **Статус:** ✅ реализовано (ветка `feature/TASK-21-editor-import-bug`).
+- **Статус:** ✅ реализовано, PR #23 смержен.
 - **Корневая причина (подтверждена юнит-тестом):** `codeBlockPlugin()`
   без `codeBlockEditorDescriptors` не регистрирует ни одного редактора
   код-блоков → `MdastCodeVisitor.testNode` возвращает `false` для любого
