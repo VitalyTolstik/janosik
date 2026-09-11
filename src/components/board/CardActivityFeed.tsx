@@ -1,8 +1,10 @@
+import { useState } from "react";
 import {
   CalendarClock,
   CalendarX,
   ArrowRightLeft,
   AlignLeft,
+  ChevronRight,
   Plus,
   Tag,
   TagX,
@@ -38,9 +40,14 @@ interface CardActivityFeedProps {
  * A card's mini-biography: newest-first timeline of what happened to it.
  * Events are stored on the card by the reducer; legacy cards (and brand
  * new ones from old data) fall back to a single "created" entry.
+ *
+ * The timeline is collapsed behind a "Activity (n)" header (Trello-style):
+ * feeds can grow long, and history is a look-up, not a reading flow — so
+ * it opens on demand and starts collapsed again on the next card visit.
  */
 export function CardActivityFeed({ activity, createdAt }: CardActivityFeedProps) {
   const { t, lang } = useI18n();
+  const [expanded, setExpanded] = useState(false);
 
   const stored = activity ?? [];
   // The "created" row is guaranteed: cards made before the feature (or
@@ -60,40 +67,57 @@ export function CardActivityFeed({ activity, createdAt }: CardActivityFeedProps)
 
   return (
     <section aria-label={t("activity.title")}>
-      <h3 className="text-xs font-medium text-muted-foreground">
+      <button
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-1.5 rounded text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        data-testid="activity-toggle"
+        onClick={() => setExpanded((value) => !value)}
+        type="button"
+      >
+        <ChevronRight
+          aria-hidden="true"
+          className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-90" : ""}`}
+        />
         {t("activity.title")}
-      </h3>
-      <ol className="mt-2 space-y-1.5">
-        {timeline.map((event) => {
-          const Icon = ACTIVITY_ICONS[event.type] ?? Plus;
-          return (
-            <li
-              className="flex items-center gap-2 text-sm"
-              data-testid="activity-event"
-              key={event.id}
-            >
-              <Icon
-                aria-hidden="true"
-                className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
-              />
-              <span className="min-w-0 flex-1 truncate text-foreground/90">
-                {t(`activity.${event.type}`, {
-                  defaultValue: event.type,
-                  detail: event.detail ?? "",
-                })}
-              </span>
-              {/* Relative time up close; the exact timestamp on hover. */}
-              <time
-                className="shrink-0 text-[11px] text-muted-foreground/70"
-                dateTime={new Date(event.at).toISOString()}
-                title={formatDate(event.at, lang)}
+        {/* Jira-style count badge, visible even while collapsed. */}
+        <span className="rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground">
+          {timeline.length}
+        </span>
+      </button>
+
+      {expanded && (
+        <ol className="mt-2 space-y-1.5 border-l border-border/60 pl-3">
+          {timeline.map((event) => {
+            const Icon = ACTIVITY_ICONS[event.type] ?? Plus;
+            return (
+              <li
+                className="flex items-center gap-2 text-sm"
+                data-testid="activity-event"
+                key={event.id}
               >
-                {formatRelative(event.at, lang)}
-              </time>
-            </li>
-          );
-        })}
-      </ol>
+                <Icon
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
+                />
+                <span className="min-w-0 flex-1 truncate text-foreground/90">
+                  {t(`activity.${event.type}`, {
+                    defaultValue: event.type,
+                    detail: event.detail ?? "",
+                  })}
+                </span>
+                {/* Relative time up close; the exact timestamp on hover. */}
+                <time
+                  className="shrink-0 text-[11px] text-muted-foreground/70"
+                  dateTime={new Date(event.at).toISOString()}
+                  title={formatDate(event.at, lang)}
+                >
+                  {formatRelative(event.at, lang)}
+                </time>
+              </li>
+            );
+          })}
+        </ol>
+      )}
     </section>
   );
 }
