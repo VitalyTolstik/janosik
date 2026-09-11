@@ -197,6 +197,27 @@ describe("CardDialog cover", () => {
   });
 });
 
+describe("CardDialog duplicate", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("duplicates a card from the dialog: copy appears right below the original", async () => {
+    const dialog = await openCardDialog("Design the new onboarding flow");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Duplicate card" }),
+    );
+    // Dialog closes and the copy renders on the board below the original.
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull(),
+    );
+    const copies = screen.getAllByText("Copy of Design the new onboarding flow");
+    expect(copies).toHaveLength(1);
+    // The original is still there.
+    expect(screen.getByText("Design the new onboarding flow")).toBeInTheDocument();
+  });
+});
+
 describe("CardDialog checklists", () => {
   beforeEach(() => {
     localStorage.clear();
