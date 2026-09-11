@@ -172,12 +172,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     loadInitialState(persistence),
   );
 
-  // The URL decides which board is active; fall back to the first board.
+  // The URL decides which board is active; archived boards are not active
+  // (the redirect above sends the user to the first active one or `/`).
   const routeBoardId =
     matchPath(routes.boardPattern, location.pathname)?.params.boardId ?? null;
-  const board =
-    (routeBoardId ? state.find((b) => b.id === routeBoardId) : undefined) ??
-    state[0];
+  const board = routeBoardId
+    ? state.find((b) => b.id === routeBoardId && !b.archivedAt)
+    : undefined;
 
   // Latest committed state, readable from stable callbacks.
   const stateRef = useRef(state);
@@ -192,20 +193,21 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }, [board?.id]);
 
   // Redirect `/`, unknown paths, dead board ids and archived boards to a
-  // real active board (replace, so dead URLs never land in history). When
-  // every board is archived there is nowhere better to go — fall back to
-  // the first archived one instead of showing an empty screen.
+  // real active board (replace, so dead URLs never land in history). With
+  // zero active boards, land on `/` — the empty-state screen (Trello's
+  // home with "create new board"): the user is never left *on* an
+  // archived board, and restoration stays one click away in the switcher.
   useEffect(() => {
     const routed = routeBoardId
       ? state.find((b) => b.id === routeBoardId)
       : undefined;
     if (routed && !routed.archivedAt) return;
     const firstActive = state.find((b) => !b.archivedAt);
-    const fallback = firstActive ?? state[0];
-    if (fallback && fallback.id !== routeBoardId) {
-      navigate(routes.board(fallback.id), { replace: true });
+    const target = firstActive ? routes.board(firstActive.id) : routes.home;
+    if (location.pathname !== target) {
+      navigate(target, { replace: true });
     }
-  }, [routeBoardId, state, navigate]);
+  }, [routeBoardId, state, location.pathname, navigate]);
 
   // Debounced persistence + throttled auto-backup after every change.
   useEffect(() => {
