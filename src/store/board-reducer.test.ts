@@ -762,3 +762,105 @@ describe("boardReducer — covers", () => {
     expect("cover" in badValue.cards["card-1"]).toBe(false);
   });
 });
+
+describe("boardReducer — DUPLICATE_CARD", () => {
+  it("duplicates a card right below the original with a copy title", () => {
+    const seed = freshBoard();
+    const next = reduceBoard(seed, {
+      type: "DUPLICATE_CARD",
+      cardId: "card-1",
+      title: "Copy of card 1",
+    });
+    const column = next.columns.find((c) => c.id === "col-backlog")!;
+    expect(column.cardIds).toHaveLength(4);
+    expect(column.cardIds[1]).not.toBe("card-1");
+    const copy = next.cards[column.cardIds[1]];
+    expect(copy.title).toBe("Copy of card 1");
+    // Content is copied, ids/timestamps are fresh.
+    expect(copy.labelIds).toEqual(["label-design"]);
+    expect(copy.id).not.toBe("card-1");
+    expect(copy.createdAt).toBeGreaterThanOrEqual(seed.cards["card-1"].createdAt);
+    expect(copy.updatedAt).toBe(copy.createdAt);
+    // The original is untouched.
+    expect(next.cards["card-1"]).toEqual(seed.cards["card-1"]);
+  });
+
+  it("copies description, checklists, due date and cover", () => {
+    const now = Date.now();
+    const seed = freshBoard();
+    seed.cards["card-1"] = {
+      ...seed.cards["card-1"],
+      description: "Some notes",
+      checklists: [
+        {
+          id: "cl-1",
+          title: "Steps",
+          items: [{ id: "cli-1", text: "First", done: false }],
+        },
+      ],
+      dueDate: now + 86_400_000,
+      cover: { type: "color", value: "blue" },
+    };
+    const next = reduceBoard(seed, { type: "DUPLICATE_CARD", cardId: "card-1" });
+    const column = next.columns.find((c) => c.cardIds.length === 4)!;
+    const copy = next.cards[column.cardIds[1]];
+    expect(copy.description).toBe("Some notes");
+    expect(copy.checklists).toEqual(seed.cards["card-1"].checklists);
+    expect(copy.dueDate).toBe(seed.cards["card-1"].dueDate);
+    expect(copy.cover).toEqual({ type: "color", value: "blue" });
+    // Nested structures must not alias the source card.
+    expect(copy.checklists).not.toBe(seed.cards["card-1"].checklists);
+  });
+
+  it("keeps the source title when no copy title is provided", () => {
+    const next = reduceBoard(freshBoard(), {
+      type: "DUPLICATE_CARD",
+      cardId: "card-1",
+    });
+    const column = next.columns.find((c) => c.id === "col-backlog")!;
+    expect(next.cards[column.cardIds[1]].title).toBe(
+      "Design the new onboarding flow",
+    );
+  });
+
+  it("ignores unknown card ids", () => {
+    const board = freshBoard();
+    expect(
+      reduceBoard(board, { type: "DUPLICATE_CARD", cardId: "nope" }),
+    ).toBe(board);
+  });
+});
+
+describe("boardReducer — DUPLICATE_COLUMN", () => {
+  it("duplicates a column with all cards placed to its right", () => {
+    const seed = freshBoard();
+    const next = reduceBoard(seed, {
+      type: "DUPLICATE_COLUMN",
+      columnId: "col-backlog",
+      title: "Copy of Backlog",
+    });
+    expect(next.columns).toHaveLength(4);
+    expect(next.columns[1].title).toBe("Copy of Backlog");
+    expect(next.columns[1].id).not.toBe("col-backlog");
+    // Every card is copied with a fresh id, same title and labels.
+    const source = seed.columns[0];
+    const copy = next.columns[1];
+    expect(copy.cardIds).toHaveLength(source.cardIds.length);
+    copy.cardIds.forEach((id, index) => {
+      const sourceCard = seed.cards[source.cardIds[index]];
+      const copied = next.cards[id];
+      expect(copied.title).toBe(sourceCard.title);
+      expect(copied.labelIds).toEqual(sourceCard.labelIds);
+      expect(id).not.toBe(sourceCard.id);
+    });
+    // Original cards stay referenced by the original column only.
+    expect(next.columns[0].cardIds).toEqual(["card-1", "card-2", "card-6"]);
+  });
+
+  it("ignores unknown column ids", () => {
+    const board = freshBoard();
+    expect(
+      reduceBoard(board, { type: "DUPLICATE_COLUMN", columnId: "nope" }),
+    ).toBe(board);
+  });
+});
