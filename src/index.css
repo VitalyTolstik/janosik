@@ -860,6 +860,47 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
   background: transparent;
   padding: 0;
 }
+/* Plain-text code block editor (TASK-21, PlainTextCodeBlock.tsx) — the
+   decorator renders our own component, not a library <pre>. */
+.mdxeditor.janosik-mdx .janosik-md-content .janosik-md-codeblock {
+  position: relative;
+  margin: 0.6rem 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--hover);
+  overflow: hidden;
+}
+.mdxeditor.janosik-mdx .janosik-md-content .janosik-md-codeblock-textarea {
+  display: block;
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 10px 12px;
+  resize: none;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-x: auto;
+}
+.mdxeditor.janosik-mdx .janosik-md-content .janosik-md-codeblock-textarea[readonly] {
+  cursor: default;
+}
+.mdxeditor.janosik-mdx .janosik-md-content .janosik-md-codeblock-lang {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
 .mdxeditor.janosik-mdx .janosik-md-content blockquote {
   margin: 0.6rem 0;
   border-left: 2px solid var(--primary);
