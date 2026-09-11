@@ -479,7 +479,7 @@ only mdxeditor from TASK 2
 
 #### TASK-13 — `wip-limits` · WIP-лимиты колонок ✅
 
-- **Статус:** ✅ реализовано.
+- **Статус:** ✅ реализовано, PR #24 смержен.
 - **Модель:** `Column.wipLimit?: number` (omit-when-unset, как у остальных
   опциональных полей), `LIMITS.wipLimitMax = 99`. Экшен
   `SET_COLUMN_WIP_LIMIT` — undoable (через общий dispatch/history),
