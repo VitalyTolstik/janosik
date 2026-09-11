@@ -6,6 +6,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
@@ -47,9 +48,11 @@ function renderBoard() {
       <BoardBackgroundProvider>
         <I18nProvider>
           <TooltipProvider>
-            <BoardProvider>
-              <BoardSection />
-            </BoardProvider>
+            <MemoryRouter>
+              <BoardProvider>
+                <BoardSection />
+              </BoardProvider>
+            </MemoryRouter>
           </TooltipProvider>
         </I18nProvider>
       </BoardBackgroundProvider>

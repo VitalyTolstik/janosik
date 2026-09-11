@@ -864,3 +864,100 @@ describe("boardReducer — DUPLICATE_COLUMN", () => {
     ).toBe(board);
   });
 });
+
+describe("boardReducer — multi-board routing", () => {
+  function secondBoard(): Board {
+    return {
+      ...freshBoard(),
+      id: "board-2",
+      title: "Second",
+      columns: [],
+      cards: {},
+    };
+  }
+
+  it("routes a board-scoped action to the board with the matching boardId", () => {
+    const first = freshBoard();
+    const second = secondBoard();
+    const next = boardReducer([first, second], {
+      type: "ADD_COLUMN",
+      title: "Only on second",
+      boardId: "board-2",
+    });
+    // First board untouched, second got the column.
+    expect(next[0]).toBe(first);
+    expect(next[1].columns.map((c) => c.title)).toEqual(["Only on second"]);
+  });
+
+  it("applies actions without boardId to the first board", () => {
+    const first = freshBoard();
+    const second = secondBoard();
+    const next = boardReducer([first, second], {
+      type: "ADD_COLUMN",
+      title: "On first",
+    });
+    expect(next[1]).toBe(second);
+    expect(next[0].columns).toHaveLength(freshBoard().columns.length + 1);
+  });
+
+  it("ignores board-scoped actions with an unknown boardId", () => {
+    const state = boardReducer([freshBoard()], {
+      type: "ADD_COLUMN",
+      title: "Nowhere",
+      boardId: "ghost",
+    });
+    expect(state).toHaveLength(1);
+    expect(state[0].columns).toHaveLength(freshBoard().columns.length);
+  });
+
+  it("ADD_BOARD appends a board with a fresh id", () => {
+    const board = secondBoard();
+    const next = boardReducer([freshBoard()], {
+      type: "ADD_BOARD",
+      board,
+    });
+    expect(next).toHaveLength(2);
+    expect(next[1].id).toBe("board-2");
+    expect(next[1].columns).toEqual([]);
+  });
+
+  it("ADD_BOARD ignores a duplicate board id", () => {
+    const seed = freshBoard();
+    const next = boardReducer([seed], {
+      type: "ADD_BOARD",
+      board: { ...seed },
+    });
+    expect(next).toHaveLength(1);
+  });
+
+  it("REMOVE_BOARD removes the targeted board and keeps the rest", () => {
+    const next = boardReducer([freshBoard(), secondBoard()], {
+      type: "REMOVE_BOARD",
+      boardId: "board-2",
+    });
+    expect(next).toHaveLength(1);
+    expect(next[0].id).not.toBe("board-2");
+  });
+
+  it("REMOVE_BOARD refuses to remove the last remaining board", () => {
+    const seed = freshBoard();
+    const next = boardReducer([seed], {
+      type: "REMOVE_BOARD",
+      boardId: seed.id,
+    });
+    expect(next).toEqual([seed]);
+  });
+
+  it("RESTORE_BOARD restores the snapshot into the targeted board slot", () => {
+    const first = freshBoard();
+    const second = secondBoard();
+    const snapshot = { ...second, title: "Restored" };
+    const next = boardReducer([first, second], {
+      type: "RESTORE_BOARD",
+      boardId: "board-2",
+      board: snapshot,
+    });
+    expect(next[0]).toBe(first);
+    expect(next[1].title).toBe("Restored");
+  });
+});
