@@ -1,4 +1,5 @@
 import { BackgroundSwitcher } from "@/components/BackgroundSwitcher";
+import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { DataMenu } from "@/components/DataMenu";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ArrowLeftIcon } from "@/components/ui/arrow-left-icon";
@@ -24,8 +25,9 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-md sm:px-6">
-      <div className="group flex items-center gap-2.5">
-        <div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-secondary text-primary-foreground shadow-sm">
+      <div className="flex items-center gap-2 sm:gap-3">
+        <div className="group flex items-center gap-2.5">
+          <div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-secondary text-primary-foreground shadow-sm">
           <svg
             className="janosik-feather"
             width="20"
@@ -72,10 +74,12 @@ export function Header() {
           >
             <path d="M12 0c.9 5.2 3.6 7.8 12 12-8.4 4.2-11.1 6.8-12 12-.9-5.2-3.6-7.8-12-12 8.4-4.2 11.1-6.8 12-12z" />
           </svg>
+          </div>
+          <h1 className="font-display text-3xl font-medium tracking-[-0.02em] text-foreground">
+            Janosik
+          </h1>
+          <BoardSwitcher />
         </div>
-        <h1 className="font-display text-3xl font-medium tracking-[-0.02em] text-foreground">
-          Janosik
-        </h1>
       </div>
 
       <div className="flex items-center gap-0.5">

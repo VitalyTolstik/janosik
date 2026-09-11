@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { HashRouter, Route, Routes } from "react-router-dom";
 
 import { BoardSection } from "@/components/BoardSection";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -9,6 +10,16 @@ import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
+
+/**
+ * `/` and any unknown URL render nothing for a frame — the BoardProvider
+ * redirects them to the first board (replace, so dead URLs never land in
+ * history). `/board/:boardId` is the canonical board address; unknown ids
+ * are redirected by the BoardProvider too.
+ */
+function NoBoardRoute() {
+  return null;
+}
 
 export default function App() {
   // First paint is done — drop the preflight kill-switch style (which
@@ -26,12 +37,21 @@ export default function App() {
           <ToastProvider>
             <ErrorBoundary>
               <TooltipProvider delayDuration={150}>
-                <BoardProvider>
-                  <div className="flex min-h-screen flex-col bg-background text-foreground">
-                    <Header />
-                    <BoardSection />
-                  </div>
-                </BoardProvider>
+                <HashRouter>
+                  <BoardProvider>
+                    <div className="flex min-h-screen flex-col bg-background text-foreground">
+                      <Header />
+                      <Routes>
+                        <Route path="/" element={<NoBoardRoute />} />
+                        <Route
+                          path="/board/:boardId"
+                          element={<BoardSection />}
+                        />
+                        <Route path="*" element={<NoBoardRoute />} />
+                      </Routes>
+                    </div>
+                  </BoardProvider>
+                </HashRouter>
               </TooltipProvider>
             </ErrorBoundary>
           </ToastProvider>
