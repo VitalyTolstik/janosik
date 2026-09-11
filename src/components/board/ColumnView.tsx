@@ -115,7 +115,7 @@ export function ColumnView({
           transition,
         }}
         className={cn(
-          "flex max-h-full w-[80vw] max-w-72 shrink-0 flex-col rounded-xl border bg-card/60 backdrop-blur-sm transition-colors sm:w-72 sm:max-w-none",
+          "flex max-h-full w-[80vw] max-w-72 shrink-0 flex-col rounded-xl border bg-card/15 backdrop-blur-sm transition-colors sm:w-72 sm:max-w-none",
           isColumnDragging
             ? "border-primary/60 opacity-50"
             : isOver
