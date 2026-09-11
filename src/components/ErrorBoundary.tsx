@@ -30,18 +30,20 @@ export class ErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
+    // The technical details stay in the console only — the fallback screen
+    // never exposes the raw error to end users.
     console.error("Janosik crashed:", error, info.componentStack);
   }
 
   render() {
     if (this.state.error !== null) {
-      return <ErrorFallback message={this.state.error.message} />;
+      return <ErrorFallback />;
     }
     return this.props.children;
   }
 }
 
-function ErrorFallback({ message }: { message: string }) {
+function ErrorFallback() {
   const { t } = useI18n();
 
   const handleReset = () => {
@@ -86,11 +88,6 @@ function ErrorFallback({ message }: { message: string }) {
           <p className="text-sm text-muted-foreground">
             {t("error.description")}
           </p>
-          {message ? (
-            <p className="mx-auto max-w-[16rem] truncate font-mono text-xs text-muted-foreground/70">
-              {message}
-            </p>
-          ) : null}
         </div>
         <div className="flex justify-center gap-2">
           <Button onClick={() => window.location.reload()}>
