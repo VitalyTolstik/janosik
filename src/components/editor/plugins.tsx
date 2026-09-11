@@ -22,6 +22,7 @@ import {
 } from "@mdxeditor/editor";
 
 import { editorTranslation } from "@/components/editor/editor-i18n";
+import { PlainTextCodeBlockEditor } from "@/components/editor/PlainTextCodeBlock";
 import { janosikIconFor } from "@/components/editor/janosik-icons";
 
 /**
@@ -29,9 +30,10 @@ import { janosikIconFor } from "@/components/editor/janosik-icons";
  *
  * The curated feature set for a kanban card (TASK-2): headings, bold/italic,
  * strikethrough, inline code, links, bullet/numbered/check lists, quotes and
- * thematic breaks. Tables, code blocks and images have no toolbar buttons on
- * purpose — the plugins stay enabled only so legacy markdown (seed data,
- * imported JSON from the TASK-1 era) keeps round-tripping without errors.
+ * thematic breaks. Tables and images have no toolbar buttons on purpose —
+ * the plugins stay enabled only so legacy markdown (seed data, imported JSON
+ * from the TASK-1 era) keeps round-tripping without errors. Code blocks are
+ * fully editable via the CodeMirror descriptor (TASK-21).
  *
  * Raw HTML is never rendered: `suppressHtmlProcessing` keeps HTML tags as
  * literal text, so pasted/imported markup can't inject anything.
@@ -48,7 +50,18 @@ const contentPlugins: RealmPlugin[] = [
   quotePlugin(),
   linkPlugin(),
   markdownShortcutPlugin(),
-  codeBlockPlugin({ defaultCodeBlockLanguage: "txt" }),
+  codeBlockPlugin({
+    defaultCodeBlockLanguage: "txt",
+    // TASK-21: without any descriptor `MdastCodeVisitor.testNode` never
+    // matches `code` mdast nodes — the import throws mid-document (truncated
+    // content) and the library permanently mutes onChange (silent data loss:
+    // edits stopped saving). The catch-all plain-text descriptor (see
+    // PlainTextCodeBlock) makes code blocks importable and editable at
+    // ~zero bundle cost; the stock CodeMirror editor would add ~430 KB.
+    codeBlockEditorDescriptors: [
+      { match: () => true, priority: 1, Editor: PlainTextCodeBlockEditor },
+    ],
+  }),
   imagePlugin({
     disableImageResize: true,
     disableImageSettingsButton: true,
