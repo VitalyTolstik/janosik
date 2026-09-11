@@ -22,10 +22,8 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 
 import { AddColumnControl } from "@/components/board/AddColumnControl";
-import { CardDialog } from "@/components/board/CardDialog";
 import { CardItem } from "@/components/board/CardItem";
 import { ColumnView } from "@/components/board/ColumnView";
 import { useI18n } from "@/i18n";
@@ -71,12 +69,16 @@ interface DndBoardProps {
   isFiltering?: boolean;
   /** Filter/search query highlighted on the card fronts. */
   highlight?: string;
+  /** Fired on a card click (and the e/Enter hotkey) — the dialog itself
+   *  lives in BoardSection so it works from every view. */
+  onCardClick: (cardId: string) => void;
 }
 
 export function DndBoard({
   filteredCardIds,
   isFiltering = false,
   highlight,
+  onCardClick,
 }: DndBoardProps) {
   const { board, addColumn, moveCard, moveColumn } = useBoard();
   const { tp, t } = useI18n();
@@ -91,18 +93,6 @@ export function DndBoard({
     setDraftState(next);
   }, []);
 
-  const [openCardId, setOpenCardId] = useState<string | null>(null);
-  // The open card mirrors the `?card=` URL param (shareable card links and
-  // the global-search "open the card itself" behaviour): navigating with the
-  // param opens the dialog; closing the dialog clears the param.
-  const [searchParams, setSearchParams] = useSearchParams();
-  useEffect(() => {
-    const cardParam = searchParams.get("card");
-    if (cardParam && board?.cards[cardParam] && openCardId !== cardParam) {
-      setOpenCardId(cardParam);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only reacts to URL changes
-  }, [searchParams, board]);
   // Keyboard cursor (j/k navigation): flat index over the visible cards —
   // columns in board order, cards in (filtered) column order. `e`/Enter
   // opens the cursor's card dialog. Cleared by Escape or when the board
@@ -426,15 +416,18 @@ export function DndBoard({
 
   const handleDragCancel = useCallback(() => updateDraft(null), [updateDraft]);
 
-  // Open the card detail dialog, ignoring the click that immediately follows
-  // a finished drag.
-  const handleCardClick = useCallback((cardId: string) => {
-    if (suppressNextCardClickRef.current) {
-      suppressNextCardClickRef.current = false;
-      return;
-    }
-    setOpenCardId(cardId);
-  }, []);
+  // Open the card detail dialog (owned by BoardSection), ignoring the click
+  // that immediately follows a finished drag.
+  const handleCardClick = useCallback(
+    (cardId: string) => {
+      if (suppressNextCardClickRef.current) {
+        suppressNextCardClickRef.current = false;
+        return;
+      }
+      onCardClick(cardId);
+    },
+    [onCardClick],
+  );
 
   if (!board) return null;
 
@@ -486,7 +479,7 @@ export function DndBoard({
         });
       } else if ((key === "e" || key === "Enter") && cursorCardId) {
         event.preventDefault();
-        setOpenCardId(cursorCardId);
+        onCardClick(cursorCardId);
       } else if (key === "n") {
         event.preventDefault();
         const columnId =
@@ -512,7 +505,7 @@ export function DndBoard({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- visible cards / cursor are the intent
-  }, [visibleCardIds, cursorCardId, cursor, columnOrder, filteredCardIds]);
+  }, [visibleCardIds, cursorCardId, cursor, columnOrder, filteredCardIds, onCardClick]);
 
   const activeCard =
     draft?.mode === "card" ? board.cards[draft.activeCardId] : undefined;
@@ -591,20 +584,6 @@ export function DndBoard({
           </div>
         ) : null}
       </DragOverlay>
-
-      <CardDialog
-        cardId={openCardId}
-        open={openCardId !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setOpenCardId(null);
-            // Drop the deep-link param so a refresh doesn't reopen the card.
-            if (searchParams.get("card")) {
-              setSearchParams({}, { replace: true });
-            }
-          }
-        }}
-      />
     </DndContext>
   );
 }
