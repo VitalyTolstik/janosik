@@ -96,6 +96,35 @@ export function formatDateOnly(timestamp: number, lang: string): string {
 }
 
 /**
+ * Locale-aware relative time for recent moments — "5 minutes ago" /
+ * "5 минут назад", "yesterday" / "вчера" (Intl.RelativeTimeFormat with
+ * `numeric: "auto"`). Beyond a week it degrades to the exact short
+ * date(time), which reads better than "3 months ago".
+ */
+export function formatRelative(
+  timestamp: number,
+  lang: string,
+  now: number = Date.now(),
+): string {
+  const locale = lang.startsWith("ru") ? "ru-RU" : "en-US";
+  const diff = timestamp - now;
+  const abs = Math.abs(diff);
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  if (abs >= WEEK_MS) return formatDate(timestamp, lang);
+  try {
+    const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+    if (abs < 60_000) return rtf.format(Math.round(diff / 1000), "second");
+    if (abs < 3_600_000) return rtf.format(Math.round(diff / 60_000), "minute");
+    if (abs < 86_400_000) {
+      return rtf.format(Math.round(diff / 3_600_000), "hour");
+    }
+    return rtf.format(Math.round(diff / 86_400_000), "day");
+  } catch {
+    return formatDate(timestamp, lang);
+  }
+}
+
+/**
  * Whether the locale conventionally reads clocks as 12-hour (AM/PM).
  * `ru` is 24-hour everywhere; `en` defaults to 12-hour (US convention —
  * our main English audience). A future settings toggle can override this.

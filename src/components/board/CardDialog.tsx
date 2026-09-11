@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ArrowRightLeft, CalendarClock, CopyPlus, Trash2 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
+import { CardActivityFeed } from "@/components/board/CardActivityFeed";
 import { CardChecklists } from "@/components/board/CardChecklists";
 import { CardDueDate } from "@/components/board/CardDueDate";
 import { CardCoverPicker } from "@/components/board/CardCoverPicker";
@@ -193,6 +194,8 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
             <CardCoverPicker cardId={card.id} cover={card.cover} />
 
             <CardChecklists cardId={card.id} checklists={card.checklists ?? []} />
+
+            <CardActivityFeed activity={card.activity} createdAt={card.createdAt} />
 
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-medium text-muted-foreground">
