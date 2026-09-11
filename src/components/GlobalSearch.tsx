@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { Search } from "lucide-react";
+import { SearchIcon } from "@/components/ui/search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -129,7 +129,7 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
             aria-label={t("search.aria")}
             onClick={() => setOpenBoth(true)}
           >
-            <Search size={20} />
+            <SearchIcon size={20} />
           </Button>
         </TooltipTrigger>
         <TooltipContent>
