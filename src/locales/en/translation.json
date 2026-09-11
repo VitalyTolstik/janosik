@@ -49,6 +49,7 @@
   "view.calendar.scaleMonth": "Month",
   "view.calendar.scaleWeek": "Week",
   "view.calendar.unscheduled": "Unscheduled",
+  "view.calendar.hint": "Click a day to add a card or open it",
   "view.calendar.unscheduledEmpty": "Everything is scheduled",
   "view.calendar.dayEmpty": "Nothing planned for this day",
   "view.calendar.moreCards_one": "{{count}} more card",

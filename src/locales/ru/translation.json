@@ -49,6 +49,7 @@
   "view.calendar.scaleMonth": "Месяц",
   "view.calendar.scaleWeek": "Неделя",
   "view.calendar.unscheduled": "Без срока",
+  "view.calendar.hint": "Клик по дню — создать карточку или открыть день",
   "view.calendar.unscheduledEmpty": "Всё запланировано",
   "view.calendar.dayEmpty": "На этот день ничего не запланировано",
   "view.calendar.moreCards_one": "ещё {{count}} карточка",
