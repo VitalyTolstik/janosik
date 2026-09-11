@@ -28,6 +28,8 @@ interface ColumnViewProps {
   isFiltered?: boolean;
   /** Filter/search query highlighted on the card fronts. */
   highlight?: string;
+  /** The j/k keyboard cursor card — rendered with a focus ring. */
+  cursorCardId?: string;
 }
 
 /**
@@ -48,6 +50,7 @@ export function ColumnView({
   onCardClick,
   isFiltered = false,
   highlight,
+  cursorCardId,
 }: ColumnViewProps) {
   const {
     board,
@@ -170,6 +173,7 @@ export function ColumnView({
                         card={card}
                         labels={labels}
                         highlight={highlight}
+                        isCursor={card.id === cursorCardId}
                         onCardClick={
                           onCardClick ? () => onCardClick(card.id) : undefined
                         }
@@ -190,6 +194,7 @@ export function ColumnView({
 
         <footer className="px-2 pb-2">
           <CardComposer
+            columnId={column.id}
             labels={board.labels}
             onSubmit={(title, labelIds) => addCard(column.id, title, labelIds)}
           />
