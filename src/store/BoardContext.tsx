@@ -124,6 +124,10 @@ interface BoardContextValue {
   addBoard: (title: string) => string;
   /** Removes a board; the caller must navigate away from it first/after. */
   removeBoard: (boardId: string) => void;
+  /** Archives a board (data kept; hidden from the normal switcher list). */
+  archiveBoard: (boardId: string) => void;
+  /** Brings an archived board back to the active list. */
+  unarchiveBoard: (boardId: string) => void;
   /* Undo / redo (scoped to the active board) */
   undo: () => void;
   redo: () => void;
@@ -184,12 +188,20 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     activeIdRef.current = board?.id;
   }, [board?.id]);
 
-  // Redirect `/`, unknown paths and dead board ids to a real board
-  // (replace, so dead URLs never land in history).
+  // Redirect `/`, unknown paths, dead board ids and archived boards to a
+  // real active board (replace, so dead URLs never land in history). When
+  // every board is archived there is nowhere better to go — fall back to
+  // the first archived one instead of showing an empty screen.
   useEffect(() => {
-    if (routeBoardId && state.some((b) => b.id === routeBoardId)) return;
-    const first = state[0];
-    if (first) navigate(routes.board(first.id), { replace: true });
+    const routed = routeBoardId
+      ? state.find((b) => b.id === routeBoardId)
+      : undefined;
+    if (routed && !routed.archivedAt) return;
+    const firstActive = state.find((b) => !b.archivedAt);
+    const fallback = firstActive ?? state[0];
+    if (fallback && fallback.id !== routeBoardId) {
+      navigate(routes.board(fallback.id), { replace: true });
+    }
   }, [routeBoardId, state, navigate]);
 
   // Debounced persistence + throttled auto-backup after every change.
@@ -236,6 +248,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     }
     if (action.type === "REMOVE_BOARD") {
       historiesRef.current.delete(action.boardId);
+      dispatchRaw(action);
+      return;
+    }
+    if (
+      action.type === "ARCHIVE_BOARD" ||
+      action.type === "UNARCHIVE_BOARD"
+    ) {
+      // Organizational actions, not content edits — no undo entry.
       dispatchRaw(action);
       return;
     }
@@ -340,6 +360,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     dispatchRaw({ type: "REMOVE_BOARD", boardId });
   }, []);
 
+  const archiveBoard = useCallback((boardId: string) => {
+    dispatchRaw({ type: "ARCHIVE_BOARD", boardId });
+  }, []);
+
+  const unarchiveBoard = useCallback((boardId: string) => {
+    dispatchRaw({ type: "UNARCHIVE_BOARD", boardId });
+  }, []);
+
   const value = useMemo<BoardContextValue>(
     () => ({
       board,
@@ -348,6 +376,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       ...createBoardActions(dispatch),
       addBoard,
       removeBoard,
+      archiveBoard,
+      unarchiveBoard,
       undo,
       redo,
       canUndo: board
@@ -358,7 +388,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         : false,
       importBoards,
     }),
-    [state, board, dispatch, addBoard, removeBoard, undo, redo, importBoards],
+    [state, board, dispatch, addBoard, removeBoard, archiveBoard, unarchiveBoard, undo, redo, importBoards],
   );
 
   return (

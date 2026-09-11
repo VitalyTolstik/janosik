@@ -231,6 +231,18 @@ export interface RemoveBoardAction {
   boardId: string;
 }
 
+/** Archive a board (data kept, hidden from the normal switcher list). */
+export interface ArchiveBoardAction {
+  type: "ARCHIVE_BOARD";
+  boardId: string;
+}
+
+/** Bring an archived board back to the active list. */
+export interface UnarchiveBoardAction {
+  type: "UNARCHIVE_BOARD";
+  boardId: string;
+}
+
 export type BoardAction =
   | BoardScoped<AddColumnAction>
   | BoardScoped<RenameColumnAction>
@@ -260,7 +272,9 @@ export type BoardAction =
   | RestoreBoardAction
   | ImportBoardsAction
   | AddBoardAction
-  | RemoveBoardAction;
+  | RemoveBoardAction
+  | ArchiveBoardAction
+  | UnarchiveBoardAction;
 
 /** Initial state: the seed board (used when localStorage is empty). */
 export function initialBoardState(): BoardState {
@@ -793,6 +807,22 @@ export function boardReducer(
     return state.length <= 1
       ? state
       : state.filter((b) => b.id !== action.boardId);
+  }
+  if (action.type === "ARCHIVE_BOARD") {
+    // Archiving keeps every byte of the board — only the timestamp is set.
+    // Like REMOVE_BOARD this is organizational (no per-board undo entry).
+    return state.map((b) =>
+      b.id === action.boardId && !b.archivedAt
+        ? { ...b, archivedAt: Date.now(), updatedAt: Date.now() }
+        : b,
+    );
+  }
+  if (action.type === "UNARCHIVE_BOARD") {
+    return state.map((b) => {
+      if (b.id !== action.boardId || !b.archivedAt) return b;
+      const { archivedAt: _archivedAt, ...rest } = b;
+      return { ...rest, updatedAt: Date.now() };
+    });
   }
   if (action.type === "IMPORT_BOARDS") {
     return action.boards;
