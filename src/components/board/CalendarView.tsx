@@ -519,32 +519,50 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
                   open={isDayOpen}
                   onOpenChange={(open) => setOpenDayKey(open ? key : null)}
                 >
-                  {/* The whole cell is the anchor AND the click target:
-                      clicking the empty area (or the day number) opens the
-                      day panel — a composer for a card due this day plus
-                      the full list of the day's cards. */}
-                  <PopoverAnchor asChild>
-                    <div
-                      {...dragProps(key)}
-                      data-testid="calendar-day"
-                      data-date={key}
-                      onClick={() => setOpenDayKey(key)}
-                      className={cn(
-                        "relative flex flex-col overflow-hidden border-b border-r border-border/40 p-1.5 [&:nth-child(7n)]:border-r-0",
-                        isWeek ? "min-h-72" : "h-28",
-                        !isSameMonth(day, anchor) && !isWeek && "bg-muted/30",
-                        dragOverKey === key && "bg-primary/10 ring-1 ring-inset ring-primary/40",
-                      )}
-                    >
+                  {/* The icon is the anchor AND the panel's home position —
+                      opening the panel (from the icon, the day number or
+                      the empty area) always pops it neatly under the
+                      top-left corner of the day. */}
+                  <div
+                    {...dragProps(key)}
+                    data-testid="calendar-day"
+                    data-date={key}
+                    onClick={() => setOpenDayKey(key)}
+                    className={cn(
+                      "group/cell relative flex flex-col overflow-hidden border-b border-r border-border/40 p-1.5 [&:nth-child(7n)]:border-r-0",
+                      isWeek ? "min-h-72" : "h-28",
+                      !isSameMonth(day, anchor) && !isWeek && "bg-muted/30",
+                      dragOverKey === key && "bg-primary/10 ring-1 ring-inset ring-primary/40",
+                    )}
+                  >
                       <div className="mb-1 flex items-center justify-between gap-1">
-                        <span
-                          className={cn(
-                            "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs tabular-nums",
-                            isToday(day) && "bg-primary font-semibold text-primary-foreground",
-                            !isToday(day) && !isSameMonth(day, anchor) && "text-muted-foreground/60",
-                          )}
-                        >
-                          {format(day, "d")}
+                        <span className="flex items-center gap-1">
+                          <span
+                            className={cn(
+                              "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs tabular-nums",
+                              isToday(day) && "bg-primary font-semibold text-primary-foreground",
+                              !isToday(day) && !isSameMonth(day, anchor) && "text-muted-foreground/60",
+                            )}
+                          >
+                            {format(day, "d")}
+                          </span>
+                          <PopoverAnchor asChild>
+                            <button
+                              type="button"
+                              aria-label={t("composer.add")}
+                              data-testid="day-add"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setOpenDayKey(isDayOpen ? null : key);
+                              }}
+                              className={cn(
+                                "flex h-5 w-5 items-center justify-center rounded-md bg-primary/15 text-primary opacity-0 transition-opacity hover:bg-primary/25 group-hover/cell:opacity-100 focus-visible:opacity-100",
+                                isDayOpen && "opacity-100",
+                              )}
+                            >
+                              <Plus className="h-3 w-3" aria-hidden />
+                            </button>
+                          </PopoverAnchor>
                         </span>
                         {overflow > 0 ? (
                           <button
@@ -568,10 +586,9 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
                       {entries.length > MAX_CHIPS_PER_CELL && !isWeek ? (
                         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-card to-transparent" />
                       ) : null}
-                    </div>
-                  </PopoverAnchor>
+                  </div>
                   <PopoverContent
-                    align="center"
+                    align="start"
                     side="bottom"
                     className="w-64 p-2"
                     data-testid="day-panel"
