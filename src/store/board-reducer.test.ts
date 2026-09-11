@@ -948,6 +948,47 @@ describe("boardReducer — multi-board routing", () => {
     expect(next).toEqual([seed]);
   });
 
+  it("ARCHIVE_BOARD sets archivedAt and keeps all board data", () => {
+    const seed = freshBoard();
+    const next = boardReducer([seed], {
+      type: "ARCHIVE_BOARD",
+      boardId: seed.id,
+    });
+    expect(next[0].archivedAt).toBeGreaterThan(0);
+    // Nothing was destroyed — the board content is untouched.
+    expect(next[0].columns).toEqual(seed.columns);
+    expect(next[0].cards).toEqual(seed.cards);
+    expect(next[0].labels).toEqual(seed.labels);
+  });
+
+  it("ARCHIVE_BOARD is idempotent (does not move the timestamp)", () => {
+    const seed = { ...freshBoard(), archivedAt: 42 };
+    const next = boardReducer([seed], {
+      type: "ARCHIVE_BOARD",
+      boardId: seed.id,
+    });
+    expect(next[0].archivedAt).toBe(42);
+  });
+
+  it("UNARCHIVE_BOARD clears archivedAt", () => {
+    const seed = { ...freshBoard(), archivedAt: 42 };
+    const next = boardReducer([seed], {
+      type: "UNARCHIVE_BOARD",
+      boardId: seed.id,
+    });
+    expect(next[0].archivedAt).toBeUndefined();
+    expect("archivedAt" in next[0]).toBe(false);
+  });
+
+  it("UNARCHIVE_BOARD on a non-archived board is a no-op", () => {
+    const seed = freshBoard();
+    const next = boardReducer([seed], {
+      type: "UNARCHIVE_BOARD",
+      boardId: seed.id,
+    });
+    expect(next[0]).toEqual(seed);
+  });
+
   it("RESTORE_BOARD restores the snapshot into the targeted board slot", () => {
     const first = freshBoard();
     const second = secondBoard();

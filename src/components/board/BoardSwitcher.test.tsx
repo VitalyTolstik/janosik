@@ -22,7 +22,8 @@ import { BoardProvider } from "@/store/BoardContext";
 /**
  * Board switcher: lists boards (with card counts and the active check),
  * live search, keyboard navigation, inline create (navigates to the new
- * board), inline delete confirm and the last-board guard.
+ * board), archiving (Trello's close-board: data kept, hidden from the
+ * active list) with an archived section (restore / delete-for-good).
  */
 
 function boardJson(id: string, title: string) {
@@ -140,32 +141,35 @@ describe("BoardSwitcher", () => {
     });
   });
 
-  it("deletes a non-active board after inline confirm", async () => {
+  it("archives a non-active board after inline confirm (data kept)", async () => {
     renderSwitcher();
     const listbox = await openSwitcher();
-    // Beta is not active — hover its row to reveal the delete button.
+    // Beta is not active — hover its row to reveal the archive button.
     const betaRow = listbox.querySelector<HTMLElement>('[data-index="1"]')!;
     fireEvent.mouseEnter(betaRow);
-    fireEvent.click(within(betaRow).getByRole("button", { name: "Delete board" }));
+    fireEvent.click(within(betaRow).getByRole("button", { name: "Archive board" }));
     // Confirm with the dedicated yes-button.
-    fireEvent.click(await screen.findByRole("button", { name: "Yes, delete" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Yes, archive" }));
     await waitFor(() => {
-      expect(screen.getByRole("listbox")).not.toHaveTextContent("Beta");
+      // Beta left the active list…
+      const options = screen.getAllByRole("option");
+      expect(options).toHaveLength(1);
+      expect(options[0]).toHaveTextContent("Alpha");
     });
+    // …but landed in the archived section (nothing was destroyed).
+    expect(screen.getByTestId("archived-section")).toHaveTextContent("Beta");
     // Still on the untouched board.
     expect(
       screen.getByRole("heading", { name: "Alpha" }),
     ).toBeInTheDocument();
   });
 
-  it("deleting the active board navigates to the remaining one", async () => {
+  it("archiving the active board navigates to the remaining one", async () => {
     renderSwitcher();
-    const listbox = await openSwitcher();
-    // The active board (b-1, first row) — hover swaps its check for a trash.
-    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    const listbox = await openSwitcher();    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
     fireEvent.mouseEnter(alphaRow);
-    fireEvent.click(within(alphaRow).getByRole("button", { name: "Delete board" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Yes, delete" }));
+    fireEvent.click(within(alphaRow).getByRole("button", { name: "Archive board" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Yes, archive" }));
     await waitFor(() => {
       expect(
         screen.getByRole("heading", { name: "Beta" }),
@@ -173,20 +177,66 @@ describe("BoardSwitcher", () => {
     });
   });
 
-  it("protects the last remaining board from deletion", async () => {
+  it("restores an archived board back to the active list", async () => {
+    localStorage.setItem(
+      "janosik-boards",
+      JSON.stringify([
+        JSON.parse(boardJson("b-1", "Alpha")),
+        { ...JSON.parse(boardJson("b-2", "Beta")), archivedAt: 123 },
+      ]),
+    );
     renderSwitcher();
-    const listbox = await openSwitcher();
-    // Remove Beta first.
-    const betaRow = listbox.querySelector<HTMLElement>('[data-index="1"]')!;
-    fireEvent.mouseEnter(betaRow);
-    fireEvent.click(within(betaRow).getByRole("button", { name: "Delete board" }));
+    await openSwitcher();
+    // Beta is archived — only Alpha is navigable.
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(screen.getByTestId("archived-section")).toHaveTextContent("Beta");
+    const archivedSection = screen.getByTestId("archived-section");
+    fireEvent.click(
+      within(archivedSection).getByRole("button", { name: "Restore board" }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByTestId("archived-section")).toBeNull();
+    });
+    // Beta is a real option again (and the header shows Alpha still).
+    expect(screen.getAllByRole("option")).toHaveLength(2);
+    expect(
+      screen.getByRole("heading", { name: "Alpha" }),
+    ).toBeInTheDocument();
+  });
+
+  it("deletes an archived board for good after confirm", async () => {
+    localStorage.setItem(
+      "janosik-boards",
+      JSON.stringify([
+        JSON.parse(boardJson("b-1", "Alpha")),
+        { ...JSON.parse(boardJson("b-2", "Beta")), archivedAt: 123 },
+      ]),
+    );
+    renderSwitcher();
+    await openSwitcher();
+    const archivedSection = screen.getByTestId("archived-section");
+    fireEvent.click(
+      within(archivedSection).getByRole("button", { name: "Delete board" }),
+    );
     fireEvent.click(await screen.findByRole("button", { name: "Yes, delete" }));
     await waitFor(() => {
-      expect(screen.getByRole("listbox")).not.toHaveTextContent("Beta");
+      expect(screen.queryByTestId("archived-section")).toBeNull();
     });
-    // Alpha (the last board) has no delete button anymore.
+    // Alpha remains active.
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+  });
+
+  it("does not offer restore/delete for active boards (only archive)", async () => {
+    renderSwitcher();
+    const listbox = await openSwitcher();
+    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    fireEvent.mouseEnter(alphaRow);
     expect(
-      screen.queryByRole("button", { name: "Delete board" }),
+      within(alphaRow).getByRole("button", { name: "Archive board" }),
+    ).toBeInTheDocument();
+    expect(
+      within(alphaRow).queryByRole("button", { name: "Delete board" }),
     ).toBeNull();
+    expect(screen.queryByTestId("archived-section")).toBeNull();
   });
 });
