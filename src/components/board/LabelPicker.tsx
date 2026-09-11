@@ -19,6 +19,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/Toast";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import {
@@ -26,7 +32,9 @@ import {
   LABEL_COLORS,
   type Label,
   type LabelColor,
+  LIMITS,
 } from "@/types/kanban";
+import { LimitCounter } from "@/components/ui/limit-counter";
 
 interface LabelPickerProps {
   /** All labels available on the active board. */
@@ -92,6 +100,7 @@ export function LabelPicker({
   onDelete,
 }: LabelPickerProps) {
   const { t } = useI18n();
+  const toast = useToast();
 
   const [creating, setCreating] = useState(false);
   const [draftName, setDraftName] = useState("");
@@ -133,7 +142,17 @@ export function LabelPicker({
               <button
                 type="button"
                 aria-pressed={isSelected}
-                onClick={() => onToggle(label.id)}
+                onClick={() => {
+                  if (!isSelected && selected.length >= LIMITS.labelsPerCard) {
+                    toast.error(
+                      t("limits.maxLabelsOnCard", {
+                        limit: LIMITS.labelsPerCard,
+                      }),
+                    );
+                    return;
+                  }
+                  onToggle(label.id);
+                }}
                 className={cn(
                   "inline-flex h-6 items-center gap-1.5 rounded-l-full border border-r-0 px-2 text-[11px] font-medium transition-colors",
                   isSelected
@@ -203,6 +222,7 @@ export function LabelPicker({
           <Input
             autoFocus
             value={draftName}
+            maxLength={LIMITS.labelName}
             onChange={(e) => setDraftName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") submitCreate();
@@ -211,6 +231,7 @@ export function LabelPicker({
             placeholder={t("label.namePlaceholder")}
             className="h-8"
           />
+          <LimitCounter length={draftName.length} limit={LIMITS.labelName} testId="label-create-limit" />
           <ColorSwatches value={draftColor} onPick={setDraftColor} />
           <div className="flex items-center gap-1.5">
             <Button
@@ -232,14 +253,26 @@ export function LabelPicker({
           </div>
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={() => setCreating(true)}
-          className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-        >
-          <Plus className="h-3 w-3" />
-          {t("label.new")}
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <button
+                type="button"
+                disabled={labels.length >= LIMITS.labelsPerBoard}
+                onClick={() => setCreating(true)}
+                className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors enabled:hover:border-primary/40 enabled:hover:text-foreground disabled:opacity-50"
+              >
+                <Plus className="h-3 w-3" />
+                {t("label.new")}
+              </button>
+            </span>
+          </TooltipTrigger>
+          {labels.length >= LIMITS.labelsPerBoard && (
+            <TooltipContent>
+              {t("limits.maxItems", { limit: LIMITS.labelsPerBoard })}
+            </TooltipContent>
+          )}
+        </Tooltip>
       )}
 
       <Dialog
@@ -253,6 +286,7 @@ export function LabelPicker({
           <Input
             autoFocus
             value={renameDraft}
+            maxLength={LIMITS.labelName}
             onChange={(e) => setRenameDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") submitRename();
@@ -261,6 +295,7 @@ export function LabelPicker({
             onFocus={(e) => e.target.select()}
             placeholder={t("label.namePlaceholder")}
           />
+          <LimitCounter length={renameDraft.length} limit={LIMITS.labelName} testId="label-rename-limit" />
           <DialogFooter className="mt-2">
             <Button variant="outline" onClick={() => setRenamingId(null)}>
               {t("common.cancel")}

@@ -141,6 +141,49 @@ export type CardActivityType = (typeof CARD_ACTIVITY_TYPES)[number];
 export const MAX_CARD_ACTIVITY = 50;
 
 /**
+ * Max lengths for every free-text field, in characters. One source of
+ * truth: UI inputs get `maxLength={LIMITS.x}`, the reducer clamps as a
+ * second line of defense (imports / console), and the future backend
+ * validates against the same constants.
+ */
+export const LIMITS = {
+  /** Board title (inline header + switcher create form). */
+  boardTitle: 100,
+  /** Column title (create + rename). */
+  columnTitle: 100,
+  /** Card title (composer + dialog). */
+  cardTitle: 300,
+  /** Card description markdown (MDXEditor). */
+  description: 10000,
+  /** Label name (create + rename). */
+  labelName: 50,
+  /** Checklist title. */
+  checklistTitle: 100,
+  /** Checklist item text (add + rename). */
+  checklistItem: 200,
+  /** Ephemeral search/filter queries (board filter, ⌘K, switcher). */
+  query: 200,
+
+  /** Checklists per card. */
+  checklistsPerCard: 20,
+  /** Items per checklist. */
+  itemsPerChecklist: 100,
+  /** Labels attached to one card. */
+  labelsPerCard: 20,
+  /** Labels defined on one board. */
+  labelsPerBoard: 50,
+  /** Columns on one board. */
+  columnsPerBoard: 20,
+  /** Cards in one column. */
+  cardsPerColumn: 500,
+  /** Boards in the workspace (localStorage quota guard). */
+  boardsCount: 50,
+} as const;
+
+/** A board import larger than this (bytes) is rejected outright. */
+export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+
+/**
  * One entry of a card's history. `actorId` is reserved for the future
  * backend (real users) — the frontend-only app always writes `null`.
  * `detail` is a display snapshot captured at mutation time (label name,

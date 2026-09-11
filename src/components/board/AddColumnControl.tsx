@@ -3,11 +3,22 @@ import { useState, type KeyboardEvent } from "react";
 
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
+import { LIMITS } from "@/types/kanban";
+import { LimitCounter } from "@/components/ui/limit-counter";
 
 interface AddColumnControlProps {
   /** Called with the trimmed title when the user commits. */
   onSubmit: (title: string) => void;
+  /** Blocks the trigger (board already has LIMITS.columnsPerBoard). */
+  disabled?: boolean;
+  /** Tooltip text shown while blocked. */
+  disabledReason?: string;
 }
 
 /**
@@ -15,7 +26,11 @@ interface AddColumnControlProps {
  * Clicking swaps the button for a compact input; Enter commits, Escape
  * cancels, blur cancels.
  */
-export function AddColumnControl({ onSubmit }: AddColumnControlProps) {
+export function AddColumnControl({
+  onSubmit,
+  disabled,
+  disabledReason,
+}: AddColumnControlProps) {
   const { t } = useI18n();
   const [composing, setComposing] = useState(false);
   const [title, setTitle] = useState("");
@@ -41,16 +56,29 @@ export function AddColumnControl({ onSubmit }: AddColumnControlProps) {
   };
 
   if (!composing) {
-    return (
+    const button = (
       <button
         type="button"
+        disabled={disabled}
         onClick={() => setComposing(true)}
         data-add-column-trigger
-        className="flex w-[80vw] max-w-72 shrink-0 items-center gap-2 rounded-xl border border-dashed border-border px-4 py-3 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:bg-hover/60 hover:text-foreground sm:w-72 sm:max-w-none"
+        className="flex w-[80vw] max-w-72 shrink-0 items-center gap-2 rounded-xl border border-dashed border-border px-4 py-3 text-sm text-muted-foreground transition-colors enabled:hover:border-primary/40 enabled:hover:bg-hover/60 enabled:hover:text-foreground disabled:pointer-events-none disabled:opacity-50 sm:w-72 sm:max-w-none"
       >
         <Plus className="h-4 w-4" />
         <span>{t("column.add")}</span>
       </button>
+    );
+    return disabled ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="flex w-[80vw] shrink-0 sm:w-72 sm:max-w-none">
+            {button}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{disabledReason}</TooltipContent>
+      </Tooltip>
+    ) : (
+      button
     );
   }
 
@@ -59,12 +87,14 @@ export function AddColumnControl({ onSubmit }: AddColumnControlProps) {
       <Input
         autoFocus
         value={title}
+        maxLength={LIMITS.columnTitle}
         onChange={(event) => setTitle(event.target.value)}
         onKeyDown={handleKeyDown}
         onBlur={reset}
         placeholder={t("column.placeholder")}
         className="h-9"
       />
+      <LimitCounter length={title.length} limit={LIMITS.columnTitle} testId="add-column-limit" />
       <div className="flex items-center gap-1.5">
         <Button
           size="sm"
