@@ -308,8 +308,28 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     expect(within(dialog).getByText("Dated card")).toBeInTheDocument();
   });
 
-  it("creates a card from the day panel composer, due that day", () => {
+  it("quick-adds a card from the unscheduled panel", () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+
+    // The dashed "+" row expands into an input.
+    fireEvent.click(screen.getByTestId("unscheduled-add"));
+    const input = screen.getByTestId("unscheduled-add-input");
+    fireEvent.change(input, { target: { value: "Fresh idea" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // The new card appears in the panel (no due date — it was created
+    // without one) and Escape reverts the composer to the "+" row.
+    expect(
+      within(screen.getByTestId("unscheduled-list")).getByText("Fresh idea"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("unscheduled-add-input")).toBeNull();
+    expect(screen.getByTestId("unscheduled-add")).toBeInTheDocument();
+  });
+
+  it("creates a card from the day panel composer, due that day", () => {    localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard();
 
     fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
