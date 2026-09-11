@@ -131,8 +131,12 @@ describe("CardDialog input limits (TASK-20)", () => {
       target: { value: "D".repeat(LIMITS.description + 100) },
     });
 
-    // The stored markdown is clamped to the limit…
-    expect(editor.value).toHaveLength(LIMITS.description);
+    // The stored markdown is clamped to the limit… (re-query: the editor
+    // remounts on overflow so its DOM resyncs with the clamped store)
+    const clamped = within(dialog).getByLabelText(
+      "Description",
+    ) as HTMLTextAreaElement;
+    expect(clamped.value).toHaveLength(LIMITS.description);
     // …and a beautiful error explains what happened.
     expect(
       await screen.findByText(
