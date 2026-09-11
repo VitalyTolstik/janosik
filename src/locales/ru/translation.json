@@ -266,5 +266,6 @@
   "editor.linkPreview.remove": "Убрать ссылку",
   "editor.dialogControls.cancel": "Отмена",
   "editor.dialogControls.save": "Сохранить",
-  "editor.dialog.close": "Закрыть"
+  "editor.dialog.close": "Закрыть",
+  "editor.codeBlock": "Блок кода"
 }

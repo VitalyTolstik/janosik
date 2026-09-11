@@ -262,5 +262,6 @@
   "editor.linkPreview.remove": "Remove link",
   "editor.dialogControls.cancel": "Cancel",
   "editor.dialogControls.save": "Save",
-  "editor.dialog.close": "Close"
+  "editor.dialog.close": "Close",
+  "editor.codeBlock": "Code block"
 }
