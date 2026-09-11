@@ -178,11 +178,11 @@ describe("BoardSection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
 
     // The kanban strip is gone; the month grid shows the dated card chip
-    // and the footer counts the card without a due date.
+    // and the unscheduled side panel holds the card without a due date.
     expect(screen.queryByRole("heading", { name: "To Do" })).toBeNull();
     expect(screen.getByText("Dated card")).toBeInTheDocument();
     expect(
-      screen.getByText("1 card without a due date"),
+      within(screen.getByTestId("unscheduled-list")).getByText("Plain card"),
     ).toBeInTheDocument();
 
     // And back to the board.
@@ -236,5 +236,277 @@ describe("BoardSection", () => {
     expect(
       within(screen.getByRole("dialog")).getByText("Plain card"),
     ).toBeInTheDocument();
+  });
+});
+
+/** Today's local calendar-day key, as CalendarView builds it. */
+function todayKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+}
+
+describe("CalendarView interactivity (TASK-14.1)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("switches to the week scale and remembers the choice", () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    expect(screen.getAllByTestId("calendar-day")).toHaveLength(42);
+
+    fireEvent.click(screen.getByRole("button", { name: "Week" }));
+    expect(screen.getAllByTestId("calendar-day")).toHaveLength(7);
+    expect(localStorage.getItem("janosik-calendar-scale")).toBe("week");
+  });
+
+  it("plans an unscheduled card by dragging it onto a day", () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    const panel = screen.getByTestId("unscheduled-list");
+    const item = within(panel).getByText("Plain card");
+    fireEvent.dragStart(item, {
+      dataTransfer: { setData: () => {}, effectAllowed: "move" },
+    });
+
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const key = `${tomorrow.getFullYear()}-${tomorrow.getMonth()}-${tomorrow.getDate()}`;
+    const day = document.querySelector(`[data-date="${key}"]`);
+    expect(day).not.toBeNull();
+    fireEvent.drop(day as Element, {
+      dataTransfer: { getData: () => "card-plain" },
+    });
+
+    // The card left the unscheduled panel and landed on the target day.
+    expect(
+      within(screen.getByTestId("unscheduled-list")).queryByText("Plain card"),
+    ).toBeNull();
+    expect(within(day as HTMLElement).getByText("Plain card")).toBeInTheDocument();
+  });
+
+  it("opens the day panel with the full list and opens a card from it", () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    const today = document.querySelector(`[data-date="${todayKey()}"]`);
+    expect(today).not.toBeNull();
+    fireEvent.click(today as Element);
+
+    const panel = screen.getByTestId("day-panel");
+    expect(within(panel).getByText("Dated card")).toBeInTheDocument();
+
+    // Clicking the card in the day panel opens the card dialog (the panel
+    // itself is aria-hidden under the modal dialog).
+    fireEvent.click(within(panel).getByText("Dated card"));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Dated card")).toBeInTheDocument();
+  });
+
+  it("quick-adds a card from the unscheduled panel", () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+
+    // The dashed "+" row expands into an input.
+    fireEvent.click(screen.getByTestId("unscheduled-add"));
+    const input = screen.getByTestId("unscheduled-add-input");
+    fireEvent.change(input, { target: { value: "Fresh idea" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // The new card appears in the panel (no due date — it was created
+    // without one) and Escape reverts the composer to the "+" row.
+    expect(
+      within(screen.getByTestId("unscheduled-list")).getByText("Fresh idea"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("unscheduled-add-input")).toBeNull();
+    expect(screen.getByTestId("unscheduled-add")).toBeInTheDocument();
+  });
+
+  it("creates a card from the day panel composer, due that day", () => {    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    fireEvent.click(
+      document.querySelector(`[data-date="${todayKey()}"]`) as Element,
+    );
+
+    const input = screen.getByTestId("day-composer-input");
+    fireEvent.change(input, { target: { value: "Brand new" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // The card dialog opens for the freshly created card.
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Brand new")).toBeInTheDocument();
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    // The new card now sits on the target day, no longer unscheduled.
+    const today = document.querySelector(`[data-date="${todayKey()}"]`);
+    expect(within(today as HTMLElement).getByText("Brand new")).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("unscheduled-list")).queryByText("Brand new"),
+    ).toBeNull();
+  });
+});
+
+/** A board with three cards in one column, stored in a non-alphabetical order. */
+function boardWithThreeCards(): string {
+  return JSON.stringify([
+    {
+      id: "board-sort",
+      title: "Sorting",
+      columns: [
+        {
+          id: "col-1",
+          title: "To Do",
+          cardIds: ["card-b", "card-a", "card-c"],
+          createdAt: 1,
+        },
+      ],
+      cards: {
+        "card-a": {
+          id: "card-a",
+          title: "Alpha task",
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        "card-b": {
+          id: "card-b",
+          title: "Beta task",
+          labelIds: [],
+          createdAt: 2,
+          updatedAt: 2,
+        },
+        "card-c": {
+          id: "card-c",
+          title: "Gamma task",
+          labelIds: [],
+          createdAt: 3,
+          updatedAt: 3,
+        },
+      },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  ]);
+}
+
+describe("TableView interactivity (TASK-14.1)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  function openTable() {
+    localStorage.setItem("janosik-boards", boardWithThreeCards());
+    renderBoard();
+    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+    return within(screen.getByRole("table"));
+  }
+
+  const rowTitles = (
+    table: ReturnType<typeof within>,
+  ): string[] =>
+    table
+      .getAllByTestId("table-row")
+      .map((row: HTMLElement) => row.querySelector("td")?.textContent ?? "");
+
+  it("sorts by a header (asc → desc → reset to the board order)", () => {
+    const table = openTable();
+    expect(rowTitles(table)).toEqual(["Beta task", "Alpha task", "Gamma task"]);
+
+    fireEvent.click(screen.getByTestId("table-sort-title"));
+    expect(rowTitles(table)).toEqual(["Alpha task", "Beta task", "Gamma task"]);
+
+    fireEvent.click(screen.getByTestId("table-sort-title"));
+    expect(rowTitles(table)).toEqual(["Gamma task", "Beta task", "Alpha task"]);
+
+    // The third click resets to the stored board order.
+    fireEvent.click(screen.getByTestId("table-sort-title"));
+    expect(rowTitles(table)).toEqual(["Beta task", "Alpha task", "Gamma task"]);
+  });
+
+  it("renames a card inline (Enter saves, Escape reverts)", () => {
+    const table = openTable();
+
+    fireEvent.click(
+      within(table.getAllByTestId("table-row")[0]).getByTestId("table-title-edit"),
+    );
+    const input = screen.getByTestId("table-title-input");
+    expect(input).toHaveValue("Beta task");
+    fireEvent.change(input, { target: { value: "Renamed row" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(table.getByText("Renamed row")).toBeInTheDocument();
+
+    // Escape reverts the draft.
+    fireEvent.click(
+      within(table.getAllByTestId("table-row")[0]).getByTestId("table-title-edit"),
+    );
+    const input2 = screen.getByTestId("table-title-input");
+    fireEvent.change(input2, { target: { value: "Never saved" } });
+    fireEvent.keyDown(input2, { key: "Escape" });
+    expect(screen.queryByTestId("table-title-input")).toBeNull();
+    expect(table.getByText("Renamed row")).toBeInTheDocument();
+  });
+
+  it("moves a card to another column from the column cell", async () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+    const table = within(screen.getByRole("table"));
+
+    // Radix DropdownMenu opens on pointerdown (not click).
+    fireEvent.pointerDown(
+      within(table.getAllByTestId("table-row")[0]).getByTestId("table-column-cell"),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Doing" }));
+
+    // Rows stay grouped by column: the moved card is now in the second
+    // group and its chip reads "Doing".
+    const movedRow = table
+      .getAllByTestId("table-row")
+      .find((row) => row.textContent?.includes("Dated card"));
+    expect(movedRow).toBeDefined();
+    expect(within(movedRow as HTMLElement).getByText("Doing")).toBeInTheDocument();
+  });
+
+  it("shows optional columns from the settings menu and persists them", async () => {
+    openTable();
+
+    fireEvent.pointerDown(screen.getByTestId("table-columns-settings"), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(
+      await screen.findByRole("menuitemcheckbox", { name: "Created" }),
+    );
+    // The modal menu keeps the rest aria-hidden — close it first.
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+
+    expect(within(screen.getByRole("table")).getByText("Created")).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("janosik-table-columns") ?? "[]")).toContain(
+      "createdAt",
+    );
+  });
+
+  it("adds a card from the table composer", async () => {
+    const table = openTable();
+
+    fireEvent.click(screen.getByTestId("table-add-card"));
+    fireEvent.change(screen.getByTestId("table-composer-input"), {
+      target: { value: "Composed row" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add card" }));
+
+    expect(await table.findByText("Composed row")).toBeInTheDocument();
   });
 });
