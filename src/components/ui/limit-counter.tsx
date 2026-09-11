@@ -43,7 +43,7 @@ export function LimitCounter({
   const { t } = useI18n();
   if (!showRemaining(length, limit)) return null;
 
-  const remaining = limit - length;
+  const remaining = Math.max(0, limit - length);
   const danger = remaining <= Math.max(5, Math.round(limit * 0.1));
   return (
     <p
