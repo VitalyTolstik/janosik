@@ -1,4 +1,13 @@
-import { CopyPlus, EllipsisVertical, Pencil, Trash2 } from "lucide-react";
+import {
+  ArrowDownAZ,
+  CalendarClock,
+  Clock4,
+  CopyPlus,
+  EllipsisVertical,
+  ArrowDownUp,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 
 import { useI18n } from "@/i18n";
 import {
@@ -6,20 +15,34 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import type { ColumnSortBy } from "@/store/board-reducer";
 
 interface ColumnMenuProps {
   onRename: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  /** Fired when a sort criterion is picked (one-shot action). */
+  onSort: (sortBy: ColumnSortBy) => void;
 }
 
+const SORT_ITEMS: Array<{ sortBy: ColumnSortBy; icon: typeof Clock4 }> = [
+  { sortBy: "createdAt", icon: Clock4 },
+  { sortBy: "dueDate", icon: CalendarClock },
+  { sortBy: "title", icon: ArrowDownAZ },
+];
+
 /**
- * Overflow menu on a column header: rename / duplicate / delete. Stops
+ * Overflow menu on a column header: rename / duplicate / sort / delete.
+ * Sort is a one-shot action (dragging afterwards restores manual order),
+ * so the sub-menu uses plain items instead of a checked state. Stops
  * pointer events from bubbling up to the header's drag handle.
  */
-export function ColumnMenu({ onRename, onDuplicate, onDelete }: ColumnMenuProps) {
+export function ColumnMenu({ onRename, onDuplicate, onDelete, onSort }: ColumnMenuProps) {
   const { t } = useI18n();
   return (
     <DropdownMenu>
@@ -42,6 +65,20 @@ export function ColumnMenu({ onRename, onDuplicate, onDelete }: ColumnMenuProps)
           <CopyPlus className="h-4 w-4" />
           {t("column.duplicate")}
         </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <ArrowDownUp className="h-4 w-4" />
+            {t("column.sort")}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-44">
+            {SORT_ITEMS.map(({ sortBy, icon: Icon }) => (
+              <DropdownMenuItem key={sortBy} onClick={() => onSort(sortBy)}>
+                <Icon className="h-4 w-4" />
+                {t(`column.sort.${sortBy}`)}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={onDelete}

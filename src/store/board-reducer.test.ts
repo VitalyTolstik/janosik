@@ -1002,3 +1002,108 @@ describe("boardReducer — multi-board routing", () => {
     expect(next[1].title).toBe("Restored");
   });
 });
+
+describe("boardReducer — SORT_COLUMN", () => {
+  const { now } = { now: 1_700_000_000_000 };
+  function card(id: string, title: string, createdAt: number, dueDate?: number) {
+    return {
+      id,
+      title,
+      labelIds: [] as string[],
+      createdAt,
+      updatedAt: createdAt,
+      ...(dueDate !== undefined ? { dueDate } : {}),
+    };
+  }
+  /** Board with one column holding cards c1..c3 in that (manual) order. */
+  function seededBoard(): Board {
+    return {
+      ...freshBoard(),
+      columns: [
+        { id: "col-x", title: "X", cardIds: ["c1", "c2", "c3"], createdAt: 1 },
+      ],
+      cards: {
+        c1: card("c1", "Banana", now + 300, now + 900),
+        c2: card("c2", "apple", now + 100, now + 500),
+        c3: card("c3", "Cherry", now + 200),
+      },
+      labels: [],
+    };
+  }
+
+  it("sorts by title case-insensitively", () => {
+    const next = reduceBoard(seededBoard(), {
+      type: "SORT_COLUMN",
+      columnId: "col-x",
+      sortBy: "title",
+    });
+    expect(next.columns[0].cardIds).toEqual(["c2", "c1", "c3"]);
+  });
+
+  it("sorts by creation date ascending", () => {
+    const next = reduceBoard(seededBoard(), {
+      type: "SORT_COLUMN",
+      columnId: "col-x",
+      sortBy: "createdAt",
+    });
+    expect(next.columns[0].cardIds).toEqual(["c2", "c3", "c1"]);
+  });
+
+  it("sorts by due date and floats undated cards to the bottom", () => {
+    const next = reduceBoard(seededBoard(), {
+      type: "SORT_COLUMN",
+      columnId: "col-x",
+      sortBy: "dueDate",
+    });
+    // c2 (earliest) → c1 (later) → c3 (no date, last).
+    expect(next.columns[0].cardIds).toEqual(["c2", "c1", "c3"]);
+  });
+
+  it("keeps cards when the column already matches the order", () => {
+    const seed = seededBoard();
+    const once = reduceBoard(seed, {
+      type: "SORT_COLUMN",
+      columnId: "col-x",
+      sortBy: "title",
+    });
+    const twice = reduceBoard(once, {
+      type: "SORT_COLUMN",
+      columnId: "col-x",
+      sortBy: "title",
+    });
+    expect(twice).toBe(once);
+  });
+
+  it("is undone by RESTORE_BOARD (part of per-board history)", () => {
+    const seed = seededBoard();
+    const sorted = reduceBoard(seed, {
+      type: "SORT_COLUMN",
+      columnId: "col-x",
+      sortBy: "title",
+    });
+    expect(sorted.columns[0].cardIds).not.toEqual(seed.columns[0].cardIds);
+    // The history snapshot mechanism stores the pre-sort board — restoring
+    // it brings the manual order back.
+    const restored = boardReducer([sorted], {
+      type: "RESTORE_BOARD",
+      board: seed,
+    })[0];
+    expect(restored.columns[0].cardIds).toEqual(["c1", "c2", "c3"]);
+  });
+
+  it("does not touch other columns", () => {
+    const seed = {
+      ...seededBoard(),
+      columns: [
+        { id: "col-x", title: "X", cardIds: ["c1", "c2", "c3"], createdAt: 1 },
+        { id: "col-y", title: "Y", cardIds: [], createdAt: 2 },
+      ],
+    };
+    const next = boardReducer([seed], {
+      type: "SORT_COLUMN",
+      columnId: "col-x",
+      sortBy: "title",
+    })[0];
+    expect(next.columns[1]).toEqual(seed.columns[1]);
+  });
+});
