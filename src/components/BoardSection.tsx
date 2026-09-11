@@ -1,7 +1,12 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { FilterBar } from "@/components/board/FilterBar";
 import { DndBoard } from "@/components/board/DndBoard";
+import { CalendarView } from "@/components/board/CalendarView";
+import { TableView } from "@/components/board/TableView";
+import { CardDialog } from "@/components/board/CardDialog";
+import { ViewSwitcher, type BoardView } from "@/components/board/ViewSwitcher";
 import { useBoardBackground } from "@/hooks/use-board-background";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -14,19 +19,44 @@ import {
   type CardFilter,
 } from "@/utils/filter";
 
+const VIEW_STORAGE_KEY = "janosik-board-view";
+
+function readStoredView(): BoardView {
+  try {
+    const stored = localStorage.getItem(VIEW_STORAGE_KEY);
+    if (stored === "calendar" || stored === "table" || stored === "board") {
+      return stored;
+    }
+  } catch {
+    /* storage unavailable — the default view applies */
+  }
+  return "board";
+}
+
 /**
- * BoardSection — renders the active board as a horizontally scrollable strip
- * of columns, wrapped in the DndBoard drag context, with a filter toolbar.
- * The filter state lives here so both the toolbar and the columns see it.
- * The chosen board background fills the whole area behind the column strip.
- * The board title lives in the header (BoardTitle) — nothing is duplicated
- * here.
+ * BoardSection — renders the active board in the chosen view (kanban strip,
+ * calendar by due dates, or flat table), wrapped with a filter toolbar.
+ * The filter state lives here so the toolbar and every view see it; the
+ * open-card dialog lives here too, so a card deep-link (?card=) opens it
+ * from any view. The chosen board background fills the whole area behind
+ * the view. The board title lives in the header (BoardTitle) — nothing is
+ * duplicated here.
  */
 export function BoardSection() {
   const { board } = useBoard();
   const { t } = useI18n();
   const { background } = useBoardBackground();
   const [filter, setFilter] = useState<CardFilter>(EMPTY_FILTER);
+  const [view, setView] = useState<BoardView>(readStoredView);
+
+  // Remember the last chosen view across sessions (next to janosik-lang).
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, view);
+    } catch {
+      /* storage unavailable — the choice only lasts the session */
+    }
+  }, [view]);
 
   const active = isFilterActive(filter);
 
@@ -44,6 +74,22 @@ export function BoardSection() {
   const matchCount = filteredIds
     ? Object.values(filteredIds).reduce((sum, ids) => sum + ids.length, 0)
     : 0;
+
+  // The open card mirrors the `?card=` URL param (shareable card links and
+  // the global-search "open the card itself" behaviour): navigating with the
+  // param opens the dialog in any view; closing the dialog clears the param.
+  const [openCardId, setOpenCardId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const cardParam = searchParams.get("card");
+    if (cardParam && board?.cards[cardParam] && openCardId !== cardParam) {
+      setOpenCardId(cardParam);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only reacts to URL changes
+  }, [searchParams, board]);
+  const handleCardClick = useCallback((cardId: string) => {
+    setOpenCardId(cardId);
+  }, []);
 
   if (!board) {
     return (
@@ -68,10 +114,46 @@ export function BoardSection() {
           onChange={setFilter}
         />
       </div>
-      <DndBoard
-        filteredCardIds={filteredIds ?? undefined}
-        isFiltering={active}
-        highlight={filter.query}
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <ViewSwitcher value={view} onChange={setView} />
+      </div>
+      {view === "board" ? (
+        <DndBoard
+          filteredCardIds={filteredIds ?? undefined}
+          isFiltering={active}
+          highlight={filter.query}
+          onCardClick={handleCardClick}
+        />
+      ) : (
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {view === "calendar" ? (
+            <CalendarView
+              filteredCardIds={filteredIds ?? undefined}
+              onCardClick={handleCardClick}
+            />
+          ) : (
+            <TableView
+              filteredCardIds={filteredIds ?? undefined}
+              isFiltering={active}
+              highlight={filter.query}
+              onCardClick={handleCardClick}
+            />
+          )}
+        </div>
+      )}
+
+      <CardDialog
+        cardId={openCardId}
+        open={openCardId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setOpenCardId(null);
+            // Drop the deep-link param so a refresh doesn't reopen the card.
+            if (searchParams.get("card")) {
+              setSearchParams({}, { replace: true });
+            }
+          }
+        }}
       />
     </main>
   );
