@@ -30,6 +30,7 @@ import { CardItem } from "@/components/board/CardItem";
 import { ColumnView } from "@/components/board/ColumnView";
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
+import { useToast } from "@/components/Toast";
 import { applyCardOver } from "@/utils/dnd";
 import { LIMITS } from "@/types/kanban";
 
@@ -79,6 +80,7 @@ export function DndBoard({
 }: DndBoardProps) {
   const { board, addColumn, moveCard, moveColumn } = useBoard();
   const { tp, t } = useI18n();
+  const toast = useToast();
 
   const [draft, setDraftState] = useState<Draft | null>(null);
   // Ref mirror so event handlers always read the latest draft (state updates
@@ -350,12 +352,42 @@ export function DndBoard({
       );
       if (!fromColumn) return;
 
+      /**
+       * TASK-13: a WIP-limited destination refuses cards from other columns.
+       * The draft already shows the card in the target column (drag-over
+       * commits visually) — on a blocked drop the draft is discarded with
+       * it, so the card visually snaps back to its source column.
+       */
+      const isWipBlocked = (targetColumnId: string) => {
+        if (targetColumnId === fromColumn.id) return false;
+        const target = board.columns.find((col) => col.id === targetColumnId);
+        return (
+          target !== undefined &&
+          target.wipLimit !== undefined &&
+          target.cardIds.length >= target.wipLimit
+        );
+      };
+      const notifyWipBlocked = (targetColumnId: string) => {
+        const target = board.columns.find((col) => col.id === targetColumnId);
+        if (!target || target.wipLimit === undefined) return;
+        toast.error(
+          t("toast.wipLimitBlocked", {
+            title: target.title,
+            limit: target.wipLimit,
+          }),
+        );
+      };
+
       if (activeContainer === overContainer) {
         // The card already sits in the landed column (same-column reorder —
         // the draft never touched it — or an earlier cross-column hover).
         // arrayMove into the hovered card's slot; `over` being the dragged
         // card itself means the pointer rests on it → keep the draft slot
         // (a plain click-style drop commits the cross-column entry slot).
+        if (isWipBlocked(activeContainer)) {
+          notifyWipBlocked(activeContainer);
+          return;
+        }
         const activeIndex = cols[activeContainer].indexOf(activeId);
         const toIndex =
           overId === activeId ? activeIndex : cols[overContainer].indexOf(overId);
@@ -378,6 +410,10 @@ export function DndBoard({
         overId in cols
           ? overItems.length
           : Math.max(0, overItems.indexOf(overId)) + (insertAfter ? 1 : 0);
+      if (isWipBlocked(overContainer)) {
+        notifyWipBlocked(overContainer);
+        return;
+      }
       moveCard(
         activeId,
         fromColumn.id,
@@ -385,7 +421,7 @@ export function DndBoard({
         Math.min(targetIndex, overItems.length),
       );
     },
-    [board, moveCard, moveColumn, updateDraft],
+    [board, moveCard, moveColumn, updateDraft, toast, t],
   );
 
   const handleDragCancel = useCallback(() => updateDraft(null), [updateDraft]);

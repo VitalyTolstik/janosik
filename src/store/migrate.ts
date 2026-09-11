@@ -147,6 +147,28 @@ function clampText(value: string, limit: number): string {
   return value.length > limit ? value.slice(0, limit) : value;
 }
 
+/**
+ * A WIP limit is either absent or an integer inside the LIMITS range;
+ * garbage (hand-edited imports) is dropped, out-of-range values are clamped.
+ */
+function toWipLimit(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.min(
+    Math.max(Math.round(value), 1),
+    LIMITS.wipLimitMax,
+  );
+}
+
+/** True when the stored WIP limit is already `undefined` or in range. */
+function isWipLimitCurrent(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (typeof value !== "number" || !Number.isFinite(value)) return false;
+  const n = Math.round(value);
+  return (
+    n === value && n >= 1 && n <= LIMITS.wipLimitMax
+  );
+}
+
 function normalizeCard(card: LegacyCard): Card {
   const { labelId, labelIds, checklists, dueDate, cover, activity, ...rest } =
     card;
@@ -182,10 +204,17 @@ export function normalizeBoard(board: Board): Board {
   return {
     ...board,
     title: clampText(board.title, LIMITS.boardTitle),
-    columns: board.columns.map((column) => ({
-      ...column,
-      title: clampText(column.title, LIMITS.columnTitle),
-    })),
+    columns: board.columns.map((column) => {
+      // Destructure so a stored garbage limit never survives `...column`.
+      const { wipLimit, ...rest } = column;
+      const clean = toWipLimit(wipLimit);
+      return {
+        ...rest,
+        title: clampText(column.title, LIMITS.columnTitle),
+        // Keep the "omit when unset" invariant (no `wipLimit: undefined`).
+        ...(clean !== undefined ? { wipLimit: clean } : {}),
+      };
+    }),
     labels: board.labels
       .slice(0, LIMITS.labelsPerBoard)
       .map((label) => ({
@@ -206,7 +235,10 @@ export function normalizeBoards(state: BoardState): BoardState {
   return state.map((board) => {
     const needsFix =
       board.title.length > LIMITS.boardTitle ||
-      board.columns.some((column) => column.title.length > LIMITS.columnTitle) ||
+      board.columns.some((column) =>
+        column.title.length > LIMITS.columnTitle ||
+        !isWipLimitCurrent(column.wipLimit),
+      ) ||
       board.labels.length > LIMITS.labelsPerBoard ||
       board.labels.some((label) => label.name.length > LIMITS.labelName) ||
       Object.values(board.cards).some((card) => {

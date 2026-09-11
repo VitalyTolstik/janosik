@@ -328,3 +328,54 @@ describe("normalizeBoards — length limits (TASK-20)", () => {
     expect(twice).toBe(once);
   });
 });
+
+describe("normalizeBoards — wipLimit (TASK-13)", () => {
+  const boardWithColumn = (wipLimit: unknown) => ({
+    id: "b",
+    title: "B",
+    columns: [
+      { id: "col", title: "C", cardIds: [], createdAt: 1, wipLimit },
+    ],
+    cards: {},
+    labels: [],
+    createdAt: 1,
+    updatedAt: 1,
+  }) as unknown as Board;
+
+  it("keeps an in-range limit and clamps out-of-range ones", async () => {
+    const { LIMITS } = await import("@/types/kanban");
+
+    const ok = normalizeBoards([boardWithColumn(7)])[0];
+    expect(ok.columns[0].wipLimit).toBe(7);
+
+    const high = normalizeBoards([boardWithColumn(LIMITS.wipLimitMax + 1)])[0];
+    expect(high.columns[0].wipLimit).toBe(LIMITS.wipLimitMax);
+
+    const zero = normalizeBoards([boardWithColumn(0)])[0];
+    expect(zero.columns[0].wipLimit).toBe(1);
+  });
+
+  it("drops garbage and keeps the omit-when-unset invariant", () => {
+    const garbage = normalizeBoards([boardWithColumn("many")])[0];
+    expect(garbage.columns[0].wipLimit).toBeUndefined();
+    expect("wipLimit" in garbage.columns[0]).toBe(false);
+
+    const unset = normalizeBoards([boardWithColumn(undefined)])[0];
+    expect(unset.columns[0].wipLimit).toBeUndefined();
+  });
+
+  it("lets already-current boards pass through untouched", () => {
+    const board = {
+      id: "b",
+      title: "B",
+      columns: [
+        { id: "col", title: "C", cardIds: [], createdAt: 1, wipLimit: 5 },
+      ],
+      cards: {},
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+    expect(normalizeBoards([board])[0]).toBe(board);
+  });
+});
