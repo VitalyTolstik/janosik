@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
+import { BoardTitle } from "@/components/board/BoardTitle";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
@@ -43,6 +44,7 @@ function renderSwitcher(initialUrl = "/board/b-1") {
           <TooltipProvider>
             <MemoryRouter initialEntries={[initialUrl]}>
               <BoardProvider>
+                <BoardTitle />
                 <BoardSwitcher />
                 <Routes>
                   <Route path="/board/:boardId" element={<BoardSection />} />
