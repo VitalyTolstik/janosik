@@ -696,9 +696,9 @@ function UnscheduledComposer({
         disabled={disabled}
         data-testid="unscheduled-add"
         onClick={() => setEditing(true)}
-        className="flex w-full items-center gap-1 rounded-md border border-dashed border-border px-1.5 py-1 text-[11px] text-muted-foreground transition-colors enabled:hover:border-primary/40 enabled:hover:text-foreground disabled:opacity-50"
+        className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-primary/40 bg-primary/10 px-1.5 py-1.5 text-[11px] font-medium text-primary transition-colors enabled:hover:border-primary/70 enabled:hover:bg-primary/20 disabled:opacity-50"
       >
-        <Plus className="h-3 w-3" aria-hidden />
+        <Plus className="h-3.5 w-3.5" aria-hidden />
         {t("composer.add")}
       </button>
     );
