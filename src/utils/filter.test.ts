@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import type { Card } from "@/types/kanban";
+import type { Board, Card, Label } from "@/types/kanban";
 import {
   activeFacetCount,
   createdDayRange,
   createdFromMs,
+  descriptionSnippet,
   EMPTY_FILTER,
   filterCardIds,
   isFilterActive,
   matchesCardFilter,
+  searchBoards,
+  splitHighlight,
   type CardFilter,
 } from "@/utils/filter";
 
@@ -331,5 +334,160 @@ describe("filterCardIds", () => {
       NOW,
     );
     expect(result).toEqual({ col1: ["c7"] });
+  });
+});
+
+describe("query semantics (title + description + label names)", () => {
+  const labels: Label[] = [
+    { id: "a", name: "Design", color: "red" },
+    { id: "b", name: "Backend", color: "blue" },
+  ];
+  const c = card("c1", "Buy milk", ["a"]);
+  const withDesc = { ...card("c2", "Tidy up", []), description: "Under the sofa" };
+
+  it("matches the card description", () => {
+    expect(
+      matchesCardFilter(withDesc, { ...EMPTY_FILTER, query: "sofa" }, NOW, labels),
+    ).toBe(true);
+    expect(matchesCardFilter(c, { ...EMPTY_FILTER, query: "sofa" }, NOW, labels)).toBe(
+      false,
+    );
+  });
+
+  it("matches label names, not just ids", () => {
+    expect(
+      matchesCardFilter(c, { ...EMPTY_FILTER, query: "design" }, NOW, labels),
+    ).toBe(true);
+    expect(
+      matchesCardFilter(c, { ...EMPTY_FILTER, query: "backend" }, NOW, labels),
+    ).toBe(false);
+  });
+});
+
+describe("searchBoards", () => {
+  const labels: Label[] = [{ id: "a", name: "Design", color: "red" }];
+  const activeBoard: Board = {
+    id: "b1",
+    title: "Marketing",
+    columns: [
+      { id: "col1", title: "To do", cardIds: ["c1", "c2"], createdAt: NOW },
+      { id: "col2", title: "Doing", cardIds: ["c3"], createdAt: NOW },
+    ],
+    cards: {
+      c1: card("c1", "Landing redesign", ["a"]),
+      c2: { ...card("c2", "Newsletter", []), description: "Q3 plan notes" },
+      c3: card("c3", "Old card", []),
+    },
+    labels,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+  const archivedBoard: Board = {
+    ...activeBoard,
+    id: "b2",
+    title: "Old Marketing board",
+    archivedAt: NOW,
+    columns: [{ id: "col1", title: "To do", cardIds: ["c4"], createdAt: NOW }],
+    cards: { c4: card("c4", "Marketing retrospective", []) },
+  };
+  const boards = [archivedBoard, activeBoard];
+
+  it("finds cards by title and reports the board and column", () => {
+    const hits = searchBoards(boards, "retro");
+    expect(hits).toHaveLength(1);
+    const hit = hits[0];
+    expect(hit.kind).toBe("card");
+    if (hit.kind !== "card") return;
+    expect(hit.card.id).toBe("c4");
+    expect(hit.boardId).toBe("b2");
+    expect(hit.columnTitle).toBe("To do");
+    expect(hit.matchIn).toBe("title");
+    expect(hit.boardArchived).toBe(true);
+  });
+
+  it("matches descriptions and labels with the right matchIn", () => {
+    const hits = searchBoards([activeBoard], "q3 plan");
+    expect(hits).toHaveLength(1);
+    if (hits[0].kind !== "card") return;
+    expect(hits[0].matchIn).toBe("description");
+
+    const byLabel = searchBoards([activeBoard], "design");
+    expect(byLabel.map((h) => (h.kind === "card" ? h.card.id : h.boardId))).toContain(
+      "c1",
+    );
+  });
+
+  it("ranks active boards before archived ones", () => {
+    const hits = searchBoards(boards, "marketing");
+    // Board-title hits: active "Marketing" before archived "Old Marketing board".
+    const boardHits = hits
+      .filter((h) => h.kind === "board")
+      .map((h) => (h.kind === "board" ? h.boardId : ""));
+    expect(boardHits).toEqual(["b1", "b2"]);
+  });
+
+  it("appends board-title matches after card hits and finds board titles", () => {
+    const hits = searchBoards([activeBoard], "newsletter");
+    expect(hits).toHaveLength(1);
+    expect(hits[0].kind).toBe("card");
+
+    const boardHits = searchBoards(boards, "old marketing board");
+    expect(boardHits.some((h) => h.kind === "board" && h.boardId === "b2")).toBe(
+      true,
+    );
+  });
+
+  it("returns nothing for an empty query", () => {
+    expect(searchBoards(boards, "  ")).toEqual([]);
+  });
+});
+
+describe("splitHighlight", () => {
+  it("splits text around case-insensitive matches", () => {
+    expect(splitHighlight("Buy Milk now", "milk")).toEqual([
+      "Buy ",
+      { match: true, text: "Milk" },
+      " now",
+    ]);
+  });
+
+  it("handles no-match and empty query", () => {
+    expect(splitHighlight("abc", "zzz")).toEqual(["abc"]);
+    expect(splitHighlight("abc", "  ")).toEqual(["abc"]);
+  });
+
+  it("supports multiple matches", () => {
+    expect(splitHighlight("aaa", "a")).toEqual([
+      { match: true, text: "a" },
+      { match: true, text: "a" },
+      { match: true, text: "a" },
+    ]);
+  });
+});
+
+describe("descriptionSnippet", () => {
+  const text = "This is a long description about the Q3 marketing plan for the team";
+
+  it("returns null when there is no match", () => {
+    expect(descriptionSnippet(text, "zzz")).toBeNull();
+  });
+
+  it("centers the snippet around the first match", () => {
+    const snippet = descriptionSnippet(text, "Q3", 15);
+    expect(snippet).not.toBeNull();
+    const joined = snippet!
+      .map((s) => (typeof s === "string" ? s : s.text))
+      .join("");
+    expect(joined.startsWith("…")).toBe(true);
+    expect(joined).toContain("Q3");
+    expect(joined.length).toBeLessThan(text.length);
+  });
+
+  it("keeps the exact matched casing", () => {
+    const snippet = descriptionSnippet(text, "MARKETING", 15);
+    const match = snippet!.find(
+      (s) => typeof s !== "string",
+    ) as { match: true; text: string };
+    expect(match.text).toBe("marketing");
   });
 });

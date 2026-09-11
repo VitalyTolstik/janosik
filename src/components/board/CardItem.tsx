@@ -2,9 +2,11 @@ import { AlignLeft, CalendarClock, CopyPlus, ListTodo } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { HighlightedText } from "@/components/ui/highlight";
 import { cn } from "@/lib/utils";
 import { useI18n, formatDate, formatDateOnly, formatTime } from "@/i18n";
 import { dueStatus, type DueStatus } from "@/utils/due-date";
+import { descriptionSnippet } from "@/utils/filter";
 import { LABEL_COLOR_CHIP, coverBackground, type Card, type Label } from "@/types/kanban";
 
 interface CardItemProps {
@@ -13,6 +15,12 @@ interface CardItemProps {
   labels: Label[];
   /** True while the card is being dragged (hides the source copy). */
   isDragging?: boolean;
+  /**
+   * Active search/filter query — title matches are highlighted in place;
+   * when only the description matched, the description badge lights up
+   * with a snippet tooltip.
+   */
+  highlight?: string;
   /** Fired on click — opens the card detail dialog. */
   onClick?: () => void;
   /** Fired by the hover duplicate button — the dialog stays closed. */
@@ -62,7 +70,7 @@ function useClamped(): [
  * a compact badge only signals that the card has one — full text lives
  * in the card dialog.
  */
-export function CardItem({ card, labels, isDragging, onClick, onDuplicate }: CardItemProps) {
+export function CardItem({ card, labels, isDragging, highlight, onClick, onDuplicate }: CardItemProps) {
   const [titleRef, titleClamped] = useClamped();
   const { t, lang } = useI18n();
   const hasDescription = Boolean(card.description?.trim());
@@ -70,6 +78,26 @@ export function CardItem({ card, labels, isDragging, onClick, onDuplicate }: Car
   const items = (card.checklists ?? []).flatMap((c) => c.items);
   const done = items.filter((item) => item.done).length;
   const total = items.length;
+
+  // Where the highlight query matched: the title renders <mark>s inline;
+  // a description-only match lights up the description badge instead
+  // (the text itself is not on the front — Trello-style).
+  const query = highlight?.trim().toLowerCase() ?? "";
+  const titleMatched = query !== "" && card.title.toLowerCase().includes(query);
+  const labelMatched =
+    query !== "" &&
+    card.labelIds.some((id) =>
+      labels.some(
+        (label) => label.id === id && label.name.toLowerCase().includes(query),
+      ),
+    );
+  const descriptionOnly = query !== "" && !titleMatched && !labelMatched && hasDescription;
+  const snippet = descriptionOnly
+    ? descriptionSnippet(card.description ?? "", query)
+    : null;
+  const snippetText = snippet
+    ?.map((segment) => (typeof segment === "string" ? segment : segment.text))
+    .join("");
 
   // Due-date badge state: overdue (red) / due within 24h (yellow) / later.
   const hasDueDate = typeof card.dueDate === "number";
@@ -151,7 +179,7 @@ export function CardItem({ card, labels, isDragging, onClick, onDuplicate }: Car
         className="line-clamp-3 break-words text-sm leading-snug text-foreground/90 [overflow-wrap:anywhere] [text-wrap:pretty]"
         data-testid="card-title"
       >
-        {card.title}
+        <HighlightedText text={card.title} query={highlight ?? ""} />
       </p>
       {hasDescription || total > 0 || hasDueDate ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -209,13 +237,20 @@ export function CardItem({ card, labels, isDragging, onClick, onDuplicate }: Car
             <Tooltip>
               <TooltipTrigger asChild>
                 <span
-                  className="inline-flex h-5 items-center rounded-md border border-border/60 bg-muted/50 px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary"
+                  className={cn(
+                    "inline-flex h-5 items-center rounded-md border px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary",
+                    descriptionOnly &&
+                      "border-primary/40 bg-primary/10 text-primary",
+                  )}
                   data-testid="card-description-badge"
+                  {...(descriptionOnly ? { "data-highlight": "description" } : {})}
                 >
                   <AlignLeft className="h-3.5 w-3.5" aria-hidden />
                 </span>
               </TooltipTrigger>
-              <TooltipContent>{t("card.hasDescription")}</TooltipContent>
+              <TooltipContent>
+                {descriptionOnly && snippetText ? snippetText : t("card.hasDescription")}
+              </TooltipContent>
             </Tooltip>
           ) : null}
         </div>

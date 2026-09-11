@@ -26,6 +26,8 @@ interface ColumnViewProps {
   onCardClick?: (cardId: string) => void;
   /** True while a board filter is active (changes the empty-state text). */
   isFiltered?: boolean;
+  /** Filter/search query highlighted on the card fronts. */
+  highlight?: string;
 }
 
 /**
@@ -45,6 +47,7 @@ export function ColumnView({
   className,
   onCardClick,
   isFiltered = false,
+  highlight,
 }: ColumnViewProps) {
   const {
     board,
@@ -166,6 +169,7 @@ export function ColumnView({
                       <SortableCard
                         card={card}
                         labels={labels}
+                        highlight={highlight}
                         onCardClick={
                           onCardClick ? () => onCardClick(card.id) : undefined
                         }
