@@ -1,4 +1,4 @@
-import { Keyboard } from "lucide-react";
+import { KeyboardIcon } from "@/components/ui/keyboard";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -67,7 +67,12 @@ export function ShortcutsDialog() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "?" && !isTypingTarget(event.target)) {
+      if (isTypingTarget(event.target)) return;
+      // "?" is Shift+/ on most layouts, but some layouts report the key
+      // differently — accept both the character and Shift+Slash.
+      const isQuestionMark =
+        event.key === "?" || (event.code === "Slash" && event.shiftKey);
+      if (isQuestionMark) {
         event.preventDefault();
         setOpen(true);
       }
@@ -89,7 +94,7 @@ export function ShortcutsDialog() {
             aria-label={t("shortcuts.aria")}
             onClick={() => setOpen(true)}
           >
-            <Keyboard size={20} />
+            <KeyboardIcon size={20} />
           </Button>
         </TooltipTrigger>
         <TooltipContent>
