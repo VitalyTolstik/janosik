@@ -19,9 +19,10 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { LABEL_COLOR_DOT, type Label } from "@/types/kanban";
+import { LABEL_COLOR_DOT, LIMITS, type Label } from "@/types/kanban";
 import { routes } from "@/routes";
 import { useBoard } from "@/store/BoardContext";
+import { LimitCounter, showRemaining } from "@/components/ui/limit-counter";
 import {
   descriptionSnippet,
   searchBoards,
@@ -143,10 +144,12 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
           <DialogDescription className="sr-only">
             {t("search.hint")}
           </DialogDescription>
-          <div className="border-b border-border p-3">
+          <div className="relative border-b border-border p-3">
             <Input
               ref={inputRef}
               value={rawQuery}
+              maxLength={LIMITS.query}
+              aria-describedby={showRemaining(rawQuery.length, LIMITS.query) ? "search-query-limit" : undefined}
               onChange={(event) => setRawQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && hits[activeIndex]) {
@@ -163,6 +166,13 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
               aria-label={t("search.aria")}
               className="h-9 border-0 shadow-none focus-visible:ring-0"
               data-testid="global-search-input"
+            />
+            <LimitCounter
+              id="search-query-limit"
+              length={rawQuery.length}
+              limit={LIMITS.query}
+              position="below"
+              testId="search-query-limit"
             />
           </div>
 

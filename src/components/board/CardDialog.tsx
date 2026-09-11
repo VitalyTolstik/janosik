@@ -9,6 +9,11 @@ import { CardCoverPicker } from "@/components/board/CardCoverPicker";
 import { LabelPicker } from "@/components/board/LabelPicker";
 import { DescriptionEditor } from "@/components/editor/DescriptionEditor";
 import { formatDate, useI18n } from "@/i18n";
+import { useToast } from "@/components/Toast";
+import {
+  LimitCounter,
+  showRemaining,
+} from "@/components/ui/limit-counter";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +34,7 @@ import {
 import { useBoard } from "@/store/BoardContext";
 import { createId } from "@/utils/id";
 import type { LabelColor } from "@/types/kanban";
+import { LIMITS } from "@/types/kanban";
 
 interface CardDialogProps {
   cardId: string | null;
@@ -54,6 +60,7 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
     duplicateCard,
   } = useBoard();
   const { t, lang } = useI18n();
+  const toast = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (!board || !cardId) {
@@ -147,11 +154,25 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                 id="card-title-input"
                 autoFocus
                 value={card.title}
+                maxLength={LIMITS.cardTitle}
                 onChange={(e) => updateCard(card.id, { title: e.target.value })}
                 onFocus={(e) => e.target.select()}
                 rows={3}
                 className="resize-none break-words"
                 placeholder={t("card.titlePlaceholder")}
+                aria-describedby={
+                  showRemaining(card.title.length, LIMITS.cardTitle)
+                    ? "card-title-counter"
+                    : undefined
+                }
+              />
+              {/* Live counter appears only near the limit — constant
+                  character counts are noise for a 300-char title. */}
+              <LimitCounter
+                id="card-title-counter"
+                length={card.title.length}
+                limit={LIMITS.cardTitle}
+                testId="card-title-counter"
               />
             </div>
 
@@ -163,14 +184,30 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                 {t("card.descriptionLabel")}
               </label>
               {/* WYSIWYG Markdown (MDXEditor) — formatting lives in the
-                  editor toolbar; no separate preview toggle needed. */}
+                  editor toolbar; no separate preview toggle needed. The
+                  editor surface can't take maxLength (contenteditable), so
+                  oversized pastes are clamped here with a visible toast. */}
               <DescriptionEditor
                 key={card.id}
                 value={card.description ?? ""}
-                onChange={(description) =>
-                  updateCard(card.id, { description })
-                }
+                onChange={(description) => {
+                  if (description.length > LIMITS.description) {
+                    toast.error(
+                      t("limits.exceeded", { limit: LIMITS.description }),
+                    );
+                    updateCard(card.id, {
+                      description: description.slice(0, LIMITS.description),
+                    });
+                    return;
+                  }
+                  updateCard(card.id, { description });
+                }}
                 placeholder={t("card.descriptionPlaceholder")}
+              />
+              <LimitCounter
+                length={(card.description ?? "").length}
+                limit={LIMITS.description}
+                testId="card-description-counter"
               />
             </div>
 

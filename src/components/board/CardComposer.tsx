@@ -4,8 +4,14 @@ import { useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { LABEL_COLOR_DOT, type Label } from "@/types/kanban";
+import { LABEL_COLOR_DOT, LIMITS, type Label } from "@/types/kanban";
+import { LimitCounter } from "@/components/ui/limit-counter";
 
 interface CardComposerProps {
   /** Called with the trimmed title and the labels picked before adding. */
@@ -18,6 +24,10 @@ interface CardComposerProps {
    * the `n` shortcut opens the composer by "clicking" this trigger.
    */
   columnId?: string;
+  /** Blocks the idle "+ Add card" button (e.g. column at its card limit). */
+  disabled?: boolean;
+  /** Tooltip text shown while blocked. */
+  disabledReason?: string;
 }
 
 /**
@@ -34,6 +44,8 @@ export function CardComposer({
   labels,
   placeholder,
   columnId,
+  disabled,
+  disabledReason,
 }: CardComposerProps) {
   const { t } = useI18n();
   const [composing, setComposing] = useState(false);
@@ -82,17 +94,32 @@ export function CardComposer({
     reset();
   };
 
+  const addCardDisabled = Boolean(
+    disabled && disabledReason,
+  );
+
   if (!composing) {
-    return (
+    const button = (
       <button
         type="button"
+        disabled={addCardDisabled}
         onClick={() => setComposing(true)}
         {...(columnId ? { "data-composer-trigger": columnId } : {})}
-        className="group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+        className="group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
       >
         <Plus className="h-4 w-4 transition-transform group-hover:scale-110" />
         <span>{t("composer.add")}</span>
       </button>
+    );
+    return addCardDisabled ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="block w-full">{button}</span>
+        </TooltipTrigger>
+        <TooltipContent>{disabledReason}</TooltipContent>
+      </Tooltip>
+    ) : (
+      button
     );
   }
 
@@ -101,6 +128,7 @@ export function CardComposer({
       <Textarea
         autoFocus
         value={title}
+        maxLength={LIMITS.cardTitle}
         onChange={(event) => setTitle(event.target.value)}
         onKeyDown={handleKeyDown}
         onBlur={handleBlur}
@@ -108,6 +136,7 @@ export function CardComposer({
         rows={2}
         className="min-h-0 resize-none"
       />
+      <LimitCounter length={title.length} limit={LIMITS.cardTitle} testId="composer-limit" />
       {labels && labels.length > 0 ? (
         <div
           className="flex flex-wrap items-center gap-1"

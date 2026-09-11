@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   boardReducer,
@@ -1240,5 +1240,180 @@ describe("boardReducer — card activity (TASK-12)", () => {
     const activity = state[0].cards["card-1"].activity!;
     expect(activity).toHaveLength(MAX_CARD_ACTIVITY);
     expect(activity.at(-1)!.type).toBe("due-date-set");
+  });
+});
+
+describe("boardReducer — input limits (TASK-20)", () => {
+  const long = (n: number) => "x".repeat(n);
+
+  it("clamps card titles to LIMITS.cardTitle", async () => {
+    const { LIMITS } = await import("@/types/kanban");
+    const board = reduceBoard(freshBoard(), {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      title: long(LIMITS.cardTitle + 50),
+    });
+    expect(board.cards["card-1"].title).toHaveLength(LIMITS.cardTitle);
+  });
+
+  it("clamps card descriptions to LIMITS.description", async () => {
+    const { LIMITS } = await import("@/types/kanban");
+    const board = reduceBoard(freshBoard(), {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      description: long(LIMITS.description + 500),
+    });
+    expect(board.cards["card-1"].description).toHaveLength(LIMITS.description);
+  });
+
+  it("clamps and trims column titles; whitespace-only is a no-op", async () => {
+    const { LIMITS } = await import("@/types/kanban");
+    const board = reduceBoard(freshBoard(), {
+      type: "RENAME_COLUMN",
+      columnId: "col-backlog",
+      title: `  ${long(LIMITS.columnTitle + 10)}  `,
+    });
+    expect(board.columns[0].title).toHaveLength(LIMITS.columnTitle);
+    const unchanged = reduceBoard(freshBoard(), {
+      type: "RENAME_COLUMN",
+      columnId: "col-backlog",
+      title: "   ",
+    });
+    expect(unchanged.columns[0].title).toBe("Backlog");
+  });
+
+  it("clamps label names on create and rename", async () => {
+    const { LIMITS } = await import("@/types/kanban");
+    const label = { id: "l-new", name: long(LIMITS.labelName + 20), color: "red" as const };
+    const board = reduceBoard(freshBoard(), { type: "ADD_LABEL", label });
+    expect(board.labels.find((l) => l.id === "l-new")!.name).toHaveLength(
+      LIMITS.labelName,
+    );
+  });
+
+  it("clamps checklist item text", async () => {
+    const { LIMITS } = await import("@/types/kanban");
+    const seeded = reduceBoard(freshBoard(), {
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      title: "Steps",
+    });
+    const checklistId = seeded.cards["card-1"].checklists![0].id;
+    const board = reduceBoard(seeded, {
+      type: "ADD_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId,
+      text: long(LIMITS.checklistItem + 30),
+    });
+    const checklist = board.cards["card-1"].checklists![0];
+    expect(checklist.items.at(-1)!.text).toHaveLength(LIMITS.checklistItem);
+  });
+});
+
+describe("boardReducer — collection limits (TASK-20)", () => {
+  let LIMITS: (typeof import("@/types/kanban"))["LIMITS"];
+  beforeAll(async () => {
+    ({ LIMITS } = await import("@/types/kanban"));
+  });
+
+  it("refuses new checklists beyond LIMITS.checklistsPerCard", () => {
+    let state = [freshBoard()];
+    for (let i = 0; i < LIMITS.checklistsPerCard + 3; i++) {
+      state = boardReducer(state, {
+        type: "ADD_CHECKLIST",
+        cardId: "card-1",
+        title: `Checklist ${i}`,
+      });
+    }
+    expect(state[0].cards["card-1"].checklists).toHaveLength(
+      LIMITS.checklistsPerCard,
+    );
+  });
+
+  it("refuses new checklist items beyond LIMITS.itemsPerChecklist", () => {
+    let state = boardReducer([freshBoard()], {
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      title: "Steps",
+    });
+    const checklistId = state[0].cards["card-1"].checklists![0].id;
+    for (let i = 0; i < LIMITS.itemsPerChecklist + 3; i++) {
+      state = boardReducer(state, {
+        type: "ADD_CHECKLIST_ITEM",
+        cardId: "card-1",
+        checklistId,
+        text: `Item ${i}`,
+      });
+    }
+    expect(state[0].cards["card-1"].checklists![0].items).toHaveLength(
+      LIMITS.itemsPerChecklist,
+    );
+  });
+
+  it("refuses adding labels to a card beyond LIMITS.labelsPerCard", () => {
+    // 25 board labels, then try to wear them all — the reducer stops at 20.
+    let state = [freshBoard()];
+    for (let i = 0; i < 25; i++) {
+      state = boardReducer(state, {
+        type: "ADD_LABEL",
+        label: { id: `extra-${i}`, name: `Extra ${i}`, color: "red" },
+      });
+    }
+    for (const label of state[0].labels) {
+      state = boardReducer(state, {
+        type: "TOGGLE_CARD_LABEL",
+        cardId: "card-1",
+        labelId: label.id,
+      });
+    }
+    expect(state[0].cards["card-1"].labelIds).toHaveLength(
+      LIMITS.labelsPerCard,
+    );
+  });
+
+  it("refuses new labels on a board beyond LIMITS.labelsPerBoard", async () => {
+    let state = [freshBoard()];
+    const base = state[0].labels.length;
+    for (let i = 0; i < 5; i++) {
+      state = boardReducer(state, {
+        type: "ADD_LABEL",
+        label: { id: `extra-${i}`, name: `Extra ${i}`, color: "red" },
+      });
+    }
+    expect(state[0].labels.length).toBe(
+      Math.min(base + 5, (await import("@/types/kanban")).LIMITS.labelsPerBoard),
+    );
+  });
+
+  it("refuses new boards beyond LIMITS.boardsCount", async () => {
+    const { LIMITS: L } = await import("@/types/kanban");
+    let state = [freshBoard()];
+    while (state.length < L.boardsCount) {
+      state = boardReducer(state, {
+        type: "ADD_BOARD",
+        board: {
+          id: `b-${state.length}`,
+          title: `Board ${state.length}`,
+          columns: [],
+          cards: {},
+          labels: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      });
+    }
+    const next = boardReducer(state, {
+      type: "ADD_BOARD",
+      board: {
+        id: "overflow",
+        title: "Overflow",
+        columns: [],
+        cards: {},
+        labels: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    });
+    expect(next).toHaveLength(L.boardsCount);
   });
 });

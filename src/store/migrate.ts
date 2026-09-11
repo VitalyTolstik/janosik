@@ -33,7 +33,7 @@ import type { BoardState } from "@/store/board-reducer";
  * single "created" row from `createdAt`.
  */
 
-import { CARD_ACTIVITY_TYPES, MAX_CARD_ACTIVITY } from "@/types/kanban";
+import { CARD_ACTIVITY_TYPES, LIMITS, MAX_CARD_ACTIVITY } from "@/types/kanban";
 import type { CardActivityEvent } from "@/types/kanban";
 
 type LegacyCard = Card & { labelId?: unknown; labelIds?: unknown };
@@ -142,13 +142,36 @@ function toActivity(value: unknown): CardActivityEvent[] | undefined {
   return events.length > 0 ? events : undefined;
 }
 
+/** Clamp text to its LIMITS bound (imports can bypass UI maxLength). */
+function clampText(value: string, limit: number): string {
+  return value.length > limit ? value.slice(0, limit) : value;
+}
+
 function normalizeCard(card: LegacyCard): Card {
   const { labelId, labelIds, checklists, dueDate, cover, activity, ...rest } =
     card;
+  const title = clampText(rest.title, LIMITS.cardTitle);
+  const description =
+    typeof rest.description === "string"
+      ? clampText(rest.description, LIMITS.description)
+      : rest.description;
   return {
     ...rest,
-    labelIds: toLabelIds(labelIds ?? labelId),
-    checklists: toChecklists(checklists),
+    title,
+    description,
+    labelIds: toLabelIds(labelIds ?? labelId).slice(0, LIMITS.labelsPerCard),
+    checklists: toChecklists(checklists)
+      ?.slice(0, LIMITS.checklistsPerCard)
+      .map((checklist) => ({
+        ...checklist,
+        title: clampText(checklist.title, LIMITS.checklistTitle),
+        items: checklist.items
+          .slice(0, LIMITS.itemsPerChecklist)
+          .map((item) => ({
+            ...item,
+            text: clampText(item.text, LIMITS.checklistItem),
+          })),
+      })),
     dueDate: toDueDate(dueDate),
     cover: toCover(cover),
     activity: toActivity(activity),
@@ -158,6 +181,17 @@ function normalizeCard(card: LegacyCard): Card {
 export function normalizeBoard(board: Board): Board {
   return {
     ...board,
+    title: clampText(board.title, LIMITS.boardTitle),
+    columns: board.columns.map((column) => ({
+      ...column,
+      title: clampText(column.title, LIMITS.columnTitle),
+    })),
+    labels: board.labels
+      .slice(0, LIMITS.labelsPerBoard)
+      .map((label) => ({
+        ...label,
+        name: clampText(label.name, LIMITS.labelName),
+      })),
     cards: Object.fromEntries(
       Object.entries(board.cards).map(([id, card]) => [
         id,
@@ -170,14 +204,21 @@ export function normalizeBoard(board: Board): Board {
 /** Normalize every board in the state array (no-op when already current). */
 export function normalizeBoards(state: BoardState): BoardState {
   return state.map((board) => {
-    const needsFix = Object.values(board.cards).some((card) => {
-      const legacy = card as LegacyCard;
-      if (!Array.isArray(legacy.labelIds)) return true;
-      if (!isChecklistsCurrent(legacy.checklists)) return true;
-      if (!isDueDateCurrent(legacy.dueDate)) return true;
-      if (!isCoverCurrent(legacy.cover)) return true;
-      return !isActivityCurrent(legacy.activity);
-    });
+    const needsFix =
+      board.title.length > LIMITS.boardTitle ||
+      board.columns.some((column) => column.title.length > LIMITS.columnTitle) ||
+      board.labels.length > LIMITS.labelsPerBoard ||
+      board.labels.some((label) => label.name.length > LIMITS.labelName) ||
+      Object.values(board.cards).some((card) => {
+        const legacy = card as LegacyCard;
+        if (card.title.length > LIMITS.cardTitle) return true;
+        if ((card.description ?? "").length > LIMITS.description) return true;
+        if (!Array.isArray(legacy.labelIds)) return true;
+        if (!isChecklistsCurrent(legacy.checklists)) return true;
+        if (!isDueDateCurrent(legacy.dueDate)) return true;
+        if (!isCoverCurrent(legacy.cover)) return true;
+        return !isActivityCurrent(legacy.activity);
+      });
     return needsFix ? normalizeBoard(board) : board;
   });
 }

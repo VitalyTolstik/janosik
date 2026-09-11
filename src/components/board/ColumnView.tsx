@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
 import type { Column } from "@/types/kanban";
+import { LIMITS } from "@/types/kanban";
 
 interface ColumnViewProps {
   column: Column;
@@ -196,6 +197,10 @@ export function ColumnView({
           <CardComposer
             columnId={column.id}
             labels={board.labels}
+            disabled={column.cardIds.length >= LIMITS.cardsPerColumn}
+            disabledReason={t("limits.maxItems", {
+              limit: LIMITS.cardsPerColumn,
+            })}
             onSubmit={(title, labelIds) => addCard(column.id, title, labelIds)}
           />
         </footer>

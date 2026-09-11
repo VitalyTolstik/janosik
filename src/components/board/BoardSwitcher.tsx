@@ -15,9 +15,12 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/Toast";
 import { useBoard } from "@/store/BoardContext";
 import { routes } from "@/routes";
 import type { Board } from "@/types/kanban";
+import { LIMITS } from "@/types/kanban";
+import { LimitCounter } from "@/components/ui/limit-counter";
 
 /**
  * Board switcher — a premium popover anchored to the header: auto-focused
@@ -60,6 +63,7 @@ function boardInitial(title: string): string {
 
 export function BoardSwitcher() {
   const { t } = useI18n();
+  const toast = useToast();
   const navigate = useNavigate();
   const {
     boards,
@@ -150,6 +154,10 @@ export function BoardSwitcher() {
   };
 
   const createBoard = (title: string) => {
+    if (boards.length >= LIMITS.boardsCount) {
+      toast.error(t("limits.maxBoards", { limit: LIMITS.boardsCount }));
+      return;
+    }
     const id = addBoard(title);
     resetAndClose();
     navigate(routes.board(id));
@@ -217,11 +225,12 @@ export function BoardSwitcher() {
         className="w-[340px] overflow-hidden rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
       >
         {/* Search */}
-        <div className="flex items-center gap-2 border-b px-3 py-2.5">
+        <div className="relative flex items-center gap-2 border-b px-3 py-2.5">
           <Search size={15} className="shrink-0 text-muted-foreground" />
           <input
             ref={searchRef}
             value={query}
+            maxLength={LIMITS.query}
             onChange={(e) => {
               setQuery(e.target.value);
               setHighlighted(0);
@@ -231,6 +240,13 @@ export function BoardSwitcher() {
             aria-label={t("board.switcher.search")}
             autoFocus
             className="h-6 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+          <LimitCounter
+            length={query.length}
+            limit={LIMITS.query}
+            position="below"
+            className="left-9"
+            testId="switcher-search-limit"
           />
         </div>
 
@@ -424,11 +440,12 @@ export function BoardSwitcher() {
         {/* Create row */}
         <div className="border-t p-1.5">
           {creating ? (
-            <div className="flex items-center gap-2 rounded-lg px-2 py-1 ring-1 ring-primary/30">
+            <div className="relative flex items-center gap-2 rounded-lg px-2 py-1 ring-1 ring-primary/30">
               <Plus size={15} className="shrink-0 text-primary" />
               <input
                 ref={createRef}
                 value={createDraft}
+                maxLength={LIMITS.boardTitle}
                 onChange={(e) => setCreateDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
@@ -444,6 +461,13 @@ export function BoardSwitcher() {
                 aria-label={t("board.switcher.newPlaceholder")}
                 autoFocus
                 className="h-7 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              />
+              <LimitCounter
+                length={createDraft.length}
+                limit={LIMITS.boardTitle}
+                position="below"
+                className="left-6"
+                testId="switcher-create-limit"
               />
             </div>
           ) : (

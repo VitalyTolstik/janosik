@@ -274,3 +274,57 @@ describe("normalizeBoards — activity (TASK-12)", () => {
     expect(next2.cards["c1"].activity).toBeUndefined();
   });
 });
+
+describe("normalizeBoards — length limits (TASK-20)", () => {
+  async function limits() {
+    return import("@/types/kanban").then((m) => m.LIMITS);
+  }
+
+  function oversizedBoard(l: typeof import("@/types/kanban").LIMITS) {
+    return {
+      id: "b",
+      title: "B".repeat(l.boardTitle + 5),
+      columns: [
+        { id: "col", title: "C".repeat(l.columnTitle + 5), cardIds: ["c1"], createdAt: 1 },
+      ],
+      labels: [{ id: "lb", name: "L".repeat(l.labelName + 5), color: "red" }],
+      cards: {
+        c1: card({
+          labelIds: [],
+          title: "T".repeat(l.cardTitle + 5),
+          description: "D".repeat(l.description + 5),
+          checklists: [
+            {
+              id: "cl",
+              title: "K".repeat(l.checklistTitle + 5),
+              items: [{ id: "i1", text: "I".repeat(l.checklistItem + 5), done: false }],
+            },
+          ],
+        }),
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+  }
+
+  it("clamps every free-text field of an oversized import", async () => {
+    const LIMITS = await limits();
+    const [next] = normalizeBoards([oversizedBoard(LIMITS)]);
+    expect(next.title).toHaveLength(LIMITS.boardTitle);
+    expect(next.columns[0].title).toHaveLength(LIMITS.columnTitle);
+    expect(next.labels[0].name).toHaveLength(LIMITS.labelName);
+    const card = next.cards["c1"];
+    expect(card.title).toHaveLength(LIMITS.cardTitle);
+    expect(card.description).toHaveLength(LIMITS.description);
+    expect(card.checklists![0].title).toHaveLength(LIMITS.checklistTitle);
+    expect(card.checklists![0].items[0].text).toHaveLength(LIMITS.checklistItem);
+  });
+
+  it("passes already-limited boards through untouched", async () => {
+    const LIMITS = await limits();
+    const board = oversizedBoard(LIMITS);
+    const [once] = normalizeBoards([board]);
+    const [twice] = normalizeBoards([once]);
+    expect(twice).toBe(once);
+  });
+});

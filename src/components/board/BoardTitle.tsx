@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
+import { LIMITS } from "@/types/kanban";
+import { LimitCounter } from "@/components/ui/limit-counter";
 
 /**
  * Inline-editable board title — the single source of truth for the name
@@ -33,18 +35,27 @@ export function BoardTitle() {
   if (!board) return null;
 
   return editing ? (
-    <input
-      ref={inputRef}
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={save}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") save();
-        else if (e.key === "Escape") setEditing(false);
-      }}
-      aria-label={t("board.editTitleAria")}
-      className="h-8 w-48 rounded-md border border-primary/40 bg-background/80 px-2 text-lg font-semibold tracking-tight outline-none ring-2 ring-primary/20 backdrop-blur-sm sm:w-64"
-    />
+    <span className="relative inline-block">
+      <input
+        ref={inputRef}
+        value={draft}
+        maxLength={LIMITS.boardTitle}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+          else if (e.key === "Escape") setEditing(false);
+        }}
+        aria-label={t("board.editTitleAria")}
+        className="h-8 w-48 rounded-md border border-primary/40 bg-background/80 px-2 text-lg font-semibold tracking-tight outline-none ring-2 ring-primary/20 backdrop-blur-sm sm:w-64"
+      />
+      <LimitCounter
+        length={draft.length}
+        limit={LIMITS.boardTitle}
+        position="below"
+        testId="board-title-limit"
+      />
+    </span>
   ) : (
     <h2
       onClick={startEdit}

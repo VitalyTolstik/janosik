@@ -8,7 +8,7 @@ import type {
   Column,
   Label,
 } from "@/types/kanban";
-import { MAX_CARD_ACTIVITY } from "@/types/kanban";
+import { LIMITS, MAX_CARD_ACTIVITY } from "@/types/kanban";
 import {
   COVER_COLORS,
   COVER_GRADIENTS,
@@ -21,6 +21,15 @@ import { createSeedBoard } from "@/store/seed-data";
 /** Insert a value at `index`, returning a new array (no in-place mutation). */
 function insertAt<T>(array: T[], index: number, value: T): T[] {
   return [...array.slice(0, index), value, ...array.slice(index)];
+}
+
+/**
+ * Clamp a text field to its `LIMITS` bound. The UI enforces the same limit
+ * via `maxLength`; this is the second line of defense for callers that
+ * bypass the inputs (imported JSON, console dispatches).
+ */
+function clampText(value: string, limit: number): string {
+  return value.length > limit ? value.slice(0, limit) : value;
 }
 
 /**
@@ -355,9 +364,10 @@ interface ColumnShape {
 }
 
 function addColumn(board: Board, action: AddColumnAction): Board {
+  if (board.columns.length >= LIMITS.columnsPerBoard) return board;
   const newColumn: ColumnShape = {
     id: createId(),
-    title: action.title,
+    title: clampText(action.title.trim(), LIMITS.columnTitle),
     cardIds: [],
     createdAt: Date.now(),
   };
@@ -365,8 +375,10 @@ function addColumn(board: Board, action: AddColumnAction): Board {
 }
 
 function renameColumn(board: Board, action: RenameColumnAction): Board {
+  const title = clampText(action.title.trim(), LIMITS.columnTitle);
+  if (!title) return board;
   const columns = board.columns.map((col) =>
-    col.id === action.columnId ? { ...col, title: action.title } : col,
+    col.id === action.columnId ? { ...col, title } : col,
   );
   return { ...board, columns };
 }
@@ -384,7 +396,7 @@ function deleteColumn(board: Board, action: DeleteColumnAction): Board {
 }
 
 function renameBoard(board: Board, action: RenameBoardAction): Board {
-  const title = action.title.trim();
+  const title = clampText(action.title.trim(), LIMITS.boardTitle);
   if (!title || title === board.title) return board;
   return { ...board, title };
 }
@@ -392,10 +404,11 @@ function renameBoard(board: Board, action: RenameBoardAction): Board {
 function addCard(board: Board, action: AddCardAction): Board {
   const column = board.columns.find((c) => c.id === action.columnId);
   if (!column) return board;
+  if (column.cardIds.length >= LIMITS.cardsPerColumn) return board;
   const now = Date.now();
   const newCard: Card = {
     id: createId(),
-    title: action.title,
+    title: clampText(action.title.trim(), LIMITS.cardTitle),
     labelIds: action.labelIds ?? [],
     activity: createdActivity(now),
     createdAt: now,
@@ -416,14 +429,17 @@ function updateCard(board: Board, action: UpdateCardAction): Board {
   const target = board.cards[action.cardId];
   if (!target) return board;
 
-  const title = action.title ?? target.title;
+  // Live editing: clamp length only — trimming here would eat the trailing
+  // space of every keystroke while the user types.
+  const title =
+    action.title === undefined
+      ? target.title
+      : clampText(action.title, LIMITS.cardTitle);
   // Empty description means "no description" — drop the field entirely.
   const description =
     action.description === undefined
       ? target.description
-      : action.description.trim()
-        ? action.description
-        : undefined;
+      : clampText(action.description.trim(), LIMITS.description) || undefined;
 
   if (
     title === target.title &&
@@ -469,6 +485,9 @@ function duplicateCard(board: Board, action: DuplicateCardAction): Board {
     col.cardIds.includes(source.id),
   );
   if (columnIndex === -1) return board;
+  if (board.columns[columnIndex].cardIds.length >= LIMITS.cardsPerColumn) {
+    return board;
+  }
   const now = Date.now();
   const copy: Card = {
     ...source,
@@ -508,6 +527,7 @@ function duplicateCard(board: Board, action: DuplicateCardAction): Board {
  * ids stay as-is — they are unique per card).
  */
 function duplicateColumn(board: Board, action: DuplicateColumnAction): Board {
+  if (board.columns.length >= LIMITS.columnsPerBoard) return board;
   const sourceIndex = board.columns.findIndex(
     (col) => col.id === action.columnId,
   );
@@ -555,6 +575,8 @@ function toggleCardLabel(board: Board, action: ToggleCardLabelAction): Board {
   // Ignore toggles for labels that no longer exist on the board.
   if (!board.labels.some((l) => l.id === action.labelId)) return board;
   const has = target.labelIds.includes(action.labelId);
+  // Adding is capped; removing a label is always allowed.
+  if (!has && target.labelIds.length >= LIMITS.labelsPerCard) return board;
   const labelIds = has
     ? target.labelIds.filter((id) => id !== action.labelId)
     : [...target.labelIds, action.labelId];
@@ -581,13 +603,23 @@ function addLabel(board: Board, action: AddLabelAction): Board {
   const { label } = action;
   // Guard against duplicate ids (e.g. double-submitted create).
   if (board.labels.some((l) => l.id === label.id)) return board;
-  return { ...board, labels: [...board.labels, label] };
+  if (board.labels.length >= LIMITS.labelsPerBoard) return board;
+  return {
+    ...board,
+    labels: [
+      ...board.labels,
+      { ...label, name: clampText(label.name.trim(), LIMITS.labelName) || label.name },
+    ],
+  };
 }
 
 function renameLabel(board: Board, action: RenameLabelAction): Board {
   const labels = board.labels.map((label) =>
     label.id === action.labelId
-      ? { ...label, name: action.name.trim() || label.name }
+      ? {
+          ...label,
+          name: clampText(action.name.trim(), LIMITS.labelName) || label.name,
+        }
       : label,
   );
   return { ...board, labels };
@@ -664,16 +696,17 @@ function mapChecklistItems(
 }
 
 function addChecklist(board: Board, action: AddChecklistAction): Board | null {
-  const title = action.title.trim();
+  const title = clampText(action.title.trim(), LIMITS.checklistTitle);
   if (!title) return null;
-  return patchChecklists(board, action.cardId, (checklists) => [
-    ...checklists,
-    { id: createId(), title, items: [] },
-  ]);
+  return patchChecklists(board, action.cardId, (checklists) =>
+    checklists.length >= LIMITS.checklistsPerCard
+      ? null
+      : [...checklists, { id: createId(), title, items: [] }],
+  );
 }
 
 function renameChecklist(board: Board, action: RenameChecklistAction): Board | null {
-  const title = action.title.trim();
+  const title = clampText(action.title.trim(), LIMITS.checklistTitle);
   return patchChecklists(board, action.cardId, (checklists) => {
     if (!title) return null;
     const next = checklists.map((checklist) =>
@@ -697,13 +730,14 @@ function addChecklistItem(
   board: Board,
   action: AddChecklistItemAction,
 ): Board | null {
-  const text = action.text.trim();
+  const text = clampText(action.text.trim(), LIMITS.checklistItem);
   if (!text) return null;
   return patchChecklists(board, action.cardId, (checklists) =>
-    mapChecklistItems(checklists, action.checklistId, (items) => [
-      ...items,
-      { id: createId(), text, done: false },
-    ]),
+    mapChecklistItems(checklists, action.checklistId, (items) =>
+      items.length >= LIMITS.itemsPerChecklist
+        ? null
+        : [...items, { id: createId(), text, done: false }],
+    ),
   );
 }
 
@@ -725,7 +759,7 @@ function renameChecklistItem(
   board: Board,
   action: RenameChecklistItemAction,
 ): Board | null {
-  const text = action.text.trim();
+  const text = clampText(action.text.trim(), LIMITS.checklistItem);
   if (!text) return null;
   return patchChecklists(board, action.cardId, (checklists) =>
     mapChecklistItems(checklists, action.checklistId, (items) => {
@@ -931,6 +965,7 @@ export function boardReducer(
 ): BoardState {
   // Array-level actions do not target a single board.
   if (action.type === "ADD_BOARD") {
+    if (state.length >= LIMITS.boardsCount) return state;
     return state.some((b) => b.id === action.board.id)
       ? state
       : [...state, action.board];

@@ -19,10 +19,17 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useBoard } from "@/store/BoardContext";
 import type { Checklist } from "@/types/kanban";
+import { LIMITS } from "@/types/kanban";
+import { LimitCounter } from "@/components/ui/limit-counter";
 
 /**
  * Subtask checklists inside the card dialog (TASK-3).
@@ -71,15 +78,29 @@ export function CardChecklists({ cardId, checklists }: CardChecklistsProps) {
         <span className="text-xs font-medium text-muted-foreground">
           {t("checklist.sectionLabel")}
         </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
-          onClick={() => addChecklist(cardId, t("checklist.defaultTitle"))}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          {t("checklist.add")}
-        </Button>
+        {/* Capped at LIMITS.checklistsPerCard — the disabled button
+            explains itself through the tooltip. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                disabled={checklists.length >= LIMITS.checklistsPerCard}
+                onClick={() => addChecklist(cardId, t("checklist.defaultTitle"))}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {t("checklist.add")}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          {checklists.length >= LIMITS.checklistsPerCard && (
+            <TooltipContent>
+              {t("limits.maxItems", { limit: LIMITS.checklistsPerCard })}
+            </TooltipContent>
+          )}
+        </Tooltip>
       </div>
 
       {checklists.map((checklist) => (
@@ -160,6 +181,7 @@ function ChecklistCard({
         {editingTitle ? (
           <TitleInput
             defaultValue={checklist.title}
+            maxLength={LIMITS.checklistTitle}
             onDraft={onEditTitle}
             onCommit={onCommitTitle}
             onCancel={onCancelTitle}
@@ -236,6 +258,7 @@ function ChecklistCard({
             {editingItemId === item.id ? (
               <TitleInput
                 defaultValue={item.text}
+                maxLength={LIMITS.checklistItem}
                 onDraft={(draft) => onEditItem(item.id, draft)}
                 onCommit={() => onCommitItem(item.id)}
                 onCancel={onCancelItem}
@@ -276,9 +299,19 @@ function ChecklistCard({
         <ListTodo className="h-4 w-4 shrink-0 text-muted-foreground/60" />
         <Input
           value={newItem}
+          maxLength={LIMITS.checklistItem}
+          disabled={checklist.items.length >= LIMITS.itemsPerChecklist}
           onChange={(e) => setNewItem(e.target.value)}
           placeholder={t("checklist.itemPlaceholder")}
+          aria-label={t("checklist.itemPlaceholder")}
           className="h-8 border-none bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
+        />
+        <LimitCounter
+          length={newItem.length}
+          limit={LIMITS.checklistItem}
+          position="below"
+          className="left-6"
+          testId="checklist-item-add-limit"
         />
       </form>
 
@@ -302,6 +335,7 @@ function ChecklistCard({
 
 interface TitleInputProps {
   defaultValue: string;
+  maxLength: number;
   onDraft: (draft: string) => void;
   onCommit: () => void;
   onCancel: () => void;
@@ -314,25 +348,40 @@ interface TitleInputProps {
  */
 function TitleInput({
   defaultValue,
+  maxLength,
   onDraft,
   onCommit,
   onCancel,
 }: TitleInputProps) {
+  // Uncontrolled input; only the length is mirrored for the limit counter.
+  const [length, setLength] = useState(defaultValue.length);
   return (
-    <Input
-      autoFocus
-      defaultValue={defaultValue}
-      onChange={(e) => onDraft(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          onCommit();
-        } else if (e.key === "Escape") {
-          onCancel();
-        }
-      }}
-      onBlur={onCommit}
-      className="h-7 text-sm"
-    />
+    <span className="relative min-w-0 flex-1">
+      <Input
+        autoFocus
+        defaultValue={defaultValue}
+        maxLength={maxLength}
+        onChange={(e) => {
+          setLength(e.target.value.length);
+          onDraft(e.target.value);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onCommit();
+          } else if (e.key === "Escape") {
+            onCancel();
+          }
+        }}
+        onBlur={onCommit}
+        className="h-7 text-sm"
+      />
+      <LimitCounter
+        length={length}
+        limit={maxLength}
+        position="below"
+        testId="checklist-title-limit"
+      />
+    </span>
   );
 }
