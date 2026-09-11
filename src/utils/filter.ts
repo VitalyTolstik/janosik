@@ -1,10 +1,13 @@
-import type { Card } from "@/types/kanban";
+import type { Board, Card, Label } from "@/types/kanban";
 import { dueStatus } from "@/utils/due-date";
 
 /**
  * Board filtering model, following the Trello/Linear conventions:
  *
- * - `query` — case-insensitive substring of the card title (Trello "keyword").
+ * - `query` — case-insensitive substring matched against the card title,
+ *   its description and the names of its labels (Notion-style "titles +
+ *   properties" quick filter; Trello keeps the keyword narrow, but our
+ *   roadmap explicitly includes descriptions and labels).
  * - `labelIds` — the card must carry ANY of the selected labels ("any match"
  *   semantics: pick two labels → find cards with either).
  * - `noLabel` — include cards without any label. When combined with
@@ -13,7 +16,7 @@ import { dueStatus } from "@/utils/due-date";
  *   filters: today (since local midnight), last 7 days, last 30 days.
  * - `createdOn` — exact local day ("YYYY-MM-DD") the card was created on.
  *   When set it overrides `created` (the UI makes the two mutually
- exclusive).
+ *  exclusive).
  * - `due` — deadline facet: overdue, due within the next 24 hours, or
  *   cards without a deadline at all ("none" mirrors the `noLabel` facet).
  *
@@ -122,29 +125,49 @@ export function createdDayRange(createdOn: string): [number, number] | null {
 
 /** Whether a single card passes the `due` deadline facet. */
 function matchesDueFilter(
- card: Card,
- due: DueFilter,
- now: number,
+  card: Card,
+  due: DueFilter,
+  now: number,
 ): boolean {
- switch (due) {
-  case "any":
-   return true;
-  case "none":
-   return card.dueDate === undefined;
-  case "overdue":
-  case "soon":
-   return card.dueDate !== undefined && dueStatus(card.dueDate, now) === due;
- }
+  switch (due) {
+    case "any":
+      return true;
+    case "none":
+      return card.dueDate === undefined;
+    case "overdue":
+    case "soon":
+      return card.dueDate !== undefined && dueStatus(card.dueDate, now) === due;
+  }
+}
+
+/**
+ * The searchable text facets of a card — title, description and the names
+ * of its labels. Shared by the board filter and the global search so both
+ * surfaces agree on what a query matches.
+ */
+export function cardTextMatches(
+  card: Card,
+  labels: Label[],
+  query: string,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") return false;
+  if (card.title.toLowerCase().includes(needle)) return true;
+  if (card.description?.toLowerCase().includes(needle)) return true;
+  return card.labelIds.some((id) =>
+    labels.some((label) => label.id === id && label.name.toLowerCase().includes(needle)),
+  );
 }
 
 /** Whether a single card passes the filter (AND across facets). */
 export function matchesCardFilter(
- card: Card,
- filter: CardFilter,
- now = Date.now(),
+  card: Card,
+  filter: CardFilter,
+  now = Date.now(),
+  labels: Label[] = [],
 ): boolean {
- const query = filter.query.trim().toLowerCase();
- if (query !== "" && !card.title.toLowerCase().includes(query)) return false;
+  const query = filter.query.trim().toLowerCase();
+  if (query !== "" && !cardTextMatches(card, labels, query)) return false;
 
  // An exact day overrides the relative window (mutually exclusive in the UI).
  if (filter.createdOn === null) {
@@ -171,17 +194,174 @@ export function matchesCardFilter(
  * ColumnView while a filter is active.
  */
 export function filterCardIds(
- columns: Record<string, string[]>,
- cards: Record<string, Card>,
- filter: CardFilter,
- now = Date.now(),
+  columns: Record<string, string[]>,
+  cards: Record<string, Card>,
+  filter: CardFilter,
+  now = Date.now(),
+  labels: Label[] = [],
 ): Record<string, string[]> {
- const result: Record<string, string[]> = {};
- for (const [colId, ids] of Object.entries(columns)) {
-  result[colId] = ids.filter((id) => {
-   const card = cards[id];
-   return card !== undefined && matchesCardFilter(card, filter, now);
+  const result: Record<string, string[]> = {};
+  for (const [colId, ids] of Object.entries(columns)) {
+    result[colId] = ids.filter((id) => {
+      const card = cards[id];
+      return (
+        card !== undefined && matchesCardFilter(card, filter, now, labels)
+      );
+    });
+  }
+  return result;
+}
+
+// --- Global search across boards -------------------------------------------
+
+/** One matching card in the global search results. */
+export interface CardSearchHit {
+  kind: "card";
+  boardId: string;
+  boardTitle: string;
+  /** Whether the board is archived — archived hits rank last. */
+  boardArchived: boolean;
+  columnTitle: string;
+  /** The board's label catalogue — lets the UI render label chips. */
+  boardLabels: Label[];
+  card: Card;
+  /** Where the query matched, drives the UI (snippet vs title highlight). */
+  matchIn: "title" | "description" | "label";
+}
+
+/** A board whose title matched — secondary group of the results. */
+export interface BoardSearchHit {
+  kind: "board";
+  boardId: string;
+  boardTitle: string;
+  boardArchived: boolean;
+}
+
+export type SearchHit = CardSearchHit | BoardSearchHit;
+
+/** Field priority for ranking: title beats description beats label. */
+const MATCH_FIELD_ORDER = ["title", "description", "label"] as const;
+
+/**
+ * Search every board's cards (and board titles) for a query.
+ * Deterministic, relevance-free ordering — the natural reading order:
+ * active boards first (in their stored order), archived last; within a
+ * board, columns in order; within a column, cards in order. Match field
+ * does not reorder rows, it only picks the presentation
+ * (`matchIn: "description"` renders a snippet). Board-title matches are
+ * appended after all card hits, active before archived.
+ */
+export function searchBoards(boards: Board[], query: string): SearchHit[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") return [];
+
+  const sorted = [...boards].sort((a, b) => {
+    if (a.archivedAt !== b.archivedAt) return a.archivedAt ? 1 : -1;
+    return 0;
   });
- }
- return result;
+
+  const cardHits: CardSearchHit[] = [];
+  const boardHits: BoardSearchHit[] = [];
+
+  for (const board of sorted) {
+    if (board.title.toLowerCase().includes(needle)) {
+      boardHits.push({
+        kind: "board",
+        boardId: board.id,
+        boardTitle: board.title,
+        boardArchived: board.archivedAt !== undefined,
+      });
+    }
+    for (const column of board.columns) {
+      for (const cardId of column.cardIds) {
+        const card = board.cards[cardId];
+        if (!card) continue;
+        const matched = MATCH_FIELD_ORDER.find((field) => {
+          switch (field) {
+            case "title":
+              return card.title.toLowerCase().includes(needle);
+            case "description":
+              return card.description?.toLowerCase().includes(needle) ?? false;
+            case "label":
+              return card.labelIds.some((id) =>
+                board.labels.some(
+                  (label) =>
+                    label.id === id &&
+                    label.name.toLowerCase().includes(needle),
+                ),
+              );
+          }
+        });
+        if (matched) {
+          cardHits.push({
+            kind: "card",
+            boardId: board.id,
+            boardTitle: board.title,
+            boardArchived: board.archivedAt !== undefined,
+            columnTitle: column.title,
+            boardLabels: board.labels,
+            card,
+            matchIn: matched,
+          });
+        }
+      }
+    }
+  }
+
+  return [...cardHits, ...boardHits];
+}
+
+// --- Match highlighting -----------------------------------------------------
+
+/**
+ * Split `text` into segments for substring highlighting: plain parts stay
+ * strings, matches are `{ match: true, text }` objects. Case-insensitive,
+ * first occurrence of each non-overlapping match. Empty query → no splits.
+ */
+export type HighlightSegment = string | { match: true; text: string };
+
+export function splitHighlight(
+  text: string,
+  query: string,
+): HighlightSegment[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") return [text];
+  const segments: HighlightSegment[] = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    const index = text.toLowerCase().indexOf(needle, cursor);
+    if (index === -1) {
+      segments.push(text.slice(cursor));
+      break;
+    }
+    if (index > cursor) segments.push(text.slice(cursor, index));
+    segments.push({ match: true, text: text.slice(index, index + needle.length) });
+    cursor = index + needle.length;
+  }
+  return segments.length > 0 ? segments : [text];
+}
+
+/**
+ * A Google-style snippet around the first match in a long text: at most
+ * `radius` characters of context on each side, ellipses where text was
+ * cut, and the matched substring itself. `null` when there is no match.
+ */
+export function descriptionSnippet(
+  text: string,
+  query: string,
+  radius = 60,
+): HighlightSegment[] | null {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") return null;
+  const index = text.toLowerCase().indexOf(needle);
+  if (index === -1) return null;
+  const start = Math.max(0, index - radius);
+  const end = Math.min(text.length, index + needle.length + radius);
+  const segments: HighlightSegment[] = [];
+  if (start > 0) segments.push("…");
+  for (const segment of splitHighlight(text.slice(start, end), query)) {
+    segments.push(segment);
+  }
+  if (end < text.length) segments.push("…");
+  return segments;
 }

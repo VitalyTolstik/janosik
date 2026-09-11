@@ -13,11 +13,11 @@ const baseCard: Card = {
   updatedAt: 1,
 };
 
-function renderCard(card: Card = baseCard, labels: Label[] = []) {
+function renderCard(card: Card = baseCard, labels: Label[] = [], highlight?: string) {
   return render(
     <I18nProvider>
       <TooltipProvider>
-        <CardItem card={card} labels={labels} />
+        <CardItem card={card} labels={labels} highlight={highlight} />
       </TooltipProvider>
     </I18nProvider>,
   );
@@ -51,5 +51,21 @@ describe("CardItem title clamping", () => {
     const long = Array.from({ length: 60 }, (_, i) => `word-${i}`).join(" ");
     renderCard({ ...baseCard, title: long });
     expect(screen.getByTestId("card-title")).toHaveTextContent(long);
+  });
+});
+
+describe("CardItem search highlight", () => {
+  it("wraps the matched substring in the title in a <mark>", () => {
+    renderCard({ ...baseCard, title: "Buy Milk tomorrow" }, [], "milk");
+    const mark = screen.getByTestId("card-title").querySelector("mark");
+    expect(mark).not.toBeNull();
+    expect(mark).toHaveTextContent("Milk");
+  });
+
+  it("does not highlight without a query", () => {
+    renderCard();
+    expect(
+      screen.getByTestId("card-title").querySelector("mark"),
+    ).toBeNull();
   });
 });

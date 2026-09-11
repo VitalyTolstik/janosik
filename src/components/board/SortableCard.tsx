@@ -8,6 +8,8 @@ interface SortableCardProps {
   card: Card;
   /** Labels resolved from the board (multi-label support). */
   labels: Label[];
+  /** Filter/search query highlighted on the card front. */
+  highlight?: string;
   /** Fired when the rendered card is clicked — opens the card dialog. */
   onCardClick?: () => void;
   /** Fired by the hover duplicate button on the card. */
@@ -19,7 +21,7 @@ interface SortableCardProps {
  * (the lift + gap animation while dragging) is applied to the wrapper div,
  * not to the CardItem itself, so the card keeps its own styling intact.
  */
-export function SortableCard({ card, labels, onCardClick, onCardDuplicate }: SortableCardProps) {
+export function SortableCard({ card, labels, highlight, onCardClick, onCardDuplicate }: SortableCardProps) {
   const {
     attributes,
     listeners,
@@ -47,6 +49,7 @@ export function SortableCard({ card, labels, onCardClick, onCardDuplicate }: Sor
         card={card}
         labels={labels}
         isDragging={isDragging}
+        highlight={highlight}
         onClick={onCardClick}
         onDuplicate={onCardDuplicate}
       />

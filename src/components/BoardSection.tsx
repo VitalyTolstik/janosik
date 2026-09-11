@@ -36,6 +36,8 @@ export function BoardSection() {
       Object.fromEntries(board.columns.map((col) => [col.id, col.cardIds])),
       board.cards,
       filter,
+      Date.now(),
+      board.labels,
     );
   }, [active, board, filter]);
 
@@ -69,6 +71,7 @@ export function BoardSection() {
       <DndBoard
         filteredCardIds={filteredIds ?? undefined}
         isFiltering={active}
+        highlight={filter.query}
       />
     </main>
   );

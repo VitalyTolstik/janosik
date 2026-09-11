@@ -22,6 +22,7 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { AddColumnControl } from "@/components/board/AddColumnControl";
 import { CardDialog } from "@/components/board/CardDialog";
@@ -66,11 +67,14 @@ interface DndBoardProps {
   filteredCardIds?: Record<string, string[]>;
   /** True while a board filter is active (disables drag & drop). */
   isFiltering?: boolean;
+  /** Filter/search query highlighted on the card fronts. */
+  highlight?: string;
 }
 
 export function DndBoard({
   filteredCardIds,
   isFiltering = false,
+  highlight,
 }: DndBoardProps) {
   const { board, addColumn, moveCard, moveColumn } = useBoard();
   const { tp } = useI18n();
@@ -85,6 +89,17 @@ export function DndBoard({
   }, []);
 
   const [openCardId, setOpenCardId] = useState<string | null>(null);
+  // The open card mirrors the `?card=` URL param (shareable card links and
+  // the global-search "open the card itself" behaviour): navigating with the
+  // param opens the dialog; closing the dialog clears the param.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const cardParam = searchParams.get("card");
+    if (cardParam && board?.cards[cardParam] && openCardId !== cardParam) {
+      setOpenCardId(cardParam);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only reacts to URL changes
+  }, [searchParams, board]);
   // dnd-kit fires a click right after a drag ends (pointerup lands on the
   // dragged element) — this flag swallows that spurious click so a drop never
   // opens the card dialog.
@@ -415,6 +430,7 @@ export function DndBoard({
                     : filteredCardIds?.[column.id]
                 }
                 isFiltered={isFiltering}
+                highlight={highlight}
                 onCardClick={handleCardClick}
               />
             );
@@ -449,7 +465,13 @@ export function DndBoard({
         cardId={openCardId}
         open={openCardId !== null}
         onOpenChange={(open) => {
-          if (!open) setOpenCardId(null);
+          if (!open) {
+            setOpenCardId(null);
+            // Drop the deep-link param so a refresh doesn't reopen the card.
+            if (searchParams.get("card")) {
+              setSearchParams({}, { replace: true });
+            }
+          }
         }}
       />
     </DndContext>
