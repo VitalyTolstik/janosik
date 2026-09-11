@@ -103,7 +103,12 @@ export function ShortcutsDialog() {
       </Tooltip>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent
+          className="max-w-md"
+          // The sheet has no input to focus — without this, Radix focuses
+          // the close X and paints its focus ring.
+          onOpenAutoFocus={(event) => event.preventDefault()}
+        >
           <DialogTitle className="text-base font-semibold">
             {t("shortcuts.title")}
           </DialogTitle>
