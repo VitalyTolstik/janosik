@@ -23,6 +23,7 @@ import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useBoard } from "@/store/BoardContext";
 import type { Checklist } from "@/types/kanban";
+import { LIMITS } from "@/types/kanban";
 
 /**
  * Subtask checklists inside the card dialog (TASK-3).
@@ -160,6 +161,7 @@ function ChecklistCard({
         {editingTitle ? (
           <TitleInput
             defaultValue={checklist.title}
+            maxLength={LIMITS.checklistTitle}
             onDraft={onEditTitle}
             onCommit={onCommitTitle}
             onCancel={onCancelTitle}
@@ -236,6 +238,7 @@ function ChecklistCard({
             {editingItemId === item.id ? (
               <TitleInput
                 defaultValue={item.text}
+                maxLength={LIMITS.checklistItem}
                 onDraft={(draft) => onEditItem(item.id, draft)}
                 onCommit={() => onCommitItem(item.id)}
                 onCancel={onCancelItem}
@@ -276,6 +279,7 @@ function ChecklistCard({
         <ListTodo className="h-4 w-4 shrink-0 text-muted-foreground/60" />
         <Input
           value={newItem}
+          maxLength={LIMITS.checklistItem}
           onChange={(e) => setNewItem(e.target.value)}
           placeholder={t("checklist.itemPlaceholder")}
           className="h-8 border-none bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
@@ -302,6 +306,7 @@ function ChecklistCard({
 
 interface TitleInputProps {
   defaultValue: string;
+  maxLength: number;
   onDraft: (draft: string) => void;
   onCommit: () => void;
   onCancel: () => void;
@@ -314,6 +319,7 @@ interface TitleInputProps {
  */
 function TitleInput({
   defaultValue,
+  maxLength,
   onDraft,
   onCommit,
   onCancel,
@@ -322,6 +328,7 @@ function TitleInput({
     <Input
       autoFocus
       defaultValue={defaultValue}
+      maxLength={maxLength}
       onChange={(e) => onDraft(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === "Enter") {

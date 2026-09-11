@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { LABEL_COLOR_DOT, type Label } from "@/types/kanban";
+import { LABEL_COLOR_DOT, LIMITS, type Label } from "@/types/kanban";
 import { routes } from "@/routes";
 import { useBoard } from "@/store/BoardContext";
 import {
@@ -147,6 +147,7 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
             <Input
               ref={inputRef}
               value={rawQuery}
+              maxLength={LIMITS.query}
               onChange={(event) => setRawQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && hits[activeIndex]) {

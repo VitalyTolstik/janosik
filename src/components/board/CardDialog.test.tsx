@@ -15,6 +15,7 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
+import { ToastProvider } from "@/components/Toast";
 
 /**
  * Integration test for the card description editor (MDXEditor): opening a
@@ -49,9 +50,11 @@ function renderBoard() {
         <I18nProvider>
           <TooltipProvider>
             <MemoryRouter>
-              <BoardProvider>
-                <BoardSection />
-              </BoardProvider>
+              <ToastProvider>
+                <BoardProvider>
+                  <BoardSection />
+                </BoardProvider>
+              </ToastProvider>
             </MemoryRouter>
           </TooltipProvider>
         </I18nProvider>
@@ -94,6 +97,48 @@ describe("CardDialog description editor", () => {
       "Description",
     ) as HTMLTextAreaElement;
     expect(editorAgain.value).toBe("Updated via MDXEditor");
+  });
+});
+
+describe("CardDialog input limits (TASK-20)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("shows the remaining-characters counter near the title limit", async () => {
+    const dialog = await openCardDialog("Design the new onboarding flow");
+    // No counter while the title is short.
+    expect(
+      within(dialog).queryByTestId("card-title-counter"),
+    ).toBeNull();
+
+    // Typing up to the last 60 chars reveals the live counter.
+    const title = within(dialog).getByLabelText("Title");
+    const longTitle = "T".repeat(299);
+    fireEvent.change(title, { target: { value: longTitle } });
+    const counter = within(dialog).getByTestId("card-title-counter");
+    expect(counter).toHaveTextContent("1");
+  });
+
+  it("clamps an oversized description paste and raises a visible toast", async () => {
+    const dialog = await openCardDialog("Design the new onboarding flow");
+    const { LIMITS } = await import("@/types/kanban");
+
+    const editor = within(dialog).getByLabelText(
+      "Description",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(editor, {
+      target: { value: "D".repeat(LIMITS.description + 100) },
+    });
+
+    // The stored markdown is clamped to the limit…
+    expect(editor.value).toHaveLength(LIMITS.description);
+    // …and a beautiful error explains what happened.
+    expect(
+      await screen.findByText(
+        /Too long — the limit is 10000 characters. The text was trimmed./,
+      ),
+    ).toBeInTheDocument();
   });
 });
 

@@ -25,8 +25,7 @@ import {
   LABEL_COLOR_DOT,
   LABEL_COLORS,
   type Label,
-  type LabelColor,
-} from "@/types/kanban";
+  type LabelColor, LIMITS } from "@/types/kanban";
 
 interface LabelPickerProps {
   /** All labels available on the active board. */
@@ -203,6 +202,7 @@ export function LabelPicker({
           <Input
             autoFocus
             value={draftName}
+            maxLength={LIMITS.labelName}
             onChange={(e) => setDraftName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") submitCreate();
@@ -253,6 +253,7 @@ export function LabelPicker({
           <Input
             autoFocus
             value={renameDraft}
+            maxLength={LIMITS.labelName}
             onChange={(e) => setRenameDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") submitRename();

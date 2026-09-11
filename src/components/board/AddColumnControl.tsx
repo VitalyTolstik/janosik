@@ -4,6 +4,7 @@ import { useState, type KeyboardEvent } from "react";
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LIMITS } from "@/types/kanban";
 
 interface AddColumnControlProps {
   /** Called with the trimmed title when the user commits. */
@@ -59,6 +60,7 @@ export function AddColumnControl({ onSubmit }: AddColumnControlProps) {
       <Input
         autoFocus
         value={title}
+        maxLength={LIMITS.columnTitle}
         onChange={(event) => setTitle(event.target.value)}
         onKeyDown={handleKeyDown}
         onBlur={reset}

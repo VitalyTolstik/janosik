@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { useBoard } from "@/store/BoardContext";
 import { routes } from "@/routes";
 import type { Board } from "@/types/kanban";
+import { LIMITS } from "@/types/kanban";
 
 /**
  * Board switcher — a premium popover anchored to the header: auto-focused
@@ -222,6 +223,7 @@ export function BoardSwitcher() {
           <input
             ref={searchRef}
             value={query}
+            maxLength={LIMITS.query}
             onChange={(e) => {
               setQuery(e.target.value);
               setHighlighted(0);
@@ -429,6 +431,7 @@ export function BoardSwitcher() {
               <input
                 ref={createRef}
                 value={createDraft}
+                maxLength={LIMITS.boardTitle}
                 onChange={(e) => setCreateDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {

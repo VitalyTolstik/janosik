@@ -1242,3 +1242,70 @@ describe("boardReducer — card activity (TASK-12)", () => {
     expect(activity.at(-1)!.type).toBe("due-date-set");
   });
 });
+
+describe("boardReducer — input limits (TASK-20)", () => {
+  const long = (n: number) => "x".repeat(n);
+
+  it("clamps card titles to LIMITS.cardTitle", async () => {
+    const { LIMITS } = await import("@/types/kanban");
+    const board = reduceBoard(freshBoard(), {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      title: long(LIMITS.cardTitle + 50),
+    });
+    expect(board.cards["card-1"].title).toHaveLength(LIMITS.cardTitle);
+  });
+
+  it("clamps card descriptions to LIMITS.description", async () => {
+    const { LIMITS } = await import("@/types/kanban");
+    const board = reduceBoard(freshBoard(), {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      description: long(LIMITS.description + 500),
+    });
+    expect(board.cards["card-1"].description).toHaveLength(LIMITS.description);
+  });
+
+  it("clamps and trims column titles; whitespace-only is a no-op", async () => {
+    const { LIMITS } = await import("@/types/kanban");
+    const board = reduceBoard(freshBoard(), {
+      type: "RENAME_COLUMN",
+      columnId: "col-backlog",
+      title: `  ${long(LIMITS.columnTitle + 10)}  `,
+    });
+    expect(board.columns[0].title).toHaveLength(LIMITS.columnTitle);
+    const unchanged = reduceBoard(freshBoard(), {
+      type: "RENAME_COLUMN",
+      columnId: "col-backlog",
+      title: "   ",
+    });
+    expect(unchanged.columns[0].title).toBe("Backlog");
+  });
+
+  it("clamps label names on create and rename", async () => {
+    const { LIMITS } = await import("@/types/kanban");
+    const label = { id: "l-new", name: long(LIMITS.labelName + 20), color: "red" as const };
+    const board = reduceBoard(freshBoard(), { type: "ADD_LABEL", label });
+    expect(board.labels.find((l) => l.id === "l-new")!.name).toHaveLength(
+      LIMITS.labelName,
+    );
+  });
+
+  it("clamps checklist item text", async () => {
+    const { LIMITS } = await import("@/types/kanban");
+    const seeded = reduceBoard(freshBoard(), {
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      title: "Steps",
+    });
+    const checklistId = seeded.cards["card-1"].checklists![0].id;
+    const board = reduceBoard(seeded, {
+      type: "ADD_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId,
+      text: long(LIMITS.checklistItem + 30),
+    });
+    const checklist = board.cards["card-1"].checklists![0];
+    expect(checklist.items.at(-1)!.text).toHaveLength(LIMITS.checklistItem);
+  });
+});

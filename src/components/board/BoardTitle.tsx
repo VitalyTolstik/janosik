@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
+import { LIMITS } from "@/types/kanban";
 
 /**
  * Inline-editable board title — the single source of truth for the name
@@ -36,6 +37,7 @@ export function BoardTitle() {
     <input
       ref={inputRef}
       value={draft}
+      maxLength={LIMITS.boardTitle}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={save}
       onKeyDown={(e) => {

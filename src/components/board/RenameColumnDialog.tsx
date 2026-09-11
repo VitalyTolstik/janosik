@@ -10,6 +10,7 @@ import {
         DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { LIMITS } from "@/types/kanban";
 
 interface RenameColumnDialogProps {
         open: boolean;
@@ -53,6 +54,7 @@ export function RenameColumnDialog({
                                 <Input
                                         autoFocus
                                         value={title}
+                                        maxLength={LIMITS.columnTitle}
                                         onChange={(e) =>
                                                 setTitle(e.target.value)
                                         }
