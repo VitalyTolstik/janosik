@@ -15,6 +15,7 @@ import {
   initialBoardState,
   type BoardAction,
   type BoardState,
+  type ColumnSortBy,
 } from "@/store/board-reducer";
 import { BoardHistory } from "@/store/history";
 import type { Board, CardCover, Label } from "@/types/kanban";
@@ -119,6 +120,8 @@ interface BoardContextValue {
     toIndex: number,
   ) => void;
   moveColumn: (columnId: string, fromIndex: number, toIndex: number) => void;
+  /** Sorts a column's cards (createdAt / dueDate / title). */
+  sortColumn: (columnId: string, sortBy: ColumnSortBy) => void;
   /* Board management (multi-board) */
   /** Creates an empty board and returns its id (for navigation). */
   addBoard: (title: string) => string;
@@ -426,6 +429,7 @@ function createBoardActions(
   | "duplicateColumn"
   | "moveCard"
   | "moveColumn"
+  | "sortColumn"
 > {
   return {
     addColumn: (title: string) => dispatch({ type: "ADD_COLUMN", title }),
@@ -497,6 +501,8 @@ function createBoardActions(
       }),
     moveColumn: (columnId: string, fromIndex: number, toIndex: number) =>
       dispatch({ type: "MOVE_COLUMN", columnId, fromIndex, toIndex }),
+    sortColumn: (columnId: string, sortBy: ColumnSortBy) =>
+      dispatch({ type: "SORT_COLUMN", columnId, sortBy }),
   };
 }
 
