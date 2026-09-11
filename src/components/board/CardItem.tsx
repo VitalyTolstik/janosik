@@ -1,4 +1,5 @@
 import { AlignLeft, CalendarClock, CopyPlus, ListTodo } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -19,15 +20,50 @@ interface CardItemProps {
 }
 
 /**
+ * True while the title is visually clipped by `line-clamp-3` (scrollHeight
+ * exceeds the clamped clientHeight). Mirrors Jira's behaviour: the native
+ * `title` tooltip appears only when something is actually hidden — no
+ * tooltip noise on short titles.
+ */
+function useClamped(): [
+  React.RefCallback<HTMLParagraphElement>,
+  boolean,
+] {
+  const elRef = useRef<HTMLParagraphElement | null>(null);
+  const [clamped, setClamped] = useState(false);
+  useEffect(() => {
+    const el = elRef.current;
+    if (!el) return;
+    const check = () =>
+      setClamped(el.scrollHeight > el.clientHeight + 1);
+    check();
+    // Re-check when the card content reflows (fonts, resize, label wrap).
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const ref: React.RefCallback<HTMLParagraphElement> = (node) => {
+    elRef.current = node;
+  };
+  return [ref, clamped];
+}
+
+/**
  * A single card inside a column.
  * Hover uses border/shadow changes (no transform) so it stays compatible
  * with the drag layer that @dnd-kit applies on top of it.
+ *
+ * The title is clamped to 3 lines (Jira's budget — Linear clips at 1,
+ * Trello/Notion don't clamp at all and grow runaway-tall cards). The clip
+ * is purely visual: the full text stays in the accessibility tree and a
+ * native `title` tooltip surfaces it on hover, only when truncated.
  *
  * The description itself is not rendered on the front (Trello-style):
  * a compact badge only signals that the card has one — full text lives
  * in the card dialog.
  */
 export function CardItem({ card, labels, isDragging, onClick, onDuplicate }: CardItemProps) {
+  const [titleRef, titleClamped] = useClamped();
   const { t, lang } = useI18n();
   const hasDescription = Boolean(card.description?.trim());
   // Checklist progress summed across all of the card's checklists.
@@ -106,7 +142,15 @@ export function CardItem({ card, labels, isDragging, onClick, onDuplicate }: Car
           ))}
         </div>
       ) : null}
-      <p className="break-words text-sm leading-snug text-foreground/90">
+      {/* `overflow-wrap:anywhere` (not just break-words) so a pasted URL
+          can't blow out the card's intrinsic width; `text-wrap:pretty`
+          avoids orphan single-word last lines under the clamp. */}
+      <p
+        ref={titleRef}
+        title={titleClamped ? card.title : undefined}
+        className="line-clamp-3 break-words text-sm leading-snug text-foreground/90 [overflow-wrap:anywhere] [text-wrap:pretty]"
+        data-testid="card-title"
+      >
         {card.title}
       </p>
       {hasDescription || total > 0 || hasDueDate ? (
