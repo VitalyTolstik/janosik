@@ -13,6 +13,11 @@ interface CardComposerProps {
   /** Board labels to offer inline — picked before the card is created. */
   labels?: Label[];
   placeholder?: string;
+  /**
+   * Column id exposed as `data-composer-trigger` on the idle button —
+   * the `n` shortcut opens the composer by "clicking" this trigger.
+   */
+  columnId?: string;
 }
 
 /**
@@ -28,6 +33,7 @@ export function CardComposer({
   onSubmit,
   labels,
   placeholder,
+  columnId,
 }: CardComposerProps) {
   const { t } = useI18n();
   const [composing, setComposing] = useState(false);
@@ -81,6 +87,7 @@ export function CardComposer({
       <button
         type="button"
         onClick={() => setComposing(true)}
+        {...(columnId ? { "data-composer-trigger": columnId } : {})}
         className="group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
       >
         <Plus className="h-4 w-4 transition-transform group-hover:scale-110" />

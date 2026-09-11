@@ -45,6 +45,7 @@ export function AddColumnControl({ onSubmit }: AddColumnControlProps) {
       <button
         type="button"
         onClick={() => setComposing(true)}
+        data-add-column-trigger
         className="flex w-[80vw] max-w-72 shrink-0 items-center gap-2 rounded-xl border border-dashed border-border px-4 py-3 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:bg-hover/60 hover:text-foreground sm:w-72 sm:max-w-none"
       >
         <Plus className="h-4 w-4" />

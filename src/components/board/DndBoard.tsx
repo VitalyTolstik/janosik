@@ -100,6 +100,24 @@ export function DndBoard({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only reacts to URL changes
   }, [searchParams, board]);
+  // Keyboard cursor (j/k navigation): flat index over the visible cards —
+  // columns in board order, cards in (filtered) column order. `e`/Enter
+  // opens the cursor's card dialog. Cleared by Escape or when the board
+  // changes (the index belongs to one board's layout).
+  const [cursor, setCursor] = useState<number | null>(null);
+  const boardId = board?.id;
+  useEffect(() => {
+    setCursor(null);
+  }, [boardId]);
+  // Scroll the cursor's card into view as it moves.
+  useEffect(() => {
+    if (cursor === null) return;
+    const el = document.querySelector('[data-card-cursor="true"]');
+    // jsdom (tests) has no scrollIntoView.
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [cursor]);
   // dnd-kit fires a click right after a drag ends (pointerup lands on the
   // dragged element) — this flag swallows that spurious click so a drop never
   // opens the card dialog.
@@ -390,6 +408,75 @@ export function DndBoard({
       : board.columns.map((col) => col.id);
   const columnsById = new Map(board.columns.map((col) => [col.id, col]));
 
+  // Flat list of visible card ids (columns in order, filtered column
+  // contents) — the coordinate space of the j/k keyboard cursor.
+  const visibleCardIds = columnOrder.flatMap(
+    (colId) => filteredCardIds?.[colId] ?? columnsById.get(colId)?.cardIds ?? [],
+  );
+  const cursorCardId = cursor !== null ? visibleCardIds[cursor] : undefined;
+
+  // Shared guard: single-letter shortcuts are inert while the user types or
+  // while an overlay (dialog/popover/menu) is open.
+  const shortcutsBlocked = (event: KeyboardEvent) => {
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      (target.isContentEditable ||
+        ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+    )
+      return true;
+    return document.querySelector(
+      '[role="dialog"], [data-radix-popper-content-wrapper]',
+    ) !== null;
+  };
+
+  // j/k navigate the visible cards, e/Enter open the cursor's dialog,
+  // n opens a composer (cursor's column, else the first), c opens the
+  // column composer, Escape clears the cursor. The overlay itself lives in
+  // ShortcutsDialog ("?").
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (shortcutsBlocked(event)) return;
+      const key = event.key;
+      if (key === "j" || key === "k") {
+        event.preventDefault();
+        setCursor((prev) => {
+          const total = visibleCardIds.length;
+          if (total === 0) return null;
+          if (prev === null) return key === "j" ? 0 : total - 1;
+          return Math.min(Math.max(key === "j" ? prev + 1 : prev - 1, 0), total - 1);
+        });
+      } else if ((key === "e" || key === "Enter") && cursorCardId) {
+        event.preventDefault();
+        setOpenCardId(cursorCardId);
+      } else if (key === "n") {
+        event.preventDefault();
+        const columnId =
+          (cursorCardId &&
+            columnOrder.find((colId) =>
+              (filteredCardIds?.[colId] ??
+                columnsById.get(colId)?.cardIds ??
+                []).includes(cursorCardId),
+            )) ||
+          columnOrder[0];
+        document
+          .querySelector<HTMLElement>(`[data-composer-trigger="${columnId}"]`)
+          ?.click();
+      } else if (key === "c") {
+        event.preventDefault();
+        document
+          .querySelector<HTMLElement>("[data-add-column-trigger]")
+          ?.click();
+      } else if (key === "Escape" && cursor !== null) {
+        setCursor(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- visible cards / cursor are the intent
+  }, [visibleCardIds, cursorCardId, cursor, columnOrder, filteredCardIds]);
+
   const activeCard =
     draft?.mode === "card" ? board.cards[draft.activeCardId] : undefined;
   const activeLabels = activeCard
@@ -431,6 +518,7 @@ export function DndBoard({
                 }
                 isFiltered={isFiltering}
                 highlight={highlight}
+                cursorCardId={cursorCardId}
                 onCardClick={handleCardClick}
               />
             );
