@@ -237,7 +237,12 @@ export function TableView({
       <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground" data-testid="table-add-card">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1 border-dashed border-primary/40 bg-primary/10 px-2 text-xs font-medium text-primary hover:bg-primary/20 hover:text-primary"
+              data-testid="table-add-card"
+            >
               <Plus className="h-3.5 w-3.5" />
               {t("composer.add")}
             </Button>
