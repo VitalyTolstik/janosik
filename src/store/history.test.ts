@@ -10,7 +10,8 @@ import { initialBoardState, type BoardAction } from "@/store/board-reducer";
  */
 
 function freshState() {
-  return initialBoardState();
+  // A single board snapshot (history is per board, not per array).
+  return initialBoardState()[0];
 }
 
 function updateCardAction(cardId: string, title: string): BoardAction {

@@ -8,6 +8,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import { useLocation, useNavigate, matchPath } from "react-router-dom";
 
 import {
   boardReducer,
@@ -20,6 +21,7 @@ import type { Board, CardCover, Label } from "@/types/kanban";
 import { migrateStorageKey } from "@/utils/storage";
 import { normalizeBoards } from "@/store/migrate";
 import { createBackup } from "@/utils/backup";
+import { createId } from "@/utils/id";
 import {
   createDebouncedLocalStoragePersistence,
   type DebouncedPersistence,
@@ -30,20 +32,28 @@ import { useI18n } from "@/i18n";
 /**
  * Board state provider.
  *
+ * - Multi-board: the whole `Board[]` is persisted; the active board comes
+ *   from the URL (`/board/:boardId` — the source of truth). Unknown or
+ *   missing ids redirect to the first board.
  * - Initializes from localStorage when present (falls back to the seed board).
  * - Persists changes via a debounced adapter (400 ms) with an immediate
  *   flush on `beforeunload`/unmount, so closing the tab never loses the
  *   last change.
- * - Records a 50-step undo/redo history on top of the pure reducer
- *   (consecutive title edits coalesce into one step) and exposes hotkeys
- *   Ctrl/⌘+Z, Ctrl/⌘+Shift+Z and Ctrl+Y.
- * - Export/import operate on the full `boards` array (multi-board ready).
+ * - Records a 50-step undo/redo history **per board** (consecutive title
+ *   edits coalesce into one step) and exposes hotkeys Ctrl/⌘+Z,
+ *   Ctrl/⌘+Shift+Z and Ctrl+Y — always scoped to the active board.
+ * - Export/import operate on the full `boards` array.
  * - Auto-backups snapshots to IndexedDB after ~60 s of activity.
  */
 
 const STORAGE_KEY = "janosik-boards";
 const SAVE_DEBOUNCE_MS = 400;
 const BACKUP_THROTTLE_MS = 60_000;
+
+/** The canonical URL shape for a board. */
+export function boardPath(boardId: string): string {
+  return `/board/${boardId}`;
+}
 
 function loadInitialState(
   persistence: DebouncedPersistence<BoardState>,
@@ -60,7 +70,7 @@ function loadInitialState(
 type CardPatch = { title?: string; description?: string };
 
 interface BoardContextValue {
-  /** The active (first) board. */
+  /** The board selected by the URL (falls back to the first one). */
   board: Board | undefined;
   /** Every board in storage (export/import target). */
   boards: Board[];
@@ -113,7 +123,12 @@ interface BoardContextValue {
     toIndex: number,
   ) => void;
   moveColumn: (columnId: string, fromIndex: number, toIndex: number) => void;
-  /* Undo / redo */
+  /* Board management (multi-board) */
+  /** Creates an empty board and returns its id (for navigation). */
+  addBoard: (title: string) => string;
+  /** Removes a board; the caller must navigate away from it first/after. */
+  removeBoard: (boardId: string) => void;
+  /* Undo / redo (scoped to the active board) */
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -127,6 +142,8 @@ const BoardContext = createContext<BoardContextValue | null>(null);
 export function BoardProvider({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const toast = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   // One persistence instance per provider lifetime (deferred creation keeps
   // the closure's debounce timer intact across re-renders).
@@ -145,20 +162,39 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     return () => persistence.setErrorHandler(null);
   }, [persistence, toast, t]);
 
-  const historyRef = useRef<BoardHistory | null>(null);
-  if (historyRef.current === null) {
-    historyRef.current = new BoardHistory();
-  }
+  // One undo/redo stack per board; created lazily, dropped on remove/import.
+  const historiesRef = useRef(new Map<string, BoardHistory>());
 
   const [state, dispatchRaw] = useReducer(boardReducer, undefined, () =>
     loadInitialState(persistence),
   );
+
+  // The URL decides which board is active; fall back to the first board.
+  const routeBoardId =
+    matchPath("/board/:boardId", location.pathname)?.params.boardId ?? null;
+  const board =
+    (routeBoardId ? state.find((b) => b.id === routeBoardId) : undefined) ??
+    state[0];
 
   // Latest committed state, readable from stable callbacks.
   const stateRef = useRef(state);
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  // Latest active board id, readable from stable callbacks.
+  const activeIdRef = useRef(board?.id);
+  useEffect(() => {
+    activeIdRef.current = board?.id;
+  }, [board?.id]);
+
+  // Redirect `/`, unknown paths and dead board ids to a real board
+  // (replace, so dead URLs never land in history).
+  useEffect(() => {
+    if (routeBoardId && state.some((b) => b.id === routeBoardId)) return;
+    const first = state[0];
+    if (first) navigate(boardPath(first.id), { replace: true });
+  }, [routeBoardId, state, navigate]);
 
   // Debounced persistence + throttled auto-backup after every change.
   useEffect(() => {
@@ -189,33 +225,68 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     };
   }, [persistence]);
 
-  // Wrapper dispatch: record history, then apply (except internal restores).
+  // Wrapper dispatch: record history for the targeted board, then apply.
+  // Board-scoped actions get the active board id injected when absent.
   const dispatch = useCallback((action: BoardAction) => {
-    if (action.type !== "RESTORE_BOARD") {
-      historyRef.current?.push(stateRef.current, action);
+    if (action.type === "IMPORT_BOARDS") {
+      // A new data set invalidates every history.
+      historiesRef.current.clear();
+      dispatchRaw(action);
+      return;
     }
-    dispatchRaw(action);
+    if (action.type === "ADD_BOARD") {
+      dispatchRaw(action);
+      return;
+    }
+    if (action.type === "REMOVE_BOARD") {
+      historiesRef.current.delete(action.boardId);
+      dispatchRaw(action);
+      return;
+    }
+    const boardId = action.type === "RESTORE_BOARD"
+      ? (action.boardId ?? activeIdRef.current)
+      : ((action as { boardId?: string }).boardId ?? activeIdRef.current);
+    if (!boardId) return;
+    const scoped = { ...action, boardId } as BoardAction;
+    if (scoped.type !== "RESTORE_BOARD") {
+      const current = stateRef.current.find((b) => b.id === boardId);
+      if (current) {
+        let history = historiesRef.current.get(boardId);
+        if (!history) {
+          history = new BoardHistory();
+          historiesRef.current.set(boardId, history);
+        }
+        history.push(current, scoped);
+      }
+    }
+    dispatchRaw(scoped);
   }, []);
 
   const undo = useCallback(() => {
-    const history = historyRef.current;
-    const previous = history?.undo(stateRef.current);
+    const boardId = activeIdRef.current;
+    if (!boardId) return;
+    const history = historiesRef.current.get(boardId);
+    const current = stateRef.current.find((b) => b.id === boardId);
+    const previous = history && current ? history.undo(current) : null;
     if (previous) {
-      dispatchRaw({ type: "RESTORE_BOARD", board: previous[0] });
+      dispatchRaw({ type: "RESTORE_BOARD", boardId, board: previous });
     }
   }, []);
 
   const redo = useCallback(() => {
-    const history = historyRef.current;
-    const next = history?.redo(stateRef.current);
+    const boardId = activeIdRef.current;
+    if (!boardId) return;
+    const history = historiesRef.current.get(boardId);
+    const current = stateRef.current.find((b) => b.id === boardId);
+    const next = history && current ? history.redo(current) : null;
     if (next) {
-      dispatchRaw({ type: "RESTORE_BOARD", board: next[0] });
+      dispatchRaw({ type: "RESTORE_BOARD", boardId, board: next });
     }
   }, []);
 
   const importBoards = useCallback((boards: BoardState) => {
     // A new data set invalidates any previous history.
-    historyRef.current?.reset();
+    historiesRef.current.clear();
     dispatchRaw({ type: "IMPORT_BOARDS", boards: normalizeBoards(boards) });
   }, []);
 
@@ -250,19 +321,48 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [undo, redo]);
 
+  const addBoard = useCallback((title: string): string => {
+    const id = createId();
+    const now = Date.now();
+    dispatchRaw({
+      type: "ADD_BOARD",
+      board: {
+        id,
+        title: title.trim() || "Untitled",
+        columns: [],
+        cards: {},
+        labels: [],
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+    return id;
+  }, []);
+
+  const removeBoard = useCallback((boardId: string) => {
+    historiesRef.current.delete(boardId);
+    dispatchRaw({ type: "REMOVE_BOARD", boardId });
+  }, []);
+
   const value = useMemo<BoardContextValue>(
     () => ({
-      board: state[0],
+      board,
       boards: state,
       dispatch,
       ...createBoardActions(dispatch),
+      addBoard,
+      removeBoard,
       undo,
       redo,
-      canUndo: historyRef.current?.canUndo() ?? false,
-      canRedo: historyRef.current?.canRedo() ?? false,
+      canUndo: board
+        ? (historiesRef.current.get(board.id)?.canUndo() ?? false)
+        : false,
+      canRedo: board
+        ? (historiesRef.current.get(board.id)?.canRedo() ?? false)
+        : false,
       importBoards,
     }),
-    [state, dispatch, undo, redo, importBoards],
+    [state, board, dispatch, addBoard, removeBoard, undo, redo, importBoards],
   );
 
   return (

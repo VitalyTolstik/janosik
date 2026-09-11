@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
+import { Header } from "@/components/Header";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
@@ -20,9 +22,12 @@ function renderBoard() {
       <BoardBackgroundProvider>
         <I18nProvider>
           <TooltipProvider>
-            <BoardProvider>
-              <BoardSection />
-            </BoardProvider>
+            <MemoryRouter>
+              <BoardProvider>
+                <Header />
+                <BoardSection />
+              </BoardProvider>
+            </MemoryRouter>
           </TooltipProvider>
         </I18nProvider>
       </BoardBackgroundProvider>
@@ -66,13 +71,13 @@ describe("BoardSection", () => {
 
     renderBoard();
 
-    expect(screen.getByRole("heading", { name: "Empty" })).toBeInTheDocument();
+    expect(screen.getByText("Empty")).toBeInTheDocument();
   });
 
-  it("renames the board inline (click title → Enter)", () => {
+  it("renames the board from the header title (click → Enter)", () => {
     renderBoard();
 
-    // The title is a clickable button; click it to start editing.
+    // The header title is clickable; click it to start editing.
     const title = screen.getByRole("heading", { name: "Product Launch" });
     fireEvent.click(title);
     const input = screen.getByRole("textbox", { name: "Board title" });
@@ -81,10 +86,12 @@ describe("BoardSection", () => {
     fireEvent.change(input, { target: { value: "Launch 2.0" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
-    // Editing ends and the new name shows on the board.
+    // Editing ends and the new name shows in the header; no duplicate title
+    // exists anywhere else on the page.
     expect(
       screen.getByRole("heading", { name: "Launch 2.0" }),
     ).toBeInTheDocument();
+    expect(screen.getAllByText("Launch 2.0")).toHaveLength(1);
     expect(screen.queryByRole("textbox", { name: "Board title" })).toBeNull();
   });
 
@@ -98,5 +105,10 @@ describe("BoardSection", () => {
     expect(
       screen.getByRole("heading", { name: "Product Launch" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows the board name exactly once (header only, not in content)", () => {
+    renderBoard();
+    expect(screen.getAllByText("Product Launch")).toHaveLength(1);
   });
 });
