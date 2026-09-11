@@ -1,11 +1,14 @@
 import type {
   Board,
   Card,
+  CardActivityEvent,
+  CardActivityType,
   CardCover,
   Checklist,
   Column,
   Label,
 } from "@/types/kanban";
+import { MAX_CARD_ACTIVITY } from "@/types/kanban";
 import {
   COVER_COLORS,
   COVER_GRADIENTS,
@@ -18,6 +21,57 @@ import { createSeedBoard } from "@/store/seed-data";
 /** Insert a value at `index`, returning a new array (no in-place mutation). */
 function insertAt<T>(array: T[], index: number, value: T): T[] {
   return [...array.slice(0, index), value, ...array.slice(index)];
+}
+
+/**
+ * Types whose rapid repeats (per-keystroke edits) collapse into the last
+ * event instead of spamming the feed. `moved`/label events are discrete
+ * user actions and always append.
+ */
+const COALESCED_ACTIVITY_TYPES: readonly CardActivityType[] = [
+  "renamed",
+  "description-changed",
+];
+
+/** Window (ms) inside which same-type repeats replace the previous event. */
+const ACTIVITY_COALESCE_WINDOW_MS = 2000;
+
+/**
+ * Return the card with `type` appended to its activity feed (new event at
+ * the end, capped to `MAX_CARD_ACTIVITY`). Repeats of a coalesced type
+ * within the window update the last event's timestamp instead of adding
+ * a row — title/description edits fire per keystroke.
+ */
+function appendActivity(
+  card: Card,
+  type: CardActivityType,
+  detail?: string,
+): Card {
+  const at = Date.now();
+  const previous = card.activity ?? [];
+  const last = previous[previous.length - 1];
+  if (
+    last &&
+    last.type === type &&
+    COALESCED_ACTIVITY_TYPES.includes(type) &&
+    at - last.at <= ACTIVITY_COALESCE_WINDOW_MS
+  ) {
+    return {
+      ...card,
+      activity: [...previous.slice(0, -1), { ...last, at }],
+    };
+  }
+  const event: CardActivityEvent = { id: createId(), type, at, actorId: null };
+  if (detail !== undefined) event.detail = detail;
+  return {
+    ...card,
+    activity: [...previous, event].slice(-MAX_CARD_ACTIVITY),
+  };
+}
+
+/** A fresh card's first (and only mandatory) activity event. */
+function createdActivity(at: number): CardActivityEvent[] {
+  return [{ id: createId(), type: "created", at, actorId: null }];
 }
 
 /**
@@ -343,6 +397,7 @@ function addCard(board: Board, action: AddCardAction): Board {
     id: createId(),
     title: action.title,
     labelIds: action.labelIds ?? [],
+    activity: createdActivity(now),
     createdAt: now,
     updatedAt: now,
   };
@@ -376,16 +431,16 @@ function updateCard(board: Board, action: UpdateCardAction): Board {
   ) {
     return board;
   }
+  let nextCard: Card = { ...target, title, description, updatedAt: Date.now() };
+  if (title !== target.title) nextCard = appendActivity(nextCard, "renamed");
+  if ((description ?? "") !== (target.description ?? "")) {
+    nextCard = appendActivity(nextCard, "description-changed");
+  }
   return {
     ...board,
     cards: {
       ...board.cards,
-      [action.cardId]: {
-        ...target,
-        title,
-        description,
-        updatedAt: Date.now(),
-      },
+      [action.cardId]: nextCard,
     },
   };
 }
@@ -427,6 +482,8 @@ function duplicateCard(board: Board, action: DuplicateCardAction): Board {
     dueDate: source.dueDate,
     cover: source.cover ? (structuredClone(source.cover) as CardCover) : undefined,
     labelIds: [...source.labelIds],
+    // The copy is a new card — it starts its own history, not the source's.
+    activity: createdActivity(now),
     createdAt: now,
     updatedAt: now,
   };
@@ -473,6 +530,7 @@ function duplicateColumn(board: Board, action: DuplicateColumnAction): Board {
         ? (structuredClone(sourceCard.cover) as CardCover)
         : undefined,
       labelIds: [...sourceCard.labelIds],
+      activity: createdActivity(now),
       createdAt: now,
       updatedAt: now,
     };
@@ -502,11 +560,19 @@ function toggleCardLabel(board: Board, action: ToggleCardLabelAction): Board {
     : [...target.labelIds, action.labelId];
   // No-op when the list wouldn't change.
   if (labelIds.length === target.labelIds.length) return board;
+  // Snapshot the label name at toggle time — the feed keeps showing it
+  // even after the label is renamed or deleted.
+  const labelName = board.labels.find((l) => l.id === action.labelId)?.name;
+  const nextCard = appendActivity(
+    { ...target, labelIds },
+    has ? "label-removed" : "label-added",
+    labelName,
+  );
   return {
     ...board,
     cards: {
       ...board.cards,
-      [action.cardId]: { ...target, labelIds },
+      [action.cardId]: nextCard,
     },
   };
 }
@@ -693,12 +759,14 @@ function setCardDueDate(board: Board, action: SetCardDueDateAction): Board {
       ? action.dueDate
       : undefined;
   if (dueDate === target.dueDate) return board;
-  const nextCard: Card = { ...target, updatedAt: Date.now() };
+  let nextCard: Card = { ...target, updatedAt: Date.now() };
   if (dueDate === undefined) {
     // Drop the field entirely (no `dueDate: undefined` key left behind).
     delete nextCard.dueDate;
+    nextCard = appendActivity(nextCard, "due-date-removed");
   } else {
     nextCard.dueDate = dueDate;
+    nextCard = appendActivity(nextCard, "due-date-set");
   }
   return {
     ...board,
@@ -772,7 +840,7 @@ function moveCard(board: Board, action: MoveCardAction): Board {
     if (col.id !== action.fromColumnId && col.id !== action.toColumnId) {
       return col;
     }
-    // Remove from the source column first (no-op when source === target).
+    // Remove from the source column first (no same-column moves).
     let next = col.cardIds.filter((id) => id !== action.cardId);
     if (col.id === action.toColumnId) {
       const at = clamp(action.toIndex, 0, next.length);
@@ -781,7 +849,21 @@ function moveCard(board: Board, action: MoveCardAction): Board {
     return { ...col, cardIds: next };
   });
 
-  return { ...board, columns };
+  // Cross-column moves land in the feed; same-column reorders don't
+  // (they're pure layout, not progress).
+  let cards = board.cards;
+  if (action.fromColumnId !== action.toColumnId) {
+    cards = {
+      ...board.cards,
+      [action.cardId]: appendActivity(
+        board.cards[action.cardId],
+        "moved",
+        to.title,
+      ),
+    };
+  }
+
+  return { ...board, columns, cards };
 }
 
 /** Reorder columns with arrayMove semantics (like @dnd-kit's arrayMove). */

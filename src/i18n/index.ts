@@ -3,6 +3,7 @@ export {
   useI18n,
   formatDate,
   formatDateOnly,
+  formatRelative,
   formatTime,
   is12HourLocale,
 } from "@/i18n/I18nProvider";
