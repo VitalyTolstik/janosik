@@ -113,8 +113,47 @@ export interface Card {
   cover?: CardCover;
   /** References to labels defined on the board; empty when unlabeled. */
   labelIds: string[];
+  /**
+   * Activity feed (TASK-12), oldest → newest, capped at
+   * `MAX_CARD_ACTIVITY`. Omitted for cards created before the feature —
+   * the UI falls back to a single "created" row from `createdAt`.
+   */
+  activity?: CardActivityEvent[];
   createdAt: number;
   updatedAt: number;
+}
+
+/** Every kind of card change the activity feed records. */
+export const CARD_ACTIVITY_TYPES = [
+  "created",
+  "renamed",
+  "description-changed",
+  "moved",
+  "label-added",
+  "label-removed",
+  "due-date-set",
+  "due-date-removed",
+] as const;
+
+export type CardActivityType = (typeof CARD_ACTIVITY_TYPES)[number];
+
+/** Upper bound of stored events per card (localStorage size guard). */
+export const MAX_CARD_ACTIVITY = 50;
+
+/**
+ * One entry of a card's history. `actorId` is reserved for the future
+ * backend (real users) — the frontend-only app always writes `null`.
+ * `detail` is a display snapshot captured at mutation time (label name,
+ * target column title) so the feed survives the referenced entity being
+ * renamed or deleted afterwards.
+ */
+export interface CardActivityEvent {
+  id: string;
+  type: CardActivityType;
+  /** Unix timestamp (ms) of the change. */
+  at: number;
+  actorId: string | null;
+  detail?: string;
 }
 
 /**

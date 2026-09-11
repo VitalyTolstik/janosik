@@ -210,3 +210,67 @@ describe("normalizeBoards", () => {
     ]);
   });
 });
+
+describe("normalizeBoards — activity (TASK-12)", () => {
+  const validEvent = {
+    id: "ev-1",
+    type: "created",
+    at: 1000,
+    actorId: null,
+  };
+
+  it("keeps well-formed activity as-is (board untouched)", () => {
+    const current = {
+      id: "b",
+      title: "B",
+      columns: [],
+      cards: { c1: card({ labelIds: [], activity: [validEvent] }) },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+
+    const [next] = normalizeBoards([current]);
+    expect(next).toBe(current);
+    expect(next.cards["c1"].activity).toEqual([validEvent]);
+  });
+
+  it("drops malformed activity events and empty/garbage lists", () => {
+    const legacy = card({
+      labelIds: [],
+      activity: [
+        validEvent,
+        { type: "created", at: 1, actorId: null }, // no id
+        { id: "e", type: "time-travel", at: 1, actorId: null }, // unknown type
+        { id: "e", type: "created", at: "yesterday", actorId: null }, // bad at
+        "garbage",
+        null,
+      ],
+    });
+    const board = {
+      id: "b",
+      title: "B",
+      columns: [],
+      cards: { c1: legacy },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+
+    const [next] = normalizeBoards([board]);
+    expect(next.cards["c1"].activity).toEqual([validEvent]);
+
+    const empty = card({ labelIds: [], activity: ["garbage"] });
+    const board2 = {
+      id: "b",
+      title: "B",
+      columns: [],
+      cards: { c1: empty },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+    const [next2] = normalizeBoards([board2]);
+    expect(next2.cards["c1"].activity).toBeUndefined();
+  });
+});

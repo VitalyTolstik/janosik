@@ -26,7 +26,15 @@ import type { BoardState } from "@/store/board-reducer";
  *
  * v5: `Card.cover` (TASK-5) — optional `{ type, value }`; only a pair the
  * app can render survives, malformed shapes are dropped.
+ *
+ * v6: `Card.activity` (TASK-12) — optional event list; only well-formed
+ * events (known type, finite timestamp) survive, malformed or empty lists
+ * are dropped. Cards without activity are valid — the UI falls back to a
+ * single "created" row from `createdAt`.
  */
+
+import { CARD_ACTIVITY_TYPES, MAX_CARD_ACTIVITY } from "@/types/kanban";
+import type { CardActivityEvent } from "@/types/kanban";
 
 type LegacyCard = Card & { labelId?: unknown; labelIds?: unknown };
 
@@ -99,14 +107,51 @@ function toCover(value: unknown): CardCover | undefined {
   return undefined;
 }
 
+/**
+ * An activity event survives only when fully well-formed: known type,
+ * finite timestamp, `actorId` of the current shape (always `null` today),
+ * optional string detail. Everything else (hand-edited imports) is dropped.
+ */
+function toActivityEvent(value: unknown): CardActivityEvent | null {
+  if (typeof value !== "object" || value === null) return null;
+  const e = value as Partial<CardActivityEvent>;
+  if (typeof e.id !== "string") return null;
+  if (!(CARD_ACTIVITY_TYPES as readonly string[]).includes(e.type as string)) {
+    return null;
+  }
+  if (typeof e.at !== "number" || !Number.isFinite(e.at)) return null;
+  if (e.actorId !== null && typeof e.actorId !== "string") return null;
+  if (e.detail !== undefined && typeof e.detail !== "string") return null;
+  const event: CardActivityEvent = {
+    id: e.id,
+    type: e.type as CardActivityEvent["type"],
+    at: e.at,
+    actorId: e.actorId,
+  };
+  if (e.detail !== undefined) event.detail = e.detail;
+  return event;
+}
+
+function toActivity(value: unknown): CardActivityEvent[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return undefined;
+  const events = value
+    .map(toActivityEvent)
+    .filter((event): event is CardActivityEvent => event !== null)
+    .slice(-MAX_CARD_ACTIVITY);
+  return events.length > 0 ? events : undefined;
+}
+
 function normalizeCard(card: LegacyCard): Card {
-  const { labelId, labelIds, checklists, dueDate, cover, ...rest } = card;
+  const { labelId, labelIds, checklists, dueDate, cover, activity, ...rest } =
+    card;
   return {
     ...rest,
     labelIds: toLabelIds(labelIds ?? labelId),
     checklists: toChecklists(checklists),
     dueDate: toDueDate(dueDate),
     cover: toCover(cover),
+    activity: toActivity(activity),
   };
 }
 
@@ -130,7 +175,8 @@ export function normalizeBoards(state: BoardState): BoardState {
       if (!Array.isArray(legacy.labelIds)) return true;
       if (!isChecklistsCurrent(legacy.checklists)) return true;
       if (!isDueDateCurrent(legacy.dueDate)) return true;
-      return !isCoverCurrent(legacy.cover);
+      if (!isCoverCurrent(legacy.cover)) return true;
+      return !isActivityCurrent(legacy.activity);
     });
     return needsFix ? normalizeBoard(board) : board;
   });
@@ -178,4 +224,14 @@ function isCoverCurrent(value: unknown): boolean {
     cover.type === (value as CardCover).type &&
     cover.value === (value as CardCover).value
   );
+}
+
+/**
+ * True when the stored activity field is already in the current shape —
+ * `undefined` or an array of well-formed events (no re-sanitize on load).
+ */
+function isActivityCurrent(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  return value.every((event) => toActivityEvent(event) !== null);
 }

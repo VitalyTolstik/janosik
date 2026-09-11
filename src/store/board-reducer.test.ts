@@ -1107,3 +1107,138 @@ describe("boardReducer — SORT_COLUMN", () => {
     expect(next.columns[1]).toEqual(seed.columns[1]);
   });
 });
+
+describe("boardReducer — card activity (TASK-12)", () => {
+  it("adds a 'created' event when a card is added", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "ADD_CARD",
+      columnId: "col-backlog",
+      title: "New card",
+    });
+    const card = Object.values(board.cards).find((c) => c.title === "New card")!;
+    expect(card.activity).toHaveLength(1);
+    expect(card.activity![0].type).toBe("created");
+    expect(card.activity![0].actorId).toBeNull();
+  });
+
+  it("appends 'renamed' / 'description-changed' events on update", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      title: "Renamed",
+      description: "New text",
+    });
+    const types = board.cards["card-1"].activity!.map((e) => e.type);
+    expect(types).toEqual(["renamed", "description-changed"]);
+  });
+
+  it("does not append an event when nothing changed", () => {
+    const seed = freshBoard();
+    const same = reduceBoard(seed, {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      title: seed.cards["card-1"].title,
+    });
+    expect(same.cards["card-1"].activity).toBeUndefined();
+  });
+
+  it("coalesces rapid same-type edits into one event", () => {
+    let state = boardReducer([freshBoard()], {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      title: "First",
+    });
+    state = boardReducer(state, {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      title: "Second",
+    });
+    const activity = state[0].cards["card-1"].activity!;
+    expect(activity).toHaveLength(1);
+    expect(activity[0].type).toBe("renamed");
+  });
+
+  it("records label toggles with a name snapshot", () => {
+    // card-1 already wears "label-design" — toggle a label it doesn't have.
+    const labelId = "label-dev";
+    const added = reduceBoard(freshBoard(), {
+      type: "TOGGLE_CARD_LABEL",
+      cardId: "card-1",
+      labelId,
+    });
+    const addEvent = added.cards["card-1"].activity!.at(-1)!;
+    expect(addEvent.type).toBe("label-added");
+    expect(addEvent.detail).toBe("Development");
+    const removed = reduceBoard(added, {
+      type: "TOGGLE_CARD_LABEL",
+      cardId: "card-1",
+      labelId,
+    });
+    expect(removed.cards["card-1"].activity!.at(-1)!.type).toBe("label-removed");
+  });
+
+  it("records due date set/remove", () => {
+    const set = reduceBoard(freshBoard(), {
+      type: "SET_CARD_DUE_DATE",
+      cardId: "card-1",
+      dueDate: 1700000000000,
+    });
+    expect(set.cards["card-1"].activity!.at(-1)!.type).toBe("due-date-set");
+    const removed = reduceBoard(set, {
+      type: "SET_CARD_DUE_DATE",
+      cardId: "card-1",
+    });
+    expect(removed.cards["card-1"].activity!.at(-1)!.type).toBe(
+      "due-date-removed",
+    );
+  });
+
+  it("records cross-column moves with the target column title, not reorders", () => {
+    const moved = reduceBoard(freshBoard(), {
+      type: "MOVE_CARD",
+      cardId: "card-1",
+      fromColumnId: "col-backlog",
+      toColumnId: "col-progress",
+      toIndex: 0,
+    });
+    const moveEvent = moved.cards["card-1"].activity!.at(-1)!;
+    expect(moveEvent.type).toBe("moved");
+    expect(moveEvent.detail).toBe("In Progress");
+    const reordered = reduceBoard(freshBoard(), {
+      type: "MOVE_CARD",
+      cardId: "card-1",
+      fromColumnId: "col-backlog",
+      toColumnId: "col-backlog",
+      toIndex: 1,
+    });
+    expect(reordered.cards["card-1"].activity).toBeUndefined();
+  });
+
+  it("duplicates start a fresh history", () => {
+    const seed = freshBoard();
+    const board = reduceBoard(seed, {
+      type: "DUPLICATE_CARD",
+      cardId: "card-1",
+    });
+    // The copy is the one card id the seed didn't have.
+    const copyId = Object.keys(board.cards).find((id) => !(id in seed.cards))!;
+    expect(board.cards[copyId].activity).toHaveLength(1);
+    expect(board.cards[copyId].activity![0].type).toBe("created");
+  });
+
+  it("caps the feed at MAX_CARD_ACTIVITY events", async () => {
+    const { MAX_CARD_ACTIVITY } = await import("@/types/kanban");
+    let state = [freshBoard()];
+    // Due-date flips are never coalesced — one distinct event per pass.
+    for (let i = 0; i < MAX_CARD_ACTIVITY + 5; i++) {
+      state = boardReducer(state, {
+        type: "SET_CARD_DUE_DATE",
+        cardId: "card-1",
+        dueDate: 1700000000000 + i,
+      });
+    }
+    const activity = state[0].cards["card-1"].activity!;
+    expect(activity).toHaveLength(MAX_CARD_ACTIVITY);
+    expect(activity.at(-1)!.type).toBe("due-date-set");
+  });
+});
