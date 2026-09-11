@@ -46,8 +46,15 @@ export function ColumnView({
   onCardClick,
   isFiltered = false,
 }: ColumnViewProps) {
-  const { board, addCard, renameColumn, deleteColumn, duplicateCard, duplicateColumn } =
-    useBoard();
+  const {
+    board,
+    addCard,
+    renameColumn,
+    deleteColumn,
+    duplicateCard,
+    duplicateColumn,
+    sortColumn,
+  } = useBoard();
   const { t, tp } = useI18n();
   const [renameOpen, setRenameOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -127,6 +134,7 @@ export function ColumnView({
                 )
               }
               onDelete={() => setConfirmDelete(true)}
+              onSort={(sortBy) => sortColumn(column.id, sortBy)}
             />
             <GripVertical
               aria-hidden

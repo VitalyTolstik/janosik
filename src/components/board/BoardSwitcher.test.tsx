@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { BoardSection } from "@/components/BoardSection";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
+import { NoBoardRoute } from "@/App";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { routes } from "@/routes";
 import { ThemeProvider } from "@/hooks/use-theme";
@@ -49,6 +50,7 @@ function renderSwitcher(initialUrl = routes.board("b-1")) {
                 <BoardTitle />
                 <BoardSwitcher />
                 <Routes>
+                  <Route path={routes.home} element={<NoBoardRoute />} />
                   <Route
                     path={routes.boardPattern}
                     element={<BoardSection />}
@@ -238,5 +240,44 @@ describe("BoardSwitcher", () => {
       within(alphaRow).queryByRole("button", { name: "Delete board" }),
     ).toBeNull();
     expect(screen.queryByTestId("archived-section")).toBeNull();
+  });
+
+  it("archiving the only board shows the empty state, not the archived board", async () => {
+    localStorage.setItem("janosik-boards", `[${boardJson("b-1", "Alpha")}]`);
+    renderSwitcher();
+    const listbox = await openSwitcher();
+    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    fireEvent.mouseEnter(alphaRow);
+    fireEvent.click(within(alphaRow).getByRole("button", { name: "Archive board" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Yes, archive" }));
+    // The empty-state screen replaces the board (never stranded on an
+    // archived board), and the popover still offers restoration.
+    expect(await screen.findByTestId("empty-create-board")).toBeInTheDocument();
+    expect(screen.getByText("All boards are archived.")).toBeInTheDocument();
+    expect(screen.getByTestId("archived-section")).toHaveTextContent("Alpha");
+    // Restoring brings the board (and the route) back.
+    fireEvent.click(screen.getByRole("button", { name: "Restore board" }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "Alpha" }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("empty-create-board")).toBeNull();
+  });
+
+  it("creates a board from the empty-state CTA and navigates to it", async () => {
+    localStorage.setItem("janosik-boards", `[${boardJson("b-1", "Alpha")}]`);
+    renderSwitcher();
+    const listbox = await openSwitcher();
+    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    fireEvent.mouseEnter(alphaRow);
+    fireEvent.click(within(alphaRow).getByRole("button", { name: "Archive board" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Yes, archive" }));
+    fireEvent.click(await screen.findByTestId("empty-create-board"));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "New board" }),
+      ).toBeInTheDocument();
+    });
   });
 });
