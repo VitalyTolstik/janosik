@@ -55,7 +55,7 @@
 - **Состояние** — чистый `boardReducer` (30 экшенов) + `BoardContext` (дебаунс-персистентность, история, хоткеи, авто-бэкап). Компоненты вызывают типизированные удобные экшены.
 - **Персистентность** — интерфейс `DebouncedPersistence` поверх `localStorage`; позже бэкенд = второй адаптер `fetch` **без изменения reducer и UI**.
 - **UI** — shadcn/ui + Radix (dialog/dropdown/popover/tooltip/slot), dnd-kit, react-day-picker, MDXEditor (описание карточки).
-- **Тесты** — 154 теста в 14 файлах (reducer, history, persistence, serialization, backup, dnd, filter, storage, migrate, i18n, интеграционные BoardSection + CardDialog).
+- **Тесты** — 187 тестов в 16 файлах (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, интеграционные BoardSection + CardDialog).
 
 ### 1.3. Ключи и точки интеграции
 
@@ -337,9 +337,23 @@ only mdxeditor from TASK 2
 
 #### TASK-6 — `card-duplicate` · Дублирование карточки и колонки
 
-- **Что:** кнопки «Дублировать» в меню карточки и колонки; копия сохраняет метки/описание (чек-листы/срок при наличии); новые id.
-- **Затрагивает:** `board-reducer.ts` (DUPLICATE_CARD/DUPLICATE_COLUMN), `CardDialog.tsx`/`ColumnMenu.tsx`, `locales/*`.
-- **DoD:** дубликат создаётся, не ломает оригинал; undo/redo; тесты.
+- **Статус:** ✅ реализовано (ветка `feature/TASK-6-card-duplicate`, PR #12).
+- **Зачем:** быстрое повторение типовых карточек/колонок (шаблонных задач).
+- **Что сделано:**
+  - дублирование карточки: кнопка в диалоге + ховер-иконка на карточке
+    (Trello quick-edit стиль, 1 клик с доски); копия встаёт сразу под
+    оригиналом со всем контентом — описание, чек-листы, срок, обложка,
+    метки; свежие id/timestamps, вложенные структуры deep-clone;
+  - дублирование колонки: пункт в меню колонки, копия справа от
+    оригинала со всеми карточками (конвенция Trello «Copy list»);
+  - названия копий по конвенции «Copy of X» / «Копия «X»» (en/ru);
+  - редьюсер `DUPLICATE_CARD`/`DUPLICATE_COLUMN` — undo/redo бесплатно;
+  - диалог при дублировании закрывается, копия видна на доске.
+- **Затрагивает:** `board-reducer.ts`, `BoardContext.tsx`, `CardDialog.tsx`,
+  `CardItem.tsx`, `SortableCard.tsx`, `ColumnMenu.tsx`, `ColumnView.tsx`,
+  `locales/*`, тесты.
+- **DoD:** ✅ дубликат создаётся (1 клик с ховера или из диалога), не ломает
+  оригинал; undo/redo; тесты (187 в 16 файлах).
 
 #### TASK-7 — `board-switcher` · Мультидоски (без роутера)
 
