@@ -1,11 +1,11 @@
-import { AlignLeft, CalendarClock, CopyPlus, ListTodo } from "lucide-react";
+import { AlignLeft, CopyPlus, ListTodo } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { DueBadge } from "@/components/board/DueBadge";
 import { HighlightedText } from "@/components/ui/highlight";
 import { cn } from "@/lib/utils";
-import { useI18n, formatDate, formatDateOnly, formatTime } from "@/i18n";
-import { dueStatus, type DueStatus } from "@/utils/due-date";
+import { useI18n } from "@/i18n";
 import { descriptionSnippet } from "@/utils/filter";
 import { LABEL_COLOR_CHIP, coverBackground, type Card, type Label } from "@/types/kanban";
 
@@ -74,7 +74,7 @@ function useClamped(): [
  */
 export function CardItem({ card, labels, isDragging, highlight, isCursor, onClick, onDuplicate }: CardItemProps) {
   const [titleRef, titleClamped] = useClamped();
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const hasDescription = Boolean(card.description?.trim());
   // Checklist progress summed across all of the card's checklists.
   const items = (card.checklists ?? []).flatMap((c) => c.items);
@@ -101,15 +101,8 @@ export function CardItem({ card, labels, isDragging, highlight, isCursor, onClic
     ?.map((segment) => (typeof segment === "string" ? segment : segment.text))
     .join("");
 
-  // Due-date badge state: overdue (red) / due within 24h (yellow) / later.
+  // Due-date badge: overdue (red) / due within 24h (yellow) / later.
   const hasDueDate = typeof card.dueDate === "number";
-  const status = hasDueDate ? dueStatus(card.dueDate as number) : null;
-  const dueTime = hasDueDate
-    ? formatTime(
-        `${String(new Date(card.dueDate as number).getHours()).padStart(2, "0")}:${String(new Date(card.dueDate as number).getMinutes()).padStart(2, "0")}`,
-        lang,
-      )
-    : "";
 
   return (
     <article
@@ -187,35 +180,7 @@ export function CardItem({ card, labels, isDragging, highlight, isCursor, onClic
       </p>
       {hasDescription || total > 0 || hasDueDate ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          {hasDueDate ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  className={cn(
-                    "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
-                    status === "overdue" &&
-                      "border-danger/40 bg-danger/10 text-danger",
-                    status === "soon" &&
-                      "border-warning/40 bg-warning/10 text-warning",
-                    status === "later" &&
-                      "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-primary",
-                  )}
-                  data-testid="card-due-badge"
-                  data-due-status={status}
-                >
-                  <CalendarClock className="h-3.5 w-3.5" aria-hidden />
-                  {formatDateOnly(card.dueDate as number, lang)}
-                  {" · "}
-                  {dueTime}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {t(`dueDate.${status as DueStatus}`, {
-                  date: formatDate(card.dueDate as number, lang),
-                })}
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
+          {hasDueDate ? <DueBadge dueDate={card.dueDate as number} /> : null}
           {total > 0 ? (
             <Tooltip>
               <TooltipTrigger asChild>
