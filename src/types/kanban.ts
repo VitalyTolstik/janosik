@@ -201,13 +201,15 @@ export interface Column {
 }
 
 export interface Board {
- id: string;
- title: string;
- /** Ordered columns — this array defines the horizontal order. */
- columns: Column[];
- /** Cards normalized by id. */
- cards: Record<string, Card>;
- labels: Label[];
- createdAt: number;
- updatedAt: number;
+  id: string;
+  title: string;
+  /** Ordered columns — this array defines the horizontal order. */
+  columns: Column[];
+  /** Cards normalized by id. */
+  cards: Record<string, Card>;
+  labels: Label[];
+  createdAt: number;
+  updatedAt: number;
+  /** Set when the board is archived (not deleted) — timestamp in ms. */
+  archivedAt?: number;
 }
