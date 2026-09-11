@@ -13,6 +13,7 @@ import { BoardSection } from "@/components/BoardSection";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { routes } from "@/routes";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { I18nProvider } from "@/i18n";
@@ -36,7 +37,7 @@ function boardJson(id: string, title: string) {
   });
 }
 
-function renderSwitcher(initialUrl = "/board/b-1") {
+function renderSwitcher(initialUrl = routes.board("b-1")) {
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
@@ -47,7 +48,10 @@ function renderSwitcher(initialUrl = "/board/b-1") {
                 <BoardTitle />
                 <BoardSwitcher />
                 <Routes>
-                  <Route path="/board/:boardId" element={<BoardSection />} />
+                  <Route
+                    path={routes.boardPattern}
+                    element={<BoardSection />}
+                  />
                 </Routes>
               </BoardProvider>
             </MemoryRouter>

@@ -26,6 +26,7 @@ import {
   createDebouncedLocalStoragePersistence,
   type DebouncedPersistence,
 } from "@/utils/persistence";
+import { routes } from "@/routes";
 import { useToast } from "@/components/Toast";
 import { useI18n } from "@/i18n";
 
@@ -49,11 +50,6 @@ import { useI18n } from "@/i18n";
 const STORAGE_KEY = "janosik-boards";
 const SAVE_DEBOUNCE_MS = 400;
 const BACKUP_THROTTLE_MS = 60_000;
-
-/** The canonical URL shape for a board. */
-export function boardPath(boardId: string): string {
-  return `/board/${boardId}`;
-}
 
 function loadInitialState(
   persistence: DebouncedPersistence<BoardState>,
@@ -171,7 +167,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   // The URL decides which board is active; fall back to the first board.
   const routeBoardId =
-    matchPath("/board/:boardId", location.pathname)?.params.boardId ?? null;
+    matchPath(routes.boardPattern, location.pathname)?.params.boardId ?? null;
   const board =
     (routeBoardId ? state.find((b) => b.id === routeBoardId) : undefined) ??
     state[0];
@@ -193,7 +189,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (routeBoardId && state.some((b) => b.id === routeBoardId)) return;
     const first = state[0];
-    if (first) navigate(boardPath(first.id), { replace: true });
+    if (first) navigate(routes.board(first.id), { replace: true });
   }, [routeBoardId, state, navigate]);
 
   // Debounced persistence + throttled auto-backup after every change.
