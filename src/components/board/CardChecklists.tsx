@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { useBoard } from "@/store/BoardContext";
 import type { Checklist } from "@/types/kanban";
 import { LIMITS } from "@/types/kanban";
+import { LimitCounter } from "@/components/ui/limit-counter";
 
 /**
  * Subtask checklists inside the card dialog (TASK-3).
@@ -284,6 +285,13 @@ function ChecklistCard({
           placeholder={t("checklist.itemPlaceholder")}
           className="h-8 border-none bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
         />
+        <LimitCounter
+          length={newItem.length}
+          limit={LIMITS.checklistItem}
+          position="below"
+          className="left-6"
+          testId="checklist-item-add-limit"
+        />
       </form>
 
       {/* Deleting a checklist wipes its items — ask first (same pattern as
@@ -324,22 +332,35 @@ function TitleInput({
   onCommit,
   onCancel,
 }: TitleInputProps) {
+  // Uncontrolled input; only the length is mirrored for the limit counter.
+  const [length, setLength] = useState(defaultValue.length);
   return (
-    <Input
-      autoFocus
-      defaultValue={defaultValue}
-      maxLength={maxLength}
-      onChange={(e) => onDraft(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          onCommit();
-        } else if (e.key === "Escape") {
-          onCancel();
-        }
-      }}
-      onBlur={onCommit}
-      className="h-7 text-sm"
-    />
+    <span className="relative min-w-0 flex-1">
+      <Input
+        autoFocus
+        defaultValue={defaultValue}
+        maxLength={maxLength}
+        onChange={(e) => {
+          setLength(e.target.value.length);
+          onDraft(e.target.value);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onCommit();
+          } else if (e.key === "Escape") {
+            onCancel();
+          }
+        }}
+        onBlur={onCommit}
+        className="h-7 text-sm"
+      />
+      <LimitCounter
+        length={length}
+        limit={maxLength}
+        position="below"
+        testId="checklist-title-limit"
+      />
+    </span>
   );
 }

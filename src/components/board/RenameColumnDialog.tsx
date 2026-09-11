@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { LIMITS } from "@/types/kanban";
+import { LimitCounter } from "@/components/ui/limit-counter";
 
 interface RenameColumnDialogProps {
         open: boolean;
@@ -65,9 +66,16 @@ export function RenameColumnDialog({
                                                         onOpenChange(false);
                                         }}
                                         onFocus={(e) => e.target.select()}
+                                        aria-describedby="column-rename-limit"
                                         placeholder={t(
                                                 "column.renamePlaceholder",
                                         )}
+                                />
+                                <LimitCounter
+                                        id="column-rename-limit"
+                                        length={title.length}
+                                        limit={LIMITS.columnTitle}
+                                        testId="column-rename-limit"
                                 />
                                 <DialogFooter className="mt-2">
                                         <Button

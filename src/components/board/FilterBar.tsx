@@ -26,6 +26,7 @@ import {
   type Label,
   type LabelColor,
 } from "@/types/kanban";
+import { LimitCounter, showRemaining } from "@/components/ui/limit-counter";
 import {
   activeFacetCount,
   EMPTY_FILTER,
@@ -222,11 +223,20 @@ export function FilterBar({
           ref={inputRef}
           value={query}
           maxLength={LIMITS.query}
+          aria-describedby={showRemaining(query.length, LIMITS.query) ? "filter-query-limit" : undefined}
           onChange={(e) => onChange({ ...filter, query: e.target.value })}
           placeholder={t("filter.searchPlaceholder")}
           aria-label={t("filter.searchAria")}
           className="h-9 rounded-lg pl-9 pr-8"
         />
+          <LimitCounter
+            id="filter-query-limit"
+            length={query.length}
+            limit={LIMITS.query}
+            position="below"
+            className="left-7"
+            testId="filter-query-limit"
+          />
         {query !== "" && (
           <button
             type="button"
