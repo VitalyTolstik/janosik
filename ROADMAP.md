@@ -5,7 +5,7 @@
 > `CURRENT_WORK_ITERATIONS.md` (они удалены). Любой ИИ-агент начинает работу
 > с чтения этого файла и `AGENT.md`.
 >
-> **Текущий фокус:** бэкенд (§7) — TASK-22…27 по порядку. Фронтенд-добивка
+> **Текущий фокус:** бэкенд (§7) — TASK-22…30 по порядку. Фронтенд-добивка
 > TASK-13…18 (§6) не меняет модель данных — можно делать параллельно.
 > Обновлено: 2026-09.
 
@@ -16,7 +16,7 @@
 1. **Одна задача = одна ветка = один пулл-реквест.** Перед началом итерации
    создай ветку `feature/TASK-{номер}-{slug}`. Пушишь — человек делает ревью
    и мержит сам. **Не мержить свою работу самостоятельно.**
-2. **Иди строго по порядку:** §7.7 — для бэкенд-задач (TASK-22…27),
+2. **Иди строго по порядку:** §7.7 — для бэкенд-задач (TASK-22…30),
    §6 — для фронтенд-добивки (TASK-13…18). Не прыгай через задачи, если
    явно не сказано обратное.
 3. **После мержа** — отметь задачу в §6 как `✅` и при необходимости обнови
@@ -86,7 +86,7 @@
 2. ~~**Нет роутинга**~~ — снято TASK-7 (`/board/:id`, `?card=` deep-link).
 3. **Карточка минимальна** — нет срока, обложки, активности. Описание — rich-text (MDXEditor, TASK-2), чек-листы есть (TASK-3); из классики Trello/Linear/Jira остаются сроки и обложки.
 4. **Заголовок доски не редактируется**, нет создания/удаления/архивирования/дублирования доски.
-5. **Хранилище — только `localStorage`** (лимит ~5 МБ, одно устройство). Риск снят экспортом/бэкапами, синхронизацию даёт бэкенд (§7, TASK-25…27).
+5. **Хранилище — только `localStorage`** (лимит ~5 МБ, одно устройство). Риск снят экспортом/бэкапами, синхронизацию даёт бэкенд (§7, TASK-25…29).
 6. **Нет дублирования карточки/колонки**, нет сортировки внутри колонки.
 7. **Поиск только по заголовку текущей доски** — не ищет по описанию и по другим доскам.
 8. **Фильтр меток — только ANY** (нет переключателя ANY/ALL).
@@ -606,69 +606,71 @@ only mdxeditor from TASK 2
 
 ## 7. Бэкенд — полный план (фаза активна)
 
-> Бэкенд-ядро: TASK-22 → 23 → 24 → 25 → 26 → 27 строго по порядку (§7.7).
-> Фронтенд-добивка TASK-13…18 параллельна — модель данных не меняет.
-> Продолжаем нумерацию TASK: бэкенд = TASK-22…27, формат веток прежний.
+> Решение пользователя: **совместные доски** (много юзеров, логины, шаринг,
+> видно кто что сделал) → бэкенд проектируется **нормализованным**: сущности
+> в таблицах, гранулярный REST, фронт работает optimistic поверх редьюсера.
+> Порядок: §7.7, TASK-22 → 30. Фронтенд-добивка TASK-13…18 параллельна.
 
 ### 7.0. Ключевые решения (зафиксированы, не пересматривать без явной причины)
 
-- **Monorepo, npm workspaces** — один репозиторий, три пакета:
-  - `ui/` — нынешний фронтенд (весь `src/`, vite, tsconfig, локали);
-  - `shared/` — пакет `@janosik/shared`, контракт UI↔API **без build-степа**
-    (TS-исходники, компилирует потребитель): модель `Board[]`,
-    `LIMITS`, envelope экспорта (`EXPORT_APP`/`schemaVersion`/`parseExport`),
-    ключи localStorage (`STORAGE_KEYS` — сейчас расползлись по 7 файлам);
-  - `backend/` — NestJS.
-  Корневые scripts: `npm run dev -w ui`, `npm test -w ui`, `npm test -w backend`.
-- **Синхронизация — whole-document.** `PUT /boards/:id/payload` принимает
-  весь `Board`-payload целиком (фронт шлёт debounce 400 мс — тот же ритм,
-  что localStorage). Оптимистичная блокировка: поле `revision` на доске,
-  устаревший payload → `409` с серверной версией, фронт подтягивает.
-  Single-user почти не даёт конфликтов; целостность документа важнее
-  гранулярного CRUD. Комментарии/вложения позже — отдельными таблицами
-  и endpoints (§7.6), поверх этой модели.
-- **ID:** id внутри payload остаются фронтовыми (`createId()`); сервер
-  генерирует только собственные (`cuid()`): `board.id`, `user.id`,
-  id событий. Схема БД не дублирует модель фронта в SQL-таблицы —
-  payload живёт в `Json`-колонке (TASK-12 активность — исключение,
-  она уходит в таблицу: лимит 50 снимается).
-- **Auth:** JWT access (15 мин, в памяти SPA) + refresh (30 дней,
-  httpOnly Secure SameSite=Strict cookie, ротация с детектом реюза).
-  Пароли — argon2id.
-- **Ошибки:** дефолтный envelope NestJS `{ statusCode, message, error }`;
-  `409` — конфликт ревизии, `413` — payload сверх лимитов, `401/403` — guard.
-- **Валидация — LIMITS как единый источник правды** (TASK-20): DTO
-  (`@Length`/`@Max`/`@ArrayMaxSize`) + серверный normalize/кламп из shared —
-  тот же код, что `migrate.ts` (вторая линия обороны как на фронте).
+- **Monorepo, npm workspaces**: `ui/` (фронт), `backend/` (NestJS),
+  `shared/` (`@janosik/shared` без build-степа): модель, `LIMITS`, envelope
+  экспорта, `STORAGE_KEYS`, **DTO-типы API** (контракт фронт↔бэк).
+- **Нормализованная схема** — «полный канбан на бэке»: колонки/карточки/
+  метки/чеклисты/активность/комментарии — SQL-таблицы (§7.3), не Json-документ.
+  Позиции — целочисленные `position` (drag → `reorder` endpoint с перенумерацией
+  при необходимости).
+- **API — гранулярный REST `/api/v1`** (~30 endpoints, §7.4). Каждый экшен
+  редьюсера получает свой endpoint; сервер — единственный источник истины.
+- **Фронт — optimistic без переписывания UI**: редьюсер остаётся
+  единственным источником UI-состояния (мгновенный отклик, undo/redo
+  работают). Адаптер шлёт API-вызов асинхронно и **reconcile**-ит canonical
+  ответ (позиции, серверные поля). Провал вызова → откат экшена + тост.
+  **id генерирует клиент** (`createId()`) и передаёт в POST → идемпотентные
+  ретраи, undo создания = `DELETE` того же id.
+- **Доступ — membership**: `BoardMember {board, user, role: OWNER|MEMBER}`
+  (VIEWER — позже). Guard проверяет membership на каждом board-scoped
+  endpoint. `actorId` во всей активности — реальный юзер.
+- **Синхронизация мульти-юзеров:** MVP — refetch агрегата доски при focus
+  окна; затем **SSE** (`GET /boards/:id/events`) в TASK-30 — живые изменения
+  чужих курсоров/карточек. WebRTC/CRDT не нужны (разрешение конфликтов —
+  last-write-wins на уровне сущности + активность).
+- **Auth:** JWT access (15 мин, память SPA) + refresh (30 дней, httpOnly
+  Secure SameSite=Strict, ротация с детектом реюза). Пароли — argon2id.
+- **Валидация — `LIMITS`** (TASK-20) на DTO + серверный normalize — тот же
+  код, что `migrate.ts`. Импорт клампит всё, что пришло мимо UI.
+- **Ошибки:** дефолтный envelope NestJS; `403` — нет membership, `409` —
+  конфликт позиций/версии, `404` — чужая сущность (не раскрываем существование).
 
 ### 7.1. Стек
 
 | Слой | Выбор | Почему |
 | --- | --- | --- |
-| Framework | NestJS 11 | DI, модули, ValidationPipe, Jest+supertest из коробки; ROADMAP-решение подтверждено анализом |
-| БД / ORM | PostgreSQL 16 + Prisma | типобезопасные модели и миграции; `Json` под payload; dev — docker-compose |
-| Валидация | class-validator + class-transformer | DTO напрямую едят `LIMITS` из `@janosik/shared` |
+| Framework | NestJS 11 | DI, модули, ValidationPipe, Jest+supertest из коробки |
+| БД / ORM | PostgreSQL 16 + Prisma | реляционные сущности + миграции; каскады на уровне БД |
+| Realtime | SSE (нативно в Nest) | однонаправленный поток достаточен; WebSocket — только если появится присутствие |
 | Auth | @nestjs/jwt + argon2 | access + refresh с ротацией |
-| Тесты | Jest + supertest (e2e на тестовой БД) | встроены в NestJS; фронт-тесты Vitest не трогаются |
-
-Отвергнутые альтернативы: Fastify+Zod монолит (легче, но теряем структуру
-модулей и гварды), CRUD-таблицы на каждую сущность (гонки при
-офлайн-редактировании, двойной маппинг модели), tRPC (нет нужды —
-REST + OpenAPI-совместимость дешевле).
+| Валидация | class-validator | DTO едят `LIMITS`/DTO-типы из shared |
+| Тесты | Jest + supertest (тестовая БД) | e2e на каждый endpoint |
 
 ### 7.2. Структура `backend/`
 
 ```
 backend/
-├── prisma/                  # schema.prisma + migrations/ + seed
+├── prisma/                  # schema.prisma + migrations/
 ├── src/
 │   ├── main.ts / app.module.ts
-│   ├── auth/                # module, controller, service, jwt-strategy, guards, DTO
+│   ├── auth/                # register/login/refresh/logout/me, jwt-strategy, guards
 │   ├── users/               # профиль
-│   ├── boards/              # CRUD + payload-sync + import/export; DTO из LIMITS
-│   ├── activity/            # события, курсорная пагинация
-│   └── common/              # exception-фильтры, декораторы, normalize/clamp (shared)
-├── test/                    # e2e supertest (тестовая БД из docker-compose)
+│   ├── boards/              # CRUD + members (invite/role)
+│   ├── columns/             # CRUD + reorder
+│   ├── cards/               # CRUD + move/duplicate + labels
+│   ├── checklists/          # чек-листы + пункты
+│   ├── labels/              # метки доски
+│   ├── activity/            # ленты (доска/карточка), курсорная пагинация
+│   ├── comments/            # комментарии
+│   └── common/              # MembershipGuard, exception-фильтры, normalize (shared)
+├── test/                    # e2e supertest
 └── docker-compose.yml       # postgres:16
 ```
 
@@ -681,124 +683,266 @@ model User {
   passwordHash  String
   displayName   String?
   createdAt     DateTime       @default(now())
-  boards        Board[]
+  memberships   BoardMember[]
+  activity      Activity[]
+  comments      Comment[]
   refreshTokens RefreshToken[]
 }
 
 model RefreshToken {
   id        String    @id @default(cuid())
-  tokenHash String    @unique          // хранится только хеш
+  tokenHash String    @unique
   user      User      @relation(fields: [userId], references: [id])
   userId    String
   expiresAt DateTime
-  revokedAt DateTime?                  // ротация; реюз revoked → отзыв всех сессий
+  revokedAt DateTime?              // ротация; реюз revoked → отзыв всех сессий
 }
 
 model Board {
-  id            String    @id @default(cuid())
-  owner         User      @relation(fields: [ownerId], references: [id])
-  ownerId       String
-  title         String    @db.VarChar(100)  // LIMITS.boardTitle
-  archivedAt    DateTime?
-  schemaVersion Int       @default(1)       // envelope EXPORT_SCHEMA_VERSION
-  payload       Json                        // Board без title/archivedAt
-  revision      Int       @default(1)       // optimistic lock → 409
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  @@index([ownerId, updatedAt])
+  id         String       @id @default(cuid())
+  title      String       @db.VarChar(100)   // LIMITS.boardTitle
+  archivedAt DateTime?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  members    BoardMember[]
+  columns    Column[]
+  cards      Card[]
+  labels     Label[]
+  activity   Activity[]
 }
 
-model ActivityEvent {
+model BoardMember {
   id        String   @id @default(cuid())
   board     Board    @relation(fields: [boardId], references: [id])
   boardId   String
-  cardId    String?
-  type      String                     // 8 типов TASK-12
-  actorId   String?
-  details   Json?                      // снапшот-детали (имя метки/колонки)
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  role      Role     @default(MEMBER)     // OWNER | MEMBER (VIEWER позже)
   createdAt DateTime @default(now())
-  @@index([boardId, cardId, createdAt])
+  @@unique([boardId, userId])
+  @@index([userId])                       // «мои доски»
+}
+
+enum Role { OWNER MEMBER }
+
+model Column {
+  id        String   @id               // id от клиента
+  board     Board    @relation(fields: [boardId], references: [id])
+  boardId   String
+  title     String   @db.VarChar(100)
+  wipLimit  Int?                           // TASK-13
+  position  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  cards     Card[]
+  @@index([boardId, position])
+}
+
+model Card {
+  id          String    @id
+  column      Column    @relation(fields: [columnId], references: [id])
+  columnId    String
+  title       String    @db.VarChar(300) // LIMITS.cardTitle
+  description String?   @db.Text         // markdown, LIMITS.description
+  coverType   String?                    // color | gradient
+  coverValue  String?
+  dueDate     DateTime?
+  position    Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  labels      CardLabel[]
+  checklists  Checklist[]
+  activity    Activity[]
+  comments    Comment[]
+  @@index([columnId, position])
+}
+
+model Label {
+  id      String  @id
+  board   Board   @relation(fields: [boardId], references: [id])
+  boardId String
+  name    String  @db.VarChar(50)        // LIMITS.labelName
+  color   String                          // из палитры 14
+  cards   CardLabel[]
+  @@index([boardId])
+}
+
+model CardLabel {                         // m2m, порядок сохраняем
+  card     Card    @relation(fields: [cardId], references: [id])
+  cardId   String
+  label    Label   @relation(fields: [labelId], references: [id])
+  labelId  String
+  position Int     @default(0)
+  @@id([cardId, labelId])
+  @@index([labelId])                      // каскад-удаление метки
+}
+
+model Checklist {
+  id     String           @id
+  card   Card             @relation(fields: [cardId], references: [id])
+  cardId String
+  title  String           @db.VarChar(100)
+  position Int
+  items  ChecklistItem[]
+  @@index([cardId, position])
+}
+
+model ChecklistItem {
+  id          String    @id
+  checklist   Checklist @relation(fields: [checklistId], references: [id])
+  checklistId String
+  text        String    @db.VarChar(200)
+  done        Boolean   @default(false)
+  position    Int
+  @@index([checklistId, position])
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  board     Board    @relation(fields: [boardId], references: [id])
+  boardId   String
+  card      Card?    @relation(fields: [cardId], references: [id])
+  cardId    String?
+  type      String                        // 8 типов TASK-12 + member/comment
+  actor     User     @relation(fields: [actorId], references: [id])
+  actorId   String                         // теперь реальный юзер
+  details   Json?                          // снапшот-детали
+  createdAt DateTime @default(now())
+  @@index([boardId, createdAt])
+  @@index([cardId, createdAt])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  card      Card     @relation(fields: [cardId], references: [id])
+  cardId    String
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  String
+  text      String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([cardId, createdAt])
 }
 ```
 
-Лимиты коллекций (чеклисты/метки/колонки/карточки) клампятся серверным
-normalize при import и payload-sync — БД доверяет только провалидированному
-документу.
+`LIMITS` (лимиты коллекций TASK-20) гвардят на DTO: `@ArrayMaxSize` для
+меток/чеклистов при импорте, счётчики перед insert (чеклистов ≤ 20/карточка,
+пунктов ≤ 100, меток ≤ 20 на карточке, ≤ 50 на доске, колонок ≤ 20,
+карточек ≤ 500 в колонке, досок ≤ 50 на юзера).
 
-### 7.4. API — REST `/api/v1`
+### 7.4. API — REST `/api/v1` (~30 endpoints)
 
-**Auth (без guard):**
+**Auth (без guard):** `POST /auth/register` · `POST /auth/login` ·
+`POST /auth/refresh` (ротация) · `POST /auth/logout` · `GET /auth/me`.
 
-| Метод | Путь | Тело/ответ |
+**Доски и участники (JwtGuard + MembershipGuard):**
+
+| Метод | Путь | Назначение |
 | --- | --- | --- |
-| POST | `/auth/register` | `{email, password}` → user + токены |
-| POST | `/auth/login` | → user + токены |
-| POST | `/auth/refresh` | cookie → новая пара токенов (ротация) |
-| POST | `/auth/logout` | отзыв refresh-токена |
-| GET | `/auth/me` | профиль |
+| GET | `/boards` | мои доски (по membership): title, archivedAt, счётчики |
+| POST | `/boards` | создать (автоматически OWNER-membership) |
+| GET | `/boards/:id` | **агрегат доски** — колонки + карточки + метки (+ чеклисты) одной выборкой — стартовое состояние UI |
+| PATCH | `/boards/:id` | rename / archive |
+| DELETE | `/boards/:id` | только OWNER |
+| GET | `/boards/:id/members` | участники |
+| POST | `/boards/:id/members` | invite `{email, role}` |
+| DELETE | `/boards/:id/members/:userId` | исключить |
 
-**Boards (JwtGuard):**
+**Колонки:**
 
-| Метод | Путь | Тело/ответ |
-| --- | --- | --- |
-| GET | `/boards` | список: id, title, archivedAt, revision, updatedAt |
-| POST | `/boards` | создать (сразу с payload) |
-| GET | `/boards/:id` | полный payload + revision |
-| PUT | `/boards/:id/payload` | `{payload, revision, events[]?}` → `{revision+1, updatedAt}`; stale → `409` |
-| PATCH | `/boards/:id` | rename/archive без полного sync |
-| DELETE | `/boards/:id` | удалить |
+| POST | `/boards/:id/columns` | {title} |
+| PATCH | `/columns/:id` | {title?, wipLimit?} |
+| DELETE | `/columns/:id` | каскад карточек |
+| PUT | `/boards/:id/columns/reorder` | {orderedIds} — drag колонок |
 
-**Activity (JwtGuard):**
+**Карточки:**
 
-| Метод | Путь | Ответ |
-| --- | --- | --- |
-| GET | `/boards/:id/activity?cursor&limit` | вся доска, курсорная пагинация |
-| GET | `/boards/:id/cards/:cardId/activity?cursor&limit` | лента карточки — замена `Card.activity` из payload, история целиком, «показать ещё» |
+| POST | `/columns/:id/cards` | {title} (+ id от клиента) |
+| GET | `/cards/:id` | агрегат: описание, чеклисты, метки, activity-страница |
+| PATCH | `/cards/:id` | {title?, description?, dueDate?, cover?} |
+| DELETE | `/cards/:id` | |
+| POST | `/cards/:id/duplicate` | серверный дубликат (TASK-6) |
+| PUT | `/cards/:id/move` | {toColumnId, toIndex} — drag карточек |
 
-**Данные (JwtGuard):**
+**Метки (на карточке / на доске):**
 
-| Метод | Путь | Ответ |
-| --- | --- | --- |
-| POST | `/boards/import` | envelope `parseExport` → normalize + клампы → Board |
-| GET | `/boards/:id/export` | envelope JSON — тот же формат файла, что UI-экспорт |
+| POST | `/cards/:id/labels` | {labelId} повесить |
+| DELETE | `/cards/:id/labels/:labelId` | снять |
+| POST | `/boards/:id/labels` | {name, color} |
+| PATCH | `/labels/:id` | {name?, color?} |
+| DELETE | `/labels/:id` | каскад со всех карточек |
 
-События активности прикрепляются к `PUT payload` как `events[]` — редьюсер
-их уже генерирует (TASK-12), сервер не гадает по diff. `Card.activity`
-из payload после TASK-27 игнорируется сервером (остаётся для офлайн-режима
-до TASK-15).
+**Чек-листы:**
 
-### 7.5. Фронтенд-адаптер (TASK-27)
+| POST | `/cards/:id/checklists` | {title} |
+| PATCH | `/checklists/:id` | {title} |
+| DELETE | `/checklists/:id` | каскад пунктов |
+| POST | `/checklists/:id/items` | {text} |
+| PATCH | `/checklist-items/:id` | {text?, done?} |
+| DELETE | `/checklist-items/:id` | |
 
-- `HttpPersistence` — второй адаптер интерфейса `DebouncedPersistence`
-  (не меняется с TASK-13?): fetch + очередь + один retry после refresh на 401.
-- Первый логин: локальный `janosik-boards` (если есть) →
-  `POST /boards/import` → подтверждение пользователя → localStorage очищается.
-- Экран входа/регистрации (роут `/login`, HashRouter остаётся);
-  UI-хром через i18n (en/ru синхронно).
-- Офлайн-деградация: тост «нет сети, изменения не сохранены» (TASK-15/PWA
-  закроет полноценно позже).
+**Активность и комментарии:**
 
-### 7.6. Разблокированные фичи (после TASK-27, по запросу — не запланированы)
+| GET | `/boards/:id/activity?cursor&limit` | лента доски |
+| GET | `/cards/:id/activity?cursor&limit` | лента карточки — история целиком (лимит 50 снят) |
+| POST | `/cards/:id/comments` | {text} |
+| GET | `/cards/:id/comments?cursor` | |
+| DELETE | `/comments/:id` | свой комментарий |
 
-- **TASK-28+ комментарии** — `Comment`-таблица, `POST/GET /boards/:id/cards/:cardId/comments`.
-- Исполнители (`assigneeId` на карточке + UI-пикер).
-- Вложения (multipart upload, файловое хранилище, антивирус-вопрос).
-- **Embed-снапшот доски** — `GET /embed/:token`, публичный read-only SSR HTML без JS.
-- SSE/WebSocket push для синхронизации нескольких устройств в реальном времени.
-- Рабочие пространства (`Workspace`/`Member`, шаринг досок).
+**Импорт/экспорт:**
+
+| POST | `/boards/import` | envelope `parseExport` → создание доски целиком |
+| GET | `/boards/:id/export` | envelope JSON — тот же формат, что UI-файл |
+
+**Realtime (TASK-30):**
+
+| GET | `/boards/:id/events` | SSE-поток: {entity, action, id, data, actor} |
+
+Сервер сам пишет Activity при каждом мутирующем вызове (interceptor),
+`details` — снапшот (имя метки/колонки), как в TASK-12.
+
+### 7.5. Фронтенд-адаптер (TASK-29)
+
+- **Optimistic:** компоненты по-прежнему зовут экшены редьюсера; редьюсер —
+  источник UI-состояния (отклик мгновенный, undo/redo без сети).
+- **Sync-слой:** каждый экшен → API-вызов → canonical ответ → reconcile
+  (позиции, счётчики). Провал → откат экшена (обратный dispatch) + тост.
+- **id клиента проходит в POST** — идемпотентные ретраи; undo создания
+  карточки = `DELETE /cards/:id`.
+- **Старт:** `GET /boards/:id` → маппинг агрегата в текущую модель `Board[]`
+  (формат ответа шейпится под редьюсер) → `REPLACE_STATE`. Компоненты/UI не
+  меняются.
+- **Первый логин:** локальный `janosik-boards` (если есть) →
+  `POST /boards/import` (данные переезжают в БД) → localStorage очищается.
+- **Чужие изменения:** refetch агрегата на window focus (MVP), с TASK-30 —
+  SSE-патчи на месте.
+- **Офлайн:** тост «нет сети, изменения не сохранены», очередь экшенов —
+  с PWA (TASK-15).
+
+### 7.6. Разблокированные фичи (после TASK-29, по запросу — не запланированы)
+
+- Уведомления (email/in-app: mention, дедлайны).
+- Вложения (multipart, файловое хранилище).
+- **Embed-снапшот доски** — `GET /embed/:token`, публичный read-only SSR HTML.
+- Рабочие пространства (`Workspace`/`Team` над досками), VIEWER-роль.
+- Присутствие (who's viewing) поверх SSE/WebSocket.
 
 ### 7.7. Порядок итераций (строго по порядку)
 
 | # | TASK | Ветка | Суть | DoD (кратко) |
 | --- | --- | --- | --- | --- |
-| 1 | TASK-22 `monorepo-restructure` | `feature/TASK-22-monorepo` | `git mv` фронта в `ui/`, работаspaces, `@janosik/shared` (модель+LIMITS+envelope+STORAGE_KEYS), `SAVE_DEBOUNCE_MS` в константы, алиасы vite/tsconfig/vitest; **внутри — TASK-19**: lazy MDXEditor + day-picker | все 287 тестов зелёные в новом layout; initial JS ≤ ~700 KB raw (editor/day-picker — lazy-чанки); tsc/build зелёные |
-| 2 | TASK-23 `backend-scaffold` | `feature/TASK-23-backend-scaffold` | NestJS + Prisma + docker-compose(postgres:16), `/health`, модули-заглушки, общий tsconfig/ESLint | `/health` 200; e2e-пайплайн Jest работает; backend-команды DoD в AGENT.md |
-| 3 | TASK-24 `backend-auth` | `feature/TASK-24-backend-auth` | register/login/refresh/logout/me, argon2id, ротация refresh + детект реюза, JwtGuard | e2e: полный цикл auth + реюз revoked → отзыв всех сессий; guard-роуты отдают 401 |
-| 4 | TASK-25 `boards-sync` | `feature/TASK-25-boards-sync` | Board + CRUD + `PUT payload` c revision/409; серверный normalize + клампы LIMITS | e2e: sync-цикл, конфликт ревизии → 409, payload сверх лимитов клампится/отклоняется |
-| 5 | TASK-26 `activity-import-export` | `feature/TASK-26-activity-data` | ActivityEvent (events[] в PUT) + курсорная пагинация; import/export endpoints | e2e: события пишутся, лента без лимита 50, import/export round-trip с UI-файлом |
-| 6 | TASK-27 `http-persistence` | `feature/TASK-27-http-persistence` | `HttpPersistence`, экран login, миграция localStorage → сервер | UI полностью работает с сервера; первый логин переносит локальные данные; офлайн-тост; все фронт-тесты зелёные |
+| 1 | TASK-22 `monorepo-restructure` | `feature/TASK-22-monorepo` | `git mv` фронта в `ui/`, workspaces, `@janosik/shared` (модель+LIMITS+envelope+STORAGE_KEYS+DTO-типы), `SAVE_DEBOUNCE_MS` в константы, алиасы vite/tsconfig/vitest; **внутри — TASK-19**: lazy MDXEditor + day-picker | 287 тестов зелёные в новом layout; initial JS ≤ ~700 KB raw (lazy-чанки); tsc/build зелёные |
+| 2 | TASK-23 `backend-scaffold` | `feature/TASK-23-backend-scaffold` | NestJS + Prisma + docker-compose(postgres:16), `/health`, модули-заглушки, общий tsconfig/ESLint | `/health` 200; e2e-пайплайн работает; backend-команды DoD в AGENT.md |
+| 3 | TASK-24 `backend-auth` | `feature/TASK-24-backend-auth` | register/login/refresh/logout/me, argon2id, ротация refresh + детект реюза, JwtGuard | e2e: полный цикл auth + реюз revoked → отзыв сессий; guard-роуты 401 |
+| 4 | TASK-25 `boards-members` | `feature/TASK-25-boards-members` | Полная схема §7.3 + миграции; boards CRUD, membership (invite/role), `GET /boards/:id` агрегат, import/export | e2e: CRUD, invite/role, 403 чужой доске; aggregate shape = модель фронта |
+| 5 | TASK-26 `columns-cards` | `feature/TASK-26-columns-cards` | Колонки и карточки: CRUD, move/reorder с позициями, duplicate, каскады | e2e: CRUD + move + позиции стабильны; каскад колонки; лимиты гвардят |
+| 6 | TASK-27 `labels-checklists` | `feature/TASK-27-labels-checklists` | Метки (доска+карточка, m2m с позицией), чек-листы + пункты | e2e: m2m round-trip, каскад метки, лимиты коллекций |
+| 7 | TASK-28 `activity-comments` | `feature/TASK-28-activity-comments` | Activity (интерцептор пишет события), курсорные ленты, комментарии | e2e: события на каждый мутирующий вызов, actorId верный, пагинация |
+| 8 | TASK-29 `optimistic-adapter` | `feature/TASK-29-optimistic-adapter` | Sync-слой: экшен→API→reconcile, откаты, старт-агрегат → REPLACE_STATE, login-экран, миграция localStorage | UI полностью живёт с сервера; undo/redo и офлайн-тосты работают; 287+ фронт-тестов зелёные |
+| 9 | TASK-30 `realtime-sse` | `feature/TASK-30-realtime-sse` | SSE-поток + применение чужих патчей на фронте, refetch-on-focus остаётся fallback | два браузера видят изменения друг друга без перезагрузки |
 
-После TASK-27 бэкенд-ядро готово → §7.6 открывается по запросу пользователя.
+После TASK-29 ядро готово (TASK-30 — realtime поверх). §7.6 открывается
+по запросу.
 
 ---
 
