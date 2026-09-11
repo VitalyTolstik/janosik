@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRightLeft, CalendarClock, Trash2 } from "lucide-react";
+import { ArrowRightLeft, CalendarClock, CopyPlus, Trash2 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { CardChecklists } from "@/components/board/CardChecklists";
@@ -50,6 +50,7 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
     deleteLabel,
     moveCard,
     deleteCard,
+    duplicateCard,
   } = useBoard();
   const { t, lang } = useI18n();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -90,6 +91,13 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
   const handleDelete = () => {
     deleteCard(card.id);
     setConfirmDelete(false);
+    onOpenChange(false);
+  };
+
+  // The duplicate lands right below the original with all content copied;
+  // close the dialog so the user sees it on the board.
+  const handleDuplicate = () => {
+    duplicateCard(card.id, t("card.duplicateTitle", { title: card.title }));
     onOpenChange(false);
   };
 
@@ -223,6 +231,13 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
           </div>
 
           <DialogFooter className="mt-2 shrink-0">
+            <Button
+              variant="ghost"
+              onClick={handleDuplicate}
+            >
+              <CopyPlus className="h-4 w-4" />
+              {t("card.duplicate")}
+            </Button>
             <Button
               variant="ghost"
               className="text-destructive hover:bg-destructive/10 hover:text-destructive"

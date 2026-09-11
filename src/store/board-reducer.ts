@@ -3,6 +3,7 @@ import type {
   Card,
   CardCover,
   Checklist,
+  Column,
   Label,
 } from "@/types/kanban";
 import {
@@ -11,6 +12,11 @@ import {
 } from "@/types/kanban";
 import { createId } from "@/utils/id";
 import { createSeedBoard } from "@/store/seed-data";
+
+/** Insert a value at `index`, returning a new array (no in-place mutation). */
+function insertAt<T>(array: T[], index: number, value: T): T[] {
+  return [...array.slice(0, index), value, ...array.slice(index)];
+}
 
 /**
  * Pure board reducer — every action returns a new Board without mutating the
@@ -165,6 +171,20 @@ export interface SetCardCoverAction {
   cover?: CardCover;
 }
 
+export interface DuplicateCardAction {
+  type: "DUPLICATE_CARD";
+  cardId: string;
+  /** Localized title for the copy ("Copy of …"); defaults to the source title. */
+  title?: string;
+}
+
+export interface DuplicateColumnAction {
+  type: "DUPLICATE_COLUMN";
+  columnId: string;
+  /** Localized title for the copy ("Copy of …"); defaults to the source title. */
+  title?: string;
+}
+
 export interface MoveCardAction {
   type: "MOVE_CARD";
   cardId: string;
@@ -205,6 +225,8 @@ export type BoardAction =
   | DeleteChecklistItemAction
   | SetCardDueDateAction
   | SetCardCoverAction
+  | DuplicateCardAction
+  | DuplicateColumnAction
   | MoveCardAction
   | MoveColumnAction
   | RestoreBoardAction
@@ -320,6 +342,96 @@ function deleteCard(board: Board, action: DeleteCardAction): Board {
     ...col,
     cardIds: col.cardIds.filter((id) => id !== action.cardId),
   }));
+  return { ...board, columns, cards };
+}
+
+/**
+ * Duplicate a card in place: the copy lands right below the original with
+ * all content (description, checklists, due date, cover, labels) but fresh
+ * ids and timestamps. Deep-clones nested structures so the copies don't
+ * share mutable state with the source.
+ */
+function duplicateCard(board: Board, action: DuplicateCardAction): Board {
+  const source = board.cards[action.cardId];
+  if (!source) return board;
+  const columnIndex = board.columns.findIndex((col) =>
+    col.cardIds.includes(source.id),
+  );
+  if (columnIndex === -1) return board;
+  const now = Date.now();
+  const copy: Card = {
+    ...source,
+    id: createId(),
+    title: action.title ?? source.title,
+    // Deep-copy nested content so later edits never alias the original.
+    description: source.description,
+    checklists: source.checklists
+      ? (structuredClone(source.checklists) as Checklist[])
+      : undefined,
+    dueDate: source.dueDate,
+    cover: source.cover ? (structuredClone(source.cover) as CardCover) : undefined,
+    labelIds: [...source.labelIds],
+    createdAt: now,
+    updatedAt: now,
+  };
+  const columns = board.columns.map((col, index) =>
+    index === columnIndex
+      ? {
+          ...col,
+          cardIds: insertAt(col.cardIds, col.cardIds.indexOf(source.id) + 1, copy.id),
+        }
+      : col,
+  );
+  return {
+    ...board,
+    columns,
+    cards: { ...board.cards, [copy.id]: copy },
+  };
+}
+
+/**
+ * Duplicate a column with every card in it. The copy is placed immediately
+ * to the right of the original; all cards get fresh ids (their checklist
+ * ids stay as-is — they are unique per card).
+ */
+function duplicateColumn(board: Board, action: DuplicateColumnAction): Board {
+  const sourceIndex = board.columns.findIndex(
+    (col) => col.id === action.columnId,
+  );
+  if (sourceIndex === -1) return board;
+  const source = board.columns[sourceIndex];
+  const now = Date.now();
+  const cardIds = source.cardIds.map(() => createId());
+  const cards = { ...board.cards };
+  source.cardIds.forEach((sourceId, index) => {
+    const sourceCard = board.cards[sourceId];
+    if (!sourceCard) return;
+    cards[cardIds[index]] = {
+      ...sourceCard,
+      id: cardIds[index],
+      checklists: sourceCard.checklists
+        ? (structuredClone(sourceCard.checklists) as Checklist[])
+        : undefined,
+      dueDate: sourceCard.dueDate,
+      cover: sourceCard.cover
+        ? (structuredClone(sourceCard.cover) as CardCover)
+        : undefined,
+      labelIds: [...sourceCard.labelIds],
+      createdAt: now,
+      updatedAt: now,
+    };
+  });
+  const copy: Column = {
+    id: createId(),
+    title: action.title ?? source.title,
+    cardIds: cardIds.filter((_, index) => source.cardIds[index] in board.cards),
+    createdAt: now,
+  };
+  const columns = [
+    ...board.columns.slice(0, sourceIndex + 1),
+    copy,
+    ...board.columns.slice(sourceIndex + 1),
+  ];
   return { ...board, columns, cards };
 }
 
@@ -712,6 +824,14 @@ export function boardReducer(
     }
     case "SET_CARD_COVER": {
       const next = setCardCover(board, action);
+      return next === board ? state : commit(state, next);
+    }
+    case "DUPLICATE_CARD": {
+      const next = duplicateCard(board, action);
+      return next === board ? state : commit(state, next);
+    }
+    case "DUPLICATE_COLUMN": {
+      const next = duplicateColumn(board, action);
       return next === board ? state : commit(state, next);
     }
     case "MOVE_CARD": {
