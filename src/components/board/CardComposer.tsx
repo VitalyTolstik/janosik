@@ -5,7 +5,7 @@ import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { LABEL_COLOR_DOT, type Label } from "@/types/kanban";
+import { LABEL_COLOR_DOT, LIMITS, type Label } from "@/types/kanban";
 
 interface CardComposerProps {
   /** Called with the trimmed title and the labels picked before adding. */
@@ -101,6 +101,7 @@ export function CardComposer({
       <Textarea
         autoFocus
         value={title}
+        maxLength={LIMITS.cardTitle}
         onChange={(event) => setTitle(event.target.value)}
         onKeyDown={handleKeyDown}
         onBlur={handleBlur}

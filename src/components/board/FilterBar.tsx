@@ -20,7 +20,12 @@ import {
 } from "@/components/ui/popover";
 import { useI18n, type MessageKey } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { LABEL_COLOR_DOT, type Label, type LabelColor } from "@/types/kanban";
+import {
+  LABEL_COLOR_DOT,
+  LIMITS,
+  type Label,
+  type LabelColor,
+} from "@/types/kanban";
 import {
   activeFacetCount,
   EMPTY_FILTER,
@@ -216,6 +221,7 @@ export function FilterBar({
         <Input
           ref={inputRef}
           value={query}
+          maxLength={LIMITS.query}
           onChange={(e) => onChange({ ...filter, query: e.target.value })}
           placeholder={t("filter.searchPlaceholder")}
           aria-label={t("filter.searchAria")}

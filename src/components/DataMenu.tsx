@@ -26,6 +26,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
+import { MAX_IMPORT_BYTES } from "@/types/kanban";
 import { useBoard } from "@/store/BoardContext";
 import { parseExport, serializeExport } from "@/utils/board-serialization";
 import { formatBackupTimestamp } from "@/utils/backup-timestamp";
@@ -98,6 +99,11 @@ export function DataMenu() {
 
   const handleFileChosen = async (file: File | undefined) => {
     if (!file) return;
+    // Refuse oversized files before reading them into memory.
+    if (file.size > MAX_IMPORT_BYTES) {
+      toast.error(t("data.importTooLarge"));
+      return;
+    }
     try {
       const text = await file.text();
       const boards = parseExport(text);
