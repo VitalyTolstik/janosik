@@ -345,6 +345,14 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
         <h3 className="mr-auto text-sm font-semibold text-foreground">
           {headerLabel}
         </h3>
+        {/* Helper text: the grid's main affordance is not obvious from
+            the grid itself. */}
+        <span
+          className="mr-2 hidden text-[11px] text-muted-foreground/70 lg:inline"
+          data-testid="calendar-hint"
+        >
+          {t("view.calendar.hint")}
+        </span>
         {/* Scale toggle — month / week (TASK-14.1). */}
         <div
           role="group"
