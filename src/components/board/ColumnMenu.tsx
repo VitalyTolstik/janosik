@@ -5,6 +5,7 @@ import {
   CopyPlus,
   EllipsisVertical,
   ArrowDownUp,
+  Gauge,
   Pencil,
   Trash2,
 } from "lucide-react";
@@ -28,6 +29,10 @@ interface ColumnMenuProps {
   onDelete: () => void;
   /** Fired when a sort criterion is picked (one-shot action). */
   onSort: (sortBy: ColumnSortBy) => void;
+  /** Opens the WIP-limit dialog. */
+  onSetWipLimit: () => void;
+  /** The column's current WIP limit (labels the menu item). */
+  wipLimit?: number;
 }
 
 const SORT_ITEMS: Array<{ sortBy: ColumnSortBy; icon: typeof Clock4 }> = [
@@ -42,7 +47,14 @@ const SORT_ITEMS: Array<{ sortBy: ColumnSortBy; icon: typeof Clock4 }> = [
  * so the sub-menu uses plain items instead of a checked state. Stops
  * pointer events from bubbling up to the header's drag handle.
  */
-export function ColumnMenu({ onRename, onDuplicate, onDelete, onSort }: ColumnMenuProps) {
+export function ColumnMenu({
+  onRename,
+  onDuplicate,
+  onDelete,
+  onSort,
+  onSetWipLimit,
+  wipLimit,
+}: ColumnMenuProps) {
   const { t } = useI18n();
   return (
     <DropdownMenu>
@@ -79,6 +91,15 @@ export function ColumnMenu({ onRename, onDuplicate, onDelete, onSort }: ColumnMe
             ))}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
+        <DropdownMenuItem onClick={onSetWipLimit}>
+          <Gauge className="h-4 w-4" />
+          {t("column.wipLimit")}
+          {wipLimit !== undefined && (
+            <span className="ml-auto text-xs text-muted-foreground">
+              {wipLimit}
+            </span>
+          )}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={onDelete}
