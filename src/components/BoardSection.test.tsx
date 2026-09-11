@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
@@ -20,9 +21,11 @@ function renderBoard() {
       <BoardBackgroundProvider>
         <I18nProvider>
           <TooltipProvider>
-            <BoardProvider>
-              <BoardSection />
-            </BoardProvider>
+            <MemoryRouter>
+              <BoardProvider>
+                <BoardSection />
+              </BoardProvider>
+            </MemoryRouter>
           </TooltipProvider>
         </I18nProvider>
       </BoardBackgroundProvider>
