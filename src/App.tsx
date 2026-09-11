@@ -82,7 +82,7 @@ export default function App() {
               <TooltipProvider delayDuration={150}>
                 <HashRouter>
                   <BoardProvider>
-                    <div className="flex min-h-screen flex-col bg-background text-foreground">
+                    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
                       <Header />
                       <Routes>
                         <Route path={routes.home} element={<NoBoardRoute />} />

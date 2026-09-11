@@ -102,7 +102,7 @@ export function BoardSection() {
   return (
     <main
       className={cn(
-        "flex w-full flex-1 flex-col px-4 pt-4 pb-4 sm:px-6",
+        "flex min-h-0 w-full flex-1 flex-col px-4 pt-4 pb-4 sm:px-6",
         boardBackgroundById(background).className,
       )}
     >
@@ -125,7 +125,7 @@ export function BoardSection() {
           onCardClick={handleCardClick}
         />
       ) : (
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {view === "calendar" ? (
             <CalendarView
               filteredCardIds={filteredIds ?? undefined}
