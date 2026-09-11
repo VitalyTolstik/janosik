@@ -176,6 +176,8 @@ export const LIMITS = {
   columnsPerBoard: 20,
   /** Cards in one column. */
   cardsPerColumn: 500,
+  /** WIP limit per column (1…max). */
+  wipLimitMax: 99,
   /** Boards in the workspace (localStorage quota guard). */
   boardsCount: 50,
 } as const;
@@ -279,6 +281,13 @@ export interface Column {
  title: string;
  /** Ordered card ids — this array defines the vertical order. */
  cardIds: string[];
+ /**
+  * WIP limit (TASK-13) — the max number of cards the column accepts.
+  * Omitted when unset. A column can hold more (limit set below the
+  * current count, undo, imports) — the counter turns red and further
+  * adds/moves in are blocked until the column is below the limit again.
+  */
+ wipLimit?: number;
  createdAt: number;
 }
 

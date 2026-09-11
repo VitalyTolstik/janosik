@@ -13,6 +13,7 @@ import { ColumnMenu } from "@/components/board/ColumnMenu";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { RenameColumnDialog } from "@/components/board/RenameColumnDialog";
 import { SortableCard } from "@/components/board/SortableCard";
+import { WipLimitDialog } from "@/components/board/WipLimitDialog";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
@@ -61,9 +62,11 @@ export function ColumnView({
     duplicateCard,
     duplicateColumn,
     sortColumn,
+    setColumnWipLimit,
   } = useBoard();
   const { t, tp } = useI18n();
   const [renameOpen, setRenameOpen] = useState(false);
+  const [wipLimitOpen, setWipLimitOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const {
@@ -82,6 +85,11 @@ export function ColumnView({
 
   const ids = cardIds ?? column.cardIds;
   const count = ids.length;
+  const wipLimit = column.wipLimit;
+  // The visible count includes hidden-by-filter cards only when no filter
+  // overrides `cardIds` — the limit is judged on the real column contents.
+  const atWipLimit = wipLimit !== undefined && count >= wipLimit;
+  const overWipLimit = wipLimit !== undefined && count > wipLimit;
 
   const setNodeRef = (node: HTMLElement | null) => {
     setSortableRef(node);
@@ -129,8 +137,22 @@ export function ColumnView({
             {column.title}
           </h3>
           <span className="flex shrink-0 items-center gap-1">
-            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-hover px-1.5 text-[11px] font-medium text-muted-foreground">
-              {count}
+            <span
+              title={
+                atWipLimit
+                  ? t("column.wipLimitReached", { limit: wipLimit })
+                  : undefined
+              }
+              className={cn(
+                "flex h-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-medium",
+                overWipLimit
+                  ? "bg-danger/15 text-danger"
+                  : atWipLimit
+                    ? "bg-warning/15 text-warning"
+                    : "bg-hover text-muted-foreground",
+              )}
+            >
+              {wipLimit !== undefined ? `${count}/${wipLimit}` : count}
             </span>
             <ColumnMenu
               onRename={() => setRenameOpen(true)}
@@ -142,6 +164,8 @@ export function ColumnView({
               }
               onDelete={() => setConfirmDelete(true)}
               onSort={(sortBy) => sortColumn(column.id, sortBy)}
+              onSetWipLimit={() => setWipLimitOpen(true)}
+              wipLimit={wipLimit}
             />
             <GripVertical
               aria-hidden
@@ -197,10 +221,18 @@ export function ColumnView({
           <CardComposer
             columnId={column.id}
             labels={board.labels}
-            disabled={column.cardIds.length >= LIMITS.cardsPerColumn}
-            disabledReason={t("limits.maxItems", {
-              limit: LIMITS.cardsPerColumn,
-            })}
+            disabled={
+              column.cardIds.length >= LIMITS.cardsPerColumn || atWipLimit
+            }
+            disabledReason={
+              column.cardIds.length >= LIMITS.cardsPerColumn
+                ? t("limits.maxItems", {
+                    limit: LIMITS.cardsPerColumn,
+                  })
+                : atWipLimit
+                  ? t("column.wipLimitReached", { limit: wipLimit })
+                  : undefined
+            }
             onSubmit={(title, labelIds) => addCard(column.id, title, labelIds)}
           />
         </footer>
@@ -211,6 +243,14 @@ export function ColumnView({
         initialTitle={column.title}
         onOpenChange={setRenameOpen}
         onSave={handleRename}
+      />
+
+      <WipLimitDialog
+        open={wipLimitOpen}
+        columnTitle={column.title}
+        initialLimit={wipLimit}
+        onOpenChange={setWipLimitOpen}
+        onSave={(wipLimit) => setColumnWipLimit(column.id, wipLimit)}
       />
 
       <ConfirmDialog

@@ -267,5 +267,16 @@
   "editor.dialogControls.cancel": "Отмена",
   "editor.dialogControls.save": "Сохранить",
   "editor.dialog.close": "Закрыть",
-  "editor.codeBlock": "Блок кода"
+  "editor.codeBlock": "Блок кода",
+  "editor.toolbar.removeBold": "Снять полужирный",
+  "editor.toolbar.removeItalic": "Снять курсив",
+  "editor.toolbar.removeStrikethrough": "Снять зачёркивание",
+  "editor.toolbar.removeInlineCode": "Снять строчный код",
+  "column.wipLimit": "WIP-лимит",
+  "column.wipLimitDialogTitle": "WIP-лимит для «{{title}}»",
+  "column.wipLimitPlaceholder": "Без лимита",
+  "column.wipLimitHint": "Максимум карточек в этой колонке. Пустое поле — убрать лимит.",
+  "column.wipLimitRemove": "Убрать лимит",
+  "column.wipLimitReached": "WIP-лимит достигнут ({{limit}})",
+  "toast.wipLimitBlocked": "«{{title}}» достигла WIP-лимита ({{limit}}) — карточка остаётся в своей колонке."
 }
