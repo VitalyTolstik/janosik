@@ -159,15 +159,19 @@ function normalizeCard(card: LegacyCard): Card {
     ...rest,
     title,
     description,
-    labelIds: toLabelIds(labelIds ?? labelId),
-    checklists: toChecklists(checklists)?.map((checklist) => ({
-      ...checklist,
-      title: clampText(checklist.title, LIMITS.checklistTitle),
-      items: checklist.items.map((item) => ({
-        ...item,
-        text: clampText(item.text, LIMITS.checklistItem),
+    labelIds: toLabelIds(labelIds ?? labelId).slice(0, LIMITS.labelsPerCard),
+    checklists: toChecklists(checklists)
+      ?.slice(0, LIMITS.checklistsPerCard)
+      .map((checklist) => ({
+        ...checklist,
+        title: clampText(checklist.title, LIMITS.checklistTitle),
+        items: checklist.items
+          .slice(0, LIMITS.itemsPerChecklist)
+          .map((item) => ({
+            ...item,
+            text: clampText(item.text, LIMITS.checklistItem),
+          })),
       })),
-    })),
     dueDate: toDueDate(dueDate),
     cover: toCover(cover),
     activity: toActivity(activity),
@@ -182,10 +186,12 @@ export function normalizeBoard(board: Board): Board {
       ...column,
       title: clampText(column.title, LIMITS.columnTitle),
     })),
-    labels: board.labels.map((label) => ({
-      ...label,
-      name: clampText(label.name, LIMITS.labelName),
-    })),
+    labels: board.labels
+      .slice(0, LIMITS.labelsPerBoard)
+      .map((label) => ({
+        ...label,
+        name: clampText(label.name, LIMITS.labelName),
+      })),
     cards: Object.fromEntries(
       Object.entries(board.cards).map(([id, card]) => [
         id,
@@ -201,6 +207,7 @@ export function normalizeBoards(state: BoardState): BoardState {
     const needsFix =
       board.title.length > LIMITS.boardTitle ||
       board.columns.some((column) => column.title.length > LIMITS.columnTitle) ||
+      board.labels.length > LIMITS.labelsPerBoard ||
       board.labels.some((label) => label.name.length > LIMITS.labelName) ||
       Object.values(board.cards).some((card) => {
         const legacy = card as LegacyCard;

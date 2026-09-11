@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/Toast";
 import { useBoard } from "@/store/BoardContext";
 import { routes } from "@/routes";
 import type { Board } from "@/types/kanban";
@@ -62,6 +63,7 @@ function boardInitial(title: string): string {
 
 export function BoardSwitcher() {
   const { t } = useI18n();
+  const toast = useToast();
   const navigate = useNavigate();
   const {
     boards,
@@ -152,6 +154,10 @@ export function BoardSwitcher() {
   };
 
   const createBoard = (title: string) => {
+    if (boards.length >= LIMITS.boardsCount) {
+      toast.error(t("limits.maxBoards", { limit: LIMITS.boardsCount }));
+      return;
+    }
     const id = addBoard(title);
     resetAndClose();
     navigate(routes.board(id));

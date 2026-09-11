@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   boardReducer,
@@ -1307,5 +1307,113 @@ describe("boardReducer — input limits (TASK-20)", () => {
     });
     const checklist = board.cards["card-1"].checklists![0];
     expect(checklist.items.at(-1)!.text).toHaveLength(LIMITS.checklistItem);
+  });
+});
+
+describe("boardReducer — collection limits (TASK-20)", () => {
+  let LIMITS: (typeof import("@/types/kanban"))["LIMITS"];
+  beforeAll(async () => {
+    ({ LIMITS } = await import("@/types/kanban"));
+  });
+
+  it("refuses new checklists beyond LIMITS.checklistsPerCard", () => {
+    let state = [freshBoard()];
+    for (let i = 0; i < LIMITS.checklistsPerCard + 3; i++) {
+      state = boardReducer(state, {
+        type: "ADD_CHECKLIST",
+        cardId: "card-1",
+        title: `Checklist ${i}`,
+      });
+    }
+    expect(state[0].cards["card-1"].checklists).toHaveLength(
+      LIMITS.checklistsPerCard,
+    );
+  });
+
+  it("refuses new checklist items beyond LIMITS.itemsPerChecklist", () => {
+    let state = boardReducer([freshBoard()], {
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      title: "Steps",
+    });
+    const checklistId = state[0].cards["card-1"].checklists![0].id;
+    for (let i = 0; i < LIMITS.itemsPerChecklist + 3; i++) {
+      state = boardReducer(state, {
+        type: "ADD_CHECKLIST_ITEM",
+        cardId: "card-1",
+        checklistId,
+        text: `Item ${i}`,
+      });
+    }
+    expect(state[0].cards["card-1"].checklists![0].items).toHaveLength(
+      LIMITS.itemsPerChecklist,
+    );
+  });
+
+  it("refuses adding labels to a card beyond LIMITS.labelsPerCard", () => {
+    // 25 board labels, then try to wear them all — the reducer stops at 20.
+    let state = [freshBoard()];
+    for (let i = 0; i < 25; i++) {
+      state = boardReducer(state, {
+        type: "ADD_LABEL",
+        label: { id: `extra-${i}`, name: `Extra ${i}`, color: "red" },
+      });
+    }
+    for (const label of state[0].labels) {
+      state = boardReducer(state, {
+        type: "TOGGLE_CARD_LABEL",
+        cardId: "card-1",
+        labelId: label.id,
+      });
+    }
+    expect(state[0].cards["card-1"].labelIds).toHaveLength(
+      LIMITS.labelsPerCard,
+    );
+  });
+
+  it("refuses new labels on a board beyond LIMITS.labelsPerBoard", async () => {
+    let state = [freshBoard()];
+    const base = state[0].labels.length;
+    for (let i = 0; i < 5; i++) {
+      state = boardReducer(state, {
+        type: "ADD_LABEL",
+        label: { id: `extra-${i}`, name: `Extra ${i}`, color: "red" },
+      });
+    }
+    expect(state[0].labels.length).toBe(
+      Math.min(base + 5, (await import("@/types/kanban")).LIMITS.labelsPerBoard),
+    );
+  });
+
+  it("refuses new boards beyond LIMITS.boardsCount", async () => {
+    const { LIMITS: L } = await import("@/types/kanban");
+    let state = [freshBoard()];
+    while (state.length < L.boardsCount) {
+      state = boardReducer(state, {
+        type: "ADD_BOARD",
+        board: {
+          id: `b-${state.length}`,
+          title: `Board ${state.length}`,
+          columns: [],
+          cards: {},
+          labels: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      });
+    }
+    const next = boardReducer(state, {
+      type: "ADD_BOARD",
+      board: {
+        id: "overflow",
+        title: "Overflow",
+        columns: [],
+        cards: {},
+        labels: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    });
+    expect(next).toHaveLength(L.boardsCount);
   });
 });
