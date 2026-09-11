@@ -19,6 +19,7 @@ import { useBoard } from "@/store/BoardContext";
 import { routes } from "@/routes";
 import type { Board } from "@/types/kanban";
 import { LIMITS } from "@/types/kanban";
+import { LimitCounter } from "@/components/ui/limit-counter";
 
 /**
  * Board switcher — a premium popover anchored to the header: auto-focused
@@ -218,7 +219,7 @@ export function BoardSwitcher() {
         className="w-[340px] overflow-hidden rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
       >
         {/* Search */}
-        <div className="flex items-center gap-2 border-b px-3 py-2.5">
+        <div className="relative flex items-center gap-2 border-b px-3 py-2.5">
           <Search size={15} className="shrink-0 text-muted-foreground" />
           <input
             ref={searchRef}
@@ -233,6 +234,13 @@ export function BoardSwitcher() {
             aria-label={t("board.switcher.search")}
             autoFocus
             className="h-6 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+          <LimitCounter
+            length={query.length}
+            limit={LIMITS.query}
+            position="below"
+            className="left-9"
+            testId="switcher-search-limit"
           />
         </div>
 
@@ -426,7 +434,7 @@ export function BoardSwitcher() {
         {/* Create row */}
         <div className="border-t p-1.5">
           {creating ? (
-            <div className="flex items-center gap-2 rounded-lg px-2 py-1 ring-1 ring-primary/30">
+            <div className="relative flex items-center gap-2 rounded-lg px-2 py-1 ring-1 ring-primary/30">
               <Plus size={15} className="shrink-0 text-primary" />
               <input
                 ref={createRef}
@@ -447,6 +455,13 @@ export function BoardSwitcher() {
                 aria-label={t("board.switcher.newPlaceholder")}
                 autoFocus
                 className="h-7 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              />
+              <LimitCounter
+                length={createDraft.length}
+                limit={LIMITS.boardTitle}
+                position="below"
+                className="left-6"
+                testId="switcher-create-limit"
               />
             </div>
           ) : (

@@ -11,6 +11,10 @@ import { DescriptionEditor } from "@/components/editor/DescriptionEditor";
 import { formatDate, useI18n } from "@/i18n";
 import { useToast } from "@/components/Toast";
 import {
+  LimitCounter,
+  showRemaining,
+} from "@/components/ui/limit-counter";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -157,25 +161,19 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                 className="resize-none break-words"
                 placeholder={t("card.titlePlaceholder")}
                 aria-describedby={
-                  card.title.length > LIMITS.cardTitle - 60
+                  showRemaining(card.title.length, LIMITS.cardTitle)
                     ? "card-title-counter"
                     : undefined
                 }
               />
               {/* Live counter appears only near the limit — constant
                   character counts are noise for a 300-char title. */}
-              {card.title.length > LIMITS.cardTitle - 60 && (
-                <p
-                  aria-live="polite"
-                  className="text-[11px] tabular-nums text-muted-foreground"
-                  id="card-title-counter"
-                  data-testid="card-title-counter"
-                >
-                  {t("limits.remaining", {
-                    count: LIMITS.cardTitle - card.title.length,
-                  })}
-                </p>
-              )}
+              <LimitCounter
+                id="card-title-counter"
+                length={card.title.length}
+                limit={LIMITS.cardTitle}
+                testId="card-title-counter"
+              />
             </div>
 
             <div className="space-y-1.5">
@@ -205,6 +203,11 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                   updateCard(card.id, { description });
                 }}
                 placeholder={t("card.descriptionPlaceholder")}
+              />
+              <LimitCounter
+                length={(card.description ?? "").length}
+                limit={LIMITS.description}
+                testId="card-description-counter"
               />
             </div>
 

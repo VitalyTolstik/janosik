@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { LABEL_COLOR_DOT, LIMITS, type Label } from "@/types/kanban";
+import { LimitCounter } from "@/components/ui/limit-counter";
 
 interface CardComposerProps {
   /** Called with the trimmed title and the labels picked before adding. */
@@ -109,6 +110,7 @@ export function CardComposer({
         rows={2}
         className="min-h-0 resize-none"
       />
+      <LimitCounter length={title.length} limit={LIMITS.cardTitle} testId="composer-limit" />
       {labels && labels.length > 0 ? (
         <div
           className="flex flex-wrap items-center gap-1"

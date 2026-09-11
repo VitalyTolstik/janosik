@@ -5,6 +5,7 @@ import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LIMITS } from "@/types/kanban";
+import { LimitCounter } from "@/components/ui/limit-counter";
 
 interface AddColumnControlProps {
   /** Called with the trimmed title when the user commits. */
@@ -67,6 +68,7 @@ export function AddColumnControl({ onSubmit }: AddColumnControlProps) {
         placeholder={t("column.placeholder")}
         className="h-9"
       />
+      <LimitCounter length={title.length} limit={LIMITS.columnTitle} testId="add-column-limit" />
       <div className="flex items-center gap-1.5">
         <Button
           size="sm"
