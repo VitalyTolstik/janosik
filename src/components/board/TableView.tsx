@@ -651,7 +651,7 @@ function TableCardComposer({
             {selected?.title ?? "—"}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuContent align="start" className="max-h-44 w-[var(--radix-dropdown-menu-trigger-width)] min-w-0 overflow-y-auto">
           {columns.map((col) => (
             <DropdownMenuItem key={col.id} onSelect={() => setColumnId(col.id)}>
               {col.title}

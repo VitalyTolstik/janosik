@@ -167,6 +167,7 @@ export function CardComposer({
           // Keep focus in the textarea so its onBlur (reset) never fires
           // before the click lands.
           onMouseDown={(event) => event.preventDefault()}
+          className="h-7 flex-1 text-xs"
         >
           {t("composer.submit")}
         </Button>
@@ -177,7 +178,7 @@ export function CardComposer({
             setComposing(false);
             onClose?.();
           }}
-          className="text-muted-foreground hover:text-foreground"
+          className="h-7 text-xs text-muted-foreground hover:text-foreground"
           onMouseDown={(event) => event.preventDefault()}
         >
           {t("common.cancel")}
