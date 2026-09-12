@@ -12,7 +12,7 @@
   /* Column glass defaults (overridden at runtime by BoardGlassProvider,
      see use-board-glass.tsx): transparency 0-100 (100 = no fill),
      blur = backdrop blur radius in px. */
-  --janosik-glass-transparency: 80;
+  --janosik-glass-transparency: 100;
   --janosik-glass-blur: 5px;
 
   /* App background (dark theme = brand background) */
@@ -353,14 +353,19 @@
 }
 
 /* Re-enable transitions once the preflight kill-switch style is removed in
- * main.tsx (it waits for the `ready` class we add after first paint). */
-html.__janosik-ready *,
-html.__janosik-ready *::before,
-html.__janosik-ready *::after {
-  transition:
-    background-color 150ms ease,
-    border-color 150ms ease,
-    color 150ms ease;
+ * main.tsx (it waits for the `ready` class we add after first paint).
+ * Lives in @layer base: unlayered, this universal rule would outrank every
+ * Tailwind transition utility (transition-opacity, transition-[height], …)
+ * and silently disable them — utilities must win where they are applied. */
+@layer base {
+  html.__janosik-ready *,
+  html.__janosik-ready *::before,
+  html.__janosik-ready *::after {
+    transition:
+      background-color 150ms ease,
+      border-color 150ms ease,
+      color 150ms ease;
+  }
 }
 /* Toast entrance — slides in from the bottom-right with a soft scale. */
 .janosik-toast {

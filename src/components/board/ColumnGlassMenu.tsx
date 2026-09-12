@@ -11,20 +11,22 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { GLASS_LIMITS, useBoardGlass } from "@/hooks/use-board-glass";
+import { GLASS_PRESETS, useBoardGlass } from "@/hooks/use-board-glass";
 import { useI18n } from "@/i18n";
 
 /**
- * Column glass controls — sliders for column transparency and backdrop
- * blur over the board background. Lives on the view-switcher row and is
- * shown only for the board view, since it affects nothing else. Changes
- * apply live and persist (see BoardGlassProvider).
+ * Column glass controls — on/off checkboxes for column transparency and
+ * backdrop blur over the board background. Lives on the view-switcher row
+ * and is shown only for the board view, since it affects nothing else.
+ * Changes apply live and persist (see BoardGlassProvider).
  */
 export function ColumnGlassMenu() {
   const { glass, setGlass } = useBoardGlass();
   const { t } = useI18n();
 
   const stopKeys = (event: React.KeyboardEvent) => event.stopPropagation();
+
+  const boxClass = "h-3.5 w-3.5 shrink-0 accent-primary";
 
   return (
     <Tooltip>
@@ -45,51 +47,43 @@ export function ColumnGlassMenu() {
         </TooltipTrigger>
         <DropdownMenuContent align="end" className="w-64 p-0">
           <div className="space-y-1.5 px-3 py-2.5" onKeyDown={stopKeys}>
-            <label className="flex h-6 items-center gap-2 text-xs">
-              <span className="w-20 shrink-0 text-muted-foreground">
-                {t("bg.glassOpacity")}
-              </span>
+            <label className="flex h-6 cursor-pointer items-center gap-2 text-xs">
               <input
-                type="range"
+                type="checkbox"
                 aria-label={t("bg.glassOpacity")}
-                min={GLASS_LIMITS.transparency.min}
-                max={GLASS_LIMITS.transparency.max}
-                step={GLASS_LIMITS.transparency.step}
-                value={glass.transparency}
+                checked={glass.transparency > 0}
                 onChange={(event) =>
                   setGlass({
                     ...glass,
-                    transparency: Number(event.target.value),
+                    transparency: event.target.checked
+                      ? GLASS_PRESETS.transparency.on
+                      : GLASS_PRESETS.transparency.off,
                   })
                 }
                 data-testid="glass-opacity"
-                className="h-1 min-w-0 flex-1 accent-primary"
+                className={boxClass}
               />
-              <span className="w-10 shrink-0 text-right tabular-nums text-muted-foreground">
-                {glass.transparency}%
+              <span className="text-muted-foreground">
+                {t("bg.glassOpacity")}
               </span>
             </label>
-            <label className="flex h-6 items-center gap-2 text-xs">
-              <span className="w-20 shrink-0 text-muted-foreground">
-                {t("bg.glassBlur")}
-              </span>
-              {/* No numeric readout here — a pixel count means nothing to
-                  the user; the visual effect is the feedback. The empty
-                  chip keeps the row aligned with the transparency one. */}
+            <label className="flex h-6 cursor-pointer items-center gap-2 text-xs">
               <input
-                type="range"
+                type="checkbox"
                 aria-label={t("bg.glassBlur")}
-                min={GLASS_LIMITS.blur.min}
-                max={GLASS_LIMITS.blur.max}
-                step={GLASS_LIMITS.blur.step}
-                value={glass.blur}
+                checked={glass.blur > 0}
                 onChange={(event) =>
-                  setGlass({ ...glass, blur: Number(event.target.value) })
+                  setGlass({
+                    ...glass,
+                    blur: event.target.checked
+                      ? GLASS_PRESETS.blur.on
+                      : GLASS_PRESETS.blur.off,
+                  })
                 }
                 data-testid="glass-blur"
-                className="h-1 min-w-0 flex-1 accent-primary"
+                className={boxClass}
               />
-              <span aria-hidden className="w-10 shrink-0" />
+              <span className="text-muted-foreground">{t("bg.glassBlur")}</span>
             </label>
           </div>
         </DropdownMenuContent>
