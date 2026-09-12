@@ -16,6 +16,7 @@ describe("ColumnMenu — sort", () => {
           onDelete={vi.fn()}
           onSort={onSort}
           onSetWipLimit={vi.fn()}
+          onArchiveCards={vi.fn()}
         />
       </I18nProvider>,
     );
@@ -67,6 +68,7 @@ describe("ColumnMenu — WIP limit (TASK-13)", () => {
           onDelete={vi.fn()}
           onSort={vi.fn()}
           onSetWipLimit={onSetWipLimit}
+          onArchiveCards={vi.fn()}
           wipLimit={3}
         />
       </I18nProvider>,

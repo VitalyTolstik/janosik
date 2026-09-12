@@ -1,5 +1,6 @@
 import {
   ArrowDownAZ,
+  Archive,
   CalendarClock,
   Clock4,
   CopyPlus,
@@ -31,6 +32,8 @@ interface ColumnMenuProps {
   onSort: (sortBy: ColumnSortBy) => void;
   /** Opens the WIP-limit dialog. */
   onSetWipLimit: () => void;
+  /** Archives every card of the column (TASK-18.1, confirm upstream). */
+  onArchiveCards: () => void;
   /** The column's current WIP limit (labels the menu item). */
   wipLimit?: number;
 }
@@ -53,6 +56,7 @@ export function ColumnMenu({
   onDelete,
   onSort,
   onSetWipLimit,
+  onArchiveCards,
   wipLimit,
 }: ColumnMenuProps) {
   const { t } = useI18n();
@@ -99,6 +103,10 @@ export function ColumnMenu({
               {wipLimit}
             </span>
           )}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onArchiveCards}>
+          <Archive className="h-4 w-4" />
+          {t("column.archiveCards")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

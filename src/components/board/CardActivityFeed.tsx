@@ -1,5 +1,7 @@
 import { useState } from "react";
 import {
+  Archive,
+  ArchiveRestore,
   CalendarClock,
   CalendarX,
   ArrowRightLeft,
@@ -25,6 +27,8 @@ const ACTIVITY_ICONS: Record<CardActivityType, LucideIcon> = {
   "label-removed": TagX,
   "due-date-set": CalendarClock,
   "due-date-removed": CalendarX,
+  archived: Archive,
+  unarchived: ArchiveRestore,
 };
 
 interface CardActivityFeedProps {

@@ -1,4 +1,4 @@
-import { FileText, ListChecks, MessageSquare, Pencil, Plus, Settings2 } from "lucide-react";
+import { Archive, FileText, ListChecks, MessageSquare, Pencil, Plus, Settings2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { DueBadge } from "@/components/board/DueBadge";
@@ -15,6 +15,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -104,6 +105,7 @@ export function TableView({
     addCard,
     updateCard,
     moveCard,
+    archiveCard,
     toggleCardLabel,
     addLabel,
     renameLabel,
@@ -431,6 +433,14 @@ export function TableView({
                             {col.title}
                           </DropdownMenuItem>
                         ))}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          data-testid="table-archive-card"
+                          onSelect={() => archiveCard(card.id)}
+                        >
+                          <Archive className="h-4 w-4" />
+                          {t("card.archive")}
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>

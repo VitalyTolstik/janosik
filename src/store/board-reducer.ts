@@ -168,6 +168,23 @@ export interface DeleteCardAction {
   cardId: string;
 }
 
+export interface ArchiveCardAction {
+  type: "ARCHIVE_CARD";
+  cardId: string;
+}
+
+export interface UnarchiveCardAction {
+  type: "UNARCHIVE_CARD";
+  cardId: string;
+  /** Target column; defaults to the first column of the board. */
+  columnId?: string;
+}
+
+export interface ArchiveColumnCardsAction {
+  type: "ARCHIVE_COLUMN_CARDS";
+  columnId: string;
+}
+
 export interface RestoreBoardAction {
   type: "RESTORE_BOARD";
   /** Full board snapshot to restore (undo/redo). */
@@ -355,6 +372,9 @@ export type BoardAction =
   | BoardScoped<UpdateCardAction>
   | BoardScoped<TouchCardAction>
   | BoardScoped<DeleteCardAction>
+  | BoardScoped<ArchiveCardAction>
+  | BoardScoped<UnarchiveCardAction>
+  | BoardScoped<ArchiveColumnCardsAction>
   | BoardScoped<ToggleCardLabelAction>
   | BoardScoped<AddLabelAction>
   | BoardScoped<RenameLabelAction>
@@ -512,6 +532,73 @@ function deleteCard(board: Board, action: DeleteCardAction): Board {
     cardIds: col.cardIds.filter((id) => id !== action.cardId),
   }));
   return { ...board, columns, cards };
+}
+
+/** Take a card off the board without deleting it — TASK-18.1 archive. */
+function archiveCard(board: Board, action: ArchiveCardAction): Board {
+  const target = board.cards[action.cardId];
+  if (!target || target.archivedAt !== undefined) return board;
+  const now = Date.now();
+  let nextCard: Card = { ...target, archivedAt: now, updatedAt: now };
+  nextCard = appendActivity(nextCard, "archived");
+  return {
+    ...board,
+    columns: board.columns.map((col) => ({
+      ...col,
+      cardIds: col.cardIds.filter((id) => id !== action.cardId),
+    })),
+    cards: { ...board.cards, [action.cardId]: nextCard },
+  };
+}
+
+/**
+ * Put an archived card back on the board, at the end of `columnId`
+ * (defaults to the first column). Respects the WIP limit — a full column
+ * refuses the restore rather than silently breaking the cap.
+ */
+function unarchiveCard(board: Board, action: UnarchiveCardAction): Board {
+  const target = board.cards[action.cardId];
+  if (!target || target.archivedAt === undefined) return board;
+  const column =
+    board.columns.find((col) => col.id === action.columnId) ?? board.columns[0];
+  if (!column) return board;
+  if (atWipLimit(column, true)) return board;
+  const now = Date.now();
+  const restoredCard: Card = { ...target, archivedAt: undefined, updatedAt: now };
+  // Exact-optional cleanup: `archivedAt: undefined` must not survive.
+  delete restoredCard.archivedAt;
+  const nextCard = appendActivity(restoredCard, "unarchived");
+  return {
+    ...board,
+    columns: board.columns.map((col) =>
+      col.id === column.id
+        ? { ...col, cardIds: [...col.cardIds, action.cardId] }
+        : col,
+    ),
+    cards: { ...board.cards, [action.cardId]: nextCard },
+  };
+}
+
+/** Archive every card of a column in one undoable step (clear "Done"). */
+function archiveColumnCards(board: Board, action: ArchiveColumnCardsAction): Board {
+  const column = board.columns.find((col) => col.id === action.columnId);
+  if (!column || column.cardIds.length === 0) return board;
+  const now = Date.now();
+  const cards = { ...board.cards };
+  for (const cardId of column.cardIds) {
+    const target = cards[cardId];
+    if (!target || target.archivedAt !== undefined) continue;
+    let nextCard: Card = { ...target, archivedAt: now, updatedAt: now };
+    nextCard = appendActivity(nextCard, "archived");
+    cards[cardId] = nextCard;
+  }
+  return {
+    ...board,
+    columns: board.columns.map((col) =>
+      col.id === action.columnId ? { ...col, cardIds: [] } : col,
+    ),
+    cards,
+  };
 }
 
 /**
@@ -1126,6 +1213,18 @@ export function boardReducer(
     }
     case "DELETE_CARD":
       return commit(state, index, deleteCard(board, action));
+    case "ARCHIVE_CARD": {
+      const next = archiveCard(board, action);
+      return next === board ? state : commit(state, index, next);
+    }
+    case "UNARCHIVE_CARD": {
+      const next = unarchiveCard(board, action);
+      return next === board ? state : commit(state, index, next);
+    }
+    case "ARCHIVE_COLUMN_CARDS": {
+      const next = archiveColumnCards(board, action);
+      return next === board ? state : commit(state, index, next);
+    }
     case "TOGGLE_CARD_LABEL": {
       const next = toggleCardLabel(board, action);
       return next === board ? state : commit(state, index, next);
