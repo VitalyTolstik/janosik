@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowRightLeft, CalendarClock, CopyPlus, Trash2 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
@@ -42,6 +42,9 @@ interface CardDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+/** Idle gap after the last keystroke that stamps the final `updatedAt`. */
+const QUIET_TOUCH_DELAY_MS = 800;
+
 /**
  * Card detail popover: edit the title, pick a label, move the card to another
  * column and delete it (with confirmation). Title changes are saved live.
@@ -50,6 +53,7 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
   const {
     board,
     updateCard,
+    touchCard,
     toggleCardLabel,
     addLabel,
     renameLabel,
@@ -68,6 +72,33 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
   // otherwise the editor DOM keeps the oversized text the store rejected.
   const [overflowTick, setOverflowTick] = useState(0);
   const overLimitRef = useRef(false);
+  // Quiet updatedAt (TASK-18): live edits dispatch with quiet:true and the
+  // debounced touch commits one timestamp per editing session, so sorting
+  // by "updated" doesn't reshuffle mid-typing and exports stay clean.
+  const touchTimerRef = useRef<number | null>(null);
+  const touchCardRef = useRef(touchCard);
+  touchCardRef.current = touchCard;
+  const cardIdRef = useRef(cardId);
+  cardIdRef.current = cardId;
+  const scheduleTouch = () => {
+    if (touchTimerRef.current !== null) window.clearTimeout(touchTimerRef.current);
+    touchTimerRef.current = window.setTimeout(() => {
+      touchTimerRef.current = null;
+      if (cardIdRef.current) touchCardRef.current(cardIdRef.current);
+    }, QUIET_TOUCH_DELAY_MS);
+  };
+  useEffect(
+    () => () => {
+      // Flush a pending commit: closing the dialog right after typing
+      // must still stamp the final time, not drop it.
+      if (touchTimerRef.current !== null) {
+        window.clearTimeout(touchTimerRef.current);
+        touchTimerRef.current = null;
+        if (cardIdRef.current) touchCardRef.current(cardIdRef.current);
+      }
+    },
+    [],
+  );
 
   if (!board || !cardId) {
     // Dialog stays closed when there's nothing to show.
@@ -161,7 +192,10 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                 autoFocus
                 value={card.title}
                 maxLength={LIMITS.cardTitle}
-                onChange={(e) => updateCard(card.id, { title: e.target.value })}
+                onChange={(e) => {
+                  updateCard(card.id, { title: e.target.value }, { quiet: true });
+                  scheduleTouch();
+                }}
                 onFocus={(e) => e.target.select()}
                 rows={3}
                 className="resize-none break-words"
@@ -204,14 +238,18 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                         t("limits.exceeded", { limit: LIMITS.description }),
                       );
                     }
-                    updateCard(card.id, {
-                      description: description.slice(0, LIMITS.description),
-                    });
+                    updateCard(
+                      card.id,
+                      { description: description.slice(0, LIMITS.description) },
+                      { quiet: true },
+                    );
+                    scheduleTouch();
                     setOverflowTick((n) => n + 1);
                     return;
                   }
                   overLimitRef.current = false;
-                  updateCard(card.id, { description });
+                  updateCard(card.id, { description }, { quiet: true });
+                  scheduleTouch();
                 }}
                 placeholder={t("card.descriptionPlaceholder")}
               />
