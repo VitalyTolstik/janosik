@@ -152,15 +152,22 @@ describe("CardDialog due dates", () => {
     localStorage.clear();
   });
 
-  /** Click a calendar day (by its day-of-month text) inside the popover. */
+  /** Click a calendar day (by its day-of-month text) inside the popover.
+      The calendar is lazy (TASK-19) — wait for the chunk to resolve. */
   async function pickDay(
     user: ReturnType<typeof userEvent.setup>,
     day: string,
   ) {
+    await waitFor(() => {
+      expect(
+        [...document.querySelectorAll("button[data-day]")].some(
+          (b) => b.textContent === day,
+        ),
+      ).toBe(true);
+    });
     const target = [...document.querySelectorAll("button[data-day]")].find(
       (b) => b.textContent === day,
     );
-    expect(target).toBeDefined();
     await user.click(target as HTMLElement);
   }
 
