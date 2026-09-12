@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import { formatDate, formatRelative, useI18n } from "@/i18n";
+import { formatDate, formatRelative, useHour12, useI18n } from "@/i18n";
 import type { CardActivityEvent, CardActivityType } from "@/types/kanban";
 
 /** Muted icon per event kind — the timeline's visual anchor. */
@@ -47,6 +47,7 @@ interface CardActivityFeedProps {
  */
 export function CardActivityFeed({ activity, createdAt }: CardActivityFeedProps) {
   const { t, lang } = useI18n();
+  const hour12 = useHour12();
   const [expanded, setExpanded] = useState(false);
 
   const stored = activity ?? [];
@@ -109,9 +110,9 @@ export function CardActivityFeed({ activity, createdAt }: CardActivityFeedProps)
                 <time
                   className="shrink-0 text-[11px] text-muted-foreground/70"
                   dateTime={new Date(event.at).toISOString()}
-                  title={formatDate(event.at, lang)}
+                  title={formatDate(event.at, lang, hour12)}
                 >
-                  {formatRelative(event.at, lang)}
+                  {formatRelative(event.at, lang, Date.now(), hour12)}
                 </time>
               </li>
             );
