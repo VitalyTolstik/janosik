@@ -298,6 +298,7 @@ function ChecklistCard({
       >
         <ListTodo className="h-4 w-4 shrink-0 text-muted-foreground/60" />
         <Input
+          name="checklist-new-item"
           value={newItem}
           maxLength={LIMITS.checklistItem}
           disabled={checklist.items.length >= LIMITS.itemsPerChecklist}
@@ -359,6 +360,7 @@ function TitleInput({
     <span className="relative min-w-0 flex-1">
       <Input
         autoFocus
+        name="checklist-item-edit"
         defaultValue={defaultValue}
         maxLength={maxLength}
         onChange={(e) => {

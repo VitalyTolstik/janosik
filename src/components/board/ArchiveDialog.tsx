@@ -80,6 +80,7 @@ export function ArchiveDialog({ open, onOpenChange }: ArchiveDialogProps) {
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
+              name="archive-search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t("archive.searchPlaceholder")}

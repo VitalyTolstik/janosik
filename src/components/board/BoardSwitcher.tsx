@@ -228,6 +228,7 @@ export function BoardSwitcher() {
         <div className="relative flex items-center gap-2 border-b px-3 py-2.5">
           <Search size={15} className="shrink-0 text-muted-foreground" />
           <input
+            name="board-search"
             ref={searchRef}
             value={query}
             maxLength={LIMITS.query}
@@ -443,6 +444,7 @@ export function BoardSwitcher() {
             <div className="relative flex items-center gap-2 rounded-lg px-2 py-1 ring-1 ring-primary/30">
               <Plus size={15} className="shrink-0 text-primary" />
               <input
+                name="board-create"
                 ref={createRef}
                 value={createDraft}
                 maxLength={LIMITS.boardTitle}

@@ -37,6 +37,7 @@ export function BoardTitle() {
   return editing ? (
     <span className="relative inline-block">
       <input
+        name="board-title-edit"
         ref={inputRef}
         value={draft}
         maxLength={LIMITS.boardTitle}

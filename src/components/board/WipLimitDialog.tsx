@@ -65,6 +65,7 @@ export function WipLimitDialog({
         </DialogHeader>
         <Input
           autoFocus
+          name="wip-limit"
           type="number"
           inputMode="numeric"
           min={1}
