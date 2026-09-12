@@ -202,6 +202,7 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
               </label>
               <Textarea
                 id="card-title-input"
+                name="card-title"
                 autoFocus
                 value={card.title}
                 maxLength={LIMITS.cardTitle}

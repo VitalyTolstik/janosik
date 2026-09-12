@@ -153,6 +153,7 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
           <div className="relative border-b border-border p-3">
             <Input
               ref={inputRef}
+              name="global-search"
               value={rawQuery}
               maxLength={LIMITS.query}
               aria-describedby={showRemaining(rawQuery.length, LIMITS.query) ? "search-query-limit" : undefined}

@@ -86,6 +86,7 @@ export function AddColumnControl({
     <div className="flex w-[80vw] max-w-72 shrink-0 self-start flex-col gap-2 rounded-xl border border-border bg-card/60 p-3 sm:w-72 sm:max-w-none">
       <Input
         autoFocus
+        name="column-create"
         value={title}
         maxLength={LIMITS.columnTitle}
         onChange={(event) => setTitle(event.target.value)}

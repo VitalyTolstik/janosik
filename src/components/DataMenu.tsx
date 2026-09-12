@@ -165,6 +165,7 @@ export function DataMenu() {
       </DropdownMenu>
       <input
         ref={inputRef}
+        name="import-file"
         type="file"
         accept="application/json,.json"
         className="hidden"
