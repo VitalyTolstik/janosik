@@ -132,6 +132,11 @@ export interface AddCardAction {
   title: string;
   /** Labels to attach to the new card right away (from the composer). */
   labelIds?: string[];
+  /**
+   * Insert position within the column (inline "add between cards").
+   * Clamped to [0, count]; omitted appends to the end.
+   */
+  atIndex?: number;
 }
 
 export interface UpdateCardAction {
@@ -426,11 +431,16 @@ function addCard(board: Board, action: AddCardAction): Board {
   };
   return {
     ...board,
-    columns: board.columns.map((col) =>
-      col.id === action.columnId
-        ? { ...col, cardIds: [...col.cardIds, newCard.id] }
-        : col,
-    ),
+    columns: board.columns.map((col) => {
+      if (col.id !== action.columnId) return col;
+      // Inline insert (hover zone between cards) vs plain append.
+      if (action.atIndex === undefined) {
+        return { ...col, cardIds: [...col.cardIds, newCard.id] };
+      }
+      const ids = [...col.cardIds];
+      ids.splice(Math.max(0, Math.min(action.atIndex, ids.length)), 0, newCard.id);
+      return { ...col, cardIds: ids };
+    }),
     cards: { ...board.cards, [newCard.id]: newCard },
   };
 }

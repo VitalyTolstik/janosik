@@ -15,7 +15,7 @@ import { LimitCounter } from "@/components/ui/limit-counter";
 
 interface CardComposerProps {
   /** Called with the trimmed title and the labels picked before adding. */
-  onSubmit: (title: string, labelIds?: string[]) => void;
+  onSubmit: (title: string, labelIds?: string[], atIndex?: number) => void;
   /** Board labels to offer inline — picked before the card is created. */
   labels?: Label[];
   placeholder?: string;
@@ -28,6 +28,12 @@ interface CardComposerProps {
   disabled?: boolean;
   /** Tooltip text shown while blocked. */
   disabledReason?: string;
+  /** Insert position passed to onSubmit (inline hover-zone composer). */
+  atIndex?: number;
+  /** Start in the open (textarea) state — inline zones open in place. */
+  defaultComposing?: boolean;
+  /** Called whenever the composer returns to the idle state. */
+  onClose?: () => void;
 }
 
 /**
@@ -46,9 +52,12 @@ export function CardComposer({
   columnId,
   disabled,
   disabledReason,
+  atIndex,
+  defaultComposing = false,
+  onClose,
 }: CardComposerProps) {
   const { t } = useI18n();
-  const [composing, setComposing] = useState(false);
+  const [composing, setComposing] = useState(defaultComposing);
   const [title, setTitle] = useState("");
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   // The composer's own region — blur inside it (label chips, buttons) is
@@ -59,11 +68,16 @@ export function CardComposer({
     setTitle("");
     setSelectedLabels([]);
     setComposing(false);
+    onClose?.();
   };
 
   const commit = () => {
     const trimmed = title.trim();
-    if (trimmed) onSubmit(trimmed, selectedLabels);
+    if (trimmed) {
+      // Keep the 2-arg call for plain appends (assert-friendly for tests).
+      if (atIndex === undefined) onSubmit(trimmed, selectedLabels);
+      else onSubmit(trimmed, selectedLabels, atIndex);
+    }
     setTitle("");
     setSelectedLabels([]);
   };
@@ -190,7 +204,10 @@ export function CardComposer({
         <Button
           size="sm"
           variant="ghost"
-          onClick={() => setComposing(false)}
+          onClick={() => {
+            setComposing(false);
+            onClose?.();
+          }}
           className="text-muted-foreground hover:text-foreground"
           onMouseDown={(event) => event.preventDefault()}
         >

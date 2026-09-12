@@ -512,4 +512,94 @@ describe("TableView interactivity (TASK-14.1)", () => {
 
     expect(await table.findByText("Composed row")).toBeInTheDocument();
   });
+
+  it("adds a card between cards via the inline hover zone", () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    // The zone between "Dated card" and "Plain card" (gap 1) opens an
+    // in-place composer.
+    fireEvent.click(screen.getByTestId("card-insert-1"));
+    const textarea = screen.getByPlaceholderText(
+      "Enter a title for this card…",
+    );
+    fireEvent.change(textarea, { target: { value: "Inserted" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add card" }));
+
+    // The card lands at gap 1: after "Dated card", before "Plain card".
+    const todo = screen
+      .getByRole("heading", { name: "To Do" })
+      .closest("section") as HTMLElement;
+    const inserted = within(todo).getByText("Inserted");
+    const plain = within(todo).getByText("Plain card");
+    expect(
+      inserted.compareDocumentPosition(plain) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    // Rapid entry: the composer re-mounts at its new gap position after the
+    // first commit (autoFocus restores the caret) — the next commit goes
+    // right after "Inserted".
+    const textarea2 = screen.getByPlaceholderText(
+      "Enter a title for this card…",
+    );
+    fireEvent.change(textarea2, { target: { value: "Second" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add card" }));
+    const second = within(todo).getByText("Second");
+    expect(
+      inserted.compareDocumentPosition(second) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("closes the inline composer on Escape and restores the zone", () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    fireEvent.click(screen.getByTestId("card-insert-1"));
+    const textarea = screen.getByPlaceholderText(
+      "Enter a title for this card…",
+    );
+    fireEvent.keyDown(textarea, { key: "Escape" });
+
+    expect(
+      screen.queryByPlaceholderText("Enter a title for this card…"),
+    ).toBeNull();
+    expect(screen.getByTestId("card-insert-1")).toBeInTheDocument();
+  });
+
+  it("hides the inline hover zones when the column is at its WIP limit", () => {
+    const limited = JSON.stringify([
+      {
+        id: "board-wip",
+        title: "WIP",
+        columns: [
+          {
+            id: "col-1",
+            title: "To Do",
+            cardIds: ["card-1"],
+            wipLimit: 1,
+            createdAt: 1,
+          },
+        ],
+        cards: {
+          "card-1": {
+            id: "card-1",
+            title: "Only card",
+            labelIds: [],
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+        labels: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    localStorage.setItem("janosik-boards", limited);
+    renderBoard();
+
+    expect(screen.queryByTestId("card-insert-zone-0")).toBeNull();
+    expect(screen.queryByTestId("card-insert-zone-1")).toBeNull();
+  });
 });
