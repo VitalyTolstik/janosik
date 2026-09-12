@@ -23,6 +23,7 @@ import { BOARD_BACKGROUNDS } from "@/types/board-background";
  * Each option shows a live preview tile of the preset's CSS class; the
  * active one gets a ring + a check badge pinned to the tile's corner,
  * wallpaper-picker style, and dimmed labels on the inactive rows.
+ * (Column transparency/blur live in the board view's ColumnGlassMenu.)
  */
 export function BackgroundSwitcher() {
   const { background, setBackground } = useBoardBackground();

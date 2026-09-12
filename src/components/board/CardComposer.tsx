@@ -134,7 +134,10 @@ export function CardComposer({
         onBlur={handleBlur}
         placeholder={placeholder ?? t("composer.placeholder")}
         rows={2}
-        className="min-h-0 resize-none"
+        // Opaque surface: the composer scrolls flush with the card list and
+        // a transparent input would let the last card's edge bleed through
+        // the top border.
+        className="min-h-0 resize-none bg-card"
       />
       <LimitCounter length={title.length} limit={LIMITS.cardTitle} testId="composer-limit" />
       {labels && labels.length > 0 ? (

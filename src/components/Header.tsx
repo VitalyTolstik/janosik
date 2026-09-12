@@ -27,7 +27,7 @@ export function Header() {
   const isDark = theme === "dark";
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-md sm:px-6">
+    <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-md sm:px-6">
       <div className="flex items-center gap-2 sm:gap-3">
         {/* `group` re-enables the CSS hover animations (feather sway +
             sparkle twinkle) that key off `.group:hover` in index.css. */}

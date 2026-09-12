@@ -8,6 +8,7 @@ import { GlobalSearch } from "@/components/GlobalSearch";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { routes } from "@/routes";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
+import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
@@ -27,7 +28,12 @@ function boardJson(
     id,
     title,
     columns: [
-      { id: `${id}-col`, title: "To do", cardIds: cards.map((c) => c.id), createdAt: 1 },
+      {
+        id: `${id}-col`,
+        title: "To do",
+        cardIds: cards.map((c) => c.id),
+        createdAt: 1,
+      },
     ],
     cards: Object.fromEntries(
       cards.map((c) => [
@@ -51,37 +57,46 @@ function boardJson(
 
 function LocationProbe() {
   const { pathname, search } = useLocation();
-  return <div data-testid="loc">{pathname}{search}</div>;
+  return (
+    <div data-testid="loc">
+      {pathname}
+      {search}
+    </div>
+  );
 }
 
 function renderSearch(initialUrl = routes.board("b-1")) {
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
-        <I18nProvider>
-          <TooltipProvider>
-            <MemoryRouter initialEntries={[initialUrl]}>
-              <BoardProvider>
-                <GlobalSearch />
-                <LocationProbe />
-                <Routes>
-                  <Route path={routes.home} element={<div>home</div>} />
-                  <Route
-                    path={routes.boardPattern}
-                    element={<BoardSection />}
-                  />
-                </Routes>
-              </BoardProvider>
-            </MemoryRouter>
-          </TooltipProvider>
-        </I18nProvider>
+        <BoardGlassProvider>
+          <I18nProvider>
+            <TooltipProvider>
+              <MemoryRouter initialEntries={[initialUrl]}>
+                <BoardProvider>
+                  <GlobalSearch />
+                  <LocationProbe />
+                  <Routes>
+                    <Route path={routes.home} element={<div>home</div>} />
+                    <Route
+                      path={routes.boardPattern}
+                      element={<BoardSection />}
+                    />
+                  </Routes>
+                </BoardProvider>
+              </MemoryRouter>
+            </TooltipProvider>
+          </I18nProvider>
+        </BoardGlassProvider>
       </BoardBackgroundProvider>
     </ThemeProvider>,
   );
 }
 
 async function search(query: string) {
-  fireEvent.click(screen.getByRole("button", { name: "Search cards and boards" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Search cards and boards" }),
+  );
   const input = await screen.findByTestId("global-search-input");
   await userEvent.type(input, query);
   // Debounce (200 ms) — wait for the first result row.
@@ -131,7 +146,9 @@ describe("GlobalSearch", () => {
     await search("newsletter");
     fireEvent.click(screen.getByRole("option"));
     await waitFor(() => {
-      expect(screen.getByTestId("loc")).toHaveTextContent("/board/b-1?card=c-2");
+      expect(screen.getByTestId("loc")).toHaveTextContent(
+        "/board/b-1?card=c-2",
+      );
     });
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
