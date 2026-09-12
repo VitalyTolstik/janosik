@@ -7,6 +7,7 @@ import { Header } from "@/components/Header";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
+import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 
@@ -62,16 +63,18 @@ function renderBoard() {
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
-        <I18nProvider>
-          <TooltipProvider>
-            <MemoryRouter>
-              <BoardProvider>
-                <Header />
-                <BoardSection />
-              </BoardProvider>
-            </MemoryRouter>
-          </TooltipProvider>
-        </I18nProvider>
+        <BoardGlassProvider>
+          <I18nProvider>
+            <TooltipProvider>
+              <MemoryRouter>
+                <BoardProvider>
+                  <Header />
+                  <BoardSection />
+                </BoardProvider>
+              </MemoryRouter>
+            </TooltipProvider>
+          </I18nProvider>
+        </BoardGlassProvider>
       </BoardBackgroundProvider>
     </ThemeProvider>,
   );
