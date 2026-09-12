@@ -781,9 +781,20 @@ only mdxeditor from TASK 2
 - **DoD:** серия правок одной карточки за N секунд даёт один `updatedAt`
   (последний), история/undo не деградируют; тесты.
 
-#### TASK-19 — `bundle-split` · Код-сплит и ускорение загрузки
+#### TASK-19 — `bundle-split` · Код-сплит и ускорение загрузки ✅
 
-- **Статус:** ⏳ в очереди — шаг 7 в §6.0 (самостоятельная задача, не в TASK-22).
+- **Статус:** ✅ реализовано — PR #34 смержен в main. Критический путь
+  1 539 KB raw / 473 KB gzip → **503 KB / 147 KB** (−67%); FCP (CPU x4)
+  344 → **212 мс**. `React.lazy` для DescriptionEditor (MDXEditor+Lexical,
+  640 KB — грузится при первом открытии карточки) и календаря
+  (react-day-picker + ru-локаль по требованию — при первом поповере
+  даты; FilterBar избавлен от date-fns). Vendor-чанки через rolldown
+  `codeSplitting` (Vite 8): react/radix/dndkit/datefns. Грабли:
+  `includeDependenciesRecursively` тянул react-dom в чанк редактора;
+  manual-группа MDXEditor ломала CJS-интероп rolldown (краш в prod);
+  статический импорт `react-day-picker/locale` отменял лень календаря.
+  CDP-проверено в prod: тяжёлые чанки не грузятся на старте. **358
+  тестов в 28 файлах.**
 - **Зачем:** бандл 1 354 KB raw / 418 KB gzip одним чанком; FCP 460 мс
   (CPU x4). Анализ показал: ~половину бандла дают MDXEditor+Lexical и
   day-picker, которые нужны только при открытии диалога/поповера —
