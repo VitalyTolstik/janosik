@@ -103,7 +103,7 @@ export interface BoardScopedAction {
   boardId?: string;
 }
 
-type BoardScoped<T extends object> = T & BoardScopedAction;
+export type BoardScoped<T extends object> = T & BoardScopedAction;
 
 export interface AddColumnAction {
   type: "ADD_COLUMN";
@@ -145,6 +145,22 @@ export interface UpdateCardAction {
   /** Partial patch — set only the fields that changed. */
   title?: string;
   description?: string;
+  /**
+   * Live-edit marker: per-keystroke edits from an open editor keep
+   * `updatedAt` quiet. The debounced TOUCH_CARD that ends the editing
+   * session stamps the final time.
+   */
+  quiet?: boolean;
+}
+
+export interface TouchCardAction {
+  type: "TOUCH_CARD";
+  cardId: string;
+  /**
+   * Commit the "last edited" timestamp after a burst of quiet live
+   * edits — one `updatedAt` per editing session, not one per keystroke.
+   */
+  at?: number;
 }
 
 export interface DeleteCardAction {
@@ -337,6 +353,7 @@ export type BoardAction =
   | BoardScoped<RenameBoardAction>
   | BoardScoped<AddCardAction>
   | BoardScoped<UpdateCardAction>
+  | BoardScoped<TouchCardAction>
   | BoardScoped<DeleteCardAction>
   | BoardScoped<ToggleCardLabelAction>
   | BoardScoped<AddLabelAction>
@@ -467,7 +484,12 @@ function updateCard(board: Board, action: UpdateCardAction): Board {
   ) {
     return board;
   }
-  let nextCard: Card = { ...target, title, description, updatedAt: Date.now() };
+  let nextCard: Card = {
+    ...target,
+    title,
+    description,
+    updatedAt: action.quiet ? target.updatedAt : Date.now(),
+  };
   if (title !== target.title) nextCard = appendActivity(nextCard, "renamed");
   if ((description ?? "") !== (target.description ?? "")) {
     nextCard = appendActivity(nextCard, "description-changed");
@@ -673,6 +695,17 @@ function deleteLabel(board: Board, action: DeleteLabelAction): Board {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+/** Stamp the card's `updatedAt` after a burst of quiet live edits. */
+function touchCard(board: Board, action: TouchCardAction): Board {
+  const target = board.cards[action.cardId];
+  if (!target) return board;
+  const at = action.at ?? Date.now();
+  return {
+    ...board,
+    cards: { ...board.cards, [action.cardId]: { ...target, updatedAt: at } },
+  };
 }
 
 /**
@@ -1085,6 +1118,10 @@ export function boardReducer(
       return commit(state, index, addCard(board, action));
     case "UPDATE_CARD": {
       const next = updateCard(board, action);
+      return next === board ? state : commit(state, index, next);
+    }
+    case "TOUCH_CARD": {
+      const next = touchCard(board, action);
       return next === board ? state : commit(state, index, next);
     }
     case "DELETE_CARD":

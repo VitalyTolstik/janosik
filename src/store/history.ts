@@ -1,4 +1,10 @@
-import type { Board, BoardAction } from "@/store/board-reducer";
+import type {
+  Board,
+  BoardAction,
+  BoardScoped,
+  TouchCardAction,
+  UpdateCardAction,
+} from "@/store/board-reducer";
 
 /**
  * Undo/redo history for a single board, built on top of the pure reducer.
@@ -8,10 +14,20 @@ import type { Board, BoardAction } from "@/store/board-reducer";
  * board, the provider hands the current board to `push`, and `undo`/`redo`
  * hand back complete board snapshots that the reducer restores verbatim.
  *
- * Coalescing: consecutive UPDATE_CARD actions for the *same* card collapse
- * into a single history step, so typing a long title produces one undo,
- * not one per keystroke.
+/**
+ * Coalescing: consecutive UPDATE_CARD / TOUCH_CARD actions for the *same*
+ * card collapse into a single history step, so typing a long title (plus
+ * the debounced quiet-edit commit) produces one undo, not one per keystroke.
  */
+type CoalescibleAction =
+  | BoardScoped<UpdateCardAction>
+  | BoardScoped<TouchCardAction>;
+
+function asCoalescible(action: BoardAction): CoalescibleAction | null {
+  return action.type === "UPDATE_CARD" || action.type === "TOUCH_CARD"
+    ? action
+    : null;
+}
 
 const DEFAULT_LIMIT = 50;
 
@@ -24,11 +40,9 @@ export class BoardHistory {
 
   /** Record the board that `action` is about to replace. */
   push(previous: Board, action: BoardAction): void {
-    const coalesce =
-      this.lastAction !== null &&
-      this.lastAction.type === "UPDATE_CARD" &&
-      action.type === "UPDATE_CARD" &&
-      this.lastAction.cardId === action.cardId;
+    const last = this.lastAction && asCoalescible(this.lastAction);
+    const next = asCoalescible(action);
+    const coalesce = last !== null && next !== null && last.cardId === next.cardId;
 
     if (!coalesce) {
       this.past.push(previous);

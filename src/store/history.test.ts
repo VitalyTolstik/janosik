@@ -14,8 +14,12 @@ function freshState() {
   return initialBoardState()[0];
 }
 
-function updateCardAction(cardId: string, title: string): BoardAction {
-  return { type: "UPDATE_CARD", cardId, title };
+function updateCardAction(
+  cardId: string,
+  title: string,
+  extra?: { quiet?: boolean },
+): BoardAction {
+  return { type: "UPDATE_CARD", cardId, title, ...extra };
 }
 
 describe("BoardHistory", () => {
@@ -80,6 +84,19 @@ describe("BoardHistory", () => {
     history.push(first, { type: "ADD_CARD", columnId: "col-done", title: "X" });
     history.undo(freshState());
     expect(history.canUndo()).toBe(true);
+  });
+
+  it("coalesces the debounced TOUCH_CARD into the editing step", () => {
+    const history = new BoardHistory();
+    const first = freshState();
+    history.push(first, updateCardAction("card-1", "T"));
+    history.push(first, updateCardAction("card-1", "Ty", { quiet: true }));
+    history.push(first, { type: "TOUCH_CARD", cardId: "card-1" });
+    // Quiet edits + their touch commit are one undo step.
+    expect(history.canUndo()).toBe(true);
+    const undone = history.undo(freshState());
+    expect(undone).toEqual(first);
+    expect(history.canUndo()).toBe(false);
   });
 
   it("respects the step limit", () => {
