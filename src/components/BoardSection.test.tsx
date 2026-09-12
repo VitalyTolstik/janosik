@@ -356,11 +356,72 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
       within(screen.getByTestId("unscheduled-list")).queryByText("Brand new"),
     ).toBeNull();
   });
+
+  it("cancels the day panel composer draft", () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    fireEvent.click(
+      document.querySelector(`[data-date="${todayKey()}"]`) as Element,
+    );
+
+    const input = screen.getByTestId("day-composer-input");
+    fireEvent.change(input, { target: { value: "Never added" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(input).toHaveValue("");
+    // Nothing was created — the day cell has no "Never added" chip.
+    const today = document.querySelector(`[data-date="${todayKey()}"]`);
+    expect(
+      within(today as HTMLElement).queryByText("Never added"),
+    ).toBeNull();
+  });
+
+  it("attaches labels from the day panel composer", () => {
+    localStorage.setItem("janosik-boards", boardWithLabels());
+    renderBoard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    fireEvent.click(
+      document.querySelector(`[data-date="${todayKey()}"]`) as Element,
+    );
+
+    // Pick a label before committing — it must land on the new card.
+    const design = within(screen.getByTestId("day-panel")).getByRole(
+      "button",
+      { name: "Design" },
+    );
+    fireEvent.click(design);
+    expect(design).toHaveAttribute("aria-pressed", "true");
+
+    const input = screen.getByTestId("day-composer-input");
+    fireEvent.change(input, { target: { value: "Labeled" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // Close the auto-opened dialog for the fresh card.
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+    // The chip on today's cell carries the label (stripe + tooltip).
+    const chip = within(
+      document.querySelector(`[data-date="${todayKey()}"]`) as HTMLElement,
+    ).getByText("Labeled").closest("button") as HTMLElement;
+    expect(chip.title).toContain("Design");
+  });
 });
 
+/** The due-card board, plus two board labels offered to the composers. */
+function boardWithLabels(): string {
+  const board = JSON.parse(boardWithDueCard()) as Record<string, unknown>[];
+  (board[0] as { labels: unknown }).labels = [
+    { id: "l-design", name: "Design", color: "indigo" },
+    { id: "l-urgent", name: "Urgent", color: "red" },
+  ];
+  return JSON.stringify(board);
+}
+
 /** A board with three cards in one column, stored in a non-alphabetical order. */
-function boardWithThreeCards(): string {
-  return JSON.stringify([
+function boardWithThreeCards(): string {  return JSON.stringify([
     {
       id: "board-sort",
       title: "Sorting",
@@ -480,6 +541,46 @@ describe("TableView interactivity (TASK-14.1)", () => {
       .find((row) => row.textContent?.includes("Dated card"));
     expect(movedRow).toBeDefined();
     expect(within(movedRow as HTMLElement).getByText("Doing")).toBeInTheDocument();
+  });
+
+  it("adds a card from the table composer with a picked label", () => {
+    localStorage.setItem("janosik-boards", boardWithLabels());
+    renderBoard();
+    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+
+    fireEvent.click(screen.getByTestId("table-add-card"));
+    // The popover composer offers the board labels as chips.
+    const design = within(
+      screen.getByTestId("table-composer-labels"),
+    ).getByRole("button", { name: "Design" });
+    fireEvent.click(design);
+    expect(design).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.change(screen.getByTestId("table-composer-input"), {
+      target: { value: "Labeled row" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add card" }));
+
+    // The new row's labels cell carries the picked label.
+    const row = within(screen.getByRole("table"))
+      .getAllByTestId("table-row")
+      .find((r) => r.textContent?.includes("Labeled row"));
+    expect(row).toBeDefined();
+    expect(within(row as HTMLElement).getByText("Design")).toBeInTheDocument();
+  });
+
+  it("cancels the table composer popover", () => {
+    localStorage.setItem("janosik-boards", boardWithLabels());
+    renderBoard();
+    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+
+    fireEvent.click(screen.getByTestId("table-add-card"));
+    expect(
+      screen.getByTestId("table-composer-input"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByTestId("table-composer-input")).toBeNull();
   });
 
   it("shows optional columns from the settings menu and persists them", async () => {

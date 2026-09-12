@@ -9,8 +9,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
-import { LABEL_COLOR_DOT, LIMITS, type Label } from "@/types/kanban";
+import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
+import { LIMITS, type Label } from "@/types/kanban";
 import { LimitCounter } from "@/components/ui/limit-counter";
 
 interface CardComposerProps {
@@ -154,42 +154,11 @@ export function CardComposer({
         className="min-h-0 resize-none bg-card"
       />
       <LimitCounter length={title.length} limit={LIMITS.cardTitle} testId="composer-limit" />
-      {labels && labels.length > 0 ? (
-        <div
-          className="flex flex-wrap items-center gap-1"
-          data-testid="composer-labels"
-          // Clicking a chip (or the gap between chips) must not move focus
-          // out of the textarea — keep it inside the composer.
-          onMouseDown={(event) => event.preventDefault()}
-        >
-          {labels.map((label) => {
-            const isSelected = selectedLabels.includes(label.id);
-            return (
-              <button
-                key={label.id}
-                type="button"
-                aria-pressed={isSelected}
-                onClick={() => toggleLabel(label.id)}
-                className={cn(
-                  "inline-flex h-5 items-center gap-1 rounded-full border px-1.5 text-[10px] font-medium transition-colors",
-                  isSelected
-                    ? "border-primary/50 bg-primary/10 text-foreground"
-                    : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground",
-                )}
-              >
-                <span
-                  aria-hidden
-                  className={cn(
-                    "h-1.5 w-1.5 shrink-0 rounded-full",
-                    LABEL_COLOR_DOT[label.color],
-                  )}
-                />
-                {label.name}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
+      <ComposerLabelPicker
+        labels={labels}
+        selected={selectedLabels}
+        onToggle={toggleLabel}
+      />
       <div className="flex items-center gap-2">
         <Button
           size="sm"

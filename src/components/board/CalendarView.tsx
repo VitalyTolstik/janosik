@@ -29,6 +29,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
 import { formatDateOnly, formatTime, useI18n } from "@/i18n";
@@ -369,7 +370,7 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
   }
 
   /** Creates a card due on `day` from the day-panel composer. */
-  const createCardOn = (day: Date, title: string) => {
+  const createCardOn = (day: Date, title: string, labelIds?: string[]) => {
     const trimmed = title.trim();
     if (!trimmed) return;
     const column = board.columns[0];
@@ -385,7 +386,7 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
       prevIds: [...column.cardIds],
       dueTs: dayTimestamp(day),
     };
-    addCard(column.id, trimmed);
+    addCard(column.id, trimmed, labelIds);
   };
 
   /** Quick-add from the unscheduled panel: the card lands in the first
@@ -720,7 +721,12 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
                     <p className="mb-1.5 px-1 text-xs font-semibold text-foreground">
                       {formatDateOnly(day.getTime(), lang)}
                     </p>
-                    <DayComposer onSubmit={(title) => createCardOn(day, title)} />
+                    <DayComposer
+                      labels={board.labels}
+                      onSubmit={(title, labelIds) =>
+                        createCardOn(day, title, labelIds)
+                      }
+                    />
                     <div className="mt-2 max-h-56 space-y-1 overflow-y-auto border-t border-border/60 pt-2">
                       {entries.length === 0 ? (
                         <p className="px-1 text-[11px] text-muted-foreground/70">
@@ -782,32 +788,86 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
 }
 
 /** Mini-composer at the top of the day panel (TASK-14.1 п.4). */
-function DayComposer({ onSubmit }: { onSubmit: (title: string) => void }) {
+function DayComposer({
+  labels,
+  onSubmit,
+}: {
+  labels?: Label[];
+  onSubmit: (title: string, labelIds?: string[]) => void;
+}) {
   const { t } = useI18n();
   const [draft, setDraft] = useState("");
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
+
+  const toggleLabel = (labelId: string) => {
+    setSelectedLabels((prev) =>
+      prev.includes(labelId)
+        ? prev.filter((id) => id !== labelId)
+        : [...prev, labelId],
+    );
+  };
+
+  const submit = () => {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    onSubmit(trimmed, selectedLabels);
+    setDraft("");
+    setSelectedLabels([]);
+  };
 
   return (
-    <div className="flex items-center gap-1.5">
-      <ListPlus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-      <Input
-        value={draft}
-        maxLength={LIMITS.cardTitle}
-        data-testid="day-composer-input"
-        aria-label={t("composer.add")}
-        placeholder={t("composer.placeholder")}
-        className="h-7 text-xs"
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && draft.trim()) {
-            onSubmit(draft);
-            setDraft("");
-          }
-          if (e.key === "Escape") {
-            setDraft("");
-            (e.target as HTMLElement).blur();
-          }
-        }}
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <ListPlus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        <Input
+          value={draft}
+          maxLength={LIMITS.cardTitle}
+          data-testid="day-composer-input"
+          aria-label={t("composer.add")}
+          placeholder={t("composer.placeholder")}
+          className="h-7 text-xs"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              submit();
+            }
+            if (e.key === "Escape") {
+              setDraft("");
+              setSelectedLabels([]);
+              (e.target as HTMLElement).blur();
+            }
+          }}
+        />
+      </div>
+      <ComposerLabelPicker
+        labels={labels}
+        selected={selectedLabels}
+        onToggle={toggleLabel}
+        testId="day-composer-labels"
       />
+      {/* Same Добавить/Отмена pair as the board composer — Отмена just
+          clears the draft, the panel itself stays open. */}
+      <div className="flex items-center gap-1.5">
+        <Button
+          size="sm"
+          className="h-6 flex-1 text-xs"
+          disabled={!draft.trim()}
+          onClick={submit}
+        >
+          {t("composer.submit")}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            setDraft("");
+            setSelectedLabels([]);
+          }}
+        >
+          {t("common.cancel")}
+        </Button>
+      </div>
     </div>
   );
 }
