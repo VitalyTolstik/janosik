@@ -88,7 +88,9 @@ interface BoardContextValue {
     labelIds?: string[],
     atIndex?: number,
   ) => void;
-  updateCard: (cardId: string, patch: CardPatch) => void;
+  updateCard: (cardId: string, patch: CardPatch, opts?: { quiet?: boolean }) => void;
+  /** Stamps the card's `updatedAt` after a burst of quiet live edits. */
+  touchCard: (cardId: string) => void;
   deleteCard: (cardId: string) => void;
   toggleCardLabel: (cardId: string, labelId: string) => void;
   addLabel: (label: Label) => void;
@@ -441,6 +443,7 @@ function createBoardActions(
   | "deleteColumn"
   | "addCard"
   | "updateCard"
+  | "touchCard"
   | "deleteCard"
   | "toggleCardLabel"
   | "addLabel"
@@ -472,8 +475,9 @@ function createBoardActions(
       dispatch({ type: "DELETE_COLUMN", columnId }),
     addCard: (columnId: string, title: string, labelIds?: string[], atIndex?: number) =>
       dispatch({ type: "ADD_CARD", columnId, title, labelIds, atIndex }),
-    updateCard: (cardId: string, patch: CardPatch) =>
-      dispatch({ type: "UPDATE_CARD", cardId, ...patch }),
+    updateCard: (cardId: string, patch: CardPatch, opts?: { quiet?: boolean }) =>
+      dispatch({ type: "UPDATE_CARD", cardId, ...patch, quiet: opts?.quiet }),
+    touchCard: (cardId: string) => dispatch({ type: "TOUCH_CARD", cardId }),
     deleteCard: (cardId: string) => dispatch({ type: "DELETE_CARD", cardId }),
     toggleCardLabel: (cardId: string, labelId: string) =>
       dispatch({ type: "TOGGLE_CARD_LABEL", cardId, labelId }),
