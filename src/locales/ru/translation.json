@@ -297,6 +297,8 @@
   "card.delete": "Удалить карточку",
   "card.duplicate": "Дублировать карточку",
   "card.archive": "Архивировать",
+  "card.archiveConfirmYes": "Да, архивировать",
+  "card.archiveConfirmCancel": "Отмена",
   "card.unarchive": "Вернуть на доску",
   "card.restoreTo": "Восстановить в столбец",
   "card.deleteForever": "Удалить навсегда",
