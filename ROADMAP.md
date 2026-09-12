@@ -938,9 +938,20 @@ only mdxeditor from TASK 2
   ответ (позиции, серверные поля). Провал вызова → откат экшена + тост.
   **id генерирует клиент** (`createId()`) и передаёт в POST → идемпотентные
   ретраи, undo создания = `DELETE` того же id.
-- **Доступ — membership**: `BoardMember {board, user, role: OWNER|MEMBER}`
-  (VIEWER — позже). Guard проверяет membership на каждом board-scoped
-  endpoint. `actorId` во всей активности — реальный юзер.
+- **Доступ — membership с ролями (решение пользователя 2026-09):**
+  `BoardMember {board, user, role: ADMIN|MEMBER|VIEWER, expiresAt?}`.
+  Создатель доски — первый ADMIN. **ADMIN** — управление доской (роли
+  участников, архив/удаление, invite); **MEMBER** («клиент») — создавать/
+  редактировать/архивировать карточки; **VIEWER** — только чтение,
+  опционально **с ограничением по времени** (`expiresAt` — протух → guard
+  отдаёт 403, запись чистится лениво). Отдельно **супер-админ системы**
+  (`User.isSuperAdmin`, первый зарегистрированный): видит и управляет
+  всеми досками/юзерами. Guard проверяет роль на каждом board-scoped
+  endpoint; `actorId` во всей активности — реальный юзер.
+- **API-токены (после ядра, §7.6):** персональные токены «вместо пароля»
+  для скриптов/интеграций — действуют от имени своего юзера (его роли),
+  в БД только hash, показ один раз, ревокация и `lastUsedAt`; супер-админ
+  может выпускать/отзывать токены юзеров.
 - **Синхронизация мульти-юзеров:** MVP — refetch агрегата доски при focus
   окна; затем **SSE** (`GET /boards/:id/events`) в TASK-30 — живые изменения
   чужих курсоров/карточек. WebRTC/CRDT не нужны (разрешение конфликтов —
@@ -1008,10 +1019,12 @@ model User {
   email         String         @unique
   passwordHash  String
   displayName   String?
+  isSuperAdmin  Boolean        @default(false)   // первый юзер; управление системой
   createdAt     DateTime       @default(now())
   memberships   BoardMember[]
   activity      Activity[]
   comments      Comment[]
+  apiTokens     ApiToken[]
   refreshTokens RefreshToken[]
 }
 
@@ -1038,18 +1051,32 @@ model Board {
 }
 
 model BoardMember {
-  id        String   @id @default(cuid())
-  board     Board    @relation(fields: [boardId], references: [id])
+  id        String    @id @default(cuid())
+  board     Board     @relation(fields: [boardId], references: [id])
   boardId   String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
   userId    String
-  role      Role     @default(MEMBER)     // OWNER | MEMBER (VIEWER позже)
-  createdAt DateTime @default(now())
+  role      Role      @default(MEMBER)    // ADMIN | MEMBER | VIEWER
+  expiresAt DateTime?                     // VIEWER на срок; протух → 403
+  createdAt DateTime  @default(now())
   @@unique([boardId, userId])
   @@index([userId])                       // «мои доски»
 }
 
-enum Role { OWNER MEMBER }
+enum Role { ADMIN MEMBER VIEWER }
+
+model ApiToken {                          // после ядра (§7.6), схема сразу
+  id          String    @id @default(cuid())
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String
+  name        String                          // «CI», «интеграция …»
+  tokenHash   String    @unique               // показ один раз, храним hash
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  @@index([userId])
+}
 
 model Column {
   id        String   @id               // id от клиента
@@ -1171,9 +1198,10 @@ model Comment {
 | GET | `/boards/:id` | **агрегат доски** — колонки (только активные `cardIds`) + cards-мапа **включая архив** (`archivedAt`) + метки (+ чеклисты) одной выборкой — стартовое состояние UI |
 | PATCH | `/boards/:id` | rename / archive |
 | DELETE | `/boards/:id` | только OWNER |
-| GET | `/boards/:id/members` | участники |
-| POST | `/boards/:id/members` | invite `{email, role}` |
-| DELETE | `/boards/:id/members/:userId` | исключить |
+| GET | `/boards/:id/members` | участники (роль, expiresAt) |
+| POST | `/boards/:id/members` | invite `{email, role, expiresAt?}` — только ADMIN |
+| PATCH | `/boards/:id/members/:userId` | `{role?, expiresAt?}` — смена роли/срока VIEWER, только ADMIN |
+| DELETE | `/boards/:id/members/:userId` | исключить — ADMIN; последний ADMIN защитён |
 
 **Колонки:**
 
@@ -1275,6 +1303,14 @@ envelope в shared на TASK-22). Activity при импорте **не пере
 
 - Уведомления (email/in-app: mention, дедлайны).
 - Вложения (multipart, файловое хранилище).
+- **API-токены** — `POST /auth/tokens` {name, expiresAt?} (токен показывается
+  один раз), `GET /auth/tokens`, `DELETE /auth/tokens/:id`; JwtStrategy
+  принимает и PAT (hash-lookup, `lastUsedAt` тикает); супер-админ выпускает/
+  отзывает токены юзеров (`POST /admin/users/:id/tokens`). Схема
+  `ApiToken` уже в §7.3.
+- **Супер-админ** — `SuperAdminGuard` (`User.isSuperAdmin`): список юзеров и
+  досок, блокировка юзера, доступ к любой доске без membership, выдача
+  ролей системы. Минимум UI — годится отдельная простая страница.
 - **Исполнители (assignee)** — `Card.assigneeId?`, колонка таблицы и бейдж
   на карточке; membership-проверка, что юзер состоит в доске.
 - **Embed-снапшот доски** — `GET /embed/:token`, публичный read-only SSR HTML.
@@ -1287,8 +1323,8 @@ envelope в shared на TASK-22). Activity при импорте **не пере
 | --- | --- | --- | --- | --- |
 | 1 | TASK-22 `monorepo-restructure` | `feature/TASK-22-monorepo` | `git mv` фронта в `ui/`, workspaces, `@janosik/shared` (модель+LIMITS+envelope+STORAGE_KEYS+DTO-типы; envelope сверить с сериалайзером архива/обложек/сроков — round-trip §7.4), `SAVE_DEBOUNCE_MS` в константы, алиасы vite/tsconfig/vitest | 362 теста зелёные в новом layout; tsc/build зелёные |
 | 2 | TASK-23 `backend-scaffold` | `feature/TASK-23-backend-scaffold` | NestJS + Prisma + docker-compose(postgres:16), `/health`, модули-заглушки, общий tsconfig/ESLint, helmet + rate-limit на auth-роутах сразу | `/health` 200; e2e-пайплайн работает; backend-команды DoD в AGENT.md |
-| 3 | TASK-24 `backend-auth` | `feature/TASK-24-backend-auth` | register/login/refresh/logout/me, argon2id, `displayName`, ротация refresh + детект реюза, JwtGuard | e2e: полный цикл auth + реюз revoked → отзыв сессий; guard-роуты 401; rate-limit на /auth/login |
-| 4 | TASK-25 `boards-members` | `feature/TASK-25-boards-members` | Полная схема §7.3 + миграции; boards CRUD, membership (invite/role), `GET /boards/:id` агрегат (активные cardIds + cards с archivedAt), import/export с round-trip cover/due/wip/archived | e2e: CRUD, invite/role, 403 чужой доске; aggregate shape = модель фронта (включая архив) |
+| 3 | TASK-24 `backend-auth` | `feature/TASK-24-backend-auth` | register/login/refresh/logout/me, argon2id, `displayName`, `isSuperAdmin` (первый юзер), ротация refresh + детект реюза, JwtGuard | e2e: полный цикл auth + реюз revoked → отзыв сессий; guard-роуты 401; rate-limit на /auth/login |
+| 4 | TASK-25 `boards-members` | `feature/TASK-25-boards-members` | Полная схема §7.3 + миграции; boards CRUD, membership с ролями ADMIN/MEMBER/VIEWER + `expiresAt` (invite/смена роли — только ADMIN, протухший VIEWER → 403), `GET /boards/:id` агрегат (активные cardIds + cards с archivedAt), import/export с round-trip cover/due/wip/archived | e2e: CRUD, роли (VIEWER-мутация → 403, expiresAt → 403), 403 чужой доске; aggregate shape = модель фронта (включая архив) |
 | 5 | TASK-26 `columns-cards` | `feature/TASK-26-columns-cards` | Колонки и карточки: CRUD, move/reorder с позициями, duplicate (id копии от клиента), archive/unarchive/mass-archive (TASK-18.1), WIP-409, каскады | e2e: CRUD + move + позиции стабильны; archive round-trip; WIP 409; каскад колонки; лимиты гвардят |
 | 6 | TASK-27 `labels-checklists` | `feature/TASK-27-labels-checklists` | Метки (доска+карточка, m2m с позицией), чек-листы + пункты | e2e: m2m round-trip, каскад метки, лимиты коллекций |
 | 7 | TASK-28 `activity-comments` | `feature/TASK-28-activity-comments` | Activity (интерцептор пишет все 10 типов + member/comment), курсорные ленты, комментарии (API готов; UI комментариев — позже, §7.6) | e2e: события на каждый мутирующий вызов, actorId верный, пагинация |
