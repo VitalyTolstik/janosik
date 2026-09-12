@@ -17,6 +17,8 @@
   "data.import": "Import JSON",
     "data.backupNow": "Save a copy now",
   "data.archiveTitle": "Card archive",
+  "data.backupCount_one": "{{count}} copy",
+  "data.backupCount_other": "{{count}} copies",
   "data.backupTitle": "Automatic backups",
   "data.backupEmpty": "No backups yet — they appear automatically while you work.",
   "data.restore": "Restore",
