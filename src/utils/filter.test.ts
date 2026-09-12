@@ -138,6 +138,32 @@ describe("matchesCardFilter", () => {
     ).toBe(false);
   });
 
+  it("uses all-match semantics when labelMatch is all", () => {
+    const both = card("c5", "T", ["a", "b"]);
+    const one = card("c6", "T", ["a"]);
+    const filter = { ...EMPTY_FILTER, labelIds: ["a", "b"], labelMatch: "all" as const };
+    expect(matchesCardFilter(both, filter, NOW)).toBe(true);
+    expect(matchesCardFilter(one, filter, NOW)).toBe(false);
+    // A single selected label behaves the same in both modes.
+    expect(
+      matchesCardFilter(one, { ...EMPTY_FILTER, labelIds: ["a"], labelMatch: "all" }, NOW),
+    ).toBe(true);
+  });
+
+  it("keeps noLabel OR-ed with all-match labels", () => {
+    const unlabeled = card("c7", "T", []);
+    const one = card("c8", "T", ["a"]);
+    const filter = { ...EMPTY_FILTER, labelIds: ["a", "b"], labelMatch: "all" as const, noLabel: true };
+    expect(matchesCardFilter(unlabeled, filter, NOW)).toBe(true);
+    // noLabel is OR-ed with the label match: a card with only "a" neither
+    // has all of a+b nor lacks labels, so it is excluded in ALL mode.
+    expect(matchesCardFilter(one, filter, NOW)).toBe(false);
+    const both = card("c10", "T", ["a", "b"]);
+    expect(matchesCardFilter(both, filter, NOW)).toBe(true);
+    const labeledOther = card("c9", "T", ["z"]);
+    expect(matchesCardFilter(labeledOther, filter, NOW)).toBe(false);
+  });
+
   it("handles noLabel combined with selected labels", () => {
     const unlabeled = card("c3", "T", []);
     // OR: no label OR any selected label.
