@@ -2,7 +2,7 @@ import { CalendarClock } from "lucide-react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { formatDate, formatDateOnly, formatTime, useI18n } from "@/i18n";
+import { formatDate, formatDateOnly, formatTime, useHour12, useI18n } from "@/i18n";
 import { dueStatus, type DueStatus } from "@/utils/due-date";
 
 interface DueBadgeProps {
@@ -17,11 +17,13 @@ interface DueBadgeProps {
  */
 export function DueBadge({ dueDate }: DueBadgeProps) {
   const { t, lang } = useI18n();
+  const hour12 = useHour12();
   const status = dueStatus(dueDate);
   const due = new Date(dueDate);
   const dueTime = formatTime(
     `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`,
     lang,
+    hour12,
   );
 
   return (
@@ -45,7 +47,7 @@ export function DueBadge({ dueDate }: DueBadgeProps) {
         </span>
       </TooltipTrigger>
       <TooltipContent>
-        {t(`dueDate.${status as DueStatus}`, { date: formatDate(dueDate, lang) })}
+        {t(`dueDate.${status as DueStatus}`, { date: formatDate(dueDate, lang, hour12) })}
       </TooltipContent>
     </Tooltip>
   );

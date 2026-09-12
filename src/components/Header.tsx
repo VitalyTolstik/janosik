@@ -5,6 +5,7 @@ import { DataMenu } from "@/components/DataMenu";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ShortcutsDialog } from "@/components/ShortcutsDialog";
+import { TimeFormatSwitcher } from "@/components/TimeFormatSwitcher";
 import { ArrowLeftIcon } from "@/components/ui/arrow-left-icon";
 import { ArrowRightIcon } from "@/components/ui/arrow-right-icon";
 import { MoonIcon } from "@/components/ui/moon-icon";
@@ -91,6 +92,7 @@ export function Header() {
         <GlobalSearch />
         <ShortcutsDialog />
         <BackgroundSwitcher />
+        <TimeFormatSwitcher />
         <LanguageSwitcher />
 
         <Tooltip>
