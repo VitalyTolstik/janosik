@@ -2,6 +2,7 @@ import { FileText, ListChecks, MessageSquare, Pencil, Plus, Settings2 } from "lu
 import { useEffect, useRef, useState } from "react";
 
 import { DueBadge } from "@/components/board/DueBadge";
+import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
 import { LabelPicker } from "@/components/board/LabelPicker";
 import {
   DueDatePickerContent,
@@ -117,6 +118,8 @@ export function TableView({
     useState<OptionalColumn[]>(readStoredColumns);
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
+  // The "+ card" popover is controlled so the composer's Отмена can close it.
+  const [addOpen, setAddOpen] = useState(false);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
 
   // Persist the column choice next to the view/scale choices.
@@ -235,7 +238,7 @@ export function TableView({
     <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/60 backdrop-blur-sm">
       {/* Toolbar: + card composer and the column settings (TASK-14.1 п.10/11). */}
       <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
-        <Popover>
+        <Popover open={addOpen} onOpenChange={setAddOpen}>
           <PopoverTrigger asChild>
             <Button
               variant="outline"
@@ -250,7 +253,11 @@ export function TableView({
           <PopoverContent align="start" className="w-64 p-2">
             <TableCardComposer
               columns={board.columns.map((col) => ({ id: col.id, title: col.title }))}
-              onSubmit={(columnId, title) => addCard(columnId, title)}
+              labels={board.labels}
+              onSubmit={(columnId, title, labelIds) =>
+                addCard(columnId, title, labelIds)
+              }
+              onCancel={() => setAddOpen(false)}
             />
           </PopoverContent>
         </Popover>
@@ -589,24 +596,38 @@ function SortHeader({
   );
 }
 
-/** "+ card" composer body: title input + column chooser (TASK-14.1 п.10). */
+/** "+ card" composer body: title, column chooser and label chips (TASK-14.1 п.10). */
 function TableCardComposer({
   columns,
+  labels,
   onSubmit,
+  onCancel,
 }: {
   columns: { id: string; title: string }[];
-  onSubmit: (columnId: string, title: string) => void;
+  labels?: Label[];
+  onSubmit: (columnId: string, title: string, labelIds?: string[]) => void;
+  onCancel: () => void;
 }) {
   const { t } = useI18n();
   const [title, setTitle] = useState("");
   const [columnId, setColumnId] = useState(columns[0]?.id ?? "");
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
+
+  const toggleLabel = (labelId: string) => {
+    setSelectedLabels((prev) =>
+      prev.includes(labelId)
+        ? prev.filter((id) => id !== labelId)
+        : [...prev, labelId],
+    );
+  };
 
   const selected = columns.find((col) => col.id === columnId);
   const submit = () => {
     const trimmed = title.trim();
     if (!trimmed || !columnId) return;
-    onSubmit(columnId, trimmed);
+    onSubmit(columnId, trimmed, selectedLabels);
     setTitle("");
+    setSelectedLabels([]);
   };
 
   return (
@@ -630,7 +651,7 @@ function TableCardComposer({
             {selected?.title ?? "—"}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuContent align="start" className="max-h-44 w-[var(--radix-dropdown-menu-trigger-width)] min-w-0 overflow-y-auto">
           {columns.map((col) => (
             <DropdownMenuItem key={col.id} onSelect={() => setColumnId(col.id)}>
               {col.title}
@@ -638,9 +659,26 @@ function TableCardComposer({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      <Button size="sm" className="h-7 w-full text-xs" disabled={!title.trim()} onClick={submit}>
-        {t("composer.submit")}
-      </Button>
+      <ComposerLabelPicker
+        labels={labels}
+        selected={selectedLabels}
+        onToggle={toggleLabel}
+        testId="table-composer-labels"
+      />
+      <div className="flex items-center gap-2">
+        <Button size="sm" className="h-7 flex-1 text-xs" disabled={!title.trim()} onClick={submit}>
+          {t("composer.submit")}
+        </Button>
+        {/* Same pair as the board composer: Отмена just closes the popover. */}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-muted-foreground hover:text-foreground"
+          onClick={onCancel}
+        >
+          {t("common.cancel")}
+        </Button>
+      </div>
     </div>
   );
 }

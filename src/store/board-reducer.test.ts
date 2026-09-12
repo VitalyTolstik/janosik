@@ -123,6 +123,29 @@ describe("boardReducer — cards", () => {
     expect(board.cards[done?.cardIds.at(-1) ?? ""]?.labelIds).toEqual([]);
   });
 
+  it("inserts a card at atIndex (inline hover-zone add)", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "ADD_CARD",
+      columnId: "col-done",
+      title: "First!",
+      atIndex: 0,
+    });
+    const done = board.columns.find((c) => c.id === "col-done");
+    const newId = done?.cardIds[0] ?? "";
+    expect(board.cards[newId]?.title).toBe("First!");
+  });
+
+  it("clamps atIndex beyond the column length to an append", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "ADD_CARD",
+      columnId: "col-done",
+      title: "Too far",
+      atIndex: 99,
+    });
+    const done = board.columns.find((c) => c.id === "col-done");
+    expect(board.cards[done?.cardIds.at(-1) ?? ""]?.title).toBe("Too far");
+  });
+
   it("updates a card title", () => {
     const board = reduceBoard(freshBoard(), {
       type: "UPDATE_CARD",

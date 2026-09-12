@@ -16,7 +16,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
-  ListPlus,
   Plus,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -24,11 +23,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Popover,
   PopoverAnchor,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
 import { formatDateOnly, formatTime, useI18n } from "@/i18n";
@@ -369,10 +375,16 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
   }
 
   /** Creates a card due on `day` from the day-panel composer. */
-  const createCardOn = (day: Date, title: string) => {
+  const createCardOn = (
+    day: Date,
+    title: string,
+    labelIds?: string[],
+    columnId?: string,
+  ) => {
     const trimmed = title.trim();
     if (!trimmed) return;
-    const column = board.columns[0];
+    const column =
+      board.columns.find((c) => c.id === columnId) ?? board.columns[0];
     if (!column) return;
     if (column.cardIds.length >= LIMITS.cardsPerColumn) {
       toast.error(
@@ -385,7 +397,7 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
       prevIds: [...column.cardIds],
       dueTs: dayTimestamp(day),
     };
-    addCard(column.id, trimmed);
+    addCard(column.id, trimmed, labelIds);
   };
 
   /** Quick-add from the unscheduled panel: the card lands in the first
@@ -720,7 +732,16 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
                     <p className="mb-1.5 px-1 text-xs font-semibold text-foreground">
                       {formatDateOnly(day.getTime(), lang)}
                     </p>
-                    <DayComposer onSubmit={(title) => createCardOn(day, title)} />
+                    <DayComposer
+                      columns={board.columns.map((col) => ({
+                        id: col.id,
+                        title: col.title,
+                      }))}
+                      labels={board.labels}
+                      onSubmit={(title, labelIds, columnId) =>
+                        createCardOn(day, title, labelIds, columnId)
+                      }
+                    />
                     <div className="mt-2 max-h-56 space-y-1 overflow-y-auto border-t border-border/60 pt-2">
                       {entries.length === 0 ? (
                         <p className="px-1 text-[11px] text-muted-foreground/70">
@@ -781,14 +802,41 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
   );
 }
 
-/** Mini-composer at the top of the day panel (TASK-14.1 п.4). */
-function DayComposer({ onSubmit }: { onSubmit: (title: string) => void }) {
+/** Mini-composer at the top of the day panel (TASK-14.1 п.4) — same body
+ * as the table composer: title, column chooser, label chips, buttons. */
+function DayComposer({
+  columns,
+  labels,
+  onSubmit,
+}: {
+  columns: { id: string; title: string }[];
+  labels?: Label[];
+  onSubmit: (title: string, labelIds?: string[], columnId?: string) => void;
+}) {
   const { t } = useI18n();
   const [draft, setDraft] = useState("");
+  const [columnId, setColumnId] = useState(columns[0]?.id ?? "");
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
+
+  const toggleLabel = (labelId: string) => {
+    setSelectedLabels((prev) =>
+      prev.includes(labelId)
+        ? prev.filter((id) => id !== labelId)
+        : [...prev, labelId],
+    );
+  };
+
+  const selectedColumn = columns.find((col) => col.id === columnId);
+  const submit = () => {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    onSubmit(trimmed, selectedLabels, columnId);
+    setDraft("");
+    setSelectedLabels([]);
+  };
 
   return (
-    <div className="flex items-center gap-1.5">
-      <ListPlus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+    <div className="space-y-1.5">
       <Input
         value={draft}
         maxLength={LIMITS.cardTitle}
@@ -798,16 +846,67 @@ function DayComposer({ onSubmit }: { onSubmit: (title: string) => void }) {
         className="h-7 text-xs"
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && draft.trim()) {
-            onSubmit(draft);
-            setDraft("");
+          if (e.key === "Enter") {
+            submit();
           }
           if (e.key === "Escape") {
             setDraft("");
+            setSelectedLabels([]);
             (e.target as HTMLElement).blur();
           }
         }}
       />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 w-full justify-start text-xs"
+            data-testid="day-composer-column"
+          >
+            {selectedColumn?.title ?? "—"}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="max-h-44 w-[var(--radix-dropdown-menu-trigger-width)] min-w-0 overflow-y-auto">
+          {columns.map((col) => (
+            <DropdownMenuItem
+              key={col.id}
+              onSelect={() => setColumnId(col.id)}
+            >
+              {col.title}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ComposerLabelPicker
+        labels={labels}
+        selected={selectedLabels}
+        onToggle={toggleLabel}
+        testId="day-composer-labels"
+      />
+      {/* Same Добавить/Отмена pair as the board composer — Отмена just
+          clears the draft, the panel itself stays open. */}
+      <div className="flex items-center gap-1.5">
+        <Button
+          size="sm"
+          className="h-7 flex-1 text-xs"
+          disabled={!draft.trim()}
+          onClick={submit}
+        >
+          {t("composer.submit")}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            setDraft("");
+            setSelectedLabels([]);
+          }}
+        >
+          {t("common.cancel")}
+        </Button>
+      </div>
     </div>
   );
 }

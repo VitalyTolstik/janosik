@@ -9,20 +9,24 @@ import {
 } from "react";
 
 /**
- * Column glass settings — how translucent and how blurred the board columns
- * are over the board background. Persisted to localStorage under
+ * Column glass settings — two-position frosted-glass toggles for the board
+ * columns over the board background. Persisted to localStorage under
  * `janosik-board-glass` and applied as CSS custom properties on the document
  * root, so ColumnView stays style-only:
  *
  * - `--janosik-glass-transparency` — 0 (opaque) … 100 (invisible fill)
  * - `--janosik-glass-blur` — backdrop blur radius in px
+ *
+ * The UI is a pair of checkboxes (on/off), so values only ever take the
+ * preset extremes; older slider values from previous versions are
+ * normalized to the nearest preset on load.
  */
 
 const STORAGE_KEY = "janosik-board-glass";
 
-export const GLASS_LIMITS = {
-  transparency: { min: 0, max: 100, step: 20, default: 80 },
-  blur: { min: 0, max: 20, step: 5, default: 5 },
+export const GLASS_PRESETS = {
+  transparency: { off: 0, on: 100 },
+  blur: { off: 0, on: 5 },
 } as const;
 
 export interface BoardGlass {
@@ -32,13 +36,9 @@ export interface BoardGlass {
   blur: number;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
 const DEFAULT_GLASS: BoardGlass = {
-  transparency: GLASS_LIMITS.transparency.default,
-  blur: GLASS_LIMITS.blur.default,
+  transparency: GLASS_PRESETS.transparency.on,
+  blur: GLASS_PRESETS.blur.on,
 };
 
 function readStoredGlass(): BoardGlass {
@@ -51,17 +51,18 @@ function readStoredGlass(): BoardGlass {
     }
     const { transparency, blur } = parsed as Record<string, unknown>;
     return {
+      // Normalize legacy slider values to the checkbox presets.
       transparency:
         typeof transparency === "number"
-          ? clamp(
-              Math.round(transparency),
-              GLASS_LIMITS.transparency.min,
-              GLASS_LIMITS.transparency.max,
-            )
+          ? transparency >= 50
+            ? GLASS_PRESETS.transparency.on
+            : GLASS_PRESETS.transparency.off
           : DEFAULT_GLASS.transparency,
       blur:
         typeof blur === "number"
-          ? clamp(Math.round(blur), GLASS_LIMITS.blur.min, GLASS_LIMITS.blur.max)
+          ? blur > 0
+            ? GLASS_PRESETS.blur.on
+            : GLASS_PRESETS.blur.off
           : DEFAULT_GLASS.blur,
     };
   } catch {
