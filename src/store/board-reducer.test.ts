@@ -465,6 +465,117 @@ describe("boardReducer — quiet updatedAt (TASK-18)", () => {
   });
 });
 
+describe("boardReducer — card archive (TASK-18.1)", () => {
+  it("archives a card: off the column, kept in board.cards", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "ARCHIVE_CARD",
+      cardId: "card-1",
+    });
+    expect(board.columns[0].cardIds).not.toContain("card-1");
+    const card = board.cards["card-1"];
+    expect(card).toBeDefined();
+    expect(card.archivedAt).toBeGreaterThan(0);
+    expect(card.activity?.at(-1)?.type).toBe("archived");
+  });
+
+  it("is a no-op when the card is already archived", () => {
+    const once = reduceBoard(freshBoard(), {
+      type: "ARCHIVE_CARD",
+      cardId: "card-1",
+    });
+    expect(reduceBoard(once, { type: "ARCHIVE_CARD", cardId: "card-1" })).toBe(
+      once,
+    );
+  });
+
+  it("restores an archived card to the end of the picked column", () => {
+    const archived = reduceBoard(freshBoard(), {
+      type: "ARCHIVE_CARD",
+      cardId: "card-1",
+    });
+    const restored = reduceBoard(archived, {
+      type: "UNARCHIVE_CARD",
+      cardId: "card-1",
+      columnId: "col-done",
+    });
+    expect(restored.columns[2].cardIds).toContain("card-1");
+    expect(restored.cards["card-1"].archivedAt).toBeUndefined();
+    expect(restored.cards["card-1"].activity?.at(-1)?.type).toBe("unarchived");
+  });
+
+  it("is a no-op when restoring a card that is not archived", () => {
+    const board = freshBoard();
+    expect(
+      reduceBoard(board, {
+        type: "UNARCHIVE_CARD",
+        cardId: "card-1",
+        columnId: "col-done",
+      }),
+    ).toBe(board);
+  });
+
+  it("refuses a restore into a column at its WIP limit", () => {
+    vi.useFakeTimers();
+    try {
+      let board = reduceBoard(freshBoard(), {
+        type: "SET_COLUMN_WIP_LIMIT",
+        columnId: "col-done",
+        wipLimit: 1,
+      });
+      board = reduceBoard(board, { type: "ARCHIVE_CARD", cardId: "card-1" });
+      expect(
+        reduceBoard(board, {
+          type: "UNARCHIVE_CARD",
+          cardId: "card-1",
+          columnId: "col-done",
+        }),
+      ).toBe(board);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("archives every card of a column in one step", () => {
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(1000);
+      const board = reduceBoard(freshBoard(), {
+        type: "ARCHIVE_COLUMN_CARDS",
+        columnId: "col-backlog",
+      });
+      expect(board.columns[0].cardIds).toEqual([]);
+      for (const id of ["card-1", "card-2", "card-6"]) {
+        expect(board.cards[id]?.archivedAt).toBe(Date.now());
+      }
+      // Cards of other columns stay untouched.
+      expect(board.columns[1].cardIds.length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is a no-op for an empty or missing column", () => {
+    const seed = freshBoard();
+    const empty = reduceBoard(seed, {
+      type: "ARCHIVE_COLUMN_CARDS",
+      columnId: "col-backlog",
+    });
+    // Nothing to archive on a second pass — state identity preserved.
+    expect(
+      reduceBoard(empty, {
+        type: "ARCHIVE_COLUMN_CARDS",
+        columnId: "col-backlog",
+      }),
+    ).toBe(empty);
+    expect(
+      reduceBoard(seed, {
+        type: "ARCHIVE_COLUMN_CARDS",
+        columnId: "nope",
+      }),
+    ).toBe(seed);
+  });
+});
+
 describe("boardReducer — RESTORE_BOARD and IMPORT_BOARDS", () => {
   it("restores an exact board snapshot and keeps other boards", () => {
     const seed = freshBoard();

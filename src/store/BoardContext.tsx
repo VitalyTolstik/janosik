@@ -92,6 +92,12 @@ interface BoardContextValue {
   /** Stamps the card's `updatedAt` after a burst of quiet live edits. */
   touchCard: (cardId: string) => void;
   deleteCard: (cardId: string) => void;
+  /** Archives a card (off the board, kept for search/restore). */
+  archiveCard: (cardId: string) => void;
+  /** Puts an archived card back at the end of `columnId` (first column if omitted). */
+  unarchiveCard: (cardId: string, columnId?: string) => void;
+  /** Archives every card of the column in one undoable step. */
+  archiveColumnCards: (columnId: string) => void;
   toggleCardLabel: (cardId: string, labelId: string) => void;
   addLabel: (label: Label) => void;
   renameLabel: (labelId: string, name: string) => void;
@@ -445,6 +451,9 @@ function createBoardActions(
   | "updateCard"
   | "touchCard"
   | "deleteCard"
+  | "archiveCard"
+  | "unarchiveCard"
+  | "archiveColumnCards"
   | "toggleCardLabel"
   | "addLabel"
   | "renameLabel"
@@ -479,6 +488,11 @@ function createBoardActions(
       dispatch({ type: "UPDATE_CARD", cardId, ...patch, quiet: opts?.quiet }),
     touchCard: (cardId: string) => dispatch({ type: "TOUCH_CARD", cardId }),
     deleteCard: (cardId: string) => dispatch({ type: "DELETE_CARD", cardId }),
+    archiveCard: (cardId: string) => dispatch({ type: "ARCHIVE_CARD", cardId }),
+    unarchiveCard: (cardId: string, columnId?: string) =>
+      dispatch({ type: "UNARCHIVE_CARD", cardId, columnId }),
+    archiveColumnCards: (columnId: string) =>
+      dispatch({ type: "ARCHIVE_COLUMN_CARDS", columnId }),
     toggleCardLabel: (cardId: string, labelId: string) =>
       dispatch({ type: "TOGGLE_CARD_LABEL", cardId, labelId }),
     addLabel: (label: Label) => dispatch({ type: "ADD_LABEL", label }),

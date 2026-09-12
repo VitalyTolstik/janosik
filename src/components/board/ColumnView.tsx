@@ -60,6 +60,8 @@ export function ColumnView({
     renameColumn,
     deleteColumn,
     duplicateCard,
+    archiveCard,
+    archiveColumnCards,
     duplicateColumn,
     sortColumn,
     setColumnWipLimit,
@@ -68,6 +70,7 @@ export function ColumnView({
   const [renameOpen, setRenameOpen] = useState(false);
   const [wipLimitOpen, setWipLimitOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmArchiveCards, setConfirmArchiveCards] = useState(false);
   /**
    * Inline "add between cards" composer (Trello-style hover zones):
    * `index` is the gap the composer opened at, `count` how many cards were
@@ -187,6 +190,7 @@ export function ColumnView({
               onDelete={() => setConfirmDelete(true)}
               onSort={(sortBy) => sortColumn(column.id, sortBy)}
               onSetWipLimit={() => setWipLimitOpen(true)}
+              onArchiveCards={() => setConfirmArchiveCards(true)}
               wipLimit={wipLimit}
             />
             <GripVertical
@@ -292,6 +296,7 @@ export function ColumnView({
                               t("card.duplicateTitle", { title: card.title }),
                             )
                           }
+                          onCardArchive={() => archiveCard(card.id)}
                         />
                       </li>
                     </Fragment>
@@ -373,6 +378,15 @@ export function ColumnView({
         confirmLabel={t("column.delete")}
         destructive
         onConfirm={handleDelete}
+      />
+
+      <ConfirmDialog
+        open={confirmArchiveCards}
+        onOpenChange={setConfirmArchiveCards}
+        title={t("column.archiveCardsTitle")}
+        description={t("column.archiveCardsDescription", { title: column.title })}
+        confirmLabel={t("column.archiveCards")}
+        onConfirm={() => archiveColumnCards(column.id)}
       />
     </>
   );

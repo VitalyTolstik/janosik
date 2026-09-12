@@ -230,7 +230,10 @@ export interface CardSearchHit {
   boardTitle: string;
   /** Whether the board is archived — archived hits rank last. */
   boardArchived: boolean;
-  columnTitle: string;
+  /** Whether the card itself is archived (TASK-18.1) — shows a badge. */
+  cardArchived: boolean;
+  /** Column the card sits in; `undefined` for archived (off-board) cards. */
+  columnTitle?: string;
   /** The board's label catalogue — lets the UI render label chips. */
   boardLabels: Label[];
   card: Card;
@@ -281,39 +284,52 @@ export function searchBoards(boards: Board[], query: string): SearchHit[] {
         boardArchived: board.archivedAt !== undefined,
       });
     }
+    const hitFor = (
+      card: Card,
+      columnTitle?: string,
+    ): CardSearchHit | null => {
+      const matched = MATCH_FIELD_ORDER.find((field) => {
+        switch (field) {
+          case "title":
+            return card.title.toLowerCase().includes(needle);
+          case "description":
+            return card.description?.toLowerCase().includes(needle) ?? false;
+          case "label":
+            return card.labelIds.some((id) =>
+              board.labels.some(
+                (label) =>
+                  label.id === id &&
+                  label.name.toLowerCase().includes(needle),
+              ),
+            );
+        }
+      });
+      if (!matched) return null;
+      return {
+        kind: "card",
+        boardId: board.id,
+        boardTitle: board.title,
+        boardArchived: board.archivedAt !== undefined,
+        cardArchived: card.archivedAt !== undefined,
+        columnTitle,
+        boardLabels: board.labels,
+        card,
+        matchIn: matched,
+      };
+    };
     for (const column of board.columns) {
       for (const cardId of column.cardIds) {
         const card = board.cards[cardId];
         if (!card) continue;
-        const matched = MATCH_FIELD_ORDER.find((field) => {
-          switch (field) {
-            case "title":
-              return card.title.toLowerCase().includes(needle);
-            case "description":
-              return card.description?.toLowerCase().includes(needle) ?? false;
-            case "label":
-              return card.labelIds.some((id) =>
-                board.labels.some(
-                  (label) =>
-                    label.id === id &&
-                    label.name.toLowerCase().includes(needle),
-                ),
-              );
-          }
-        });
-        if (matched) {
-          cardHits.push({
-            kind: "card",
-            boardId: board.id,
-            boardTitle: board.title,
-            boardArchived: board.archivedAt !== undefined,
-            columnTitle: column.title,
-            boardLabels: board.labels,
-            card,
-            matchIn: matched,
-          });
-        }
+        const hit = hitFor(card, column.title);
+        if (hit) cardHits.push(hit);
       }
+    }
+    // Archived cards sit outside every column — search still finds them.
+    for (const card of Object.values(board.cards)) {
+      if (card.archivedAt === undefined) continue;
+      const hit = hitFor(card);
+      if (hit) cardHits.push(hit);
     }
   }
 

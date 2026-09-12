@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArchiveIcon } from "@/components/ui/archive-icon";
 import {
+  Archive,
   Check,
   Download,
   HardDriveDownload,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { useToast } from "@/components/Toast";
+import { ArchiveDialog } from "@/components/board/ArchiveDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,11 +53,17 @@ export function DataMenu() {
   const { t, lang } = useI18n();
   const hour12 = useHour12();
   const toast = useToast();
-  const { boards, importBoards } = useBoard();
+  const { boards, board, importBoards } = useBoard();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [backups, setBackups] = useState<BackupMeta[] | null>(null);
   const [confirmRestoreId, setConfirmRestoreId] = useState<number | null>(null);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+
+  const archivedCount = board
+    ? Object.values(board.cards).filter((card) => card.archivedAt !== undefined)
+        .length
+    : 0;
 
   // Radix locks page scroll (RemoveScroll) and preventDefaults wheel events
   // over the portaled menu at the document level — after any listener on the
@@ -191,6 +199,15 @@ export function DataMenu() {
             <HardDriveDownload className="h-4 w-4" />
             {t("data.backupNow")}
           </DropdownMenuItem>
+          <DropdownMenuItem
+            data-testid="data-archive"
+            onClick={() => setArchiveOpen(true)}
+          >
+            <Archive className="h-4 w-4" />
+            {archivedCount > 0
+              ? `${t("data.archiveTitle")} · ${archivedCount}`
+              : t("data.archiveTitle")}
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>
             {backups !== null && backups.length > 0
@@ -292,6 +309,7 @@ export function DataMenu() {
           e.target.value = "";
         }}
       />
+      <ArchiveDialog open={archiveOpen} onOpenChange={setArchiveOpen} />
     </>
   );
 }

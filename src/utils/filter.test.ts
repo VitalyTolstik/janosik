@@ -443,6 +443,27 @@ describe("searchBoards", () => {
     );
   });
 
+  it("finds archived cards even though they are off every column", () => {
+    const board: Board = {
+      ...activeBoard,
+      columns: [
+        { id: "col1", title: "To do", cardIds: ["c1", "c2"], createdAt: NOW },
+        // c3 was archived — it is gone from its column's cardIds.
+        { id: "col2", title: "Doing", cardIds: [], createdAt: NOW },
+      ],
+      cards: {
+        ...activeBoard.cards,
+        c3: { ...card("c3", "Old card", []), archivedAt: NOW },
+      },
+    };
+    const hits = searchBoards([board], "old card");
+    expect(hits).toHaveLength(1);
+    if (hits[0].kind !== "card") return;
+    expect(hits[0].cardArchived).toBe(true);
+    expect(hits[0].boardArchived).toBe(false);
+    expect(hits[0].columnTitle).toBeUndefined();
+  });
+
   it("ranks active boards before archived ones", () => {
     const hits = searchBoards(boards, "marketing");
     // Board-title hits: active "Marketing" before archived "Old Marketing board".
