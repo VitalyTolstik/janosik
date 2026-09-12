@@ -6,21 +6,29 @@ A premium, offline-first **Kanban board** — Trello-class drag & drop with a Sp
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)](https://vite.dev)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38bdf8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
+[![Tests](https://img.shields.io/badge/tests-362%20passing-brightgreen)](#)
 
-> **Janosik** is a single-user, fully client-side board. All data lives in your browser (`localStorage`) with JSON export/import and automatic `IndexedDB` backups — **no server required**.
+> **Janosik** is a fully client-side board that installs as a **PWA** and works **offline**. All data lives in your browser (`localStorage`) with JSON export/import and automatic `IndexedDB` backups — no server required. Multi-user collaboration (accounts, shared boards, roles, realtime) is the active backend phase — see [ROADMAP.md §7](./ROADMAP.md).
 
 ---
 
 ## Highlights
 
-- **Drag & drop** — move cards within/between columns and reorder columns (`@dnd-kit`), with keyboard sensor and a drag overlay.
-- **14-color labels** — multi-select, create / rename / recolor / delete with cascade.
-- **Search & filters** — by title, by labels (ANY + "no label"), and by creation date (today / 7 / 30 days / exact day via calendar). Hotkeys `/` and `Ctrl/Cmd+K`.
-- **Card details** — live title editing, plain-text description, label picker, move-to-column, delete with confirmation.
+- **Three board views** — Kanban, **Calendar** (drag deadlines, "unscheduled" panel, week/month, day panel) and **Table** (sorting, inline editing, configurable columns).
+- **Drag & drop** — move cards within/between columns and reorder columns (`@dnd-kit`), inline Trello-style "+" zones, keyboard sensor and drag overlay.
+- **Rich card content** — WYSIWYG description (MDXEditor), checklists with progress badges, due dates with overdue/soon badges, color/gradient covers, 14-color labels.
+- **Card & board archive** — Trello-style archiving with restore (WIP-aware) and permanent delete; board archive with restore.
+- **Multi-boards** — switcher, create/rename/archive/delete, deep links `/board/:id`, global search across boards with snippets.
+- **Search & filters** — by title/description/labels, label ANY/ALL matching, due status, creation date; hotkeys `/` and `Ctrl/Cmd+K`, match counter.
+- **WIP limits** — per-column caps with counters, blocked composers/drags and toasts.
+- **Activity feed** — per-card event history (10 event types) with relative timestamps.
+- **Keyboard-first** — shortcut palette (`?`), `j/k` cursor navigation, `n`/`c` composers, `e`/`Enter` edit.
 - **Undo / redo** — 50-step history with coalescing, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`, `Ctrl+Y`, header buttons.
-- **Data safety** — debounced saves, JSON export/import, automatic backups (20 snapshots, rotated), error boundary + toasts.
-- **Themes & polish** — dark/light themes with no-flash preflight, four board backgrounds (solid / paper / dots / grid), `prefers-reduced-motion`, custom scrollbars, GPU animations.
-- **i18n** — English & Russian with type-safe keys and pluralization.
+- **PWA / offline** — installable (manifest + icons), service worker caches the app shell and all hashed chunks; the board keeps working with the network fully cut.
+- **Fast by construction** — code-split bundle (editor & calendar load on demand), vendor chunks with stable cache keys; first paint ~212 ms on throttled CPU.
+- **Data safety** — debounced saves, JSON export/import, automatic backups (20 snapshots, rotated), error boundary + toasts, input/collection limits everywhere.
+- **Themes & polish** — dark/light with no-flash preflight, four board backgrounds, adjustable column glass, `prefers-reduced-motion`, custom scrollbars.
+- **i18n** — English & Russian with type-safe keys and pluralization; 12h/24h time format toggle.
 - **Brand** — Space Grotesk wordmark (self-hosted) + animated "Перо Яношика" feather logo.
 
 ---
@@ -30,14 +38,17 @@ A premium, offline-first **Kanban board** — Trello-class drag & drop with a Sp
 | Layer | Choice |
 | --- | --- |
 | UI | React 18, TypeScript 5.9 (strict) |
-| Build | Vite 8, Tailwind CSS v4 (CSS-first, `@theme inline`) |
+| Build | Vite 8 (Rolldown), Tailwind CSS v4 (CSS-first, `@theme inline`) |
 | Components | shadcn/ui + Radix primitives (dialog, dropdown, popover, tooltip, slot) |
-| Drag & drop | `@dnd-kit/core` + `@dnd-kit/sortable` |
-| State | React `useReducer` (pure reducer) + context |
+| Rich text | `@mdxeditor/editor` (WYSIWYG description, hardened import pipeline) |
+| Drag & drop | `@dnd-kit/core` + `@dnd-kit/sortable` (board), native HTML5 DnD (calendar) |
+| Calendar | `react-day-picker` (lazy-loaded, locale on demand), `date-fns` |
+| State | React `useReducer` (pure reducer, 30+ actions) + context |
+| Router | `react-router-dom` (`HashRouter`, `/board/:id`, `?card=` deep links) |
+| PWA | Hand-rolled service worker + web manifest (zero extra deps) |
 | i18n | `i18next`, `react-i18next`, `i18next-browser-languagedetector` |
-| Dates | `date-fns`, `react-day-picker` |
 | Fonts | `@fontsource/space-grotesk` (self-hosted, no CDN) |
-| Tests | Vitest + React Testing Library |
+| Tests | Vitest + React Testing Library (362 tests / 29 files) |
 
 ---
 
@@ -56,7 +67,7 @@ npm run dev -- --port 5199 --strictPort
 # http://localhost:5199/
 ```
 
-On first launch the app shows a seeded **"Product Launch"** demo board. Everything you change is persisted locally.
+On first launch the app shows a seeded **"Product Launch"** demo board. Everything you change is persisted locally. In production the app is installable (PWA) and keeps working offline.
 
 ---
 
@@ -76,22 +87,25 @@ On first launch the app shows a seeded **"Product Launch"** demo board. Everythi
 
 ```text
 janosik/
+├─ public/                  # PWA: manifest, service worker, icons
 ├─ src/
 │  ├─ components/
-│  │  ├─ board/            # Columns, cards, card dialog, filters, DnD board
+│  │  ├─ board/            # Columns, cards, card dialog, filters, views (board/calendar/table)
+│  │  ├─ editor/           # MDXEditor description editor (plugins, code blocks, i18n)
 │  │  ├─ ui/               # shadcn/ui + Radix primitives
-│  │  ├─ Header.tsx        # Brand + background/language/undo/redo/data/theme
-│  │  ├─ DataMenu.tsx      # Export/import JSON + automatic backups
+│  │  ├─ Header.tsx        # Brand + search/language/time-format/undo/redo/data/theme
+│  │  ├─ DataMenu.tsx      # Export/import JSON, backups, card archive
 │  │  ├─ ErrorBoundary.tsx # Branded crash fallback (Reload / Reset)
 │  │  └─ Toast.tsx         # Toast notifications
-│  ├─ hooks/               # use-theme, use-board-background
-│  ├─ i18n/                # i18next setup (keys typed from the EN catalog)
+│  ├─ hooks/               # theme, board background, column glass
+│  ├─ i18n/                # i18next setup (keys typed from the EN catalog), time format
 │  ├─ locales/             # en/ru translation.json
+│  ├─ pwa/                 # service worker registration (production only)
 │  ├─ store/               # BoardContext, pure reducer, history, seed, migrations
-│  ├─ types/               # Domain model (Board/Column/Card/Label) + backgrounds
-│  ├─ utils/               # storage, persistence, backups, serialization, dnd, filter
+│  ├─ types/               # Domain model (Board/Column/Card/Label) + LIMITS
+│  ├─ utils/               # storage, persistence, backups, serialization, dnd, filter, due dates
 │  ├─ App.tsx              # Provider tree + layout
-│  ├─ main.tsx             # Theme preflight + entry point
+│  ├─ main.tsx             # Theme preflight + SW registration + entry point
 │  └─ index.css            # Design tokens (Tailwind v4 @theme)
 ├─ index.html
 ├─ vite.config.ts
@@ -104,12 +118,13 @@ janosik/
 
 ## Architecture (30 seconds)
 
-- **Normalized data model** — a `Board` holds ordered `Column[]`, a `Record<string, Card>`, and `Label[]`. Reordering = reordering id arrays. The `Board[]` top-level shape is already multi-board ready.
-- **Pure reducer** — `boardReducer` (15 actions) is a pure function; every action returns a new board, which makes undo/redo and testing trivial.
-- **One provider** — `BoardProvider` owns state, debounced persistence (400 ms), history, hotkeys and auto-backups. Components only call typed convenience actions (`addCard`, `moveCard`, …).
-- **Persistence is swappable** — a `DebouncedPersistence` interface wraps `localStorage` today; a `fetch` adapter to a backend can drop in later **without touching the reducer or UI**.
+- **Normalized data model** — a `Board` holds ordered `Column[]`, a `Record<string, Card>` and `Label[]`. Reordering = reordering id arrays. Archived cards stay in the map with `archivedAt` and are dropped from `column.cardIds` until restored.
+- **Pure reducer** — `boardReducer` (30+ actions) is a pure function; every action returns a new board, which makes undo/redo, coalescing and testing trivial.
+- **One provider** — `BoardProvider` owns state, debounced persistence (400 ms), per-board history, hotkeys and auto-backups. Components only call typed convenience actions (`addCard`, `moveCard`, …).
+- **Persistence is swappable** — a `DebouncedPersistence` interface wraps `localStorage` today; the backend phase adds a `fetch` adapter **without touching the reducer or UI** (optimistic updates on top of the same actions).
+- **Performance** — the MDXEditor description editor and the calendar are lazy-loaded on first use; vendor libraries are split into stable chunks that the service worker caches.
 
-See [ROADMAP.md](./ROADMAP.md) for the full architecture assessment, competitor comparison and the planned iteration steps.
+See [ROADMAP.md](./ROADMAP.md) for the full architecture assessment, competitor comparison, the iteration log and the backend plan (accounts, shared boards with ADMIN/MEMBER/VIEWER roles, realtime).
 
 ---
 
@@ -126,7 +141,8 @@ See [ROADMAP.md](./ROADMAP.md) for the full architecture assessment, competitor 
    ```
 
 4. End-to-end tests (Playwright/Cypress) are intentionally **out of scope** — testing is Vitest + React Testing Library.
-5. Backend work is **deferred** — see `ROADMAP.md`.
+5. New UI strings land in both `src/locales/en` and `src/locales/ru` synchronously; colors come only from the design tokens in `src/index.css`.
+6. The backend phase is active — see `ROADMAP.md` §7 for the fixed stack (NestJS/Prisma/PostgreSQL/JWT) and iteration order.
 
 ---
 
