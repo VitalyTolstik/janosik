@@ -1,6 +1,7 @@
 import { SettingsIcon } from "@/components/icons/settings";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,8 +27,6 @@ export function ColumnGlassMenu() {
 
   const stopKeys = (event: React.KeyboardEvent) => event.stopPropagation();
 
-  const boxClass = "h-3.5 w-3.5 shrink-0 accent-primary";
-
   return (
     <Tooltip>
       <DropdownMenu>
@@ -48,40 +47,36 @@ export function ColumnGlassMenu() {
         <DropdownMenuContent align="end" className="w-64 p-0">
           <div className="space-y-1.5 px-3 py-2.5" onKeyDown={stopKeys}>
             <label className="flex h-6 cursor-pointer items-center gap-2 text-xs">
-              <input
-                type="checkbox"
+              <Checkbox
                 aria-label={t("bg.glassOpacity")}
                 checked={glass.transparency > 0}
-                onChange={(event) =>
+                onCheckedChange={(checked) =>
                   setGlass({
                     ...glass,
-                    transparency: event.target.checked
+                    transparency: checked
                       ? GLASS_PRESETS.transparency.on
                       : GLASS_PRESETS.transparency.off,
                   })
                 }
                 data-testid="glass-opacity"
-                className={boxClass}
               />
               <span className="text-muted-foreground">
                 {t("bg.glassOpacity")}
               </span>
             </label>
             <label className="flex h-6 cursor-pointer items-center gap-2 text-xs">
-              <input
-                type="checkbox"
+              <Checkbox
                 aria-label={t("bg.glassBlur")}
                 checked={glass.blur > 0}
-                onChange={(event) =>
+                onCheckedChange={(checked) =>
                   setGlass({
                     ...glass,
-                    blur: event.target.checked
+                    blur: checked
                       ? GLASS_PRESETS.blur.on
                       : GLASS_PRESETS.blur.off,
                   })
                 }
                 data-testid="glass-blur"
-                className={boxClass}
               />
               <span className="text-muted-foreground">{t("bg.glassBlur")}</span>
             </label>

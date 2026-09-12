@@ -16,13 +16,18 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
-  ListPlus,
   Plus,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverAnchor,
@@ -370,10 +375,16 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
   }
 
   /** Creates a card due on `day` from the day-panel composer. */
-  const createCardOn = (day: Date, title: string, labelIds?: string[]) => {
+  const createCardOn = (
+    day: Date,
+    title: string,
+    labelIds?: string[],
+    columnId?: string,
+  ) => {
     const trimmed = title.trim();
     if (!trimmed) return;
-    const column = board.columns[0];
+    const column =
+      board.columns.find((c) => c.id === columnId) ?? board.columns[0];
     if (!column) return;
     if (column.cardIds.length >= LIMITS.cardsPerColumn) {
       toast.error(
@@ -722,9 +733,13 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
                       {formatDateOnly(day.getTime(), lang)}
                     </p>
                     <DayComposer
+                      columns={board.columns.map((col) => ({
+                        id: col.id,
+                        title: col.title,
+                      }))}
                       labels={board.labels}
-                      onSubmit={(title, labelIds) =>
-                        createCardOn(day, title, labelIds)
+                      onSubmit={(title, labelIds, columnId) =>
+                        createCardOn(day, title, labelIds, columnId)
                       }
                     />
                     <div className="mt-2 max-h-56 space-y-1 overflow-y-auto border-t border-border/60 pt-2">
@@ -787,16 +802,20 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
   );
 }
 
-/** Mini-composer at the top of the day panel (TASK-14.1 п.4). */
+/** Mini-composer at the top of the day panel (TASK-14.1 п.4) — same body
+ * as the table composer: title, column chooser, label chips, buttons. */
 function DayComposer({
+  columns,
   labels,
   onSubmit,
 }: {
+  columns: { id: string; title: string }[];
   labels?: Label[];
-  onSubmit: (title: string, labelIds?: string[]) => void;
+  onSubmit: (title: string, labelIds?: string[], columnId?: string) => void;
 }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState("");
+  const [columnId, setColumnId] = useState(columns[0]?.id ?? "");
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
 
   const toggleLabel = (labelId: string) => {
@@ -807,38 +826,58 @@ function DayComposer({
     );
   };
 
+  const selectedColumn = columns.find((col) => col.id === columnId);
   const submit = () => {
     const trimmed = draft.trim();
     if (!trimmed) return;
-    onSubmit(trimmed, selectedLabels);
+    onSubmit(trimmed, selectedLabels, columnId);
     setDraft("");
     setSelectedLabels([]);
   };
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-1.5">
-        <ListPlus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        <Input
-          value={draft}
-          maxLength={LIMITS.cardTitle}
-          data-testid="day-composer-input"
-          aria-label={t("composer.add")}
-          placeholder={t("composer.placeholder")}
-          className="h-7 text-xs"
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              submit();
-            }
-            if (e.key === "Escape") {
-              setDraft("");
-              setSelectedLabels([]);
-              (e.target as HTMLElement).blur();
-            }
-          }}
-        />
-      </div>
+      <Input
+        value={draft}
+        maxLength={LIMITS.cardTitle}
+        data-testid="day-composer-input"
+        aria-label={t("composer.add")}
+        placeholder={t("composer.placeholder")}
+        className="h-7 text-xs"
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            submit();
+          }
+          if (e.key === "Escape") {
+            setDraft("");
+            setSelectedLabels([]);
+            (e.target as HTMLElement).blur();
+          }
+        }}
+      />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 w-full justify-start text-xs"
+            data-testid="day-composer-column"
+          >
+            {selectedColumn?.title ?? "—"}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="max-h-44 w-[var(--radix-dropdown-menu-trigger-width)] min-w-0 overflow-y-auto">
+          {columns.map((col) => (
+            <DropdownMenuItem
+              key={col.id}
+              onSelect={() => setColumnId(col.id)}
+            >
+              {col.title}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <ComposerLabelPicker
         labels={labels}
         selected={selectedLabels}
@@ -850,7 +889,7 @@ function DayComposer({
       <div className="flex items-center gap-1.5">
         <Button
           size="sm"
-          className="h-6 flex-1 text-xs"
+          className="h-7 flex-1 text-xs"
           disabled={!draft.trim()}
           onClick={submit}
         >
@@ -859,7 +898,7 @@ function DayComposer({
         <Button
           size="sm"
           variant="ghost"
-          className="h-6 text-muted-foreground hover:text-foreground"
+          className="h-7 text-xs text-muted-foreground hover:text-foreground"
           onClick={() => {
             setDraft("");
             setSelectedLabels([]);

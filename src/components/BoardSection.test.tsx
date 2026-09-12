@@ -378,6 +378,40 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     ).toBeNull();
   });
 
+  it("creates the day-panel card in the chosen column", async () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    fireEvent.click(
+      document.querySelector(`[data-date="${todayKey()}"]`) as Element,
+    );
+
+    // Radix DropdownMenu opens on pointerdown — pick "Doing" (the second
+    // column) instead of the default first one.
+    fireEvent.pointerDown(screen.getByTestId("day-composer-column"), {
+      button: 0,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Doing" }));
+
+    const input = screen.getByTestId("day-composer-input");
+    fireEvent.change(input, { target: { value: "Chosen" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // Close the auto-opened dialog for the fresh card.
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+
+    const doing = screen
+      .getByRole("heading", { name: "Doing" })
+      .closest("section") as HTMLElement;
+    const todo = screen
+      .getByRole("heading", { name: "To Do" })
+      .closest("section") as HTMLElement;
+    expect(within(doing).getByText("Chosen")).toBeInTheDocument();
+    expect(within(todo).queryByText("Chosen")).toBeNull();
+  });
+
   it("attaches labels from the day panel composer", () => {
     localStorage.setItem("janosik-boards", boardWithLabels());
     renderBoard();
