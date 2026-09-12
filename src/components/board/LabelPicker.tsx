@@ -221,6 +221,7 @@ export function LabelPicker({
         <div className="space-y-2 rounded-lg border border-border bg-background/40 p-2.5">
           <Input
             autoFocus
+            name="label-create"
             value={draftName}
             maxLength={LIMITS.labelName}
             onChange={(e) => setDraftName(e.target.value)}
@@ -285,6 +286,7 @@ export function LabelPicker({
           </DialogHeader>
           <Input
             autoFocus
+            name="label-rename"
             value={renameDraft}
             maxLength={LIMITS.labelName}
             onChange={(e) => setRenameDraft(e.target.value)}

@@ -141,6 +141,7 @@ export function CardComposer({
     <div ref={rootRef} className="space-y-1.5">
       <Textarea
         autoFocus
+        name="card-composer"
         value={title}
         maxLength={LIMITS.cardTitle}
         onChange={(event) => setTitle(event.target.value)}

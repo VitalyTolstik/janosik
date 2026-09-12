@@ -373,6 +373,7 @@ export function TableView({
                     {editingTitleId === card.id ? (
                       <Input
                         ref={titleInputRef}
+                        name="table-title-edit"
                         value={titleDraft}
                         maxLength={LIMITS.cardTitle}
                         aria-label={t("view.table.rename")}
@@ -678,6 +679,7 @@ function TableCardComposer({
     <div className="space-y-2">
       <Input
         autoFocus
+        name="table-composer"
         value={title}
         maxLength={LIMITS.cardTitle}
         data-testid="table-composer-input"

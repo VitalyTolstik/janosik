@@ -841,6 +841,7 @@ function DayComposer({
   return (
     <div className="space-y-1.5">
       <Input
+        name="day-composer"
         value={draft}
         maxLength={LIMITS.cardTitle}
         data-testid="day-composer-input"
@@ -949,6 +950,7 @@ function UnscheduledComposer({
   return (
     <Input
       autoFocus
+      name="unscheduled-composer"
       value={draft}
       maxLength={LIMITS.cardTitle}
       data-testid="unscheduled-add-input"

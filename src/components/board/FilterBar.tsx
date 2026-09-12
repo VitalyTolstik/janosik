@@ -227,6 +227,7 @@ export function FilterBar({
         />
         <Input
           ref={inputRef}
+          name="filter-search"
           value={query}
           maxLength={LIMITS.query}
           aria-describedby={showRemaining(query.length, LIMITS.query) ? "filter-query-limit" : undefined}
