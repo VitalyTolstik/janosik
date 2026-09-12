@@ -568,6 +568,24 @@ describe("TableView interactivity (TASK-14.1)", () => {
     expect(screen.getByTestId("card-insert-1")).toBeInTheDocument();
   });
 
+  it("adds the first card to an empty column via its hover zone", () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    // Empty "Doing" column: the zone sits under the empty state.
+    const doing = screen
+      .getByRole("heading", { name: "Doing" })
+      .closest("section") as HTMLElement;
+    fireEvent.click(within(doing).getByTestId("card-insert-0"));
+    const textarea = within(doing).getByPlaceholderText(
+      "Enter a title for this card…",
+    );
+    fireEvent.change(textarea, { target: { value: "Firstborn" } });
+    fireEvent.click(within(doing).getByRole("button", { name: "Add card" }));
+
+    expect(within(doing).getByText("Firstborn")).toBeInTheDocument();
+  });
+
   it("hides the inline hover zones when the column is at its WIP limit", () => {
     const limited = JSON.stringify([
       {

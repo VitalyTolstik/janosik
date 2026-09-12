@@ -198,11 +198,40 @@ export function ColumnView({
 
         <div className="flex-1 overflow-y-auto px-2 pb-1">
           {count === 0 ? (
-            <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-border text-xs text-muted-foreground/70">
-              {isFiltered && column.cardIds.length > 0
-                ? t("filter.noMatch")
-                : t("column.empty")}
-            </div>
+            inlineAdd ? (
+              // Empty column + opened inline composer: the composer takes
+              // the empty state's place (first commit moves to the regular
+              // list rendering with hover zones).
+              <div className="py-1">
+                <CardComposer
+                  key={`inline-empty`}
+                  labels={board.labels}
+                  defaultComposing
+                  atIndex={inlineAdd.index + inlineAdd.count}
+                  onClose={() => setInlineAdd(null)}
+                  onSubmit={(title, labelIds, at) => {
+                    addCard(column.id, title, labelIds, at);
+                    setInlineAdd((s) =>
+                      s ? { ...s, count: s.count + 1 } : s,
+                    );
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="flex flex-col">
+                <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-border text-xs text-muted-foreground/70">
+                  {isFiltered && column.cardIds.length > 0
+                    ? t("filter.noMatch")
+                    : t("column.empty")}
+                </div>
+                {inlineAddAllowed && (
+                  <AddCardZone
+                    index={0}
+                    onInsert={() => setInlineAdd({ index: 0, count: 0 })}
+                  />
+                )}
+              </div>
+            )
           ) : (
             <SortableContext items={ids} strategy={verticalListSortingStrategy}>
               {/* With hover zones the gaps come from the 8px zones themselves;
@@ -225,7 +254,9 @@ export function ColumnView({
                     <Fragment key={cardId}>
                       {inlineAddAllowed &&
                         (inlineAdd?.index === i ? (
-                          <li>
+                          // Breathing room so the composer's top border
+                          // never merges with the card above it.
+                          <li className="py-1">
                             <CardComposer
                               key={`inline-${i}`}
                               labels={board.labels}
@@ -275,7 +306,7 @@ export function ColumnView({
                   />
                 )}
                 {inlineAdd && inlineAdd.index === count && (
-                  <li>
+                  <li className="py-1">
                     <CardComposer
                       key={`inline-${count}`}
                       labels={board.labels}
@@ -349,10 +380,11 @@ export function ColumnView({
 
 /**
  * Trello-style hover zone in a card gap: an 8px strip that expands to a
- * dashed "+ Add card" ghost on hover. Collapsed, the button ignores pointer
+ * "+ Add card" ghost on hover. Collapsed, the button ignores pointer
  * events (a click in the gap must not open a composer by accident) — only
- * the revealed button is clickable. Expanding shifts the neighbours exactly
- * like the composer that takes its place will.
+ * the revealed button is clickable. The reveal is deliberately delayed and
+ * eased (no border, just a soft hover surface) so brushing past cards
+ * never flashes the ghost.
  */
 function AddCardZone({
   index,
@@ -365,14 +397,14 @@ function AddCardZone({
   return (
     <li
       data-testid={`card-insert-zone-${index}`}
-      className="group/zone flex h-2 shrink-0 items-center transition-[height] duration-100 hover:h-8"
+      className="group/zone flex h-2 shrink-0 items-center transition-[height] duration-200 hover:delay-150 hover:h-8"
     >
       <button
         type="button"
         data-testid={`card-insert-${index}`}
         aria-label={t("composer.add")}
         onClick={onInsert}
-        className="pointer-events-none flex h-8 w-full items-center gap-1.5 rounded-lg border border-dashed border-border px-2 text-xs text-muted-foreground opacity-0 transition-opacity duration-100 group-hover/zone:pointer-events-auto group-hover/zone:opacity-100 hover:text-foreground"
+        className="pointer-events-none flex h-8 w-full items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground opacity-0 transition-opacity duration-200 group-hover/zone:pointer-events-auto group-hover/zone:delay-150 group-hover/zone:opacity-100 hover:bg-hover/60 hover:text-foreground"
       >
         <Plus className="h-3 w-3" />
         <span className="truncate">{t("composer.add")}</span>
