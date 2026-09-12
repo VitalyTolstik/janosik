@@ -64,6 +64,16 @@ describe("FilterBar", () => {
     });
   });
 
+  it("switches the label match mode between any and all", async () => {
+    const onChange = renderBar();
+    await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
+    const group = screen.getByRole("radiogroup", { name: "Label match mode" });
+    expect(group).toHaveTextContent("Any");
+    expect(group).toHaveTextContent("All");
+    await userEvent.click(screen.getByRole("radio", { name: "All" }));
+    expect(onChange).toHaveBeenLastCalledWith({ ...EMPTY_FILTER, labelMatch: "all" });
+  });
+
   it("shows the active facet count on the filters button", () => {
     renderBar({ ...EMPTY_FILTER, due: "soon", labelIds: ["l1"] });
     expect(screen.getByRole("button", { name: "Filter cards" })).toHaveTextContent(

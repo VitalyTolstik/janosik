@@ -34,6 +34,7 @@ import {
   type CardFilter,
   type CreatedWindow,
   type DueFilter,
+  type LabelMatch,
 } from "@/utils/filter";
 
 const CREATED_LABEL_KEY: Record<CreatedWindow, MessageKey> = {
@@ -48,6 +49,11 @@ const DUE_LABEL_KEY: Record<DueFilter, MessageKey> = {
   overdue: "filter.dueOverdue",
   soon: "filter.dueSoon",
   none: "filter.dueNone",
+};
+
+const MATCH_LABEL_KEY: Record<LabelMatch, MessageKey> = {
+  any: "filter.matchAny",
+  all: "filter.matchAll",
 };
 
 /** Locale-aware "15 June 2025" label for a stored YYYY-MM-DD day. */
@@ -283,6 +289,34 @@ export function FilterBar({
             </FilterSection>
           </div>
           <FilterSection title={t("filter.labels")}>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">
+                {t("filter.match")}
+              </span>
+              <div
+                role="radiogroup"
+                aria-label={t("filter.matchAria")}
+                className="flex rounded-md border border-border p-0.5"
+              >
+                {(["any", "all"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={filter.labelMatch === mode}
+                    onClick={() => onChange({ ...filter, labelMatch: mode })}
+                    className={cn(
+                      "rounded px-2 py-0.5 text-xs transition-colors",
+                      filter.labelMatch === mode
+                        ? "bg-primary/15 font-medium text-primary"
+                        : "text-muted-foreground hover:bg-hover",
+                    )}
+                  >
+                    {t(MATCH_LABEL_KEY[mode])}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="max-h-44 overflow-y-auto">
               {labels.map((label) => (
                 <CheckRow
