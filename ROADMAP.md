@@ -5,9 +5,8 @@
 > `CURRENT_WORK_ITERATIONS.md` (они удалены). Любой ИИ-агент начинает работу
 > с чтения этого файла и `AGENT.md`.
 >
-> **Текущий фокус:** фронтенд-добивка до бэкенда — порядок в §6.0
-> (TASK-21 → 13 → 14 → 16 → 17 → 18 → 19 → 15), затем бэкенд (§7,
-> TASK-22…30). Обновлено: 2026-09.
+> **Текущий фокус:** фронтенд-добивка §6.0 закрыта полностью (TASK-21…19,
+> 15 — все ✅); активная фаза — бэкенд (§7, TASK-22…30). Обновлено: 2026-09.
 
 ---
 
@@ -59,11 +58,20 @@
 
 ### 1.2. Архитектура (кратко)
 
-- **Модель** — `Board { columns[], cards: Record<string,Card>, labels[] }`, `Card { id, title, description?, checklists?, labelIds[], createdAt, updatedAt }` (`Checklist { id, title, items: [{id, text, done}] }`). Нормализовано: перестановка = перестановка id-массивов. `Board[]` на верхнем уровне — мультидоски уже заложены, но используется только `[0]`.
-- **Состояние** — чистый `boardReducer` (30 экшенов) + `BoardContext` (дебаунс-персистентность, история, хоткеи, авто-бэкап). Компоненты вызывают типизированные удобные экшены.
+- **Модель** — `Board { columns[], cards: Record<string,Card>, labels[] }`,
+  `Card { id, title, description?, checklists?, labelIds[], dueDate?, cover?,
+  archivedAt?, createdAt, updatedAt }` (`Checklist { id, title, items:
+  [{id, text, done}] }`). Архивная карточка (TASK-18.1) остаётся в `cards`
+  с `archivedAt`, но вынимается из `column.cardIds` — восстановление
+  возвращает её в конец выбранной колонки с учётом WIP-лимита.
+  Нормализовано: перестановка = перестановка id-массивов. `Board[]` на
+  верхнем уровне — мультидоски (свитчер, `/board/:id`).
+  Активность карточки — 10 типов событий (включая `archived`/`unarchived`),
+  лимит 50/карточку снимет БД (§7.3).
+- **Состояние** — чистый `boardReducer` (35+ экшенов) + `BoardContext` (дебаунс-персистентность, история, хоткеи, авто-бэкап). Компоненты вызывают типизированные удобные экшены.
 - **Персистентность** — интерфейс `DebouncedPersistence` поверх `localStorage`; позже бэкенд = второй адаптер `fetch` **без изменения reducer и UI**.
-- **UI** — shadcn/ui + Radix (dialog/dropdown/popover/tooltip/slot), dnd-kit, react-day-picker, MDXEditor (описание карточки).
-- **Тесты** — 287 тестов в 23 файлах (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, интеграционные BoardSection + CardDialog + свитчер).
+- **UI** — shadcn/ui + Radix (dialog/dropdown/popover/tooltip/slot), dnd-kit, react-day-picker, MDXEditor (описание карточки); виды доски: канбан / календарь / таблица (TASK-14/14.1).
+- **Тесты** — 362 теста в 29 файлах (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер).
 
 ### 1.3. Ключи и точки интеграции
 
@@ -922,7 +930,7 @@ only mdxeditor from TASK 2
   метки/чеклисты/активность/комментарии — SQL-таблицы (§7.3), не Json-документ.
   Позиции — целочисленные `position` (drag → `reorder` endpoint с перенумерацией
   при необходимости).
-- **API — гранулярный REST `/api/v1`** (~30 endpoints, §7.4). Каждый экшен
+- **API — гранулярный REST `/api/v1`** (~35 endpoints, §7.4). Каждый экшен
   редьюсера получает свой endpoint; сервер — единственный источник истины.
 - **Фронт — optimistic без переписывания UI**: редьюсер остаётся
   единственным источником UI-состояния (мгновенный отклик, undo/redo
@@ -939,6 +947,22 @@ only mdxeditor from TASK 2
   last-write-wins на уровне сущности + активность).
 - **Auth:** JWT access (15 мин, память SPA) + refresh (30 дней, httpOnly
   Secure SameSite=Strict, ротация с детектом реюза). Пароли — argon2id.
+  На auth-роутах — rate-limit (brute force), helmet, CORS-allowlist.
+- **Архив карточек (TASK-18.1) — часть контракта:** `GET /boards/:id`
+  отдаёт колонки с **только активными** `cardIds`; архивная карточка живёт
+  в cards-мапе агрегата с `archivedAt` (фронт уже так хранит). Archive /
+  unarchive (с выбором колонки и WIP-проверкой) и массовый архив колонки —
+  отдельные endpoints (§7.4).
+- **Undo/redo остаётся клиентским** — история редьюсера мапится на
+  **обратные API-вызовы** (таблица инверсий в адаптере, §7.5). Серверные
+  генерации id нет: дубликат карточки/колонки получает **клиентский id
+  копии** в POST — идемпотентно и undo-совместимо.
+- **SSE-auth:** `EventSource` не умеет заголовки → SSE-подключение по
+  **одноразовому ticket** (`POST /boards/:id/events-ticket` → short-lived
+  token в query) или по refresh-cookie; access-token в query не светим.
+- **Масштабирование:** MVP — одна нода, in-memory fan-out SSE. Redis
+  pub/sub — при второй ноде (за пределами MVP, точка подключения —
+  интерфейс event-броадкаста в TASK-30).
 - **Валидация — `LIMITS`** (TASK-20) на DTO + серверный normalize — тот же
   код, что `migrate.ts`. Импорт клампит всё, что пришло мимо UI.
 - **Ошибки:** дефолтный envelope NestJS; `403` — нет membership, `409` —
@@ -1049,6 +1073,7 @@ model Card {
   coverType   String?                    // color | gradient
   coverValue  String?
   dueDate     DateTime?
+  archivedAt  DateTime?                  // TASK-18.1: архив карточки
   position    Int
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -1105,7 +1130,7 @@ model Activity {
   boardId   String
   card      Card?    @relation(fields: [cardId], references: [id])
   cardId    String?
-  type      String                        // 8 типов TASK-12 + member/comment
+  type      String                        // 10 типов TASK-12/18.1 + member/comment
   actor     User     @relation(fields: [actorId], references: [id])
   actorId   String                         // теперь реальный юзер
   details   Json?                          // снапшот-детали
@@ -1132,7 +1157,7 @@ model Comment {
 пунктов ≤ 100, меток ≤ 20 на карточке, ≤ 50 на доске, колонок ≤ 20,
 карточек ≤ 500 в колонке, досок ≤ 50 на юзера).
 
-### 7.4. API — REST `/api/v1` (~30 endpoints)
+### 7.4. API — REST `/api/v1` (~35 endpoints)
 
 **Auth (без guard):** `POST /auth/register` · `POST /auth/login` ·
 `POST /auth/refresh` (ротация) · `POST /auth/logout` · `GET /auth/me`.
@@ -1143,7 +1168,7 @@ model Comment {
 | --- | --- | --- |
 | GET | `/boards` | мои доски (по membership): title, archivedAt, счётчики |
 | POST | `/boards` | создать (автоматически OWNER-membership) |
-| GET | `/boards/:id` | **агрегат доски** — колонки + карточки + метки (+ чеклисты) одной выборкой — стартовое состояние UI |
+| GET | `/boards/:id` | **агрегат доски** — колонки (только активные `cardIds`) + cards-мапа **включая архив** (`archivedAt`) + метки (+ чеклисты) одной выборкой — стартовое состояние UI |
 | PATCH | `/boards/:id` | rename / archive |
 | DELETE | `/boards/:id` | только OWNER |
 | GET | `/boards/:id/members` | участники |
@@ -1156,15 +1181,22 @@ model Comment {
 | PATCH | `/columns/:id` | {title?, wipLimit?} |
 | DELETE | `/columns/:id` | каскад карточек |
 | PUT | `/boards/:id/columns/reorder` | {orderedIds} — drag колонок |
+| POST | `/columns/:id/cards/archive` | массовый архив колонки (TASK-18.1, один undo-шаг) |
 
 **Карточки:**
+
+WIP-лимит сервер считает контрактом: `POST /columns/:id/cards`,
+`/cards/:id/move`, `/cards/:id/duplicate` и `/cards/:id/unarchive` в полную
+колонку → `409` (фронт уже гвардит тем же предикатом `atWipLimit`).
 
 | POST | `/columns/:id/cards` | {title} (+ id от клиента) |
 | GET | `/cards/:id` | агрегат: описание, чеклисты, метки, activity-страница |
 | PATCH | `/cards/:id` | {title?, description?, dueDate?, cover?} |
-| DELETE | `/cards/:id` | |
-| POST | `/cards/:id/duplicate` | серверный дубликат (TASK-6) |
+| DELETE | `/cards/:id` | удаление (из архива — «навсегда», TASK-18.1) |
+| POST | `/cards/:id/duplicate` | серверный дубликат (TASK-6); **id копии — от клиента** |
 | PUT | `/cards/:id/move` | {toColumnId, toIndex} — drag карточек |
+| POST | `/cards/:id/archive` | архив (снимается с `cardIds`, `archivedAt` ставится) |
+| POST | `/cards/:id/unarchive` | {toColumnId?} — восстановление в конец колонки, WIP-409 |
 
 **Метки (на карточке / на доске):**
 
@@ -1196,6 +1228,11 @@ model Comment {
 | POST | `/boards/import` | envelope `parseExport` → создание доски целиком |
 | GET | `/boards/:id/export` | envelope JSON — тот же формат, что UI-файл |
 
+Round-trip-гарантия: cover, dueDate, `wipLimit`, `archivedAt` переносятся
+в обе стороны без потерь (сериалайзер фронта их уже пишет — сверить
+envelope в shared на TASK-22). Activity при импорте **не переносится** —
+события сервер пишет сам с реальным actorId.
+
 **Realtime (TASK-30):**
 
 | GET | `/boards/:id/events` | SSE-поток: {entity, action, id, data, actor} |
@@ -1209,6 +1246,12 @@ model Comment {
   источник UI-состояния (отклик мгновенный, undo/redo без сети).
 - **Sync-слой:** каждый экшен → API-вызов → canonical ответ → reconcile
   (позиции, счётчики). Провал → откат экшена (обратный dispatch) + тост.
+- **Undo = обратный API-вызов:** история редьюсера разворачивается
+  инверсиями (add↔delete, move↔move, set↔set-назад); дубликат при undo
+  удаляется по клиентскому id копии — серверных сюрпризов в истории нет.
+- **401-цикл:** access истёк → `POST /auth/refresh` → retry вызова один
+  раз; refresh не удался (ротация/реюз) → сброс состояния → логин-экран.
+  Параллельные 401 ждут одного общего refresh (single-flight).
 - **id клиента проходит в POST** — идемпотентные ретраи; undo создания
   карточки = `DELETE /cards/:id`.
 - **Старт:** `GET /boards/:id` → маппинг агрегата в текущую модель `Board[]`
@@ -1223,8 +1266,17 @@ model Comment {
 
 ### 7.6. Разблокированные фичи (после TASK-29, по запросу — не запланированы)
 
+> Решение пользователя: UI в текущем виде конечен — авторы, комментарии и
+> исполнители (assignee) в интерфейс добавляются **потом**. Бэкенд при этом
+> готов: Comment — таблица и endpoints с TASK-28, `User.displayName` — с
+> TASK-24; для assignee в TASK-26 достаточно будет миграции
+> `Card.assigneeId?` + колонки таблицы вида (слот в настройках колонок уже
+> зарезервирован, TASK-14.1 п.11).
+
 - Уведомления (email/in-app: mention, дедлайны).
 - Вложения (multipart, файловое хранилище).
+- **Исполнители (assignee)** — `Card.assigneeId?`, колонка таблицы и бейдж
+  на карточке; membership-проверка, что юзер состоит в доске.
 - **Embed-снапшот доски** — `GET /embed/:token`, публичный read-only SSR HTML.
 - Рабочие пространства (`Workspace`/`Team` над досками), VIEWER-роль.
 - Присутствие (who's viewing) поверх SSE/WebSocket.
@@ -1233,14 +1285,14 @@ model Comment {
 
 | # | TASK | Ветка | Суть | DoD (кратко) |
 | --- | --- | --- | --- | --- |
-| 1 | TASK-22 `monorepo-restructure` | `feature/TASK-22-monorepo` | `git mv` фронта в `ui/`, workspaces, `@janosik/shared` (модель+LIMITS+envelope+STORAGE_KEYS+DTO-типы), `SAVE_DEBOUNCE_MS` в константы, алиасы vite/tsconfig/vitest | 287+ тестов зелёные в новом layout; tsc/build зелёные |
-| 2 | TASK-23 `backend-scaffold` | `feature/TASK-23-backend-scaffold` | NestJS + Prisma + docker-compose(postgres:16), `/health`, модули-заглушки, общий tsconfig/ESLint | `/health` 200; e2e-пайплайн работает; backend-команды DoD в AGENT.md |
-| 3 | TASK-24 `backend-auth` | `feature/TASK-24-backend-auth` | register/login/refresh/logout/me, argon2id, ротация refresh + детект реюза, JwtGuard | e2e: полный цикл auth + реюз revoked → отзыв сессий; guard-роуты 401 |
-| 4 | TASK-25 `boards-members` | `feature/TASK-25-boards-members` | Полная схема §7.3 + миграции; boards CRUD, membership (invite/role), `GET /boards/:id` агрегат, import/export | e2e: CRUD, invite/role, 403 чужой доске; aggregate shape = модель фронта |
-| 5 | TASK-26 `columns-cards` | `feature/TASK-26-columns-cards` | Колонки и карточки: CRUD, move/reorder с позициями, duplicate, каскады | e2e: CRUD + move + позиции стабильны; каскад колонки; лимиты гвардят |
+| 1 | TASK-22 `monorepo-restructure` | `feature/TASK-22-monorepo` | `git mv` фронта в `ui/`, workspaces, `@janosik/shared` (модель+LIMITS+envelope+STORAGE_KEYS+DTO-типы; envelope сверить с сериалайзером архива/обложек/сроков — round-trip §7.4), `SAVE_DEBOUNCE_MS` в константы, алиасы vite/tsconfig/vitest | 362 теста зелёные в новом layout; tsc/build зелёные |
+| 2 | TASK-23 `backend-scaffold` | `feature/TASK-23-backend-scaffold` | NestJS + Prisma + docker-compose(postgres:16), `/health`, модули-заглушки, общий tsconfig/ESLint, helmet + rate-limit на auth-роутах сразу | `/health` 200; e2e-пайплайн работает; backend-команды DoD в AGENT.md |
+| 3 | TASK-24 `backend-auth` | `feature/TASK-24-backend-auth` | register/login/refresh/logout/me, argon2id, `displayName`, ротация refresh + детект реюза, JwtGuard | e2e: полный цикл auth + реюз revoked → отзыв сессий; guard-роуты 401; rate-limit на /auth/login |
+| 4 | TASK-25 `boards-members` | `feature/TASK-25-boards-members` | Полная схема §7.3 + миграции; boards CRUD, membership (invite/role), `GET /boards/:id` агрегат (активные cardIds + cards с archivedAt), import/export с round-trip cover/due/wip/archived | e2e: CRUD, invite/role, 403 чужой доске; aggregate shape = модель фронта (включая архив) |
+| 5 | TASK-26 `columns-cards` | `feature/TASK-26-columns-cards` | Колонки и карточки: CRUD, move/reorder с позициями, duplicate (id копии от клиента), archive/unarchive/mass-archive (TASK-18.1), WIP-409, каскады | e2e: CRUD + move + позиции стабильны; archive round-trip; WIP 409; каскад колонки; лимиты гвардят |
 | 6 | TASK-27 `labels-checklists` | `feature/TASK-27-labels-checklists` | Метки (доска+карточка, m2m с позицией), чек-листы + пункты | e2e: m2m round-trip, каскад метки, лимиты коллекций |
-| 7 | TASK-28 `activity-comments` | `feature/TASK-28-activity-comments` | Activity (интерцептор пишет события), курсорные ленты, комментарии | e2e: события на каждый мутирующий вызов, actorId верный, пагинация |
-| 8 | TASK-29 `optimistic-adapter` | `feature/TASK-29-optimistic-adapter` | Sync-слой: экшен→API→reconcile, откаты, старт-агрегат → REPLACE_STATE, login-экран, миграция localStorage | UI полностью живёт с сервера; undo/redo и офлайн-тосты работают; 287+ фронт-тестов зелёные |
+| 7 | TASK-28 `activity-comments` | `feature/TASK-28-activity-comments` | Activity (интерцептор пишет все 10 типов + member/comment), курсорные ленты, комментарии (API готов; UI комментариев — позже, §7.6) | e2e: события на каждый мутирующий вызов, actorId верный, пагинация |
+| 8 | TASK-29 `optimistic-adapter` | `feature/TASK-29-optimistic-adapter` | Sync-слой: экшен→API→reconcile, undo=инверсные вызовы, 401/refresh single-flight, откаты, старт-агрегат → REPLACE_STATE, login-экран, миграция localStorage (включая архивные карточки) | UI полностью живёт с сервера; undo/redo и офлайн-тосты работают; 362+ фронт-тестов зелёные |
 | 9 | TASK-30 `realtime-sse` | `feature/TASK-30-realtime-sse` | SSE-поток + применение чужих патчей на фронте, refetch-on-focus остаётся fallback | два браузера видят изменения друг друга без перезагрузки |
 
 После TASK-29 ядро готово (TASK-30 — realtime поверх). §7.6 открывается
