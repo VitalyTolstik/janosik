@@ -7,6 +7,7 @@ import { CalendarView } from "@/components/board/CalendarView";
 import { TableView } from "@/components/board/TableView";
 import { CardDialog } from "@/components/board/CardDialog";
 import { ViewSwitcher, type BoardView } from "@/components/board/ViewSwitcher";
+import { ColumnGlassMenu } from "@/components/board/ColumnGlassMenu";
 import { useBoardBackground } from "@/hooks/use-board-background";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -116,6 +117,8 @@ export function BoardSection() {
       </div>
       <div className="mb-3 flex items-center justify-between gap-3">
         <ViewSwitcher value={view} onChange={setView} />
+        {/* Column glass settings only make sense for the board view. */}
+        {view === "board" ? <ColumnGlassMenu /> : null}
       </div>
       {view === "board" ? (
         <DndBoard

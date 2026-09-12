@@ -372,20 +372,13 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
         >
           {t("view.calendar.today")}
         </Button>
-        <div className="mr-auto" />
-        {/* Helper text: the grid's main affordance is not obvious from
-            the grid itself. */}
-        <span
-          className="mr-2 hidden text-[11px] text-muted-foreground/70 lg:inline"
-          data-testid="calendar-hint"
-        >
-          {t("view.calendar.hint")}
-        </span>
-        {/* Scale toggle — month / week (TASK-14.1). */}
+        {/* «Сегодня» sits next to the period label; the scale toggle and
+            the arrows follow — everything navigation-related stays on the
+            left, the right side keeps only the helper text. */}
         <div
           role="group"
           aria-label={t("view.calendar.scale")}
-          className="mr-2 inline-flex items-center rounded-md border border-border/60 p-0.5"
+          className="ml-1 inline-flex items-center rounded-md border border-border/60 p-0.5"
         >
           <button
             type="button"
@@ -432,6 +425,15 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
         >
           <ChevronRight className="h-4 w-4" />
         </Button>
+        <div className="mr-auto" />
+        {/* Helper text: the grid's main affordance is not obvious from
+            the grid itself. */}
+        <span
+          className="hidden text-[11px] text-muted-foreground/70 lg:inline"
+          data-testid="calendar-hint"
+        >
+          {t("view.calendar.hint")}
+        </span>
       </header>
 
       <div className="flex flex-1 overflow-hidden">

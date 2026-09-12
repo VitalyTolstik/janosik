@@ -185,6 +185,7 @@
   "bg.glassTitle": "Колонки",
   "bg.glassOpacity": "Прозрачность",
   "bg.glassBlur": "Размытие",
+  "bg.glassMenu": "Вид колонок",
   "card.notFoundTitle": "Карточка",
   "card.notFoundDesc": "Эта карточка больше не существует.",
   "card.deletedDesc": "Эта карточка была удалена.",
