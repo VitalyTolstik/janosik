@@ -1,4 +1,4 @@
-import { Archive, FileText, ListChecks, MessageSquare, Pencil, Plus, Settings2 } from "lucide-react";
+import { Archive, Check, FileText, ListChecks, MessageSquare, Plus, Settings2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { DueBadge } from "@/components/board/DueBadge";
@@ -119,6 +119,8 @@ export function TableView({
   const [visibleColumns, setVisibleColumns] =
     useState<OptionalColumn[]>(readStoredColumns);
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  // Row archive uses the same two-step confirm as the board card (✓ / ✗).
+  const [archiveConfirmId, setArchiveConfirmId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   // The "+ card" popover is controlled so the composer's Отмена can close it.
   const [addOpen, setAddOpen] = useState(false);
@@ -395,18 +397,50 @@ export function TableView({
                         >
                           <HighlightedText text={card.title} query={highlight ?? ""} />
                         </span>
-                        <button
-                          type="button"
-                          aria-label={t("view.table.rename")}
-                          data-testid="table-title-edit"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            startTitleEdit(card);
-                          }}
-                          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/title:opacity-100"
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </button>
+                        {archiveConfirmId === card.id ? (
+                          <span
+                            data-testid="table-archive-confirm"
+                            className="flex shrink-0 items-center gap-0.5"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              aria-label={t("card.archiveConfirmYes")}
+                              className="flex h-5 w-5 items-center justify-center rounded-md text-danger hover:bg-danger/10"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setArchiveConfirmId(null);
+                                archiveCard(card.id);
+                              }}
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={t("card.archiveConfirmCancel")}
+                              className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setArchiveConfirmId(null);
+                              }}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            aria-label={t("card.archive")}
+                            data-testid="table-archive-btn"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setArchiveConfirmId(card.id);
+                            }}
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-warning/10 hover:text-warning group-hover/title:opacity-100"
+                          >
+                            <Archive className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </span>
                     )}
                   </td>

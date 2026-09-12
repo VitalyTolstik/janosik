@@ -289,6 +289,8 @@
   "card.delete": "Delete card",
   "card.duplicate": "Duplicate card",
   "card.archive": "Archive",
+  "card.archiveConfirmYes": "Yes, archive",
+  "card.archiveConfirmCancel": "Cancel",
   "card.unarchive": "Send back to board",
   "card.restoreTo": "Restore to column",
   "card.deleteForever": "Delete forever",

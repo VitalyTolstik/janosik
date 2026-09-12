@@ -1,4 +1,4 @@
-import { AlignLeft, Archive, CopyPlus, ListTodo } from "lucide-react";
+import { AlignLeft, Archive, Check, CopyPlus, ListTodo, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -77,6 +77,9 @@ function useClamped(): [
 export function CardItem({ card, labels, isDragging, highlight, isCursor, onClick, onDuplicate, onArchive }: CardItemProps) {
   const [titleRef, titleClamped] = useClamped();
   const { t } = useI18n();
+  // Archive uses the board-archive two-step: first click arms the
+  // confirmation (✓ / ✗), so a brushed click never archives silently.
+  const [confirmArchive, setConfirmArchive] = useState(false);
   const hasDescription = Boolean(card.description?.trim());
   // Checklist progress summed across all of the card's checklists.
   const items = (card.checklists ?? []).flatMap((c) => c.items);
@@ -119,7 +122,7 @@ export function CardItem({ card, labels, isDragging, highlight, isCursor, onClic
       {/* Hover duplicate (Trello quick-edit style): a compact icon in the
           top-right corner, visible only while hovered. Hidden while dragging
           and when there is nowhere to put the copy handler. */}
-      {onDuplicate && !isDragging ? (
+      {onDuplicate && !isDragging && !confirmArchive ? (
         <Tooltip>
           <TooltipTrigger asChild>
             <button
@@ -139,24 +142,56 @@ export function CardItem({ card, labels, isDragging, highlight, isCursor, onClic
         </Tooltip>
       ) : null}
       {onArchive && !isDragging ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
+        confirmArchive ? (
+          <span
+            data-testid="card-archive-confirm"
+            className="absolute right-1.5 top-1.5 z-10 flex h-6 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
-              aria-label={t("card.archive")}
-              data-testid="card-archive"
-              className="absolute right-8 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 hover:text-foreground group-hover:opacity-100"
+              aria-label={t("card.archiveConfirmYes")}
+              className="flex h-5 w-5 items-center justify-center rounded-md text-danger hover:bg-danger/10"
               onClick={(e) => {
-                // Don't let the click open the card dialog.
                 e.stopPropagation();
+                setConfirmArchive(false);
                 onArchive();
               }}
             >
-              <Archive className="h-3.5 w-3.5" />
+              <Check className="h-3.5 w-3.5" />
             </button>
-          </TooltipTrigger>
-          <TooltipContent>{t("card.archive")}</TooltipContent>
-        </Tooltip>
+            <button
+              type="button"
+              aria-label={t("card.archiveConfirmCancel")}
+              className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirmArchive(false);
+              }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={t("card.archive")}
+                data-testid="card-archive"
+                className="absolute right-8 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 hover:bg-warning/10 hover:text-warning group-hover:opacity-100"
+                onClick={(e) => {
+                  // Don't let the click open the card dialog.
+                  e.stopPropagation();
+                  setConfirmArchive(true);
+                }}
+              >
+                <Archive className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{t("card.archive")}</TooltipContent>
+          </Tooltip>
+        )
       ) : null}
       {/* Cover: a slim top strip — same height for colors and gradients
           (matches the label chip row scale). Negative margins bleed it into
