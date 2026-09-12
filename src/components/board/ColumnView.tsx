@@ -222,7 +222,7 @@ export function ColumnView({
           )}
         </div>
 
-        <footer className="px-2 pb-2">
+        <footer className="px-2 pb-2 pt-1.5">
           <CardComposer
             columnId={column.id}
             labels={board.labels}

@@ -359,9 +359,20 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
   return (
     <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/60 backdrop-blur-sm">
       <header className="flex items-center gap-1 border-b border-border/60 px-3 py-2">
-        <h3 className="mr-auto text-sm font-semibold text-foreground">
+        <h3 className="text-sm font-semibold text-foreground">
           {headerLabel}
         </h3>
+        {/* «Сегодня» sits next to the period label — the two are used
+            together, and on wide screens the right side is too far away. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={() => setAnchor(startOfMonth(new Date()))}
+        >
+          {t("view.calendar.today")}
+        </Button>
+        <div className="mr-auto" />
         {/* Helper text: the grid's main affordance is not obvious from
             the grid itself. */}
         <span
@@ -411,14 +422,6 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
           onClick={() => step(-1)}
         >
           <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={() => setAnchor(startOfMonth(new Date()))}
-        >
-          {t("view.calendar.today")}
         </Button>
         <Button
           variant="ghost"
