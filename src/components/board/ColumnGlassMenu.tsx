@@ -1,4 +1,4 @@
-import { SlidersHorizontal } from "lucide-react";
+import { Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -36,14 +36,20 @@ export function ColumnGlassMenu() {
               size="icon"
               aria-label={t("bg.glassMenu")}
               aria-haspopup="menu"
+              className="group"
             >
-              <SlidersHorizontal className="h-5 w-5" aria-hidden />
+              {/* Lucide icon animated on hover — the gear spins a quarter
+                  turn, inviting the click. */}
+              <Settings
+                className="h-5 w-5 transition-transform duration-300 group-hover:rotate-90"
+                aria-hidden
+              />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
-        <DropdownMenuContent align="end" className="w-64">
-          <div className="py-1" onKeyDown={stopKeys}>
-            <label className="flex items-center gap-2 text-xs">
+        <DropdownMenuContent align="end" className="w-64 p-0">
+          <div className="space-y-1.5 px-3 py-2.5" onKeyDown={stopKeys}>
+            <label className="flex h-6 items-center gap-2 text-xs">
               <span className="w-20 shrink-0 text-muted-foreground">
                 {t("bg.glassOpacity")}
               </span>
@@ -67,7 +73,7 @@ export function ColumnGlassMenu() {
                 {glass.transparency}%
               </span>
             </label>
-            <label className="mt-2 flex items-center gap-2 text-xs">
+            <label className="flex h-6 items-center gap-2 text-xs">
               <span className="w-20 shrink-0 text-muted-foreground">
                 {t("bg.glassBlur")}
               </span>
