@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { CalendarClock, X } from "lucide-react";
-import { ru } from "react-day-picker/locale";
 
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
+import { Calendar } from "@/components/ui/calendar-lazy";
 import {
   TimePickerPanel,
   TimePickerTrigger,
@@ -100,7 +99,7 @@ export function DueDatePickerContent({
       )}
       <Calendar
         mode="single"
-        locale={lang.startsWith("ru") ? ru : undefined}
+        localeTag={lang}
         selected={due?.date}
         onSelect={applyDate}
       />

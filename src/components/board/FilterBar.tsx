@@ -1,4 +1,3 @@
-import { format, parseISO } from "date-fns";
 import {
   CalendarClock,
   CalendarDays,
@@ -11,7 +10,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
+import { Calendar } from "@/components/ui/calendar-lazy";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -56,10 +55,23 @@ const MATCH_LABEL_KEY: Record<LabelMatch, MessageKey> = {
   all: "filter.matchAll",
 };
 
+// Inline YYYY-MM-DD <-> Date helpers — pulling in date-fns here would put
+// it (and the whole daypicker chunk) on the critical path (TASK-19).
+function parseIsoDate(on: string): Date {
+  const [y, m, d] = on.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function formatIsoDate(day: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+}
+
 /** Locale-aware "15 June 2025" label for a stored YYYY-MM-DD day. */
 function formatDay(on: string, lang: string): string {
   try {
-    const day = parseISO(on);
+    const [y, m, d] = on.split("-").map(Number);
+    const day = new Date(y, m - 1, d);
     if (Number.isNaN(day.getTime())) return on;
     return day.toLocaleDateString(lang.startsWith("ru") ? "ru-RU" : "en-US", {
       day: "numeric",
@@ -380,12 +392,12 @@ export function FilterBar({
                   aria-label={t("filter.dateTitle")}
                   mode="single"
                   selected={
-                    filter.createdOn ? parseISO(filter.createdOn) : undefined
+                    filter.createdOn ? parseIsoDate(filter.createdOn) : undefined
                   }
                   onSelect={(day) => {
                     onChange({
                       ...filter,
-                      createdOn: day ? format(day, "yyyy-MM-dd") : null,
+                      createdOn: day ? formatIsoDate(day) : null,
                     });
                     if (day) setDayCalendarOpen(false);
                   }}

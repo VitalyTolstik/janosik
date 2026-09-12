@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Archive, ArchiveRestore, ArrowRightLeft, CalendarClock, CopyPlus, Trash2 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
@@ -7,7 +7,14 @@ import { CardChecklists } from "@/components/board/CardChecklists";
 import { CardDueDate } from "@/components/board/CardDueDate";
 import { CardCoverPicker } from "@/components/board/CardCoverPicker";
 import { LabelPicker } from "@/components/board/LabelPicker";
-import { DescriptionEditor } from "@/components/editor/DescriptionEditor";
+// MDXEditor + Lexical are ~half of the app bundle but only needed once the
+// user opens a card — load them on demand (TASK-19). vi.mock in tests
+// intercepts the dynamic import the same way as a static one.
+const DescriptionEditor = lazy(() =>
+  import("@/components/editor/DescriptionEditor").then((m) => ({
+    default: m.DescriptionEditor,
+  })),
+);
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { useToast } from "@/components/Toast";
 import {
@@ -241,32 +248,40 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                   editor toolbar; no separate preview toggle needed. The
                   editor surface can't take maxLength (contenteditable), so
                   oversized pastes are clamped here with a visible toast. */}
-              <DescriptionEditor
-                key={`${card.id}:${overflowTick}`}
-                value={card.description ?? ""}
-                onChange={(description) => {
-                  if (description.length > LIMITS.description) {
-                    if (!overLimitRef.current) {
-                      overLimitRef.current = true;
-                      toast.error(
-                        t("limits.exceeded", { limit: LIMITS.description }),
+              <Suspense
+                fallback={
+                  /* Same footprint as the empty editor so the dialog rows
+                     don't jump while the chunk streams in (first open only). */
+                  <div className="h-16 animate-pulse rounded-md bg-muted/40" />
+                }
+              >
+                <DescriptionEditor
+                  key={`${card.id}:${overflowTick}`}
+                  value={card.description ?? ""}
+                  onChange={(description) => {
+                    if (description.length > LIMITS.description) {
+                      if (!overLimitRef.current) {
+                        overLimitRef.current = true;
+                        toast.error(
+                          t("limits.exceeded", { limit: LIMITS.description }),
+                        );
+                      }
+                      updateCard(
+                        card.id,
+                        { description: description.slice(0, LIMITS.description) },
+                        { quiet: true },
                       );
+                      scheduleTouch();
+                      setOverflowTick((n) => n + 1);
+                      return;
                     }
-                    updateCard(
-                      card.id,
-                      { description: description.slice(0, LIMITS.description) },
-                      { quiet: true },
-                    );
+                    overLimitRef.current = false;
+                    updateCard(card.id, { description }, { quiet: true });
                     scheduleTouch();
-                    setOverflowTick((n) => n + 1);
-                    return;
-                  }
-                  overLimitRef.current = false;
-                  updateCard(card.id, { description }, { quiet: true });
-                  scheduleTouch();
-                }}
-                placeholder={t("card.descriptionPlaceholder")}
-              />
+                  }}
+                  placeholder={t("card.descriptionPlaceholder")}
+                />
+              </Suspense>
               <LimitCounter
                 length={(card.description ?? "").length}
                 limit={LIMITS.description}
