@@ -1,4 +1,4 @@
-import { Settings } from "lucide-react";
+import { SettingsIcon } from "@/components/icons/settings";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -36,14 +36,10 @@ export function ColumnGlassMenu() {
               size="icon"
               aria-label={t("bg.glassMenu")}
               aria-haspopup="menu"
-              className="group"
             >
-              {/* Lucide icon animated on hover — the gear spins a quarter
-                  turn, inviting the click. */}
-              <Settings
-                className="h-5 w-5 transition-transform duration-300 group-hover:rotate-90"
-                aria-hidden
-              />
+              {/* lucide-animated SettingsIcon — spring-spins 180° on
+                  hover (motion-powered, see lucide-animated.com). */}
+              <SettingsIcon size={20} aria-hidden />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>

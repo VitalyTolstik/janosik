@@ -104,6 +104,7 @@
   "shortcuts.help": "This cheat sheet",
   "shortcuts.close": "Close overlay / cancel",
   "search.aria": "Search cards and boards",
+  "search.label": "Global search",
   "search.tooltip": "Search ({{shortcut}})",
   "search.placeholder": "Search across all boards…",
   "search.hint": "Type to search titles, descriptions and labels across all boards.",
