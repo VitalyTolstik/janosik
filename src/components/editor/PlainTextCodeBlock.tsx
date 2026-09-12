@@ -41,6 +41,7 @@ export function PlainTextCodeBlockEditor({
   return (
     <div className="janosik-md-codeblock">
       <textarea
+        name="code-block"
         aria-label={
           language
             ? `${t("editor.codeBlock")} (${language})`

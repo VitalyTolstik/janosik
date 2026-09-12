@@ -53,6 +53,7 @@ export function RenameColumnDialog({
                                         </DialogTitle>
                                 </DialogHeader>
                                 <Input
+                                        name="column-rename"
                                         autoFocus
                                         value={title}
                                         maxLength={LIMITS.columnTitle}
