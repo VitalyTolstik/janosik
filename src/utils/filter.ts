@@ -8,10 +8,10 @@ import { dueStatus } from "@/utils/due-date";
  *   its description and the names of its labels (Notion-style "titles +
  *   properties" quick filter; Trello keeps the keyword narrow, but our
  *   roadmap explicitly includes descriptions and labels).
- * - `labelIds` — the card must carry ANY of the selected labels ("any match"
- *   semantics: pick two labels → find cards with either).
+ * - `labelIds` — the card must carry the selected labels, combined per
+ *   `labelMatch`: "any" (default — at least one) or "all" (every one).
  * - `noLabel` — include cards without any label. When combined with
- *   `labelIds` it behaves as OR ("no label" OR any selected label).
+ *   `labelIds` it behaves as OR ("no label" OR the label match).
  * - `created` — creation-date window, mirroring "created in the last …"
  *   filters: today (since local midnight), last 7 days, last 30 days.
  * - `createdOn` — exact local day ("YYYY-MM-DD") the card was created on.
@@ -28,11 +28,16 @@ export type CreatedWindow = "any" | "today" | "7d" | "30d";
 
 export type DueFilter = "any" | "overdue" | "soon" | "none";
 
+/** How multiple selected labels combine: at least one (ANY) or all of them (ALL). */
+export type LabelMatch = "any" | "all";
+
 export interface CardFilter {
  /** Substring of the card title; trimmed before matching. */
  query: string;
- /** Selected label ids — ANY of them must be present on the card. */
- labelIds: string[];
+  /** Selected label ids — matched according to `labelMatch`. */
+  labelIds: string[];
+  /** Label match mode: "any" (default, OR) or "all" (every selected label). */
+  labelMatch: LabelMatch;
  /** Also include cards without any label (OR-ed with labelIds). */
  noLabel: boolean;
  /** Creation-date window; "any" disables the facet. */
@@ -44,8 +49,9 @@ export interface CardFilter {
 }
 
 export const EMPTY_FILTER: CardFilter = {
- query: "",
- labelIds: [],
+  query: "",
+  labelIds: [],
+  labelMatch: "any",
  noLabel: false,
  created: "any",
  createdOn: null,
@@ -182,7 +188,10 @@ export function matchesCardFilter(
 
  if (!matchesDueFilter(card, filter.due, now)) return false;
 
- const hasSelected = card.labelIds.some((id) => filter.labelIds.includes(id));
+  const hasSelected =
+    filter.labelMatch === "all"
+      ? filter.labelIds.every((id) => card.labelIds.includes(id))
+      : card.labelIds.some((id) => filter.labelIds.includes(id));
  if (filter.noLabel) return card.labelIds.length === 0 || hasSelected;
  if (filter.labelIds.length > 0 && !hasSelected) return false;
  return true;
