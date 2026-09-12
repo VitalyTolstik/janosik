@@ -124,8 +124,12 @@ export function BackgroundSwitcher() {
               <span className="w-20 shrink-0 text-muted-foreground">
                 {t("bg.glassBlur")}
               </span>
+              {/* No numeric readout here — a pixel count means nothing to
+                  the user; the visual effect is the feedback. The empty
+                  chip keeps the row aligned with the transparency one. */}
               <input
                 type="range"
+                aria-label={t("bg.glassBlur")}
                 min={GLASS_LIMITS.blur.min}
                 max={GLASS_LIMITS.blur.max}
                 step={GLASS_LIMITS.blur.step}
@@ -136,9 +140,7 @@ export function BackgroundSwitcher() {
                 data-testid="glass-blur"
                 className="h-1 min-w-0 flex-1 accent-primary"
               />
-              <span className="w-10 shrink-0 text-right tabular-nums text-muted-foreground">
-                {glass.blur}px
-              </span>
+              <span aria-hidden className="w-10 shrink-0" />
             </label>
           </div>
         </DropdownMenuContent>
