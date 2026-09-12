@@ -13,6 +13,7 @@ import { BoardSection } from "@/components/BoardSection";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
+import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 import { ToastProvider } from "@/components/Toast";
@@ -47,17 +48,19 @@ function renderBoard() {
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
-        <I18nProvider>
-          <TooltipProvider>
-            <MemoryRouter>
-              <ToastProvider>
-                <BoardProvider>
-                  <BoardSection />
-                </BoardProvider>
-              </ToastProvider>
-            </MemoryRouter>
-          </TooltipProvider>
-        </I18nProvider>
+        <BoardGlassProvider>
+          <I18nProvider>
+            <TooltipProvider>
+              <MemoryRouter>
+                <ToastProvider>
+                  <BoardProvider>
+                    <BoardSection />
+                  </BoardProvider>
+                </ToastProvider>
+              </MemoryRouter>
+            </TooltipProvider>
+          </I18nProvider>
+        </BoardGlassProvider>
       </BoardBackgroundProvider>
     </ThemeProvider>,
   );
@@ -108,9 +111,7 @@ describe("CardDialog input limits (TASK-20)", () => {
   it("shows the remaining-characters counter near the title limit", async () => {
     const dialog = await openCardDialog("Design the new onboarding flow");
     // No counter while the title is short.
-    expect(
-      within(dialog).queryByTestId("card-title-counter"),
-    ).toBeNull();
+    expect(within(dialog).queryByTestId("card-title-counter")).toBeNull();
 
     // Typing up to the last 60 chars reveals the live counter.
     const title = within(dialog).getByLabelText("Title");
@@ -227,9 +228,9 @@ describe("CardDialog cover", () => {
     // The gradient cover band appears on the card behind the dialog…
     await waitFor(() => {
       expect(
-        screen.getAllByTestId("card-cover").some(
-          (el) => el.getAttribute("data-cover-type") === "gradient",
-        ),
+        screen
+          .getAllByTestId("card-cover")
+          .some((el) => el.getAttribute("data-cover-type") === "gradient"),
       ).toBe(true);
     });
 
@@ -260,13 +261,15 @@ describe("CardDialog duplicate", () => {
       within(dialog).getByRole("button", { name: "Duplicate card" }),
     );
     // Dialog closes and the copy renders on the board below the original.
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog")).toBeNull(),
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const copies = screen.getAllByText(
+      "Copy of Design the new onboarding flow",
     );
-    const copies = screen.getAllByText("Copy of Design the new onboarding flow");
     expect(copies).toHaveLength(1);
     // The original is still there.
-    expect(screen.getByText("Design the new onboarding flow")).toBeInTheDocument();
+    expect(
+      screen.getByText("Design the new onboarding flow"),
+    ).toBeInTheDocument();
   });
 });
 
@@ -280,9 +283,9 @@ describe("CardDialog checklists", () => {
 
     // Create a checklist via the section header button.
     fireEvent.click(within(dialog).getByText("Add checklist"));
-    const checklistCard = within(dialog).getByText("Checklist").closest(
-      "[class*='rounded-lg border']",
-    );
+    const checklistCard = within(dialog)
+      .getByText("Checklist")
+      .closest("[class*='rounded-lg border']");
     expect(checklistCard).not.toBeNull();
 
     // Add an item through the inline composer.
@@ -294,9 +297,12 @@ describe("CardDialog checklists", () => {
     expect(within(dialog).getByText("Draft the copy")).toBeInTheDocument();
 
     // Toggle it done — the progress counter and the card badge flip to 1/1.
-    fireEvent.click(within(dialog).getByText("Draft the copy")
-      .closest("li")!
-      .querySelector("button") as HTMLButtonElement);
+    fireEvent.click(
+      within(dialog)
+        .getByText("Draft the copy")
+        .closest("li")!
+        .querySelector("button") as HTMLButtonElement,
+    );
     expect(within(dialog).getByText("1 of 1 task")).toBeInTheDocument();
     const badges = screen.getAllByTestId("card-checklist-badge");
     expect(badges.length).toBeGreaterThan(0);
@@ -334,9 +340,7 @@ describe("CardDialog checklists", () => {
     const confirmAgain = await screen.findByRole("dialog", {
       name: /Delete this checklist/i,
     });
-    await user.click(
-      within(confirmAgain).getByText("Delete", { exact: true }),
-    );
+    await user.click(within(confirmAgain).getByText("Delete", { exact: true }));
     expect(
       within(dialog).queryByText("Draft the copy"),
     ).not.toBeInTheDocument();

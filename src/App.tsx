@@ -8,6 +8,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Header } from "@/components/Header";
 import { ToastProvider } from "@/components/Toast";
 import { ThemeProvider } from "@/hooks/use-theme";
+import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider, useBoard } from "@/store/BoardContext";
@@ -76,29 +77,31 @@ export default function App() {
   return (
     <ThemeProvider>
       <BoardBackgroundProvider>
-        <I18nProvider>
-          <ToastProvider>
-            <ErrorBoundary>
-              <TooltipProvider delayDuration={150}>
-                <HashRouter>
-                  <BoardProvider>
-                    <div className="flex min-h-screen flex-col bg-background text-foreground">
-                      <Header />
-                      <Routes>
-                        <Route path={routes.home} element={<NoBoardRoute />} />
-                        <Route
-                          path={routes.boardPattern}
-                          element={<BoardSection />}
-                        />
-                        <Route path="*" element={<NoBoardRoute />} />
-                      </Routes>
-                    </div>
-                  </BoardProvider>
-                </HashRouter>
-              </TooltipProvider>
-            </ErrorBoundary>
-          </ToastProvider>
-        </I18nProvider>
+        <BoardGlassProvider>
+          <I18nProvider>
+            <ToastProvider>
+              <ErrorBoundary>
+                <TooltipProvider delayDuration={150}>
+                  <HashRouter>
+                    <BoardProvider>
+                      <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+                        <Header />
+                        <Routes>
+                          <Route path={routes.home} element={<NoBoardRoute />} />
+                          <Route
+                            path={routes.boardPattern}
+                            element={<BoardSection />}
+                          />
+                          <Route path="*" element={<NoBoardRoute />} />
+                        </Routes>
+                      </div>
+                    </BoardProvider>
+                  </HashRouter>
+                </TooltipProvider>
+              </ErrorBoundary>
+            </ToastProvider>
+          </I18nProvider>
+        </BoardGlassProvider>
       </BoardBackgroundProvider>
     </ThemeProvider>
   );

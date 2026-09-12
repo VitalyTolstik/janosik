@@ -529,7 +529,7 @@ export function DndBoard({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div className="flex flex-1 items-start gap-3 overflow-x-auto pb-4">
+      <div className="flex min-h-0 flex-1 items-stretch gap-3 overflow-x-auto pb-4">
         <SortableContext
           items={columnOrder}
           strategy={horizontalListSortingStrategy}
