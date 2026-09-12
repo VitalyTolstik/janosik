@@ -1,4 +1,4 @@
-import { Archive, Check, FileText, ListChecks, MessageSquare, Plus, Settings2, X } from "lucide-react";
+import { AlignLeft, Archive, Check, ListChecks, MessageSquare, Plus, Settings2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { DueBadge } from "@/components/board/DueBadge";
@@ -369,7 +369,7 @@ export function TableView({
                   data-testid="table-row"
                   className="cursor-pointer border-b border-border/40 transition-colors last:border-b-0 hover:bg-muted/40"
                 >
-                  <td className="max-w-0 px-3 py-2">
+                  <td className="relative max-w-0 px-3 py-2">
                     {editingTitleId === card.id ? (
                       <Input
                         ref={titleInputRef}
@@ -387,20 +387,20 @@ export function TableView({
                         className="h-7 text-sm"
                       />
                     ) : (
-                      <span className="group/title flex items-center gap-1">
+                      <span className="group/title block">
                         <span
                           onDoubleClick={(event) => {
                             event.stopPropagation();
                             startTitleEdit(card);
                           }}
-                          className="min-w-0 flex-1 truncate text-foreground/90"
+                          className="block truncate text-foreground/90 group-hover/title:pr-9"
                         >
                           <HighlightedText text={card.title} query={highlight ?? ""} />
                         </span>
                         {archiveConfirmId === card.id ? (
                           <span
                             data-testid="table-archive-confirm"
-                            className="flex shrink-0 items-center gap-0.5"
+                            className="absolute right-2 top-1/2 z-10 flex h-6 -translate-y-1/2 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
                             onClick={(event) => event.stopPropagation()}
                           >
                             <button
@@ -436,7 +436,7 @@ export function TableView({
                               event.stopPropagation();
                               setArchiveConfirmId(card.id);
                             }}
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-warning/10 hover:text-warning group-hover/title:opacity-100"
+                            className="absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/title:opacity-100"
                           >
                             <Archive className="h-3.5 w-3.5" />
                           </button>
@@ -563,7 +563,7 @@ export function TableView({
                   {visibleColumns.includes("description") ? (
                     <td className="px-3 py-2">
                       {card.description ? (
-                        <FileText
+                        <AlignLeft
                           data-testid="table-description"
                           className="h-3.5 w-3.5 text-muted-foreground"
                           aria-label={t("view.table.description")}
