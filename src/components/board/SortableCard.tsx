@@ -16,6 +16,8 @@ interface SortableCardProps {
   onCardClick?: () => void;
   /** Fired by the hover duplicate button on the card. */
   onCardDuplicate?: () => void;
+  /** Fired by the hover archive button on the card (TASK-18.1). */
+  onCardArchive?: () => void;
 }
 
 /**
@@ -23,7 +25,7 @@ interface SortableCardProps {
  * (the lift + gap animation while dragging) is applied to the wrapper div,
  * not to the CardItem itself, so the card keeps its own styling intact.
  */
-export function SortableCard({ card, labels, highlight, isCursor, onCardClick, onCardDuplicate }: SortableCardProps) {
+export function SortableCard({ card, labels, highlight, isCursor, onCardClick, onCardDuplicate, onCardArchive }: SortableCardProps) {
   const {
     attributes,
     listeners,
@@ -55,6 +57,7 @@ export function SortableCard({ card, labels, highlight, isCursor, onCardClick, o
         isCursor={isCursor}
         onClick={onCardClick}
         onDuplicate={onCardDuplicate}
+        onArchive={onCardArchive}
       />
     </div>
   );
