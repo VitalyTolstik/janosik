@@ -1,10 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { BackgroundSwitcher } from "@/components/BackgroundSwitcher";
+import { ColumnGlassMenu } from "@/components/board/ColumnGlassMenu";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import {
   BoardGlassProvider,
   GLASS_LIMITS,
@@ -12,24 +10,20 @@ import {
 import { I18nProvider } from "@/i18n";
 
 /**
- * The background switcher also hosts the column glass sliders (TASK: user
- * controlled column transparency + blur). Changing a slider must update the
- * `--janosik-glass-*` CSS variables on the document root (consumed by
- * ColumnView) and persist to localStorage.
+ * The board view's column glass sliders (user-controlled transparency +
+ * blur). Changing a slider must update the `--janosik-glass-*` CSS
+ * variables on the document root (consumed by ColumnView) and persist to
+ * localStorage.
  */
 
-function renderSwitcher() {
+function renderMenu() {
   return render(
     <I18nProvider>
-      <BoardBackgroundProvider>
-        <BoardGlassProvider>
-          <TooltipProvider>
-            <MemoryRouter>
-              <BackgroundSwitcher />
-            </MemoryRouter>
-          </TooltipProvider>
-        </BoardGlassProvider>
-      </BoardBackgroundProvider>
+      <BoardGlassProvider>
+        <TooltipProvider>
+          <ColumnGlassMenu />
+        </TooltipProvider>
+      </BoardGlassProvider>
     </I18nProvider>,
   );
 }
@@ -37,18 +31,18 @@ function renderSwitcher() {
 function openMenu() {
   // Radix DropdownMenu opens on pointerdown, not click.
   fireEvent.pointerDown(
-    screen.getByRole("button", { name: "Board background" }),
+    screen.getByRole("button", { name: "Column appearance" }),
     { button: 0 },
   );
 }
 
-describe("BackgroundSwitcher glass sliders", () => {
+describe("ColumnGlassMenu", () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
   it("persists transparency changes to localStorage and CSS variables", () => {
-    renderSwitcher();
+    renderMenu();
     openMenu();
 
     const opacity = screen.getByTestId("glass-opacity");
@@ -67,7 +61,7 @@ describe("BackgroundSwitcher glass sliders", () => {
   });
 
   it("persists blur changes and stores 0 as 'no frosting'", () => {
-    renderSwitcher();
+    renderMenu();
     openMenu();
 
     fireEvent.change(screen.getByTestId("glass-blur"), {
@@ -85,14 +79,14 @@ describe("BackgroundSwitcher glass sliders", () => {
   it("restores saved values from localStorage on mount", () => {
     localStorage.setItem(
       "janosik-board-glass",
-      JSON.stringify({ transparency: 100, blur: 12 }),
+      JSON.stringify({ transparency: 100, blur: 20 }),
     );
 
-    renderSwitcher();
+    renderMenu();
     openMenu();
 
     expect(screen.getByTestId("glass-opacity")).toHaveValue("100");
-    expect(screen.getByTestId("glass-blur")).toHaveValue("12");
+    expect(screen.getByTestId("glass-blur")).toHaveValue("20");
     expect(
       document.documentElement.style.getPropertyValue(
         "--janosik-glass-transparency",
@@ -100,6 +94,6 @@ describe("BackgroundSwitcher glass sliders", () => {
     ).toBe("100");
     expect(
       document.documentElement.style.getPropertyValue("--janosik-glass-blur"),
-    ).toBe("12px");
+    ).toBe("20px");
   });
 });

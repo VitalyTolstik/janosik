@@ -17,6 +17,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { routes } from "@/routes";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
+import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 
@@ -43,30 +44,35 @@ function renderSwitcher(initialUrl = routes.board("b-1")) {
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
-        <I18nProvider>
-          <TooltipProvider>
-            <MemoryRouter initialEntries={[initialUrl]}>
-              <BoardProvider>
-                <BoardTitle />
-                <BoardSwitcher />
-                <Routes>
-                  <Route path={routes.home} element={<NoBoardRoute />} />
-                  <Route
-                    path={routes.boardPattern}
-                    element={<BoardSection />}
-                  />
-                </Routes>
-              </BoardProvider>
-            </MemoryRouter>
-          </TooltipProvider>
-        </I18nProvider>
+        <BoardGlassProvider>
+          <I18nProvider>
+            <TooltipProvider>
+              <MemoryRouter initialEntries={[initialUrl]}>
+                <BoardProvider>
+                  <BoardTitle />
+                  <BoardSwitcher />
+                  <Routes>
+                    <Route path={routes.home} element={<NoBoardRoute />} />
+                    <Route
+                      path={routes.boardPattern}
+                      element={<BoardSection />}
+                    />
+                  </Routes>
+                </BoardProvider>
+              </MemoryRouter>
+            </TooltipProvider>
+          </I18nProvider>
+        </BoardGlassProvider>
       </BoardBackgroundProvider>
     </ThemeProvider>,
   );
 }
 
 function seedTwoBoards() {
-  localStorage.setItem("janosik-boards", `[${boardJson("b-1", "Alpha")},${boardJson("b-2", "Beta")}]`);
+  localStorage.setItem(
+    "janosik-boards",
+    `[${boardJson("b-1", "Alpha")},${boardJson("b-2", "Beta")}]`,
+  );
 }
 
 async function openSwitcher() {
@@ -112,9 +118,7 @@ describe("BoardSwitcher", () => {
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => {
-      expect(
-        screen.getByRole("heading", { name: "Beta" }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Beta" })).toBeInTheDocument();
     });
   });
 
@@ -149,9 +153,13 @@ describe("BoardSwitcher", () => {
     // Beta is not active — hover its row to reveal the archive button.
     const betaRow = listbox.querySelector<HTMLElement>('[data-index="1"]')!;
     fireEvent.mouseEnter(betaRow);
-    fireEvent.click(within(betaRow).getByRole("button", { name: "Archive board" }));
+    fireEvent.click(
+      within(betaRow).getByRole("button", { name: "Archive board" }),
+    );
     // Confirm with the dedicated yes-button.
-    fireEvent.click(await screen.findByRole("button", { name: "Yes, archive" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Yes, archive" }),
+    );
     await waitFor(() => {
       // Beta left the active list…
       const options = screen.getAllByRole("option");
@@ -161,21 +169,22 @@ describe("BoardSwitcher", () => {
     // …but landed in the archived section (nothing was destroyed).
     expect(screen.getByTestId("archived-section")).toHaveTextContent("Beta");
     // Still on the untouched board.
-    expect(
-      screen.getByRole("heading", { name: "Alpha" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
   });
 
   it("archiving the active board navigates to the remaining one", async () => {
     renderSwitcher();
-    const listbox = await openSwitcher();    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    const listbox = await openSwitcher();
+    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
     fireEvent.mouseEnter(alphaRow);
-    fireEvent.click(within(alphaRow).getByRole("button", { name: "Archive board" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Yes, archive" }));
+    fireEvent.click(
+      within(alphaRow).getByRole("button", { name: "Archive board" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Yes, archive" }),
+    );
     await waitFor(() => {
-      expect(
-        screen.getByRole("heading", { name: "Beta" }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Beta" })).toBeInTheDocument();
     });
   });
 
@@ -201,9 +210,7 @@ describe("BoardSwitcher", () => {
     });
     // Beta is a real option again (and the header shows Alpha still).
     expect(screen.getAllByRole("option")).toHaveLength(2);
-    expect(
-      screen.getByRole("heading", { name: "Alpha" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
   });
 
   it("deletes an archived board for good after confirm", async () => {
@@ -248,8 +255,12 @@ describe("BoardSwitcher", () => {
     const listbox = await openSwitcher();
     const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
     fireEvent.mouseEnter(alphaRow);
-    fireEvent.click(within(alphaRow).getByRole("button", { name: "Archive board" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Yes, archive" }));
+    fireEvent.click(
+      within(alphaRow).getByRole("button", { name: "Archive board" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Yes, archive" }),
+    );
     // The empty-state screen replaces the board (never stranded on an
     // archived board), and the popover still offers restoration.
     expect(await screen.findByTestId("empty-create-board")).toBeInTheDocument();
@@ -271,8 +282,12 @@ describe("BoardSwitcher", () => {
     const listbox = await openSwitcher();
     const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
     fireEvent.mouseEnter(alphaRow);
-    fireEvent.click(within(alphaRow).getByRole("button", { name: "Archive board" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Yes, archive" }));
+    fireEvent.click(
+      within(alphaRow).getByRole("button", { name: "Archive board" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Yes, archive" }),
+    );
     fireEvent.click(await screen.findByTestId("empty-create-board"));
     await waitFor(() => {
       expect(

@@ -181,6 +181,7 @@
   "bg.glassTitle": "Columns",
   "bg.glassOpacity": "Transparency",
   "bg.glassBlur": "Blur",
+  "bg.glassMenu": "Column appearance",
   "card.notFoundTitle": "Card",
   "card.notFoundDesc": "This card no longer exists.",
   "card.deletedDesc": "This card was deleted.",
