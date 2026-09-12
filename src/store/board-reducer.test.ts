@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   boardReducer,
@@ -404,6 +404,64 @@ describe("boardReducer — UPDATE_CARD patch", () => {
       title: board.cards["card-1"].title,
     });
     expect(next).toEqual(board);
+  });
+});
+
+describe("boardReducer — quiet updatedAt (TASK-18)", () => {
+  it("keeps updatedAt quiet on live edits marked quiet", () => {
+    const board = freshBoard();
+    const before = board.cards["card-1"].updatedAt;
+    const next = reduceBoard(board, {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      title: "Typed live",
+      quiet: true,
+    });
+    expect(next.cards["card-1"].title).toBe("Typed live");
+    expect(next.cards["card-1"].updatedAt).toBe(before);
+  });
+
+  it("stamps one updatedAt per editing session via TOUCH_CARD", () => {
+    const board = freshBoard();
+    const before = board.cards["card-1"].updatedAt;
+    const typed = reduceBoard(board, {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      title: "T",
+      quiet: true,
+    });
+    const typedMore = reduceBoard(typed, {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      title: "Ty",
+      quiet: true,
+    });
+    expect(typedMore.cards["card-1"].updatedAt).toBe(before);
+    const touched = reduceBoard(typedMore, {
+      type: "TOUCH_CARD",
+      cardId: "card-1",
+      at: 987654,
+    });
+    expect(touched.cards["card-1"].updatedAt).toBe(987654);
+  });
+
+  it("bumps updatedAt to now when TOUCH_CARD has no explicit at", () => {
+    vi.useFakeTimers();
+    try {
+      const board = freshBoard();
+      vi.advanceTimersByTime(5000);
+      const next = reduceBoard(board, { type: "TOUCH_CARD", cardId: "card-1" });
+      expect(next.cards["card-1"].updatedAt).toBe(Date.now());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ignores TOUCH_CARD for a missing card", () => {
+    const board = freshBoard();
+    expect(
+      reduceBoard(board, { type: "TOUCH_CARD", cardId: "nope" }),
+    ).toEqual(board);
   });
 });
 
