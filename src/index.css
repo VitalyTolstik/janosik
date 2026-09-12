@@ -12,7 +12,7 @@
   /* Column glass defaults (overridden at runtime by BoardGlassProvider,
      see use-board-glass.tsx): transparency 0-100 (100 = no fill),
      blur = backdrop blur radius in px. */
-  --janosik-glass-transparency: 85;
+  --janosik-glass-transparency: 80;
   --janosik-glass-blur: 4px;
 
   /* App background (dark theme = brand background) */

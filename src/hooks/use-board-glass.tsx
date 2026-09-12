@@ -21,7 +21,7 @@ import {
 const STORAGE_KEY = "janosik-board-glass";
 
 export const GLASS_LIMITS = {
-  transparency: { min: 0, max: 100, step: 5, default: 85 },
+  transparency: { min: 0, max: 100, step: 20, default: 80 },
   blur: { min: 0, max: 20, step: 1, default: 4 },
 } as const;
 

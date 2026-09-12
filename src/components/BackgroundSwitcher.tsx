@@ -114,9 +114,9 @@ export function BackgroundSwitcher() {
                   })
                 }
                 data-testid="glass-opacity"
-                className="h-1 flex-1 accent-primary"
+                className="h-1 min-w-0 flex-1 accent-primary"
               />
-              <span className="w-9 text-right tabular-nums text-muted-foreground">
+              <span className="w-10 shrink-0 text-right tabular-nums text-muted-foreground">
                 {glass.transparency}%
               </span>
             </label>
@@ -134,9 +134,9 @@ export function BackgroundSwitcher() {
                   setGlass({ ...glass, blur: Number(event.target.value) })
                 }
                 data-testid="glass-blur"
-                className="h-1 flex-1 accent-primary"
+                className="h-1 min-w-0 flex-1 accent-primary"
               />
-              <span className="w-9 text-right tabular-nums text-muted-foreground">
+              <span className="w-10 shrink-0 text-right tabular-nums text-muted-foreground">
                 {glass.blur}px
               </span>
             </label>
