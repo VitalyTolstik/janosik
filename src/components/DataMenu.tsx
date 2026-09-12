@@ -25,7 +25,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useI18n } from "@/i18n";
+import { formatDate, useHour12, useI18n } from "@/i18n";
 import { MAX_IMPORT_BYTES } from "@/types/kanban";
 import { useBoard } from "@/store/BoardContext";
 import { parseExport, serializeExport } from "@/utils/board-serialization";
@@ -49,6 +49,7 @@ import {
 
 export function DataMenu() {
   const { t, lang } = useI18n();
+  const hour12 = useHour12();
   const toast = useToast();
   const { boards, importBoards } = useBoard();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -244,12 +245,13 @@ export function DataMenu() {
                       <div className="flex items-center gap-1">
                         <span
                           className="flex-1 truncate text-xs text-muted-foreground"
-                          title={new Date(backup.createdAt).toLocaleString()}
+                          title={formatDate(backup.createdAt, lang, hour12)}
                         >
                           {formatBackupTimestamp(
                             timestamp,
                             Date.now(),
                             lang,
+                            hour12,
                           )}
                         </span>
                         <Button

@@ -37,7 +37,7 @@ import {
 import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
-import { formatDateOnly, formatTime, useI18n } from "@/i18n";
+import { formatDateOnly, formatTime, useHour12, useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
 import {
   LABEL_COLOR_DOT,
@@ -225,6 +225,7 @@ function MonthYearMenu({ anchor, label, locale, onPick }: MonthYearMenuProps) {
 export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps) {
   const { board, addCard, setCardDueDate } = useBoard();
   const { t, tp, lang } = useI18n();
+  const hour12 = useHour12();
   const toast = useToast();
   const locale = lang.startsWith("ru") ? ruLocale : undefined;
   const weekStartsOn = lang.startsWith("ru") ? 1 : 0;
@@ -433,6 +434,7 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
         title={`${withTime ? `${formatTime(
           `${String(new Date(card.dueDate as number).getHours()).padStart(2, "0")}:${String(new Date(card.dueDate as number).getMinutes()).padStart(2, "0")}`,
           lang,
+          hour12,
         )} · ` : ""}${columnTitle} · ${card.title}${labels.length > 0 ? ` · ${labels.map((l) => l.name).join(", ")}` : ""}`}
         onClick={(event) => {
           event.stopPropagation();
@@ -473,6 +475,7 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
               {formatTime(
                 `${String(new Date(card.dueDate as number).getHours()).padStart(2, "0")}:${String(new Date(card.dueDate as number).getMinutes()).padStart(2, "0")}`,
                 lang,
+                hour12,
               )}
             </span>
           ) : null}
