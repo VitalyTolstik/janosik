@@ -31,7 +31,6 @@ import { parseExport, serializeExport } from "@/utils/board-serialization";
 import {
   createBackup,
   listBackups,
-  type BackupMeta,
 } from "@/utils/backup";
 
 /**
