@@ -71,12 +71,27 @@ function syncHtmlLang(lang: string) {
 syncHtmlLang(i18n.language);
 i18n.on("languageChanged", syncHtmlLang);
 
-/** Locale-aware short date(time) formatter, e.g. "2/10/25, 14:30". */
-export function formatDate(timestamp: number, lang: string): string {
+/**
+ * Locale-aware short date(time) formatter, e.g. "2/10/25, 14:30".
+ * `hour12` forces 12/24-hour rendering on top of the locale default
+ * (the user's time-format override) — `dateStyle`/`timeStyle` shorthand
+ * is replaced by explicit components so the option actually applies.
+ */
+export function formatDate(timestamp: number, lang: string, hour12?: boolean): string {
+  const locale = lang.startsWith("ru") ? "ru-RU" : "en-US";
   try {
     return new Date(timestamp).toLocaleString(
-      lang.startsWith("ru") ? "ru-RU" : "en-US",
-      { dateStyle: "short", timeStyle: "short" },
+      locale,
+      hour12 === undefined
+        ? { dateStyle: "short", timeStyle: "short" }
+        : {
+            year: "2-digit",
+            month: "numeric",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            hour12,
+          },
     );
   } catch {
     return new Date(timestamp).toLocaleString();
@@ -105,12 +120,13 @@ export function formatRelative(
   timestamp: number,
   lang: string,
   now: number = Date.now(),
+  hour12?: boolean,
 ): string {
   const locale = lang.startsWith("ru") ? "ru-RU" : "en-US";
   const diff = timestamp - now;
   const abs = Math.abs(diff);
   const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-  if (abs >= WEEK_MS) return formatDate(timestamp, lang);
+  if (abs >= WEEK_MS) return formatDate(timestamp, lang, hour12);
   try {
     const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
     if (abs < 60_000) return rtf.format(Math.round(diff / 1000), "second");
@@ -127,10 +143,38 @@ export function formatRelative(
 /**
  * Whether the locale conventionally reads clocks as 12-hour (AM/PM).
  * `ru` is 24-hour everywhere; `en` defaults to 12-hour (US convention —
- * our main English audience). A future settings toggle can override this.
+ * our main English audience). The user's `janosik-time-format` override
+ * (see `TimeFormat`) is applied on top of this in `useHour12`.
  */
 export function is12HourLocale(lang: string): boolean {
   return !lang.startsWith("ru");
+}
+
+// --- Time format override (TASK-17) -----------------------------------------
+
+/** User preference for clock rendering: locale default or forced 12/24h. */
+export type TimeFormat = "auto" | "12h" | "24h";
+
+const TIME_FORMAT_KEY = "janosik-time-format";
+
+/** Read the persisted time-format override; invalid values fall back to "auto". */
+export function loadTimeFormat(): TimeFormat {
+  try {
+    const raw = localStorage.getItem(TIME_FORMAT_KEY);
+    if (raw === "12h" || raw === "24h" || raw === "auto") return raw;
+  } catch {
+    /* storage unavailable — locale default */
+  }
+  return "auto";
+}
+
+/** Persist the time-format override; best-effort (private mode etc.). */
+export function saveTimeFormat(format: TimeFormat): void {
+  try {
+    localStorage.setItem(TIME_FORMAT_KEY, format);
+  } catch {
+    /* storage unavailable — choice still applies for the session */
+  }
 }
 
 /** "19:30" → { hour: 19, minute: 30 } (internal, always 24h). */
@@ -146,14 +190,18 @@ export function composeTime(hour: number, minute: number): string {
 
 /**
  * Locale-aware time formatter for badges/triggers: "19:30" (ru) or
- * "7:30 PM" (en). Format-only — the stored value stays a timestamp.
+ * "7:30 PM" (en). `hour12` forces 12/24-hour rendering on top of the
+ * locale default (the user's time-format override); format-only — the
+ * stored value stays a timestamp / "HH:mm" string.
  */
-export function formatTime(time: string, lang: string): string {
+export function formatTime(time: string, lang: string, hour12?: boolean): string {
   const { hour, minute } = parseTime(time);
   try {
     return new Date(2000, 0, 1, hour, minute).toLocaleTimeString(
       lang.startsWith("ru") ? "ru-RU" : "en-US",
-      { hour: "numeric", minute: "2-digit" },
+      hour12 === undefined
+        ? { hour: "numeric", minute: "2-digit" }
+        : { hour: "numeric", minute: "2-digit", hour12 },
     );
   } catch {
     return time;

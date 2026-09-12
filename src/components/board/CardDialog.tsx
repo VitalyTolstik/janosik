@@ -8,7 +8,7 @@ import { CardDueDate } from "@/components/board/CardDueDate";
 import { CardCoverPicker } from "@/components/board/CardCoverPicker";
 import { LabelPicker } from "@/components/board/LabelPicker";
 import { DescriptionEditor } from "@/components/editor/DescriptionEditor";
-import { formatDate, useI18n } from "@/i18n";
+import { formatDate, useHour12, useI18n } from "@/i18n";
 import { useToast } from "@/components/Toast";
 import {
   LimitCounter,
@@ -60,6 +60,7 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
     duplicateCard,
   } = useBoard();
   const { t, lang } = useI18n();
+  const hour12 = useHour12();
   const toast = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Fires the "too long" toast once per crossing (not on every keystroke
@@ -273,9 +274,9 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
 
             <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
               <CalendarClock className="h-3.5 w-3.5" />
-              {t("card.created", { date: formatDate(card.createdAt, lang) })}
+              {t("card.created", { date: formatDate(card.createdAt, lang, hour12) })}
               {card.updatedAt > card.createdAt
-                ? ` · ${t("card.updated", { date: formatDate(card.updatedAt, lang) })}`
+                ? ` · ${t("card.updated", { date: formatDate(card.updatedAt, lang, hour12) })}`
                 : ""}
             </div>
           </div>

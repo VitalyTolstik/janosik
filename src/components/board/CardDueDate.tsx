@@ -13,7 +13,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { formatDateOnly, formatTime, useI18n } from "@/i18n";
+import { formatDateOnly, formatTime, useHour12, useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
 
 /** Time-of-day applied when a date is picked without a time set yet. */
@@ -140,6 +140,7 @@ interface CardDueDateProps {
  */
 export function CardDueDate({ cardId, dueDate }: CardDueDateProps) {
   const { t, lang } = useI18n();
+  const hour12 = useHour12();
   const [open, setOpen] = useState(false);
   const due = typeof dueDate === "number" ? dueParts(dueDate) : undefined;
 
@@ -156,7 +157,7 @@ export function CardDueDate({ cardId, dueDate }: CardDueDateProps) {
           <Button variant="outline" size="sm" data-testid="due-date-trigger">
             <CalendarClock className="h-3.5 w-3.5" />
             {due
-              ? `${formatDateOnly(dueDate as number, lang)}, ${formatTime(due.time, lang)}`
+              ? `${formatDateOnly(dueDate as number, lang)}, ${formatTime(due.time, lang, hour12)}`
               : t("dueDate.set")}
           </Button>
         </PopoverTrigger>

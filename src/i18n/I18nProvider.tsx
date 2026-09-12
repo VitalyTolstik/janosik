@@ -1,4 +1,5 @@
 import type { i18n as I18nInstance } from "i18next";
+import { createContext, useContext, useState } from "react";
 import type { ReactNode } from "react";
 import { I18nextProvider, useTranslation } from "react-i18next";
 
@@ -9,8 +10,11 @@ import {
   formatRelative,
   formatTime,
   is12HourLocale,
+  loadTimeFormat,
+  saveTimeFormat,
   type Lang,
   type MessageKey,
+  type TimeFormat,
 } from "@/i18n/i18n";
 
 /**
@@ -29,8 +33,26 @@ export function I18nProvider({
  children: ReactNode;
  i18n?: I18nInstance;
 }) {
- return <I18nextProvider i18n={i18n}>{children}</I18nextProvider>;
+ const [timeFormat, setTimeFormatState] = useState<TimeFormat>(loadTimeFormat);
+
+ const setTimeFormat = (next: TimeFormat) => {
+  saveTimeFormat(next);
+  setTimeFormatState(next);
+ };
+
+ return (
+  <I18nextProvider i18n={i18n}>
+   <TimeFormatContext.Provider value={{ timeFormat, setTimeFormat }}>
+    {children}
+   </TimeFormatContext.Provider>
+  </I18nextProvider>
+ );
 }
+
+const TimeFormatContext = createContext<{
+ timeFormat: TimeFormat;
+ setTimeFormat: (next: TimeFormat) => void;
+}>({ timeFormat: "auto", setTimeFormat: () => {} });
 
 interface I18nContextValue {
  lang: Lang;
@@ -64,3 +86,23 @@ export function useI18n(): I18nContextValue {
 }
 
 export { formatDate, formatDateOnly, formatRelative, formatTime, is12HourLocale };
+
+/**
+ * Whether clocks should render as 12-hour (AM/PM): the user's
+ * `janosik-time-format` override when set, otherwise the locale convention
+ * (`is12HourLocale`). Reactive — components re-render when the toggle changes.
+ */
+export function useHour12(): boolean {
+  const { timeFormat } = useContext(TimeFormatContext);
+  const { i18n } = useTranslation();
+  const lang = i18n.language.startsWith("ru") ? "ru" : "en";
+  if (timeFormat === "auto") return is12HourLocale(lang);
+  return timeFormat === "12h";
+}
+
+export { type TimeFormat };
+
+/** Access the time-format override and its setter (persists to localStorage). */
+export function useTimeFormat() {
+  return useContext(TimeFormatContext);
+}

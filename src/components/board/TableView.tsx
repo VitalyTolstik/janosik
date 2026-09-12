@@ -389,7 +389,7 @@ export function TableView({
                             event.stopPropagation();
                             startTitleEdit(card);
                           }}
-                          className="min-w-0 flex-1 truncate font-medium text-foreground/90"
+                          className="min-w-0 flex-1 truncate text-foreground/90"
                         >
                           <HighlightedText text={card.title} query={highlight ?? ""} />
                         </span>

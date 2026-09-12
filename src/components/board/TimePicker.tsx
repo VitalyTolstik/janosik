@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Clock } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { formatTime, is12HourLocale, useI18n } from "@/i18n";
+import { formatTime, useHour12, useI18n } from "@/i18n";
 
 /** Visible rows in each column (drives the column height). */
 const ROWS_VISIBLE = 7;
@@ -134,6 +134,7 @@ export function TimePickerTrigger({
   onToggle,
 }: TimePickerTriggerProps) {
   const { t, lang } = useI18n();
+  const hour12 = useHour12();
   return (
     <button
       type="button"
@@ -147,7 +148,7 @@ export function TimePickerTrigger({
       )}
     >
       <Clock className="h-3.5 w-3.5 opacity-70" aria-hidden />
-      {formatTime(value, lang)}
+      {formatTime(value, lang, hour12)}
     </button>
   );
 }
@@ -171,8 +172,8 @@ export function TimePickerPanel({
   onChange,
   onConfirm,
 }: TimePickerPanelProps) {
-  const { t, lang } = useI18n();
-  const hour12 = is12HourLocale(lang);
+  const { t } = useI18n();
+  const hour12 = useHour12();
   const hour = Number.parseInt(value.split(":")[0], 10) || 0;
   const minute = Number.parseInt(value.split(":")[1], 10) || 0;
 

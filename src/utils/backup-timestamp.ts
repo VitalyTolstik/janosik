@@ -14,7 +14,12 @@ import type { Lang } from "@/i18n/i18n";
 
 const MINUTE = 60_000;
 
-export function formatBackupTimestamp(timestamp: number, now: number, lang: Lang): string {
+export function formatBackupTimestamp(
+  timestamp: number,
+  now: number,
+  lang: Lang,
+  hour12 = false,
+): string {
   const locale = lang === "ru" ? "ru-RU" : "en-US";
   const deltaMinutes = Math.round((timestamp - now) / MINUTE);
 
@@ -33,7 +38,7 @@ export function formatBackupTimestamp(timestamp: number, now: number, lang: Lang
   const time = new Intl.DateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hour12,
   }).format(timestamp);
 
   if (daysBetween === 0) return time;
