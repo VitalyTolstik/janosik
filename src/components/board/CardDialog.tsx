@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRightLeft, CalendarClock, CopyPlus, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowRightLeft, CalendarClock, CopyPlus, Trash2 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { CardActivityFeed } from "@/components/board/CardActivityFeed";
@@ -54,6 +54,8 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
     board,
     updateCard,
     touchCard,
+    archiveCard,
+    unarchiveCard,
     toggleCardLabel,
     addLabel,
     renameLabel,
@@ -161,6 +163,17 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
       columnId,
       target.cardIds.length,
     );
+  };
+
+  // Archive closes the dialog — the card just left the board (TASK-18.1).
+  const handleArchive = () => {
+    archiveCard(card.id);
+    onOpenChange(false);
+  };
+
+  // Restore keeps the dialog open so the user sees the card back on board.
+  const handleRestore = (columnId: string) => {
+    unarchiveCard(card.id, columnId);
   };
 
   return (
@@ -283,32 +296,34 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
 
             <CardActivityFeed activity={card.activity} createdAt={card.createdAt} />
 
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-muted-foreground">
-                {t("card.columnLabel")}
-              </span>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <ArrowRightLeft className="h-3.5 w-3.5" />
-                    {currentColumn?.title ?? "—"}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuLabel>{t("card.moveTo")}</DropdownMenuLabel>
-                  {board.columns.map((column) => (
-                    <DropdownMenuItem
-                      key={column.id}
-                      disabled={column.id === currentColumn?.id}
-                      onClick={() => handleMove(column.id)}
-                    >
-                      {column.id === currentColumn?.id ? "✓ " : ""}
-                      {column.title}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            {!card.archivedAt && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("card.columnLabel")}
+                </span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <ArrowRightLeft className="h-3.5 w-3.5" />
+                      {currentColumn?.title ?? "—"}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuLabel>{t("card.moveTo")}</DropdownMenuLabel>
+                    {board.columns.map((column) => (
+                      <DropdownMenuItem
+                        key={column.id}
+                        disabled={column.id === currentColumn?.id}
+                        onClick={() => handleMove(column.id)}
+                      >
+                        {column.id === currentColumn?.id ? "✓ " : ""}
+                        {column.title}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
 
             <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
               <CalendarClock className="h-3.5 w-3.5" />
@@ -320,20 +335,47 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
           </div>
 
           <DialogFooter className="mt-2 shrink-0">
-            <Button
-              variant="ghost"
-              onClick={handleDuplicate}
-            >
-              <CopyPlus className="h-4 w-4" />
-              {t("card.duplicate")}
-            </Button>
+            {card.archivedAt === undefined ? (
+              <Button variant="ghost" onClick={handleDuplicate}>
+                <CopyPlus className="h-4 w-4" />
+                {t("card.duplicate")}
+              </Button>
+            ) : null}
+            {card.archivedAt === undefined ? (
+              <Button variant="ghost" onClick={handleArchive}>
+                <Archive className="h-4 w-4" />
+                {t("card.archive")}
+              </Button>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost">
+                    <ArchiveRestore className="h-4 w-4" />
+                    {t("card.unarchive")}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-48">
+                  <DropdownMenuLabel>{t("card.restoreTo")}</DropdownMenuLabel>
+                  {board.columns.map((column) => (
+                    <DropdownMenuItem
+                      key={column.id}
+                      onClick={() => handleRestore(column.id)}
+                    >
+                      {column.title}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <Button
               variant="ghost"
               className="text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={() => setConfirmDelete(true)}
             >
               <Trash2 className="h-4 w-4" />
-              {t("card.delete")}
+              {card.archivedAt !== undefined
+                ? t("card.deleteForever")
+                : t("card.delete")}
             </Button>
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               {t("card.close")}
@@ -345,8 +387,16 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title={t("card.deleteTitle")}
-        description={t("card.deleteDescription", { title: card.title })}
+        title={
+          card.archivedAt !== undefined
+            ? t("card.deleteForeverTitle")
+            : t("card.deleteTitle")
+        }
+        description={
+          card.archivedAt !== undefined
+            ? t("card.deleteForeverDescription", { title: card.title })
+            : t("card.deleteDescription", { title: card.title })
+        }
         confirmLabel={t("card.deleteConfirm")}
         destructive
         onConfirm={handleDelete}

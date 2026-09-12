@@ -121,6 +121,13 @@ export interface Card {
   activity?: CardActivityEvent[];
   createdAt: number;
   updatedAt: number;
+  /**
+   * Set when the card is archived (TASK-18.1) — timestamp in ms. Archived
+   * cards stay in `board.cards` (history and search keep working) but are
+   * removed from every `column.cardIds`, so no view on the board shows
+   * them; restore (and delete-forever) live in the DataMenu archive.
+   */
+  archivedAt?: number;
 }
 
 /** Every kind of card change the activity feed records. */
@@ -133,6 +140,8 @@ export const CARD_ACTIVITY_TYPES = [
   "label-removed",
   "due-date-set",
   "due-date-removed",
+  "archived",
+  "unarchived",
 ] as const;
 
 export type CardActivityType = (typeof CARD_ACTIVITY_TYPES)[number];

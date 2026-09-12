@@ -213,9 +213,10 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
                           </div>
                           <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                             <span className="truncate">
-                              {hit.boardTitle} › {hit.columnTitle}
+                              {hit.boardTitle}
+                              {hit.columnTitle ? ` › ${hit.columnTitle}` : ""}
                             </span>
-                            {hit.boardArchived ? (
+                            {hit.boardArchived || hit.cardArchived ? (
                               <ArchivedBadge>{t("search.archived")}</ArchivedBadge>
                             ) : null}
                           </div>

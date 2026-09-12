@@ -1,4 +1,4 @@
-import { FileText, ListChecks, MessageSquare, Pencil, Plus, Settings2 } from "lucide-react";
+import { AlignLeft, Archive, Check, ListChecks, MessageSquare, Plus, Settings2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { DueBadge } from "@/components/board/DueBadge";
@@ -15,6 +15,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -104,6 +105,7 @@ export function TableView({
     addCard,
     updateCard,
     moveCard,
+    archiveCard,
     toggleCardLabel,
     addLabel,
     renameLabel,
@@ -117,6 +119,8 @@ export function TableView({
   const [visibleColumns, setVisibleColumns] =
     useState<OptionalColumn[]>(readStoredColumns);
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  // Row archive uses the same two-step confirm as the board card (✓ / ✗).
+  const [archiveConfirmId, setArchiveConfirmId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   // The "+ card" popover is controlled so the composer's Отмена can close it.
   const [addOpen, setAddOpen] = useState(false);
@@ -365,7 +369,7 @@ export function TableView({
                   data-testid="table-row"
                   className="cursor-pointer border-b border-border/40 transition-colors last:border-b-0 hover:bg-muted/40"
                 >
-                  <td className="max-w-0 px-3 py-2">
+                  <td className="relative max-w-0 px-3 py-2">
                     {editingTitleId === card.id ? (
                       <Input
                         ref={titleInputRef}
@@ -383,28 +387,60 @@ export function TableView({
                         className="h-7 text-sm"
                       />
                     ) : (
-                      <span className="group/title flex items-center gap-1">
+                      <span className="group/title block">
                         <span
                           onDoubleClick={(event) => {
                             event.stopPropagation();
                             startTitleEdit(card);
                           }}
-                          className="min-w-0 flex-1 truncate text-foreground/90"
+                          className="block truncate text-foreground/90 group-hover/title:pr-9"
                         >
                           <HighlightedText text={card.title} query={highlight ?? ""} />
                         </span>
-                        <button
-                          type="button"
-                          aria-label={t("view.table.rename")}
-                          data-testid="table-title-edit"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            startTitleEdit(card);
-                          }}
-                          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/title:opacity-100"
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </button>
+                        {archiveConfirmId === card.id ? (
+                          <span
+                            data-testid="table-archive-confirm"
+                            className="absolute right-2 top-1/2 z-10 flex h-6 -translate-y-1/2 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              aria-label={t("card.archiveConfirmYes")}
+                              className="flex h-5 w-5 items-center justify-center rounded-md text-danger hover:bg-danger/10"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setArchiveConfirmId(null);
+                                archiveCard(card.id);
+                              }}
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={t("card.archiveConfirmCancel")}
+                              className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setArchiveConfirmId(null);
+                              }}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            aria-label={t("card.archive")}
+                            data-testid="table-archive-btn"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setArchiveConfirmId(card.id);
+                            }}
+                            className="absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/title:opacity-100"
+                          >
+                            <Archive className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </span>
                     )}
                   </td>
@@ -431,6 +467,14 @@ export function TableView({
                             {col.title}
                           </DropdownMenuItem>
                         ))}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          data-testid="table-archive-card"
+                          onSelect={() => archiveCard(card.id)}
+                        >
+                          <Archive className="h-4 w-4" />
+                          {t("card.archive")}
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>
@@ -519,7 +563,7 @@ export function TableView({
                   {visibleColumns.includes("description") ? (
                     <td className="px-3 py-2">
                       {card.description ? (
-                        <FileText
+                        <AlignLeft
                           data-testid="table-description"
                           className="h-3.5 w-3.5 text-muted-foreground"
                           aria-label={t("view.table.description")}

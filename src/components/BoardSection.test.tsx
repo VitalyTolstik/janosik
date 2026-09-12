@@ -534,8 +534,10 @@ describe("TableView interactivity (TASK-14.1)", () => {
   it("renames a card inline (Enter saves, Escape reverts)", () => {
     const table = openTable();
 
-    fireEvent.click(
-      within(table.getAllByTestId("table-row")[0]).getByTestId("table-title-edit"),
+    // Inline rename lives on the title double-click (the hover icon is
+    // the archive button).
+    fireEvent.doubleClick(
+      within(table.getAllByTestId("table-row")[0]).getByText("Beta task"),
     );
     const input = screen.getByTestId("table-title-input");
     expect(input).toHaveValue("Beta task");
@@ -545,8 +547,8 @@ describe("TableView interactivity (TASK-14.1)", () => {
     expect(table.getByText("Renamed row")).toBeInTheDocument();
 
     // Escape reverts the draft.
-    fireEvent.click(
-      within(table.getAllByTestId("table-row")[0]).getByTestId("table-title-edit"),
+    fireEvent.doubleClick(
+      within(table.getAllByTestId("table-row")[0]).getByText("Renamed row"),
     );
     const input2 = screen.getByTestId("table-title-input");
     fireEvent.change(input2, { target: { value: "Never saved" } });
