@@ -9,13 +9,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
-import { LABEL_COLOR_DOT, LIMITS, type Label } from "@/types/kanban";
+import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
+import { LIMITS, type Label } from "@/types/kanban";
 import { LimitCounter } from "@/components/ui/limit-counter";
 
 interface CardComposerProps {
   /** Called with the trimmed title and the labels picked before adding. */
-  onSubmit: (title: string, labelIds?: string[]) => void;
+  onSubmit: (title: string, labelIds?: string[], atIndex?: number) => void;
   /** Board labels to offer inline — picked before the card is created. */
   labels?: Label[];
   placeholder?: string;
@@ -28,6 +28,12 @@ interface CardComposerProps {
   disabled?: boolean;
   /** Tooltip text shown while blocked. */
   disabledReason?: string;
+  /** Insert position passed to onSubmit (inline hover-zone composer). */
+  atIndex?: number;
+  /** Start in the open (textarea) state — inline zones open in place. */
+  defaultComposing?: boolean;
+  /** Called whenever the composer returns to the idle state. */
+  onClose?: () => void;
 }
 
 /**
@@ -46,9 +52,12 @@ export function CardComposer({
   columnId,
   disabled,
   disabledReason,
+  atIndex,
+  defaultComposing = false,
+  onClose,
 }: CardComposerProps) {
   const { t } = useI18n();
-  const [composing, setComposing] = useState(false);
+  const [composing, setComposing] = useState(defaultComposing);
   const [title, setTitle] = useState("");
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   // The composer's own region — blur inside it (label chips, buttons) is
@@ -59,11 +68,16 @@ export function CardComposer({
     setTitle("");
     setSelectedLabels([]);
     setComposing(false);
+    onClose?.();
   };
 
   const commit = () => {
     const trimmed = title.trim();
-    if (trimmed) onSubmit(trimmed, selectedLabels);
+    if (trimmed) {
+      // Keep the 2-arg call for plain appends (assert-friendly for tests).
+      if (atIndex === undefined) onSubmit(trimmed, selectedLabels);
+      else onSubmit(trimmed, selectedLabels, atIndex);
+    }
     setTitle("");
     setSelectedLabels([]);
   };
@@ -140,42 +154,11 @@ export function CardComposer({
         className="min-h-0 resize-none bg-card"
       />
       <LimitCounter length={title.length} limit={LIMITS.cardTitle} testId="composer-limit" />
-      {labels && labels.length > 0 ? (
-        <div
-          className="flex flex-wrap items-center gap-1"
-          data-testid="composer-labels"
-          // Clicking a chip (or the gap between chips) must not move focus
-          // out of the textarea — keep it inside the composer.
-          onMouseDown={(event) => event.preventDefault()}
-        >
-          {labels.map((label) => {
-            const isSelected = selectedLabels.includes(label.id);
-            return (
-              <button
-                key={label.id}
-                type="button"
-                aria-pressed={isSelected}
-                onClick={() => toggleLabel(label.id)}
-                className={cn(
-                  "inline-flex h-5 items-center gap-1 rounded-full border px-1.5 text-[10px] font-medium transition-colors",
-                  isSelected
-                    ? "border-primary/50 bg-primary/10 text-foreground"
-                    : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground",
-                )}
-              >
-                <span
-                  aria-hidden
-                  className={cn(
-                    "h-1.5 w-1.5 shrink-0 rounded-full",
-                    LABEL_COLOR_DOT[label.color],
-                  )}
-                />
-                {label.name}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
+      <ComposerLabelPicker
+        labels={labels}
+        selected={selectedLabels}
+        onToggle={toggleLabel}
+      />
       <div className="flex items-center gap-2">
         <Button
           size="sm"
@@ -184,14 +167,18 @@ export function CardComposer({
           // Keep focus in the textarea so its onBlur (reset) never fires
           // before the click lands.
           onMouseDown={(event) => event.preventDefault()}
+          className="h-7 flex-1 text-xs"
         >
           {t("composer.submit")}
         </Button>
         <Button
           size="sm"
           variant="ghost"
-          onClick={() => setComposing(false)}
-          className="text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            setComposing(false);
+            onClose?.();
+          }}
+          className="h-7 text-xs text-muted-foreground hover:text-foreground"
           onMouseDown={(event) => event.preventDefault()}
         >
           {t("common.cancel")}

@@ -356,11 +356,106 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
       within(screen.getByTestId("unscheduled-list")).queryByText("Brand new"),
     ).toBeNull();
   });
+
+  it("cancels the day panel composer draft", () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    fireEvent.click(
+      document.querySelector(`[data-date="${todayKey()}"]`) as Element,
+    );
+
+    const input = screen.getByTestId("day-composer-input");
+    fireEvent.change(input, { target: { value: "Never added" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(input).toHaveValue("");
+    // Nothing was created — the day cell has no "Never added" chip.
+    const today = document.querySelector(`[data-date="${todayKey()}"]`);
+    expect(
+      within(today as HTMLElement).queryByText("Never added"),
+    ).toBeNull();
+  });
+
+  it("creates the day-panel card in the chosen column", async () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    fireEvent.click(
+      document.querySelector(`[data-date="${todayKey()}"]`) as Element,
+    );
+
+    // Radix DropdownMenu opens on pointerdown — pick "Doing" (the second
+    // column) instead of the default first one.
+    fireEvent.pointerDown(screen.getByTestId("day-composer-column"), {
+      button: 0,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Doing" }));
+
+    const input = screen.getByTestId("day-composer-input");
+    fireEvent.change(input, { target: { value: "Chosen" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // Close the auto-opened dialog for the fresh card.
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+
+    const doing = screen
+      .getByRole("heading", { name: "Doing" })
+      .closest("section") as HTMLElement;
+    const todo = screen
+      .getByRole("heading", { name: "To Do" })
+      .closest("section") as HTMLElement;
+    expect(within(doing).getByText("Chosen")).toBeInTheDocument();
+    expect(within(todo).queryByText("Chosen")).toBeNull();
+  });
+
+  it("attaches labels from the day panel composer", () => {
+    localStorage.setItem("janosik-boards", boardWithLabels());
+    renderBoard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    fireEvent.click(
+      document.querySelector(`[data-date="${todayKey()}"]`) as Element,
+    );
+
+    // Pick a label before committing — it must land on the new card.
+    const design = within(screen.getByTestId("day-panel")).getByRole(
+      "button",
+      { name: "Design" },
+    );
+    fireEvent.click(design);
+    expect(design).toHaveAttribute("aria-pressed", "true");
+
+    const input = screen.getByTestId("day-composer-input");
+    fireEvent.change(input, { target: { value: "Labeled" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // Close the auto-opened dialog for the fresh card.
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+    // The chip on today's cell carries the label (stripe + tooltip).
+    const chip = within(
+      document.querySelector(`[data-date="${todayKey()}"]`) as HTMLElement,
+    ).getByText("Labeled").closest("button") as HTMLElement;
+    expect(chip.title).toContain("Design");
+  });
 });
 
+/** The due-card board, plus two board labels offered to the composers. */
+function boardWithLabels(): string {
+  const board = JSON.parse(boardWithDueCard()) as Record<string, unknown>[];
+  (board[0] as { labels: unknown }).labels = [
+    { id: "l-design", name: "Design", color: "indigo" },
+    { id: "l-urgent", name: "Urgent", color: "red" },
+  ];
+  return JSON.stringify(board);
+}
+
 /** A board with three cards in one column, stored in a non-alphabetical order. */
-function boardWithThreeCards(): string {
-  return JSON.stringify([
+function boardWithThreeCards(): string {  return JSON.stringify([
     {
       id: "board-sort",
       title: "Sorting",
@@ -482,6 +577,46 @@ describe("TableView interactivity (TASK-14.1)", () => {
     expect(within(movedRow as HTMLElement).getByText("Doing")).toBeInTheDocument();
   });
 
+  it("adds a card from the table composer with a picked label", () => {
+    localStorage.setItem("janosik-boards", boardWithLabels());
+    renderBoard();
+    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+
+    fireEvent.click(screen.getByTestId("table-add-card"));
+    // The popover composer offers the board labels as chips.
+    const design = within(
+      screen.getByTestId("table-composer-labels"),
+    ).getByRole("button", { name: "Design" });
+    fireEvent.click(design);
+    expect(design).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.change(screen.getByTestId("table-composer-input"), {
+      target: { value: "Labeled row" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add card" }));
+
+    // The new row's labels cell carries the picked label.
+    const row = within(screen.getByRole("table"))
+      .getAllByTestId("table-row")
+      .find((r) => r.textContent?.includes("Labeled row"));
+    expect(row).toBeDefined();
+    expect(within(row as HTMLElement).getByText("Design")).toBeInTheDocument();
+  });
+
+  it("cancels the table composer popover", () => {
+    localStorage.setItem("janosik-boards", boardWithLabels());
+    renderBoard();
+    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+
+    fireEvent.click(screen.getByTestId("table-add-card"));
+    expect(
+      screen.getByTestId("table-composer-input"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByTestId("table-composer-input")).toBeNull();
+  });
+
   it("shows optional columns from the settings menu and persists them", async () => {
     openTable();
 
@@ -511,5 +646,113 @@ describe("TableView interactivity (TASK-14.1)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add card" }));
 
     expect(await table.findByText("Composed row")).toBeInTheDocument();
+  });
+
+  it("adds a card between cards via the inline hover zone", () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    // The zone between "Dated card" and "Plain card" (gap 1) opens an
+    // in-place composer.
+    fireEvent.click(screen.getByTestId("card-insert-1"));
+    const textarea = screen.getByPlaceholderText(
+      "Enter a title for this card…",
+    );
+    fireEvent.change(textarea, { target: { value: "Inserted" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add card" }));
+
+    // The card lands at gap 1: after "Dated card", before "Plain card".
+    const todo = screen
+      .getByRole("heading", { name: "To Do" })
+      .closest("section") as HTMLElement;
+    const inserted = within(todo).getByText("Inserted");
+    const plain = within(todo).getByText("Plain card");
+    expect(
+      inserted.compareDocumentPosition(plain) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    // Rapid entry: the composer re-mounts at its new gap position after the
+    // first commit (autoFocus restores the caret) — the next commit goes
+    // right after "Inserted".
+    const textarea2 = screen.getByPlaceholderText(
+      "Enter a title for this card…",
+    );
+    fireEvent.change(textarea2, { target: { value: "Second" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add card" }));
+    const second = within(todo).getByText("Second");
+    expect(
+      inserted.compareDocumentPosition(second) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("closes the inline composer on Escape and restores the zone", () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    fireEvent.click(screen.getByTestId("card-insert-1"));
+    const textarea = screen.getByPlaceholderText(
+      "Enter a title for this card…",
+    );
+    fireEvent.keyDown(textarea, { key: "Escape" });
+
+    expect(
+      screen.queryByPlaceholderText("Enter a title for this card…"),
+    ).toBeNull();
+    expect(screen.getByTestId("card-insert-1")).toBeInTheDocument();
+  });
+
+  it("adds the first card to an empty column via its hover zone", () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard();
+
+    // Empty "Doing" column: the zone sits under the empty state.
+    const doing = screen
+      .getByRole("heading", { name: "Doing" })
+      .closest("section") as HTMLElement;
+    fireEvent.click(within(doing).getByTestId("card-insert-0"));
+    const textarea = within(doing).getByPlaceholderText(
+      "Enter a title for this card…",
+    );
+    fireEvent.change(textarea, { target: { value: "Firstborn" } });
+    fireEvent.click(within(doing).getByRole("button", { name: "Add card" }));
+
+    expect(within(doing).getByText("Firstborn")).toBeInTheDocument();
+  });
+
+  it("hides the inline hover zones when the column is at its WIP limit", () => {
+    const limited = JSON.stringify([
+      {
+        id: "board-wip",
+        title: "WIP",
+        columns: [
+          {
+            id: "col-1",
+            title: "To Do",
+            cardIds: ["card-1"],
+            wipLimit: 1,
+            createdAt: 1,
+          },
+        ],
+        cards: {
+          "card-1": {
+            id: "card-1",
+            title: "Only card",
+            labelIds: [],
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+        labels: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    localStorage.setItem("janosik-boards", limited);
+    renderBoard();
+
+    expect(screen.queryByTestId("card-insert-zone-0")).toBeNull();
+    expect(screen.queryByTestId("card-insert-zone-1")).toBeNull();
   });
 });
