@@ -5,8 +5,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
-import { useState } from "react";
+import { GripVertical, Plus } from "lucide-react";
+import { Fragment, useState } from "react";
 
 import { CardComposer } from "@/components/board/CardComposer";
 import { ColumnMenu } from "@/components/board/ColumnMenu";
@@ -68,6 +68,16 @@ export function ColumnView({
   const [renameOpen, setRenameOpen] = useState(false);
   const [wipLimitOpen, setWipLimitOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /**
+   * Inline "add between cards" composer (Trello-style hover zones):
+   * `index` is the gap the composer opened at, `count` how many cards were
+   * committed there — the insert position slides down with each commit so
+   * rapid entries keep their order.
+   */
+  const [inlineAdd, setInlineAdd] = useState<{
+    index: number;
+    count: number;
+  } | null>(null);
 
   const {
     attributes,
@@ -90,6 +100,13 @@ export function ColumnView({
   // overrides `cardIds` — the limit is judged on the real column contents.
   const atWipLimit = wipLimit !== undefined && count >= wipLimit;
   const overWipLimit = wipLimit !== undefined && count > wipLimit;
+  // Hover zones insert into the real column order, so they only make sense
+  // when the rendered ids ARE the column order (no filter override, no
+  // active card-drag draft) and the column can still take cards.
+  const inlineAddAllowed =
+    cardIds === undefined &&
+    column.cardIds.length < LIMITS.cardsPerColumn &&
+    !atWipLimit;
 
   const setNodeRef = (node: HTMLElement | null) => {
     setSortableRef(node);
@@ -188,8 +205,15 @@ export function ColumnView({
             </div>
           ) : (
             <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-              <ul className="space-y-2 py-1">
-                {ids.map((cardId) => {
+              {/* With hover zones the gaps come from the 8px zones themselves;
+                  without them (filter/drag override) keep the plain spacing. */}
+              <ul
+                className={cn(
+                  "py-1",
+                  !inlineAddAllowed && "space-y-2",
+                )}
+              >
+                {ids.map((cardId, i) => {
                   const card = board.cards[cardId];
                   if (!card) return null;
                   const labels = card.labelIds
@@ -198,25 +222,75 @@ export function ColumnView({
                     )
                     .filter((l): l is NonNullable<typeof l> => Boolean(l));
                   return (
-                    <li key={cardId}>
-                      <SortableCard
-                        card={card}
-                        labels={labels}
-                        highlight={highlight}
-                        isCursor={card.id === cursorCardId}
-                        onCardClick={
-                          onCardClick ? () => onCardClick(card.id) : undefined
-                        }
-                        onCardDuplicate={() =>
-                          duplicateCard(
-                            card.id,
-                            t("card.duplicateTitle", { title: card.title }),
-                          )
-                        }
-                      />
-                    </li>
+                    <Fragment key={cardId}>
+                      {inlineAddAllowed &&
+                        (inlineAdd?.index === i ? (
+                          <li>
+                            <CardComposer
+                              key={`inline-${i}`}
+                              labels={board.labels}
+                              defaultComposing
+                              atIndex={i + inlineAdd.count}
+                              onClose={() => setInlineAdd(null)}
+                              onSubmit={(title, labelIds, at) => {
+                                addCard(column.id, title, labelIds, at);
+                                setInlineAdd((s) =>
+                                  s ? { ...s, count: s.count + 1 } : s,
+                                );
+                              }}
+                            />
+                          </li>
+                        ) : (
+                          <AddCardZone
+                            index={i}
+                            onInsert={() => setInlineAdd({ index: i, count: 0 })}
+                          />
+                        ))}
+                      <li>
+                        <SortableCard
+                          card={card}
+                          labels={labels}
+                          highlight={highlight}
+                          isCursor={card.id === cursorCardId}
+                          onCardClick={
+                            onCardClick ? () => onCardClick(card.id) : undefined
+                          }
+                          onCardDuplicate={() =>
+                            duplicateCard(
+                              card.id,
+                              t("card.duplicateTitle", { title: card.title }),
+                            )
+                          }
+                        />
+                      </li>
+                    </Fragment>
                   );
                 })}
+                {inlineAddAllowed && count > 0 && inlineAdd?.index !== count && (
+                  <AddCardZone
+                    index={count}
+                    onInsert={() =>
+                      setInlineAdd({ index: count, count: 0 })
+                    }
+                  />
+                )}
+                {inlineAdd && inlineAdd.index === count && (
+                  <li>
+                    <CardComposer
+                      key={`inline-${count}`}
+                      labels={board.labels}
+                      defaultComposing
+                      atIndex={inlineAdd.index + inlineAdd.count}
+                      onClose={() => setInlineAdd(null)}
+                      onSubmit={(title, labelIds, at) => {
+                        addCard(column.id, title, labelIds, at);
+                        setInlineAdd((s) =>
+                          s ? { ...s, count: s.count + 1 } : s,
+                        );
+                      }}
+                    />
+                  </li>
+                )}
               </ul>
             </SortableContext>
           )}
@@ -270,5 +344,39 @@ export function ColumnView({
         onConfirm={handleDelete}
       />
     </>
+  );
+}
+
+/**
+ * Trello-style hover zone in a card gap: an 8px strip that expands to a
+ * dashed "+ Add card" ghost on hover. Collapsed, the button ignores pointer
+ * events (a click in the gap must not open a composer by accident) — only
+ * the revealed button is clickable. Expanding shifts the neighbours exactly
+ * like the composer that takes its place will.
+ */
+function AddCardZone({
+  index,
+  onInsert,
+}: {
+  index: number;
+  onInsert: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <li
+      data-testid={`card-insert-zone-${index}`}
+      className="group/zone flex h-2 shrink-0 items-center transition-[height] duration-100 hover:h-8"
+    >
+      <button
+        type="button"
+        data-testid={`card-insert-${index}`}
+        aria-label={t("composer.add")}
+        onClick={onInsert}
+        className="pointer-events-none flex h-8 w-full items-center gap-1.5 rounded-lg border border-dashed border-border px-2 text-xs text-muted-foreground opacity-0 transition-opacity duration-100 group-hover/zone:pointer-events-auto group-hover/zone:opacity-100 hover:text-foreground"
+      >
+        <Plus className="h-3 w-3" />
+        <span className="truncate">{t("composer.add")}</span>
+      </button>
+    </li>
   );
 }
