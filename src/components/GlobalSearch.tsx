@@ -124,12 +124,18 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
     <>
       <Tooltip>
         <TooltipTrigger asChild>
+          {/* Labeled trigger: a muted "Global search" hint sits to the left
+              of the magnifier (hidden on narrow screens — the icon stays). */}
           <Button
             variant="ghost"
-            size="icon"
+            size="sm"
             aria-label={t("search.aria")}
             onClick={() => setOpenBoth(true)}
+            className="gap-1.5 pr-2.5 text-muted-foreground transition-colors hover:text-foreground"
           >
+            <span className="hidden text-xs font-medium sm:inline">
+              {t("search.label")}
+            </span>
             <SearchIcon size={20} />
           </Button>
         </TooltipTrigger>
