@@ -113,9 +113,14 @@ export function ColumnView({
         style={{
           transform: CSS.Transform.toString(transform),
           transition,
+          // Column glass — driven by --janosik-glass-* (BoardGlassProvider).
+          // transparency 0 = opaque, 100 = frame only; blur 0 = no frosting.
+          backgroundColor:
+            "color-mix(in oklab, var(--card) calc((100 - var(--janosik-glass-transparency)) * 1%), transparent)",
+          backdropFilter: "blur(var(--janosik-glass-blur))",
         }}
         className={cn(
-          "flex max-h-full w-[80vw] max-w-72 shrink-0 flex-col rounded-xl border bg-card/15 backdrop-blur-sm transition-colors sm:w-72 sm:max-w-none",
+          "flex max-h-full w-[80vw] max-w-72 shrink-0 flex-col rounded-xl border transition-colors sm:w-72 sm:max-w-none",
           isColumnDragging
             ? "border-primary/60 opacity-50"
             : isOver
