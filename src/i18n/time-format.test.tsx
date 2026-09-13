@@ -22,7 +22,11 @@ function Probe() {
 describe("time format override", () => {
   afterEach(async () => {
     localStorage.removeItem("janosik-time-format");
-    await defaultI18n.changeLanguage("en");
+    // i18next notifies subscribers asynchronously; flush inside act so the
+    // unmounted-after-test updates don't produce act() warnings.
+    await act(async () => {
+      await defaultI18n.changeLanguage("en");
+    });
     localStorage.removeItem("janosik-lang");
   });
 
@@ -44,18 +48,24 @@ describe("time format override", () => {
   });
 
   it("renders per locale by default and re-renders on the override", async () => {
-    await defaultI18n.changeLanguage("ru");
+    await act(async () => {
+      await defaultI18n.changeLanguage("ru");
+    });
     render(
       <I18nProvider>
         <Probe />
       </I18nProvider>,
     );
+    // Let the provider's post-mount i18next updates settle inside act.
+    await act(async () => {});
     // Auto + ru → 24h.
     expect(screen.getByTestId("probe")).toHaveTextContent("19:30");
   });
 
   it("persists the picked format and applies it", async () => {
-    await defaultI18n.changeLanguage("ru");
+    await act(async () => {
+      await defaultI18n.changeLanguage("ru");
+    });
     render(
       <I18nProvider>
         <TooltipProvider>
@@ -64,10 +74,13 @@ describe("time format override", () => {
         </TooltipProvider>
       </I18nProvider>,
     );
+    await act(async () => {});
     await userEvent.click(
       screen.getByRole("button", { name: "Формат времени" }),
     );
     await userEvent.click(screen.getByRole("menuitem", { name: "12-часовой" }));
+    // Radix closes the menu asynchronously; flush before asserting.
+    await act(async () => {});
     expect(localStorage.getItem("janosik-time-format")).toBe("12h");
     // Same ru locale now renders AM/PM.
     expect(screen.getByTestId("probe").textContent).toMatch(/7:30/i);
