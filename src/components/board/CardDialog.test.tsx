@@ -158,13 +158,18 @@ describe("CardDialog due dates", () => {
     user: ReturnType<typeof userEvent.setup>,
     day: string,
   ) {
-    await waitFor(() => {
-      expect(
-        [...document.querySelectorAll("button[data-day]")].some(
-          (b) => b.textContent === day,
-        ),
-      ).toBe(true);
-    });
+    // The calendar arrives in a lazy chunk (TASK-19); under full-suite load
+    // its import can exceed the 1 s default waitFor timeout.
+    await waitFor(
+      () => {
+        expect(
+          [...document.querySelectorAll("button[data-day]")].some(
+            (b) => b.textContent === day,
+          ),
+        ).toBe(true);
+      },
+      { timeout: 5000 },
+    );
     const target = [...document.querySelectorAll("button[data-day]")].find(
       (b) => b.textContent === day,
     );

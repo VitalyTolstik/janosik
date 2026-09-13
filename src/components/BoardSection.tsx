@@ -3,8 +3,8 @@ import { useSearchParams } from "react-router-dom";
 
 import { FilterBar } from "@/components/board/FilterBar";
 import { DndBoard } from "@/components/board/DndBoard";
-import { CalendarView } from "@/components/board/CalendarView";
-import { TableView } from "@/components/board/TableView";
+// Calendar/table render only after a view switch — lazy chunks (TASK-34).
+import { CalendarView, TableView } from "@/components/board/views-lazy";
 import { CardDialog } from "@/components/board/CardDialog";
 import { ViewSwitcher, type BoardView } from "@/components/board/ViewSwitcher";
 import { ColumnGlassMenu } from "@/components/board/ColumnGlassMenu";
