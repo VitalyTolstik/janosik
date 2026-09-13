@@ -162,7 +162,7 @@
 | 22 | TASK-21.8 `browser-router` | HashRouter → BrowserRouter до лендинга — см. §6.0.1 |
 | 23 | TASK-21.9 `motion-lazy` | анимированные иконки шапки — лениво после загрузки (решено: вариант Б) — см. §6.0.1 |
 | 24 | TASK-21.10 `touch-dnd` | тач-DnD доски: TouchSensor dnd-kit (переехал из TASK-31; тач-слой календаря/таблицы остаётся в TASK-31) — см. §6.0.1 |
-| — | TASK-22…30 | бэкенд (§7.7) — старт после TASK-21.10; решение по API (§6.0.1) — железно до TASK-23 |
+| — | TASK-22…30 | бэкенд (§7.7) — старт после TASK-21.10 |
 | — | TASK-31 `mobile-ux` | мобильная адаптация: **тач-слой для календаря/таблицы** (нативный HTML5 DnD на тачах не работает; тач-DnD доски — TASK-21.10), адаптив шапки/фильтров/диалогов; после бэкенда |
 | — | TASK-32 `landing-intro` | презентационная страница для неавторизованных + маршрут «войти/создать аккаунт»; после TASK-29/30 (нужен auth) |
 
@@ -362,18 +362,15 @@
 - **DoD:** motion-чанка нет в `modulepreload` `dist/index.html`; иконки
   анимируются после idle; size-limit бюджет обновлён.
 
-#### Открытые решения (за пользователем)
+#### Решённые вопросы
 
-1. **API бэкенда: командный лог vs REST-на-экшен (§7.0/§7.4).** Цель —
-   realtime-канбан на много пользователей. Вариант Б (командный лог):
-   `POST /boards/:id/commands {commandId, baseVersion, action}` — сервер
-   применяет тот же `boardReducer` из `shared/`; 3 эндпоинта вместо ~35,
-   порядок через `version`, SSE шлёт те же экшены, undo = инверсная команда,
-   лог команд = активность. Для PAT (§7.6) позже тонкий REST-фасад. **Решение
-   меняет §7.0/§7.4.** Дедлайн — **до TASK-23** (выбор определяет объём
-   TASK-26…28; до TASK-22 недостаточно — к старту TASK-26 контроллеры уже
-   пишутся). Шаги TASK-21.7a–d **не блокируются** этим решением: детерминизм
-   и инверсии нужны при обоих вариантах.
+1. **API: командный лог (вариант Б) — решено пользователем 2026-09.**
+   Мутации — `POST /boards/:id/commands {commandId, action, ifMatch?}`,
+   сервер применяет тот же `boardReducer` из `shared/` (3 мутационных
+   endpoint'а вместо ~35); порядок через `seq`, идемпотентность через
+   `commandId`, SSE шлёт те же экшены, undo = инверсная команда, лог команд
+   = активность. Для PAT (§7.6) позже тонкий REST-фасад. §7.0/§7.2/§7.4/§7.5/
+   §7.7 переписаны под это решение. Дедлайн «до TASK-23» выполнен с запасом.
 
 ### 6.0.2. Закрытые задачи — архив в `ROADMAP-DONE.md`
 
@@ -389,8 +386,9 @@
 
 > Решение пользователя: **совместные доски** (много юзеров, логины, шаринг,
 > видно кто что сделал) → бэкенд проектируется **нормализованным**: сущности
-> в таблицах, гранулярный REST, фронт работает optimistic поверх редьюсера.
-> Старт бэкенда — **после** фронтенд-добивки (порядок §6.0). Далее §7.7:
+> в таблицах, мутации — командным логом (§7.0, решено 2026-09 — вариант Б),
+> фронт работает optimistic поверх редьюсера.
+> Старт бэкенда — **после** TASK-21.1…21.10 (порядок §6.0). Далее §7.7:
 > TASK-22 → 30.
 
 ### 7.0. Ключевые решения (зафиксированы, не пересматривать без явной причины)
@@ -402,17 +400,24 @@
   метки/чеклисты/активность/комментарии — SQL-таблицы (§7.3), не Json-документ.
   Позиции — целочисленные `position` (drag → `reorder` endpoint с перенумерацией
   при необходимости).
-- **API — гранулярный REST `/api/v1`** (~35 endpoints, §7.4). Каждый экшен
-  редьюсера получает свой endpoint; сервер — единственный источник истины.
-  **⚠️ ОТКРЫТО:** выбор «гранулярный REST vs командный лог» не сделан —
-  см. §6.0.1 (дедлайн — до TASK-23; при командном логе этот пункт и §7.4
-  переписываются).
+- **API — командный лог (решение пользователя 2026-09 — вариант Б, §6.0.1):**
+  мутации едут одним транспортом — `POST /boards/:id/commands
+  {commandId, action, ifMatch?}`; сервер применяет **тот же `boardReducer`
+  из `shared/`** и пишет команду в лог (Command, §7.3). `commandId`
+  (клиентский uuid) — первичный ключ → идемпотентные ретраи; `seq`
+  (монотонный) — порядок операций и версия доски; несовпадение `ifMatch` →
+  `409 {conflict, currentVersion}`. Чтение — обычный REST (§7.4): агрегат,
+  members, activity-ленты, import/export. SSE шлёт те же
+  `{seq, action, actorId}` — чужие изменения применяются тем же редьюсером
+  (TASK-30). Undo — инверсная команда из стора (TASK-21.7d); сервер не
+  знает, что это отмена. Для PAT/интеграций (§7.6) позже тонкий REST-фасад
+  поверх тех же команд.
 - **Фронт — optimistic без переписывания UI**: редьюсер остаётся
   единственным источником UI-состояния (мгновенный отклик, undo/redo
-  работают). Адаптер шлёт API-вызов асинхронно и **reconcile**-ит canonical
-  ответ (позиции, серверные поля). Провал вызова → откат экшена + тост.
-  **id генерирует клиент** (`createId()`) и передаёт в POST → идемпотентные
-  ретраи, undo создания = `DELETE` того же id.
+  работают). Адаптер шлёт команду асинхронно и **reconcile**-ит canonical
+  ответ (позиции, версии). Провал вызова → откат экшена (инверсия) + тост.
+  **id генерирует клиент** (TASK-21.7a) и едет в команде → идемпотентные
+  ретраи, undo создания = инверсная команда с тем же id.
   **Предусловие — TASK-21.7a/b:** сейчас id/время генерируются **внутри**
   редьюсера (9× `createId()`, 16× `Date.now()`) и экшен id не несёт; до
   бэкенда редьюсер делается детерминированным, id создаваемых сущностей —
@@ -445,9 +450,9 @@
   На auth-роутах — rate-limit (brute force), helmet, CORS-allowlist.
 - **Архив карточек (TASK-18.1) — часть контракта:** `GET /boards/:id`
   отдаёт колонки с **только активными** `cardIds`; архивная карточка живёт
-  в cards-мапе агрегата с `archivedAt` (фронт уже так хранит). Archive /
+  в cards-мапе агрегата с `archivedAt` (фронт уже так хранит). Архив /
   unarchive (с выбором колонки и WIP-проверкой) и массовый архив колонки —
-  отдельные endpoints (§7.4).
+  команды редьюсера (`ARCHIVE_CARD`, `UNARCHIVE_CARD`, `ARCHIVE_COLUMN_CARDS`).
 - **Undo/redo остаётся клиентским** — инверсии экшенов считаются во
   **фронтовом сторе** (`src/store/invert.ts`, TASK-21.7d), а не в адаптере:
   адаптер только отправляет инверсную команду как обычный вызов. Серверные
@@ -497,14 +502,11 @@ backend/
 │   ├── main.ts / app.module.ts
 │   ├── auth/                # register/login/refresh/logout/me, jwt-strategy, guards
 │   ├── users/               # профиль
-│   ├── boards/              # CRUD + members (invite/role)
-│   ├── columns/             # CRUD + reorder
-│   ├── cards/               # CRUD + move/duplicate + labels
-│   ├── checklists/          # чек-листы + пункты
-│   ├── labels/              # метки доски
-│   ├── activity/            # ленты (доска/карточка), курсорная пагинация
+│   ├── boards/              # CRUD + members (invite/role) + агрегат + import/export
+│   ├── commands/            # POST /commands: validate → boardReducer(shared) → лог+таблицы; догон ?since=
+│   ├── activity/            # ленты (доска/карточка) поверх Command-лога, курсорная пагинация
 │   ├── comments/            # комментарии
-│   └── common/              # MembershipGuard, exception-фильтры, normalize (shared)
+│   └── common/              # MembershipGuard, exception-фильтры, normalize/validate (shared)
 ├── test/                    # e2e supertest
 └── docker-compose.yml       # postgres:16
 ```
@@ -523,6 +525,7 @@ model User {
   activity      Activity[]
   comments      Comment[]
   apiTokens     ApiToken[]
+  commands      Command[]
   refreshTokens RefreshToken[]
 }
 
@@ -547,6 +550,7 @@ model Board {
   cards      Card[]
   labels     Label[]
   activity   Activity[]
+  commands   Command[]
 }
 
 model BoardMember {
@@ -575,6 +579,19 @@ model ApiToken {                          // после ядра (§7.6), схе
   revokedAt   DateTime?
   createdAt   DateTime  @default(now())
   @@index([userId])
+}
+
+model Command {                           // командный лог (§7.0, решение 2026-09)
+  id        String   @id                 // = клиентский commandId → идемпотентность
+  board     Board    @relation(fields: [boardId], references: [id])
+  boardId   String
+  actor     User     @relation(fields: [actorId], references: [id])
+  actorId   String
+  seq       BigInt   @default(autoincrement()) // монотонная версия доски; догон ?since=
+  type      String                         // тип BoardAction
+  payload   Json                           // экшен целиком (детерминирован — TASK-21.7a)
+  createdAt DateTime @default(now())
+  @@index([boardId, seq])
 }
 
 model Column {
@@ -658,8 +675,8 @@ model ChecklistItem {
   @@index([checklistId, position])
 }
 
-model Activity {
-  id        String   @id @default(cuid())
+model Activity {                          // member/comment/системные; мутирующие
+  id        String   @id @default(cuid()) // события карточек — из Command-лога (§7.4)
   board     Board    @relation(fields: [boardId], references: [id])
   boardId   String
   card      Card?    @relation(fields: [cardId], references: [id])
@@ -700,13 +717,21 @@ Prisma-миграцией, не `onDelete: Cascade`); выборки фильт�
 не возвращается и в «Корзину» (§7.6, по запросу) отдаётся отдельным
 endpoint'ом.
 
-### 7.4. API — REST `/api/v1` (~35 endpoints)
+### 7.4. API — командный лог + чтение (`/api/v1`) (решение 2026-09: вариант Б)
 
-> ⚠️ Этот раздел описывает вариант «гранулярный REST». Выбор против
-> командного лога (§6.0.1) не сделан — дедлайн до TASK-23. При командном
-> логе мутационные таблицы ниже заменяются тремя endpoint'ами
-> (`POST /boards/:id/commands`, `GET /boards/:id`, `GET /boards/:id/events`);
-> auth/members/import/export остаются.
+**Мутации — один транспорт для всех действий редьюсера:**
+
+| Метод | Путь | Назначение |
+| --- | --- | --- |
+| POST | `/boards/:id/commands` | `{commandId, action, ifMatch?}` → `200 {seq, versions}` · `400` (validate) · `409 {conflict, currentVersion}` |
+| GET | `/boards/:id/commands?since=<seq>` | дельта-догон после обрыва SSE (вместо перезапроса агрегата) |
+
+Сервер: `validate()` (строгий, §7.0) → `boardReducer(board, action)` из
+`shared/` → транзакция (Command-лог + нормализованные таблицы §7.3).
+Идемпотентность: повтор с тем же `commandId` возвращает закешированный
+ответ, а не вторую сущность. Отказы редьюсера (WIP `atWipLimit`, лимиты)
+→ `409 {conflict: "wip"}` — предикат общий с фронтом. Лог команд = активность
++ аудит (каждая команда несёт `actorId` и затронутые сущности).
 
 **Auth (без guard):** `POST /auth/register` · `POST /auth/login` ·
 `POST /auth/refresh` (ротация) · `POST /auth/logout` · `GET /auth/me`.
@@ -719,59 +744,36 @@ endpoint'ом.
 | POST | `/boards` | создать (автоматически OWNER-membership) |
 | GET | `/boards/:id` | **агрегат доски** — колонки (только активные `cardIds`) + cards-мапа **включая архив** (`archivedAt`) + метки (+ чеклисты) одной выборкой — стартовое состояние UI |
 | PATCH | `/boards/:id` | rename / archive |
-| DELETE | `/boards/:id` | только OWNER |
+| DELETE | `/boards/:id` | только ADMIN (последний ADMIN защищён) |
 | GET | `/boards/:id/members` | участники (роль, expiresAt) |
 | POST | `/boards/:id/members` | invite `{email, role, expiresAt?}` — только ADMIN |
 | PATCH | `/boards/:id/members/:userId` | `{role?, expiresAt?}` — смена роли/срока VIEWER, только ADMIN |
 | DELETE | `/boards/:id/members/:userId` | исключить — ADMIN; последний ADMIN защитён |
 
-**Колонки:**
+**Чтение (обычный REST, мутации — только через команды):**
 
-| POST | `/boards/:id/columns` | {title} |
-| PATCH | `/columns/:id` | {title?, wipLimit?} |
-| DELETE | `/columns/:id` | каскад карточек |
-| PUT | `/boards/:id/columns/reorder` | {orderedIds} — drag колонок |
-| POST | `/columns/:id/cards/archive` | массовый архив колонки (TASK-18.1, один undo-шаг) |
+| Метод | Путь | Назначение |
+| --- | --- | --- |
+| GET | `/cards/:id` | агрегат карточки: описание, чеклисты, метки, activity-страница (диалог) |
 
-**Карточки:**
-
-WIP-лимит сервер считает контрактом: `POST /columns/:id/cards`,
-`/cards/:id/move`, `/cards/:id/duplicate` и `/cards/:id/unarchive` в полную
-колонку → `409` (фронт уже гвардит тем же предикатом `atWipLimit`).
-
-| POST | `/columns/:id/cards` | {title} (+ id от клиента) |
-| GET | `/cards/:id` | агрегат: описание, чеклисты, метки, activity-страница |
-| PATCH | `/cards/:id` | {title?, description?, dueDate?, cover?} |
-| DELETE | `/cards/:id` | удаление (из архива — «навсегда», TASK-18.1) |
-| POST | `/cards/:id/duplicate` | серверный дубликат (TASK-6); **id копии — от клиента** |
-| PUT | `/cards/:id/move` | {toColumnId, toIndex} — drag карточек |
-| POST | `/cards/:id/archive` | архив (снимается с `cardIds`, `archivedAt` ставится) |
-| POST | `/cards/:id/unarchive` | {toColumnId?} — восстановление в конец колонки, WIP-409 |
-
-**Метки (на карточке / на доске):**
-
-| POST | `/cards/:id/labels` | {labelId} повесить |
-| DELETE | `/cards/:id/labels/:labelId` | снять |
-| POST | `/boards/:id/labels` | {name, color} |
-| PATCH | `/labels/:id` | {name?, color?} |
-| DELETE | `/labels/:id` | каскад со всех карточек |
-
-**Чек-листы:**
-
-| POST | `/cards/:id/checklists` | {title} |
-| PATCH | `/checklists/:id` | {title} |
-| DELETE | `/checklists/:id` | каскад пунктов |
-| POST | `/checklists/:id/items` | {text} |
-| PATCH | `/checklist-items/:id` | {text?, done?} |
-| DELETE | `/checklist-items/:id` | |
+Создание/удаление/переименование/перемещение/дублирование/архив колонок,
+карточек, меток и чек-листов, повес/снятие метки, галочка пункта, сортировка
+— всё это уже есть в `BoardAction` и уезжает командами (`MOVE_CARD`,
+`DUPLICATE_CARD`, `SET_COLUMN_CARD_ORDER`, `ARCHIVE_CARD`, …). WIP-лимит
+и лимиты коллекций гвардятся тем же кодом, что на фронте (`atWipLimit`,
+`LIMITS`): не «ещё одна валидация», а тот же редьюсер.
 
 **Активность и комментарии:**
 
 | GET | `/boards/:id/activity?cursor&limit` | лента доски |
 | GET | `/cards/:id/activity?cursor&limit` | лента карточки — история целиком (лимит 50 снят) |
-| POST | `/cards/:id/comments` | {text} |
+| POST | `/cards/:id/comments` | {text} (комментарии — не экшены редьюсера, обычный REST) |
 | GET | `/cards/:id/comments?cursor` | |
 | DELETE | `/comments/:id` | свой комментарий |
+
+Ленты активности строятся **поверх Command-лога** (фильтр по затронутым
+сущностям, курсор по `seq`); member/comment-события пишутся в тот же лог
+отдельным типом. Лимит 50/карточку снят — история хранится целиком.
 
 **Импорт/экспорт:**
 
@@ -785,10 +787,11 @@ envelope в shared на TASK-22). Activity при импорте **не пере
 
 **Realtime (TASK-30):**
 
-| GET | `/boards/:id/events` | SSE-поток: {entity, action, id, data, actor} |
+| GET | `/boards/:id/events` | SSE-поток: `{seq, action, actorId}` — те же экшены, что уходят командами |
 
-Сервер сам пишет Activity при каждом мутирующем вызове (interceptor),
-`details` — снапшот (имя метки/колонки), как в TASK-12.
+Member/comment-события и снапшот-детали (`details` — имя метки/колонки, как
+в TASK-12) пишет сервер при применении команды; чужие экшены фронт применяет
+тем же `boardReducer` (TASK-30).
 
 ### 7.5. Фронтенд-адаптер (TASK-29)
 
@@ -799,8 +802,12 @@ envelope в shared на TASK-22). Activity при импорте **не пере
   переписывать — снимается бэкендом.
 - **Optimistic:** компоненты по-прежнему зовут экшены редьюсера; редьюсер —
   источник UI-состояния (отклик мгновенный, undo/redo без сети).
-- **Sync-слой:** каждый экшен → API-вызов → canonical ответ → reconcile
-  (позиции, счётчики). Провал → откат экшена (обратный dispatch) + тост.
+- **Sync-слой:** каждый экшен → `POST /boards/:id/commands {commandId,
+  action, ifMatch}` → `200 {seq, versions}` / `409 {conflict}` → reconcile
+  (позиции, версии). Провал/отказ → откат экшена (инверсия, TASK-21.7d) +
+  тост. Команды в полёте (pending) при чужой команде по SSE → rebase через
+  инверсии (механизм уже есть после TASK-21.7d); для MVP допустим LWW без
+  rebase.
 - **Undo = инверсная команда, обычная для сервера:** инверсии считаются
   во фронтовом сторе (`src/store/invert.ts`, TASK-21.7d) в момент dispatch;
   undo уезжает через тот же sync-слой — сервер не знает, что это отмена.
@@ -812,15 +819,16 @@ envelope в shared на TASK-22). Activity при импорте **не пере
 - **401-цикл:** access истёк → `POST /auth/refresh` → retry вызова один
   раз; refresh не удался (ротация/реюз) → сброс состояния → логин-экран.
   Параллельные 401 ждут одного общего refresh (single-flight).
-- **id клиента проходит в POST** — идемпотентные ретраи; undo создания
-  карточки = `DELETE /cards/:id`.
+- **id клиента едет в команде** (`commandId`, id создаваемых сущностей в
+  payload) — идемпотентные ретраи; undo создания = `DELETE_CARD` с тем же id.
 - **Старт:** `GET /boards/:id` → маппинг агрегата в текущую модель `Board[]`
   (формат ответа шейпится под редьюсер) → `REPLACE_STATE`. Компоненты/UI не
   меняются.
 - **Первый логин:** локальный `janosik-boards` (если есть) →
   `POST /boards/import` (данные переезжают в БД) → localStorage очищается.
 - **Чужие изменения:** refetch агрегата на window focus (MVP), с TASK-30 —
-  SSE-патчи на месте.
+  SSE `{seq, action, actorId}` → чужой экшен применяется тем же
+  `boardReducer`; обрыв — догон `?since=` дельтой.
 - **Офлайн:** тост «нет сети, изменения не сохранены», очередь экшенов —
   с PWA (TASK-15).
 
@@ -853,15 +861,15 @@ envelope в shared на TASK-22). Activity при импорте **не пере
 
 | # | TASK | Ветка | Суть | DoD (кратко) |
 | --- | --- | --- | --- | --- |
-| 1 | TASK-22 `monorepo-restructure` | `feature/TASK-22-monorepo` | `git mv` фронта в `ui/`, workspaces, `@janosik/shared` (модель+LIMITS+envelope+STORAGE_KEYS+DTO-типы; envelope сверить с сериалайзером архива/обложек/сроков — round-trip §7.4), `SAVE_DEBOUNCE_MS` в константы, алиасы vite/tsconfig/vitest | 362 теста зелёные в новом layout; tsc/build зелёные |
+| 1 | TASK-22 `monorepo-restructure` | `feature/TASK-22-monorepo` | `git mv` фронта в `ui/`, workspaces, `@janosik/shared` (модель+LIMITS+envelope+STORAGE_KEYS+**DTO-типы API и `BoardAction` — контракт фронт↔бэк, форма экшенов к этому моменту финализирована TASK-21.7a/b**; envelope сверить с сериалайзером архива/обложек/сроков — round-trip §7.4), `SAVE_DEBOUNCE_MS` в константы, алиасы vite/tsconfig/vitest | 362 теста зелёные в новом layout; tsc/build зелёные |
 | 2 | TASK-23 `backend-scaffold` | `feature/TASK-23-backend-scaffold` | NestJS + Prisma + docker-compose(postgres:16), `/health`, модули-заглушки, общий tsconfig/ESLint, helmet + rate-limit на auth-роутах сразу | `/health` 200; e2e-пайплайн работает; backend-команды DoD в AGENT.md |
 | 3 | TASK-24 `backend-auth` | `feature/TASK-24-backend-auth` | register/login/refresh/logout/me, argon2id, `displayName`, `isSuperAdmin` (первый юзер), ротация refresh + детект реюза, JwtGuard | e2e: полный цикл auth + реюз revoked → отзыв сессий; guard-роуты 401; rate-limit на /auth/login |
 | 4 | TASK-25 `boards-members` | `feature/TASK-25-boards-members` | Полная схема §7.3 + миграции **включая soft-delete (`deletedAt`) и `version` — с первого дня, каскады проставлением флага** (§7.0); boards CRUD, membership с ролями ADMIN/MEMBER/VIEWER + `expiresAt` (invite/смена роли — только ADMIN, протухший VIEWER → 403), `GET /boards/:id` агрегат (активные cardIds + cards с archivedAt), import/export с round-trip cover/due/wip/archived | e2e: CRUD, роли (VIEWER-мутация → 403, expiresAt → 403), 403 чужой доске; aggregate shape = модель фронта (включая архив); soft-delete: DELETE прячет сущность, выборки фильтруют `deletedAt` |
-| 5 | TASK-26 `columns-cards` | `feature/TASK-26-columns-cards` | Колонки и карточки: CRUD, move/reorder с позициями, duplicate (id копии от клиента), archive/unarchive/mass-archive (TASK-18.1), WIP-409, каскады | e2e: CRUD + move + позиции стабильны; archive round-trip; WIP 409; каскад колонки; лимиты гвардят |
-| 6 | TASK-27 `labels-checklists` | `feature/TASK-27-labels-checklists` | Метки (доска+карточка, m2m с позицией), чек-листы + пункты | e2e: m2m round-trip, каскад метки, лимиты коллекций |
-| 7 | TASK-28 `activity-comments` | `feature/TASK-28-activity-comments` | Activity (интерцептор пишет все 10 типов + member/comment), курсорные ленты, комментарии (API готов; UI комментариев — позже, §7.6) | e2e: события на каждый мутирующий вызов, actorId верный, пагинация |
-| 8 | TASK-29 `optimistic-adapter` | `feature/TASK-29-optimistic-adapter` | Sync-слой: экшен→API→reconcile, undo=инверсная команда из стора (TASK-21.7d) с политикой конфликтов §7.0 (текст → отказ с тостом, позиции → LWW), 401/refresh single-flight, откаты, старт-агрегат → REPLACE_STATE, login-экран, миграция localStorage (включая архивные карточки) | UI полностью живёт с сервера; undo/redo и офлайн-тосты работают; undo при чужой правке текста отказывается с тостом, правка другого участника не теряется; 362+ фронт-тестов зелёные |
-| 9 | TASK-30 `realtime-sse` | `feature/TASK-30-realtime-sse` | SSE-поток + применение чужих патчей на фронте, refetch-on-focus остаётся fallback | два браузера видят изменения друг друга без перезагрузки |
+| 5 | TASK-26 `columns-cards` | `feature/TASK-26-columns-cards` | Команды колонок/карточек (CRUD, move/reorder с позициями, duplicate — id копии от клиента, archive/unarchive/mass-archive, TOGGLE→SET, SET_COLUMN_CARD_ORDER) поверх командного лога; WIP — отказ команды общим `atWipLimit`; каскады — soft-delete §7.3 | e2e: команды apply/reject; повтор `commandId` не создаёт дубль; позиции стабильны; archive round-trip; WIP 409; каскад колонки; `ifMatch` 409 |
+| 6 | TASK-27 `labels-checklists` | `feature/TASK-27-labels-checklists` | Команды меток (доска+карточка, m2m с позицией) и чек-листов + пунктов (включая `SET_CHECKLIST_ITEM_DONE`, RESTORE_*) | e2e: m2m round-trip, каскад метки (soft-delete), лимиты коллекций, restore-команды возвращают состояние |
+| 7 | TASK-28 `activity-comments` | `feature/TASK-28-activity-comments` | Ленты активности поверх Command-лога (курсор по `seq`, фильтр по сущностям), member/comment-события в логе, комментарии (REST; UI позже — §7.6) | e2e: каждая мутирующая команда видна в лентах, actorId верный, пагинация, догон `?since=` отдаёт дельту без перезапроса агрегата |
+| 8 | TASK-29 `optimistic-adapter` | `feature/TASK-29-optimistic-adapter` | Sync-слой: экшен→`POST /commands {commandId, action, ifMatch}`→`{seq, versions}`/`409`, undo=инверсная команда из стора (TASK-21.7d) с политикой конфликтов §7.0 (текст → отказ с тостом, позиции → LWW), 401/refresh single-flight, откаты, старт-агрегат → REPLACE_STATE, login-экран, миграция localStorage (включая архивные карточки) | UI полностью живёт с сервера; undo/redo и офлайн-тосты работают; undo при чужой правке текста отказывается с тостом, правка другого участника не теряется; 362+ фронт-тестов зелёные |
+| 9 | TASK-30 `realtime-sse` | `feature/TASK-30-realtime-sse` | SSE `{seq, action, actorId}` + применение чужих экшенов тем же `boardReducer`, refetch-on-focus остаётся fallback; в идеале — rebase pending-команд через инверсии | два браузера видят изменения друг друга без перезагрузки; обрыв SSE догоняет `?since=` дельтой |
 
 После TASK-29 ядро готово (TASK-30 — realtime поверх). §7.6 открывается
 по запросу.
