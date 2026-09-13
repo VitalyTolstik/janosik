@@ -209,11 +209,23 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       )
     : undefined;
 
-  // Latest committed state, readable from stable callbacks.
+  // Latest committed state, readable from stable callbacks. `apply` below
+  // keeps it in sync *synchronously*, so this effect is only a safety net.
   const stateRef = useRef(state);
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  // Single funnel for every state transition: advance `stateRef` with the
+  // pure reducer *before* handing the action to React. Two dispatches in
+  // one event handler (e.g. create label + attach it) would otherwise both
+  // read the same stale "before" snapshot into undo history, producing a
+  // phantom no-op undo step. The reducer is pure, so the ref value always
+  // matches what React commits. (TASK-33)
+  const apply = useCallback((action: BoardAction) => {
+    stateRef.current = boardReducer(stateRef.current, action);
+    dispatchRaw(action);
+  }, []);
 
   // Latest active board id, readable from stable callbacks.
   const activeIdRef = useRef(board?.id);
@@ -281,16 +293,16 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     if (action.type === "IMPORT_BOARDS") {
       // A new data set invalidates every history.
       historiesRef.current.clear();
-      dispatchRaw(action);
+      apply(action);
       return;
     }
     if (action.type === "ADD_BOARD") {
-      dispatchRaw(action);
+      apply(action);
       return;
     }
     if (action.type === "REMOVE_BOARD") {
       historiesRef.current.delete(action.boardId);
-      dispatchRaw(action);
+      apply(action);
       return;
     }
     if (
@@ -298,7 +310,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       action.type === "UNARCHIVE_BOARD"
     ) {
       // Organizational actions, not content edits — no undo entry.
-      dispatchRaw(action);
+      apply(action);
       return;
     }
     const boardId = action.type === "RESTORE_BOARD"
@@ -317,7 +329,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         history.push(current, scoped);
       }
     }
-    dispatchRaw(scoped);
+    apply(scoped);
   }, []);
 
   const undo = useCallback(() => {
@@ -327,7 +339,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     const current = stateRef.current.find((b) => b.id === boardId);
     const previous = history && current ? history.undo(current) : null;
     if (previous) {
-      dispatchRaw({ type: "RESTORE_BOARD", boardId, board: previous });
+      apply({ type: "RESTORE_BOARD", boardId, board: previous });
     }
   }, []);
 
@@ -338,14 +350,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     const current = stateRef.current.find((b) => b.id === boardId);
     const next = history && current ? history.redo(current) : null;
     if (next) {
-      dispatchRaw({ type: "RESTORE_BOARD", boardId, board: next });
+      apply({ type: "RESTORE_BOARD", boardId, board: next });
     }
   }, []);
 
   const importBoards = useCallback((boards: BoardState) => {
     // A new data set invalidates any previous history.
     historiesRef.current.clear();
-    dispatchRaw({ type: "IMPORT_BOARDS", boards: normalizeBoards(boards) });
+    apply({ type: "IMPORT_BOARDS", boards: normalizeBoards(boards) });
   }, []);
 
   // Hotkeys: Ctrl/⌘+Z undo, Ctrl/⌘+Shift+Z or Ctrl+Y redo. Skip while the
@@ -382,7 +394,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const addBoard = useCallback((title: string): string => {
     const id = createId();
     const now = Date.now();
-    dispatchRaw({
+    apply({
       type: "ADD_BOARD",
       board: {
         id,
@@ -399,15 +411,15 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   const removeBoard = useCallback((boardId: string) => {
     historiesRef.current.delete(boardId);
-    dispatchRaw({ type: "REMOVE_BOARD", boardId });
+    apply({ type: "REMOVE_BOARD", boardId });
   }, []);
 
   const archiveBoard = useCallback((boardId: string) => {
-    dispatchRaw({ type: "ARCHIVE_BOARD", boardId });
+    apply({ type: "ARCHIVE_BOARD", boardId });
   }, []);
 
   const unarchiveBoard = useCallback((boardId: string) => {
-    dispatchRaw({ type: "UNARCHIVE_BOARD", boardId });
+    apply({ type: "UNARCHIVE_BOARD", boardId });
   }, []);
 
   const value = useMemo<BoardContextValue>(
