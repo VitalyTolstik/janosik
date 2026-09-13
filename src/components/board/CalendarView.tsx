@@ -39,12 +39,7 @@ import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
 import { formatDateOnly, formatTime, useHour12, useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
-import {
-  LABEL_COLOR_DOT,
-  type Card,
-  type Label,
-  LIMITS,
-} from "@/types/kanban";
+import { LABEL_COLOR_DOT, type Card, type Label, LIMITS } from "@/types/kanban";
 import { dueStatus } from "@/utils/due-date";
 
 interface CalendarViewProps {
@@ -222,7 +217,10 @@ function MonthYearMenu({ anchor, label, locale, onPick }: MonthYearMenuProps) {
  *   plus the FULL list of the day's cards (chips may be truncated);
  * - fixed cell heights: the grid never grows with content.
  */
-export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps) {
+export function CalendarView({
+  filteredCardIds,
+  onCardClick,
+}: CalendarViewProps) {
   const { board, addCard, setCardDueDate } = useBoard();
   const { t, tp, lang } = useI18n();
   const hour12 = useHour12();
@@ -282,7 +280,12 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
         const labels = card.labelIds
           .map((labelId) => board.labels.find((l) => l.id === labelId))
           .filter((l): l is Label => Boolean(l));
-        const entry: DayEntry = { card, columnId: column.id, columnTitle: column.title, labels };
+        const entry: DayEntry = {
+          card,
+          columnId: column.id,
+          columnTitle: column.title,
+          labels,
+        };
         const list = map.get(key);
         if (list) {
           list.push(entry);
@@ -311,14 +314,14 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
     return list;
   }, [board, filteredCardIds]);
 
-  if (!board) return null;  const isWeek = scale === "week";
+  if (!board) return null;
+  const isWeek = scale === "week";
   const gridStart = isWeek
     ? startOfWeek(anchor, { weekStartsOn })
     : startOfWeek(startOfMonth(anchor), { weekStartsOn });
   const gridEnd = endOfWeek(gridStart, { weekStartsOn });
-  const days = Array.from(
-    { length: isWeek ? 7 : 42 },
-    (_, i) => addDays(gridStart, i),
+  const days = Array.from({ length: isWeek ? 7 : 42 }, (_, i) =>
+    addDays(gridStart, i),
   );
   const weekdays = Array.from({ length: 7 }, (_, i) => addDays(gridStart, i));
 
@@ -326,9 +329,7 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
     ? `${format(gridStart, "d LLL", { locale })} – ${format(gridEnd, "d LLL yyyy", { locale })}`
     : (() => {
         const monthLabel = format(anchor, "LLLL yyyy", { locale });
-        return (
-          monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1)
-        );
+        return monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1);
       })();
 
   const step = (dir: 1 | -1) => {
@@ -388,9 +389,7 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
       board.columns.find((c) => c.id === columnId) ?? board.columns[0];
     if (!column) return;
     if (column.cardIds.length >= LIMITS.cardsPerColumn) {
-      toast.error(
-        t("limits.maxItems", { limit: LIMITS.cardsPerColumn }),
-      );
+      toast.error(t("limits.maxItems", { limit: LIMITS.cardsPerColumn }));
       return;
     }
     pendingCreationRef.current = {
@@ -409,9 +408,7 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
     const column = board.columns[0];
     if (!column) return;
     if (column.cardIds.length >= LIMITS.cardsPerColumn) {
-      toast.error(
-        t("limits.maxItems", { limit: LIMITS.cardsPerColumn }),
-      );
+      toast.error(t("limits.maxItems", { limit: LIMITS.cardsPerColumn }));
       return;
     }
     addCard(column.id, trimmed);
@@ -422,7 +419,10 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
     event.dataTransfer.effectAllowed = "move";
   };
 
-  const renderChip = ({ card, columnTitle, labels }: DayEntry, withTime: boolean) => {
+  const renderChip = (
+    { card, columnTitle, labels }: DayEntry,
+    withTime: boolean,
+  ) => {
     const status = dueStatus(card.dueDate as number);
     return (
       <button
@@ -431,11 +431,15 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
         draggable
         data-testid="calendar-chip"
         onDragStart={(event) => chipDragStart(event, card.id)}
-        title={`${withTime ? `${formatTime(
-          `${String(new Date(card.dueDate as number).getHours()).padStart(2, "0")}:${String(new Date(card.dueDate as number).getMinutes()).padStart(2, "0")}`,
-          lang,
-          hour12,
-        )} · ` : ""}${columnTitle} · ${card.title}${labels.length > 0 ? ` · ${labels.map((l) => l.name).join(", ")}` : ""}`}
+        title={`${
+          withTime
+            ? `${formatTime(
+                `${String(new Date(card.dueDate as number).getHours()).padStart(2, "0")}:${String(new Date(card.dueDate as number).getMinutes()).padStart(2, "0")}`,
+                lang,
+                hour12,
+              )} · `
+            : ""
+        }${columnTitle} · ${card.title}${labels.length > 0 ? ` · ${labels.map((l) => l.name).join(", ")}` : ""}`}
         onClick={(event) => {
           event.stopPropagation();
           onCardClick(card.id);
@@ -444,7 +448,8 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
           "flex items-stretch gap-1 overflow-hidden rounded-md border text-left text-[11px] leading-tight transition-colors hover:border-primary/50",
           status === "overdue" && "border-danger/40 bg-danger/10 text-danger",
           status === "soon" && "border-warning/40 bg-warning/10 text-warning",
-          status === "later" && "border-border/60 bg-muted/40 text-foreground/80",
+          status === "later" &&
+            "border-border/60 bg-muted/40 text-foreground/80",
         )}
       >
         {/* Label stripe: one thin bar, segmented per label — every label
@@ -536,7 +541,9 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
           variant="ghost"
           size="icon"
           className="h-7 w-7"
-          aria-label={isWeek ? t("view.calendar.prevWeek") : t("view.calendar.prev")}
+          aria-label={
+            isWeek ? t("view.calendar.prevWeek") : t("view.calendar.prev")
+          }
           onClick={() => step(-1)}
         >
           <ChevronLeft className="h-4 w-4" />
@@ -553,7 +560,9 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
           variant="ghost"
           size="icon"
           className="h-7 w-7"
-          aria-label={isWeek ? t("view.calendar.nextWeek") : t("view.calendar.next")}
+          aria-label={
+            isWeek ? t("view.calendar.nextWeek") : t("view.calendar.next")
+          }
           onClick={() => step(1)}
         >
           <ChevronRight className="h-4 w-4" />
@@ -597,7 +606,10 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
             </span>
           </button>
           {unscheduledOpen ? (
-            <div className="flex-1 space-y-1 overflow-y-auto p-2" data-testid="unscheduled-list">
+            <div
+              className="flex-1 space-y-1 overflow-y-auto p-2"
+              data-testid="unscheduled-list"
+            >
               <UnscheduledComposer
                 disabled={board.columns.length === 0}
                 onCreate={createUnscheduledCard}
@@ -648,7 +660,9 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
               const entries = entriesByDay.get(key) ?? [];
               // Month cells are capped (fixed height); week cells are tall
               // and list everything.
-              const visible = isWeek ? entries : entries.slice(0, MAX_CHIPS_PER_CELL);
+              const visible = isWeek
+                ? entries
+                : entries.slice(0, MAX_CHIPS_PER_CELL);
               const overflow = isWeek ? 0 : entries.length - visible.length;
               const isDayOpen = openDayKey === key;
               return (
@@ -670,60 +684,64 @@ export function CalendarView({ filteredCardIds, onCardClick }: CalendarViewProps
                       "group/cell relative flex flex-col overflow-hidden border-b border-r border-border/40 p-1.5 [&:nth-child(7n)]:border-r-0",
                       isWeek ? "min-h-72" : "h-28",
                       !isSameMonth(day, anchor) && !isWeek && "bg-muted/30",
-                      dragOverKey === key && "bg-primary/10 ring-1 ring-inset ring-primary/40",
+                      dragOverKey === key &&
+                        "bg-primary/10 ring-1 ring-inset ring-primary/40",
                     )}
                   >
-                      <div className="mb-1 flex items-center justify-between gap-1">
-                        <span className="flex items-center gap-1">
-                          <span
-                            className={cn(
-                              "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs tabular-nums",
-                              isToday(day) && "bg-primary font-semibold text-primary-foreground",
-                              !isToday(day) && !isSameMonth(day, anchor) && "text-muted-foreground/60",
-                            )}
-                          >
-                            {format(day, "d")}
-                          </span>
-                          <PopoverAnchor asChild>
-                            <button
-                              type="button"
-                              aria-label={t("composer.add")}
-                              data-testid="day-add"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setOpenDayKey(isDayOpen ? null : key);
-                              }}
-                              className={cn(
-                                "flex h-5 w-5 items-center justify-center rounded-md bg-primary/15 text-primary opacity-0 transition-opacity hover:bg-primary/25 group-hover/cell:opacity-100 focus-visible:opacity-100",
-                                isDayOpen && "opacity-100",
-                              )}
-                            >
-                              <Plus className="h-3 w-3" aria-hidden />
-                            </button>
-                          </PopoverAnchor>
+                    <div className="mb-1 flex items-center justify-between gap-1">
+                      <span className="flex items-center gap-1">
+                        <span
+                          className={cn(
+                            "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs tabular-nums",
+                            isToday(day) &&
+                              "bg-primary font-semibold text-primary-foreground",
+                            !isToday(day) &&
+                              !isSameMonth(day, anchor) &&
+                              "text-muted-foreground/60",
+                          )}
+                        >
+                          {format(day, "d")}
                         </span>
-                        {overflow > 0 ? (
+                        <PopoverAnchor asChild>
                           <button
                             type="button"
-                            data-testid="day-overflow"
+                            aria-label={t("composer.add")}
+                            data-testid="day-add"
                             onClick={(event) => {
                               event.stopPropagation();
-                              setOpenDayKey(key);
+                              setOpenDayKey(isDayOpen ? null : key);
                             }}
-                            className="rounded px-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+                            className={cn(
+                              "flex h-5 w-5 items-center justify-center rounded-md bg-primary/15 text-primary opacity-0 transition-opacity hover:bg-primary/25 group-hover/cell:opacity-100 focus-visible:opacity-100",
+                              isDayOpen && "opacity-100",
+                            )}
                           >
-                            {tp("view.calendar.moreCards", overflow)}
+                            <Plus className="h-3 w-3" aria-hidden />
                           </button>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        {visible.map((entry) => renderChip(entry, isWeek))}
-                      </div>
-                      {/* Fade instead of an open end — a fixed cell height
-                          keeps the grid from growing with content. */}
-                      {entries.length > MAX_CHIPS_PER_CELL && !isWeek ? (
-                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-card to-transparent" />
+                        </PopoverAnchor>
+                      </span>
+                      {overflow > 0 ? (
+                        <button
+                          type="button"
+                          data-testid="day-overflow"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setOpenDayKey(key);
+                          }}
+                          className="rounded px-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                          {tp("view.calendar.moreCards", overflow)}
+                        </button>
                       ) : null}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {visible.map((entry) => renderChip(entry, isWeek))}
+                    </div>
+                    {/* Fade instead of an open end — a fixed cell height
+                          keeps the grid from growing with content. */}
+                    {entries.length > MAX_CHIPS_PER_CELL && !isWeek ? (
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-card to-transparent" />
+                    ) : null}
                   </div>
                   <PopoverContent
                     align="start"
@@ -871,12 +889,12 @@ function DayComposer({
             {selectedColumn?.title ?? "—"}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="max-h-44 w-[var(--radix-dropdown-menu-trigger-width)] min-w-0 overflow-y-auto">
+        <DropdownMenuContent
+          align="start"
+          className="max-h-44 w-[var(--radix-dropdown-menu-trigger-width)] min-w-0 overflow-y-auto"
+        >
           {columns.map((col) => (
-            <DropdownMenuItem
-              key={col.id}
-              onSelect={() => setColumnId(col.id)}
-            >
+            <DropdownMenuItem key={col.id} onSelect={() => setColumnId(col.id)}>
               {col.title}
             </DropdownMenuItem>
           ))}

@@ -50,8 +50,16 @@ export function Header() {
                   x2="1"
                   y2="0"
                 >
-                  <stop offset="0" stopColor="currentColor" stopOpacity="0.95" />
-                  <stop offset="1" stopColor="currentColor" stopOpacity="0.72" />
+                  <stop
+                    offset="0"
+                    stopColor="currentColor"
+                    stopOpacity="0.95"
+                  />
+                  <stop
+                    offset="1"
+                    stopColor="currentColor"
+                    stopOpacity="0.72"
+                  />
                 </linearGradient>
               </defs>
               <path

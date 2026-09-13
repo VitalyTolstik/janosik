@@ -1,12 +1,19 @@
-import { AlignLeft, Archive, Check, ListChecks, MessageSquare, Plus, Settings2, X } from "lucide-react";
+import {
+  AlignLeft,
+  Archive,
+  Check,
+  ListChecks,
+  MessageSquare,
+  Plus,
+  Settings2,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { DueBadge } from "@/components/board/DueBadge";
 import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
 import { LabelPicker } from "@/components/board/LabelPicker";
-import {
-  DueDatePickerContent,
-} from "@/components/board/CardDueDate";
+import { DueDatePickerContent } from "@/components/board/CardDueDate";
 import { HighlightedText } from "@/components/ui/highlight";
 import { Button } from "@/components/ui/button";
 import {
@@ -158,13 +165,20 @@ export function TableView({
     const cmp = (a: (typeof rows)[number], b: (typeof rows)[number]) => {
       switch (sort.key) {
         case "title":
-          return a.card.title.localeCompare(b.card.title, lang, { sensitivity: "base" });
+          return a.card.title.localeCompare(b.card.title, lang, {
+            sensitivity: "base",
+          });
         case "column":
-          return (columnIndex.get(a.column.id) ?? 0) - (columnIndex.get(b.column.id) ?? 0);
+          return (
+            (columnIndex.get(a.column.id) ?? 0) -
+            (columnIndex.get(b.column.id) ?? 0)
+          );
         case "due": {
           // Undated cards always float to the bottom (like sortColumn).
-          const aDue = typeof a.card.dueDate === "number" ? a.card.dueDate : null;
-          const bDue = typeof b.card.dueDate === "number" ? b.card.dueDate : null;
+          const aDue =
+            typeof a.card.dueDate === "number" ? a.card.dueDate : null;
+          const bDue =
+            typeof b.card.dueDate === "number" ? b.card.dueDate : null;
           if (aDue === null && bDue === null) return 0;
           if (aDue === null) return 1;
           if (bDue === null) return -1;
@@ -210,13 +224,18 @@ export function TableView({
 
   const cancelTitleEdit = () => setEditingTitleId(null);
 
-  const handleCreateLabel = (cardId: string) => (name: string, color: LabelColor) => {
-    const label = { id: createId(), name, color };
-    addLabel(label);
-    toggleCardLabel(cardId, label.id);
-  };
+  const handleCreateLabel =
+    (cardId: string) => (name: string, color: LabelColor) => {
+      const label = { id: createId(), name, color };
+      addLabel(label);
+      toggleCardLabel(cardId, label.id);
+    };
 
-  const moveToColumn = (card: Card, fromColumnId: string, toColumnId: string) => {
+  const moveToColumn = (
+    card: Card,
+    fromColumnId: string,
+    toColumnId: string,
+  ) => {
     if (toColumnId === fromColumnId) return;
     const target = board.columns.find((col) => col.id === toColumnId);
     if (!target) return;
@@ -256,7 +275,10 @@ export function TableView({
           </PopoverTrigger>
           <PopoverContent align="start" className="w-64 p-2">
             <TableCardComposer
-              columns={board.columns.map((col) => ({ id: col.id, title: col.title }))}
+              columns={board.columns.map((col) => ({
+                id: col.id,
+                title: col.title,
+              }))}
               labels={board.labels}
               onSubmit={(columnId, title, labelIds) =>
                 addCard(columnId, title, labelIds)
@@ -279,7 +301,9 @@ export function TableView({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuLabel>{t("view.table.columnsSettings")}</DropdownMenuLabel>
+            <DropdownMenuLabel>
+              {t("view.table.columnsSettings")}
+            </DropdownMenuLabel>
             {OPTIONAL_COLUMNS.map((column) => (
               <DropdownMenuCheckboxItem
                 key={column}
@@ -324,31 +348,49 @@ export function TableView({
                 onCycle={cycleSort}
                 className="w-48"
               />
-              <th scope="col" className="w-44 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <th
+                scope="col"
+                className="w-44 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+              >
                 {t("view.table.labels")}
               </th>
               {visibleColumns.includes("checklists") ? (
-                <th scope="col" className="w-24 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <th
+                  scope="col"
+                  className="w-24 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                >
                   {t("view.table.checklists")}
                 </th>
               ) : null}
               {visibleColumns.includes("description") ? (
-                <th scope="col" className="w-16 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <th
+                  scope="col"
+                  className="w-16 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                >
                   {t("view.table.description")}
                 </th>
               ) : null}
               {visibleColumns.includes("createdAt") ? (
-                <th scope="col" className="w-28 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <th
+                  scope="col"
+                  className="w-28 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                >
                   {t("view.table.createdAt")}
                 </th>
               ) : null}
               {visibleColumns.includes("updatedAt") ? (
-                <th scope="col" className="w-28 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <th
+                  scope="col"
+                  className="w-28 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                >
                   {t("view.table.updatedAt")}
                 </th>
               ) : null}
               {visibleColumns.includes("activity") ? (
-                <th scope="col" className="w-20 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <th
+                  scope="col"
+                  className="w-20 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                >
                   {t("view.table.activity")}
                 </th>
               ) : null}
@@ -357,7 +399,10 @@ export function TableView({
           <tbody>
             {sortedRows.length === 0 ? (
               <tr>
-                <td colSpan={4 + optionalCount} className="px-3 py-8 text-center text-muted-foreground">
+                <td
+                  colSpan={4 + optionalCount}
+                  className="px-3 py-8 text-center text-muted-foreground"
+                >
                   {isFiltering ? t("filter.noMatch") : t("view.table.empty")}
                 </td>
               </tr>
@@ -396,7 +441,10 @@ export function TableView({
                           }}
                           className="block truncate text-foreground/90 group-hover/title:pr-9"
                         >
-                          <HighlightedText text={card.title} query={highlight ?? ""} />
+                          <HighlightedText
+                            text={card.title}
+                            query={highlight ?? ""}
+                          />
                         </span>
                         {archiveConfirmId === card.id ? (
                           <span
@@ -445,7 +493,10 @@ export function TableView({
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
+                  <td
+                    className="px-3 py-2"
+                    onClick={(event) => event.stopPropagation()}
+                  >
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
@@ -458,12 +509,16 @@ export function TableView({
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start">
-                        <DropdownMenuLabel>{t("view.table.column")}</DropdownMenuLabel>
+                        <DropdownMenuLabel>
+                          {t("view.table.column")}
+                        </DropdownMenuLabel>
                         {board.columns.map((col) => (
                           <DropdownMenuItem
                             key={col.id}
                             disabled={col.id === column.id}
-                            onSelect={() => moveToColumn(card, column.id, col.id)}
+                            onSelect={() =>
+                              moveToColumn(card, column.id, col.id)
+                            }
                           >
                             {col.title}
                           </DropdownMenuItem>
@@ -479,7 +534,10 @@ export function TableView({
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>
-                  <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
+                  <td
+                    className="px-3 py-2"
+                    onClick={(event) => event.stopPropagation()}
+                  >
                     <Popover>
                       <PopoverTrigger asChild>
                         <button
@@ -491,16 +549,27 @@ export function TableView({
                           {typeof card.dueDate === "number" ? (
                             <DueBadge dueDate={card.dueDate} />
                           ) : (
-                            <span className="text-xs text-muted-foreground/60">—</span>
+                            <span className="text-xs text-muted-foreground/60">
+                              —
+                            </span>
                           )}
                         </button>
                       </PopoverTrigger>
-                      <PopoverContent align="start" className="relative w-auto p-3">
-                        <DueDatePickerContent cardId={card.id} dueDate={card.dueDate} />
+                      <PopoverContent
+                        align="start"
+                        className="relative w-auto p-3"
+                      >
+                        <DueDatePickerContent
+                          cardId={card.id}
+                          dueDate={card.dueDate}
+                        />
                       </PopoverContent>
                     </Popover>
                   </td>
-                  <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
+                  <td
+                    className="px-3 py-2"
+                    onClick={(event) => event.stopPropagation()}
+                  >
                     <Popover>
                       <PopoverTrigger asChild>
                         <button
@@ -519,13 +588,18 @@ export function TableView({
                                     LABEL_COLOR_CHIP[label.color]
                                   }
                                 >
-                                  <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
+                                  <span
+                                    className="h-1.5 w-1.5 rounded-full bg-current"
+                                    aria-hidden
+                                  />
                                   {label.name}
                                 </span>
                               ))}
                             </span>
                           ) : (
-                            <span className="text-xs text-muted-foreground/60">—</span>
+                            <span className="text-xs text-muted-foreground/60">
+                              —
+                            </span>
                           )}
                         </button>
                       </PopoverTrigger>
@@ -533,7 +607,9 @@ export function TableView({
                         <LabelPicker
                           labels={board.labels}
                           selected={card.labelIds}
-                          onToggle={(labelId) => toggleCardLabel(card.id, labelId)}
+                          onToggle={(labelId) =>
+                            toggleCardLabel(card.id, labelId)
+                          }
                           onCreate={handleCreateLabel(card.id)}
                           onRename={renameLabel}
                           onRecolor={setLabelColor}
@@ -556,7 +632,9 @@ export function TableView({
                             {done}/{total}
                           </span>
                         ) : (
-                          <span className="text-xs text-muted-foreground/60">—</span>
+                          <span className="text-xs text-muted-foreground/60">
+                            —
+                          </span>
                         );
                       })()}
                     </td>
@@ -570,7 +648,9 @@ export function TableView({
                           aria-label={t("view.table.description")}
                         />
                       ) : (
-                        <span className="text-xs text-muted-foreground/60">—</span>
+                        <span className="text-xs text-muted-foreground/60">
+                          —
+                        </span>
                       )}
                     </td>
                   ) : null}
@@ -622,7 +702,9 @@ function SortHeader({
       <button
         type="button"
         data-testid={`table-sort-${sortKey}`}
-        aria-sort={isSorted ? (sort?.dir === 1 ? "ascending" : "descending") : "none"}
+        aria-sort={
+          isSorted ? (sort?.dir === 1 ? "ascending" : "descending") : "none"
+        }
         title={label}
         onClick={() => onCycle(sortKey)}
         className={cn(
@@ -693,11 +775,19 @@ function TableCardComposer({
       />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-7 w-full justify-start text-xs" data-testid="table-composer-column">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 w-full justify-start text-xs"
+            data-testid="table-composer-column"
+          >
             {selected?.title ?? "—"}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="max-h-44 w-[var(--radix-dropdown-menu-trigger-width)] min-w-0 overflow-y-auto">
+        <DropdownMenuContent
+          align="start"
+          className="max-h-44 w-[var(--radix-dropdown-menu-trigger-width)] min-w-0 overflow-y-auto"
+        >
           {columns.map((col) => (
             <DropdownMenuItem key={col.id} onSelect={() => setColumnId(col.id)}>
               {col.title}
@@ -712,7 +802,12 @@ function TableCardComposer({
         testId="table-composer-labels"
       />
       <div className="flex items-center gap-2">
-        <Button size="sm" className="h-7 flex-1 text-xs" disabled={!title.trim()} onClick={submit}>
+        <Button
+          size="sm"
+          className="h-7 flex-1 text-xs"
+          disabled={!title.trim()}
+          onClick={submit}
+        >
           {t("composer.submit")}
         </Button>
         {/* Same pair as the board composer: Отмена just closes the popover. */}

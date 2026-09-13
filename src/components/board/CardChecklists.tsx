@@ -88,7 +88,9 @@ export function CardChecklists({ cardId, checklists }: CardChecklistsProps) {
                 size="sm"
                 className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
                 disabled={checklists.length >= LIMITS.checklistsPerCard}
-                onClick={() => addChecklist(cardId, t("checklist.defaultTitle"))}
+                onClick={() =>
+                  addChecklist(cardId, t("checklist.defaultTitle"))
+                }
               >
                 <Plus className="h-3.5 w-3.5" />
                 {t("checklist.add")}

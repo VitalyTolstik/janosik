@@ -118,17 +118,17 @@ describe("keyboard shortcuts", () => {
   it("j/k move the cursor, Enter opens the cursor's card", () => {
     renderBoard();
     pressKey("j");
-    expect(document.querySelector('[data-card-cursor="true"]')).toHaveTextContent(
-      "First card",
-    );
+    expect(
+      document.querySelector('[data-card-cursor="true"]'),
+    ).toHaveTextContent("First card");
     pressKey("j");
-    expect(document.querySelector('[data-card-cursor="true"]')).toHaveTextContent(
-      "Second card",
-    );
+    expect(
+      document.querySelector('[data-card-cursor="true"]'),
+    ).toHaveTextContent("Second card");
     pressKey("k");
-    expect(document.querySelector('[data-card-cursor="true"]')).toHaveTextContent(
-      "First card",
-    );
+    expect(
+      document.querySelector('[data-card-cursor="true"]'),
+    ).toHaveTextContent("First card");
     pressKey("Enter");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });

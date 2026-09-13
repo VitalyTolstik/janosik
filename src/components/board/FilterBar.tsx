@@ -93,7 +93,13 @@ interface FilterBarProps {
 }
 
 /** Section title inside the filters popover. */
-function FilterSection({ title, children }: { title: string; children: React.ReactNode }) {
+function FilterSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="border-b border-border px-3 py-2 last:border-b-0">
       <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -242,20 +248,24 @@ export function FilterBar({
           name="filter-search"
           value={query}
           maxLength={LIMITS.query}
-          aria-describedby={showRemaining(query.length, LIMITS.query) ? "filter-query-limit" : undefined}
+          aria-describedby={
+            showRemaining(query.length, LIMITS.query)
+              ? "filter-query-limit"
+              : undefined
+          }
           onChange={(e) => onChange({ ...filter, query: e.target.value })}
           placeholder={t("filter.searchPlaceholder")}
           aria-label={t("filter.searchAria")}
           className="h-9 rounded-lg pl-9 pr-8"
         />
-          <LimitCounter
-            id="filter-query-limit"
-            length={query.length}
-            limit={LIMITS.query}
-            position="below"
-            className="left-7"
-            testId="filter-query-limit"
-          />
+        <LimitCounter
+          id="filter-query-limit"
+          length={query.length}
+          limit={LIMITS.query}
+          position="below"
+          className="left-7"
+          testId="filter-query-limit"
+        />
         {query !== "" && (
           <button
             type="button"
@@ -362,7 +372,9 @@ export function FilterBar({
               {(["any", "today", "7d", "30d"] as const).map((value) => (
                 <OptionRow
                   key={value}
-                  selected={filter.createdOn === null && filter.created === value}
+                  selected={
+                    filter.createdOn === null && filter.created === value
+                  }
                   onSelect={() =>
                     onChange({
                       ...filter,
@@ -392,7 +404,9 @@ export function FilterBar({
                   aria-label={t("filter.dateTitle")}
                   mode="single"
                   selected={
-                    filter.createdOn ? parseIsoDate(filter.createdOn) : undefined
+                    filter.createdOn
+                      ? parseIsoDate(filter.createdOn)
+                      : undefined
                   }
                   onSelect={(day) => {
                     onChange({

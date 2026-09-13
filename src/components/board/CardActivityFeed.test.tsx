@@ -74,7 +74,9 @@ describe("CardActivityFeed", () => {
 
   it("renders label events with the captured name snapshot", () => {
     renderFeed({
-      activity: [event({ id: "e1", type: "label-added", at: HOUR, detail: "Design" })],
+      activity: [
+        event({ id: "e1", type: "label-added", at: HOUR, detail: "Design" }),
+      ],
       createdAt: 0,
     });
     expandFeed();

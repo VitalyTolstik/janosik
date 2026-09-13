@@ -87,7 +87,10 @@ export default function App() {
                       <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
                         <Header />
                         <Routes>
-                          <Route path={routes.home} element={<NoBoardRoute />} />
+                          <Route
+                            path={routes.home}
+                            element={<NoBoardRoute />}
+                          />
                           <Route
                             path={routes.boardPattern}
                             element={<BoardSection />}

@@ -141,19 +141,32 @@ describe("matchesCardFilter", () => {
   it("uses all-match semantics when labelMatch is all", () => {
     const both = card("c5", "T", ["a", "b"]);
     const one = card("c6", "T", ["a"]);
-    const filter = { ...EMPTY_FILTER, labelIds: ["a", "b"], labelMatch: "all" as const };
+    const filter = {
+      ...EMPTY_FILTER,
+      labelIds: ["a", "b"],
+      labelMatch: "all" as const,
+    };
     expect(matchesCardFilter(both, filter, NOW)).toBe(true);
     expect(matchesCardFilter(one, filter, NOW)).toBe(false);
     // A single selected label behaves the same in both modes.
     expect(
-      matchesCardFilter(one, { ...EMPTY_FILTER, labelIds: ["a"], labelMatch: "all" }, NOW),
+      matchesCardFilter(
+        one,
+        { ...EMPTY_FILTER, labelIds: ["a"], labelMatch: "all" },
+        NOW,
+      ),
     ).toBe(true);
   });
 
   it("keeps noLabel OR-ed with all-match labels", () => {
     const unlabeled = card("c7", "T", []);
     const one = card("c8", "T", ["a"]);
-    const filter = { ...EMPTY_FILTER, labelIds: ["a", "b"], labelMatch: "all" as const, noLabel: true };
+    const filter = {
+      ...EMPTY_FILTER,
+      labelIds: ["a", "b"],
+      labelMatch: "all" as const,
+      noLabel: true,
+    };
     expect(matchesCardFilter(unlabeled, filter, NOW)).toBe(true);
     // noLabel is OR-ed with the label match: a card with only "a" neither
     // has all of a+b nor lacks labels, so it is excluded in ALL mode.
@@ -369,15 +382,23 @@ describe("query semantics (title + description + label names)", () => {
     { id: "b", name: "Backend", color: "blue" },
   ];
   const c = card("c1", "Buy milk", ["a"]);
-  const withDesc = { ...card("c2", "Tidy up", []), description: "Under the sofa" };
+  const withDesc = {
+    ...card("c2", "Tidy up", []),
+    description: "Under the sofa",
+  };
 
   it("matches the card description", () => {
     expect(
-      matchesCardFilter(withDesc, { ...EMPTY_FILTER, query: "sofa" }, NOW, labels),
+      matchesCardFilter(
+        withDesc,
+        { ...EMPTY_FILTER, query: "sofa" },
+        NOW,
+        labels,
+      ),
     ).toBe(true);
-    expect(matchesCardFilter(c, { ...EMPTY_FILTER, query: "sofa" }, NOW, labels)).toBe(
-      false,
-    );
+    expect(
+      matchesCardFilter(c, { ...EMPTY_FILTER, query: "sofa" }, NOW, labels),
+    ).toBe(false);
   });
 
   it("matches label names, not just ids", () => {
@@ -438,9 +459,9 @@ describe("searchBoards", () => {
     expect(hits[0].matchIn).toBe("description");
 
     const byLabel = searchBoards([activeBoard], "design");
-    expect(byLabel.map((h) => (h.kind === "card" ? h.card.id : h.boardId))).toContain(
-      "c1",
-    );
+    expect(
+      byLabel.map((h) => (h.kind === "card" ? h.card.id : h.boardId)),
+    ).toContain("c1");
   });
 
   it("finds archived cards even though they are off every column", () => {
@@ -479,9 +500,9 @@ describe("searchBoards", () => {
     expect(hits[0].kind).toBe("card");
 
     const boardHits = searchBoards(boards, "old marketing board");
-    expect(boardHits.some((h) => h.kind === "board" && h.boardId === "b2")).toBe(
-      true,
-    );
+    expect(
+      boardHits.some((h) => h.kind === "board" && h.boardId === "b2"),
+    ).toBe(true);
   });
 
   it("returns nothing for an empty query", () => {
@@ -513,7 +534,8 @@ describe("splitHighlight", () => {
 });
 
 describe("descriptionSnippet", () => {
-  const text = "This is a long description about the Q3 marketing plan for the team";
+  const text =
+    "This is a long description about the Q3 marketing plan for the team";
 
   it("returns null when there is no match", () => {
     expect(descriptionSnippet(text, "zzz")).toBeNull();
@@ -532,9 +554,10 @@ describe("descriptionSnippet", () => {
 
   it("keeps the exact matched casing", () => {
     const snippet = descriptionSnippet(text, "MARKETING", 15);
-    const match = snippet!.find(
-      (s) => typeof s !== "string",
-    ) as { match: true; text: string };
+    const match = snippet!.find((s) => typeof s !== "string") as {
+      match: true;
+      text: string;
+    };
     expect(match.text).toBe("marketing");
   });
 });

@@ -28,10 +28,7 @@ import { useI18n } from "@/i18n";
 import { MAX_IMPORT_BYTES } from "@/types/kanban";
 import { useBoard } from "@/store/BoardContext";
 import { parseExport, serializeExport } from "@/utils/board-serialization";
-import {
-  createBackup,
-  listBackups,
-} from "@/utils/backup";
+import { createBackup, listBackups } from "@/utils/backup";
 
 /**
  * Data & backups menu — export/import the board data as JSON, create a

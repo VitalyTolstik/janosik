@@ -21,52 +21,52 @@
  *          or the hover would not change anything.
  */
 export function applyCardOver(
- columns: Record<string, string[]>,
- activeId: string,
- overId: string,
- insertAfter = false,
+  columns: Record<string, string[]>,
+  activeId: string,
+  overId: string,
+  insertAfter = false,
 ): Record<string, string[]> | null {
- const columnOf = (cardId: string) =>
-  Object.keys(columns).find((colId) => columns[colId].includes(cardId));
+  const columnOf = (cardId: string) =>
+    Object.keys(columns).find((colId) => columns[colId].includes(cardId));
 
- const fromColId = columnOf(activeId);
- if (!fromColId) return null;
- const toColId = overId in columns ? overId : columnOf(overId);
- if (!toColId) return null;
+  const fromColId = columnOf(activeId);
+  if (!fromColId) return null;
+  const toColId = overId in columns ? overId : columnOf(overId);
+  if (!toColId) return null;
 
- // Same-column reorders are the sortable strategy's job (no-op here).
- if (fromColId === toColId) return null;
+  // Same-column reorders are the sortable strategy's job (no-op here).
+  if (fromColId === toColId) return null;
 
- const from = [...columns[fromColId]];
- const fromIndex = from.indexOf(activeId);
- if (fromIndex === -1) return null;
- from.splice(fromIndex, 1);
+  const from = [...columns[fromColId]];
+  const fromIndex = from.indexOf(activeId);
+  if (fromIndex === -1) return null;
+  from.splice(fromIndex, 1);
 
- const to = [...columns[toColId]];
+  const to = [...columns[toColId]];
 
- let insertAt: number;
- if (overId in columns) {
-  // Hovering a column body → append at the end.
-  insertAt = to.length;
- } else {
-  const overIndex = to.indexOf(overId);
-  if (overIndex === -1) return null;
-  // Insert before the hovered card, or after it (+1) once the dragged
-  // card's center passed the hovered card's center. Clamped so that
-  // "after the last card" means "last".
-  insertAt = Math.min(overIndex + (insertAfter ? 1 : 0), to.length);
- }
+  let insertAt: number;
+  if (overId in columns) {
+    // Hovering a column body → append at the end.
+    insertAt = to.length;
+  } else {
+    const overIndex = to.indexOf(overId);
+    if (overIndex === -1) return null;
+    // Insert before the hovered card, or after it (+1) once the dragged
+    // card's center passed the hovered card's center. Clamped so that
+    // "after the last card" means "last".
+    insertAt = Math.min(overIndex + (insertAfter ? 1 : 0), to.length);
+  }
 
- to.splice(insertAt, 0, activeId);
+  to.splice(insertAt, 0, activeId);
 
- const result = { ...columns, [fromColId]: from, [toColId]: to };
+  const result = { ...columns, [fromColId]: from, [toColId]: to };
 
- // A hover that leaves every column untouched is a no-op (keeps the API's
- // "null when nothing changed" contract for callers and tests).
- const unchanged = Object.keys(result).every(
-  (colId) =>
-   result[colId].length === columns[colId].length &&
-   result[colId].every((id, i) => id === columns[colId][i]),
- );
- return unchanged ? null : result;
+  // A hover that leaves every column untouched is a no-op (keeps the API's
+  // "null when nothing changed" contract for callers and tests).
+  const unchanged = Object.keys(result).every(
+    (colId) =>
+      result[colId].length === columns[colId].length &&
+      result[colId].every((id, i) => id === columns[colId][i]),
+  );
+  return unchanged ? null : result;
 }

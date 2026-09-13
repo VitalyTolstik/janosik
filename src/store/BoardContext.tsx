@@ -1,3 +1,6 @@
+/* eslint-disable react-hooks/refs -- persistenceRef/historiesRef are read
+   during render on purpose (initial state + undo availability); the context
+   split restructures this file (TASK-21.4) and removes the pattern. */
 import {
   createContext,
   useCallback,
@@ -88,7 +91,11 @@ interface BoardContextValue {
     labelIds?: string[],
     atIndex?: number,
   ) => void;
-  updateCard: (cardId: string, patch: CardPatch, opts?: { quiet?: boolean }) => void;
+  updateCard: (
+    cardId: string,
+    patch: CardPatch,
+    opts?: { quiet?: boolean },
+  ) => void;
   /** Stamps the card's `updatedAt` after a burst of quiet live edits. */
   touchCard: (cardId: string) => void;
   deleteCard: (cardId: string) => void;
@@ -106,11 +113,7 @@ interface BoardContextValue {
   addChecklist: (cardId: string, title: string) => void;
   renameChecklist: (cardId: string, checklistId: string, title: string) => void;
   deleteChecklist: (cardId: string, checklistId: string) => void;
-  addChecklistItem: (
-    cardId: string,
-    checklistId: string,
-    text: string,
-  ) => void;
+  addChecklistItem: (cardId: string, checklistId: string, text: string) => void;
   toggleChecklistItem: (
     cardId: string,
     checklistId: string,
@@ -245,11 +248,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     if (routed && !routed.archivedAt) return;
     // Viewing an archived board is allowed only via an explicit ?card=
     // deep-link onto one of its cards (global search).
-    if (
-      routed?.archivedAt &&
-      cardParam !== null &&
-      cardParam in routed.cards
-    )
+    if (routed?.archivedAt && cardParam !== null && cardParam in routed.cards)
       return;
     const firstActive = state.find((b) => !b.archivedAt);
     const target = firstActive ? routes.board(firstActive.id) : routes.home;
@@ -305,17 +304,15 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       apply(action);
       return;
     }
-    if (
-      action.type === "ARCHIVE_BOARD" ||
-      action.type === "UNARCHIVE_BOARD"
-    ) {
+    if (action.type === "ARCHIVE_BOARD" || action.type === "UNARCHIVE_BOARD") {
       // Organizational actions, not content edits — no undo entry.
       apply(action);
       return;
     }
-    const boardId = action.type === "RESTORE_BOARD"
-      ? (action.boardId ?? activeIdRef.current)
-      : ((action as { boardId?: string }).boardId ?? activeIdRef.current);
+    const boardId =
+      action.type === "RESTORE_BOARD"
+        ? (action.boardId ?? activeIdRef.current)
+        : ((action as { boardId?: string }).boardId ?? activeIdRef.current);
     if (!boardId) return;
     const scoped = { ...action, boardId } as BoardAction;
     if (scoped.type !== "RESTORE_BOARD") {
@@ -442,7 +439,18 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         : false,
       importBoards,
     }),
-    [state, board, dispatch, addBoard, removeBoard, archiveBoard, unarchiveBoard, undo, redo, importBoards],
+    [
+      state,
+      board,
+      dispatch,
+      addBoard,
+      removeBoard,
+      archiveBoard,
+      unarchiveBoard,
+      undo,
+      redo,
+      importBoards,
+    ],
   );
 
   return (
@@ -494,9 +502,17 @@ function createBoardActions(
       dispatch({ type: "RENAME_COLUMN", columnId, title }),
     deleteColumn: (columnId: string) =>
       dispatch({ type: "DELETE_COLUMN", columnId }),
-    addCard: (columnId: string, title: string, labelIds?: string[], atIndex?: number) =>
-      dispatch({ type: "ADD_CARD", columnId, title, labelIds, atIndex }),
-    updateCard: (cardId: string, patch: CardPatch, opts?: { quiet?: boolean }) =>
+    addCard: (
+      columnId: string,
+      title: string,
+      labelIds?: string[],
+      atIndex?: number,
+    ) => dispatch({ type: "ADD_CARD", columnId, title, labelIds, atIndex }),
+    updateCard: (
+      cardId: string,
+      patch: CardPatch,
+      opts?: { quiet?: boolean },
+    ) =>
       dispatch({ type: "UPDATE_CARD", cardId, ...patch, quiet: opts?.quiet }),
     touchCard: (cardId: string) => dispatch({ type: "TOUCH_CARD", cardId }),
     deleteCard: (cardId: string) => dispatch({ type: "DELETE_CARD", cardId }),
@@ -526,14 +542,21 @@ function createBoardActions(
       cardId: string,
       checklistId: string,
       itemId: string,
-    ) => dispatch({ type: "TOGGLE_CHECKLIST_ITEM", cardId, checklistId, itemId }),
+    ) =>
+      dispatch({ type: "TOGGLE_CHECKLIST_ITEM", cardId, checklistId, itemId }),
     renameChecklistItem: (
       cardId: string,
       checklistId: string,
       itemId: string,
       text: string,
     ) =>
-      dispatch({ type: "RENAME_CHECKLIST_ITEM", cardId, checklistId, itemId, text }),
+      dispatch({
+        type: "RENAME_CHECKLIST_ITEM",
+        cardId,
+        checklistId,
+        itemId,
+        text,
+      }),
     deleteChecklistItem: (
       cardId: string,
       checklistId: string,

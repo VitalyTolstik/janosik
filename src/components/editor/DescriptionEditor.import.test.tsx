@@ -21,10 +21,19 @@ import { SEED_RICH_MARKDOWN } from "./seed-md";
 // needs them when it commits DOM selection updates after edits.
 if (typeof Range !== "undefined") {
   const zeroRect = (): DOMRect =>
-    ({ x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }) as DOMRect;
+    ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: 0,
+      height: 0,
+    }) as DOMRect;
   Range.prototype.getBoundingClientRect ??= zeroRect;
   Range.prototype.getClientRects ??= () =>
-    ({ length: 0, item: () => null } as unknown as DOMRectList);
+    ({ length: 0, item: () => null }) as unknown as DOMRectList;
 }
 
 /** The exact seed markdown of card-1 (seed-data.ts). */

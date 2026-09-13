@@ -87,7 +87,10 @@ export function BoardGlassProvider({ children }: { children: ReactNode }) {
       /* storage unavailable — glass still works for the session */
     }
     const root = document.documentElement;
-    root.style.setProperty("--janosik-glass-transparency", String(glass.transparency));
+    root.style.setProperty(
+      "--janosik-glass-transparency",
+      String(glass.transparency),
+    );
     root.style.setProperty("--janosik-glass-blur", `${glass.blur}px`);
   }, [glass]);
 

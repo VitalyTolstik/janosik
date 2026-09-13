@@ -3,11 +3,10 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-interface CheckboxProps
-  extends Omit<
-    React.ButtonHTMLAttributes<HTMLButtonElement>,
-    "onChange" | "checked" | "type"
-  > {
+interface CheckboxProps extends Omit<
+  React.ButtonHTMLAttributes<HTMLButtonElement>,
+  "onChange" | "checked" | "type"
+> {
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
 }

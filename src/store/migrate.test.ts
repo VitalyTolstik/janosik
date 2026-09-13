@@ -130,7 +130,10 @@ describe("normalizeBoards", () => {
     const cover = { type: "gradient", value: "sunset" };
     const valid = card({ labelIds: [], cover });
     const badShape = card({ labelIds: [], cover: "blue" });
-    const badValue = card({ labelIds: [], cover: { type: "color", value: "chartreuse" } });
+    const badValue = card({
+      labelIds: [],
+      cover: { type: "color", value: "chartreuse" },
+    });
     const board = {
       id: "b",
       title: "B",
@@ -204,7 +207,11 @@ describe("normalizeBoards", () => {
 
     const [next] = normalizeBoards([board]);
     expect(next.cards["c1"].checklists).toEqual([
-      { id: "cl-1", title: "Steps", items: [{ id: "i1", text: "Keep", done: false }] },
+      {
+        id: "cl-1",
+        title: "Steps",
+        items: [{ id: "i1", text: "Keep", done: false }],
+      },
       // Empty checklists are valid user data — only malformed entries drop.
       { id: "cl-2", title: "Empty", items: [] },
     ]);
@@ -285,7 +292,12 @@ describe("normalizeBoards — length limits (TASK-20)", () => {
       id: "b",
       title: "B".repeat(l.boardTitle + 5),
       columns: [
-        { id: "col", title: "C".repeat(l.columnTitle + 5), cardIds: ["c1"], createdAt: 1 },
+        {
+          id: "col",
+          title: "C".repeat(l.columnTitle + 5),
+          cardIds: ["c1"],
+          createdAt: 1,
+        },
       ],
       labels: [{ id: "lb", name: "L".repeat(l.labelName + 5), color: "red" }],
       cards: {
@@ -297,7 +309,13 @@ describe("normalizeBoards — length limits (TASK-20)", () => {
             {
               id: "cl",
               title: "K".repeat(l.checklistTitle + 5),
-              items: [{ id: "i1", text: "I".repeat(l.checklistItem + 5), done: false }],
+              items: [
+                {
+                  id: "i1",
+                  text: "I".repeat(l.checklistItem + 5),
+                  done: false,
+                },
+              ],
             },
           ],
         }),
@@ -317,7 +335,9 @@ describe("normalizeBoards — length limits (TASK-20)", () => {
     expect(card.title).toHaveLength(LIMITS.cardTitle);
     expect(card.description).toHaveLength(LIMITS.description);
     expect(card.checklists![0].title).toHaveLength(LIMITS.checklistTitle);
-    expect(card.checklists![0].items[0].text).toHaveLength(LIMITS.checklistItem);
+    expect(card.checklists![0].items[0].text).toHaveLength(
+      LIMITS.checklistItem,
+    );
   });
 
   it("passes already-limited boards through untouched", async () => {
@@ -330,17 +350,16 @@ describe("normalizeBoards — length limits (TASK-20)", () => {
 });
 
 describe("normalizeBoards — wipLimit (TASK-13)", () => {
-  const boardWithColumn = (wipLimit: unknown) => ({
-    id: "b",
-    title: "B",
-    columns: [
-      { id: "col", title: "C", cardIds: [], createdAt: 1, wipLimit },
-    ],
-    cards: {},
-    labels: [],
-    createdAt: 1,
-    updatedAt: 1,
-  }) as unknown as Board;
+  const boardWithColumn = (wipLimit: unknown) =>
+    ({
+      id: "b",
+      title: "B",
+      columns: [{ id: "col", title: "C", cardIds: [], createdAt: 1, wipLimit }],
+      cards: {},
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    }) as unknown as Board;
 
   it("keeps an in-range limit and clamps out-of-range ones", async () => {
     const { LIMITS } = await import("@/types/kanban");

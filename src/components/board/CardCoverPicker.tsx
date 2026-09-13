@@ -49,8 +49,7 @@ function ColorSwatch({
       onClick={onClick}
       className={cn(
         "flex h-5 w-5 items-center justify-center rounded-full transition-transform hover:scale-110",
-        selected &&
-          "ring-2 ring-ring ring-offset-1 ring-offset-popover",
+        selected && "ring-2 ring-ring ring-offset-1 ring-offset-popover",
       )}
       style={{ background: COVER_COLOR_CSS[color] }}
     >
@@ -136,9 +135,7 @@ export function CardCoverPicker({ cardId, cover }: CardCoverPickerProps) {
                 <ColorSwatch
                   key={color}
                   color={color}
-                  selected={
-                    cover?.type === "color" && cover.value === color
-                  }
+                  selected={cover?.type === "color" && cover.value === color}
                   onClick={() =>
                     setCardCover(cardId, { type: "color", value: color })
                   }

@@ -161,7 +161,10 @@ export function DndBoard({
       let overId = getFirstCollision(intersections, "id");
 
       if (overId != null) {
-        const columnCards = current?.mode === "card" ? current.columns[overId as string] : undefined;
+        const columnCards =
+          current?.mode === "card"
+            ? current.columns[overId as string]
+            : undefined;
         if (columnCards && columnCards.length > 0) {
           // Column body hit — resolve to its closest card instead.
           overId = closestCenter({
@@ -380,7 +383,9 @@ export function DndBoard({
         }
         const activeIndex = cols[activeContainer].indexOf(activeId);
         const toIndex =
-          overId === activeId ? activeIndex : cols[overContainer].indexOf(overId);
+          overId === activeId
+            ? activeIndex
+            : cols[overContainer].indexOf(overId);
         if (toIndex !== -1) {
           moveCard(activeId, fromColumn.id, activeContainer, toIndex);
         }
@@ -429,22 +434,6 @@ export function DndBoard({
     [onCardClick],
   );
 
-  if (!board) return null;
-
-  // Render columns in the live draft order while a column drag is active.
-  const columnOrder =
-    draft?.mode === "column"
-      ? draft.columnOrder
-      : board.columns.map((col) => col.id);
-  const columnsById = new Map(board.columns.map((col) => [col.id, col]));
-
-  // Flat list of visible card ids (columns in order, filtered column
-  // contents) — the coordinate space of the j/k keyboard cursor.
-  const visibleCardIds = columnOrder.flatMap(
-    (colId) => filteredCardIds?.[colId] ?? columnsById.get(colId)?.cardIds ?? [],
-  );
-  const cursorCardId = cursor !== null ? visibleCardIds[cursor] : undefined;
-
   // Shared guard: single-letter shortcuts are inert while the user types or
   // while an overlay (dialog/popover/menu) is open.
   const shortcutsBlocked = (event: KeyboardEvent) => {
@@ -455,16 +444,29 @@ export function DndBoard({
         ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
     )
       return true;
-    return document.querySelector(
-      '[role="dialog"], [data-radix-popper-content-wrapper]',
-    ) !== null;
+    return (
+      document.querySelector(
+        '[role="dialog"], [data-radix-popper-content-wrapper]',
+      ) !== null
+    );
   };
 
   // j/k navigate the visible cards, e/Enter open the cursor's dialog,
   // n opens a composer (cursor's column, else the first), c opens the
   // column composer, Escape clears the cursor. The overlay itself lives in
-  // ShortcutsDialog ("?").
+  // ShortcutsDialog ("?"). Hooks stay above the `!board` early return, so
+  // the visible-card derivation is repeated here for the keydown closure.
   useEffect(() => {
+    if (!board) return;
+    const order =
+      draft?.mode === "column"
+        ? draft.columnOrder
+        : board.columns.map((col) => col.id);
+    const columns = new Map(board.columns.map((col) => [col.id, col]));
+    const flatCardIds = order.flatMap(
+      (colId) => filteredCardIds?.[colId] ?? columns.get(colId)?.cardIds ?? [],
+    );
+    const focusedCardId = cursor !== null ? flatCardIds[cursor] : undefined;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (shortcutsBlocked(event)) return;
@@ -472,24 +474,29 @@ export function DndBoard({
       if (key === "j" || key === "k") {
         event.preventDefault();
         setCursor((prev) => {
-          const total = visibleCardIds.length;
+          const total = flatCardIds.length;
           if (total === 0) return null;
           if (prev === null) return key === "j" ? 0 : total - 1;
-          return Math.min(Math.max(key === "j" ? prev + 1 : prev - 1, 0), total - 1);
+          return Math.min(
+            Math.max(key === "j" ? prev + 1 : prev - 1, 0),
+            total - 1,
+          );
         });
-      } else if ((key === "e" || key === "Enter") && cursorCardId) {
+      } else if ((key === "e" || key === "Enter") && focusedCardId) {
         event.preventDefault();
-        onCardClick(cursorCardId);
+        onCardClick(focusedCardId);
       } else if (key === "n") {
         event.preventDefault();
         const columnId =
-          (cursorCardId &&
-            columnOrder.find((colId) =>
-              (filteredCardIds?.[colId] ??
-                columnsById.get(colId)?.cardIds ??
-                []).includes(cursorCardId),
+          (focusedCardId &&
+            order.find((colId) =>
+              (
+                filteredCardIds?.[colId] ??
+                columns.get(colId)?.cardIds ??
+                []
+              ).includes(focusedCardId),
             )) ||
-          columnOrder[0];
+          order[0];
         document
           .querySelector<HTMLElement>(`[data-composer-trigger="${columnId}"]`)
           ?.click();
@@ -504,8 +511,24 @@ export function DndBoard({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- visible cards / cursor are the intent
-  }, [visibleCardIds, cursorCardId, cursor, columnOrder, filteredCardIds, onCardClick]);
+  }, [board, draft, cursor, filteredCardIds, onCardClick]);
+
+  if (!board) return null;
+
+  // Render columns in the live draft order while a column drag is active.
+  const columnOrder =
+    draft?.mode === "column"
+      ? draft.columnOrder
+      : board.columns.map((col) => col.id);
+  const columnsById = new Map(board.columns.map((col) => [col.id, col]));
+
+  // Flat list of visible card ids (columns in order, filtered column
+  // contents) — the coordinate space of the j/k keyboard cursor.
+  const visibleCardIds = columnOrder.flatMap(
+    (colId) =>
+      filteredCardIds?.[colId] ?? columnsById.get(colId)?.cardIds ?? [],
+  );
+  const cursorCardId = cursor !== null ? visibleCardIds[cursor] : undefined;
 
   const activeCard =
     draft?.mode === "card" ? board.cards[draft.activeCardId] : undefined;

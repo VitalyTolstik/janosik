@@ -13,7 +13,11 @@ const baseCard: Card = {
   updatedAt: 1,
 };
 
-function renderCard(card: Card = baseCard, labels: Label[] = [], highlight?: string) {
+function renderCard(
+  card: Card = baseCard,
+  labels: Label[] = [],
+  highlight?: string,
+) {
   return render(
     <I18nProvider>
       <TooltipProvider>
@@ -64,8 +68,6 @@ describe("CardItem search highlight", () => {
 
   it("does not highlight without a query", () => {
     renderCard();
-    expect(
-      screen.getByTestId("card-title").querySelector("mark"),
-    ).toBeNull();
+    expect(screen.getByTestId("card-title").querySelector("mark")).toBeNull();
   });
 });

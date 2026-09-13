@@ -12,6 +12,8 @@ export default defineConfig({
     },
   },
   test: {
+    // vmThreads boots jsdom once for the whole run instead of per file.
+    pool: "vmThreads",
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],

@@ -95,7 +95,11 @@ export function AddColumnControl({
         placeholder={t("column.placeholder")}
         className="h-9"
       />
-      <LimitCounter length={title.length} limit={LIMITS.columnTitle} testId="add-column-limit" />
+      <LimitCounter
+        length={title.length}
+        limit={LIMITS.columnTitle}
+        testId="add-column-limit"
+      />
       <div className="flex items-center gap-1.5">
         <Button
           size="sm"

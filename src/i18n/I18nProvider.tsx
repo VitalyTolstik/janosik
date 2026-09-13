@@ -27,65 +27,71 @@ import {
  */
 
 export function I18nProvider({
- children,
- i18n = defaultI18n,
+  children,
+  i18n = defaultI18n,
 }: {
- children: ReactNode;
- i18n?: I18nInstance;
+  children: ReactNode;
+  i18n?: I18nInstance;
 }) {
- const [timeFormat, setTimeFormatState] = useState<TimeFormat>(loadTimeFormat);
+  const [timeFormat, setTimeFormatState] = useState<TimeFormat>(loadTimeFormat);
 
- const setTimeFormat = (next: TimeFormat) => {
-  saveTimeFormat(next);
-  setTimeFormatState(next);
- };
+  const setTimeFormat = (next: TimeFormat) => {
+    saveTimeFormat(next);
+    setTimeFormatState(next);
+  };
 
- return (
-  <I18nextProvider i18n={i18n}>
-   <TimeFormatContext.Provider value={{ timeFormat, setTimeFormat }}>
-    {children}
-   </TimeFormatContext.Provider>
-  </I18nextProvider>
- );
+  return (
+    <I18nextProvider i18n={i18n}>
+      <TimeFormatContext.Provider value={{ timeFormat, setTimeFormat }}>
+        {children}
+      </TimeFormatContext.Provider>
+    </I18nextProvider>
+  );
 }
 
 const TimeFormatContext = createContext<{
- timeFormat: TimeFormat;
- setTimeFormat: (next: TimeFormat) => void;
+  timeFormat: TimeFormat;
+  setTimeFormat: (next: TimeFormat) => void;
 }>({ timeFormat: "auto", setTimeFormat: () => {} });
 
 interface I18nContextValue {
- lang: Lang;
- setLang: (lang: Lang) => void;
- /** Translate a key; `params` become `{{param}}` placeholders. */
- t: (key: MessageKey, params?: Record<string, string | number>) => string;
- /** Translate a key with a count — i18next resolves the plural form. */
- tp: (
-  key: MessageKey,
-  count: number,
-  params?: Record<string, string | number>,
- ) => string;
+  lang: Lang;
+  setLang: (lang: Lang) => void;
+  /** Translate a key; `params` become `{{param}}` placeholders. */
+  t: (key: MessageKey, params?: Record<string, string | number>) => string;
+  /** Translate a key with a count — i18next resolves the plural form. */
+  tp: (
+    key: MessageKey,
+    count: number,
+    params?: Record<string, string | number>,
+  ) => string;
 }
 
 export function useI18n(): I18nContextValue {
- const { t, i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
 
- const lang: Lang = i18n.language.startsWith("ru") ? "ru" : "en";
+  const lang: Lang = i18n.language.startsWith("ru") ? "ru" : "en";
 
- const setLang = (next: Lang) => {
-  void i18n.changeLanguage(next);
- };
+  const setLang = (next: Lang) => {
+    void i18n.changeLanguage(next);
+  };
 
- const tp = (
-  key: MessageKey,
-  count: number,
-  params?: Record<string, string | number>,
- ) => t(key, { ...params, count });
+  const tp = (
+    key: MessageKey,
+    count: number,
+    params?: Record<string, string | number>,
+  ) => t(key, { ...params, count });
 
- return { lang, setLang, t, tp };
+  return { lang, setLang, t, tp };
 }
 
-export { formatDate, formatDateOnly, formatRelative, formatTime, is12HourLocale };
+export {
+  formatDate,
+  formatDateOnly,
+  formatRelative,
+  formatTime,
+  is12HourLocale,
+};
 
 /**
  * Whether clocks should render as 12-hour (AM/PM): the user's

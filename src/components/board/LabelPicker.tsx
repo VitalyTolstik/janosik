@@ -232,7 +232,11 @@ export function LabelPicker({
             placeholder={t("label.namePlaceholder")}
             className="h-8"
           />
-          <LimitCounter length={draftName.length} limit={LIMITS.labelName} testId="label-create-limit" />
+          <LimitCounter
+            length={draftName.length}
+            limit={LIMITS.labelName}
+            testId="label-create-limit"
+          />
           <ColorSwatches value={draftColor} onPick={setDraftColor} />
           <div className="flex items-center gap-1.5">
             <Button
@@ -297,7 +301,11 @@ export function LabelPicker({
             onFocus={(e) => e.target.select()}
             placeholder={t("label.namePlaceholder")}
           />
-          <LimitCounter length={renameDraft.length} limit={LIMITS.labelName} testId="label-rename-limit" />
+          <LimitCounter
+            length={renameDraft.length}
+            limit={LIMITS.labelName}
+            testId="label-rename-limit"
+          />
           <DialogFooter className="mt-2">
             <Button variant="outline" onClick={() => setRenamingId(null)}>
               {t("common.cancel")}

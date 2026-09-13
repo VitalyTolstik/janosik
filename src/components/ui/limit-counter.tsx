@@ -50,7 +50,8 @@ export function LimitCounter({
       aria-live="polite"
       className={cn(
         "text-[11px] tabular-nums",
-        position === "below" && "absolute left-0 top-full z-10 mt-0.5 max-w-full rounded bg-background/90 px-1 backdrop-blur-sm",
+        position === "below" &&
+          "absolute left-0 top-full z-10 mt-0.5 max-w-full rounded bg-background/90 px-1 backdrop-blur-sm",
         danger ? "font-medium text-danger" : "text-muted-foreground",
         className,
       )}

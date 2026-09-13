@@ -20,8 +20,7 @@ import type {
  * the debounced quiet-edit commit) produces one undo, not one per keystroke.
  */
 type CoalescibleAction =
-  | BoardScoped<UpdateCardAction>
-  | BoardScoped<TouchCardAction>;
+  BoardScoped<UpdateCardAction> | BoardScoped<TouchCardAction>;
 
 function asCoalescible(action: BoardAction): CoalescibleAction | null {
   return action.type === "UPDATE_CARD" || action.type === "TOUCH_CARD"
@@ -42,7 +41,8 @@ export class BoardHistory {
   push(previous: Board, action: BoardAction): void {
     const last = this.lastAction && asCoalescible(this.lastAction);
     const next = asCoalescible(action);
-    const coalesce = last !== null && next !== null && last.cardId === next.cardId;
+    const coalesce =
+      last !== null && next !== null && last.cardId === next.cardId;
 
     if (!coalesce) {
       this.past.push(previous);

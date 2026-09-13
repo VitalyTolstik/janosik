@@ -9,10 +9,7 @@ import type {
   Label,
 } from "@/types/kanban";
 import { LIMITS, MAX_CARD_ACTIVITY } from "@/types/kanban";
-import {
-  COVER_COLORS,
-  COVER_GRADIENTS,
-} from "@/types/kanban";
+import { COVER_COLORS, COVER_GRADIENTS } from "@/types/kanban";
 
 export type { Board } from "@/types/kanban";
 import { createId } from "@/utils/id";
@@ -475,7 +472,11 @@ function addCard(board: Board, action: AddCardAction): Board {
         return { ...col, cardIds: [...col.cardIds, newCard.id] };
       }
       const ids = [...col.cardIds];
-      ids.splice(Math.max(0, Math.min(action.atIndex, ids.length)), 0, newCard.id);
+      ids.splice(
+        Math.max(0, Math.min(action.atIndex, ids.length)),
+        0,
+        newCard.id,
+      );
       return { ...col, cardIds: ids };
     }),
     cards: { ...board.cards, [newCard.id]: newCard },
@@ -564,7 +565,11 @@ function unarchiveCard(board: Board, action: UnarchiveCardAction): Board {
   if (!column) return board;
   if (atWipLimit(column, true)) return board;
   const now = Date.now();
-  const restoredCard: Card = { ...target, archivedAt: undefined, updatedAt: now };
+  const restoredCard: Card = {
+    ...target,
+    archivedAt: undefined,
+    updatedAt: now,
+  };
   // Exact-optional cleanup: `archivedAt: undefined` must not survive.
   delete restoredCard.archivedAt;
   const nextCard = appendActivity(restoredCard, "unarchived");
@@ -580,7 +585,10 @@ function unarchiveCard(board: Board, action: UnarchiveCardAction): Board {
 }
 
 /** Archive every card of a column in one undoable step (clear "Done"). */
-function archiveColumnCards(board: Board, action: ArchiveColumnCardsAction): Board {
+function archiveColumnCards(
+  board: Board,
+  action: ArchiveColumnCardsAction,
+): Board {
   const column = board.columns.find((col) => col.id === action.columnId);
   if (!column || column.cardIds.length === 0) return board;
   const now = Date.now();
@@ -629,7 +637,9 @@ function duplicateCard(board: Board, action: DuplicateCardAction): Board {
       ? (structuredClone(source.checklists) as Checklist[])
       : undefined,
     dueDate: source.dueDate,
-    cover: source.cover ? (structuredClone(source.cover) as CardCover) : undefined,
+    cover: source.cover
+      ? (structuredClone(source.cover) as CardCover)
+      : undefined,
     labelIds: [...source.labelIds],
     // The copy is a new card — it starts its own history, not the source's.
     activity: createdActivity(now),
@@ -640,7 +650,11 @@ function duplicateCard(board: Board, action: DuplicateCardAction): Board {
     index === columnIndex
       ? {
           ...col,
-          cardIds: insertAt(col.cardIds, col.cardIds.indexOf(source.id) + 1, copy.id),
+          cardIds: insertAt(
+            col.cardIds,
+            col.cardIds.indexOf(source.id) + 1,
+            copy.id,
+          ),
         }
       : col,
   );
@@ -741,7 +755,10 @@ function addLabel(board: Board, action: AddLabelAction): Board {
     ...board,
     labels: [
       ...board.labels,
-      { ...label, name: clampText(label.name.trim(), LIMITS.labelName) || label.name },
+      {
+        ...label,
+        name: clampText(label.name.trim(), LIMITS.labelName) || label.name,
+      },
     ],
   };
 }
@@ -849,20 +866,24 @@ function addChecklist(board: Board, action: AddChecklistAction): Board | null {
   );
 }
 
-function renameChecklist(board: Board, action: RenameChecklistAction): Board | null {
+function renameChecklist(
+  board: Board,
+  action: RenameChecklistAction,
+): Board | null {
   const title = clampText(action.title.trim(), LIMITS.checklistTitle);
   return patchChecklists(board, action.cardId, (checklists) => {
     if (!title) return null;
     const next = checklists.map((checklist) =>
-      checklist.id === action.checklistId
-        ? { ...checklist, title }
-        : checklist,
+      checklist.id === action.checklistId ? { ...checklist, title } : checklist,
     );
     return next.some((c, i) => c !== checklists[i]) ? next : null;
   });
 }
 
-function deleteChecklist(board: Board, action: DeleteChecklistAction): Board | null {
+function deleteChecklist(
+  board: Board,
+  action: DeleteChecklistAction,
+): Board | null {
   return patchChecklists(board, action.cardId, (checklists) =>
     checklists.some((c) => c.id === action.checklistId)
       ? checklists.filter((c) => c.id !== action.checklistId)
@@ -969,7 +990,10 @@ function isValidCover(cover: unknown): cover is CardCover {
 }
 
 /** Structural equality for covers (cheap, avoids a needless commit). */
-function isSameCover(a: CardCover | undefined, b: CardCover | undefined): boolean {
+function isSameCover(
+  a: CardCover | undefined,
+  b: CardCover | undefined,
+): boolean {
   if (a === b) return true;
   if (a === undefined || b === undefined) return false;
   return a.type === b.type && a.value === b.value;
@@ -1105,7 +1129,10 @@ function atWipLimit(column: Column, isMovingIn: boolean): boolean {
  * entirely. The value is clamped to 1…LIMITS.wipLimitMax so hand-edited
  * imports/console dispatches cannot poison the UI.
  */
-function setColumnWipLimit(board: Board, action: SetColumnWipLimitAction): Board {
+function setColumnWipLimit(
+  board: Board,
+  action: SetColumnWipLimitAction,
+): Board {
   const column = board.columns.find((c) => c.id === action.columnId);
   if (!column) return board;
   const wipLimit =
@@ -1143,7 +1170,9 @@ function moveColumn(board: Board, action: MoveColumnAction): Board {
  * router, not by position).
  */
 function commit(state: BoardState, index: number, board: Board): BoardState {
-  return state.map((b, i) => (i === index ? { ...board, updatedAt: Date.now() } : b));
+  return state.map((b, i) =>
+    i === index ? { ...board, updatedAt: Date.now() } : b,
+  );
 }
 
 export function boardReducer(
@@ -1184,9 +1213,7 @@ export function boardReducer(
   }
 
   const boardId = "boardId" in action ? action.boardId : undefined;
-  const index = boardId
-    ? state.findIndex((b) => b.id === boardId)
-    : 0;
+  const index = boardId ? state.findIndex((b) => b.id === boardId) : 0;
   const board = state[index];
   if (!board) return state;
 

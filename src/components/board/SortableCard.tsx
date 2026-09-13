@@ -25,7 +25,15 @@ interface SortableCardProps {
  * (the lift + gap animation while dragging) is applied to the wrapper div,
  * not to the CardItem itself, so the card keeps its own styling intact.
  */
-export function SortableCard({ card, labels, highlight, isCursor, onCardClick, onCardDuplicate, onCardArchive }: SortableCardProps) {
+export function SortableCard({
+  card,
+  labels,
+  highlight,
+  isCursor,
+  onCardClick,
+  onCardDuplicate,
+  onCardArchive,
+}: SortableCardProps) {
   const {
     attributes,
     listeners,

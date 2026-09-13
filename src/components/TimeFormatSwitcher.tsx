@@ -39,7 +39,11 @@ export function TimeFormatSwitcher() {
       <DropdownMenu>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label={t("timeFormat.aria")}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t("timeFormat.aria")}
+            >
               <ClockIcon size={20} />
             </Button>
           </DropdownMenuTrigger>
@@ -49,7 +53,9 @@ export function TimeFormatSwitcher() {
             <DropdownMenuItem
               key={format}
               onClick={() => setTimeFormat(format)}
-              className={timeFormat === format ? "font-medium text-foreground" : ""}
+              className={
+                timeFormat === format ? "font-medium text-foreground" : ""
+              }
             >
               {timeFormat === format && <Check className="h-4 w-4" />}
               <span className={timeFormat === format ? "" : "pl-6"}>

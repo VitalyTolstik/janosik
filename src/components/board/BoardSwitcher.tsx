@@ -12,7 +12,11 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/Toast";
@@ -65,14 +69,8 @@ export function BoardSwitcher() {
   const { t } = useI18n();
   const toast = useToast();
   const navigate = useNavigate();
-  const {
-    boards,
-    board,
-    addBoard,
-    removeBoard,
-    archiveBoard,
-    unarchiveBoard,
-  } = useBoard();
+  const { boards, board, addBoard, removeBoard, archiveBoard, unarchiveBoard } =
+    useBoard();
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -171,7 +169,8 @@ export function BoardSwitcher() {
     // the popover's state predictable).
     if (board?.id === target.id) {
       const remaining = activeBoards.filter((b) => b.id !== target.id);
-      if (remaining[0]) navigate(routes.board(remaining[0].id), { replace: true });
+      if (remaining[0])
+        navigate(routes.board(remaining[0].id), { replace: true });
     }
   };
 
@@ -198,7 +197,9 @@ export function BoardSwitcher() {
   useEffect(() => {
     const list = listRef.current;
     if (!list || typeof list.scrollIntoView !== "function") return;
-    const row = list.querySelector<HTMLElement>(`[data-index="${highlighted}"]`);
+    const row = list.querySelector<HTMLElement>(
+      `[data-index="${highlighted}"]`,
+    );
     row?.scrollIntoView({ block: "nearest" });
   }, [highlighted]);
 
@@ -297,7 +298,9 @@ export function BoardSwitcher() {
                   <span
                     className={cn(
                       "min-w-0 flex-1 truncate text-left text-sm",
-                      isActive ? "font-medium text-foreground" : "text-foreground/90",
+                      isActive
+                        ? "font-medium text-foreground"
+                        : "text-foreground/90",
                     )}
                   >
                     {b.title}
@@ -360,7 +363,10 @@ export function BoardSwitcher() {
           )}
           {/* Archived boards: kept out of navigation, restorable. */}
           {filteredArchived.length > 0 ? (
-            <div className="mt-1 border-t pt-1.5" data-testid="archived-section">
+            <div
+              className="mt-1 border-t pt-1.5"
+              data-testid="archived-section"
+            >
               <p className="flex items-center gap-1.5 px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 <Archive size={12} aria-hidden />
                 {t("board.switcher.archived")}

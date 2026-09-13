@@ -12,7 +12,9 @@ const CalendarViewImpl = React.lazy(() =>
   })),
 );
 const TableViewImpl = React.lazy(() =>
-  import("@/components/board/TableView").then((m) => ({ default: m.TableView })),
+  import("@/components/board/TableView").then((m) => ({
+    default: m.TableView,
+  })),
 );
 
 type CalendarViewComponent =
@@ -31,7 +33,9 @@ type TableViewProps = Parameters<TableViewComponent>[0];
 function CalendarView(props: CalendarViewProps) {
   return (
     <React.Suspense
-      fallback={<div className="min-h-0 flex-1 animate-pulse rounded-lg bg-muted/40" />}
+      fallback={
+        <div className="min-h-0 flex-1 animate-pulse rounded-lg bg-muted/40" />
+      }
     >
       <CalendarViewImpl {...props} />
     </React.Suspense>
@@ -41,7 +45,9 @@ function CalendarView(props: CalendarViewProps) {
 function TableView(props: TableViewProps) {
   return (
     <React.Suspense
-      fallback={<div className="min-h-0 flex-1 animate-pulse rounded-lg bg-muted/40" />}
+      fallback={
+        <div className="min-h-0 flex-1 animate-pulse rounded-lg bg-muted/40" />
+      }
     >
       <TableViewImpl {...props} />
     </React.Suspense>

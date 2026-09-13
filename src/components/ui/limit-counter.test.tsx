@@ -2,10 +2,7 @@ import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import {
-  LimitCounter,
-  showRemaining,
-} from "@/components/ui/limit-counter";
+import { LimitCounter, showRemaining } from "@/components/ui/limit-counter";
 import { I18nProvider } from "@/i18n";
 
 /**

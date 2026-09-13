@@ -47,9 +47,9 @@ describe("ColumnGlassMenu", () => {
 
     fireEvent.click(screen.getByTestId("glass-opacity"));
 
-    expect(JSON.parse(localStorage.getItem("janosik-board-glass") ?? "{}")).toEqual(
-      { transparency: 0, blur: 5 },
-    );
+    expect(
+      JSON.parse(localStorage.getItem("janosik-board-glass") ?? "{}"),
+    ).toEqual({ transparency: 0, blur: 5 });
     expect(
       document.documentElement.style.getPropertyValue(
         "--janosik-glass-transparency",
@@ -63,9 +63,9 @@ describe("ColumnGlassMenu", () => {
 
     fireEvent.click(screen.getByTestId("glass-blur"));
 
-    expect(JSON.parse(localStorage.getItem("janosik-board-glass") ?? "{}")).toEqual(
-      { transparency: 100, blur: 0 },
-    );
+    expect(
+      JSON.parse(localStorage.getItem("janosik-board-glass") ?? "{}"),
+    ).toEqual({ transparency: 100, blur: 0 });
     expect(
       document.documentElement.style.getPropertyValue("--janosik-glass-blur"),
     ).toBe("0px");

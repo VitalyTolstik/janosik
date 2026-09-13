@@ -64,7 +64,9 @@ describe("time format override", () => {
         </TooltipProvider>
       </I18nProvider>,
     );
-    await userEvent.click(screen.getByRole("button", { name: "Формат времени" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Формат времени" }),
+    );
     await userEvent.click(screen.getByRole("menuitem", { name: "12-часовой" }));
     expect(localStorage.getItem("janosik-time-format")).toBe("12h");
     // Same ru locale now renders AM/PM.

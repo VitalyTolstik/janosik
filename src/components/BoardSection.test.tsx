@@ -188,9 +188,7 @@ describe("BoardSection", () => {
     renderBoard();
 
     // Default view: the kanban strip with column headings.
-    expect(
-      screen.getByRole("heading", { name: "To Do" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "To Do" })).toBeInTheDocument();
 
     await openCalendarView();
 
@@ -303,7 +301,9 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     expect(
       within(screen.getByTestId("unscheduled-list")).queryByText("Plain card"),
     ).toBeNull();
-    expect(within(day as HTMLElement).getByText("Plain card")).toBeInTheDocument();
+    expect(
+      within(day as HTMLElement).getByText("Plain card"),
+    ).toBeInTheDocument();
   });
 
   it("opens the day panel with the full list and opens a card from it", async () => {
@@ -346,7 +346,8 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     expect(screen.getByTestId("unscheduled-add")).toBeInTheDocument();
   });
 
-  it("creates a card from the day panel composer, due that day", async () => {    localStorage.setItem("janosik-boards", boardWithDueCard());
+  it("creates a card from the day panel composer, due that day", async () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard();
 
     await openCalendarView();
@@ -365,7 +366,9 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     fireEvent.keyDown(dialog, { key: "Escape" });
     // The new card now sits on the target day, no longer unscheduled.
     const today = document.querySelector(`[data-date="${todayKey()}"]`);
-    expect(within(today as HTMLElement).getByText("Brand new")).toBeInTheDocument();
+    expect(
+      within(today as HTMLElement).getByText("Brand new"),
+    ).toBeInTheDocument();
     expect(
       within(screen.getByTestId("unscheduled-list")).queryByText("Brand new"),
     ).toBeNull();
@@ -387,9 +390,7 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     expect(input).toHaveValue("");
     // Nothing was created — the day cell has no "Never added" chip.
     const today = document.querySelector(`[data-date="${todayKey()}"]`);
-    expect(
-      within(today as HTMLElement).queryByText("Never added"),
-    ).toBeNull();
+    expect(within(today as HTMLElement).queryByText("Never added")).toBeNull();
   });
 
   it("creates the day-panel card in the chosen column", async () => {
@@ -436,10 +437,9 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     );
 
     // Pick a label before committing — it must land on the new card.
-    const design = within(screen.getByTestId("day-panel")).getByRole(
-      "button",
-      { name: "Design" },
-    );
+    const design = within(screen.getByTestId("day-panel")).getByRole("button", {
+      name: "Design",
+    });
     fireEvent.click(design);
     expect(design).toHaveAttribute("aria-pressed", "true");
 
@@ -453,7 +453,9 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     // The chip on today's cell carries the label (stripe + tooltip).
     const chip = within(
       document.querySelector(`[data-date="${todayKey()}"]`) as HTMLElement,
-    ).getByText("Labeled").closest("button") as HTMLElement;
+    )
+      .getByText("Labeled")
+      .closest("button") as HTMLElement;
     expect(chip.title).toContain("Design");
   });
 });
@@ -469,7 +471,8 @@ function boardWithLabels(): string {
 }
 
 /** A board with three cards in one column, stored in a non-alphabetical order. */
-function boardWithThreeCards(): string {  return JSON.stringify([
+function boardWithThreeCards(): string {
+  return JSON.stringify([
     {
       id: "board-sort",
       title: "Sorting",
@@ -522,9 +525,7 @@ describe("TableView interactivity (TASK-14.1)", () => {
     return openTableView().then(() => within(screen.getByRole("table")));
   }
 
-  const rowTitles = (
-    table: ReturnType<typeof within>,
-  ): string[] =>
+  const rowTitles = (table: ReturnType<typeof within>): string[] =>
     table
       .getAllByTestId("table-row")
       .map((row: HTMLElement) => row.querySelector("td")?.textContent ?? "");
@@ -578,7 +579,9 @@ describe("TableView interactivity (TASK-14.1)", () => {
 
     // Radix DropdownMenu opens on pointerdown (not click).
     fireEvent.pointerDown(
-      within(table.getAllByTestId("table-row")[0]).getByTestId("table-column-cell"),
+      within(table.getAllByTestId("table-row")[0]).getByTestId(
+        "table-column-cell",
+      ),
       { button: 0, ctrlKey: false },
     );
     fireEvent.click(await screen.findByRole("menuitem", { name: "Doing" }));
@@ -589,7 +592,9 @@ describe("TableView interactivity (TASK-14.1)", () => {
       .getAllByTestId("table-row")
       .find((row) => row.textContent?.includes("Dated card"));
     expect(movedRow).toBeDefined();
-    expect(within(movedRow as HTMLElement).getByText("Doing")).toBeInTheDocument();
+    expect(
+      within(movedRow as HTMLElement).getByText("Doing"),
+    ).toBeInTheDocument();
   });
 
   it("adds a card from the table composer with a picked label", async () => {
@@ -624,9 +629,7 @@ describe("TableView interactivity (TASK-14.1)", () => {
     await openTableView();
 
     fireEvent.click(screen.getByTestId("table-add-card"));
-    expect(
-      screen.getByTestId("table-composer-input"),
-    ).toBeInTheDocument();
+    expect(screen.getByTestId("table-composer-input")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByTestId("table-composer-input")).toBeNull();
@@ -645,10 +648,12 @@ describe("TableView interactivity (TASK-14.1)", () => {
     // The modal menu keeps the rest aria-hidden — close it first.
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
 
-    expect(within(screen.getByRole("table")).getByText("Created")).toBeInTheDocument();
-    expect(JSON.parse(localStorage.getItem("janosik-table-columns") ?? "[]")).toContain(
-      "createdAt",
-    );
+    expect(
+      within(screen.getByRole("table")).getByText("Created"),
+    ).toBeInTheDocument();
+    expect(
+      JSON.parse(localStorage.getItem("janosik-table-columns") ?? "[]"),
+    ).toContain("createdAt");
   });
 
   it("adds a card from the table composer", async () => {

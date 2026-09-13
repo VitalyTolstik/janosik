@@ -40,7 +40,9 @@ function Calendar<P extends CalendarProps>(props: P & { localeTag?: string }) {
   const resolvedLocale = useRdpLocale(localeTag);
   return (
     <React.Suspense
-      fallback={<div className="h-80 w-72 animate-pulse rounded-md bg-muted/40" />}
+      fallback={
+        <div className="h-80 w-72 animate-pulse rounded-md bg-muted/40" />
+      }
     >
       <CalendarImpl
         {...(rest as CalendarProps)}
@@ -51,4 +53,3 @@ function Calendar<P extends CalendarProps>(props: P & { localeTag?: string }) {
 }
 
 export { Calendar };
-
