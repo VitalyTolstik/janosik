@@ -16,8 +16,6 @@
   Зависимости TASK-1 (`react-markdown`, `remark-gfm`, `remark-breaks`)
   и `src/utils/markdown.tsx` удалены.
 
-only mdxeditor from TASK 2
-
 #### TASK-2 — `card-mdx-editor` · WYSIWYG-редактор описания (MDXEditor)
 
 - **Статус:** ✅ реализовано (ветка `feature/TASK-2-mdx-description-editor`).
