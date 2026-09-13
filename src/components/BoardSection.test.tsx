@@ -39,6 +39,20 @@ function renderBoard(initialRoute = "/") {
   );
 }
 
+// The calendar/table views are lazy chunks (TASK-34): the first switch
+// resolves an import, so the view must be awaited before its assertions.
+// The generous timeout absorbs full-suite load (chunk import under a busy
+// worker can exceed the 1 s default).
+async function openCalendarView() {
+  fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+  await screen.findAllByTestId("calendar-day", {}, { timeout: 5000 });
+}
+
+async function openTableView() {
+  fireEvent.click(screen.getByRole("button", { name: "Table" }));
+  await screen.findByRole("table", {}, { timeout: 5000 });
+}
+
 /** A board with one due-dated card due "today noon" and one without a due. */
 function boardWithDueCard(): string {
   const now = new Date();
@@ -169,7 +183,7 @@ describe("BoardSection", () => {
     expect(screen.getAllByText("Product Launch")).toHaveLength(1);
   });
 
-  it("renders the board view by default and can switch to the calendar", () => {
+  it("renders the board view by default and can switch to the calendar", async () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard();
 
@@ -178,7 +192,7 @@ describe("BoardSection", () => {
       screen.getByRole("heading", { name: "To Do" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    await openCalendarView();
 
     // The kanban strip is gone; the month grid shows the dated card chip
     // and the unscheduled side panel holds the card without a due date.
@@ -193,22 +207,22 @@ describe("BoardSection", () => {
     expect(screen.getByRole("heading", { name: "To Do" })).toBeInTheDocument();
   });
 
-  it("opens the card dialog from a calendar chip", () => {
+  it("opens the card dialog from a calendar chip", async () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard();
 
-    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    await openCalendarView();
     fireEvent.click(screen.getByText("Dated card"));
 
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Dated card")).toBeInTheDocument();
   });
 
-  it("shows the table view with column, due badge and labels", () => {
+  it("shows the table view with column, due badge and labels", async () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard();
 
-    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+    await openTableView();
 
     const table = screen.getByRole("table");
     expect(within(table).getByText("Dated card")).toBeInTheDocument();
@@ -232,7 +246,7 @@ describe("BoardSection", () => {
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+    await openTableView();
     fireEvent.click(within(screen.getByRole("table")).getByText("Plain card"));
 
     // The row click opens the same dialog from the table projection.
@@ -253,11 +267,11 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     localStorage.clear();
   });
 
-  it("switches to the week scale and remembers the choice", () => {
+  it("switches to the week scale and remembers the choice", async () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard();
 
-    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    await openCalendarView();
     expect(screen.getAllByTestId("calendar-day")).toHaveLength(42);
 
     fireEvent.click(screen.getByRole("button", { name: "Week" }));
@@ -265,11 +279,11 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     expect(localStorage.getItem("janosik-calendar-scale")).toBe("week");
   });
 
-  it("plans an unscheduled card by dragging it onto a day", () => {
+  it("plans an unscheduled card by dragging it onto a day", async () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard();
 
-    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    await openCalendarView();
     const panel = screen.getByTestId("unscheduled-list");
     const item = within(panel).getByText("Plain card");
     fireEvent.dragStart(item, {
@@ -292,11 +306,11 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     expect(within(day as HTMLElement).getByText("Plain card")).toBeInTheDocument();
   });
 
-  it("opens the day panel with the full list and opens a card from it", () => {
+  it("opens the day panel with the full list and opens a card from it", async () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard();
 
-    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    await openCalendarView();
     const today = document.querySelector(`[data-date="${todayKey()}"]`);
     expect(today).not.toBeNull();
     fireEvent.click(today as Element);
@@ -311,11 +325,11 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     expect(within(dialog).getByText("Dated card")).toBeInTheDocument();
   });
 
-  it("quick-adds a card from the unscheduled panel", () => {
+  it("quick-adds a card from the unscheduled panel", async () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard();
 
-    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    await openCalendarView();
 
     // The dashed "+" row expands into an input.
     fireEvent.click(screen.getByTestId("unscheduled-add"));
@@ -332,10 +346,10 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     expect(screen.getByTestId("unscheduled-add")).toBeInTheDocument();
   });
 
-  it("creates a card from the day panel composer, due that day", () => {    localStorage.setItem("janosik-boards", boardWithDueCard());
+  it("creates a card from the day panel composer, due that day", async () => {    localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard();
 
-    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    await openCalendarView();
     fireEvent.click(
       document.querySelector(`[data-date="${todayKey()}"]`) as Element,
     );
@@ -357,11 +371,11 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     ).toBeNull();
   });
 
-  it("cancels the day panel composer draft", () => {
+  it("cancels the day panel composer draft", async () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard();
 
-    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    await openCalendarView();
     fireEvent.click(
       document.querySelector(`[data-date="${todayKey()}"]`) as Element,
     );
@@ -382,7 +396,7 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard();
 
-    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    await openCalendarView();
     fireEvent.click(
       document.querySelector(`[data-date="${todayKey()}"]`) as Element,
     );
@@ -412,11 +426,11 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     expect(within(todo).queryByText("Chosen")).toBeNull();
   });
 
-  it("attaches labels from the day panel composer", () => {
+  it("attaches labels from the day panel composer", async () => {
     localStorage.setItem("janosik-boards", boardWithLabels());
     renderBoard();
 
-    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    await openCalendarView();
     fireEvent.click(
       document.querySelector(`[data-date="${todayKey()}"]`) as Element,
     );
@@ -505,8 +519,7 @@ describe("TableView interactivity (TASK-14.1)", () => {
   function openTable() {
     localStorage.setItem("janosik-boards", boardWithThreeCards());
     renderBoard();
-    fireEvent.click(screen.getByRole("button", { name: "Table" }));
-    return within(screen.getByRole("table"));
+    return openTableView().then(() => within(screen.getByRole("table")));
   }
 
   const rowTitles = (
@@ -516,8 +529,8 @@ describe("TableView interactivity (TASK-14.1)", () => {
       .getAllByTestId("table-row")
       .map((row: HTMLElement) => row.querySelector("td")?.textContent ?? "");
 
-  it("sorts by a header (asc → desc → reset to the board order)", () => {
-    const table = openTable();
+  it("sorts by a header (asc → desc → reset to the board order)", async () => {
+    const table = await openTable();
     expect(rowTitles(table)).toEqual(["Beta task", "Alpha task", "Gamma task"]);
 
     fireEvent.click(screen.getByTestId("table-sort-title"));
@@ -531,8 +544,8 @@ describe("TableView interactivity (TASK-14.1)", () => {
     expect(rowTitles(table)).toEqual(["Beta task", "Alpha task", "Gamma task"]);
   });
 
-  it("renames a card inline (Enter saves, Escape reverts)", () => {
-    const table = openTable();
+  it("renames a card inline (Enter saves, Escape reverts)", async () => {
+    const table = await openTable();
 
     // Inline rename lives on the title double-click (the hover icon is
     // the archive button).
@@ -560,7 +573,7 @@ describe("TableView interactivity (TASK-14.1)", () => {
   it("moves a card to another column from the column cell", async () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard();
-    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+    await openTableView();
     const table = within(screen.getByRole("table"));
 
     // Radix DropdownMenu opens on pointerdown (not click).
@@ -579,10 +592,10 @@ describe("TableView interactivity (TASK-14.1)", () => {
     expect(within(movedRow as HTMLElement).getByText("Doing")).toBeInTheDocument();
   });
 
-  it("adds a card from the table composer with a picked label", () => {
+  it("adds a card from the table composer with a picked label", async () => {
     localStorage.setItem("janosik-boards", boardWithLabels());
     renderBoard();
-    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+    await openTableView();
 
     fireEvent.click(screen.getByTestId("table-add-card"));
     // The popover composer offers the board labels as chips.
@@ -605,10 +618,10 @@ describe("TableView interactivity (TASK-14.1)", () => {
     expect(within(row as HTMLElement).getByText("Design")).toBeInTheDocument();
   });
 
-  it("cancels the table composer popover", () => {
+  it("cancels the table composer popover", async () => {
     localStorage.setItem("janosik-boards", boardWithLabels());
     renderBoard();
-    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+    await openTableView();
 
     fireEvent.click(screen.getByTestId("table-add-card"));
     expect(
@@ -620,7 +633,7 @@ describe("TableView interactivity (TASK-14.1)", () => {
   });
 
   it("shows optional columns from the settings menu and persists them", async () => {
-    openTable();
+    await openTable();
 
     fireEvent.pointerDown(screen.getByTestId("table-columns-settings"), {
       button: 0,
@@ -639,7 +652,7 @@ describe("TableView interactivity (TASK-14.1)", () => {
   });
 
   it("adds a card from the table composer", async () => {
-    const table = openTable();
+    const table = await openTable();
 
     fireEvent.click(screen.getByTestId("table-add-card"));
     fireEvent.change(screen.getByTestId("table-composer-input"), {

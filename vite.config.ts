@@ -45,6 +45,13 @@ export default defineConfig({
             // UI primitives used across the whole app.
             { name: "radix", test: /[\\/]node_modules[\\/]@radix-ui[\\/]/ },
             { name: "dndkit", test: /[\\/]node_modules[\\/]@dnd-kit[\\/]/ },
+            // Animated icons across the header — same vendor-cache treatment.
+            // The `motion` entry is a thin re-export; the code lives in
+            // framer-motion/motion-dom/motion-utils.
+            {
+              name: "motion",
+              test: /[\\/]node_modules[\\/](motion|framer-motion|motion-dom|motion-utils)[\\/]/,
+            },
           ],
         },
       },
