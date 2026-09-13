@@ -143,9 +143,14 @@ See [ROADMAP.md](./ROADMAP.md) for the full architecture assessment, competitor 
 4. End-to-end tests (Playwright/Cypress) are intentionally **out of scope** — testing is Vitest + React Testing Library.
 5. New UI strings land in both `src/locales/en` and `src/locales/ru` synchronously; colors come only from the design tokens in `src/index.css`.
 6. The backend phase is active — see `ROADMAP.md` §7 for the fixed stack (NestJS/Prisma/PostgreSQL/JWT) and iteration order.
+7. By submitting a pull request you agree that your contribution is licensed under the [MIT License](./LICENSE), the same terms as the rest of the project.
 
 ---
 
 ## License
 
-Private project — not yet released under an open-source license.
+[MIT](./LICENSE) © 2026 Vitali Toustsik
+
+Use it, fork it, run it, build on it — commercially too. The only condition is
+that the copyright notice and the license text travel with the copies. The
+software comes with no warranty.

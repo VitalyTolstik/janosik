@@ -1,6 +1,26 @@
 {
   "name": "janosik",
   "version": "0.1.0",
+  "description": "Self-hosted Kanban board — offline-first PWA with drag & drop, calendar and table views, undo/redo, WIP limits and i18n.",
+  "license": "MIT",
+  "author": "Vitali Toustsik",
+  "homepage": "https://github.com/VitalyTolstik/janosik#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VitalyTolstik/janosik.git"
+  },
+  "bugs": {
+    "url": "https://github.com/VitalyTolstik/janosik/issues"
+  },
+  "keywords": [
+    "kanban",
+    "trello-alternative",
+    "self-hosted",
+    "offline-first",
+    "pwa",
+    "react",
+    "typescript"
+  ],
   "private": true,
   "type": "module",
   "scripts": {
