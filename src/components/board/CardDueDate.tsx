@@ -27,7 +27,7 @@ function dueParts(due: number): { date: Date; time: string } {
   };
 }
 
-export function composeTimestamp(date: Date, time: string): number {
+function composeTimestamp(date: Date, time: string): number {
   const [hh, mm] = time.split(":").map((v) => Number.parseInt(v, 10));
   return new Date(
     date.getFullYear(),

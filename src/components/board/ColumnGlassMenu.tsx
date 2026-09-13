@@ -12,7 +12,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { GLASS_PRESETS, useBoardGlass } from "@/hooks/use-board-glass";
+import { useBoardGlass } from "@/hooks/use-board-glass";
+import { GLASS_PRESETS } from "@/utils/board-glass";
 import { useI18n } from "@/i18n";
 
 /**

@@ -5,10 +5,6 @@ import { I18nextProvider, useTranslation } from "react-i18next";
 
 import {
   defaultI18n,
-  formatDate,
-  formatDateOnly,
-  formatRelative,
-  formatTime,
   is12HourLocale,
   loadTimeFormat,
   saveTimeFormat,
@@ -84,14 +80,6 @@ export function useI18n(): I18nContextValue {
 
   return { lang, setLang, t, tp };
 }
-
-export {
-  formatDate,
-  formatDateOnly,
-  formatRelative,
-  formatTime,
-  is12HourLocale,
-};
 
 /**
  * Whether clocks should render as 12-hour (AM/PM): the user's

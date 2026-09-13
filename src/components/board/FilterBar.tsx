@@ -25,7 +25,8 @@ import {
   type Label,
   type LabelColor,
 } from "@/types/kanban";
-import { LimitCounter, showRemaining } from "@/components/ui/limit-counter";
+import { LimitCounter } from "@/components/ui/limit-counter";
+import { showRemaining } from "@/utils/limit-format";
 import {
   activeFacetCount,
   EMPTY_FILTER,

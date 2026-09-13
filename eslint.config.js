@@ -19,7 +19,27 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": "warn",
+      // Provider+hook pairs (useTheme, useToast, ...) are an idiomatic
+      // single-file pattern; Fast Refresh's full-reload fallback for them
+      // is acceptable, so only non-hook exports are flagged.
+      "react-refresh/only-export-components": [
+        "warn",
+        {
+          // Exact names only (the rule uses Set.has, not regex): hook
+          // exports next to their providers and shadcn's buttonVariants.
+          allowExportNames: [
+            "useI18n",
+            "useHour12",
+            "useTimeFormat",
+            "useTheme",
+            "useBoard",
+            "useBoardBackground",
+            "useBoardGlass",
+            "useToast",
+            "buttonVariants",
+          ],
+        },
+      ],
       // New in react-hooks v7 and currently opinionated about patterns the
       // codebase relies on (dialog state reset on open, render-time clock).
       // Demoted to warnings until the context split (TASK-21.4) and friends.

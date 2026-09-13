@@ -24,7 +24,8 @@ const DescriptionEditor = lazy(() =>
 );
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { useToast } from "@/components/Toast";
-import { LimitCounter, showRemaining } from "@/components/ui/limit-counter";
+import { LimitCounter } from "@/components/ui/limit-counter";
+import { showRemaining } from "@/utils/limit-format";
 import {
   DropdownMenu,
   DropdownMenuContent,

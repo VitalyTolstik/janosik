@@ -22,7 +22,8 @@ import { cn } from "@/lib/utils";
 import { LABEL_COLOR_DOT, LIMITS, type Label } from "@/types/kanban";
 import { routes } from "@/routes";
 import { useBoard } from "@/store/BoardContext";
-import { LimitCounter, showRemaining } from "@/components/ui/limit-counter";
+import { LimitCounter } from "@/components/ui/limit-counter";
+import { showRemaining } from "@/utils/limit-format";
 import {
   descriptionSnippet,
   searchBoards,
