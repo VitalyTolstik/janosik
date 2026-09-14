@@ -108,9 +108,7 @@ export function CardComposer({
     reset();
   };
 
-  const addCardDisabled = Boolean(
-    disabled && disabledReason,
-  );
+  const addCardDisabled = Boolean(disabled && disabledReason);
 
   if (!composing) {
     const button = (
@@ -154,7 +152,11 @@ export function CardComposer({
         // the top border.
         className="min-h-0 resize-none bg-card"
       />
-      <LimitCounter length={title.length} limit={LIMITS.cardTitle} testId="composer-limit" />
+      <LimitCounter
+        length={title.length}
+        limit={LIMITS.cardTitle}
+        testId="composer-limit"
+      />
       <ComposerLabelPicker
         labels={labels}
         selected={selectedLabels}

@@ -22,12 +22,9 @@ import {
  * normalized to the nearest preset on load.
  */
 
-const STORAGE_KEY = "janosik-board-glass";
+import { GLASS_PRESETS } from "@/utils/board-glass";
 
-export const GLASS_PRESETS = {
-  transparency: { off: 0, on: 100 },
-  blur: { off: 0, on: 5 },
-} as const;
+const STORAGE_KEY = "janosik-board-glass";
 
 export interface BoardGlass {
   /** 0 = fully opaque, 100 = no fill at all (frame only). */
@@ -87,7 +84,10 @@ export function BoardGlassProvider({ children }: { children: ReactNode }) {
       /* storage unavailable — glass still works for the session */
     }
     const root = document.documentElement;
-    root.style.setProperty("--janosik-glass-transparency", String(glass.transparency));
+    root.style.setProperty(
+      "--janosik-glass-transparency",
+      String(glass.transparency),
+    );
     root.style.setProperty("--janosik-glass-blur", `${glass.blur}px`);
   }, [glass]);
 

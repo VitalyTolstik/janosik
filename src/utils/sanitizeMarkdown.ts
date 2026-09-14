@@ -39,6 +39,7 @@ function stripHtmlSegments(line: string): string {
 
 export function sanitizeMarkdownForImport(markdown: string): string {
   // NUL bytes could forge protection placeholders below.
+  // eslint-disable-next-line no-control-regex -- stripping NUL is the point
   let current = markdown.replace(/\u0000/g, "");
 
   // Strip to a fixpoint: removing tags can change backtick-run adjacency
@@ -69,7 +70,11 @@ function sanitizePass(markdown: string): string {
     const fence = line.match(FENCE);
     if (fenceChar !== null) {
       const closer = line.match(FENCE_CLOSE);
-      if (closer && closer[1][0] === fenceChar && closer[1].length >= fenceLength) {
+      if (
+        closer &&
+        closer[1][0] === fenceChar &&
+        closer[1].length >= fenceLength
+      ) {
         fenceChar = null;
         fenceLength = 0;
       }
@@ -94,5 +99,9 @@ function sanitizePass(markdown: string): string {
   // segments out of its way).
   const stripped = processedLines.join("\n").replace(DANGEROUS_HTML, "");
 
-  return stripped.replace(/\u0000(\d+)\u0000/g, (_, i) => protectedSpans[Number(i)] ?? "");
+  return stripped.replace(
+    // eslint-disable-next-line no-control-regex -- restoring placeholders
+    /\u0000(\d+)\u0000/g,
+    (_, i) => protectedSpans[Number(i)] ?? "",
+  );
 }

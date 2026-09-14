@@ -1,5 +1,12 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Archive, ArchiveRestore, ArrowRightLeft, CalendarClock, CopyPlus, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  ArrowRightLeft,
+  CalendarClock,
+  CopyPlus,
+  Trash2,
+} from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { CardActivityFeed } from "@/components/board/CardActivityFeed";
@@ -17,10 +24,8 @@ const DescriptionEditor = lazy(() =>
 );
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { useToast } from "@/components/Toast";
-import {
-  LimitCounter,
-  showRemaining,
-} from "@/components/ui/limit-counter";
+import { LimitCounter } from "@/components/ui/limit-counter";
+import { showRemaining } from "@/utils/limit-format";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -86,11 +91,16 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
   // by "updated" doesn't reshuffle mid-typing and exports stay clean.
   const touchTimerRef = useRef<number | null>(null);
   const touchCardRef = useRef(touchCard);
-  touchCardRef.current = touchCard;
   const cardIdRef = useRef(cardId);
-  cardIdRef.current = cardId;
+  // Mirror the latest values into refs outside of render (the timer callback
+  // must see current ones without re-creating the timeout).
+  useEffect(() => {
+    touchCardRef.current = touchCard;
+    cardIdRef.current = cardId;
+  }, [touchCard, cardId]);
   const scheduleTouch = () => {
-    if (touchTimerRef.current !== null) window.clearTimeout(touchTimerRef.current);
+    if (touchTimerRef.current !== null)
+      window.clearTimeout(touchTimerRef.current);
     touchTimerRef.current = window.setTimeout(() => {
       touchTimerRef.current = null;
       if (cardIdRef.current) touchCardRef.current(cardIdRef.current);
@@ -214,7 +224,11 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                 value={card.title}
                 maxLength={LIMITS.cardTitle}
                 onChange={(e) => {
-                  updateCard(card.id, { title: e.target.value }, { quiet: true });
+                  updateCard(
+                    card.id,
+                    { title: e.target.value },
+                    { quiet: true },
+                  );
                   scheduleTouch();
                 }}
                 onFocus={(e) => e.target.select()}
@@ -268,7 +282,9 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                       }
                       updateCard(
                         card.id,
-                        { description: description.slice(0, LIMITS.description) },
+                        {
+                          description: description.slice(0, LIMITS.description),
+                        },
                         { quiet: true },
                       );
                       scheduleTouch();
@@ -308,9 +324,15 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
 
             <CardCoverPicker cardId={card.id} cover={card.cover} />
 
-            <CardChecklists cardId={card.id} checklists={card.checklists ?? []} />
+            <CardChecklists
+              cardId={card.id}
+              checklists={card.checklists ?? []}
+            />
 
-            <CardActivityFeed activity={card.activity} createdAt={card.createdAt} />
+            <CardActivityFeed
+              activity={card.activity}
+              createdAt={card.createdAt}
+            />
 
             {!card.archivedAt && (
               <div className="flex items-center justify-between gap-2">
@@ -343,7 +365,9 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
 
             <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
               <CalendarClock className="h-3.5 w-3.5" />
-              {t("card.created", { date: formatDate(card.createdAt, lang, hour12) })}
+              {t("card.created", {
+                date: formatDate(card.createdAt, lang, hour12),
+              })}
               {card.updatedAt > card.createdAt
                 ? ` · ${t("card.updated", { date: formatDate(card.updatedAt, lang, hour12) })}`
                 : ""}

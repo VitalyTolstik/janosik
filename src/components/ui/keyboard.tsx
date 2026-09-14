@@ -57,7 +57,7 @@ const KeyboardIcon = forwardRef<KeyboardIconHandle, KeyboardIconProps>(
           setIsHovered(true);
         }
       },
-      [onMouseEnter]
+      [onMouseEnter],
     );
 
     const handleMouseLeave = useCallback(
@@ -68,7 +68,7 @@ const KeyboardIcon = forwardRef<KeyboardIconHandle, KeyboardIconProps>(
           setIsHovered(false);
         }
       },
-      [onMouseLeave]
+      [onMouseLeave],
     );
 
     useEffect(() => {
@@ -126,7 +126,7 @@ const KeyboardIcon = forwardRef<KeyboardIconHandle, KeyboardIconProps>(
         </svg>
       </div>
     );
-  }
+  },
 );
 
 KeyboardIcon.displayName = "KeyboardIcon";

@@ -94,7 +94,10 @@ export function BackupDialog({ open, onOpenChange }: BackupDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6" data-testid="backup-list">
+        <div
+          className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6"
+          data-testid="backup-list"
+        >
           {backups === null || backups.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               {t("data.backupEmpty")}

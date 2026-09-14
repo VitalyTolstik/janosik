@@ -104,7 +104,9 @@ function Column({
             <span
               className={cn(
                 "text-[10px] font-medium tracking-wide",
-                value === selected ? "text-primary-foreground/70" : "text-muted-foreground",
+                value === selected
+                  ? "text-primary-foreground/70"
+                  : "text-muted-foreground",
               )}
             >
               {suffix}

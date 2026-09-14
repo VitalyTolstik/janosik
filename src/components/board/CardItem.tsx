@@ -1,13 +1,22 @@
 import { AlignLeft, Archive, Check, CopyPlus, ListTodo, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { DueBadge } from "@/components/board/DueBadge";
 import { HighlightedText } from "@/components/ui/highlight";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { descriptionSnippet } from "@/utils/filter";
-import { LABEL_COLOR_CHIP, coverBackground, type Card, type Label } from "@/types/kanban";
+import {
+  LABEL_COLOR_CHIP,
+  coverBackground,
+  type Card,
+  type Label,
+} from "@/types/kanban";
 
 interface CardItemProps {
   card: Card;
@@ -37,17 +46,13 @@ interface CardItemProps {
  * `title` tooltip appears only when something is actually hidden — no
  * tooltip noise on short titles.
  */
-function useClamped(): [
-  React.RefCallback<HTMLParagraphElement>,
-  boolean,
-] {
+function useClamped(): [React.RefCallback<HTMLParagraphElement>, boolean] {
   const elRef = useRef<HTMLParagraphElement | null>(null);
   const [clamped, setClamped] = useState(false);
   useEffect(() => {
     const el = elRef.current;
     if (!el) return;
-    const check = () =>
-      setClamped(el.scrollHeight > el.clientHeight + 1);
+    const check = () => setClamped(el.scrollHeight > el.clientHeight + 1);
     check();
     // Re-check when the card content reflows (fonts, resize, label wrap).
     const observer = new ResizeObserver(check);
@@ -74,7 +79,16 @@ function useClamped(): [
  * a compact badge only signals that the card has one — full text lives
  * in the card dialog.
  */
-export function CardItem({ card, labels, isDragging, highlight, isCursor, onClick, onDuplicate, onArchive }: CardItemProps) {
+export function CardItem({
+  card,
+  labels,
+  isDragging,
+  highlight,
+  isCursor,
+  onClick,
+  onDuplicate,
+  onArchive,
+}: CardItemProps) {
   const [titleRef, titleClamped] = useClamped();
   const { t } = useI18n();
   // Archive uses the board-archive two-step: first click arms the
@@ -98,7 +112,8 @@ export function CardItem({ card, labels, isDragging, highlight, isCursor, onClic
         (label) => label.id === id && label.name.toLowerCase().includes(query),
       ),
     );
-  const descriptionOnly = query !== "" && !titleMatched && !labelMatched && hasDescription;
+  const descriptionOnly =
+    query !== "" && !titleMatched && !labelMatched && hasDescription;
   const snippet = descriptionOnly
     ? descriptionSnippet(card.description ?? "", query)
     : null;
@@ -269,13 +284,17 @@ export function CardItem({ card, labels, isDragging, highlight, isCursor, onClic
                       "border-primary/40 bg-primary/10 text-primary",
                   )}
                   data-testid="card-description-badge"
-                  {...(descriptionOnly ? { "data-highlight": "description" } : {})}
+                  {...(descriptionOnly
+                    ? { "data-highlight": "description" }
+                    : {})}
                 >
                   <AlignLeft className="h-3.5 w-3.5" aria-hidden />
                 </span>
               </TooltipTrigger>
               <TooltipContent>
-                {descriptionOnly && snippetText ? snippetText : t("card.hasDescription")}
+                {descriptionOnly && snippetText
+                  ? snippetText
+                  : t("card.hasDescription")}
               </TooltipContent>
             </Tooltip>
           ) : null}

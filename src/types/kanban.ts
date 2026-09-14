@@ -18,20 +18,20 @@
  * persisted with the old color still render.
  */
 export const LABEL_COLORS = [
- "red",
- "orange",
- "yellow",
- "brown",
- "green",
- "teal",
- "cyan",
- "blue",
- "indigo",
- "brand",
- "fuchsia",
- "pink",
- "slate",
- "plain",
+  "red",
+  "orange",
+  "yellow",
+  "brown",
+  "green",
+  "teal",
+  "cyan",
+  "blue",
+  "indigo",
+  "brand",
+  "fuchsia",
+  "pink",
+  "slate",
+  "plain",
 ] as const;
 
 /** Legacy colors accepted from persisted data but not offered in the picker. */
@@ -39,44 +39,44 @@ export type LabelColor = (typeof LABEL_COLORS)[number] | "amber";
 
 /** Tailwind classes used to render a label chip in both themes. */
 export const LABEL_COLOR_CHIP = {
- red: "bg-danger/15 text-danger",
- orange: "bg-orange/15 text-orange",
- yellow: "bg-yellow/15 text-yellow",
- brown: "bg-brown/15 text-brown",
- green: "bg-success/15 text-success",
- teal: "bg-teal/15 text-teal",
- cyan: "bg-secondary/15 text-secondary",
- blue: "bg-blue/15 text-blue",
- indigo: "bg-indigo/15 text-indigo",
- brand: "bg-primary/15 text-primary",
- fuchsia: "bg-fuchsia/15 text-fuchsia",
- pink: "bg-pink/15 text-pink",
- slate: "bg-slate/15 text-slate",
- // Colorless: an outlined empty pill instead of a tinted one.
- plain: "border border-border bg-background/40 text-muted-foreground",
- // Retired color kept so persisted labels still render.
- amber: "bg-warning/15 text-warning",
+  red: "bg-danger/15 text-danger",
+  orange: "bg-orange/15 text-orange",
+  yellow: "bg-yellow/15 text-yellow",
+  brown: "bg-brown/15 text-brown",
+  green: "bg-success/15 text-success",
+  teal: "bg-teal/15 text-teal",
+  cyan: "bg-secondary/15 text-secondary",
+  blue: "bg-blue/15 text-blue",
+  indigo: "bg-indigo/15 text-indigo",
+  brand: "bg-primary/15 text-primary",
+  fuchsia: "bg-fuchsia/15 text-fuchsia",
+  pink: "bg-pink/15 text-pink",
+  slate: "bg-slate/15 text-slate",
+  // Colorless: an outlined empty pill instead of a tinted one.
+  plain: "border border-border bg-background/40 text-muted-foreground",
+  // Retired color kept so persisted labels still render.
+  amber: "bg-warning/15 text-warning",
 } satisfies Record<LabelColor, string>;
 
 /** Solid color used for dot indicators (e.g. drag previews, swatches). */
 export const LABEL_COLOR_DOT = {
- red: "bg-danger",
- orange: "bg-orange",
- yellow: "bg-yellow",
- brown: "bg-brown",
- green: "bg-success",
- teal: "bg-teal",
- cyan: "bg-secondary",
- blue: "bg-blue",
- indigo: "bg-indigo",
- brand: "bg-primary",
- fuchsia: "bg-fuchsia",
- pink: "bg-pink",
- slate: "bg-slate",
- // Colorless: an empty ring instead of a filled dot.
- plain: "bg-transparent ring-1 ring-inset ring-border",
- // Retired color kept so persisted labels still render.
- amber: "bg-warning",
+  red: "bg-danger",
+  orange: "bg-orange",
+  yellow: "bg-yellow",
+  brown: "bg-brown",
+  green: "bg-success",
+  teal: "bg-teal",
+  cyan: "bg-secondary",
+  blue: "bg-blue",
+  indigo: "bg-indigo",
+  brand: "bg-primary",
+  fuchsia: "bg-fuchsia",
+  pink: "bg-pink",
+  slate: "bg-slate",
+  // Colorless: an empty ring instead of a filled dot.
+  plain: "bg-transparent ring-1 ring-inset ring-border",
+  // Retired color kept so persisted labels still render.
+  amber: "bg-warning",
 } satisfies Record<LabelColor, string>;
 
 export interface Label {
@@ -270,12 +270,18 @@ export const COVER_COLOR_CSS: Record<CoverColor, string> = {
  *  Three stops with a clear hue shift so the gradient reads even at the
  *  strip's 6px height. */
 export const COVER_GRADIENT_CSS: Record<CoverGradient, string> = {
-  sunset: "linear-gradient(135deg, var(--yellow), var(--orange) 50%, var(--danger))",
-  ocean: "linear-gradient(135deg, var(--secondary), var(--blue) 50%, var(--indigo))",
-  forest: "linear-gradient(135deg, var(--success), var(--teal) 50%, var(--secondary))",
-  candy: "linear-gradient(135deg, var(--pink), var(--fuchsia) 50%, var(--primary))",
-  grape: "linear-gradient(135deg, var(--indigo), var(--primary) 50%, var(--fuchsia))",
-  steel: "linear-gradient(135deg, var(--slate), var(--muted-foreground) 50%, var(--secondary))",
+  sunset:
+    "linear-gradient(135deg, var(--yellow), var(--orange) 50%, var(--danger))",
+  ocean:
+    "linear-gradient(135deg, var(--secondary), var(--blue) 50%, var(--indigo))",
+  forest:
+    "linear-gradient(135deg, var(--success), var(--teal) 50%, var(--secondary))",
+  candy:
+    "linear-gradient(135deg, var(--pink), var(--fuchsia) 50%, var(--primary))",
+  grape:
+    "linear-gradient(135deg, var(--indigo), var(--primary) 50%, var(--fuchsia))",
+  steel:
+    "linear-gradient(135deg, var(--slate), var(--muted-foreground) 50%, var(--secondary))",
 };
 
 /** CSS background for any cover shape (solid color or gradient). */
@@ -286,18 +292,18 @@ export function coverBackground(cover: CardCover): string {
 }
 
 export interface Column {
- id: string;
- title: string;
- /** Ordered card ids — this array defines the vertical order. */
- cardIds: string[];
- /**
-  * WIP limit (TASK-13) — the max number of cards the column accepts.
-  * Omitted when unset. A column can hold more (limit set below the
-  * current count, undo, imports) — the counter turns red and further
-  * adds/moves in are blocked until the column is below the limit again.
-  */
- wipLimit?: number;
- createdAt: number;
+  id: string;
+  title: string;
+  /** Ordered card ids — this array defines the vertical order. */
+  cardIds: string[];
+  /**
+   * WIP limit (TASK-13) — the max number of cards the column accepts.
+   * Omitted when unset. A column can hold more (limit set below the
+   * current count, undo, imports) — the counter turns red and further
+   * adds/moves in are blocked until the column is below the limit again.
+   */
+  wipLimit?: number;
+  createdAt: number;
 }
 
 export interface Board {

@@ -32,42 +32,42 @@ export type DueFilter = "any" | "overdue" | "soon" | "none";
 export type LabelMatch = "any" | "all";
 
 export interface CardFilter {
- /** Substring of the card title; trimmed before matching. */
- query: string;
+  /** Substring of the card title; trimmed before matching. */
+  query: string;
   /** Selected label ids — matched according to `labelMatch`. */
   labelIds: string[];
   /** Label match mode: "any" (default, OR) or "all" (every selected label). */
   labelMatch: LabelMatch;
- /** Also include cards without any label (OR-ed with labelIds). */
- noLabel: boolean;
- /** Creation-date window; "any" disables the facet. */
- created: CreatedWindow;
- /** Exact "YYYY-MM-DD" local day; overrides `created` when non-null. */
- createdOn: string | null;
- /** Deadline facet; "any" disables the facet. */
- due: DueFilter;
+  /** Also include cards without any label (OR-ed with labelIds). */
+  noLabel: boolean;
+  /** Creation-date window; "any" disables the facet. */
+  created: CreatedWindow;
+  /** Exact "YYYY-MM-DD" local day; overrides `created` when non-null. */
+  createdOn: string | null;
+  /** Deadline facet; "any" disables the facet. */
+  due: DueFilter;
 }
 
 export const EMPTY_FILTER: CardFilter = {
   query: "",
   labelIds: [],
   labelMatch: "any",
- noLabel: false,
- created: "any",
- createdOn: null,
- due: "any",
+  noLabel: false,
+  created: "any",
+  createdOn: null,
+  due: "any",
 };
 
 /** True when at least one facet restricts the board. */
 export function isFilterActive(filter: CardFilter): boolean {
- return (
-  filter.query.trim() !== "" ||
-  filter.labelIds.length > 0 ||
-  filter.noLabel ||
-  filter.created !== "any" ||
-  filter.createdOn !== null ||
-  filter.due !== "any"
- );
+  return (
+    filter.query.trim() !== "" ||
+    filter.labelIds.length > 0 ||
+    filter.noLabel ||
+    filter.created !== "any" ||
+    filter.createdOn !== null ||
+    filter.due !== "any"
+  );
 }
 
 /**
@@ -76,13 +76,13 @@ export function isFilterActive(filter: CardFilter): boolean {
  * (plus one for "no label"), as it is a single picker in the UI.
  */
 export function activeFacetCount(filter: CardFilter): number {
- let count = 0;
- if (filter.query.trim() !== "") count += 1;
- if (filter.labelIds.length > 0 || filter.noLabel) count += 1;
- if (filter.created !== "any") count += 1;
- if (filter.createdOn !== null) count += 1;
- if (filter.due !== "any") count += 1;
- return count;
+  let count = 0;
+  if (filter.query.trim() !== "") count += 1;
+  if (filter.labelIds.length > 0 || filter.noLabel) count += 1;
+  if (filter.created !== "any") count += 1;
+  if (filter.createdOn !== null) count += 1;
+  if (filter.due !== "any") count += 1;
+  return count;
 }
 
 const DAY_MS = 86_400_000;
@@ -93,19 +93,19 @@ const DAY_MS = 86_400_000;
  * windows ending now.
  */
 export function createdFromMs(
- created: CreatedWindow,
- now = Date.now(),
+  created: CreatedWindow,
+  now = Date.now(),
 ): number | null {
- switch (created) {
-  case "any":
-   return null;
-  case "today":
-   return new Date(now).setHours(0, 0, 0, 0);
-  case "7d":
-   return now - 7 * DAY_MS;
-  case "30d":
-   return now - 30 * DAY_MS;
- }
+  switch (created) {
+    case "any":
+      return null;
+    case "today":
+      return new Date(now).setHours(0, 0, 0, 0);
+    case "7d":
+      return now - 7 * DAY_MS;
+    case "30d":
+      return now - 30 * DAY_MS;
+  }
 }
 
 /**
@@ -114,27 +114,23 @@ export function createdFromMs(
  * parts (not UTC) so a chosen day never shifts across time zones.
  */
 export function createdDayRange(createdOn: string): [number, number] | null {
- const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(createdOn);
- if (!match) return null;
- const [, y, m, d] = match;
- const start = new Date(Number(y), Number(m) - 1, Number(d));
- // Date auto-corrects overflow (e.g. 2025-13-40) — reject unless the
- // components round-trip unchanged, so only real calendar days match.
- if (
-  start.getFullYear() !== Number(y) ||
-  start.getMonth() !== Number(m) - 1 ||
-  start.getDate() !== Number(d)
- )
-  return null;
- return [start.getTime(), start.getTime() + DAY_MS];
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(createdOn);
+  if (!match) return null;
+  const [, y, m, d] = match;
+  const start = new Date(Number(y), Number(m) - 1, Number(d));
+  // Date auto-corrects overflow (e.g. 2025-13-40) — reject unless the
+  // components round-trip unchanged, so only real calendar days match.
+  if (
+    start.getFullYear() !== Number(y) ||
+    start.getMonth() !== Number(m) - 1 ||
+    start.getDate() !== Number(d)
+  )
+    return null;
+  return [start.getTime(), start.getTime() + DAY_MS];
 }
 
 /** Whether a single card passes the `due` deadline facet. */
-function matchesDueFilter(
-  card: Card,
-  due: DueFilter,
-  now: number,
-): boolean {
+function matchesDueFilter(card: Card, due: DueFilter, now: number): boolean {
   switch (due) {
     case "any":
       return true;
@@ -161,7 +157,9 @@ export function cardTextMatches(
   if (card.title.toLowerCase().includes(needle)) return true;
   if (card.description?.toLowerCase().includes(needle)) return true;
   return card.labelIds.some((id) =>
-    labels.some((label) => label.id === id && label.name.toLowerCase().includes(needle)),
+    labels.some(
+      (label) => label.id === id && label.name.toLowerCase().includes(needle),
+    ),
   );
 }
 
@@ -175,26 +173,26 @@ export function matchesCardFilter(
   const query = filter.query.trim().toLowerCase();
   if (query !== "" && !cardTextMatches(card, labels, query)) return false;
 
- // An exact day overrides the relative window (mutually exclusive in the UI).
- if (filter.createdOn === null) {
-  const from = createdFromMs(filter.created, now);
-  if (from !== null && card.createdAt < from) return false;
- } else {
-  const range = createdDayRange(filter.createdOn);
-  // Invalid date — defensively match nothing (the asked day doesn't exist).
-  if (!range) return false;
-  if (card.createdAt < range[0] || card.createdAt >= range[1]) return false;
- }
+  // An exact day overrides the relative window (mutually exclusive in the UI).
+  if (filter.createdOn === null) {
+    const from = createdFromMs(filter.created, now);
+    if (from !== null && card.createdAt < from) return false;
+  } else {
+    const range = createdDayRange(filter.createdOn);
+    // Invalid date — defensively match nothing (the asked day doesn't exist).
+    if (!range) return false;
+    if (card.createdAt < range[0] || card.createdAt >= range[1]) return false;
+  }
 
- if (!matchesDueFilter(card, filter.due, now)) return false;
+  if (!matchesDueFilter(card, filter.due, now)) return false;
 
   const hasSelected =
     filter.labelMatch === "all"
       ? filter.labelIds.every((id) => card.labelIds.includes(id))
       : card.labelIds.some((id) => filter.labelIds.includes(id));
- if (filter.noLabel) return card.labelIds.length === 0 || hasSelected;
- if (filter.labelIds.length > 0 && !hasSelected) return false;
- return true;
+  if (filter.noLabel) return card.labelIds.length === 0 || hasSelected;
+  if (filter.labelIds.length > 0 && !hasSelected) return false;
+  return true;
 }
 
 /**
@@ -213,9 +211,7 @@ export function filterCardIds(
   for (const [colId, ids] of Object.entries(columns)) {
     result[colId] = ids.filter((id) => {
       const card = cards[id];
-      return (
-        card !== undefined && matchesCardFilter(card, filter, now, labels)
-      );
+      return card !== undefined && matchesCardFilter(card, filter, now, labels);
     });
   }
   return result;
@@ -284,10 +280,7 @@ export function searchBoards(boards: Board[], query: string): SearchHit[] {
         boardArchived: board.archivedAt !== undefined,
       });
     }
-    const hitFor = (
-      card: Card,
-      columnTitle?: string,
-    ): CardSearchHit | null => {
+    const hitFor = (card: Card, columnTitle?: string): CardSearchHit | null => {
       const matched = MATCH_FIELD_ORDER.find((field) => {
         switch (field) {
           case "title":
@@ -298,8 +291,7 @@ export function searchBoards(boards: Board[], query: string): SearchHit[] {
             return card.labelIds.some((id) =>
               board.labels.some(
                 (label) =>
-                  label.id === id &&
-                  label.name.toLowerCase().includes(needle),
+                  label.id === id && label.name.toLowerCase().includes(needle),
               ),
             );
         }
@@ -360,7 +352,10 @@ export function splitHighlight(
       break;
     }
     if (index > cursor) segments.push(text.slice(cursor, index));
-    segments.push({ match: true, text: text.slice(index, index + needle.length) });
+    segments.push({
+      match: true,
+      text: text.slice(index, index + needle.length),
+    });
     cursor = index + needle.length;
   }
   return segments.length > 0 ? segments : [text];

@@ -153,10 +153,7 @@ function clampText(value: string, limit: number): string {
  */
 function toWipLimit(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  return Math.min(
-    Math.max(Math.round(value), 1),
-    LIMITS.wipLimitMax,
-  );
+  return Math.min(Math.max(Math.round(value), 1), LIMITS.wipLimitMax);
 }
 
 /** True when the stored WIP limit is already `undefined` or in range. */
@@ -164,9 +161,7 @@ function isWipLimitCurrent(value: unknown): boolean {
   if (value === undefined) return true;
   if (typeof value !== "number" || !Number.isFinite(value)) return false;
   const n = Math.round(value);
-  return (
-    n === value && n >= 1 && n <= LIMITS.wipLimitMax
-  );
+  return n === value && n >= 1 && n <= LIMITS.wipLimitMax;
 }
 
 function normalizeCard(card: LegacyCard): Card {
@@ -215,12 +210,10 @@ export function normalizeBoard(board: Board): Board {
         ...(clean !== undefined ? { wipLimit: clean } : {}),
       };
     }),
-    labels: board.labels
-      .slice(0, LIMITS.labelsPerBoard)
-      .map((label) => ({
-        ...label,
-        name: clampText(label.name, LIMITS.labelName),
-      })),
+    labels: board.labels.slice(0, LIMITS.labelsPerBoard).map((label) => ({
+      ...label,
+      name: clampText(label.name, LIMITS.labelName),
+    })),
     cards: Object.fromEntries(
       Object.entries(board.cards).map(([id, card]) => [
         id,
@@ -235,9 +228,10 @@ export function normalizeBoards(state: BoardState): BoardState {
   return state.map((board) => {
     const needsFix =
       board.title.length > LIMITS.boardTitle ||
-      board.columns.some((column) =>
-        column.title.length > LIMITS.columnTitle ||
-        !isWipLimitCurrent(column.wipLimit),
+      board.columns.some(
+        (column) =>
+          column.title.length > LIMITS.columnTitle ||
+          !isWipLimitCurrent(column.wipLimit),
       ) ||
       board.labels.length > LIMITS.labelsPerBoard ||
       board.labels.some((label) => label.name.length > LIMITS.labelName) ||
@@ -284,8 +278,9 @@ function isChecklistsCurrent(value: unknown): boolean {
 
 /** True when the stored due date is `undefined` or a finite number. */
 function isDueDateCurrent(value: unknown): boolean {
-  return value === undefined ||
-    (typeof value === "number" && Number.isFinite(value));
+  return (
+    value === undefined || (typeof value === "number" && Number.isFinite(value))
+  );
 }
 
 /** True when the stored cover is `undefined` or a well-formed pair. */

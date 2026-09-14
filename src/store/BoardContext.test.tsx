@@ -137,8 +137,9 @@ describe("BoardContext dispatch/history (TASK-33)", () => {
     const afterSecond = JSON.stringify(latest);
 
     expect(afterFirst).not.toEqual(afterSecond);
-    expect(JSON.parse(afterFirst).labels.map((l: { id: string }) => l.id))
-      .toEqual(["l-1"]);
+    expect(
+      JSON.parse(afterFirst).labels.map((l: { id: string }) => l.id),
+    ).toEqual(["l-1"]);
     expect(JSON.parse(afterSecond).labels).toEqual([]);
   });
 });

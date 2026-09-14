@@ -22,7 +22,7 @@ self.addEventListener("install", (event) => {
       .catch(() => {
         /* first run offline — runtime caching still applies */
       })
-      .then(() => self.skipWaiting())
+      .then(() => self.skipWaiting()),
   );
 });
 
@@ -34,10 +34,10 @@ self.addEventListener("activate", (event) => {
         Promise.all(
           keys
             .filter((key) => key !== CACHE_VERSION)
-            .map((key) => caches.delete(key))
-        )
+            .map((key) => caches.delete(key)),
+        ),
       )
-      .then(() => self.clients.claim())
+      .then(() => self.clients.claim()),
   );
 });
 
@@ -59,17 +59,15 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch(() =>
-          caches
-            .match(APP_SHELL_URL)
-            .then(
-              (cached) =>
-                cached ||
-                new Response("Offline", {
-                  status: 503,
-                  headers: { "Content-Type": "text/plain" },
-                })
-            )
-        )
+          caches.match(APP_SHELL_URL).then(
+            (cached) =>
+              cached ||
+              new Response("Offline", {
+                status: 503,
+                headers: { "Content-Type": "text/plain" },
+              }),
+          ),
+        ),
     );
     return;
   }
@@ -84,6 +82,6 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       });
-    })
+    }),
   );
 });

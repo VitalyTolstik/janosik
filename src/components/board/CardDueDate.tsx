@@ -27,7 +27,7 @@ function dueParts(due: number): { date: Date; time: string } {
   };
 }
 
-export function composeTimestamp(date: Date, time: string): number {
+function composeTimestamp(date: Date, time: string): number {
   const [hh, mm] = time.split(":").map((v) => Number.parseInt(v, 10));
   return new Date(
     date.getFullYear(),
@@ -148,10 +148,7 @@ export function CardDueDate({ cardId, dueDate }: CardDueDateProps) {
       <span className="text-xs font-medium text-muted-foreground">
         {t("dueDate.label")}
       </span>
-      <Popover
-        open={open}
-        onOpenChange={(next) => setOpen(next)}
-      >
+      <Popover open={open} onOpenChange={(next) => setOpen(next)}>
         <PopoverTrigger asChild>
           <Button variant="outline" size="sm" data-testid="due-date-trigger">
             <CalendarClock className="h-3.5 w-3.5" />

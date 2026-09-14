@@ -113,20 +113,14 @@ describe("ArchiveDialog", () => {
     await userEvent.click(
       await screen.findByRole("menuitem", { name: "To do" }),
     );
-    await waitFor(() =>
-      expect(screen.queryByTestId("archive-row")).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByTestId("archive-row")).toBeNull());
   });
 
   it("deletes an archived card for good after inline confirm", async () => {
     renderArchive();
     fireEvent.click(screen.getByTestId("archive-delete"));
-    fireEvent.click(
-      screen.getByRole("button", { name: "Yes, delete" }),
-    );
-    await waitFor(() =>
-      expect(screen.queryByTestId("archive-row")).toBeNull(),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Yes, delete" }));
+    await waitFor(() => expect(screen.queryByTestId("archive-row")).toBeNull());
     expect(screen.getByTestId("archive-list")).toHaveTextContent(
       "The archive is empty.",
     );

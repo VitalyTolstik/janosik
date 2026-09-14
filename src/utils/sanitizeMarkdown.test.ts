@@ -8,7 +8,11 @@ import { sanitizeMarkdownForImport } from "./sanitizeMarkdown";
  * not see a single `html` node — at any depth, block or inline. */
 function htmlNodes(markdown: string): string[] {
   const found: string[] = [];
-  const visit = (node: { type: string; value?: string; children?: unknown[] }) => {
+  const visit = (node: {
+    type: string;
+    value?: string;
+    children?: unknown[];
+  }) => {
     if (node.type === "html") found.push(node.value ?? "");
     node.children?.forEach((child) => visit(child as never));
   };
@@ -18,21 +22,26 @@ function htmlNodes(markdown: string): string[] {
 
 function expectNoHtml(markdown: string) {
   const sanitized = sanitizeMarkdownForImport(markdown);
-  expect(htmlNodes(sanitized), `sanitized: ${JSON.stringify(sanitized)}`).toEqual([]);
+  expect(
+    htmlNodes(sanitized),
+    `sanitized: ${JSON.stringify(sanitized)}`,
+  ).toEqual([]);
   return sanitized;
 }
 
 describe("sanitizeMarkdownForImport", () => {
   it("removes HTML img tags that would hit the image plugin innerHTML sink", () => {
-    const sanitized = expectNoHtml('<img src=x onerror="alert(1)">\n\nsome text');
+    const sanitized = expectNoHtml(
+      '<img src=x onerror="alert(1)">\n\nsome text',
+    );
     expect(sanitized).toContain("some text");
     expect(sanitized).not.toContain("onerror");
   });
 
   it("strips tags split across lines (the per-line pass misses them)", () => {
-    expect(expectNoHtml('before\n<img\n  src=x\n  onerror="alert(1)">\nafter')).toBe(
-      "before\n\nafter",
-    );
+    expect(
+      expectNoHtml('before\n<img\n  src=x\n  onerror="alert(1)">\nafter'),
+    ).toBe("before\n\nafter");
   });
 
   it("strips comments and generic tags so imports stop failing", () => {
@@ -111,9 +120,21 @@ describe("sanitizeMarkdownForImport", () => {
 
   it("differential fuzz: no adversarial combination leaves an html node", () => {
     const fragments = [
-      "`", "``", "```", "````", "~~~",
-      "<img src=x onerror=alert(1)>", "<b>", "</b>", "<script>",
-      "\\`", "a", " ", "x`y", "\n", "~~~ ts",
+      "`",
+      "``",
+      "```",
+      "````",
+      "~~~",
+      "<img src=x onerror=alert(1)>",
+      "<b>",
+      "</b>",
+      "<script>",
+      "\\`",
+      "a",
+      " ",
+      "x`y",
+      "\n",
+      "~~~ ts",
     ];
     // Deterministic sweep over a fixed sample of combinations (seeded).
     let seed = 1337;
@@ -124,10 +145,13 @@ describe("sanitizeMarkdownForImport", () => {
     for (let i = 0; i < 10000; i++) {
       const parts: string[] = [];
       const count = 2 + rand(6);
-      for (let j = 0; j < count; j++) parts.push(fragments[rand(fragments.length)]);
+      for (let j = 0; j < count; j++)
+        parts.push(fragments[rand(fragments.length)]);
       const input = parts.join("");
       const sanitized = sanitizeMarkdownForImport(input);
-      expect(htmlNodes(sanitized), `input: ${JSON.stringify(input)}`).toEqual([]);
+      expect(htmlNodes(sanitized), `input: ${JSON.stringify(input)}`).toEqual(
+        [],
+      );
     }
   });
 });

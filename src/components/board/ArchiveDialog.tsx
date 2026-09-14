@@ -72,7 +72,10 @@ export function ArchiveDialog({ open, onOpenChange }: ArchiveDialogProps) {
         <DialogHeader>
           <DialogTitle>{t("archive.title")}</DialogTitle>
           <DialogDescription>
-            {t("archive.subtitle", { board: board.title, count: archived.length })}
+            {t("archive.subtitle", {
+              board: board.title,
+              count: archived.length,
+            })}
           </DialogDescription>
         </DialogHeader>
 
@@ -90,7 +93,10 @@ export function ArchiveDialog({ open, onOpenChange }: ArchiveDialogProps) {
           </div>
         ) : null}
 
-        <div className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6" data-testid="archive-list">
+        <div
+          className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6"
+          data-testid="archive-list"
+        >
           {archived.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               {t("archive.empty")}
@@ -177,7 +183,9 @@ export function ArchiveDialog({ open, onOpenChange }: ArchiveDialogProps) {
                             {board.columns.map((column) => (
                               <DropdownMenuItem
                                 key={column.id}
-                                onSelect={() => unarchiveCard(card.id, column.id)}
+                                onSelect={() =>
+                                  unarchiveCard(card.id, column.id)
+                                }
                               >
                                 {column.title}
                               </DropdownMenuItem>

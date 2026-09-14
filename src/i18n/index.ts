@@ -3,13 +3,13 @@ export {
   useHour12,
   useI18n,
   useTimeFormat,
+} from "@/i18n/I18nProvider";
+export {
   formatDate,
   formatDateOnly,
   formatRelative,
   formatTime,
   is12HourLocale,
-} from "@/i18n/I18nProvider";
-export {
   type Lang,
   type MessageKey,
   type TimeFormat,

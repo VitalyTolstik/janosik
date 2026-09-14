@@ -16,7 +16,8 @@ import {
 import { useI18n } from "@/i18n";
 
 const isMac =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+  typeof navigator !== "undefined" &&
+  /Mac|iPhone|iPad/.test(navigator.platform);
 const MOD = isMac ? "⌘" : "Ctrl+";
 
 /** Guard: single-letter shortcuts must not fire while typing. */
@@ -31,13 +32,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 /**
  * One row of the shortcuts table: action + key badge(s).
  */
-function ShortcutRow({
-  action,
-  keys,
-}: {
-  action: string;
-  keys: string[];
-}) {
+function ShortcutRow({ action, keys }: { action: string; keys: string[] }) {
   return (
     <div className="flex items-center justify-between gap-4 py-1.5">
       <span className="text-sm text-foreground/90">{action}</span>
@@ -115,33 +110,21 @@ export function ShortcutsDialog() {
           <DialogDescription className="sr-only">
             {t("shortcuts.aria")}
           </DialogDescription>
-          <div data-testid="shortcuts-table" className="divide-y divide-border/60">
-            <ShortcutRow
-              action={t("shortcuts.search")}
-              keys={[`${mod}K`]}
-            />
-            <ShortcutRow
-              action={t("shortcuts.undo")}
-              keys={[`${mod}Z`]}
-            />
+          <div
+            data-testid="shortcuts-table"
+            className="divide-y divide-border/60"
+          >
+            <ShortcutRow action={t("shortcuts.search")} keys={[`${mod}K`]} />
+            <ShortcutRow action={t("shortcuts.undo")} keys={[`${mod}Z`]} />
             <ShortcutRow
               action={t("shortcuts.redo")}
               keys={[`${mod}⇧Z`, `${mod}Y`]}
             />
             <ShortcutRow action={t("shortcuts.newCard")} keys={["N"]} />
             <ShortcutRow action={t("shortcuts.newColumn")} keys={["C"]} />
-            <ShortcutRow
-              action={t("shortcuts.moveDown")}
-              keys={["J"]}
-            />
-            <ShortcutRow
-              action={t("shortcuts.moveUp")}
-              keys={["K"]}
-            />
-            <ShortcutRow
-              action={t("shortcuts.openCard")}
-              keys={["E", "↵"]}
-            />
+            <ShortcutRow action={t("shortcuts.moveDown")} keys={["J"]} />
+            <ShortcutRow action={t("shortcuts.moveUp")} keys={["K"]} />
+            <ShortcutRow action={t("shortcuts.openCard")} keys={["E", "↵"]} />
             <ShortcutRow action={t("shortcuts.help")} keys={["?"]} />
             <ShortcutRow action={t("shortcuts.close")} keys={["Esc"]} />
           </div>

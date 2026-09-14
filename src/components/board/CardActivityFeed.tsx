@@ -49,7 +49,10 @@ interface CardActivityFeedProps {
  * feeds can grow long, and history is a look-up, not a reading flow — so
  * it opens on demand and starts collapsed again on the next card visit.
  */
-export function CardActivityFeed({ activity, createdAt }: CardActivityFeedProps) {
+export function CardActivityFeed({
+  activity,
+  createdAt,
+}: CardActivityFeedProps) {
   const { t, lang } = useI18n();
   const hour12 = useHour12();
   const [expanded, setExpanded] = useState(false);

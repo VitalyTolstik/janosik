@@ -77,7 +77,11 @@ i18n.on("languageChanged", syncHtmlLang);
  * (the user's time-format override) — `dateStyle`/`timeStyle` shorthand
  * is replaced by explicit components so the option actually applies.
  */
-export function formatDate(timestamp: number, lang: string, hour12?: boolean): string {
+export function formatDate(
+  timestamp: number,
+  lang: string,
+  hour12?: boolean,
+): string {
   const locale = lang.startsWith("ru") ? "ru-RU" : "en-US";
   try {
     return new Date(timestamp).toLocaleString(
@@ -194,7 +198,11 @@ export function composeTime(hour: number, minute: number): string {
  * locale default (the user's time-format override); format-only — the
  * stored value stays a timestamp / "HH:mm" string.
  */
-export function formatTime(time: string, lang: string, hour12?: boolean): string {
+export function formatTime(
+  time: string,
+  lang: string,
+  hour12?: boolean,
+): string {
   const { hour, minute } = parseTime(time);
   try {
     return new Date(2000, 0, 1, hour, minute).toLocaleTimeString(

@@ -1,13 +1,6 @@
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-
-/**
- * Whether the "N characters left" counter is visible: only near the limit
- * (last ~20%, at least 10 chars) — a constant character count is noise.
- */
-export function showRemaining(length: number, limit: number): boolean {
-  return length > limit - Math.max(10, Math.round(limit * 0.2));
-}
+import { showRemaining } from "@/utils/limit-format";
 
 interface LimitCounterProps {
   /** Current input length in characters. */
@@ -50,7 +43,8 @@ export function LimitCounter({
       aria-live="polite"
       className={cn(
         "text-[11px] tabular-nums",
-        position === "below" && "absolute left-0 top-full z-10 mt-0.5 max-w-full rounded bg-background/90 px-1 backdrop-blur-sm",
+        position === "below" &&
+          "absolute left-0 top-full z-10 mt-0.5 max-w-full rounded bg-background/90 px-1 backdrop-blur-sm",
         danger ? "font-medium text-danger" : "text-muted-foreground",
         className,
       )}

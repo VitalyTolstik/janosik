@@ -22,7 +22,8 @@ import { cn } from "@/lib/utils";
 import { LABEL_COLOR_DOT, LIMITS, type Label } from "@/types/kanban";
 import { routes } from "@/routes";
 import { useBoard } from "@/store/BoardContext";
-import { LimitCounter, showRemaining } from "@/components/ui/limit-counter";
+import { LimitCounter } from "@/components/ui/limit-counter";
+import { showRemaining } from "@/utils/limit-format";
 import {
   descriptionSnippet,
   searchBoards,
@@ -35,7 +36,8 @@ const SEARCH_DEBOUNCE_MS = 200;
 const MAX_RESULTS = 20;
 
 const isMac =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+  typeof navigator !== "undefined" &&
+  /Mac|iPhone|iPad/.test(navigator.platform);
 
 interface GlobalSearchProps {
   /** Exposed for tests (open via a normal click instead of the shortcut). */
@@ -101,10 +103,10 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
     }
   }, [open]);
 
-  const hits = useMemo(() => searchBoards(boards, query).slice(0, MAX_RESULTS), [
-    boards,
-    query,
-  ]);
+  const hits = useMemo(
+    () => searchBoards(boards, query).slice(0, MAX_RESULTS),
+    [boards, query],
+  );
 
   useEffect(() => setActiveIndex(0), [query]);
 
@@ -156,7 +158,11 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
               name="global-search"
               value={rawQuery}
               maxLength={LIMITS.query}
-              aria-describedby={showRemaining(rawQuery.length, LIMITS.query) ? "search-query-limit" : undefined}
+              aria-describedby={
+                showRemaining(rawQuery.length, LIMITS.query)
+                  ? "search-query-limit"
+                  : undefined
+              }
               onChange={(event) => setRawQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && hits[activeIndex]) {
@@ -218,7 +224,9 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
                               {hit.columnTitle ? ` › ${hit.columnTitle}` : ""}
                             </span>
                             {hit.boardArchived || hit.cardArchived ? (
-                              <ArchivedBadge>{t("search.archived")}</ArchivedBadge>
+                              <ArchivedBadge>
+                                {t("search.archived")}
+                              </ArchivedBadge>
                             ) : null}
                           </div>
                           <LabelChips
@@ -252,7 +260,9 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
                           </div>
                           {hit.boardArchived ? (
                             <div className="mt-0.5">
-                              <ArchivedBadge>{t("search.archived")}</ArchivedBadge>
+                              <ArchivedBadge>
+                                {t("search.archived")}
+                              </ArchivedBadge>
                             </div>
                           ) : null}
                         </div>
@@ -320,7 +330,9 @@ function LabelChips({
   labels: Label[] | undefined;
   cardLabelIds: string[];
 }) {
-  const chips = (labels ?? []).filter((label) => cardLabelIds.includes(label.id));
+  const chips = (labels ?? []).filter((label) =>
+    cardLabelIds.includes(label.id),
+  );
   if (chips.length === 0) return null;
   return (
     <div className="mt-1 flex flex-wrap gap-1">
@@ -330,7 +342,10 @@ function LabelChips({
           className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
         >
           <span
-            className={cn("h-1.5 w-1.5 rounded-full", LABEL_COLOR_DOT[label.color])}
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              LABEL_COLOR_DOT[label.color],
+            )}
             aria-hidden
           />
           {label.name}

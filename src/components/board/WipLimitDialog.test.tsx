@@ -48,7 +48,9 @@ describe("WipLimitDialog", () => {
     const { LIMITS } = await import("@/types/kanban");
     const { onSave } = setup();
     const input = screen.getByRole("spinbutton");
-    fireEvent.change(input, { target: { value: String(LIMITS.wipLimitMax + 100) } });
+    fireEvent.change(input, {
+      target: { value: String(LIMITS.wipLimitMax + 100) },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onSave).toHaveBeenCalledWith(LIMITS.wipLimitMax);
   });

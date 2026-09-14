@@ -8,13 +8,13 @@
 
 /** Read and JSON.parse a value; returns null when missing or corrupt. */
 export function loadJSON<T>(key: string): T | null {
-   try {
-      const raw = localStorage.getItem(key);
-      if (raw === null) return null;
-      return JSON.parse(raw) as T;
-   } catch {
-      return null;
-   }
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -23,23 +23,23 @@ export function loadJSON<T>(key: string): T | null {
  * key so no user data is lost. No-op in every other case.
  */
 export function migrateStorageKey(oldKey: string, newKey: string): void {
-   try {
-      if (localStorage.getItem(newKey) !== null) return;
-      const raw = localStorage.getItem(oldKey);
-      if (raw === null) return;
-      localStorage.setItem(newKey, raw);
-      localStorage.removeItem(oldKey);
-   } catch {
-      /* storage unavailable — leave keys untouched */
-   }
+  try {
+    if (localStorage.getItem(newKey) !== null) return;
+    const raw = localStorage.getItem(oldKey);
+    if (raw === null) return;
+    localStorage.setItem(newKey, raw);
+    localStorage.removeItem(oldKey);
+  } catch {
+    /* storage unavailable — leave keys untouched */
+  }
 }
 
 /** Stringify and store a value; returns false when storage failed. */
 export function saveJSON<T>(key: string, value: T): boolean {
-   try {
-      localStorage.setItem(key, JSON.stringify(value));
-      return true;
-   } catch {
-      return false;
-   }
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
 }

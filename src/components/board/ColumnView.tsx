@@ -215,9 +215,7 @@ export function ColumnView({
                   onClose={() => setInlineAdd(null)}
                   onSubmit={(title, labelIds, at) => {
                     addCard(column.id, title, labelIds, at);
-                    setInlineAdd((s) =>
-                      s ? { ...s, count: s.count + 1 } : s,
-                    );
+                    setInlineAdd((s) => (s ? { ...s, count: s.count + 1 } : s));
                   }}
                 />
               </div>
@@ -240,12 +238,7 @@ export function ColumnView({
             <SortableContext items={ids} strategy={verticalListSortingStrategy}>
               {/* With hover zones the gaps come from the 8px zones themselves;
                   without them (filter/drag override) keep the plain spacing. */}
-              <ul
-                className={cn(
-                  "py-1",
-                  !inlineAddAllowed && "space-y-2",
-                )}
-              >
+              <ul className={cn("py-1", !inlineAddAllowed && "space-y-2")}>
                 {ids.map((cardId, i) => {
                   const card = board.cards[cardId];
                   if (!card) return null;
@@ -278,7 +271,9 @@ export function ColumnView({
                         ) : (
                           <AddCardZone
                             index={i}
-                            onInsert={() => setInlineAdd({ index: i, count: 0 })}
+                            onInsert={() =>
+                              setInlineAdd({ index: i, count: 0 })
+                            }
                           />
                         ))}
                       <li>
@@ -302,14 +297,14 @@ export function ColumnView({
                     </Fragment>
                   );
                 })}
-                {inlineAddAllowed && count > 0 && inlineAdd?.index !== count && (
-                  <AddCardZone
-                    index={count}
-                    onInsert={() =>
-                      setInlineAdd({ index: count, count: 0 })
-                    }
-                  />
-                )}
+                {inlineAddAllowed &&
+                  count > 0 &&
+                  inlineAdd?.index !== count && (
+                    <AddCardZone
+                      index={count}
+                      onInsert={() => setInlineAdd({ index: count, count: 0 })}
+                    />
+                  )}
                 {inlineAdd && inlineAdd.index === count && (
                   <li className="py-1">
                     <CardComposer
@@ -384,7 +379,9 @@ export function ColumnView({
         open={confirmArchiveCards}
         onOpenChange={setConfirmArchiveCards}
         title={t("column.archiveCardsTitle")}
-        description={t("column.archiveCardsDescription", { title: column.title })}
+        description={t("column.archiveCardsDescription", {
+          title: column.title,
+        })}
         confirmLabel={t("column.archiveCards")}
         onConfirm={() => archiveColumnCards(column.id)}
       />

@@ -105,8 +105,9 @@
 @theme inline {
   /* Wordmark display font (self-hosted via Fontsource) — Space Grotesk
    * gives the brand name its distinctive premium face. */
-  --font-display: "Space Grotesk", ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", Roboto, sans-serif;
+  --font-display:
+    "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -246,7 +247,8 @@
       rgb(255 255 255 / 0.09) 1.2px,
       transparent 1.2px
     );
-    background-size: var(--janosik-dots-size, 22px) var(--janosik-dots-size, 22px);
+    background-size: var(--janosik-dots-size, 22px)
+      var(--janosik-dots-size, 22px);
   }
   .light .janosik-bg-dots {
     background-color: #eef0f3;
@@ -261,7 +263,8 @@
     background-image:
       linear-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px),
       linear-gradient(90deg, rgb(255 255 255 / 0.05) 1px, transparent 1px);
-    background-size: var(--janosik-grid-size, 28px) var(--janosik-grid-size, 28px);
+    background-size: var(--janosik-grid-size, 28px)
+      var(--janosik-grid-size, 28px);
   }
   .light .janosik-bg-grid {
     background-color: #eef0f3;
@@ -487,8 +490,9 @@ body > .mdxeditor-popup-container {
   --baseTextContrast: var(--foreground);
 
   --font-body: inherit;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    "Liberation Mono", "Courier New", monospace;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
 
   font-family: inherit;
   color: var(--foreground);
@@ -592,7 +596,8 @@ body
 body
   > .mdxeditor-popup-container
   [class*="linkDialogPopoverContent"]
-  [class*="actionButton"] svg {
+  [class*="actionButton"]
+  svg {
   width: 15px;
   height: 15px;
 }
@@ -804,9 +809,7 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
 /* Task-list checkboxes mirror the card checklist widget exactly:
  * unchecked — transparent with a border token; checked — primary fill
  * with a white check glyph (via mask so the color follows the tokens). */
-.mdxeditor.janosik-mdx
-  .janosik-md-content
-  li[class*="listItemChecked"]:before,
+.mdxeditor.janosik-mdx .janosik-md-content li[class*="listItemChecked"]:before,
 .mdxeditor.janosik-mdx
   .janosik-md-content
   li[class*="listItemUnchecked"]:before {
@@ -821,9 +824,7 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
 /* Checked: filled with the brand color + a white check (same look as the
  * card checklist's boxes). The mask keeps everything on the --primary
  * token — no hardcoded colors, both themes stay correct. */
-.mdxeditor.janosik-mdx
-  .janosik-md-content
-  li[class*="listItemChecked"]:before {
+.mdxeditor.janosik-mdx .janosik-md-content li[class*="listItemChecked"]:before {
   border-color: var(--primary);
   background-color: var(--primary);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
@@ -834,12 +835,8 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
 /* Align task checkboxes with the bullet/number markers of other lists:
  * hang the box in the same marker gutter (measured against the tokens'
  * rem base) instead of the library's deeper indent. */
-.mdxeditor.janosik-mdx
-  .janosik-md-content
-  li[class*="listItemChecked"],
-.mdxeditor.janosik-mdx
-  .janosik-md-content
-  li[class*="listItemUnchecked"] {
+.mdxeditor.janosik-mdx .janosik-md-content li[class*="listItemChecked"],
+.mdxeditor.janosik-mdx .janosik-md-content li[class*="listItemUnchecked"] {
   margin-inline-start: -1.1rem;
   padding-left: 1.3rem;
   padding-right: 0;
@@ -896,7 +893,9 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
   white-space: pre;
   overflow-x: auto;
 }
-.mdxeditor.janosik-mdx .janosik-md-content .janosik-md-codeblock-textarea[readonly] {
+.mdxeditor.janosik-mdx
+  .janosik-md-content
+  .janosik-md-codeblock-textarea[readonly] {
   cursor: default;
 }
 .mdxeditor.janosik-mdx .janosik-md-content .janosik-md-codeblock-lang {

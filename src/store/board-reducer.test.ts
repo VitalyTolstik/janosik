@@ -459,9 +459,9 @@ describe("boardReducer — quiet updatedAt (TASK-18)", () => {
 
   it("ignores TOUCH_CARD for a missing card", () => {
     const board = freshBoard();
-    expect(
-      reduceBoard(board, { type: "TOUCH_CARD", cardId: "nope" }),
-    ).toEqual(board);
+    expect(reduceBoard(board, { type: "TOUCH_CARD", cardId: "nope" })).toEqual(
+      board,
+    );
   });
 });
 
@@ -972,7 +972,9 @@ describe("boardReducer — DUPLICATE_CARD", () => {
     // Content is copied, ids/timestamps are fresh.
     expect(copy.labelIds).toEqual(["label-design"]);
     expect(copy.id).not.toBe("card-1");
-    expect(copy.createdAt).toBeGreaterThanOrEqual(seed.cards["card-1"].createdAt);
+    expect(copy.createdAt).toBeGreaterThanOrEqual(
+      seed.cards["card-1"].createdAt,
+    );
     expect(copy.updatedAt).toBe(copy.createdAt);
     // The original is untouched.
     expect(next.cards["card-1"]).toEqual(seed.cards["card-1"]);
@@ -994,7 +996,10 @@ describe("boardReducer — DUPLICATE_CARD", () => {
       dueDate: now + 86_400_000,
       cover: { type: "color", value: "blue" },
     };
-    const next = reduceBoard(seed, { type: "DUPLICATE_CARD", cardId: "card-1" });
+    const next = reduceBoard(seed, {
+      type: "DUPLICATE_CARD",
+      cardId: "card-1",
+    });
     const column = next.columns.find((c) => c.cardIds.length === 4)!;
     const copy = next.cards[column.cardIds[1]];
     expect(copy.description).toBe("Some notes");
@@ -1018,9 +1023,9 @@ describe("boardReducer — DUPLICATE_CARD", () => {
 
   it("ignores unknown card ids", () => {
     const board = freshBoard();
-    expect(
-      reduceBoard(board, { type: "DUPLICATE_CARD", cardId: "nope" }),
-    ).toBe(board);
+    expect(reduceBoard(board, { type: "DUPLICATE_CARD", cardId: "nope" })).toBe(
+      board,
+    );
   });
 });
 
@@ -1198,7 +1203,12 @@ describe("boardReducer — multi-board routing", () => {
 
 describe("boardReducer — SORT_COLUMN", () => {
   const { now } = { now: 1_700_000_000_000 };
-  function card(id: string, title: string, createdAt: number, dueDate?: number) {
+  function card(
+    id: string,
+    title: string,
+    createdAt: number,
+    dueDate?: number,
+  ) {
     return {
       id,
       title,
@@ -1308,7 +1318,9 @@ describe("boardReducer — card activity (TASK-12)", () => {
       columnId: "col-backlog",
       title: "New card",
     });
-    const card = Object.values(board.cards).find((c) => c.title === "New card")!;
+    const card = Object.values(board.cards).find(
+      (c) => c.title === "New card",
+    )!;
     expect(card.activity).toHaveLength(1);
     expect(card.activity![0].type).toBe("created");
     expect(card.activity![0].actorId).toBeNull();
@@ -1367,7 +1379,9 @@ describe("boardReducer — card activity (TASK-12)", () => {
       cardId: "card-1",
       labelId,
     });
-    expect(removed.cards["card-1"].activity!.at(-1)!.type).toBe("label-removed");
+    expect(removed.cards["card-1"].activity!.at(-1)!.type).toBe(
+      "label-removed",
+    );
   });
 
   it("records due date set/remove", () => {
@@ -1477,7 +1491,11 @@ describe("boardReducer — input limits (TASK-20)", () => {
 
   it("clamps label names on create and rename", async () => {
     const { LIMITS } = await import("@/types/kanban");
-    const label = { id: "l-new", name: long(LIMITS.labelName + 20), color: "red" as const };
+    const label = {
+      id: "l-new",
+      name: long(LIMITS.labelName + 20),
+      color: "red" as const,
+    };
     const board = reduceBoard(freshBoard(), { type: "ADD_LABEL", label });
     expect(board.labels.find((l) => l.id === "l-new")!.name).toHaveLength(
       LIMITS.labelName,
@@ -1574,7 +1592,10 @@ describe("boardReducer — collection limits (TASK-20)", () => {
       });
     }
     expect(state[0].labels.length).toBe(
-      Math.min(base + 5, (await import("@/types/kanban")).LIMITS.labelsPerBoard),
+      Math.min(
+        base + 5,
+        (await import("@/types/kanban")).LIMITS.labelsPerBoard,
+      ),
     );
   });
 
@@ -1678,7 +1699,9 @@ describe("boardReducer — SET_COLUMN_WIP_LIMIT (TASK-13)", () => {
       columnId: "col-done",
       title: "Fits now",
     });
-    expect(allowed.columns.find((c) => c.id === "col-done")?.cardIds).toHaveLength(2);
+    expect(
+      allowed.columns.find((c) => c.id === "col-done")?.cardIds,
+    ).toHaveLength(2);
   });
 
   it("blocks DUPLICATE_CARD at the limit", () => {
@@ -1691,7 +1714,9 @@ describe("boardReducer — SET_COLUMN_WIP_LIMIT (TASK-13)", () => {
       type: "DUPLICATE_CARD",
       cardId: "card-3",
     });
-    expect(next.columns.find((c) => c.id === "col-done")?.cardIds).toHaveLength(1);
+    expect(next.columns.find((c) => c.id === "col-done")?.cardIds).toHaveLength(
+      1,
+    );
   });
 
   it("blocks cross-column MOVE_CARD into a full column, allows within-column moves", () => {
@@ -1710,9 +1735,9 @@ describe("boardReducer — SET_COLUMN_WIP_LIMIT (TASK-13)", () => {
     expect(blocked.columns.find((c) => c.id === "col-done")?.cardIds).toEqual([
       "card-3",
     ]);
-    expect(blocked.columns.find((c) => c.id === "col-backlog")?.cardIds).toContain(
-      "card-1",
-    );
+    expect(
+      blocked.columns.find((c) => c.id === "col-backlog")?.cardIds,
+    ).toContain("card-1");
 
     const reordered = reduceBoard(board, {
       type: "MOVE_CARD",
@@ -1721,9 +1746,9 @@ describe("boardReducer — SET_COLUMN_WIP_LIMIT (TASK-13)", () => {
       toColumnId: "col-backlog",
       toIndex: 0,
     });
-    expect(reordered.columns.find((c) => c.id === "col-backlog")?.cardIds[0]).toBe(
-      "card-1",
-    );
+    expect(
+      reordered.columns.find((c) => c.id === "col-backlog")?.cardIds[0],
+    ).toBe("card-1");
   });
 
   it("keeps the limit on DUPLICATE_COLUMN", () => {

@@ -51,7 +51,10 @@ describe("FilterBar", () => {
     const onChange = renderBar();
     await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
     await userEvent.click(screen.getByRole("radio", { name: "Overdue" }));
-    expect(onChange).toHaveBeenLastCalledWith({ ...EMPTY_FILTER, due: "overdue" });
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...EMPTY_FILTER,
+      due: "overdue",
+    });
   });
 
   it("toggles a label checkbox from the popover", async () => {
@@ -71,14 +74,17 @@ describe("FilterBar", () => {
     expect(group).toHaveTextContent("Any");
     expect(group).toHaveTextContent("All");
     await userEvent.click(screen.getByRole("radio", { name: "All" }));
-    expect(onChange).toHaveBeenLastCalledWith({ ...EMPTY_FILTER, labelMatch: "all" });
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...EMPTY_FILTER,
+      labelMatch: "all",
+    });
   });
 
   it("shows the active facet count on the filters button", () => {
     renderBar({ ...EMPTY_FILTER, due: "soon", labelIds: ["l1"] });
-    expect(screen.getByRole("button", { name: "Filter cards" })).toHaveTextContent(
-      "2",
-    );
+    expect(
+      screen.getByRole("button", { name: "Filter cards" }),
+    ).toHaveTextContent("2");
   });
 
   it("renders removable chips for the active facets", async () => {

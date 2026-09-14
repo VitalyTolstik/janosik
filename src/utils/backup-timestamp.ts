@@ -42,7 +42,8 @@ export function formatBackupTimestamp(
   }).format(timestamp);
 
   if (daysBetween === 0) return time;
-  if (daysBetween === 1) return lang === "ru" ? `Вчера, ${time}` : `Yesterday, ${time}`;
+  if (daysBetween === 1)
+    return lang === "ru" ? `Вчера, ${time}` : `Yesterday, ${time}`;
 
   const date = new Intl.DateTimeFormat(locale, {
     year: "numeric",
