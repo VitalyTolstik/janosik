@@ -1,4 +1,4 @@
-import { loadJSON, saveJSON } from "@/utils/storage";
+import { readJSON, saveJSON, type LoadResult } from "@/utils/storage";
 
 /**
  * Debounced persistence for the board state.
@@ -6,19 +6,32 @@ import { loadJSON, saveJSON } from "@/utils/storage";
  * `queueSave` coalesces rapid changes (typing, drag) into a single write
  * after `delayMs` of quiet; `flush` writes any pending state immediately,
  * which the provider calls on `beforeunload`/`pagehide` so closing the tab
- * never loses the last change. Storage failures surface through an error
- * handler instead of failing silently.
+ * never loses the last change. Every write attempt is reported to the write
+ * listener, so a failing storage (quota, private mode) surfaces in the UI
+ * instead of failing silently.
+ *
+ * Writes can also be held back entirely (`setWritesEnabled(false)`): after a
+ * corrupt read that could not be quarantined, the unparsable text in storage
+ * is the user's only copy and must not be overwritten by fresh state until
+ * they have been told about it.
  */
 
 export interface DebouncedPersistence<T> {
-  /** Synchronously read the stored value (used at bootstrap). */
-  load(): T | null;
+  /** Read the stored value, reporting missing / corrupt / unavailable. */
+  load(): LoadResult<T>;
   /** Debounced write — safe to call on every state change. */
   queueSave(value: T): void;
   /** Immediately write any pending value (beforeunload / unmount). */
   flush(): void;
-  /** Install/clear the handler invoked when a write fails. */
-  setErrorHandler(handler: ((error: unknown) => void) | null): void;
+  /**
+   * Allow or hold back writes. Re-enabling writes any value queued while
+   * held; disabling keeps the pending value for later.
+   */
+  setWritesEnabled(enabled: boolean): void;
+  /** Install/clear the listener invoked after every write attempt. */
+  setWriteListener(
+    listener: ((ok: boolean, error?: unknown) => void) | null,
+  ): void;
 }
 
 export function createDebouncedLocalStoragePersistence<T>(
@@ -27,40 +40,54 @@ export function createDebouncedLocalStoragePersistence<T>(
 ): DebouncedPersistence<T> {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pending: { value: T } | null = null;
-  let errorHandler: ((error: unknown) => void) | null = null;
+  let writesEnabled = true;
+  let writeListener: ((ok: boolean, error?: unknown) => void) | null = null;
 
   function write(value: T): void {
     const ok = saveJSON(key, value);
-    if (!ok) errorHandler?.(new Error(`saveJSON failed for ${key}`));
+    writeListener?.(
+      ok,
+      ok ? undefined : new Error(`saveJSON failed for ${key}`),
+    );
+  }
+
+  /** Write the queued value, unless writes are held back. */
+  function writePending(): void {
+    if (pending === null || !writesEnabled) return;
+    const toWrite = pending;
+    pending = null;
+    write(toWrite.value);
+  }
+
+  function clearTimer(): void {
+    if (timer === null) return;
+    clearTimeout(timer);
+    timer = null;
   }
 
   return {
     load() {
-      return loadJSON<T>(key);
+      return readJSON<T>(key);
     },
     queueSave(value) {
       pending = { value };
-      if (timer !== null) clearTimeout(timer);
+      clearTimer();
       timer = setTimeout(() => {
         timer = null;
-        if (pending === null) return;
-        const toWrite = pending;
-        pending = null;
-        write(toWrite.value);
+        writePending();
       }, delayMs);
     },
     flush() {
-      if (timer !== null) {
-        clearTimeout(timer);
-        timer = null;
-      }
-      if (pending === null) return;
-      const toWrite = pending;
-      pending = null;
-      write(toWrite.value);
+      clearTimer();
+      writePending();
     },
-    setErrorHandler(handler) {
-      errorHandler = handler;
+    setWritesEnabled(enabled) {
+      writesEnabled = enabled;
+      // Nothing was written while held back — catch up now.
+      if (enabled) writePending();
+    },
+    setWriteListener(listener) {
+      writeListener = listener;
     },
   };
 }

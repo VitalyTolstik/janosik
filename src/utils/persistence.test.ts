@@ -4,8 +4,10 @@ import { createDebouncedLocalStoragePersistence } from "@/utils/persistence";
 
 /**
  * Tests for the debounced persistence adapter: coalescing rapid writes into
- * one, flushing immediately on demand, and surfacing storage failures
- * through the error handler instead of failing silently.
+ * one, flushing immediately on demand, reporting every write attempt to the
+ * write listener instead of failing silently, and holding writes back so a
+ * corrupt stored value cannot be overwritten before the user is told
+ * (TASK-21.2).
  */
 
 beforeEach(() => {
@@ -85,21 +87,76 @@ describe("createDebouncedLocalStoragePersistence", () => {
     );
     persistence.queueSave({ n: 5 });
     persistence.flush();
-    expect(persistence.load()).toEqual({ n: 5 });
+    expect(persistence.load()).toEqual({ status: "ok", value: { n: 5 } });
   });
 
-  it("invokes the error handler when storage writes fail", () => {
+  it("load() distinguishes a missing key from an unparsable one", () => {
     const persistence = createDebouncedLocalStoragePersistence<{ n: number }>(
       "janosik-persist-test",
       400,
     );
-    const handler = vi.fn();
-    persistence.setErrorHandler(handler);
+    expect(persistence.load()).toEqual({ status: "missing" });
+
+    localStorage.setItem("janosik-persist-test", "{not json");
+    const result = persistence.load();
+    expect(result.status).toBe("corrupt");
+    // The unparsable text was copied aside before anything overwrites it.
+    if (result.status !== "corrupt") throw new Error("expected corrupt");
+    expect(result.quarantineKey).not.toBeNull();
+    expect(localStorage.getItem(result.quarantineKey!)).toBe("{not json");
+  });
+
+  it("reports failed writes to the write listener", () => {
+    const persistence = createDebouncedLocalStoragePersistence<{ n: number }>(
+      "janosik-persist-test",
+      400,
+    );
+    const listener = vi.fn();
+    persistence.setWriteListener(listener);
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("quota exceeded");
     });
     persistence.queueSave({ n: 1 });
     vi.advanceTimersByTime(400);
-    expect(handler).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls[0]?.[0]).toBe(false);
+  });
+
+  it("reports successful writes to the write listener", () => {
+    const persistence = createDebouncedLocalStoragePersistence<{ n: number }>(
+      "janosik-persist-test",
+      400,
+    );
+    const listener = vi.fn();
+    persistence.setWriteListener(listener);
+    persistence.queueSave({ n: 1 });
+    vi.advanceTimersByTime(400);
+    expect(listener).toHaveBeenCalledWith(true, undefined);
+  });
+
+  it("writes nothing while writes are held back", () => {
+    localStorage.setItem("janosik-persist-test", "{corrupt");
+    const persistence = createDebouncedLocalStoragePersistence<{ n: number }>(
+      "janosik-persist-test",
+      400,
+    );
+    persistence.setWritesEnabled(false);
+    persistence.queueSave({ n: 1 });
+    vi.advanceTimersByTime(400);
+    persistence.flush();
+    // The value in storage is the user's only copy — it stays untouched.
+    expect(localStorage.getItem("janosik-persist-test")).toBe("{corrupt");
+  });
+
+  it("writes the value queued while held back once writes resume", () => {
+    const persistence = createDebouncedLocalStoragePersistence<{ n: number }>(
+      "janosik-persist-test",
+      400,
+    );
+    persistence.setWritesEnabled(false);
+    persistence.queueSave({ n: 9 });
+    vi.advanceTimersByTime(400);
+    persistence.setWritesEnabled(true);
+    expect(localStorage.getItem("janosik-persist-test")).toBe('{"n":9}');
   });
 });

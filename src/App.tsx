@@ -4,6 +4,7 @@ import { HashRouter, Route, Routes } from "react-router-dom";
 import { Archive, Plus } from "lucide-react";
 
 import { BoardSection } from "@/components/BoardSection";
+import { DataSafetyBanner } from "@/components/DataSafetyBanner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Header } from "@/components/Header";
 import { ToastProvider } from "@/components/Toast";
@@ -85,6 +86,9 @@ export default function App() {
                   <HashRouter>
                     <BoardProvider>
                       <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+                        {/* Above the header: a data-at-risk warning outranks
+                            everything else on the screen (TASK-21.2). */}
+                        <DataSafetyBanner />
                         <Header />
                         <Routes>
                           <Route
