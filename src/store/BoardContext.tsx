@@ -251,8 +251,6 @@ const BoardStateContext = createContext<BoardStateValue | null>(null);
 const BoardHistoryContext = createContext<BoardHistoryValue | null>(null);
 const BoardActionsContext = createContext<BoardActionsValue | null>(null);
 
-const NO_HISTORY: BoardHistoryValue = { canUndo: false, canRedo: false };
-
 export function BoardProvider({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -295,7 +293,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // Undo availability, mirrored into state: `BoardHistory` is mutable, so
   // reading it during render would be both impure and invisible to React.
   // Every mutation path calls `syncHistory()` right after touching a stack.
-  const [history, setHistory] = useState<BoardHistoryValue>(NO_HISTORY);
+  // Two booleans rather than one object: React compares primitives, so an
+  // unchanged flag bails out exactly, and the context value below keeps its
+  // identity. (An updater returning a fresh object is re-run by React —
+  // eagerly and again while rendering — and each fresh object counts as a
+  // change, costing the header an extra render on every flip.)
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   // A failed write means nothing is being persisted any more: raise a
   // banner (not a toast that disappears) until a write succeeds again.
@@ -375,19 +379,19 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const activeIdRef = useRef(board?.id);
 
   // Publishes the active board's undo availability. Cheap and idempotent:
-  // an unchanged pair keeps the previous object, so the header's context
-  // value stays identical and it does not re-render.
+  // unchanged flags are no state change at all, so the context value below
+  // keeps its identity and the header does not re-render.
   const syncHistory = useCallback(() => {
     const boardId = activeIdRef.current;
     const stack = boardId ? historiesRef.current.get(boardId) : undefined;
-    const canUndo = stack?.canUndo() ?? false;
-    const canRedo = stack?.canRedo() ?? false;
-    setHistory((prev) =>
-      prev.canUndo === canUndo && prev.canRedo === canRedo
-        ? prev
-        : { canUndo, canRedo },
-    );
+    setCanUndo(stack?.canUndo() ?? false);
+    setCanRedo(stack?.canRedo() ?? false);
   }, []);
+
+  const history = useMemo<BoardHistoryValue>(
+    () => ({ canUndo, canRedo }),
+    [canUndo, canRedo],
+  );
 
   // Switching boards swaps in that board's stack — and its own undo state.
   useEffect(() => {

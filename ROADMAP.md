@@ -109,7 +109,7 @@
   на воспроизводимость экшенов (см. `WARNING.md` §0).
 - **Персистентность** — интерфейс `DebouncedPersistence` поверх `localStorage`; позже бэкенд = второй адаптер `fetch` **без изменения reducer и UI**.
 - **UI** — shadcn/ui + Radix (dialog/dropdown/popover/tooltip/slot), dnd-kit, react-day-picker, MDXEditor (описание карточки); виды доски: канбан / календарь / таблица (TASK-14/14.1).
-- **Тесты** — **406 тестов в 35 файлах** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4; поведение service worker'а — TASK-21.3). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
+- **Тесты** — **407 тестов в 36 файлах** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4; поведение service worker'а — TASK-21.3). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
 
 ### 1.3. Ключи и точки интеграции
 
@@ -179,7 +179,7 @@
 | 13 | TASK-42 `dnd-spacing-jump` | ✅ реализовано, PR #39 — прыжок колонки на 8px при старте драга/фильтра (зоны вставки = спейсеры всегда); в коммите ошибочно назван TASK-35 — см. запись в `ROADMAP-DONE.md` |
 | 13 | TASK-21.2 `data-safety` | ✅ реализовано, ветка `feature/TASK-21.2-data-safety` — баннер вместо тоста, карантин битого JSON, подтверждение+автоэкспорт в ErrorBoundary |
 | 14 | TASK-21.3 `sw-fixes` | ✅ реализовано, ветка `feature/TASK-21.3-21.4-sw-fixes-context-split` — ошибочные ответы больше не кэшируются как app shell, `CACHE_VERSION` = хеш сборки (плагин Vite, `sw.js` переехал из `public/` в `src/pwa/`) |
-| 15 | TASK-21.4 `context-split` | ✅ реализовано, та же ветка — три контекста (стейт / actions / canUndo-canRedo), `memo` на карточках, общий резолвер меток, ротация бэкапов по ключам + trailing-снимок |
+| 15 | TASK-21.4 `context-split` | ✅ реализовано, та же ветка — три контекста (стейт / actions / canUndo-canRedo), `memo` на карточках, общий резолвер меток, ротация бэкапов по ключам + trailing-снимок; замер: 5 нажатий в заголовке карточки — шапка 5→1 рендер, чужие карточки 5→0 |
 | 16 | TASK-21.5 `limits-rebalance` | честные лимиты localStorage — см. §6.0.1 |
 | 17 | TASK-21.6 `i18n-lazy` | ленивые локали — см. §6.0.1 |
 | 18 | TASK-21.7a `deterministic-actions` | детерминизм редьюсера: `createId()`/`Date.now()` → в payload экшена (корень всех инверсий) — см. §6.0.1 |
