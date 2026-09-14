@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { I18nProvider, useHour12, useTimeFormat } from "@/i18n/I18nProvider";
 import { TimeFormatSwitcher } from "@/components/TimeFormatSwitcher";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { defaultI18n, formatDate, formatTime } from "@/i18n/i18n";
+import { ensureLocale, defaultI18n, formatDate, formatTime } from "@/i18n/i18n";
 import { formatBackupTimestamp } from "@/utils/backup-timestamp";
 
 /**
@@ -63,7 +63,10 @@ describe("time format override", () => {
   });
 
   it("persists the picked format and applies it", async () => {
+    // ru is a lazy locale (TASK-21.6) — load its catalog first, exactly the
+    // way the app's language switcher does.
     await act(async () => {
+      await ensureLocale("ru");
       await defaultI18n.changeLanguage("ru");
     });
     render(

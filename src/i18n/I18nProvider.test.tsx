@@ -1,12 +1,14 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createInstance, type i18n as I18nInstance } from "i18next";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { I18nProvider, useI18n } from "@/i18n";
 import { initReactI18next } from "react-i18next";
 import en from "@/locales/en/translation.json";
 import ru from "@/locales/ru/translation.json";
+import * as i18nModule from "@/i18n/i18n";
+import { defaultI18n } from "@/i18n/i18n";
 
 /**
  * Tests for the typed adapter over react-i18next: defaults to English,
@@ -109,5 +111,36 @@ describe("I18nProvider (react-i18next)", () => {
     renderProbe(i18n);
     await user.click(screen.getByText("to-ru"));
     await waitFor(() => expect(seen).toContain("ru"));
+  });
+
+  it("lazily loads the ru catalog through the singleton before switching (TASK-21.6)", async () => {
+    const user = userEvent.setup();
+    renderProbe(i18n);
+
+    // The switcher must pull the catalog via ensureLocale() (the singleton's
+    // lazy loader) before changeLanguage, or the UI would show raw keys.
+    await user.click(screen.getByText("to-ru"));
+    await waitFor(() =>
+      expect(screen.getByTestId("add-column").textContent).toBe(
+        "Добавить колонку",
+      ),
+    );
+    expect(defaultI18n.hasResourceBundle("ru", "translation")).toBe(true);
+    expect(screen.getByTestId("lang").textContent).toBe("ru");
+  });
+
+  it("stays on the current language when the lazy bundle fails to load", async () => {
+    const user = userEvent.setup();
+    const ensure = vi
+      .spyOn(i18nModule, "ensureLocale")
+      .mockResolvedValue(false);
+    renderProbe(i18n);
+
+    await user.click(screen.getByText("to-ru"));
+    // No changeLanguage call — no languageChanged event, UI keeps English.
+    expect(i18n.language).toBe("en");
+    expect(screen.getByTestId("add-column").textContent).toBe("Add column");
+    expect(ensure).toHaveBeenCalledWith("ru");
+    ensure.mockRestore();
   });
 });
