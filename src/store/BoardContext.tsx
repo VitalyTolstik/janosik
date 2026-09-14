@@ -9,6 +9,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
 import {
@@ -27,7 +28,7 @@ import {
 } from "@/store/board-reducer";
 import { BoardHistory } from "@/store/history";
 import type { Board, CardCover, Label } from "@/types/kanban";
-import { migrateStorageKey } from "@/utils/storage";
+import { migrateStorageKey, quarantineValue, readRaw } from "@/utils/storage";
 import { normalizeBoards } from "@/store/migrate";
 import { createBackup } from "@/utils/backup";
 import { createId } from "@/utils/id";
@@ -54,22 +55,79 @@ import { useI18n } from "@/i18n";
  *   Ctrl/⌘+Shift+Z and Ctrl+Y — always scoped to the active board.
  * - Export/import operate on the full `boards` array.
  * - Auto-backups snapshots to IndexedDB after ~60 s of activity.
+ * - Data-safety: a failing write (quota, private mode) and unparsable
+ *   stored data both raise a `dataIssue` the UI turns into a banner —
+ *   losing data silently must not be possible (TASK-21.2).
  */
 
 const STORAGE_KEY = "janosik-boards";
 const SAVE_DEBOUNCE_MS = 400;
 const BACKUP_THROTTLE_MS = 60_000;
 
+/**
+ * A data problem the user has to know about.
+ *
+ * - `save-blocked` — the last write failed, so nothing is being persisted
+ *   any more. Not dismissible: the banner stays until a write succeeds.
+ * - `corrupt-load` — the stored data did not parse. `sourceKey` is where
+ *   the raw text can still be read from (the quarantine copy, or the
+ *   original key when the copy failed and writes are held back).
+ */
+export type DataIssue =
+  | { kind: "save-blocked" }
+  | { kind: "corrupt-load"; sourceKey: string; quarantined: boolean };
+
+interface BootState {
+  state: BoardState;
+  issue: DataIssue | null;
+}
+
 function loadInitialState(
   persistence: DebouncedPersistence<BoardState>,
-): BoardState {
+): BootState {
   // One-time brand migration (Vortex → Janosik) — read before the new key.
   migrateStorageKey("vortex-boards", STORAGE_KEY);
   const stored = persistence.load();
-  if (Array.isArray(stored) && stored.length > 0) {
-    return normalizeBoards(stored);
+  if (stored.status === "ok" && Array.isArray(stored.value)) {
+    // An empty array is a legitimate "no boards yet" — nothing to lose.
+    return stored.value.length > 0
+      ? { state: normalizeBoards(stored.value), issue: null }
+      : { state: initialBoardState(), issue: null };
   }
-  return initialBoardState();
+  if (stored.status === "ok") {
+    // Valid JSON of the wrong shape (not a board array) would be replaced
+    // by the seed just as silently as unparsable text — quarantine it too.
+    const raw = readRaw(STORAGE_KEY);
+    return damagedData(
+      persistence,
+      raw === null ? null : quarantineValue(STORAGE_KEY, raw),
+    );
+  }
+  if (stored.status === "corrupt") {
+    return damagedData(persistence, stored.quarantineKey);
+  }
+  return { state: initialBoardState(), issue: null };
+}
+
+/**
+ * Start from the seed board while keeping the damaged data reachable: it is
+ * either copied aside under the quarantine key, or — when even that copy
+ * failed (quota) — left in place, with writes held back so the seed cannot
+ * erase it until the user has acknowledged the banner.
+ */
+function damagedData(
+  persistence: DebouncedPersistence<BoardState>,
+  quarantineKey: string | null,
+): BootState {
+  if (quarantineKey === null) persistence.setWritesEnabled(false);
+  return {
+    state: initialBoardState(),
+    issue: {
+      kind: "corrupt-load",
+      sourceKey: quarantineKey ?? STORAGE_KEY,
+      quarantined: quarantineKey !== null,
+    },
+  };
 }
 
 type CardPatch = { title?: string; description?: string };
@@ -161,6 +219,11 @@ interface BoardContextValue {
   canRedo: boolean;
   /* Import replaces the whole data set (and resets history). */
   importBoards: (boards: BoardState) => void;
+  /* Data safety (TASK-21.2) */
+  /** Non-null while the data is at risk — rendered as a banner. */
+  dataIssue: DataIssue | null;
+  /** Acknowledges a `corrupt-load` notice (releases held-back writes). */
+  dismissDataIssue: () => void;
 }
 
 const BoardContext = createContext<BoardContextValue | null>(null);
@@ -182,18 +245,59 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }
   const persistence = persistenceRef.current;
 
-  // Surface storage failures (quota, private mode) instead of failing silently.
-  useEffect(() => {
-    persistence.setErrorHandler(() => toast.error(t("toast.saveError")));
-    return () => persistence.setErrorHandler(null);
-  }, [persistence, toast, t]);
-
   // One undo/redo stack per board; created lazily, dropped on remove/import.
   const historiesRef = useRef(new Map<string, BoardHistory>());
 
-  const [state, dispatchRaw] = useReducer(boardReducer, undefined, () =>
-    loadInitialState(persistence),
+  // Bootstrap runs exactly once: it both seeds the reducer and reports what
+  // was wrong with the stored data (corrupt / quarantined).
+  const bootRef = useRef<BootState | null>(null);
+  if (bootRef.current === null) {
+    bootRef.current = loadInitialState(persistence);
+  }
+
+  const [state, dispatchRaw] = useReducer(boardReducer, bootRef.current.state);
+  const [dataIssue, setDataIssue] = useState<DataIssue | null>(
+    bootRef.current.issue,
   );
+
+  // A failed write means nothing is being persisted any more: raise a
+  // banner (not a toast that disappears) until a write succeeds again.
+  useEffect(() => {
+    persistence.setWriteListener((ok) => {
+      setDataIssue((prev) => {
+        if (!ok) {
+          return prev?.kind === "save-blocked"
+            ? prev
+            : { kind: "save-blocked" };
+        }
+        // A corrupt-load notice outlives successful writes — only the user
+        // dismisses it.
+        return prev?.kind === "save-blocked" ? null : prev;
+      });
+    });
+    return () => persistence.setWriteListener(null);
+  }, [persistence]);
+
+  // Tell the user once that the damaged data was set aside (or kept in
+  // place); the banner carries the actions from there on.
+  const corruptNoticeShownRef = useRef(false);
+  useEffect(() => {
+    if (corruptNoticeShownRef.current) return;
+    if (dataIssue?.kind !== "corrupt-load") return;
+    corruptNoticeShownRef.current = true;
+    if (dataIssue.quarantined) {
+      toast.info(t("data.corruptQuarantined"));
+    } else {
+      toast.error(t("data.corruptKept"));
+    }
+  }, [dataIssue, toast, t]);
+
+  const dismissDataIssue = useCallback(() => {
+    // Acknowledging the notice releases writes held back to protect the
+    // unparsable text (a copy has been quarantined or offered by then).
+    persistence.setWritesEnabled(true);
+    setDataIssue((prev) => (prev?.kind === "corrupt-load" ? null : prev));
+  }, [persistence]);
 
   // The URL decides which board is active; archived boards are not active
   // (the redirect above sends the user to the first active one or `/`).
@@ -459,6 +563,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         ? (historiesRef.current.get(board.id)?.canRedo() ?? false)
         : false,
       importBoards,
+      dataIssue,
+      dismissDataIssue,
     }),
     [
       state,
@@ -471,6 +577,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       undo,
       redo,
       importBoards,
+      dataIssue,
+      dismissDataIssue,
     ],
   );
 

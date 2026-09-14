@@ -1,15 +1,32 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { RotateCcw, Trash2 } from "lucide-react";
+import { Download, RotateCcw, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { useI18n } from "@/i18n";
+import type { BoardState } from "@/store/board-reducer";
+import { serializeExport } from "@/utils/board-serialization";
+import { downloadTextFile, timestampedFilename } from "@/utils/download";
+import { readRaw } from "@/utils/storage";
 
 /**
  * Error boundary — catches render errors below it and shows a branded,
- * theme-aware fallback instead of a blank screen. Placed above the page
- * content but inside the i18n/theme providers so the fallback itself can
- * use the app's own tokens and translations.
+ * theme-aware fallback instead of a blank screen.
+ *
+ * The fallback is deliberately self-contained: **hardcoded English, no
+ * i18n, no Radix dialog**. It renders after something below has already
+ * crashed, and the crash may well have come from the i18n or dialog layer
+ * itself — an error thrown inside a fallback has no boundary left to catch
+ * it and takes the whole page down with it. The confirmation step is
+ * therefore inlined rather than reusing `ConfirmDialog` (TASK-21.2).
+ *
+ * Resetting is destructive, so it is gated twice over: an explicit
+ * confirmation, and a JSON copy of the stored boards downloaded *before*
+ * anything is erased.
  */
+
+const BOARDS_KEY = "janosik-boards";
+const APP_KEY_PREFIXES = ["janosik-", "vortex-"];
+/** Give the browser a moment to start the download before the page reloads. */
+const RELOAD_DELAY_MS = 400;
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -17,15 +34,16 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   error: Error | null;
+  confirmingReset: boolean;
 }
 
 export class ErrorBoundary extends Component<
   ErrorBoundaryProps,
   ErrorBoundaryState
 > {
-  state: ErrorBoundaryState = { error: null };
+  state: ErrorBoundaryState = { error: null, confirmingReset: false };
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
     return { error };
   }
 
@@ -37,25 +55,60 @@ export class ErrorBoundary extends Component<
 
   render() {
     if (this.state.error !== null) {
-      return <ErrorFallback />;
+      return (
+        <ErrorFallback
+          confirmingReset={this.state.confirmingReset}
+          onConfirmingResetChange={(confirmingReset) =>
+            this.setState({ confirmingReset })
+          }
+        />
+      );
     }
     return this.props.children;
   }
 }
 
-function ErrorFallback() {
-  const { t } = useI18n();
+/**
+ * Download whatever is stored before it is erased: a regular Janosik export
+ * (re-importable from the data menu) when the boards still parse, otherwise
+ * the raw text as-is — damaged data is still data.
+ */
+function downloadDataBeforeReset(): void {
+  const raw = readRaw(BOARDS_KEY);
+  if (raw === null) return;
+  let payload = raw;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) payload = serializeExport(parsed as BoardState);
+  } catch {
+    /* unparsable — fall through and dump the raw text unchanged */
+  }
+  downloadTextFile(timestampedFilename("janosik-before-reset"), payload);
+}
 
+/** Wipe the app's own keys (nothing else) and reload. */
+function resetAppData(): void {
+  try {
+    const keys = Object.keys(localStorage).filter((key) =>
+      APP_KEY_PREFIXES.some((prefix) => key.startsWith(prefix)),
+    );
+    for (const key of keys) localStorage.removeItem(key);
+  } catch {
+    /* storage unreachable — the reload below is still the best next step */
+  }
+  window.setTimeout(() => window.location.reload(), RELOAD_DELAY_MS);
+}
+
+function ErrorFallback({
+  confirmingReset,
+  onConfirmingResetChange,
+}: {
+  confirmingReset: boolean;
+  onConfirmingResetChange: (confirming: boolean) => void;
+}) {
   const handleReset = () => {
-    // Wipe only the app's own data, then reload.
-    try {
-      const keys = Object.keys(localStorage).filter(
-        (key) => key.startsWith("janosik-") || key.startsWith("vortex-"),
-      );
-      for (const key of keys) localStorage.removeItem(key);
-    } finally {
-      window.location.reload();
-    }
+    downloadDataBeforeReset();
+    resetAppData();
   };
 
   return (
@@ -81,28 +134,62 @@ function ErrorFallback() {
             />
           </svg>
         </div>
-        <div className="space-y-1.5">
-          <h1 className="font-display text-lg font-semibold tracking-tight">
-            {t("error.title")}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {t("error.description")}
-          </p>
-        </div>
-        <div className="flex justify-center gap-2">
-          <Button onClick={() => window.location.reload()}>
-            <RotateCcw className="h-4 w-4" />
-            {t("error.reload")}
-          </Button>
-          <Button
-            variant="outline"
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={handleReset}
-          >
-            <Trash2 className="h-4 w-4" />
-            {t("error.reset")}
-          </Button>
-        </div>
+        {confirmingReset ? (
+          <>
+            <div className="space-y-1.5">
+              <h1 className="font-display text-lg font-semibold tracking-tight">
+                Erase local data?
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Your boards are replaced by the starter board. A JSON copy is
+                downloaded first — you can import it back from the data menu.
+              </p>
+            </div>
+            <div className="flex justify-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => onConfirmingResetChange(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                data-testid="error-reset-confirm"
+                onClick={handleReset}
+              >
+                <Download className="h-4 w-4" />
+                Save a copy &amp; erase
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              <h1 className="font-display text-lg font-semibold tracking-tight">
+                Something went wrong
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Janosik hit an unexpected error. Reload the app, or reset the
+                local data — a copy is downloaded before anything is erased.
+              </p>
+            </div>
+            <div className="flex justify-center gap-2">
+              <Button onClick={() => window.location.reload()}>
+                <RotateCcw className="h-4 w-4" />
+                Reload
+              </Button>
+              <Button
+                variant="outline"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                data-testid="error-reset"
+                onClick={() => onConfirmingResetChange(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Reset data
+              </Button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

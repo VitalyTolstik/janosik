@@ -28,6 +28,7 @@ import { useI18n } from "@/i18n";
 import { MAX_IMPORT_BYTES } from "@/types/kanban";
 import { useBoard } from "@/store/BoardContext";
 import { parseExport, serializeExport } from "@/utils/board-serialization";
+import { downloadTextFile } from "@/utils/download";
 import { createBackup, listBackups } from "@/utils/backup";
 
 /**
@@ -62,14 +63,7 @@ export function DataMenu() {
 
   const handleExport = () => {
     try {
-      const json = serializeExport(boards);
-      const blob = new Blob([json], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "janosik-boards.json";
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadTextFile("janosik-boards.json", serializeExport(boards));
       toast.success(t("data.exportSuccess"));
     } catch {
       toast.error(t("data.exportFailed"));
