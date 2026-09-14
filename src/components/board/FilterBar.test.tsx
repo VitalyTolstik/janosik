@@ -125,6 +125,16 @@ describe("FilterBar", () => {
 
     // Open the calendar and pick a day; the lazy chunk needs a longer wait.
     await userEvent.click(screen.getByRole("radio", { name: /On date/ }));
+    // The check moves to the exact-day option as soon as its calendar opens —
+    // staying on the old window reads as "the toggle did nothing".
+    expect(screen.getByRole("radio", { name: /On date/ })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("radio", { name: "Any time" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
     await waitFor(
       () => {
         expect(

@@ -374,7 +374,9 @@ export function FilterBar({
                 <OptionRow
                   key={value}
                   selected={
-                    filter.createdOn === null && filter.created === value
+                    filter.createdOn === null &&
+                    !dayCalendarOpen &&
+                    filter.created === value
                   }
                   onSelect={() =>
                     onChange({
@@ -390,7 +392,10 @@ export function FilterBar({
                 </OptionRow>
               ))}
               <OptionRow
-                selected={filter.createdOn !== null}
+                // The exact-day option owns the check while its calendar is
+                // open — leaving it on the old window read as "the toggle
+                // did nothing". Closing without picking hands it back.
+                selected={filter.createdOn !== null || dayCalendarOpen}
                 onSelect={() => setDayCalendarOpen((open) => !open)}
               >
                 <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
