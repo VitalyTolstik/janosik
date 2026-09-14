@@ -36,11 +36,15 @@ import {
 } from "@/components/ui/popover";
 import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
 import { useToast } from "@/components/Toast";
+import { useCardLabels } from "@/hooks/use-card-labels";
 import { cn } from "@/lib/utils";
 import { formatDateOnly, formatTime, useHour12, useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
 import { LABEL_COLOR_DOT, type Card, type Label, LIMITS } from "@/types/kanban";
 import { dueStatus } from "@/utils/due-date";
+
+/** Stable empty list, so the label resolver survives a board-less render. */
+const NO_LABELS: Label[] = [];
 
 interface CalendarViewProps {
   /** Per-column card ids with a filter applied — overrides the stored
@@ -222,6 +226,7 @@ export function CalendarView({
   onCardClick,
 }: CalendarViewProps) {
   const { board, addCard, setCardDueDate } = useBoard();
+  const resolveLabels = useCardLabels(board?.labels ?? NO_LABELS);
   const { t, tp, lang } = useI18n();
   const hour12 = useHour12();
   const toast = useToast();
@@ -277,9 +282,7 @@ export function CalendarView({
         if (!card || typeof card.dueDate !== "number") continue;
         const due = new Date(card.dueDate);
         const key = dayKey(due);
-        const labels = card.labelIds
-          .map((labelId) => board.labels.find((l) => l.id === labelId))
-          .filter((l): l is Label => Boolean(l));
+        const labels = resolveLabels(card.labelIds);
         const entry: DayEntry = {
           card,
           columnId: column.id,
@@ -296,7 +299,7 @@ export function CalendarView({
       }
     }
     return map;
-  }, [board, filteredCardIds]);
+  }, [board, filteredCardIds, resolveLabels]);
 
   // Cards without a due date — the unscheduled panel's content.
   const unscheduled = useMemo(() => {

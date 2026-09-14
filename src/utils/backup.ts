@@ -89,17 +89,15 @@ export async function createBackup(state: BoardState): Promise<void> {
         boards: state,
       }),
     );
-    // Rotation re-reads inside the same transaction to keep ordering.
-    // List the overflow ids first via getAll, then delete them by key —
-    // the batch delete happens inside the same readwrite transaction.
-    const records = await requestResult(
-      store.getAll() as IDBRequest<BackupRecord[]>,
+    // Rotation reads only the KEYS — `getAll()` would deserialize every
+    // stored snapshot (tens of MB of board JSON) just to learn which ids to
+    // drop. Keys are the autoIncrement ids, handed back in ascending order,
+    // so insertion order is oldest-first and the head is the overflow.
+    const keys = await requestResult(
+      store.getAllKeys() as IDBRequest<IDBValidKey[]>,
     );
-    const overflow = records
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(MAX_BACKUPS);
-    for (const record of overflow) {
-      store.delete(record.id);
+    for (const key of keys.slice(0, Math.max(0, keys.length - MAX_BACKUPS))) {
+      store.delete(key);
     }
     await done;
   } finally {

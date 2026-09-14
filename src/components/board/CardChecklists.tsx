@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { useBoard } from "@/store/BoardContext";
+import { useBoardActions } from "@/store/BoardContext";
 import type { Checklist } from "@/types/kanban";
 import { LIMITS } from "@/types/kanban";
 import { LimitCounter } from "@/components/ui/limit-counter";
@@ -55,7 +55,7 @@ export function CardChecklists({ cardId, checklists }: CardChecklistsProps) {
     toggleChecklistItem,
     renameChecklistItem,
     deleteChecklistItem,
-  } = useBoard();
+  } = useBoardActions();
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const draftRef = useRef("");

@@ -87,7 +87,7 @@ On first launch the app shows a seeded **"Product Launch"** demo board. Everythi
 
 ```text
 janosik/
-├─ public/                  # PWA: manifest, service worker, icons
+├─ public/                  # PWA: manifest, icons
 ├─ src/
 │  ├─ components/
 │  │  ├─ board/            # Columns, cards, card dialog, filters, views (board/calendar/table)
@@ -97,16 +97,17 @@ janosik/
 │  │  ├─ DataMenu.tsx      # Export/import JSON, backups, card archive
 │  │  ├─ ErrorBoundary.tsx # Branded crash fallback (Reload / Reset)
 │  │  └─ Toast.tsx         # Toast notifications
-│  ├─ hooks/               # theme, board background, column glass
+│  ├─ hooks/               # theme, board background, column glass, card labels
 │  ├─ i18n/                # i18next setup (keys typed from the EN catalog), time format
 │  ├─ locales/             # en/ru translation.json
-│  ├─ pwa/                 # service worker registration (production only)
+│  ├─ pwa/                 # service worker + its registration (production only)
 │  ├─ store/               # BoardContext, pure reducer, history, seed, migrations
 │  ├─ types/               # Domain model (Board/Column/Card/Label) + LIMITS
 │  ├─ utils/               # storage, persistence, backups, serialization, dnd, filter, due dates
 │  ├─ App.tsx              # Provider tree + layout
 │  ├─ main.tsx             # Theme preflight + SW registration + entry point
 │  └─ index.css            # Design tokens (Tailwind v4 @theme)
+├─ vite/                    # Build plugins (service worker emit + cache version)
 ├─ index.html
 ├─ vite.config.ts
 ├─ vitest.config.ts
@@ -120,9 +121,9 @@ janosik/
 
 - **Normalized data model** — a `Board` holds ordered `Column[]`, a `Record<string, Card>` and `Label[]`. Reordering = reordering id arrays. Archived cards stay in the map with `archivedAt` and are dropped from `column.cardIds` until restored.
 - **Pure reducer** — `boardReducer` (30+ actions) is a pure function; every action returns a new board, which makes undo/redo, coalescing and testing trivial.
-- **One provider** — `BoardProvider` owns state, debounced persistence (400 ms), per-board history, hotkeys and auto-backups. Components only call typed convenience actions (`addCard`, `moveCard`, …).
+- **One provider, three contexts** — `BoardProvider` owns state, debounced persistence (400 ms), per-board history, hotkeys and auto-backups. It publishes the board data, the actions (assembled once, so write-only components never re-render) and undo availability separately. Components only call typed convenience actions (`addCard`, `moveCard`, …).
 - **Persistence is swappable** — a `DebouncedPersistence` interface wraps `localStorage` today; the backend phase adds a `fetch` adapter **without touching the reducer or UI** (optimistic updates on top of the same actions).
-- **Performance** — the MDXEditor description editor and the calendar are lazy-loaded on first use; vendor libraries are split into stable chunks that the service worker caches.
+- **Performance** — the MDXEditor description editor and the calendar are lazy-loaded on first use; vendor libraries are split into stable chunks that the service worker caches; cards are memoized, so typing in one card leaves the rest of the board untouched.
 
 See [ROADMAP.md](./ROADMAP.md) for the full architecture assessment, competitor comparison, the iteration log and the backend plan (accounts, shared boards with ADMIN/MEMBER/VIEWER roles, realtime).
 

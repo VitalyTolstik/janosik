@@ -33,6 +33,10 @@ export default tseslint.config(
             "useTimeFormat",
             "useTheme",
             "useBoard",
+            "useBoardState",
+            "useBoardActions",
+            "useBoardHistory",
+            "useCardLabels",
             "useBoardBackground",
             "useBoardGlass",
             "useToast",
@@ -53,7 +57,7 @@ export default tseslint.config(
   },
   {
     // Service worker runs outside the page context (self, caches, clients).
-    files: ["public/sw.js"],
+    files: ["src/pwa/sw.js"],
     languageOptions: {
       globals: globals.serviceworker,
     },
@@ -68,7 +72,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["*.config.ts", "*.config.js"],
+    files: ["*.config.ts", "*.config.js", "vite/*.ts"],
     languageOptions: {
       globals: globals.node,
     },

@@ -18,13 +18,16 @@ import {
 } from "@/components/ui/tooltip";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
-import { useBoard } from "@/store/BoardContext";
+import { useBoardActions, useBoardHistory } from "@/store/BoardContext";
 
 /** Header: brand, background/language switchers, undo/redo, data and theme. */
 export function Header() {
   const { theme, toggleTheme } = useTheme();
   const { t } = useI18n();
-  const { undo, redo, canUndo, canRedo } = useBoard();
+  // Narrow subscriptions on purpose (TASK-21.4): the actions never change
+  // and the flags flip rarely, so typing in a card leaves the header alone.
+  const { undo, redo } = useBoardActions();
+  const { canUndo, canRedo } = useBoardHistory();
   const isDark = theme === "dark";
 
   return (

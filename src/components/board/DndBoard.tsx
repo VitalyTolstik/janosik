@@ -26,11 +26,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AddColumnControl } from "@/components/board/AddColumnControl";
 import { CardItem } from "@/components/board/CardItem";
 import { ColumnView } from "@/components/board/ColumnView";
+import { useCardLabels } from "@/hooks/use-card-labels";
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
 import { useToast } from "@/components/Toast";
 import { applyCardOver } from "@/utils/dnd";
-import { LIMITS } from "@/types/kanban";
+import { LIMITS, type Label } from "@/types/kanban";
+
+/** Stable empty list, so the label resolver survives a board-less render. */
+const NO_LABELS: Label[] = [];
 
 /**
  * Live draft while a drag is in progress. The store is only touched on drag
@@ -83,6 +87,7 @@ export function DndBoard({
   const { board, addColumn, moveCard, moveColumn } = useBoard();
   const { tp, t } = useI18n();
   const toast = useToast();
+  const resolveLabels = useCardLabels(board?.labels ?? NO_LABELS);
 
   const [draft, setDraftState] = useState<Draft | null>(null);
   // Ref mirror so event handlers always read the latest draft (state updates
@@ -533,10 +538,8 @@ export function DndBoard({
   const activeCard =
     draft?.mode === "card" ? board.cards[draft.activeCardId] : undefined;
   const activeLabels = activeCard
-    ? activeCard.labelIds
-        .map((labelId) => board.labels.find((l) => l.id === labelId))
-        .filter((l): l is NonNullable<typeof l> => Boolean(l))
-    : [];
+    ? resolveLabels(activeCard.labelIds)
+    : NO_LABELS;
   const activeColumn =
     draft?.mode === "column"
       ? board.columns.find((col) => col.id === draft.activeColumnId)

@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/popover";
 import { useToast } from "@/components/Toast";
 import { formatDateOnly, useI18n } from "@/i18n";
+import { useCardLabels } from "@/hooks/use-card-labels";
 import { cn } from "@/lib/utils";
 import { createId } from "@/utils/id";
 import { useBoard } from "@/store/BoardContext";
@@ -43,6 +44,9 @@ import {
   type LabelColor,
   LIMITS,
 } from "@/types/kanban";
+
+/** Stable empty list, so the label resolver survives a board-less render. */
+const NO_LABELS: Label[] = [];
 
 interface TableViewProps {
   /** Per-column card ids with a filter applied — overrides the stored
@@ -121,6 +125,7 @@ export function TableView({
   } = useBoard();
   const { t, lang } = useI18n();
   const toast = useToast();
+  const labelsOf = useCardLabels(board?.labels ?? NO_LABELS);
 
   const [sort, setSort] = useState<SortState | null>(null);
   const [visibleColumns, setVisibleColumns] =
@@ -198,11 +203,6 @@ export function TableView({
       return null; // third click resets to the board order
     });
   };
-
-  const labelsOf = (labelIds: string[]): Label[] =>
-    labelIds
-      .map((labelId) => board.labels.find((l) => l.id === labelId))
-      .filter((l): l is Label => Boolean(l));
 
   const checklistProgress = (card: Card) => {
     const items = (card.checklists ?? []).flatMap((c) => c.items);

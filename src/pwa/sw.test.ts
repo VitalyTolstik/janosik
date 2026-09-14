@@ -1,0 +1,244 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { cacheVersionFrom } from "../../vite/sw-plugin";
+
+/**
+ * The service worker is plain script-scope JS, so it is loaded here the way
+ * the browser would: the source is evaluated against a fake worker global
+ * (`self`, `caches`, `fetch`), and the registered listeners are driven with
+ * fake events. That covers exactly what TASK-21.3 fixed — an error response
+ * must never be cached as the app shell, and `activate` must drop the
+ * previous deploy's cache.
+ */
+
+const SW_SOURCE = path.resolve(import.meta.dirname, "./sw.js");
+const ORIGIN = "https://boards.test";
+const VERSION = "janosik-test";
+
+interface FakeResponse {
+  ok: boolean;
+  status: number;
+  body: string;
+  clone: () => FakeResponse;
+}
+
+function response(body: string, status = 200): FakeResponse {
+  const res: FakeResponse = {
+    ok: status >= 200 && status < 300,
+    status,
+    body,
+    clone: () => res,
+  };
+  return res;
+}
+
+/** Minimal CacheStorage: a map of cache name → (url → response). */
+function createCaches(seed: Record<string, Record<string, FakeResponse>> = {}) {
+  const store = new Map<string, Map<string, FakeResponse>>(
+    Object.entries(seed).map(([name, entries]) => [
+      name,
+      new Map(Object.entries(entries)),
+    ]),
+  );
+  const cacheFor = (name: string) => {
+    let cache = store.get(name);
+    if (!cache) {
+      cache = new Map();
+      store.set(name, cache);
+    }
+    return {
+      put: (request: string | { url: string }, value: FakeResponse) => {
+        cache.set(typeof request === "string" ? request : request.url, value);
+        return Promise.resolve();
+      },
+      add: (url: string) => {
+        cache.set(url, response("shell"));
+        return Promise.resolve();
+      },
+      match: (request: string | { url: string }) =>
+        Promise.resolve(
+          cache.get(typeof request === "string" ? request : request.url),
+        ),
+    };
+  };
+  return {
+    store,
+    api: {
+      open: (name: string) => Promise.resolve(cacheFor(name)),
+      keys: () => Promise.resolve([...store.keys()]),
+      delete: (name: string) => Promise.resolve(store.delete(name)),
+      match: (request: string | { url: string }) => {
+        const url = typeof request === "string" ? request : request.url;
+        for (const cache of store.values()) {
+          const hit = cache.get(url);
+          if (hit) return Promise.resolve(hit);
+        }
+        return Promise.resolve(undefined);
+      },
+    },
+  };
+}
+
+type Listener = (event: FakeEvent) => void;
+
+interface FakeEvent {
+  request?: { url: string; method: string; mode?: string };
+  respondWith: (value: Promise<FakeResponse>) => void;
+  waitUntil: (value: Promise<unknown>) => void;
+}
+
+function loadWorker(
+  cachesApi: unknown,
+  fetchImpl: (request: unknown) => Promise<FakeResponse>,
+) {
+  const listeners = new Map<string, Listener>();
+  const self = {
+    location: { origin: ORIGIN },
+    addEventListener: (type: string, listener: Listener) =>
+      listeners.set(type, listener),
+    skipWaiting: vi.fn(),
+    clients: { claim: vi.fn() },
+  };
+  const source = readFileSync(SW_SOURCE, "utf8").replaceAll(
+    "__CACHE_VERSION__",
+    VERSION,
+  );
+  // The worker reads `caches`/`fetch` off the global scope; parameters of
+  // the wrapper shadow them, which keeps the test free of global patching.
+  const evaluate = new Function("self", "caches", "fetch", "Response", source);
+  evaluate(self, cachesApi, fetchImpl, FakeResponseCtor);
+
+  const dispatch = async (type: string, request?: FakeEvent["request"]) => {
+    const listener = listeners.get(type);
+    if (!listener) throw new Error(`no ${type} listener registered`);
+    const pending: Promise<unknown>[] = [];
+    let responded: Promise<FakeResponse> | undefined;
+    listener({
+      request,
+      respondWith: (value) => {
+        responded = value;
+        pending.push(value);
+      },
+      waitUntil: (value) => pending.push(value),
+    });
+    await Promise.all(pending);
+    return responded ? await responded : undefined;
+  };
+
+  return { self, dispatch };
+}
+
+/** Stands in for the worker's `new Response(...)` offline fallback. */
+function FakeResponseCtor(
+  this: Record<string, unknown>,
+  body: string,
+  init?: { status?: number },
+) {
+  this.body = body;
+  this.status = init?.status ?? 200;
+  this.ok = this.status === 200;
+}
+
+const navigation = {
+  url: `${ORIGIN}/board/abc`,
+  method: "GET",
+  mode: "navigate",
+};
+
+describe("service worker", () => {
+  let caches: ReturnType<typeof createCaches>;
+
+  beforeEach(() => {
+    caches = createCaches();
+  });
+
+  it("caches a successful navigation as the app shell", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(response("<html>fresh"));
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", navigation);
+
+    expect(result).toMatchObject({ body: "<html>fresh" });
+    expect(caches.store.get(VERSION)?.get("/")?.body).toBe("<html>fresh");
+  });
+
+  it("does not cache an error response as the app shell", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(response("oops", 500));
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", navigation);
+
+    // The error still reaches the page — it is only kept out of the cache
+    // (the cache is not even opened, so there is no entry to find).
+    expect(result).toMatchObject({ status: 500 });
+    expect(caches.store.get(VERSION)?.has("/") ?? false).toBe(false);
+  });
+
+  it("keeps serving the cached shell after a failed navigation", async () => {
+    caches = createCaches({ [VERSION]: { "/": response("<html>cached") } });
+    const fetchImpl = vi.fn().mockRejectedValue(new Error("offline"));
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", navigation);
+
+    expect(result).toMatchObject({ body: "<html>cached" });
+  });
+
+  it("serves assets cache-first and only caches successful ones", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(response("chunk"));
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    await dispatch("fetch", {
+      url: `${ORIGIN}/assets/index-abc123.js`,
+      method: "GET",
+    });
+    expect(caches.store.get(VERSION)?.has("/assets/index-abc123.js")).toBe(
+      false,
+    );
+    // Requests are keyed by the Request object; the fake cache keys by url.
+    expect(
+      caches.store.get(VERSION)?.has(`${ORIGIN}/assets/index-abc123.js`),
+    ).toBe(true);
+
+    fetchImpl.mockResolvedValue(response("missing", 404));
+    await dispatch("fetch", {
+      url: `${ORIGIN}/assets/gone-000000.js`,
+      method: "GET",
+    });
+    expect(
+      caches.store.get(VERSION)?.has(`${ORIGIN}/assets/gone-000000.js`),
+    ).toBe(false);
+  });
+
+  it("drops caches from previous deploys on activate", async () => {
+    caches = createCaches({
+      [VERSION]: {},
+      "janosik-oldbuild": { "/assets/old-1.js": response("stale") },
+    });
+    const { dispatch, self } = loadWorker(caches.api, vi.fn());
+
+    await dispatch("activate");
+
+    expect([...caches.store.keys()]).toEqual([VERSION]);
+    expect(self.clients.claim).toHaveBeenCalled();
+  });
+});
+
+describe("cacheVersionFrom", () => {
+  it("changes when the build output changes", () => {
+    const before = cacheVersionFrom(["assets/index-aaa.js", "index.html"]);
+    const after = cacheVersionFrom(["assets/index-bbb.js", "index.html"]);
+
+    expect(before).not.toBe(after);
+    expect(before).toMatch(/^janosik-[0-9a-f]{8}$/);
+  });
+
+  it("ignores the order of the file names", () => {
+    expect(cacheVersionFrom(["b.js", "a.js"])).toBe(
+      cacheVersionFrom(["a.js", "b.js"]),
+    );
+  });
+});

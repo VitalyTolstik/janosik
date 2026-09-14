@@ -6,7 +6,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Plus } from "lucide-react";
-import { Fragment, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import { CardComposer } from "@/components/board/CardComposer";
 import { ColumnMenu } from "@/components/board/ColumnMenu";
@@ -14,11 +14,15 @@ import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { RenameColumnDialog } from "@/components/board/RenameColumnDialog";
 import { SortableCard } from "@/components/board/SortableCard";
 import { WipLimitDialog } from "@/components/board/WipLimitDialog";
+import { useCardLabels } from "@/hooks/use-card-labels";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
-import type { Column } from "@/types/kanban";
+import type { Column, Label } from "@/types/kanban";
 import { LIMITS } from "@/types/kanban";
+
+/** Stable empty list, so the label resolver is not rebuilt board-less. */
+const NO_LABELS: Label[] = [];
 
 interface ColumnViewProps {
   column: Column;
@@ -81,6 +85,31 @@ export function ColumnView({
     index: number;
     count: number;
   } | null>(null);
+
+  // The card callbacks must keep their identity across renders, otherwise
+  // `memo` on SortableCard/CardItem never holds (TASK-21.4). They take a
+  // card id and read the current board from a ref instead of closing over
+  // the card, so one handler serves the whole column.
+  const boardRef = useRef(board);
+  useEffect(() => {
+    boardRef.current = board;
+  }, [board]);
+  const resolveLabels = useCardLabels(board?.labels ?? NO_LABELS);
+
+  const handleCardClick = useCallback(
+    (cardId: string) => onCardClick?.(cardId),
+    [onCardClick],
+  );
+  const handleCardDuplicate = useCallback(
+    (cardId: string) => {
+      const card = boardRef.current?.cards[cardId];
+      duplicateCard(
+        cardId,
+        card ? t("card.duplicateTitle", { title: card.title }) : undefined,
+      );
+    },
+    [duplicateCard, t],
+  );
 
   const {
     attributes,
@@ -243,11 +272,7 @@ export function ColumnView({
                 {ids.map((cardId, i) => {
                   const card = board.cards[cardId];
                   if (!card) return null;
-                  const labels = card.labelIds
-                    .map((labelId) =>
-                      board.labels.find((l) => l.id === labelId),
-                    )
-                    .filter((l): l is NonNullable<typeof l> => Boolean(l));
+                  const labels = resolveLabels(card.labelIds);
                   return (
                     <Fragment key={cardId}>
                       {inlineAdd?.index === i ? (
@@ -282,15 +307,10 @@ export function ColumnView({
                           highlight={highlight}
                           isCursor={card.id === cursorCardId}
                           onCardClick={
-                            onCardClick ? () => onCardClick(card.id) : undefined
+                            onCardClick ? handleCardClick : undefined
                           }
-                          onCardDuplicate={() =>
-                            duplicateCard(
-                              card.id,
-                              t("card.duplicateTitle", { title: card.title }),
-                            )
-                          }
-                          onCardArchive={() => archiveCard(card.id)}
+                          onCardDuplicate={handleCardDuplicate}
+                          onCardArchive={archiveCard}
                         />
                       </li>
                     </Fragment>

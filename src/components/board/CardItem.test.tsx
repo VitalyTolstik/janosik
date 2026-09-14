@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
 import { CardItem } from "@/components/board/CardItem";
@@ -69,5 +70,43 @@ describe("CardItem search highlight", () => {
   it("does not highlight without a query", () => {
     renderCard();
     expect(screen.getByTestId("card-title").querySelector("mark")).toBeNull();
+  });
+});
+
+describe("CardItem render isolation (TASK-21.4)", () => {
+  it("skips the re-render when its props are unchanged", () => {
+    // Property reads on the card stand in for a render count: the memo
+    // comparison itself never touches them, only the render body does.
+    let reads = 0;
+    const card = new Proxy(baseCard, {
+      get(target, prop) {
+        reads += 1;
+        return target[prop as keyof Card];
+      },
+    });
+    const labels: Label[] = [];
+    const onClick = vi.fn();
+    let bump = () => {};
+
+    function Parent() {
+      const [, setTick] = useState(0);
+      bump = () => setTick((tick) => tick + 1);
+      return <CardItem card={card} labels={labels} onClick={onClick} />;
+    }
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <Parent />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+    const afterMount = reads;
+    expect(afterMount).toBeGreaterThan(0);
+
+    // The column around a card re-renders on every board change; the card
+    // must sit it out as long as nothing of its own changed.
+    act(() => bump());
+    expect(reads).toBe(afterMount);
   });
 });

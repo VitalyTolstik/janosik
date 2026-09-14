@@ -1,6 +1,3 @@
-/* eslint-disable react-hooks/refs -- persistenceRef/historiesRef are read
-   during render on purpose (initial state + undo availability); the context
-   split restructures this file (TASK-21.4) and removes the pattern. */
 import {
   createContext,
   useCallback,
@@ -132,11 +129,34 @@ function damagedData(
 
 type CardPatch = { title?: string; description?: string };
 
-interface BoardContextValue {
+/**
+ * Everything that changes when the data changes. Read it through
+ * `useBoardState()` (or `useBoard()`): consumers re-render on every edit.
+ */
+interface BoardStateValue {
   /** The board selected by the URL (falls back to the first one). */
   board: Board | undefined;
   /** Every board in storage (export/import target). */
   boards: Board[];
+  /** Non-null while the data is at risk — rendered as a banner. */
+  dataIssue: DataIssue | null;
+}
+
+/**
+ * Undo availability for the active board — a narrow slice on its own
+ * context so the header does not re-render with every card edit.
+ */
+interface BoardHistoryValue {
+  canUndo: boolean;
+  canRedo: boolean;
+}
+
+/**
+ * Every way to change the data. The object is built once and never
+ * replaced, so `useBoardActions()` consumers never re-render because of it
+ * and its members are safe `useCallback`/`useMemo` dependencies.
+ */
+interface BoardActionsValue {
   dispatch: (action: BoardAction) => void;
   /* Convenience actions */
   addColumn: (title: string) => void;
@@ -215,18 +235,23 @@ interface BoardContextValue {
   /* Undo / redo (scoped to the active board) */
   undo: () => void;
   redo: () => void;
-  canUndo: boolean;
-  canRedo: boolean;
   /* Import replaces the whole data set (and resets history). */
   importBoards: (boards: BoardState) => void;
   /* Data safety (TASK-21.2) */
-  /** Non-null while the data is at risk — rendered as a banner. */
-  dataIssue: DataIssue | null;
   /** Acknowledges a `corrupt-load` notice (releases held-back writes). */
   dismissDataIssue: () => void;
 }
 
-const BoardContext = createContext<BoardContextValue | null>(null);
+/** The full surface, as `useBoard()` hands it out. */
+type BoardContextValue = BoardStateValue &
+  BoardHistoryValue &
+  BoardActionsValue;
+
+const BoardStateContext = createContext<BoardStateValue | null>(null);
+const BoardHistoryContext = createContext<BoardHistoryValue | null>(null);
+const BoardActionsContext = createContext<BoardActionsValue | null>(null);
+
+const NO_HISTORY: BoardHistoryValue = { canUndo: false, canRedo: false };
 
 export function BoardProvider({ children }: { children: ReactNode }) {
   const { t } = useI18n();
@@ -234,8 +259,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // One persistence instance per provider lifetime (deferred creation keeps
-  // the closure's debounce timer intact across re-renders).
+  /* eslint-disable react-hooks/refs -- deliberate once-per-provider lazy
+     init. A `useState` initializer would be the lint-clean spelling, but
+     StrictMode double-invokes those in development, and booting twice means
+     two debounce timers and a second quarantine copy of damaged data; a ref
+     is shared across the double render, so this runs exactly once. */
+
+  // One persistence instance per provider lifetime (the deferred creation
+  // keeps the closure's debounce timer intact across re-renders).
   const persistenceRef = useRef<DebouncedPersistence<BoardState> | null>(null);
   if (persistenceRef.current === null) {
     persistenceRef.current = createDebouncedLocalStoragePersistence<BoardState>(
@@ -254,11 +285,17 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   if (bootRef.current === null) {
     bootRef.current = loadInitialState(persistence);
   }
+  const boot = bootRef.current;
 
-  const [state, dispatchRaw] = useReducer(boardReducer, bootRef.current.state);
-  const [dataIssue, setDataIssue] = useState<DataIssue | null>(
-    bootRef.current.issue,
-  );
+  const [state, dispatchRaw] = useReducer(boardReducer, boot.state);
+  const [dataIssue, setDataIssue] = useState<DataIssue | null>(boot.issue);
+
+  /* eslint-enable react-hooks/refs */
+
+  // Undo availability, mirrored into state: `BoardHistory` is mutable, so
+  // reading it during render would be both impure and invisible to React.
+  // Every mutation path calls `syncHistory()` right after touching a stack.
+  const [history, setHistory] = useState<BoardHistoryValue>(NO_HISTORY);
 
   // A failed write means nothing is being persisted any more: raise a
   // banner (not a toast that disappears) until a write succeeds again.
@@ -336,9 +373,27 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   // Latest active board id, readable from stable callbacks.
   const activeIdRef = useRef(board?.id);
+
+  // Publishes the active board's undo availability. Cheap and idempotent:
+  // an unchanged pair keeps the previous object, so the header's context
+  // value stays identical and it does not re-render.
+  const syncHistory = useCallback(() => {
+    const boardId = activeIdRef.current;
+    const stack = boardId ? historiesRef.current.get(boardId) : undefined;
+    const canUndo = stack?.canUndo() ?? false;
+    const canRedo = stack?.canRedo() ?? false;
+    setHistory((prev) =>
+      prev.canUndo === canUndo && prev.canRedo === canRedo
+        ? prev
+        : { canUndo, canRedo },
+    );
+  }, []);
+
+  // Switching boards swaps in that board's stack — and its own undo state.
   useEffect(() => {
     activeIdRef.current = board?.id;
-  }, [board?.id]);
+    syncHistory();
+  }, [board?.id, syncHistory]);
 
   // Redirect `/`, unknown paths, dead board ids and archived boards to a
   // real active board (replace, so dead URLs never land in history). With
@@ -366,17 +421,48 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     persistence.queueSave(state);
   }, [persistence, state]);
 
+  // Leading + trailing throttle: the first change is snapshotted at once,
+  // later ones coalesce into a single backup at the end of the window.
+  // Without the trailing call, everything edited inside the last 60 s
+  // before the tab closes never reaches a backup at all.
   const lastBackupRef = useRef(0);
+  const pendingBackupRef = useRef<BoardState | null>(null);
+  const backupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushBackup = useCallback(() => {
+    const snapshot = pendingBackupRef.current;
+    pendingBackupRef.current = null;
+    if (backupTimerRef.current !== null) {
+      clearTimeout(backupTimerRef.current);
+      backupTimerRef.current = null;
+    }
+    if (snapshot === null || snapshot.length === 0) return;
+    lastBackupRef.current = Date.now();
+    void createBackup(snapshot).catch(() => {
+      /* IndexedDB unavailable (private mode / tests) — storage still works. */
+    });
+  }, []);
+
   useEffect(() => {
     if (state.length === 0) return;
-    const now = Date.now();
-    if (now - lastBackupRef.current >= BACKUP_THROTTLE_MS) {
-      lastBackupRef.current = now;
-      void createBackup(state).catch(() => {
-        /* IndexedDB unavailable (private mode / tests) — storage still works. */
-      });
+    pendingBackupRef.current = state;
+    const elapsed = Date.now() - lastBackupRef.current;
+    if (elapsed >= BACKUP_THROTTLE_MS) {
+      flushBackup();
+    } else if (backupTimerRef.current === null) {
+      backupTimerRef.current = setTimeout(
+        flushBackup,
+        BACKUP_THROTTLE_MS - elapsed,
+      );
     }
-  }, [state]);
+  }, [state, flushBackup]);
+
+  // Unmount must not drop a snapshot the throttle was still holding, so it
+  // takes it now (best effort — an IndexedDB write started on unload may
+  // not land; the localStorage flush below is the actual guarantee). The
+  // effect above re-runs on every change, so the cleanup lives here, where
+  // it cannot cancel the window it is waiting out.
+  useEffect(() => () => flushBackup(), [flushBackup]);
 
   // Flush pending writes when the tab is closed or the provider unmounts.
   useEffect(() => {
@@ -398,6 +484,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         // A new data set invalidates every history.
         historiesRef.current.clear();
         apply(action);
+        syncHistory();
         return;
       }
       if (action.type === "ADD_BOARD") {
@@ -407,6 +494,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       if (action.type === "REMOVE_BOARD") {
         historiesRef.current.delete(action.boardId);
         apply(action);
+        syncHistory();
         return;
       }
       if (
@@ -426,48 +514,52 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       if (scoped.type !== "RESTORE_BOARD") {
         const current = stateRef.current.find((b) => b.id === boardId);
         if (current) {
-          let history = historiesRef.current.get(boardId);
-          if (!history) {
-            history = new BoardHistory();
-            historiesRef.current.set(boardId, history);
+          let stack = historiesRef.current.get(boardId);
+          if (!stack) {
+            stack = new BoardHistory();
+            historiesRef.current.set(boardId, stack);
           }
-          history.push(current, scoped);
+          stack.push(current, scoped);
         }
       }
       apply(scoped);
+      syncHistory();
     },
-    [apply],
+    [apply, syncHistory],
   );
 
   const undo = useCallback(() => {
     const boardId = activeIdRef.current;
     if (!boardId) return;
-    const history = historiesRef.current.get(boardId);
+    const stack = historiesRef.current.get(boardId);
     const current = stateRef.current.find((b) => b.id === boardId);
-    const previous = history && current ? history.undo(current) : null;
+    const previous = stack && current ? stack.undo(current) : null;
     if (previous) {
       apply({ type: "RESTORE_BOARD", boardId, board: previous });
     }
-  }, [apply]);
+    syncHistory();
+  }, [apply, syncHistory]);
 
   const redo = useCallback(() => {
     const boardId = activeIdRef.current;
     if (!boardId) return;
-    const history = historiesRef.current.get(boardId);
+    const stack = historiesRef.current.get(boardId);
     const current = stateRef.current.find((b) => b.id === boardId);
-    const next = history && current ? history.redo(current) : null;
+    const next = stack && current ? stack.redo(current) : null;
     if (next) {
       apply({ type: "RESTORE_BOARD", boardId, board: next });
     }
-  }, [apply]);
+    syncHistory();
+  }, [apply, syncHistory]);
 
   const importBoards = useCallback(
     (boards: BoardState) => {
       // A new data set invalidates any previous history.
       historiesRef.current.clear();
       apply({ type: "IMPORT_BOARDS", boards: normalizeBoards(boards) });
+      syncHistory();
     },
-    [apply],
+    [apply, syncHistory],
   );
 
   // Hotkeys: Ctrl/⌘+Z undo, Ctrl/⌘+Shift+Z or Ctrl+Y redo. Skip while the
@@ -526,8 +618,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     (boardId: string) => {
       historiesRef.current.delete(boardId);
       apply({ type: "REMOVE_BOARD", boardId });
+      syncHistory();
     },
-    [apply],
+    [apply, syncHistory],
   );
 
   const archiveBoard = useCallback(
@@ -544,11 +637,16 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     [apply],
   );
 
-  const value = useMemo<BoardContextValue>(
+  // Assembled once: every member is a `useCallback` with stable
+  // dependencies, so this object outlives every state change and its
+  // consumers (the header, the card dialog's editors) never re-render
+  // because of the store.
+  const actions = useMemo<BoardActionsValue>(
     () => ({
-      board,
-      boards: state,
       dispatch,
+      // `dispatch` is a stable callback that reads refs when *called*; here
+      // it is only stored in closures, never invoked during render.
+      // eslint-disable-next-line react-hooks/refs
       ...createBoardActions(dispatch),
       addBoard,
       removeBoard,
@@ -556,19 +654,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       unarchiveBoard,
       undo,
       redo,
-      canUndo: board
-        ? (historiesRef.current.get(board.id)?.canUndo() ?? false)
-        : false,
-      canRedo: board
-        ? (historiesRef.current.get(board.id)?.canRedo() ?? false)
-        : false,
       importBoards,
-      dataIssue,
       dismissDataIssue,
     }),
     [
-      state,
-      board,
       dispatch,
       addBoard,
       removeBoard,
@@ -577,13 +666,23 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       undo,
       redo,
       importBoards,
-      dataIssue,
       dismissDataIssue,
     ],
   );
 
+  const stateValue = useMemo<BoardStateValue>(
+    () => ({ board, boards: state, dataIssue }),
+    [board, state, dataIssue],
+  );
+
   return (
-    <BoardContext.Provider value={value}>{children}</BoardContext.Provider>
+    <BoardActionsContext.Provider value={actions}>
+      <BoardHistoryContext.Provider value={history}>
+        <BoardStateContext.Provider value={stateValue}>
+          {children}
+        </BoardStateContext.Provider>
+      </BoardHistoryContext.Provider>
+    </BoardActionsContext.Provider>
   );
 }
 
@@ -591,7 +690,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 function createBoardActions(
   dispatch: (action: BoardAction) => void,
 ): Pick<
-  BoardContextValue,
+  BoardActionsValue,
   | "addColumn"
   | "renameBoard"
   | "renameColumn"
@@ -722,10 +821,41 @@ function createBoardActions(
   };
 }
 
-export function useBoard(): BoardContextValue {
-  const ctx = useContext(BoardContext);
-  if (!ctx) {
-    throw new Error("useBoard must be used within a BoardProvider");
+function required<T>(value: T | null, hook: string): T {
+  if (value === null) {
+    throw new Error(`${hook} must be used within a BoardProvider`);
   }
-  return ctx;
+  return value;
+}
+
+/** The board data. Re-renders the consumer on every edit, anywhere. */
+export function useBoardState(): BoardStateValue {
+  return required(useContext(BoardStateContext), "useBoardState");
+}
+
+/** Undo availability for the active board — changes only when it flips. */
+export function useBoardHistory(): BoardHistoryValue {
+  return required(useContext(BoardHistoryContext), "useBoardHistory");
+}
+
+/**
+ * The actions. Never changes, so a component that only writes (the header,
+ * pickers, composers) is not re-rendered by other people's edits — prefer
+ * it over `useBoard()` whenever the board data itself is not rendered.
+ */
+export function useBoardActions(): BoardActionsValue {
+  return required(useContext(BoardActionsContext), "useBoardActions");
+}
+
+/**
+ * Data + actions + undo availability in one object, for components that
+ * render the board anyway. It subscribes to all three contexts; reach for
+ * `useBoardActions()` / `useBoardHistory()` when only those are needed.
+ */
+export function useBoard(): BoardContextValue {
+  return {
+    ...useBoardState(),
+    ...useBoardHistory(),
+    ...useBoardActions(),
+  };
 }
