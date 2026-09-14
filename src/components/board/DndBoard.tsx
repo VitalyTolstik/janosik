@@ -607,6 +607,9 @@ export function DndBoard({
                 highlight={highlight}
                 cursorCardId={cursorCardId}
                 onCardClick={handleCardClick}
+                canDuplicateColumn={
+                  board.columns.length < LIMITS.columnsPerBoard
+                }
               />
             );
           })}

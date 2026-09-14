@@ -53,6 +53,13 @@ interface ColumnViewProps {
   highlight?: string;
   /** The j/k keyboard cursor card — rendered with a focus ring. */
   cursorCardId?: string;
+  /**
+   * False when the board is at LIMITS.columnsPerBoard — the column menu's
+   * "Duplicate column" disables (the reducer would refuse it anyway).
+   * A primitive prop on purpose: subscribing the memoized column to the
+   * board state would undo TASK-21.4.1.
+   */
+  canDuplicateColumn?: boolean;
 }
 
 /**
@@ -76,6 +83,7 @@ function ColumnViewBody({
   isFiltered = false,
   highlight,
   cursorCardId,
+  canDuplicateColumn = true,
 }: ColumnViewProps) {
   const {
     addCard,
@@ -249,6 +257,10 @@ function ColumnViewBody({
               onSetWipLimit={() => setWipLimitOpen(true)}
               onArchiveCards={() => setConfirmArchiveCards(true)}
               wipLimit={wipLimit}
+              duplicateDisabled={!canDuplicateColumn}
+              duplicateDisabledReason={t("limits.maxColumns", {
+                limit: LIMITS.columnsPerBoard,
+              })}
             />
             <GripVertical
               aria-hidden

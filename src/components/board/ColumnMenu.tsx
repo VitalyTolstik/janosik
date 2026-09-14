@@ -36,6 +36,10 @@ interface ColumnMenuProps {
   onArchiveCards: () => void;
   /** The column's current WIP limit (labels the menu item). */
   wipLimit?: number;
+  /** Blocks "Duplicate column" (the board is at LIMITS.columnsPerBoard). */
+  duplicateDisabled?: boolean;
+  /** Tooltip text shown while `duplicateDisabled`. */
+  duplicateDisabledReason?: string;
 }
 
 const SORT_ITEMS: Array<{ sortBy: ColumnSortBy; icon: typeof Clock4 }> = [
@@ -58,6 +62,8 @@ export function ColumnMenu({
   onSetWipLimit,
   onArchiveCards,
   wipLimit,
+  duplicateDisabled = false,
+  duplicateDisabledReason,
 }: ColumnMenuProps) {
   const { t } = useI18n();
   return (
@@ -77,7 +83,11 @@ export function ColumnMenu({
           <Pencil className="h-4 w-4" />
           {t("column.rename")}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onDuplicate}>
+        <DropdownMenuItem
+          onClick={onDuplicate}
+          disabled={duplicateDisabled}
+          title={duplicateDisabled ? duplicateDisabledReason : undefined}
+        >
           <CopyPlus className="h-4 w-4" />
           {t("column.duplicate")}
         </DropdownMenuItem>

@@ -34,6 +34,7 @@ import {
 import { useToast } from "@/components/Toast";
 import { formatDateOnly, useI18n } from "@/i18n";
 import { useCardLabels } from "@/hooks/use-card-labels";
+import { isColumnFull } from "@/utils/column-limits";
 import { cn } from "@/lib/utils";
 import { createId } from "@/utils/id";
 import { useBoard } from "@/store/BoardContext";
@@ -261,6 +262,10 @@ export function TableView({
 
   const optionalCount = visibleColumns.length;
 
+  // The toolbar "+ Add card" is dead weight when every column is full —
+  // the popover would only show disabled choices.
+  const anyColumnWithRoom = board.columns.some((col) => !isColumnFull(col));
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/60 backdrop-blur-sm">
       {/* Toolbar: + card composer and the column settings (TASK-14.1 п.10/11). */}
@@ -272,6 +277,8 @@ export function TableView({
               size="sm"
               className="h-7 gap-1 border-dashed border-primary/40 bg-primary/10 px-2 text-xs font-medium text-primary hover:bg-primary/20 hover:text-primary"
               data-testid="table-add-card"
+              disabled={!anyColumnWithRoom}
+              title={anyColumnWithRoom ? undefined : t("limits.columnsFull")}
             >
               <Plus className="h-3.5 w-3.5" />
               {t("composer.add")}
@@ -282,6 +289,7 @@ export function TableView({
               columns={board.columns.map((col) => ({
                 id: col.id,
                 title: col.title,
+                full: isColumnFull(col),
               }))}
               labels={board.labels}
               onSubmit={(columnId, title, labelIds) =>
@@ -799,14 +807,19 @@ function TableCardComposer({
   onSubmit,
   onCancel,
 }: {
-  columns: { id: string; title: string }[];
+  /** `full` marks columns that cannot take another card right now. */
+  columns: { id: string; title: string; full: boolean }[];
   labels?: Label[];
   onSubmit: (columnId: string, title: string, labelIds?: string[]) => void;
   onCancel: () => void;
 }) {
   const { t } = useI18n();
   const [title, setTitle] = useState("");
-  const [columnId, setColumnId] = useState(columns[0]?.id ?? "");
+  // Default to the first column that can actually take the card — a full
+  // default column would only produce a disabled submit.
+  const [columnId, setColumnId] = useState(
+    (columns.find((col) => !col.full) ?? columns[0])?.id ?? "",
+  );
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
 
   const toggleLabel = (labelId: string) => {
@@ -818,9 +831,12 @@ function TableCardComposer({
   };
 
   const selected = columns.find((col) => col.id === columnId);
+  // The reducer refuses an add into a full column — the composer says so
+  // up front instead of letting the user type into a dead submit.
+  const selectedFull = selected?.full ?? true;
   const submit = () => {
     const trimmed = title.trim();
-    if (!trimmed || !columnId) return;
+    if (!trimmed || !columnId || selectedFull) return;
     onSubmit(columnId, trimmed, selectedLabels);
     setTitle("");
     setSelectedLabels([]);
@@ -858,7 +874,16 @@ function TableCardComposer({
           className="max-h-44 w-[var(--radix-dropdown-menu-trigger-width)] min-w-0 overflow-y-auto"
         >
           {columns.map((col) => (
-            <DropdownMenuItem key={col.id} onSelect={() => setColumnId(col.id)}>
+            <DropdownMenuItem
+              key={col.id}
+              onSelect={() => setColumnId(col.id)}
+              disabled={col.full}
+              title={
+                col.full
+                  ? t("limits.columnFull", { limit: LIMITS.cardsPerColumn })
+                  : undefined
+              }
+            >
               {col.title}
             </DropdownMenuItem>
           ))}
@@ -874,7 +899,12 @@ function TableCardComposer({
         <Button
           size="sm"
           className="h-7 flex-1 text-xs"
-          disabled={!title.trim()}
+          disabled={!title.trim() || selectedFull}
+          title={
+            selectedFull
+              ? t("limits.columnFull", { limit: LIMITS.cardsPerColumn })
+              : undefined
+          }
           onClick={submit}
         >
           {t("composer.submit")}

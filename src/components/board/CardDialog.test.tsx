@@ -358,3 +358,62 @@ describe("CardDialog checklists", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("CardDialog duplicate (column limits)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  function seedBoard(wipLimit?: number) {
+    localStorage.setItem(
+      "janosik-boards",
+      JSON.stringify([
+        {
+          id: "b-1",
+          title: "Limits board",
+          columns: [
+            {
+              id: "col-1",
+              title: "Packed",
+              cardIds: ["card-1"],
+              wipLimit,
+              createdAt: 0,
+            },
+          ],
+          cards: {
+            "card-1": {
+              id: "card-1",
+              title: "Packed card",
+              labelIds: [],
+              createdAt: 0,
+              updatedAt: 0,
+            },
+          },
+          labels: [],
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      ]),
+    );
+  }
+
+  it("disables Duplicate card when the column's WIP limit is reached", async () => {
+    seedBoard(1);
+    renderBoard();
+    fireEvent.click(await screen.findByText("Packed card"));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByRole("button", { name: "Duplicate card" }),
+    ).toBeDisabled();
+  });
+
+  it("keeps Duplicate card enabled while the column has room", async () => {
+    seedBoard(undefined);
+    renderBoard();
+    fireEvent.click(await screen.findByText("Packed card"));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByRole("button", { name: "Duplicate card" }),
+    ).toBeEnabled();
+  });
+});

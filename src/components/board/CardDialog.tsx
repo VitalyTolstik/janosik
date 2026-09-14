@@ -47,6 +47,12 @@ import { useBoard } from "@/store/BoardContext";
 import { createId } from "@/utils/id";
 import type { LabelColor } from "@/types/kanban";
 import { LIMITS } from "@/types/kanban";
+import { isColumnFull } from "@/utils/column-limits";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface CardDialogProps {
   cardId: string | null;
@@ -151,6 +157,16 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
   const currentColumn = board.columns.find((col) =>
     col.cardIds.includes(card.id),
   );
+
+  // The duplicate lands in the card's own column — it is blocked when that
+  // column cannot take another card (hard limit or WIP), so the button
+  // says so up front instead of doing nothing.
+  const duplicateDisabled = currentColumn ? isColumnFull(currentColumn) : true;
+  const duplicateDisabledReason =
+    currentColumn?.wipLimit !== undefined &&
+    currentColumn.cardIds.length >= currentColumn.wipLimit
+      ? t("column.wipLimitReached", { limit: currentColumn.wipLimit })
+      : t("limits.columnFull", { limit: LIMITS.cardsPerColumn });
 
   const handleDelete = () => {
     deleteCard(card.id);
@@ -376,10 +392,26 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
 
           <DialogFooter className="mt-2 shrink-0">
             {card.archivedAt === undefined ? (
-              <Button variant="ghost" onClick={handleDuplicate}>
-                <CopyPlus className="h-4 w-4" />
-                {t("card.duplicate")}
-              </Button>
+              duplicateDisabled ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    {/* Disabled buttons drop pointer events — the tooltip
+                        needs a wrapper that still receives them. */}
+                    <span className="inline-flex">
+                      <Button variant="ghost" disabled>
+                        <CopyPlus className="h-4 w-4" />
+                        {t("card.duplicate")}
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{duplicateDisabledReason}</TooltipContent>
+                </Tooltip>
+              ) : (
+                <Button variant="ghost" onClick={handleDuplicate}>
+                  <CopyPlus className="h-4 w-4" />
+                  {t("card.duplicate")}
+                </Button>
+              )
             ) : null}
             {card.archivedAt === undefined ? (
               <Button variant="ghost" onClick={handleArchive}>
