@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -102,6 +102,51 @@ describe("FilterBar", () => {
       ...EMPTY_FILTER,
       due: "any",
       noLabel: true,
+    });
+  });
+
+  it("renders a removable chip for the relative created window", async () => {
+    const onChange = renderBar({ ...EMPTY_FILTER, created: "7d" });
+
+    // The window is a live facet like any other: visible and switchable
+    // without reopening the popover.
+    expect(screen.getByText("Last 7 days")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Remove label" }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...EMPTY_FILTER,
+      created: "any",
+    });
+  });
+
+  it("retires the relative window when a calendar day is picked", async () => {
+    const onChange = renderBar();
+    await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Last 30 days" }));
+
+    // Open the calendar and pick a day; the lazy chunk needs a longer wait.
+    await userEvent.click(screen.getByRole("radio", { name: /On date/ }));
+    await waitFor(
+      () => {
+        expect(
+          document.querySelectorAll("button[data-day]").length,
+        ).toBeGreaterThan(0);
+      },
+      { timeout: 5000 },
+    );
+    await userEvent.click(
+      [...document.querySelectorAll("button[data-day]")].find(
+        (b) => b.textContent === "15",
+      ) as HTMLElement,
+    );
+
+    // The window must not survive as a dormant facet — otherwise it
+    // resurrects when the exact-day chip is removed.
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...EMPTY_FILTER,
+      created: "any",
+      createdOn: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-15`,
     });
   });
 });
