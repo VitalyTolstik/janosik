@@ -5,6 +5,7 @@ export {
   useTimeFormat,
 } from "@/i18n/I18nProvider";
 export {
+  ensureLocale,
   formatDate,
   formatDateOnly,
   formatRelative,

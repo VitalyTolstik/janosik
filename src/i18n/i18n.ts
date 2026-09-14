@@ -3,7 +3,6 @@ import LanguageDetector from "i18next-browser-languagedetector";
 import { initReactI18next } from "react-i18next";
 
 import en from "@/locales/en/translation.json";
-import ru from "@/locales/ru/translation.json";
 import { migrateStorageKey } from "@/utils/storage";
 
 /**
@@ -11,6 +10,11 @@ import { migrateStorageKey } from "@/utils/storage";
  *
  * - Resources: plain JSON files per locale (src/locales/{lang}/translation.json),
  *   fully decoupled from code so translators can edit them directly.
+ * - Loading (TASK-21.6): the default locale (en) stays bundled — the app must
+ *   boot translated on a cold offline first visit; every other locale is a
+ *   dynamic import that Vite splits into its own chunk (cached by the service
+ *   worker on the first online load). Until a lazy bundle arrives, i18next
+ *   falls back to en, so nothing renders as a raw key.
  * - Detection: localStorage `janosik-lang` (existing key) → navigator.language
  *   → <html lang>. The choice is cached back into localStorage.
  * - Typed keys: `CustomTypeOptions` derives valid message keys from the EN
@@ -35,7 +39,6 @@ i18n
   .init({
     resources: {
       en: { translation: en },
-      ru: { translation: ru },
     },
     fallbackLng: "en",
     defaultNS: "translation",
@@ -47,7 +50,8 @@ i18n
       escapeValue: false,
     },
     react: {
-      // Resources are bundled synchronously — no Suspense boundary needed.
+      // The default locale is bundled synchronously — no Suspense boundary
+      // needed; lazy locales resolve through `ensureLocale` (below).
       useSuspense: false,
     },
     initAsync: false,
@@ -57,6 +61,52 @@ i18n
       caches: ["localStorage"],
     },
   });
+
+// --- Lazy locale loading (TASK-21.6) -----------------------------------------
+
+/** Per-locale dynamic loaders — Vite turns each into its own cached chunk.
+ *  A new language = one entry here + one catalog file + `supportedLngs`. */
+const localeLoaders: Record<Lang, () => Promise<{ default: object }>> = {
+  en: () => Promise.resolve({ default: en }),
+  ru: () => import("@/locales/ru/translation.json"),
+};
+
+const loadedLocales = new Set<Lang>(["en"]);
+
+/** Normalize any BCP-47 tag ("ru-RU", "en-GB") to a supported Lang. */
+function toLang(tag: string): Lang {
+  return tag.toLowerCase().startsWith("ru") ? "ru" : "en";
+}
+
+/**
+ * Make sure the singleton has the catalog for `lang` before
+ * `changeLanguage(lang)` is called. Resolves `true` when the bundle is
+ * ready, `false` when loading failed (offline and the chunk isn't in the
+ * service-worker cache yet) — the caller then stays on the current locale
+ * instead of switching to a wall of raw keys.
+ */
+export function ensureLocale(lang: Lang): Promise<boolean> {
+  const locale = toLang(lang);
+  if (loadedLocales.has(locale)) return Promise.resolve(true);
+  return localeLoaders[locale]()
+    .then((mod) => {
+      i18n.addResourceBundle(locale, "translation", mod.default, true, true);
+      loadedLocales.add(locale);
+      return true;
+    })
+    .catch(() => false);
+}
+
+// The detector may resolve to a lazily-loaded locale (persisted "ru" from a
+// previous session): kick off the chunk fetch, then re-apply the language so
+// subscribers re-render. Until then i18next falls back to bundled English.
+const detected = i18n.language;
+if (detected && !detected.toLowerCase().startsWith("en")) {
+  const locale = toLang(detected);
+  void ensureLocale(locale).then((ok) => {
+    if (ok && i18n.language === detected) void i18n.changeLanguage(locale);
+  });
+}
 
 function syncHtmlLang(lang: string) {
   document.documentElement.lang = lang;

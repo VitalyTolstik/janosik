@@ -5,6 +5,7 @@ import { I18nextProvider, useTranslation } from "react-i18next";
 
 import {
   defaultI18n,
+  ensureLocale,
   is12HourLocale,
   loadTimeFormat,
   saveTimeFormat,
@@ -69,7 +70,11 @@ export function useI18n(): I18nContextValue {
   const lang: Lang = i18n.language.startsWith("ru") ? "ru" : "en";
 
   const setLang = (next: Lang) => {
-    void i18n.changeLanguage(next);
+    // Lazy locales (TASK-21.6): fetch the chunk first — on failure (offline,
+    // uncached) stay on the current language instead of showing raw keys.
+    void ensureLocale(next).then((ok) => {
+      if (ok) void i18n.changeLanguage(next);
+    });
   };
 
   const tp = (
