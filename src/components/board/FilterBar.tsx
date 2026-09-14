@@ -412,6 +412,10 @@ export function FilterBar({
                   onSelect={(day) => {
                     onChange({
                       ...filter,
+                      // Picking a day retires the relative window for good:
+                      // leaving it dormant made it resurrect when the day
+                      // chip was removed.
+                      created: "any",
                       createdOn: day ? formatIsoDate(day) : null,
                     });
                     if (day) setDayCalendarOpen(false);
