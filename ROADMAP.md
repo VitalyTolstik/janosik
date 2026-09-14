@@ -195,8 +195,8 @@
 
 #### TASK-21.2 — `data-safety` · Защита от потери данных ✅
 
-- **Статус:** ✅ реализовано, ветка `feature/TASK-21.2-data-safety` —
-  полное описание в `ROADMAP-DONE.md`. Next: TASK-21.3.
+- **Статус:** ✅ реализовано, PR #40 смержен — полное описание в
+  `ROADMAP-DONE.md`. Next: TASK-21.3.
 
 #### TASK-21.3 — `sw-fixes` · Две строки в service worker
 
