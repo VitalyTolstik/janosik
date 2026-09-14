@@ -5,9 +5,17 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Plus } from "lucide-react";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { GripVertical } from "lucide-react";
+import {
+  Fragment,
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
+import { AddCardZone } from "@/components/board/AddCardZone";
 import { CardComposer } from "@/components/board/CardComposer";
 import { ColumnMenu } from "@/components/board/ColumnMenu";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
@@ -17,17 +25,30 @@ import { WipLimitDialog } from "@/components/board/WipLimitDialog";
 import { useCardLabels } from "@/hooks/use-card-labels";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
-import { useBoard } from "@/store/BoardContext";
-import type { Column, Label } from "@/types/kanban";
+import { useBoardActions } from "@/store/BoardContext";
+import type { Card, Column, Label } from "@/types/kanban";
 import { LIMITS } from "@/types/kanban";
-
-/** Stable empty list, so the label resolver is not rebuilt board-less. */
-const NO_LABELS: Label[] = [];
 
 interface ColumnViewProps {
   column: Column;
-  /** Ordered card ids — overrides column.cardIds during an active drag. */
-  cardIds?: string[];
+  /**
+   * The ids to render, in order — the column's own order, or a filter/drag
+   * override. Straight from the store, so it keeps its identity until the
+   * order itself changes: it is `SortableContext`'s `items`, and a fresh
+   * array there re-renders every card through dnd-kit's context, `memo` or
+   * not (TASK-21.4.1).
+   */
+  cardIds: string[];
+  /**
+   * Those ids resolved to cards, in the same order. Resolved by the caller
+   * (`useCardList`) so the array keeps its identity while nothing in this
+   * column changes — that is what makes the `memo` below effective.
+   */
+  cards: Card[];
+  /** The board's labels — card chips and the composer's picker. */
+  labels: Label[];
+  /** True when `cards` is a filter/drag override of the column's own order. */
+  overridden?: boolean;
   className?: string;
   onCardClick?: (cardId: string) => void;
   /** True while a board filter is active (changes the empty-state text). */
@@ -49,9 +70,12 @@ interface ColumnViewProps {
  * - Double-click the title or use the menu to rename; menu → Delete column
  *   asks for confirmation (cascades to its cards).
  */
-export function ColumnView({
+function ColumnViewBody({
   column,
   cardIds,
+  cards,
+  labels,
+  overridden = false,
   className,
   onCardClick,
   isFiltered = false,
@@ -59,7 +83,6 @@ export function ColumnView({
   cursorCardId,
 }: ColumnViewProps) {
   const {
-    board,
     addCard,
     renameColumn,
     deleteColumn,
@@ -69,7 +92,7 @@ export function ColumnView({
     duplicateColumn,
     sortColumn,
     setColumnWipLimit,
-  } = useBoard();
+  } = useBoardActions();
   const { t, tp } = useI18n();
   const [renameOpen, setRenameOpen] = useState(false);
   const [wipLimitOpen, setWipLimitOpen] = useState(false);
@@ -88,13 +111,13 @@ export function ColumnView({
 
   // The card callbacks must keep their identity across renders, otherwise
   // `memo` on SortableCard/CardItem never holds (TASK-21.4). They take a
-  // card id and read the current board from a ref instead of closing over
-  // the card, so one handler serves the whole column.
-  const boardRef = useRef(board);
+  // card id and read the current cards from a ref instead of closing over
+  // one card, so a single handler serves the whole column.
+  const cardsRef = useRef(cards);
   useEffect(() => {
-    boardRef.current = board;
-  }, [board]);
-  const resolveLabels = useCardLabels(board?.labels ?? NO_LABELS);
+    cardsRef.current = cards;
+  }, [cards]);
+  const resolveLabels = useCardLabels(labels);
 
   const handleCardClick = useCallback(
     (cardId: string) => onCardClick?.(cardId),
@@ -102,7 +125,7 @@ export function ColumnView({
   );
   const handleCardDuplicate = useCallback(
     (cardId: string) => {
-      const card = boardRef.current?.cards[cardId];
+      const card = cardsRef.current.find((item) => item.id === cardId);
       duplicateCard(
         cardId,
         card ? t("card.duplicateTitle", { title: card.title }) : undefined,
@@ -110,6 +133,11 @@ export function ColumnView({
     },
     [duplicateCard, t],
   );
+  // Stable too, so the insert zones can be memoized (TASK-21.4.1): the zone
+  // reports the gap it sits in instead of each one closing over its index.
+  const handleInsertAt = useCallback((index: number) => {
+    setInlineAdd({ index, count: 0 });
+  }, []);
 
   const {
     attributes,
@@ -123,10 +151,7 @@ export function ColumnView({
     id: column.id,
   });
 
-  if (!board) return null;
-
-  const ids = cardIds ?? column.cardIds;
-  const count = ids.length;
+  const count = cardIds.length;
   const wipLimit = column.wipLimit;
   // The visible count includes hidden-by-filter cards only when no filter
   // overrides `cardIds` — the limit is judged on the real column contents.
@@ -136,9 +161,7 @@ export function ColumnView({
   // when the rendered ids ARE the column order (no filter override, no
   // active card-drag draft) and the column can still take cards.
   const inlineAddAllowed =
-    cardIds === undefined &&
-    column.cardIds.length < LIMITS.cardsPerColumn &&
-    !atWipLimit;
+    !overridden && column.cardIds.length < LIMITS.cardsPerColumn && !atWipLimit;
 
   const setNodeRef = (node: HTMLElement | null) => {
     setSortableRef(node);
@@ -238,7 +261,7 @@ export function ColumnView({
               <div className="py-1">
                 <CardComposer
                   key={`inline-empty`}
-                  labels={board.labels}
+                  labels={labels}
                   defaultComposing
                   atIndex={inlineAdd.index + inlineAdd.count}
                   onClose={() => setInlineAdd(null)}
@@ -256,32 +279,30 @@ export function ColumnView({
                     : t("column.empty")}
                 </div>
                 {inlineAddAllowed && (
-                  <AddCardZone
-                    index={0}
-                    onInsert={() => setInlineAdd({ index: 0, count: 0 })}
-                  />
+                  <AddCardZone index={0} onInsert={handleInsertAt} />
                 )}
               </div>
             )
           ) : (
-            <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+            <SortableContext
+              items={cardIds}
+              strategy={verticalListSortingStrategy}
+            >
               {/* Spacing comes from the 8px zones/spacers themselves (they
                   render in every mode) — a conditional space-y here would
                   shift the whole column on drag start. */}
               <ul className="py-1">
-                {ids.map((cardId, i) => {
-                  const card = board.cards[cardId];
-                  if (!card) return null;
-                  const labels = resolveLabels(card.labelIds);
+                {cards.map((card, i) => {
+                  const cardLabels = resolveLabels(card.labelIds);
                   return (
-                    <Fragment key={cardId}>
+                    <Fragment key={card.id}>
                       {inlineAdd?.index === i ? (
                         // Breathing room so the composer's top border
                         // never merges with the card above it.
                         <li className="py-1">
                           <CardComposer
                             key={`inline-${i}`}
-                            labels={board.labels}
+                            labels={labels}
                             defaultComposing
                             atIndex={i + inlineAdd.count}
                             onClose={() => setInlineAdd(null)}
@@ -297,13 +318,13 @@ export function ColumnView({
                         <AddCardZone
                           index={i}
                           interactive={inlineAddAllowed}
-                          onInsert={() => setInlineAdd({ index: i, count: 0 })}
+                          onInsert={handleInsertAt}
                         />
                       )}
                       <li>
                         <SortableCard
                           card={card}
-                          labels={labels}
+                          labels={cardLabels}
                           highlight={highlight}
                           isCursor={card.id === cursorCardId}
                           onCardClick={
@@ -320,14 +341,14 @@ export function ColumnView({
                   <AddCardZone
                     index={count}
                     interactive={inlineAddAllowed}
-                    onInsert={() => setInlineAdd({ index: count, count: 0 })}
+                    onInsert={handleInsertAt}
                   />
                 )}
                 {inlineAddAllowed && inlineAdd?.index === count && (
                   <li className="py-1">
                     <CardComposer
                       key={`inline-${count}`}
-                      labels={board.labels}
+                      labels={labels}
                       defaultComposing
                       atIndex={inlineAdd.index + inlineAdd.count}
                       onClose={() => setInlineAdd(null)}
@@ -348,7 +369,7 @@ export function ColumnView({
         <footer className="px-2 pb-2 pt-1.5">
           <CardComposer
             columnId={column.id}
-            labels={board.labels}
+            labels={labels}
             disabled={
               column.cardIds.length >= LIMITS.cardsPerColumn || atWipLimit
             }
@@ -408,48 +429,11 @@ export function ColumnView({
 }
 
 /**
- * Trello-style hover zone in a card gap: an 8px strip that expands to a
- * "+ Add card" ghost on hover. Collapsed, the button ignores pointer
- * events (a click in the gap must not open a composer by accident) — only
- * the revealed button is clickable. The reveal is deliberately delayed and
- * eased (no border, just a soft hover surface) so brushing past cards
- * never flashes the ghost.
- *
- * The zone is ALSO the column's spacing unit: it renders (as an inert
- * spacer via `interactive=false`) even while dragging/filtering. Swapping
- * zones for `space-y` margins there shifted every card 8px up on drag
- * start — space-y never adds a margin before the first card.
+ * Memoized (TASK-21.4.1). Everything it renders — the insert zones, the
+ * column menu, the composer, four always-mounted dialogs — used to re-run
+ * on every keystroke anywhere on the board, because the column looked its
+ * cards up in the store and the store hands out a new board object each
+ * time. It now takes them as props (`useCardList` keeps the array stable)
+ * and reads only the actions context, which never changes.
  */
-function AddCardZone({
-  index,
-  onInsert,
-  interactive = true,
-}: {
-  index: number;
-  onInsert?: () => void;
-  /** False = plain 8px spacer (drag/filter/WIP override): same geometry,
-   *  no hover reveal, no button. */
-  interactive?: boolean;
-}) {
-  const { t } = useI18n();
-  if (!interactive) {
-    return <li className="h-2 shrink-0" aria-hidden />;
-  }
-  return (
-    <li
-      data-testid={`card-insert-zone-${index}`}
-      className="group/zone flex h-2 shrink-0 items-center transition-[height] duration-200 hover:delay-150 hover:h-8"
-    >
-      <button
-        type="button"
-        data-testid={`card-insert-${index}`}
-        aria-label={t("composer.add")}
-        onClick={onInsert}
-        className="pointer-events-none flex h-8 w-full items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground opacity-0 transition-opacity duration-200 group-hover/zone:pointer-events-auto group-hover/zone:delay-150 group-hover/zone:opacity-100 hover:bg-hover/60 hover:text-foreground"
-      >
-        <Plus className="h-3 w-3" />
-        <span className="truncate">{t("composer.add")}</span>
-      </button>
-    </li>
-  );
-}
+export const ColumnView = memo(ColumnViewBody);

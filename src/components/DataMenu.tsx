@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { ArchiveIcon } from "@/components/ui/archive-icon";
 import {
   Archive,
@@ -45,13 +45,22 @@ export function DataMenu() {
   const { boards, board, importBoards } = useBoard();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [backupCount, setBackupCount] = useState<number | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [backupsOpen, setBackupsOpen] = useState(false);
 
-  const archivedCount = board
-    ? Object.values(board.cards).filter((card) => card.archivedAt !== undefined)
-        .length
-    : 0;
+  // Counted only while the menu is open (TASK-21.4.1): this component
+  // re-renders on every keystroke anywhere on the board, and walking every
+  // card to label a closed menu item is pure waste.
+  const archivedCount = useMemo(
+    () =>
+      menuOpen && board
+        ? Object.values(board.cards).filter(
+            (card) => card.archivedAt !== undefined,
+          ).length
+        : 0,
+    [menuOpen, board],
+  );
 
   const refreshBackups = useCallback(async () => {
     try {
@@ -101,6 +110,7 @@ export function DataMenu() {
     <>
       <DropdownMenu
         onOpenChange={(open) => {
+          setMenuOpen(open);
           if (open) void refreshBackups();
         }}
       >

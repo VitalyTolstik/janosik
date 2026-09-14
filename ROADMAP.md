@@ -109,7 +109,15 @@
   на воспроизводимость экшенов (см. `WARNING.md` §0).
 - **Персистентность** — интерфейс `DebouncedPersistence` поверх `localStorage`; позже бэкенд = второй адаптер `fetch` **без изменения reducer и UI**.
 - **UI** — shadcn/ui + Radix (dialog/dropdown/popover/tooltip/slot), dnd-kit, react-day-picker, MDXEditor (описание карточки); виды доски: канбан / календарь / таблица (TASK-14/14.1).
-- **Тесты** — **407 тестов в 36 файлах** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4; поведение service worker'а — TASK-21.3). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
+- **Рендер-изоляция** (TASK-21.4/21.4.1) — `memo` на `ColumnView`,
+  `SortableCard`/`CardItem`, `AddCardZone` и `TableRow`; данные им приходят
+  **пропсами** через резолверы `useCardList`/`useCardLabels`, которые
+  возвращают тот же массив, пока не изменились сами карточки/метки. Правка
+  карточки перерисовывает только её колонку (или строку таблицы).
+  **Массивы, уходящие в `SortableContext items`, обязаны быть стабильными:**
+  новый массив меняет контекст dnd-kit и перерисовывает всех подписчиков
+  `useSortable` в обход `memo` (наступали дважды).
+- **Тесты** — **416 тестов в 39 файлах** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
 
 ### 1.3. Ключи и точки интеграции
 
@@ -180,6 +188,7 @@
 | 13 | TASK-21.2 `data-safety` | ✅ реализовано, ветка `feature/TASK-21.2-data-safety` — баннер вместо тоста, карантин битого JSON, подтверждение+автоэкспорт в ErrorBoundary |
 | 14 | TASK-21.3 `sw-fixes` | ✅ реализовано, ветка `feature/TASK-21.3-21.4-sw-fixes-context-split` — ошибочные ответы больше не кэшируются как app shell, `CACHE_VERSION` = хеш сборки (плагин Vite, `sw.js` переехал из `public/` в `src/pwa/`) |
 | 15 | TASK-21.4 `context-split` | ✅ реализовано, та же ветка — три контекста (стейт / actions / canUndo-canRedo), `memo` на карточках, общий резолвер меток, ротация бэкапов по ключам + trailing-снимок; замер: 5 нажатий в заголовке карточки — шапка 5→1 рендер, чужие карточки 5→0 |
+| 15 | TASK-21.4.1 `memo-columns` | ✅ реализовано, та же ветка — `memo` на колонке, зоне вставки и строке таблицы; правка карточки перерисовывает только свою колонку/строку, рендеров на нажатие 86 → 37 и больше не растёт с числом карточек |
 | 16 | TASK-21.5 `limits-rebalance` | честные лимиты localStorage — см. §6.0.1 |
 | 17 | TASK-21.6 `i18n-lazy` | ленивые локали — см. §6.0.1 |
 | 18 | TASK-21.7a `deterministic-actions` | детерминизм редьюсера: `createId()`/`Date.now()` → в payload экшена (корень всех инверсий) — см. §6.0.1 |
@@ -211,6 +220,11 @@
   — полное описание в `ROADMAP-DONE.md`. Next: TASK-21.5.
 
 #### TASK-21.4 — `context-split` · Рендер-производительность ✅
+
+- **Статус:** ✅ реализовано, ветка `feature/TASK-21.3-21.4-sw-fixes-context-split`
+  — полное описание в `ROADMAP-DONE.md`. Next: TASK-21.5.
+
+#### TASK-21.4.1 — `memo-columns` · Мемоизация колонок, зон и строк таблицы ✅
 
 - **Статус:** ✅ реализовано, ветка `feature/TASK-21.3-21.4-sw-fixes-context-split`
   — полное описание в `ROADMAP-DONE.md`. Next: TASK-21.5.

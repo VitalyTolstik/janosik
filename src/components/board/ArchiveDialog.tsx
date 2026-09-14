@@ -24,6 +24,9 @@ import { routes } from "@/routes";
 import { useBoard } from "@/store/BoardContext";
 import type { Card } from "@/types/kanban";
 
+/** Stable empty list for the closed dialog. */
+const NO_CARDS: Card[] = [];
+
 interface ArchiveDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -53,9 +56,14 @@ export function ArchiveDialog({ open, onOpenChange }: ArchiveDialogProps) {
 
   if (!board) return null;
 
-  const archived = Object.values(board.cards)
-    .filter((card): card is Card => card.archivedAt !== undefined)
-    .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0));
+  // Scanned only while open (TASK-21.4.1): the dialog stays mounted so it
+  // keeps its close animation, and it re-renders on every board change —
+  // sorting every archived card for an invisible dialog is pure waste.
+  const archived = open
+    ? Object.values(board.cards)
+        .filter((card): card is Card => card.archivedAt !== undefined)
+        .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
+    : NO_CARDS;
   const needle = query.trim().toLowerCase();
   const visible = needle
     ? archived.filter((card) => card.title.toLowerCase().includes(needle))
