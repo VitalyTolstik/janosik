@@ -236,9 +236,10 @@ export function ColumnView({
             )
           ) : (
             <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-              {/* With hover zones the gaps come from the 8px zones themselves;
-                  without them (filter/drag override) keep the plain spacing. */}
-              <ul className={cn("py-1", !inlineAddAllowed && "space-y-2")}>
+              {/* Spacing comes from the 8px zones/spacers themselves (they
+                  render in every mode) — a conditional space-y here would
+                  shift the whole column on drag start. */}
+              <ul className="py-1">
                 {ids.map((cardId, i) => {
                   const card = board.cards[cardId];
                   if (!card) return null;
@@ -249,33 +250,31 @@ export function ColumnView({
                     .filter((l): l is NonNullable<typeof l> => Boolean(l));
                   return (
                     <Fragment key={cardId}>
-                      {inlineAddAllowed &&
-                        (inlineAdd?.index === i ? (
-                          // Breathing room so the composer's top border
-                          // never merges with the card above it.
-                          <li className="py-1">
-                            <CardComposer
-                              key={`inline-${i}`}
-                              labels={board.labels}
-                              defaultComposing
-                              atIndex={i + inlineAdd.count}
-                              onClose={() => setInlineAdd(null)}
-                              onSubmit={(title, labelIds, at) => {
-                                addCard(column.id, title, labelIds, at);
-                                setInlineAdd((s) =>
-                                  s ? { ...s, count: s.count + 1 } : s,
-                                );
-                              }}
-                            />
-                          </li>
-                        ) : (
-                          <AddCardZone
-                            index={i}
-                            onInsert={() =>
-                              setInlineAdd({ index: i, count: 0 })
-                            }
+                      {inlineAdd?.index === i ? (
+                        // Breathing room so the composer's top border
+                        // never merges with the card above it.
+                        <li className="py-1">
+                          <CardComposer
+                            key={`inline-${i}`}
+                            labels={board.labels}
+                            defaultComposing
+                            atIndex={i + inlineAdd.count}
+                            onClose={() => setInlineAdd(null)}
+                            onSubmit={(title, labelIds, at) => {
+                              addCard(column.id, title, labelIds, at);
+                              setInlineAdd((s) =>
+                                s ? { ...s, count: s.count + 1 } : s,
+                              );
+                            }}
                           />
-                        ))}
+                        </li>
+                      ) : (
+                        <AddCardZone
+                          index={i}
+                          interactive={inlineAddAllowed}
+                          onInsert={() => setInlineAdd({ index: i, count: 0 })}
+                        />
+                      )}
                       <li>
                         <SortableCard
                           card={card}
@@ -297,15 +296,14 @@ export function ColumnView({
                     </Fragment>
                   );
                 })}
-                {inlineAddAllowed &&
-                  count > 0 &&
-                  inlineAdd?.index !== count && (
-                    <AddCardZone
-                      index={count}
-                      onInsert={() => setInlineAdd({ index: count, count: 0 })}
-                    />
-                  )}
-                {inlineAdd && inlineAdd.index === count && (
+                {count > 0 && inlineAdd?.index !== count && (
+                  <AddCardZone
+                    index={count}
+                    interactive={inlineAddAllowed}
+                    onInsert={() => setInlineAdd({ index: count, count: 0 })}
+                  />
+                )}
+                {inlineAddAllowed && inlineAdd?.index === count && (
                   <li className="py-1">
                     <CardComposer
                       key={`inline-${count}`}
@@ -396,15 +394,27 @@ export function ColumnView({
  * the revealed button is clickable. The reveal is deliberately delayed and
  * eased (no border, just a soft hover surface) so brushing past cards
  * never flashes the ghost.
+ *
+ * The zone is ALSO the column's spacing unit: it renders (as an inert
+ * spacer via `interactive=false`) even while dragging/filtering. Swapping
+ * zones for `space-y` margins there shifted every card 8px up on drag
+ * start — space-y never adds a margin before the first card.
  */
 function AddCardZone({
   index,
   onInsert,
+  interactive = true,
 }: {
   index: number;
-  onInsert: () => void;
+  onInsert?: () => void;
+  /** False = plain 8px spacer (drag/filter/WIP override): same geometry,
+   *  no hover reveal, no button. */
+  interactive?: boolean;
 }) {
   const { t } = useI18n();
+  if (!interactive) {
+    return <li className="h-2 shrink-0" aria-hidden />;
+  }
   return (
     <li
       data-testid={`card-insert-zone-${index}`}
