@@ -288,46 +288,52 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   // Wrapper dispatch: record history for the targeted board, then apply.
   // Board-scoped actions get the active board id injected when absent.
-  const dispatch = useCallback((action: BoardAction) => {
-    if (action.type === "IMPORT_BOARDS") {
-      // A new data set invalidates every history.
-      historiesRef.current.clear();
-      apply(action);
-      return;
-    }
-    if (action.type === "ADD_BOARD") {
-      apply(action);
-      return;
-    }
-    if (action.type === "REMOVE_BOARD") {
-      historiesRef.current.delete(action.boardId);
-      apply(action);
-      return;
-    }
-    if (action.type === "ARCHIVE_BOARD" || action.type === "UNARCHIVE_BOARD") {
-      // Organizational actions, not content edits — no undo entry.
-      apply(action);
-      return;
-    }
-    const boardId =
-      action.type === "RESTORE_BOARD"
-        ? (action.boardId ?? activeIdRef.current)
-        : ((action as { boardId?: string }).boardId ?? activeIdRef.current);
-    if (!boardId) return;
-    const scoped = { ...action, boardId } as BoardAction;
-    if (scoped.type !== "RESTORE_BOARD") {
-      const current = stateRef.current.find((b) => b.id === boardId);
-      if (current) {
-        let history = historiesRef.current.get(boardId);
-        if (!history) {
-          history = new BoardHistory();
-          historiesRef.current.set(boardId, history);
-        }
-        history.push(current, scoped);
+  const dispatch = useCallback(
+    (action: BoardAction) => {
+      if (action.type === "IMPORT_BOARDS") {
+        // A new data set invalidates every history.
+        historiesRef.current.clear();
+        apply(action);
+        return;
       }
-    }
-    apply(scoped);
-  }, []);
+      if (action.type === "ADD_BOARD") {
+        apply(action);
+        return;
+      }
+      if (action.type === "REMOVE_BOARD") {
+        historiesRef.current.delete(action.boardId);
+        apply(action);
+        return;
+      }
+      if (
+        action.type === "ARCHIVE_BOARD" ||
+        action.type === "UNARCHIVE_BOARD"
+      ) {
+        // Organizational actions, not content edits — no undo entry.
+        apply(action);
+        return;
+      }
+      const boardId =
+        action.type === "RESTORE_BOARD"
+          ? (action.boardId ?? activeIdRef.current)
+          : ((action as { boardId?: string }).boardId ?? activeIdRef.current);
+      if (!boardId) return;
+      const scoped = { ...action, boardId } as BoardAction;
+      if (scoped.type !== "RESTORE_BOARD") {
+        const current = stateRef.current.find((b) => b.id === boardId);
+        if (current) {
+          let history = historiesRef.current.get(boardId);
+          if (!history) {
+            history = new BoardHistory();
+            historiesRef.current.set(boardId, history);
+          }
+          history.push(current, scoped);
+        }
+      }
+      apply(scoped);
+    },
+    [apply],
+  );
 
   const undo = useCallback(() => {
     const boardId = activeIdRef.current;
@@ -338,7 +344,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     if (previous) {
       apply({ type: "RESTORE_BOARD", boardId, board: previous });
     }
-  }, []);
+  }, [apply]);
 
   const redo = useCallback(() => {
     const boardId = activeIdRef.current;
@@ -349,13 +355,16 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     if (next) {
       apply({ type: "RESTORE_BOARD", boardId, board: next });
     }
-  }, []);
+  }, [apply]);
 
-  const importBoards = useCallback((boards: BoardState) => {
-    // A new data set invalidates any previous history.
-    historiesRef.current.clear();
-    apply({ type: "IMPORT_BOARDS", boards: normalizeBoards(boards) });
-  }, []);
+  const importBoards = useCallback(
+    (boards: BoardState) => {
+      // A new data set invalidates any previous history.
+      historiesRef.current.clear();
+      apply({ type: "IMPORT_BOARDS", boards: normalizeBoards(boards) });
+    },
+    [apply],
+  );
 
   // Hotkeys: Ctrl/⌘+Z undo, Ctrl/⌘+Shift+Z or Ctrl+Y redo. Skip while the
   // user is typing inside an editable field (native text undo takes over).
@@ -388,36 +397,48 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [undo, redo]);
 
-  const addBoard = useCallback((title: string): string => {
-    const id = createId();
-    const now = Date.now();
-    apply({
-      type: "ADD_BOARD",
-      board: {
-        id,
-        title: title.trim() || "Untitled",
-        columns: [],
-        cards: {},
-        labels: [],
-        createdAt: now,
-        updatedAt: now,
-      },
-    });
-    return id;
-  }, []);
+  const addBoard = useCallback(
+    (title: string): string => {
+      const id = createId();
+      const now = Date.now();
+      apply({
+        type: "ADD_BOARD",
+        board: {
+          id,
+          title: title.trim() || "Untitled",
+          columns: [],
+          cards: {},
+          labels: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      return id;
+    },
+    [apply],
+  );
 
-  const removeBoard = useCallback((boardId: string) => {
-    historiesRef.current.delete(boardId);
-    apply({ type: "REMOVE_BOARD", boardId });
-  }, []);
+  const removeBoard = useCallback(
+    (boardId: string) => {
+      historiesRef.current.delete(boardId);
+      apply({ type: "REMOVE_BOARD", boardId });
+    },
+    [apply],
+  );
 
-  const archiveBoard = useCallback((boardId: string) => {
-    apply({ type: "ARCHIVE_BOARD", boardId });
-  }, []);
+  const archiveBoard = useCallback(
+    (boardId: string) => {
+      apply({ type: "ARCHIVE_BOARD", boardId });
+    },
+    [apply],
+  );
 
-  const unarchiveBoard = useCallback((boardId: string) => {
-    apply({ type: "UNARCHIVE_BOARD", boardId });
-  }, []);
+  const unarchiveBoard = useCallback(
+    (boardId: string) => {
+      apply({ type: "UNARCHIVE_BOARD", boardId });
+    },
+    [apply],
+  );
 
   const value = useMemo<BoardContextValue>(
     () => ({

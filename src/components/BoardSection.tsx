@@ -86,7 +86,7 @@ export function BoardSection() {
     if (cardParam && board?.cards[cardParam] && openCardId !== cardParam) {
       setOpenCardId(cardParam);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only reacts to URL changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to URL changes only; including openCardId would reopen the dialog right after the user closes it (the close handler clears the param asynchronously)
   }, [searchParams, board]);
   const handleCardClick = useCallback((cardId: string) => {
     setOpenCardId(cardId);
