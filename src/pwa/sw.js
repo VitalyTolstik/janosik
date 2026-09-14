@@ -1,5 +1,10 @@
 /* Janosik service worker.
  *
+ * Not part of the app bundle: this file is never imported. The build reads
+ * it from here, stamps `CACHE_VERSION` with a hash of the emitted assets
+ * and writes it to `dist/sw.js` (vite/sw-plugin.ts) — so every deploy gets
+ * a fresh cache name and `activate` drops the previous deploy's `/assets/*`.
+ *
  * Strategy:
  *  - app shell ("/", the SPA entry): network-first, cache fallback — a
  *    fresh index.html points at the current hashed assets, a cached one
@@ -9,9 +14,11 @@
  *    (editor, calendar) land in the cache the first time they load;
  *  - everything else same-origin (manifest, icons): cache-first.
  *
- * Bump CACHE_VERSION to invalidate everything on the next deploy.
+ * Only successful responses are cached: a 500 from a half-deployed server
+ * or a 404 behind a captive portal would otherwise be pinned as the app
+ * shell forever, and the "offline" fallback would replay the error page.
  */
-const CACHE_VERSION = "janosik-v1";
+const CACHE_VERSION = "__CACHE_VERSION__";
 const APP_SHELL_URL = "/";
 
 self.addEventListener("install", (event) => {
@@ -52,10 +59,13 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches
-            .open(CACHE_VERSION)
-            .then((cache) => cache.put(APP_SHELL_URL, copy));
+          // An error page must not become the cached app shell.
+          if (response.ok) {
+            const copy = response.clone();
+            caches
+              .open(CACHE_VERSION)
+              .then((cache) => cache.put(APP_SHELL_URL, copy));
+          }
           return response;
         })
         .catch(() =>

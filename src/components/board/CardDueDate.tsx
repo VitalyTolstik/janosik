@@ -13,7 +13,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { formatDateOnly, formatTime, useHour12, useI18n } from "@/i18n";
-import { useBoard } from "@/store/BoardContext";
+import { useBoardActions } from "@/store/BoardContext";
 
 /** Time-of-day applied when a date is picked without a time set yet. */
 const DEFAULT_TIME = "12:00";
@@ -57,7 +57,7 @@ export function DueDatePickerContent({
   dueDate,
   onRemoved,
 }: DueDatePickerContentProps) {
-  const { setCardDueDate } = useBoard();
+  const { setCardDueDate } = useBoardActions();
   const { t, lang } = useI18n();
   const [timeOpen, setTimeOpen] = useState(false);
   const [time, setTime] = useState(() =>

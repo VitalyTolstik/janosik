@@ -8,7 +8,7 @@ import {
   Settings2,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { DueBadge } from "@/components/board/DueBadge";
 import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
@@ -33,16 +33,26 @@ import {
 } from "@/components/ui/popover";
 import { useToast } from "@/components/Toast";
 import { formatDateOnly, useI18n } from "@/i18n";
+import { useCardLabels } from "@/hooks/use-card-labels";
 import { cn } from "@/lib/utils";
 import { createId } from "@/utils/id";
 import { useBoard } from "@/store/BoardContext";
 import {
   LABEL_COLOR_CHIP,
   type Card,
+  type Column,
   type Label,
   type LabelColor,
   LIMITS,
 } from "@/types/kanban";
+
+/** Stable empty list, so the label resolver survives a board-less render. */
+const NO_LABELS: Label[] = [];
+
+function checklistProgress(card: Card) {
+  const items = (card.checklists ?? []).flatMap((c) => c.items);
+  return { done: items.filter((i) => i.done).length, total: items.length };
+}
 
 interface TableViewProps {
   /** Per-column card ids with a filter applied — overrides the stored
@@ -121,6 +131,7 @@ export function TableView({
   } = useBoard();
   const { t, lang } = useI18n();
   const toast = useToast();
+  const labelsOf = useCardLabels(board?.labels ?? NO_LABELS);
 
   const [sort, setSort] = useState<SortState | null>(null);
   const [visibleColumns, setVisibleColumns] =
@@ -128,10 +139,63 @@ export function TableView({
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   // Row archive uses the same two-step confirm as the board card (✓ / ✗).
   const [archiveConfirmId, setArchiveConfirmId] = useState<string | null>(null);
-  const [titleDraft, setTitleDraft] = useState("");
   // The "+ card" popover is controlled so the composer's Отмена can close it.
   const [addOpen, setAddOpen] = useState(false);
-  const titleInputRef = useRef<HTMLInputElement | null>(null);
+
+  // The row callbacks must keep their identity, otherwise `memo` on
+  // TableRow never holds (TASK-21.4.1) — so they read the current board
+  // from a ref instead of closing over it.
+  const boardRef = useRef(board);
+  useEffect(() => {
+    boardRef.current = board;
+  }, [board]);
+
+  const submitTitleEdit = useCallback(
+    (cardId: string, title: string) => {
+      const trimmed = title.trim();
+      setEditingTitleId(null);
+      if (trimmed && trimmed !== boardRef.current?.cards[cardId]?.title) {
+        updateCard(cardId, { title: trimmed });
+      }
+    },
+    [updateCard],
+  );
+
+  const cancelTitleEdit = useCallback(() => setEditingTitleId(null), []);
+
+  const handleCreateLabel = useCallback(
+    (cardId: string, name: string, color: LabelColor) => {
+      const label = { id: createId(), name, color };
+      addLabel(label);
+      toggleCardLabel(cardId, label.id);
+    },
+    [addLabel, toggleCardLabel],
+  );
+
+  const moveToColumn = useCallback(
+    (cardId: string, fromColumnId: string, toColumnId: string) => {
+      if (toColumnId === fromColumnId) return;
+      const target = boardRef.current?.columns.find(
+        (col) => col.id === toColumnId,
+      );
+      if (!target) return;
+      // WIP limit respected on inline moves too — same toast as board drag.
+      if (
+        target.wipLimit !== undefined &&
+        target.cardIds.length >= target.wipLimit
+      ) {
+        toast.error(
+          t("toast.wipLimitBlocked", {
+            title: target.title,
+            limit: target.wipLimit,
+          }),
+        );
+        return;
+      }
+      moveCard(cardId, fromColumnId, toColumnId, target.cardIds.length);
+    },
+    [moveCard, t, toast],
+  );
 
   // Persist the column choice next to the view/scale choices.
   useEffect(() => {
@@ -141,10 +205,6 @@ export function TableView({
       /* storage unavailable — the choice only lasts the session */
     }
   }, [visibleColumns]);
-
-  useEffect(() => {
-    if (editingTitleId) titleInputRef.current?.focus();
-  }, [editingTitleId]);
 
   if (!board) return null;
 
@@ -197,62 +257,6 @@ export function TableView({
       if (prev.dir === 1) return { key, dir: -1 };
       return null; // third click resets to the board order
     });
-  };
-
-  const labelsOf = (labelIds: string[]): Label[] =>
-    labelIds
-      .map((labelId) => board.labels.find((l) => l.id === labelId))
-      .filter((l): l is Label => Boolean(l));
-
-  const checklistProgress = (card: Card) => {
-    const items = (card.checklists ?? []).flatMap((c) => c.items);
-    return { done: items.filter((i) => i.done).length, total: items.length };
-  };
-
-  const startTitleEdit = (card: Card) => {
-    setEditingTitleId(card.id);
-    setTitleDraft(card.title);
-  };
-
-  const submitTitleEdit = (cardId: string) => {
-    const trimmed = titleDraft.trim();
-    setEditingTitleId(null);
-    if (trimmed && trimmed !== board.cards[cardId]?.title) {
-      updateCard(cardId, { title: trimmed });
-    }
-  };
-
-  const cancelTitleEdit = () => setEditingTitleId(null);
-
-  const handleCreateLabel =
-    (cardId: string) => (name: string, color: LabelColor) => {
-      const label = { id: createId(), name, color };
-      addLabel(label);
-      toggleCardLabel(cardId, label.id);
-    };
-
-  const moveToColumn = (
-    card: Card,
-    fromColumnId: string,
-    toColumnId: string,
-  ) => {
-    if (toColumnId === fromColumnId) return;
-    const target = board.columns.find((col) => col.id === toColumnId);
-    if (!target) return;
-    // WIP limit respected on inline moves too — same toast as board drag.
-    if (
-      target.wipLimit !== undefined &&
-      target.cardIds.length >= target.wipLimit
-    ) {
-      toast.error(
-        t("toast.wipLimitBlocked", {
-          title: target.title,
-          limit: target.wipLimit,
-        }),
-      );
-      return;
-    }
-    moveCard(card.id, fromColumnId, toColumnId, target.cardIds.length);
   };
 
   const optionalCount = visibleColumns.length;
@@ -408,271 +412,31 @@ export function TableView({
               </tr>
             ) : (
               sortedRows.map(({ card, column }) => (
-                <tr
+                <TableRow
                   key={card.id}
-                  onClick={() => onCardClick(card.id)}
-                  data-testid="table-row"
-                  className="cursor-pointer border-b border-border/40 transition-colors last:border-b-0 hover:bg-muted/40"
-                >
-                  <td className="relative max-w-0 px-3 py-2">
-                    {editingTitleId === card.id ? (
-                      <Input
-                        ref={titleInputRef}
-                        name="table-title-edit"
-                        value={titleDraft}
-                        maxLength={LIMITS.cardTitle}
-                        aria-label={t("view.table.rename")}
-                        data-testid="table-title-input"
-                        onClick={(event) => event.stopPropagation()}
-                        onChange={(e) => setTitleDraft(e.target.value)}
-                        onBlur={() => submitTitleEdit(card.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") submitTitleEdit(card.id);
-                          if (e.key === "Escape") cancelTitleEdit();
-                        }}
-                        className="h-7 text-sm"
-                      />
-                    ) : (
-                      <span className="group/title block">
-                        <span
-                          onDoubleClick={(event) => {
-                            event.stopPropagation();
-                            startTitleEdit(card);
-                          }}
-                          className="block truncate text-foreground/90 group-hover/title:pr-9"
-                        >
-                          <HighlightedText
-                            text={card.title}
-                            query={highlight ?? ""}
-                          />
-                        </span>
-                        {archiveConfirmId === card.id ? (
-                          <span
-                            data-testid="table-archive-confirm"
-                            className="absolute right-2 top-1/2 z-10 flex h-6 -translate-y-1/2 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            <button
-                              type="button"
-                              aria-label={t("card.archiveConfirmYes")}
-                              className="flex h-5 w-5 items-center justify-center rounded-md text-danger hover:bg-danger/10"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setArchiveConfirmId(null);
-                                archiveCard(card.id);
-                              }}
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              aria-label={t("card.archiveConfirmCancel")}
-                              className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setArchiveConfirmId(null);
-                              }}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            aria-label={t("card.archive")}
-                            data-testid="table-archive-btn"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setArchiveConfirmId(card.id);
-                            }}
-                            className="absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/title:opacity-100"
-                          >
-                            <Archive className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </span>
-                    )}
-                  </td>
-                  <td
-                    className="px-3 py-2"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          data-testid="table-column-cell"
-                          title={t("view.table.moveHint")}
-                          className="inline-flex max-w-full items-center truncate rounded-md bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        >
-                          {column.title}
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start">
-                        <DropdownMenuLabel>
-                          {t("view.table.column")}
-                        </DropdownMenuLabel>
-                        {board.columns.map((col) => (
-                          <DropdownMenuItem
-                            key={col.id}
-                            disabled={col.id === column.id}
-                            onSelect={() =>
-                              moveToColumn(card, column.id, col.id)
-                            }
-                          >
-                            {col.title}
-                          </DropdownMenuItem>
-                        ))}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          data-testid="table-archive-card"
-                          onSelect={() => archiveCard(card.id)}
-                        >
-                          <Archive className="h-4 w-4" />
-                          {t("card.archive")}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </td>
-                  <td
-                    className="px-3 py-2"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
-                          data-testid="table-due-cell"
-                          className="rounded transition-opacity hover:opacity-80"
-                          aria-label={t("dueDate.label")}
-                        >
-                          {typeof card.dueDate === "number" ? (
-                            <DueBadge dueDate={card.dueDate} />
-                          ) : (
-                            <span className="text-xs text-muted-foreground/60">
-                              —
-                            </span>
-                          )}
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent
-                        align="start"
-                        className="relative w-auto p-3"
-                      >
-                        <DueDatePickerContent
-                          cardId={card.id}
-                          dueDate={card.dueDate}
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </td>
-                  <td
-                    className="px-3 py-2"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
-                          data-testid="table-labels-cell"
-                          className="max-w-44"
-                          aria-label={t("view.table.labels")}
-                        >
-                          {card.labelIds.length > 0 ? (
-                            <span className="flex flex-wrap gap-1">
-                              {labelsOf(card.labelIds).map((label) => (
-                                <span
-                                  key={label.id}
-                                  className={
-                                    "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
-                                    LABEL_COLOR_CHIP[label.color]
-                                  }
-                                >
-                                  <span
-                                    className="h-1.5 w-1.5 rounded-full bg-current"
-                                    aria-hidden
-                                  />
-                                  {label.name}
-                                </span>
-                              ))}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground/60">
-                              —
-                            </span>
-                          )}
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent align="start" className="w-64 p-3">
-                        <LabelPicker
-                          labels={board.labels}
-                          selected={card.labelIds}
-                          onToggle={(labelId) =>
-                            toggleCardLabel(card.id, labelId)
-                          }
-                          onCreate={handleCreateLabel(card.id)}
-                          onRename={renameLabel}
-                          onRecolor={setLabelColor}
-                          onDelete={deleteLabel}
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </td>
-                  {visibleColumns.includes("checklists") ? (
-                    <td className="px-3 py-2">
-                      {(() => {
-                        const { done, total } = checklistProgress(card);
-                        return total > 0 ? (
-                          <span
-                            data-testid="table-checklist"
-                            title={t("checklist.badgeTooltip", { done, total })}
-                            className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 text-[11px] text-muted-foreground"
-                          >
-                            <ListChecks className="h-3 w-3" aria-hidden />
-                            {done}/{total}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground/60">
-                            —
-                          </span>
-                        );
-                      })()}
-                    </td>
-                  ) : null}
-                  {visibleColumns.includes("description") ? (
-                    <td className="px-3 py-2">
-                      {card.description ? (
-                        <AlignLeft
-                          data-testid="table-description"
-                          className="h-3.5 w-3.5 text-muted-foreground"
-                          aria-label={t("view.table.description")}
-                        />
-                      ) : (
-                        <span className="text-xs text-muted-foreground/60">
-                          —
-                        </span>
-                      )}
-                    </td>
-                  ) : null}
-                  {visibleColumns.includes("createdAt") ? (
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {formatDateOnly(card.createdAt, lang)}
-                    </td>
-                  ) : null}
-                  {visibleColumns.includes("updatedAt") ? (
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {formatDateOnly(card.updatedAt, lang)}
-                    </td>
-                  ) : null}
-                  {visibleColumns.includes("activity") ? (
-                    <td className="px-3 py-2">
-                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                        <MessageSquare className="h-3 w-3" aria-hidden />
-                        {card.activity?.length ?? 0}
-                      </span>
-                    </td>
-                  ) : null}
-                </tr>
+                  card={card}
+                  cardLabels={labelsOf(card.labelIds)}
+                  columnId={column.id}
+                  columnTitle={column.title}
+                  columns={board.columns}
+                  labels={board.labels}
+                  visibleColumns={visibleColumns}
+                  highlight={highlight}
+                  isEditingTitle={editingTitleId === card.id}
+                  isArchiveConfirm={archiveConfirmId === card.id}
+                  onOpen={onCardClick}
+                  onStartTitleEdit={setEditingTitleId}
+                  onSubmitTitle={submitTitleEdit}
+                  onCancelTitle={cancelTitleEdit}
+                  onArchiveConfirm={setArchiveConfirmId}
+                  onArchive={archiveCard}
+                  onMoveToColumn={moveToColumn}
+                  onToggleLabel={toggleCardLabel}
+                  onCreateLabel={handleCreateLabel}
+                  onRenameLabel={renameLabel}
+                  onRecolorLabel={setLabelColor}
+                  onDeleteLabel={deleteLabel}
+                />
               ))
             )}
           </tbody>
@@ -681,6 +445,311 @@ export function TableView({
     </div>
   );
 }
+
+interface TableRowProps {
+  card: Card;
+  /** Resolved labels of this card (stable — see `useCardLabels`). */
+  cardLabels: Label[];
+  columnId: string;
+  columnTitle: string;
+  /** Every column, for the "move to" menu. */
+  columns: Column[];
+  /** Every board label, for the picker. */
+  labels: Label[];
+  visibleColumns: OptionalColumn[];
+  highlight?: string;
+  isEditingTitle: boolean;
+  isArchiveConfirm: boolean;
+  onOpen: (cardId: string) => void;
+  onStartTitleEdit: (cardId: string) => void;
+  /** Commits the inline editor's own (uncontrolled) value. */
+  onSubmitTitle: (cardId: string, title: string) => void;
+  onCancelTitle: () => void;
+  onArchiveConfirm: (cardId: string | null) => void;
+  onArchive: (cardId: string) => void;
+  onMoveToColumn: (
+    cardId: string,
+    fromColumnId: string,
+    toColumnId: string,
+  ) => void;
+  onToggleLabel: (cardId: string, labelId: string) => void;
+  onCreateLabel: (cardId: string, name: string, color: LabelColor) => void;
+  onRenameLabel: (labelId: string, name: string) => void;
+  onRecolorLabel: (labelId: string, color: LabelColor) => void;
+  onDeleteLabel: (labelId: string) => void;
+}
+
+function TableRowBody({
+  card,
+  cardLabels,
+  columnId,
+  columnTitle,
+  columns,
+  labels,
+  visibleColumns,
+  highlight,
+  isEditingTitle,
+  isArchiveConfirm,
+  onOpen,
+  onStartTitleEdit,
+  onSubmitTitle,
+  onCancelTitle,
+  onArchiveConfirm,
+  onArchive,
+  onMoveToColumn,
+  onToggleLabel,
+  onCreateLabel,
+  onRenameLabel,
+  onRecolorLabel,
+  onDeleteLabel,
+}: TableRowProps) {
+  const { t, lang } = useI18n();
+  return (
+    <tr
+      onClick={() => onOpen(card.id)}
+      data-testid="table-row"
+      className="cursor-pointer border-b border-border/40 transition-colors last:border-b-0 hover:bg-muted/40"
+    >
+      <td className="relative max-w-0 px-3 py-2">
+        {isEditingTitle ? (
+          <Input
+            autoFocus
+            name="table-title-edit"
+            defaultValue={card.title}
+            maxLength={LIMITS.cardTitle}
+            aria-label={t("view.table.rename")}
+            data-testid="table-title-input"
+            onClick={(event) => event.stopPropagation()}
+            onBlur={(event) => onSubmitTitle(card.id, event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter")
+                onSubmitTitle(card.id, event.currentTarget.value);
+              if (event.key === "Escape") onCancelTitle();
+            }}
+            className="h-7 text-sm"
+          />
+        ) : (
+          <span className="group/title block">
+            <span
+              onDoubleClick={(event) => {
+                event.stopPropagation();
+                onStartTitleEdit(card.id);
+              }}
+              className="block truncate text-foreground/90 group-hover/title:pr-9"
+            >
+              <HighlightedText text={card.title} query={highlight ?? ""} />
+            </span>
+            {isArchiveConfirm ? (
+              <span
+                data-testid="table-archive-confirm"
+                className="absolute right-2 top-1/2 z-10 flex h-6 -translate-y-1/2 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  aria-label={t("card.archiveConfirmYes")}
+                  className="flex h-5 w-5 items-center justify-center rounded-md text-danger hover:bg-danger/10"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onArchiveConfirm(null);
+                    onArchive(card.id);
+                  }}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  aria-label={t("card.archiveConfirmCancel")}
+                  className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onArchiveConfirm(null);
+                  }}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                aria-label={t("card.archive")}
+                data-testid="table-archive-btn"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onArchiveConfirm(card.id);
+                }}
+                className="absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/title:opacity-100"
+              >
+                <Archive className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </span>
+        )}
+      </td>
+      <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              data-testid="table-column-cell"
+              title={t("view.table.moveHint")}
+              className="inline-flex max-w-full items-center truncate rounded-md bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {columnTitle}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>{t("view.table.column")}</DropdownMenuLabel>
+            {columns.map((col) => (
+              <DropdownMenuItem
+                key={col.id}
+                disabled={col.id === columnId}
+                onSelect={() => onMoveToColumn(card.id, columnId, col.id)}
+              >
+                {col.title}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              data-testid="table-archive-card"
+              onSelect={() => onArchive(card.id)}
+            >
+              <Archive className="h-4 w-4" />
+              {t("card.archive")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </td>
+      <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              data-testid="table-due-cell"
+              className="rounded transition-opacity hover:opacity-80"
+              aria-label={t("dueDate.label")}
+            >
+              {typeof card.dueDate === "number" ? (
+                <DueBadge dueDate={card.dueDate} />
+              ) : (
+                <span className="text-xs text-muted-foreground/60">—</span>
+              )}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="relative w-auto p-3">
+            <DueDatePickerContent cardId={card.id} dueDate={card.dueDate} />
+          </PopoverContent>
+        </Popover>
+      </td>
+      <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              data-testid="table-labels-cell"
+              className="max-w-44"
+              aria-label={t("view.table.labels")}
+            >
+              {card.labelIds.length > 0 ? (
+                <span className="flex flex-wrap gap-1">
+                  {cardLabels.map((label) => (
+                    <span
+                      key={label.id}
+                      className={
+                        "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
+                        LABEL_COLOR_CHIP[label.color]
+                      }
+                    >
+                      <span
+                        className="h-1.5 w-1.5 rounded-full bg-current"
+                        aria-hidden
+                      />
+                      {label.name}
+                    </span>
+                  ))}
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground/60">—</span>
+              )}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-64 p-3">
+            <LabelPicker
+              labels={labels}
+              selected={card.labelIds}
+              onToggle={(labelId) => onToggleLabel(card.id, labelId)}
+              onCreate={(name, color) => onCreateLabel(card.id, name, color)}
+              onRename={onRenameLabel}
+              onRecolor={onRecolorLabel}
+              onDelete={onDeleteLabel}
+            />
+          </PopoverContent>
+        </Popover>
+      </td>
+      {visibleColumns.includes("checklists") ? (
+        <td className="px-3 py-2">
+          {(() => {
+            const { done, total } = checklistProgress(card);
+            return total > 0 ? (
+              <span
+                data-testid="table-checklist"
+                title={t("checklist.badgeTooltip", { done, total })}
+                className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 text-[11px] text-muted-foreground"
+              >
+                <ListChecks className="h-3 w-3" aria-hidden />
+                {done}/{total}
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground/60">—</span>
+            );
+          })()}
+        </td>
+      ) : null}
+      {visibleColumns.includes("description") ? (
+        <td className="px-3 py-2">
+          {card.description ? (
+            <AlignLeft
+              data-testid="table-description"
+              className="h-3.5 w-3.5 text-muted-foreground"
+              aria-label={t("view.table.description")}
+            />
+          ) : (
+            <span className="text-xs text-muted-foreground/60">—</span>
+          )}
+        </td>
+      ) : null}
+      {visibleColumns.includes("createdAt") ? (
+        <td className="px-3 py-2 text-xs text-muted-foreground">
+          {formatDateOnly(card.createdAt, lang)}
+        </td>
+      ) : null}
+      {visibleColumns.includes("updatedAt") ? (
+        <td className="px-3 py-2 text-xs text-muted-foreground">
+          {formatDateOnly(card.updatedAt, lang)}
+        </td>
+      ) : null}
+      {visibleColumns.includes("activity") ? (
+        <td className="px-3 py-2">
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <MessageSquare className="h-3 w-3" aria-hidden />
+            {card.activity?.length ?? 0}
+          </span>
+        </td>
+      ) : null}
+    </tr>
+  );
+}
+
+/**
+ * Memoized (TASK-21.4.1): the table lists every card of the board, so an
+ * edit anywhere used to re-render all of them — measured at 40 rows per
+ * keystroke. The props are stable by construction: resolved labels come
+ * from `useCardLabels`, `columns`/`labels` straight from the board (both
+ * survive card edits), the per-row flags are booleans, and the callbacks
+ * take a card id so one handler serves every row. The inline title editor
+ * is uncontrolled, so typing in one row does not touch the others.
+ */
+const TableRow = memo(TableRowBody);
 
 /** Table header cell with the asc → desc → reset click cycle. */
 function SortHeader({

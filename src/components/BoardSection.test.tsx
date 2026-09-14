@@ -166,6 +166,26 @@ describe("BoardSection", () => {
     expect(screen.queryByRole("textbox", { name: "Board title" })).toBeNull();
   });
 
+  // The header reads undo availability from its own narrow context slice
+  // (TASK-21.4) instead of the board state — this is that wiring, end to end.
+  it("arms the header undo button with the first edit", () => {
+    renderBoard();
+    const undo = screen.getByRole("button", { name: "Undo" });
+    expect(undo).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("heading", { name: "Product Launch" }));
+    const input = screen.getByRole("textbox", { name: "Board title" });
+    fireEvent.change(input, { target: { value: "Launch 2.0" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(undo).toBeEnabled();
+
+    fireEvent.click(undo);
+    expect(
+      screen.getByRole("heading", { name: "Product Launch" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Redo" })).toBeEnabled();
+  });
+
   it("cancels the rename with Escape", () => {
     renderBoard();
     fireEvent.click(screen.getByRole("heading", { name: "Product Launch" }));

@@ -6,7 +6,14 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { I18nProvider } from "@/i18n";
 import { routes } from "@/routes";
-import { BoardProvider, useBoard } from "@/store/BoardContext";
+import {
+  BoardProvider,
+  useBoard,
+  useBoardActions,
+  useBoardHistory,
+  useBoardIdentity,
+  useBoardState,
+} from "@/store/BoardContext";
 import type { Board } from "@/types/kanban";
 
 /**
@@ -141,5 +148,133 @@ describe("BoardContext dispatch/history (TASK-33)", () => {
       JSON.parse(afterFirst).labels.map((l: { id: string }) => l.id),
     ).toEqual(["l-1"]);
     expect(JSON.parse(afterSecond).labels).toEqual([]);
+  });
+});
+
+/**
+ * Render-isolation coverage for the context split (TASK-21.4): editing a
+ * card must reach the state consumers and leave the actions-only ones (the
+ * header, the pickers) untouched. Counting renders is the assertion the
+ * React Profiler would make by hand.
+ */
+
+let stateRenders = 0;
+let actionsRenders = 0;
+let historyRenders = 0;
+let identityRenders = 0;
+let api: ReturnType<typeof useBoardActions>;
+let flags: ReturnType<typeof useBoardHistory>;
+let identity: ReturnType<typeof useBoardIdentity>;
+let cardTitle: string | undefined;
+
+function StateProbe() {
+  stateRenders += 1;
+  const { board } = useBoardState();
+  cardTitle = board?.cards["c-1"]?.title;
+  return null;
+}
+
+function ActionsProbe() {
+  actionsRenders += 1;
+  api = useBoardActions();
+  return null;
+}
+
+function HistoryProbe() {
+  historyRenders += 1;
+  flags = useBoardHistory();
+  return null;
+}
+
+function IdentityProbe() {
+  identityRenders += 1;
+  identity = useBoardIdentity();
+  return null;
+}
+
+function renderSplitProbes() {
+  stateRenders = 0;
+  actionsRenders = 0;
+  historyRenders = 0;
+  identityRenders = 0;
+  return render(
+    <ThemeProvider>
+      <I18nProvider>
+        <TooltipProvider>
+          <MemoryRouter initialEntries={[routes.board("b-1")]}>
+            <BoardProvider>
+              <Routes>
+                <Route
+                  path={routes.boardPattern}
+                  element={
+                    <>
+                      <StateProbe />
+                      <ActionsProbe />
+                      <HistoryProbe />
+                      <IdentityProbe />
+                    </>
+                  }
+                />
+              </Routes>
+            </BoardProvider>
+          </MemoryRouter>
+        </TooltipProvider>
+      </I18nProvider>
+    </ThemeProvider>,
+  );
+}
+
+describe("BoardContext split (TASK-21.4)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    seedBoard();
+  });
+
+  it("a card edit re-renders state consumers only", () => {
+    renderSplitProbes();
+    const stateBefore = stateRenders;
+    const actionsBefore = actionsRenders;
+    const apiBefore = api;
+
+    act(() => api.updateCard("c-1", { title: "Renamed" }));
+
+    expect(cardTitle).toBe("Renamed");
+    expect(stateRenders).toBeGreaterThan(stateBefore);
+    // The actions object is assembled once, so its consumers never hear
+    // about anyone else's edits.
+    expect(actionsRenders).toBe(actionsBefore);
+    expect(api).toBe(apiBefore);
+  });
+
+  it("undo availability only changes when it actually flips", () => {
+    renderSplitProbes();
+    expect(flags).toEqual({ canUndo: false, canRedo: false });
+
+    // First edit: false -> true, so the header does re-render, once.
+    act(() => api.updateCard("c-1", { title: "One" }));
+    const afterFirstEdit = historyRenders;
+    expect(flags).toEqual({ canUndo: true, canRedo: false });
+
+    // Further edits keep undo available — no further header renders.
+    act(() => api.updateCard("c-1", { title: "Two" }));
+    act(() => api.updateCard("c-1", { title: "Three" }));
+    expect(historyRenders).toBe(afterFirstEdit);
+
+    act(() => api.undo());
+    expect(flags.canRedo).toBe(true);
+  });
+  it("keeps the board's own name out of card edits", () => {
+    renderSplitProbes();
+    expect(identity).toEqual({ id: "b-1", title: "Alpha" });
+    const before = identityRenders;
+
+    // A card edit does not touch the board's name...
+    act(() => api.updateCard("c-1", { title: "Renamed card" }));
+    expect(identityRenders).toBe(before);
+
+    // ...renaming the board does.
+    act(() => api.renameBoard("Beta"));
+    expect(identity.title).toBe("Beta");
+    expect(identityRenders).toBeGreaterThan(before);
   });
 });

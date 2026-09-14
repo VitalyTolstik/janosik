@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 
 import { useI18n } from "@/i18n";
-import { useBoard } from "@/store/BoardContext";
+import { useBoardActions, useBoardIdentity } from "@/store/BoardContext";
 import { LIMITS } from "@/types/kanban";
 import { LimitCounter } from "@/components/ui/limit-counter";
 
@@ -12,14 +12,17 @@ import { LimitCounter } from "@/components/ui/limit-counter";
  */
 export function BoardTitle() {
   const { t } = useI18n();
-  const { board, renameBoard } = useBoard();
+  // Narrow subscriptions (TASK-21.4.1): the name is all this needs, so a
+  // card edit somewhere on the board leaves the header title alone.
+  const { id, title } = useBoardIdentity();
+  const { renameBoard } = useBoardActions();
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const startEdit = () => {
-    setDraft(board?.title ?? "");
+    setDraft(title);
     setEditing(true);
     requestAnimationFrame(() => inputRef.current?.select());
   };
@@ -27,12 +30,12 @@ export function BoardTitle() {
   const save = () => {
     setEditing(false);
     const trimmed = draft.trim();
-    if (trimmed && board && trimmed !== board.title) {
+    if (trimmed && id && trimmed !== title) {
       renameBoard(trimmed);
     }
   };
 
-  if (!board) return null;
+  if (!id) return null;
 
   return editing ? (
     <span className="relative inline-block">
@@ -70,7 +73,7 @@ export function BoardTitle() {
       title={t("board.editTitleHint")}
       className="max-w-[40vw] cursor-text truncate rounded-md px-1.5 py-0.5 text-lg font-semibold tracking-tight text-foreground outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-primary/40 sm:max-w-[320px] sm:text-xl"
     >
-      {board.title}
+      {title}
     </h2>
   );
 }

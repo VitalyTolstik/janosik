@@ -45,15 +45,19 @@ describe("backups", () => {
     expect(loaded).toEqual(state);
   });
 
-  it("rotates old backups beyond the maximum", async () => {
+  it("rotates old backups beyond the maximum, keeping the newest", async () => {
     const state = initialBoardState();
     // Slightly more than the cap.
     for (let i = 0; i < MAX_BACKUPS + 5; i++) {
       await createBackup(state);
     }
     const backups = await listBackups();
-    expect(backups.length).toBeLessThanOrEqual(MAX_BACKUPS);
     expect(backups.length).toBe(MAX_BACKUPS);
+    // Rotation drops the head of the key order (TASK-21.4): the surviving
+    // ids must be the last MAX_BACKUPS ones written, not an arbitrary set.
+    const ids = backups.map((backup) => backup.id).sort((a, b) => a - b);
+    expect(ids[ids.length - 1]).toBe(MAX_BACKUPS + 5);
+    expect(ids[0]).toBe(6);
   });
 
   it("deletes a backup", async () => {

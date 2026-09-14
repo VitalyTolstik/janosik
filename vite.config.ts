@@ -3,6 +3,8 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+import { serviceWorkerPlugin } from "./vite/sw-plugin.ts";
+
 // Vite config: React plugin + Tailwind v4 plugin + `@/` path alias.
 // Vendor chunks (TASK-19): stable, long-cached groups + parallel loading.
 // Vite 8 is Rolldown-based, so chunking is configured via `codeSplitting`
@@ -11,7 +13,7 @@ import { defineConfig } from "vite";
 // no group for MDXEditor: a manual chunk around its CJS deps breaks
 // rolldown's require interop across chunks (crash at <Lazy> in prod).
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), serviceWorkerPlugin()],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),

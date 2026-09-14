@@ -21,16 +21,23 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AddColumnControl } from "@/components/board/AddColumnControl";
 import { CardItem } from "@/components/board/CardItem";
 import { ColumnView } from "@/components/board/ColumnView";
+import { useCardLabels } from "@/hooks/use-card-labels";
+import { useCardList } from "@/hooks/use-card-list";
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
 import { useToast } from "@/components/Toast";
 import { applyCardOver } from "@/utils/dnd";
-import { LIMITS } from "@/types/kanban";
+import { LIMITS, type Card, type Column, type Label } from "@/types/kanban";
+
+/** Stable empties, so the resolvers survive a board-less render. */
+const NO_LABELS: Label[] = [];
+const NO_CARDS: Record<string, Card> = {};
+const NO_COLUMNS: Column[] = [];
 
 /**
  * Live draft while a drag is in progress. The store is only touched on drag
@@ -61,6 +68,19 @@ const POINTER_SENSOR_OPTIONS = {
   activationConstraint: { distance: 5 },
 } as const;
 
+/**
+ * Both hoisted out of the render (TASK-21.4.1): every prop of `DndContext`
+ * lands in dnd-kit's context, so a fresh array/object here re-renders every
+ * `useSortable`/`useDroppable` consumer — each column and card — on every
+ * keystroke, `memo` or not. `sensors: []` disables dragging while a filter
+ * is active; `Always` re-measures droppables, and a new object asked for
+ * that measurement again on every render.
+ */
+const NO_SENSORS: ReturnType<typeof useSensors> = [];
+const MEASURING = {
+  droppable: { strategy: MeasuringStrategy.Always },
+} as const;
+
 interface DndBoardProps {
   /** Per-column card ids with a filter applied — overrides each column's
    *  stored order while the filter is active. */
@@ -83,6 +103,8 @@ export function DndBoard({
   const { board, addColumn, moveCard, moveColumn } = useBoard();
   const { tp, t } = useI18n();
   const toast = useToast();
+  const resolveLabels = useCardLabels(board?.labels ?? NO_LABELS);
+  const resolveCards = useCardList(board?.cards ?? NO_CARDS);
 
   const [draft, setDraftState] = useState<Draft | null>(null);
   // Ref mirror so event handlers always read the latest draft (state updates
@@ -513,14 +535,24 @@ export function DndBoard({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [board, draft, cursor, filteredCardIds, onCardClick]);
 
-  if (!board) return null;
-
   // Render columns in the live draft order while a column drag is active.
-  const columnOrder =
-    draft?.mode === "column"
-      ? draft.columnOrder
-      : board.columns.map((col) => col.id);
-  const columnsById = new Map(board.columns.map((col) => [col.id, col]));
+  // Both memoized because `columnOrder` feeds `SortableContext items`:
+  // a fresh array there changes dnd-kit's sortable context on every render,
+  // and that re-renders every `useSortable` consumer — every column and
+  // every card — straight through their `memo` (TASK-21.4.1).
+  const columnOrder = useMemo(
+    () =>
+      draft?.mode === "column"
+        ? draft.columnOrder
+        : (board?.columns ?? NO_COLUMNS).map((col) => col.id),
+    [draft, board?.columns],
+  );
+  const columnsById = useMemo(
+    () => new Map((board?.columns ?? NO_COLUMNS).map((col) => [col.id, col])),
+    [board?.columns],
+  );
+
+  if (!board) return null;
 
   // Flat list of visible card ids (columns in order, filtered column
   // contents) — the coordinate space of the j/k keyboard cursor.
@@ -533,10 +565,8 @@ export function DndBoard({
   const activeCard =
     draft?.mode === "card" ? board.cards[draft.activeCardId] : undefined;
   const activeLabels = activeCard
-    ? activeCard.labelIds
-        .map((labelId) => board.labels.find((l) => l.id === labelId))
-        .filter((l): l is NonNullable<typeof l> => Boolean(l))
-    : [];
+    ? resolveLabels(activeCard.labelIds)
+    : NO_LABELS;
   const activeColumn =
     draft?.mode === "column"
       ? board.columns.find((col) => col.id === draft.activeColumnId)
@@ -544,9 +574,9 @@ export function DndBoard({
 
   return (
     <DndContext
-      sensors={isFiltering ? [] : sensors}
+      sensors={isFiltering ? NO_SENSORS : sensors}
       collisionDetection={collisionDetectionStrategy}
-      measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+      measuring={MEASURING}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
@@ -560,15 +590,19 @@ export function DndBoard({
           {columnOrder.map((columnId) => {
             const column = columnsById.get(columnId);
             if (!column) return null;
+            // A drag draft or an active filter overrides the column's own
+            // order; otherwise the column renders its stored order.
+            const override =
+              draft?.mode === "card"
+                ? draft.columns[column.id]
+                : filteredCardIds?.[column.id];
             return (
               <ColumnView
                 key={columnId}
                 column={column}
-                cardIds={
-                  draft?.mode === "card"
-                    ? draft.columns[column.id]
-                    : filteredCardIds?.[column.id]
-                }
+                cards={resolveCards(column, override ?? column.cardIds)}
+                labels={board.labels}
+                overridden={override !== undefined}
                 isFiltered={isFiltering}
                 highlight={highlight}
                 cursorCardId={cursorCardId}

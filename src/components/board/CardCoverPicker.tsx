@@ -19,7 +19,7 @@ import {
   type CoverColor,
   type CoverGradient,
 } from "@/types/kanban";
-import { useBoard } from "@/store/BoardContext";
+import { useBoardActions } from "@/store/BoardContext";
 
 interface CardCoverPickerProps {
   cardId: string;
@@ -97,7 +97,7 @@ function GradientSwatch({
  * the card; a gradient shows as a taller header band (see CardItem).
  */
 export function CardCoverPicker({ cardId, cover }: CardCoverPickerProps) {
-  const { setCardCover } = useBoard();
+  const { setCardCover } = useBoardActions();
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
 

@@ -1,5 +1,6 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { memo } from "react";
 
 import { CardItem } from "@/components/board/CardItem";
 import type { Card, Label } from "@/types/kanban";
@@ -13,11 +14,11 @@ interface SortableCardProps {
   /** True when this card holds the j/k keyboard cursor (focus ring). */
   isCursor?: boolean;
   /** Fired when the rendered card is clicked — opens the card dialog. */
-  onCardClick?: () => void;
+  onCardClick?: (cardId: string) => void;
   /** Fired by the hover duplicate button on the card. */
-  onCardDuplicate?: () => void;
+  onCardDuplicate?: (cardId: string) => void;
   /** Fired by the hover archive button on the card (TASK-18.1). */
-  onCardArchive?: () => void;
+  onCardArchive?: (cardId: string) => void;
 }
 
 /**
@@ -25,7 +26,7 @@ interface SortableCardProps {
  * (the lift + gap animation while dragging) is applied to the wrapper div,
  * not to the CardItem itself, so the card keeps its own styling intact.
  */
-export function SortableCard({
+function SortableCardView({
   card,
   labels,
   highlight,
@@ -70,3 +71,10 @@ export function SortableCard({
     </div>
   );
 }
+
+/**
+ * Memoized together with CardItem (TASK-21.4): the column list re-renders
+ * on every board change, and dnd-kit's own subscription already re-renders
+ * this wrapper whenever the drag state that concerns it changes.
+ */
+export const SortableCard = memo(SortableCardView);

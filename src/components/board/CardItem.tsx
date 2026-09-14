@@ -1,5 +1,5 @@
 import { AlignLeft, Archive, Check, CopyPlus, ListTodo, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import {
   Tooltip,
@@ -32,12 +32,16 @@ interface CardItemProps {
   highlight?: string;
   /** True when this card holds the j/k keyboard cursor (focus ring). */
   isCursor?: boolean;
-  /** Fired on click — opens the card detail dialog. */
-  onClick?: () => void;
+  /**
+   * Fired on click — opens the card detail dialog. The card id is passed
+   * back so the parent can keep one stable handler for the whole column
+   * instead of a fresh closure per card (TASK-21.4).
+   */
+  onClick?: (cardId: string) => void;
   /** Fired by the hover duplicate button — the dialog stays closed. */
-  onDuplicate?: () => void;
+  onDuplicate?: (cardId: string) => void;
   /** Fired by the hover archive button (TASK-18.1) — the dialog stays closed. */
-  onArchive?: () => void;
+  onArchive?: (cardId: string) => void;
 }
 
 /**
@@ -79,7 +83,7 @@ function useClamped(): [React.RefCallback<HTMLParagraphElement>, boolean] {
  * a compact badge only signals that the card has one — full text lives
  * in the card dialog.
  */
-export function CardItem({
+function CardItemView({
   card,
   labels,
   isDragging,
@@ -126,7 +130,7 @@ export function CardItem({
 
   return (
     <article
-      onClick={onClick}
+      onClick={onClick ? () => onClick(card.id) : undefined}
       data-card-cursor={isCursor || undefined}
       className={cn(
         "group animate-card-in relative cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2.5 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
@@ -147,7 +151,7 @@ export function CardItem({
               onClick={(e) => {
                 // Don't let the click open the card dialog.
                 e.stopPropagation();
-                onDuplicate();
+                onDuplicate(card.id);
               }}
             >
               <CopyPlus className="h-3.5 w-3.5" />
@@ -170,7 +174,7 @@ export function CardItem({
               onClick={(e) => {
                 e.stopPropagation();
                 setConfirmArchive(false);
-                onArchive();
+                onArchive(card.id);
               }}
             >
               <Check className="h-3.5 w-3.5" />
@@ -303,3 +307,12 @@ export function CardItem({
     </article>
   );
 }
+
+/**
+ * Memoized: a column re-renders on every board change (a keystroke in
+ * another card, a drag, a filter), and without this every card in view
+ * would re-render with it. The props are stable by construction — `card`
+ * comes straight from the store, `labels` from `useCardLabels`, and the
+ * handlers take the card id so they can be hoisted (TASK-21.4).
+ */
+export const CardItem = memo(CardItemView);
