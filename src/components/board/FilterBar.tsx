@@ -444,9 +444,13 @@ export function FilterBar({
         </div>
       )}
 
-      {/* Selected labels, due status, and exact day as removable chips */}
+      {/* Selected labels, due status, and creation date as removable chips.
+          The relative window (`today`/`7d`/`30d`) gets its own chip — it is
+          as much of a live filter as the exact day, hiding it made the only
+          way to switch it off the filters popover. */}
       {(selectedLabels.length > 0 ||
         filter.noLabel ||
+        filter.created !== "any" ||
         filter.createdOn ||
         filter.due !== "any") && (
         <div className="flex w-full flex-wrap items-center gap-1.5">
@@ -491,6 +495,21 @@ export function FilterBar({
                 aria-label={t("label.pickerRemove")}
                 onClick={() => onChange({ ...filter, noLabel: false })}
                 className="rounded-full p-0.5 transition-colors hover:bg-hover hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+          {filter.created !== "any" && filter.createdOn === null && (
+            // An exact day overrides the window — only one chip at a time.
+            <span className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground">
+              <CalendarDays className="h-3 w-3 text-muted-foreground" />
+              {t(CREATED_LABEL_KEY[filter.created])}
+              <button
+                type="button"
+                aria-label={t("label.pickerRemove")}
+                onClick={() => onChange({ ...filter, created: "any" })}
+                className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
               >
                 <X className="h-3 w-3" />
               </button>

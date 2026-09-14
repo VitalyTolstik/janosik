@@ -104,4 +104,17 @@ describe("FilterBar", () => {
       noLabel: true,
     });
   });
+
+  it("renders a removable chip for the relative created window", async () => {
+    const onChange = renderBar({ ...EMPTY_FILTER, created: "7d" });
+
+    // The window is a live facet like any other: visible and switchable
+    // without reopening the popover.
+    expect(screen.getByText("Last 7 days")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Remove label" }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...EMPTY_FILTER,
+      created: "any",
+    });
+  });
 });
