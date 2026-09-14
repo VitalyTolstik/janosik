@@ -110,3 +110,42 @@ describe("CardItem render isolation (TASK-21.4)", () => {
     expect(reads).toBe(afterMount);
   });
 });
+
+describe("CardItem hover duplicate (column limits)", () => {
+  const base = {
+    labels: [] as Label[],
+    onDuplicate: vi.fn(),
+    onArchive: vi.fn(),
+  };
+
+  it("enables the hover duplicate while the column has room", () => {
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <CardItem card={baseCard} {...base} />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+    expect(
+      screen.getByRole("button", { name: "Duplicate card" }),
+    ).toBeEnabled();
+  });
+
+  it("disables the hover duplicate when the column is full", () => {
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <CardItem
+            card={baseCard}
+            {...base}
+            duplicateDisabled
+            duplicateDisabledReason="Column is full (200 cards)"
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+    expect(
+      screen.getByRole("button", { name: "Duplicate card" }),
+    ).toBeDisabled();
+  });
+});

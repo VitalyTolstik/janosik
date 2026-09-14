@@ -19,6 +19,10 @@ interface SortableCardProps {
   onCardDuplicate?: (cardId: string) => void;
   /** Fired by the hover archive button on the card (TASK-18.1). */
   onCardArchive?: (cardId: string) => void;
+  /** Blocks the hover duplicate (the card's column is full). */
+  duplicateDisabled?: boolean;
+  /** Tooltip text shown while `duplicateDisabled`. */
+  duplicateDisabledReason?: string;
 }
 
 /**
@@ -34,6 +38,8 @@ function SortableCardView({
   onCardClick,
   onCardDuplicate,
   onCardArchive,
+  duplicateDisabled = false,
+  duplicateDisabledReason,
 }: SortableCardProps) {
   const {
     attributes,
@@ -67,6 +73,8 @@ function SortableCardView({
         onClick={onCardClick}
         onDuplicate={onCardDuplicate}
         onArchive={onCardArchive}
+        duplicateDisabled={duplicateDisabled}
+        duplicateDisabledReason={duplicateDisabledReason}
       />
     </div>
   );
