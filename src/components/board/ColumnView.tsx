@@ -11,6 +11,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -29,20 +30,15 @@ import { useBoardActions } from "@/store/BoardContext";
 import type { Card, Column, Label } from "@/types/kanban";
 import { LIMITS } from "@/types/kanban";
 
+/** Stable empty list for an empty column's SortableContext. */
+const NO_IDS: string[] = [];
+
 interface ColumnViewProps {
   column: Column;
   /**
-   * The ids to render, in order — the column's own order, or a filter/drag
-   * override. Straight from the store, so it keeps its identity until the
-   * order itself changes: it is `SortableContext`'s `items`, and a fresh
-   * array there re-renders every card through dnd-kit's context, `memo` or
-   * not (TASK-21.4.1).
-   */
-  cardIds: string[];
-  /**
-   * Those ids resolved to cards, in the same order. Resolved by the caller
-   * (`useCardList`) so the array keeps its identity while nothing in this
-   * column changes — that is what makes the `memo` below effective.
+   * The cards to render, in order. Resolved by the caller (`useCardList`)
+   * so the array keeps its identity while nothing in this column changes —
+   * that is what makes the `memo` below effective (TASK-21.4.1).
    */
   cards: Card[];
   /** The board's labels — card chips and the composer's picker. */
@@ -72,7 +68,6 @@ interface ColumnViewProps {
  */
 function ColumnViewBody({
   column,
-  cardIds,
   cards,
   labels,
   overridden = false,
@@ -139,6 +134,16 @@ function ColumnViewBody({
     setInlineAdd({ index, count: 0 });
   }, []);
 
+  // `SortableContext`'s `items` must keep its identity: a fresh array there
+  // changes dnd-kit's context and re-renders every card in the column,
+  // `memo` or not. Keyed by the ids themselves rather than by the array,
+  // because an active filter rebuilds its id arrays on every keystroke.
+  const idsKey = cards.map((card) => card.id).join(" ");
+  const ids = useMemo(
+    () => (idsKey === "" ? NO_IDS : idsKey.split(" ")),
+    [idsKey],
+  );
+
   const {
     attributes,
     listeners,
@@ -151,7 +156,7 @@ function ColumnViewBody({
     id: column.id,
   });
 
-  const count = cardIds.length;
+  const count = cards.length;
   const wipLimit = column.wipLimit;
   // The visible count includes hidden-by-filter cards only when no filter
   // overrides `cardIds` — the limit is judged on the real column contents.
@@ -284,10 +289,7 @@ function ColumnViewBody({
               </div>
             )
           ) : (
-            <SortableContext
-              items={cardIds}
-              strategy={verticalListSortingStrategy}
-            >
+            <SortableContext items={ids} strategy={verticalListSortingStrategy}>
               {/* Spacing comes from the 8px zones/spacers themselves (they
                   render in every mode) — a conditional space-y here would
                   shift the whole column on drag start. */}

@@ -153,6 +153,31 @@ describe("render isolation on a card edit (TASK-21.4.1)", () => {
     );
   });
 
+  it("leaves the other column alone with a filter active too", async () => {
+    // A filter rebuilds its per-column id lists on every keystroke, and
+    // dragging is disabled while it is on — both used to hand dnd-kit (and
+    // the columns) fresh values on every render.
+    renderBoard("/board/b-1");
+    fireEvent.change(screen.getByRole("textbox", { name: "Search cards" }), {
+      target: { value: "card" },
+    });
+    // The query highlights matches, so the title is split across <mark>s —
+    // click the card front by its test id instead of by text.
+    fireEvent.click((await screen.findAllByTestId("card-title"))[0]);
+    const before = {
+      editedColumn: counter.columns["col-1"] ?? 0,
+      otherColumn: counter.columns["col-2"] ?? 0,
+      neighbour: counter.fronts["Neighbour card"] ?? 0,
+    };
+    expect(before.otherColumn).toBeGreaterThan(0);
+
+    await typeInCardTitle("12345");
+
+    expect(counter.columns["col-1"]).toBeGreaterThan(before.editedColumn);
+    expect(counter.columns["col-2"] ?? 0).toBe(before.otherColumn);
+    expect(counter.fronts["Neighbour card"] ?? 0).toBe(before.neighbour);
+  });
+
   it("leaves every other row of the table alone", async () => {
     localStorage.setItem("janosik-board-view", "table");
     // The table is lazy and an open modal aria-hides the rest of the page,

@@ -68,6 +68,19 @@ const POINTER_SENSOR_OPTIONS = {
   activationConstraint: { distance: 5 },
 } as const;
 
+/**
+ * Both hoisted out of the render (TASK-21.4.1): every prop of `DndContext`
+ * lands in dnd-kit's context, so a fresh array/object here re-renders every
+ * `useSortable`/`useDroppable` consumer — each column and card — on every
+ * keystroke, `memo` or not. `sensors: []` disables dragging while a filter
+ * is active; `Always` re-measures droppables, and a new object asked for
+ * that measurement again on every render.
+ */
+const NO_SENSORS: ReturnType<typeof useSensors> = [];
+const MEASURING = {
+  droppable: { strategy: MeasuringStrategy.Always },
+} as const;
+
 interface DndBoardProps {
   /** Per-column card ids with a filter applied — overrides each column's
    *  stored order while the filter is active. */
@@ -561,9 +574,9 @@ export function DndBoard({
 
   return (
     <DndContext
-      sensors={isFiltering ? [] : sensors}
+      sensors={isFiltering ? NO_SENSORS : sensors}
       collisionDetection={collisionDetectionStrategy}
-      measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+      measuring={MEASURING}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
@@ -587,7 +600,6 @@ export function DndBoard({
               <ColumnView
                 key={columnId}
                 column={column}
-                cardIds={override ?? column.cardIds}
                 cards={resolveCards(column, override ?? column.cardIds)}
                 labels={board.labels}
                 overridden={override !== undefined}

@@ -114,10 +114,12 @@
   **пропсами** через резолверы `useCardList`/`useCardLabels`, которые
   возвращают тот же массив, пока не изменились сами карточки/метки. Правка
   карточки перерисовывает только её колонку (или строку таблицы).
-  **Массивы, уходящие в `SortableContext items`, обязаны быть стабильными:**
-  новый массив меняет контекст dnd-kit и перерисовывает всех подписчиков
-  `useSortable` в обход `memo` (наступали дважды).
-- **Тесты** — **416 тестов в 39 файлах** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
+  **Любое значение, уходящее в dnd-kit, обязано быть стабильным:** и массив
+  в `SortableContext items`, и каждый проп `DndContext` (`sensors`,
+  `measuring`) — новый массив/объект меняет контекст dnd-kit и
+  перерисовывает всех подписчиков `useSortable`/`useDroppable` в обход
+  `memo` (наступали трижды, каждый раз находилось только замером).
+- **Тесты** — **417 тестов в 39 файлах** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
 
 ### 1.3. Ключи и точки интеграции
 
