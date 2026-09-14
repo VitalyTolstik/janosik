@@ -81,3 +81,58 @@ describe("ColumnMenu — WIP limit (TASK-13)", () => {
     expect(onSetWipLimit).toHaveBeenCalledOnce();
   });
 });
+
+describe("ColumnMenu — duplicate column blocked at the board limit", () => {
+  const openMenu = () => {
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Column options" }),
+      { button: 0, ctrlKey: false },
+    );
+  };
+
+  it("enables the item by default", async () => {
+    render(
+      <I18nProvider>
+        <ColumnMenu
+          onRename={vi.fn()}
+          onDuplicate={vi.fn()}
+          onDelete={vi.fn()}
+          onSort={vi.fn()}
+          onSetWipLimit={vi.fn()}
+          onArchiveCards={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+    openMenu();
+    expect(await screen.findByText("Duplicate column")).toBeEnabled();
+  });
+
+  it("disables the item with a reason while the board is full", async () => {
+    render(
+      <I18nProvider>
+        <ColumnMenu
+          onRename={vi.fn()}
+          onDuplicate={vi.fn()}
+          onDelete={vi.fn()}
+          onSort={vi.fn()}
+          onSetWipLimit={vi.fn()}
+          onArchiveCards={vi.fn()}
+          duplicateDisabled
+          duplicateDisabledReason="Column limit reached (12)"
+        />
+      </I18nProvider>,
+    );
+    openMenu();
+    const item = await screen.findByText("Duplicate column");
+    // Radix menu items signal via aria-disabled/data-disabled, not the
+    // native attribute.
+    expect(item.closest('[role="menuitem"]')).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(item.closest('[role="menuitem"]')).toHaveAttribute(
+      "title",
+      "Column limit reached (12)",
+    );
+  });
+});

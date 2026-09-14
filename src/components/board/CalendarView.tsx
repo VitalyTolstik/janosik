@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { formatDateOnly, formatTime, useHour12, useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
 import { LABEL_COLOR_DOT, type Card, type Label, LIMITS } from "@/types/kanban";
+import { isColumnFull } from "@/utils/column-limits";
 import { dueStatus } from "@/utils/due-date";
 
 /** Stable empty list, so the label resolver survives a board-less render. */
@@ -614,7 +615,12 @@ export function CalendarView({
               data-testid="unscheduled-list"
             >
               <UnscheduledComposer
-                disabled={board.columns.length === 0}
+                disabled={
+                  board.columns.length === 0 ||
+                  // Quick-add lands in the first column — dead when it
+                  // cannot take another card.
+                  isColumnFull(board.columns[0])
+                }
                 onCreate={createUnscheduledCard}
               />
               {unscheduled.length === 0 ? (
@@ -760,6 +766,7 @@ export function CalendarView({
                       columns={board.columns.map((col) => ({
                         id: col.id,
                         title: col.title,
+                        full: isColumnFull(col),
                       }))}
                       labels={board.labels}
                       onSubmit={(title, labelIds, columnId) =>
@@ -833,13 +840,18 @@ function DayComposer({
   labels,
   onSubmit,
 }: {
-  columns: { id: string; title: string }[];
+  /** `full` marks columns that cannot take another card right now. */
+  columns: { id: string; title: string; full: boolean }[];
   labels?: Label[];
   onSubmit: (title: string, labelIds?: string[], columnId?: string) => void;
 }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState("");
-  const [columnId, setColumnId] = useState(columns[0]?.id ?? "");
+  // Default to the first column with room — a full default column would
+  // only produce a disabled submit.
+  const [columnId, setColumnId] = useState(
+    (columns.find((col) => !col.full) ?? columns[0])?.id ?? "",
+  );
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
 
   const toggleLabel = (labelId: string) => {
@@ -851,9 +863,12 @@ function DayComposer({
   };
 
   const selectedColumn = columns.find((col) => col.id === columnId);
+  // The reducer refuses an add into a full column — the composer says so
+  // up front instead of letting the user type into a dead submit.
+  const selectedFull = selectedColumn?.full ?? true;
   const submit = () => {
     const trimmed = draft.trim();
-    if (!trimmed) return;
+    if (!trimmed || selectedFull) return;
     onSubmit(trimmed, selectedLabels, columnId);
     setDraft("");
     setSelectedLabels([]);
@@ -897,7 +912,16 @@ function DayComposer({
           className="max-h-44 w-[var(--radix-dropdown-menu-trigger-width)] min-w-0 overflow-y-auto"
         >
           {columns.map((col) => (
-            <DropdownMenuItem key={col.id} onSelect={() => setColumnId(col.id)}>
+            <DropdownMenuItem
+              key={col.id}
+              onSelect={() => setColumnId(col.id)}
+              disabled={col.full}
+              title={
+                col.full
+                  ? t("limits.columnFull", { limit: LIMITS.cardsPerColumn })
+                  : undefined
+              }
+            >
               {col.title}
             </DropdownMenuItem>
           ))}
@@ -915,7 +939,12 @@ function DayComposer({
         <Button
           size="sm"
           className="h-7 flex-1 text-xs"
-          disabled={!draft.trim()}
+          disabled={!draft.trim() || selectedFull}
+          title={
+            selectedFull
+              ? t("limits.columnFull", { limit: LIMITS.cardsPerColumn })
+              : undefined
+          }
           onClick={submit}
         >
           {t("composer.submit")}
