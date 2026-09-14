@@ -8,7 +8,8 @@ import { readJSON, saveJSON, type LoadResult } from "@/utils/storage";
  * which the provider calls on `beforeunload`/`pagehide` so closing the tab
  * never loses the last change. Every write attempt is reported to the write
  * listener, so a failing storage (quota, private mode) surfaces in the UI
- * instead of failing silently.
+ * instead of failing silently. The report carries the serialized size, so a
+ * nearly-full storage can be flagged *before* a write actually fails.
  *
  * Writes can also be held back entirely (`setWritesEnabled(false)`): after a
  * corrupt read that could not be quarantined, the unparsable text in storage
@@ -30,9 +31,14 @@ export interface DebouncedPersistence<T> {
   setWritesEnabled(enabled: boolean): void;
   /** Install/clear the listener invoked after every write attempt. */
   setWriteListener(
-    listener: ((ok: boolean, error?: unknown) => void) | null,
+    listener: ((ok: boolean, error?: unknown, bytes?: number) => void) | null,
   ): void;
 }
+
+/** Five megabytes is the common localStorage budget browsers grant. */
+export const ASSUMED_QUOTA_BYTES = 5 * 1024 * 1024;
+/** A write attempt this large deserves a warning before the quota refuses. */
+export const QUOTA_WARNING_BYTES = Math.round(ASSUMED_QUOTA_BYTES * 0.8);
 
 export function createDebouncedLocalStoragePersistence<T>(
   key: string,
@@ -41,13 +47,18 @@ export function createDebouncedLocalStoragePersistence<T>(
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pending: { value: T } | null = null;
   let writesEnabled = true;
-  let writeListener: ((ok: boolean, error?: unknown) => void) | null = null;
+  let writeListener:
+    ((ok: boolean, error?: unknown, bytes?: number) => void) | null = null;
 
   function write(value: T): void {
+    // Serialized once here for the size report; saveJSON stringifies again —
+    // this runs on debounced writes only, not per keystroke.
+    const bytes = JSON.stringify(value).length;
     const ok = saveJSON(key, value);
     writeListener?.(
       ok,
       ok ? undefined : new Error(`saveJSON failed for ${key}`),
+      bytes,
     );
   }
 

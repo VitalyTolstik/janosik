@@ -182,13 +182,13 @@ export const LIMITS = {
   /** Labels defined on one board. */
   labelsPerBoard: 50,
   /** Columns on one board. */
-  columnsPerBoard: 20,
+  columnsPerBoard: 12,
   /** Cards in one column. */
-  cardsPerColumn: 500,
+  cardsPerColumn: 200,
   /** WIP limit per column (1…max). */
   wipLimitMax: 99,
   /** Boards in the workspace (localStorage quota guard). */
-  boardsCount: 50,
+  boardsCount: 10,
 } as const;
 
 /** A board import larger than this (bytes) is rejected outright. */
