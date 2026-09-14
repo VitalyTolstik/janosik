@@ -358,5 +358,7 @@
   "column.archiveCards": "Archive all cards",
   "column.archiveCardsTitle": "Archive all cards?",
   "column.archiveCardsDescription": "Every card in “{{title}}” will move to the archive. You can restore them at any time.",
-  "toast.wipLimitBlocked": "“{{title}}” is at its WIP limit ({{limit}}) — the card stays in its column."
+  "toast.wipLimitBlocked": "“{{title}}” is at its WIP limit ({{limit}}) — the card stays in its column.",
+  "safety.quotaTitle": "Storage is almost full",
+  "safety.quotaDesc": "Local storage is nearing its limit — saving may stop working soon. Download a backup and delete boards you no longer need."
 }

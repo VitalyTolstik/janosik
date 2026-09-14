@@ -122,7 +122,7 @@ describe("createDebouncedLocalStoragePersistence", () => {
     expect(listener.mock.calls[0]?.[0]).toBe(false);
   });
 
-  it("reports successful writes to the write listener", () => {
+  it("reports successful writes to the write listener, with the size", () => {
     const persistence = createDebouncedLocalStoragePersistence<{ n: number }>(
       "janosik-persist-test",
       400,
@@ -131,7 +131,10 @@ describe("createDebouncedLocalStoragePersistence", () => {
     persistence.setWriteListener(listener);
     persistence.queueSave({ n: 1 });
     vi.advanceTimersByTime(400);
-    expect(listener).toHaveBeenCalledWith(true, undefined);
+    expect(listener).toHaveBeenCalledWith(true, undefined, expect.any(Number));
+    // The report carries the serialized size, so a nearly-full storage can
+    // be flagged before a write actually fails (TASK-21.5).
+    expect(listener.mock.calls[0]?.[2]).toBe('{"n":1}'.length);
   });
 
   it("writes nothing while writes are held back", () => {

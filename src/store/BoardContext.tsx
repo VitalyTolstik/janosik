@@ -31,6 +31,7 @@ import { createBackup } from "@/utils/backup";
 import { createId } from "@/utils/id";
 import {
   createDebouncedLocalStoragePersistence,
+  QUOTA_WARNING_BYTES,
   type DebouncedPersistence,
 } from "@/utils/persistence";
 import { routes } from "@/routes";
@@ -66,12 +67,17 @@ const BACKUP_THROTTLE_MS = 60_000;
  *
  * - `save-blocked` — the last write failed, so nothing is being persisted
  *   any more. Not dismissible: the banner stays until a write succeeds.
+ * - `quota-warning` — a write succeeded, but the serialized data is past
+ *   80% of the assumed localStorage quota. The next failed write is only a
+ *   matter of time; dismissible, and it goes away on its own once the data
+ *   shrinks back under the threshold (TASK-21.5).
  * - `corrupt-load` — the stored data did not parse. `sourceKey` is where
  *   the raw text can still be read from (the quarantine copy, or the
  *   original key when the copy failed and writes are held back).
  */
 export type DataIssue =
   | { kind: "save-blocked" }
+  | { kind: "quota-warning"; bytes: number }
   | { kind: "corrupt-load"; sourceKey: string; quarantined: boolean };
 
 interface BootState {
@@ -312,19 +318,40 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
+  // Once dismissed, the quota-warning stays quiet until the data actually
+  // drops under the threshold — otherwise the banner re-appears on every
+  // debounced write and nothing but deleting boards silences it.
+  const quotaDismissedRef = useRef(false);
+
   // A failed write means nothing is being persisted any more: raise a
   // banner (not a toast that disappears) until a write succeeds again.
+  // A successful write past the quota threshold raises the milder
+  // quota-warning instead — saving still works, but the next write is
+  // likely to be refused, so the user gets ahead of it (TASK-21.5). The
+  // warning never masks a more severe issue, and it clears by itself once
+  // the data shrinks back under the threshold.
   useEffect(() => {
-    persistence.setWriteListener((ok) => {
+    persistence.setWriteListener((ok, _error, bytes) => {
       setDataIssue((prev) => {
         if (!ok) {
           return prev?.kind === "save-blocked"
             ? prev
             : { kind: "save-blocked" };
         }
+        const overQuota = bytes !== undefined && bytes > QUOTA_WARNING_BYTES;
+        if (overQuota) {
+          if (quotaDismissedRef.current) return prev;
+          return prev === null || prev.kind === "save-blocked"
+            ? { kind: "quota-warning", bytes }
+            : prev;
+        }
+        if (bytes !== undefined) quotaDismissedRef.current = false;
+        if (prev?.kind === "save-blocked" || prev?.kind === "quota-warning") {
+          return null;
+        }
         // A corrupt-load notice outlives successful writes — only the user
         // dismisses it.
-        return prev?.kind === "save-blocked" ? null : prev;
+        return prev;
       });
     });
     return () => persistence.setWriteListener(null);
@@ -345,11 +372,18 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }, [dataIssue, toast, t]);
 
   const dismissDataIssue = useCallback(() => {
+    if (dataIssue?.kind === "quota-warning") {
+      quotaDismissedRef.current = true;
+    }
     // Acknowledging the notice releases writes held back to protect the
     // unparsable text (a copy has been quarantined or offered by then).
     persistence.setWritesEnabled(true);
-    setDataIssue((prev) => (prev?.kind === "corrupt-load" ? null : prev));
-  }, [persistence]);
+    setDataIssue((prev) =>
+      prev?.kind === "corrupt-load" || prev?.kind === "quota-warning"
+        ? null
+        : prev,
+    );
+  }, [persistence, dataIssue]);
 
   // The URL decides which board is active; archived boards are not active
   // (the redirect above sends the user to the first active one or `/`).

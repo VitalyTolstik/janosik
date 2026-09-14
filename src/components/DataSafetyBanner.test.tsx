@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,10 +10,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { I18nProvider } from "@/i18n";
 import { routes } from "@/routes";
-import { BoardProvider } from "@/store/BoardContext";
+import { BoardProvider, useBoardActions } from "@/store/BoardContext";
+import type { BoardState } from "@/store/board-reducer";
 
 /**
- * Data-safety banner (TASK-21.2). The three ways stored data can be lost
+ * Data-safety banner (TASK-21.2). The ways stored data can be lost
  * silently, and the guarantee for each:
  *
  * - the write fails (quota / private mode) → a banner that does not go away
@@ -21,6 +23,10 @@ import { BoardProvider } from "@/store/BoardContext";
  *   `janosik-boards.corrupt.<ts>` before the seed board is written over it;
  * - the quarantine copy itself fails → writes are held back entirely, so
  *   the unparsable text survives until the user dismisses the banner.
+ *
+ * Plus the softer sibling from TASK-21.5: a write that succeeds but lands
+ * past 80% of the assumed quota raises a dismissible warning ahead of the
+ * failure.
  */
 
 const BOARDS_KEY = "janosik-boards";
@@ -45,7 +51,7 @@ function failWritesFor(shouldFail: (key: string) => boolean) {
   });
 }
 
-function renderBanner() {
+function renderBanner(children?: ReactNode) {
   return render(
     <ThemeProvider>
       <I18nProvider>
@@ -60,6 +66,7 @@ function renderBanner() {
                   />
                   <Route path="*" element={<DataSafetyBanner />} />
                 </Routes>
+                {children}
               </BoardProvider>
             </MemoryRouter>
           </TooltipProvider>
@@ -169,5 +176,149 @@ describe("DataSafetyBanner", () => {
     await waitFor(() =>
       expect(localStorage.getItem(BOARDS_KEY)).not.toBe(CORRUPT),
     );
+  });
+});
+
+/**
+ * TASK-21.5: a write that succeeds but lands past 80% of the assumed
+ * localStorage quota raises the quota-warning banner. The seed crosses the
+ * 4 MiB threshold honestly: ~450 cards with 10000-character descriptions
+ * (the `LIMITS.description` maximum) serialize to ~4.5 MB.
+ */
+function bigWorkspace(): BoardState {
+  const columns: BoardState[number]["columns"] = [0, 1, 2].map((c) => ({
+    id: `col-${c}`,
+    title: `Column ${c}`,
+    cardIds: [],
+    createdAt: 0,
+  }));
+  const cards: BoardState[number]["cards"] = {};
+  for (let i = 0; i < 450; i += 1) {
+    const id = `card-${i}`;
+    cards[id] = {
+      id,
+      title: "Card",
+      description: "x".repeat(10000),
+      labelIds: [],
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    columns[i % 3]!.cardIds.push(id);
+  }
+  return [
+    {
+      id: "b-1",
+      title: "Heavy board",
+      columns,
+      cards,
+      labels: [],
+      createdAt: 0,
+      updatedAt: 0,
+    },
+  ];
+}
+
+function smallWorkspace(): BoardState {
+  return [
+    {
+      id: "b-1",
+      title: "Light board",
+      columns: [
+        { id: "col-0", title: "Column", cardIds: ["card-0"], createdAt: 0 },
+      ],
+      cards: {
+        "card-0": {
+          id: "card-0",
+          title: "Card",
+          labelIds: [],
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      },
+      labels: [],
+      createdAt: 0,
+      updatedAt: 0,
+    },
+  ];
+}
+
+function ImportTriggers() {
+  const { importBoards } = useBoardActions();
+  return (
+    <>
+      <button type="button" onClick={() => importBoards(bigWorkspace())}>
+        import big
+      </button>
+      <button type="button" onClick={() => importBoards(smallWorkspace())}>
+        import small
+      </button>
+    </>
+  );
+}
+
+describe("DataSafetyBanner quota warning", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  it("warns ahead of the quota while saving still works", async () => {
+    localStorage.setItem(BOARDS_KEY, JSON.stringify(bigWorkspace()));
+    renderBanner(<ImportTriggers />);
+
+    const banner = await screen.findByTestId("data-safety-banner", undefined, {
+      timeout: 3000,
+    });
+    expect(banner).toHaveTextContent("Storage is almost full");
+    expect(banner).toHaveTextContent("Download a backup");
+    // It is a heads-up, not an emergency — the user may close it.
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+  });
+
+  it("clears on its own once the data shrinks under the threshold", async () => {
+    localStorage.setItem(BOARDS_KEY, JSON.stringify(bigWorkspace()));
+    renderBanner(<ImportTriggers />);
+    await screen.findByTestId("data-safety-banner", undefined, {
+      timeout: 3000,
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "import small" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("data-safety-banner"),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("stays quiet after dismissal until the data drops under the threshold", async () => {
+    localStorage.setItem(BOARDS_KEY, JSON.stringify(bigWorkspace()));
+    renderBanner(<ImportTriggers />);
+    await screen.findByTestId("data-safety-banner", undefined, {
+      timeout: 3000,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByTestId("data-safety-banner")).not.toBeInTheDocument();
+
+    // A fresh over-quota write must not bring the banner back — otherwise
+    // it re-appears on every debounced save and nothing but deleting
+    // boards silences it.
+    await userEvent.click(screen.getByRole("button", { name: "import big" }));
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(screen.queryByTestId("data-safety-banner")).not.toBeInTheDocument();
+
+    // Once the data has been under the threshold in between, a new
+    // over-quota write warns again.
+    await userEvent.click(screen.getByRole("button", { name: "import small" }));
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    await userEvent.click(screen.getByRole("button", { name: "import big" }));
+    expect(
+      await screen.findByTestId("data-safety-banner", undefined, {
+        timeout: 3000,
+      }),
+    ).toHaveTextContent("Storage is almost full");
   });
 });

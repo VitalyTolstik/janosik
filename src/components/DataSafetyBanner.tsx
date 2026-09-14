@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { Download, HardDrive, ShieldAlert, X } from "lucide-react";
+import {
+  Download,
+  HardDrive,
+  ShieldAlert,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 
 import { useToast } from "@/components/Toast";
 import { BackupDialog } from "@/components/board/BackupDialog";
@@ -17,6 +23,10 @@ import { readRaw } from "@/utils/storage";
  * - `save-blocked`: storage refuses writes (quota, private mode). The
  *   banner cannot be dismissed — it goes away only when a write succeeds —
  *   and its single action downloads a backup of what is still in memory.
+ * - `quota-warning`: writes succeed, but the data is past 80% of the
+ *   assumed storage quota (TASK-21.5). A heads-up, not an emergency: the
+ *   export action is the same, and the user can dismiss it until the data
+ *   shrinks back under the threshold.
  * - `corrupt-load`: the stored data did not parse. The damaged text is
  *   downloadable, and "restore from a copy" opens the automatic backups.
  */
@@ -58,11 +68,15 @@ export function DataSafetyBanner() {
   };
 
   const saveBlocked = dataIssue.kind === "save-blocked";
-  const description = saveBlocked
-    ? t("safety.saveBlockedDesc")
-    : dataIssue.quarantined
-      ? t("safety.corruptQuarantinedDesc")
-      : t("safety.corruptKeptDesc");
+  const quotaWarning = dataIssue.kind === "quota-warning";
+  const description =
+    dataIssue.kind === "quota-warning"
+      ? t("safety.quotaDesc")
+      : saveBlocked
+        ? t("safety.saveBlockedDesc")
+        : dataIssue.quarantined
+          ? t("safety.corruptQuarantinedDesc")
+          : t("safety.corruptKeptDesc");
 
   return (
     <>
@@ -70,25 +84,38 @@ export function DataSafetyBanner() {
         role="alert"
         aria-label={t("safety.regionAria")}
         data-testid="data-safety-banner"
-        className="flex shrink-0 items-start gap-3 border-b border-danger/40 bg-danger/10 px-4 py-3 text-foreground sm:px-6"
+        className={
+          quotaWarning
+            ? "flex shrink-0 items-start gap-3 border-b border-warning/40 bg-warning/10 px-4 py-3 text-foreground sm:px-6"
+            : "flex shrink-0 items-start gap-3 border-b border-danger/40 bg-danger/10 px-4 py-3 text-foreground sm:px-6"
+        }
       >
-        <ShieldAlert
-          className="mt-0.5 h-5 w-5 shrink-0 text-danger"
-          aria-hidden
-        />
+        {quotaWarning ? (
+          <TriangleAlert
+            className="mt-0.5 h-5 w-5 shrink-0 text-warning"
+            aria-hidden
+          />
+        ) : (
+          <ShieldAlert
+            className="mt-0.5 h-5 w-5 shrink-0 text-danger"
+            aria-hidden
+          />
+        )}
         <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 space-y-0.5">
             <p className="text-sm font-semibold leading-snug">
-              {saveBlocked
-                ? t("safety.saveBlockedTitle")
-                : t("safety.corruptTitle")}
+              {quotaWarning
+                ? t("safety.quotaTitle")
+                : saveBlocked
+                  ? t("safety.saveBlockedTitle")
+                  : t("safety.corruptTitle")}
             </p>
             <p className="text-sm leading-snug text-muted-foreground">
               {description}
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            {saveBlocked ? (
+            {saveBlocked || quotaWarning ? (
               <Button size="sm" onClick={handleDownloadBackup}>
                 <Download className="h-4 w-4" />
                 {t("safety.saveBlockedAction")}
