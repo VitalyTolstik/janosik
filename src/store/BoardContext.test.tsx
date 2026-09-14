@@ -11,6 +11,7 @@ import {
   useBoard,
   useBoardActions,
   useBoardHistory,
+  useBoardIdentity,
   useBoardState,
 } from "@/store/BoardContext";
 import type { Board } from "@/types/kanban";
@@ -160,8 +161,10 @@ describe("BoardContext dispatch/history (TASK-33)", () => {
 let stateRenders = 0;
 let actionsRenders = 0;
 let historyRenders = 0;
+let identityRenders = 0;
 let api: ReturnType<typeof useBoardActions>;
 let flags: ReturnType<typeof useBoardHistory>;
+let identity: ReturnType<typeof useBoardIdentity>;
 let cardTitle: string | undefined;
 
 function StateProbe() {
@@ -183,10 +186,17 @@ function HistoryProbe() {
   return null;
 }
 
+function IdentityProbe() {
+  identityRenders += 1;
+  identity = useBoardIdentity();
+  return null;
+}
+
 function renderSplitProbes() {
   stateRenders = 0;
   actionsRenders = 0;
   historyRenders = 0;
+  identityRenders = 0;
   return render(
     <ThemeProvider>
       <I18nProvider>
@@ -201,6 +211,7 @@ function renderSplitProbes() {
                       <StateProbe />
                       <ActionsProbe />
                       <HistoryProbe />
+                      <IdentityProbe />
                     </>
                   }
                 />
@@ -251,5 +262,19 @@ describe("BoardContext split (TASK-21.4)", () => {
 
     act(() => api.undo());
     expect(flags.canRedo).toBe(true);
+  });
+  it("keeps the board's own name out of card edits", () => {
+    renderSplitProbes();
+    expect(identity).toEqual({ id: "b-1", title: "Alpha" });
+    const before = identityRenders;
+
+    // A card edit does not touch the board's name...
+    act(() => api.updateCard("c-1", { title: "Renamed card" }));
+    expect(identityRenders).toBe(before);
+
+    // ...renaming the board does.
+    act(() => api.renameBoard("Beta"));
+    expect(identity.title).toBe("Beta");
+    expect(identityRenders).toBeGreaterThan(before);
   });
 });

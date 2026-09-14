@@ -34,6 +34,7 @@ export default tseslint.config(
             "useTheme",
             "useBoard",
             "useBoardState",
+            "useBoardIdentity",
             "useBoardActions",
             "useBoardHistory",
             "useCardLabels",

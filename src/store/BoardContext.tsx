@@ -143,6 +143,16 @@ interface BoardStateValue {
 }
 
 /**
+ * The active board's identity — a narrow slice on its own context so the
+ * header's title is not re-rendered by every card edit (TASK-21.4.1).
+ * `id` is undefined when the URL points at no board (the empty state).
+ */
+interface BoardIdentityValue {
+  id: string | undefined;
+  title: string;
+}
+
+/**
  * Undo availability for the active board — a narrow slice on its own
  * context so the header does not re-render with every card edit.
  */
@@ -248,6 +258,7 @@ type BoardContextValue = BoardStateValue &
   BoardActionsValue;
 
 const BoardStateContext = createContext<BoardStateValue | null>(null);
+const BoardIdentityContext = createContext<BoardIdentityValue | null>(null);
 const BoardHistoryContext = createContext<BoardHistoryValue | null>(null);
 const BoardActionsContext = createContext<BoardActionsValue | null>(null);
 
@@ -679,12 +690,19 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     [board, state, dataIssue],
   );
 
+  const identity = useMemo<BoardIdentityValue>(
+    () => ({ id: board?.id, title: board?.title ?? "" }),
+    [board?.id, board?.title],
+  );
+
   return (
     <BoardActionsContext.Provider value={actions}>
       <BoardHistoryContext.Provider value={history}>
-        <BoardStateContext.Provider value={stateValue}>
-          {children}
-        </BoardStateContext.Provider>
+        <BoardIdentityContext.Provider value={identity}>
+          <BoardStateContext.Provider value={stateValue}>
+            {children}
+          </BoardStateContext.Provider>
+        </BoardIdentityContext.Provider>
       </BoardHistoryContext.Provider>
     </BoardActionsContext.Provider>
   );
@@ -835,6 +853,15 @@ function required<T>(value: T | null, hook: string): T {
 /** The board data. Re-renders the consumer on every edit, anywhere. */
 export function useBoardState(): BoardStateValue {
   return required(useContext(BoardStateContext), "useBoardState");
+}
+
+/**
+ * The active board's id and title. Changes only when one of them does, so
+ * the header's title sits out every card edit — reach for it instead of
+ * `useBoardState()` whenever the board's name is all a component needs.
+ */
+export function useBoardIdentity(): BoardIdentityValue {
+  return required(useContext(BoardIdentityContext), "useBoardIdentity");
 }
 
 /** Undo availability for the active board — changes only when it flips. */

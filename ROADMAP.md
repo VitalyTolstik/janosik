@@ -109,7 +109,10 @@
   на воспроизводимость экшенов (см. `WARNING.md` §0).
 - **Персистентность** — интерфейс `DebouncedPersistence` поверх `localStorage`; позже бэкенд = второй адаптер `fetch` **без изменения reducer и UI**.
 - **UI** — shadcn/ui + Radix (dialog/dropdown/popover/tooltip/slot), dnd-kit, react-day-picker, MDXEditor (описание карточки); виды доски: канбан / календарь / таблица (TASK-14/14.1).
-- **Рендер-изоляция** (TASK-21.4/21.4.1) — `memo` на `ColumnView`,
+- **Рендер-изоляция** (TASK-21.4/21.4.1) — четыре контекста провайдера
+  (стейт / actions / `canUndo`-`canRedo` / `{id,title}` активной доски —
+  последний нужен, чтобы заголовок в шапке не перерисовывался от правок
+  карточек), `memo` на `ColumnView`,
   `SortableCard`/`CardItem`, `AddCardZone` и `TableRow`; данные им приходят
   **пропсами** через резолверы `useCardList`/`useCardLabels`, которые
   возвращают тот же массив, пока не изменились сами карточки/метки. Правка
@@ -119,7 +122,7 @@
   `measuring`) — новый массив/объект меняет контекст dnd-kit и
   перерисовывает всех подписчиков `useSortable`/`useDroppable` в обход
   `memo` (наступали трижды, каждый раз находилось только замером).
-- **Тесты** — **417 тестов в 39 файлах** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
+- **Тесты** — **418 тестов в 39 файлах** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
 
 ### 1.3. Ключи и точки интеграции
 
