@@ -42,6 +42,10 @@ interface CardItemProps {
   onDuplicate?: (cardId: string) => void;
   /** Fired by the hover archive button (TASK-18.1) — the dialog stays closed. */
   onArchive?: (cardId: string) => void;
+  /** Blocks the hover duplicate (the card's column cannot take a copy). */
+  duplicateDisabled?: boolean;
+  /** Tooltip text shown while `duplicateDisabled`. */
+  duplicateDisabledReason?: string;
 }
 
 /**
@@ -92,6 +96,8 @@ function CardItemView({
   onClick,
   onDuplicate,
   onArchive,
+  duplicateDisabled = false,
+  duplicateDisabledReason,
 }: CardItemProps) {
   const [titleRef, titleClamped] = useClamped();
   const { t } = useI18n();
@@ -140,24 +146,35 @@ function CardItemView({
     >
       {/* Hover duplicate (Trello quick-edit style): a compact icon in the
           top-right corner, visible only while hovered. Hidden while dragging
-          and when there is nowhere to put the copy handler. */}
+          and when there is nowhere to put the copy handler. Disabled when
+          the card's column is full — the reducer would refuse the copy. */}
       {onDuplicate && !isDragging && !confirmArchive ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
-              type="button"
-              aria-label={t("card.duplicate")}
-              className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 hover:text-foreground group-hover:opacity-100"
-              onClick={(e) => {
-                // Don't let the click open the card dialog.
-                e.stopPropagation();
-                onDuplicate(card.id);
-              }}
-            >
-              <CopyPlus className="h-3.5 w-3.5" />
-            </button>
+            {/* Positioning and hover-visibility live on the wrapper: a
+                disabled button drops pointer events, and the tooltip needs
+                an element that still receives them. */}
+            <span className="absolute right-1.5 top-1.5 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+              <button
+                type="button"
+                aria-label={t("card.duplicate")}
+                disabled={duplicateDisabled}
+                className="flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                onClick={(e) => {
+                  // Don't let the click open the card dialog.
+                  e.stopPropagation();
+                  onDuplicate(card.id);
+                }}
+              >
+                <CopyPlus className="h-3.5 w-3.5" />
+              </button>
+            </span>
           </TooltipTrigger>
-          <TooltipContent>{t("card.duplicate")}</TooltipContent>
+          <TooltipContent>
+            {duplicateDisabled
+              ? (duplicateDisabledReason ?? t("card.duplicate"))
+              : t("card.duplicate")}
+          </TooltipContent>
         </Tooltip>
       ) : null}
       {onArchive && !isDragging ? (

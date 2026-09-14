@@ -29,6 +29,7 @@ import { useI18n } from "@/i18n";
 import { useBoardActions } from "@/store/BoardContext";
 import type { Card, Column, Label } from "@/types/kanban";
 import { LIMITS } from "@/types/kanban";
+import { isColumnFull } from "@/utils/column-limits";
 
 /** Stable empty list for an empty column's SortableContext. */
 const NO_IDS: string[] = [];
@@ -170,6 +171,13 @@ function ColumnViewBody({
   // overrides `cardIds` — the limit is judged on the real column contents.
   const atWipLimit = wipLimit !== undefined && count >= wipLimit;
   const overWipLimit = wipLimit !== undefined && count > wipLimit;
+  // The hover duplicate puts the copy into this column — dead when the
+  // real column contents (not the filtered view) cannot take one more.
+  const duplicateDisabled = isColumnFull(column);
+  const duplicateDisabledReason =
+    wipLimit !== undefined && column.cardIds.length >= wipLimit
+      ? t("column.wipLimitReached", { limit: wipLimit })
+      : t("limits.columnFull", { limit: LIMITS.cardsPerColumn });
   // Hover zones insert into the real column order, so they only make sense
   // when the rendered ids ARE the column order (no filter override, no
   // active card-drag draft) and the column can still take cards.
@@ -346,6 +354,8 @@ function ColumnViewBody({
                           }
                           onCardDuplicate={handleCardDuplicate}
                           onCardArchive={archiveCard}
+                          duplicateDisabled={duplicateDisabled}
+                          duplicateDisabledReason={duplicateDisabledReason}
                         />
                       </li>
                     </Fragment>
