@@ -772,6 +772,7 @@ export function CalendarView({
                       onSubmit={(title, labelIds, columnId) =>
                         createCardOn(day, title, labelIds, columnId)
                       }
+                      onCancel={() => setOpenDayKey(null)}
                     />
                     <div className="mt-2 max-h-56 space-y-1 overflow-y-auto border-t border-border/60 pt-2">
                       {entries.length === 0 ? (
@@ -839,11 +840,14 @@ function DayComposer({
   columns,
   labels,
   onSubmit,
+  onCancel,
 }: {
   /** `full` marks columns that cannot take another card right now. */
   columns: { id: string; title: string; full: boolean }[];
   labels?: Label[];
   onSubmit: (title: string, labelIds?: string[], columnId?: string) => void;
+  /** Closes the day panel — same contract as the table composer's cancel. */
+  onCancel: () => void;
 }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState("");
@@ -956,6 +960,7 @@ function DayComposer({
           onClick={() => {
             setDraft("");
             setSelectedLabels([]);
+            onCancel();
           }}
         >
           {t("common.cancel")}
