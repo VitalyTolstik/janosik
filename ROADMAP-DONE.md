@@ -822,3 +822,27 @@
   index-чанка. Автоматизируется бюджетом `size-limit` в TASK-21.1.
 
 ---
+
+#### TASK-21.1 — `ci-lint` · CI + ESLint + Prettier + бюджет бандла ✅
+
+- **Статус:** ✅ реализовано, PR #38 смержен в main.
+- **Что:** `eslint.config.js` (flat): typescript-eslint recommended +
+  react-hooks v7 + react-refresh; Prettier по коду (`*.md` исключены —
+  правки ROADMAP не должны тянуть переформатирование); `pool: 'vmThreads'`
+  в vitest; GitHub Actions: npm ci → tsc → test → build → lint →
+  format:check → size-limit; бюджет критического пути (entry +
+  modulepreload-чанки) ≤260 KB gzip, факт на момент ввода — 237.7 KB.
+- **Найдено и починено по-настоящему:** условный `useEffect` хоткеев в
+  `DndBoard` (вызывался после `if (!board) return null` — rules-of-hooks);
+  «latest ref»-присвоения в рендере `CardDialog` → в эффект.
+- **Решения:** react-refresh предупреждения сведены к 0 (чистые функции —
+  в `utils/limit-format.ts` / `utils/board-glass.ts`; хуки рядом с
+  провайдерами — allowlist точных имён: правило использует `Set.has`, не
+  regex); `react-hooks/refs` в `BoardContext` подавлен файлово до
+  TASK-21.4; `set-state-in-effect`/`purity` демотированы до warnings
+  (pattern-ы живут в BoardContext).
+- **Уроки:** exhaustive-deps почти все чинятся тривиально (стабильный
+  `apply` в deps); но «безопасная» правка deps в deep-link-эффекте
+  `BoardSection` переоткрывала диалог после закрытия — тест поймал, disable
+  вернули с настоящей причиной. Вывод: disable-комментарий без причины —
+  долг, disable с причиной — контракт.

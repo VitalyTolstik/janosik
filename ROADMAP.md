@@ -168,7 +168,7 @@
 | 9 | TASK-15 `pwa-offline` | ✅ реализовано, PR #35 смержен — манифест, иконки, SW поверх финального бандла |
 | 10 | TASK-33 `undo-history-fix` | ✅ реализовано, PR #36 — точные снапшоты истории при нескольких dispatch в одном тике |
 | 11 | TASK-34 `lazy-views` | ✅ реализовано, PR #37 — календарь/таблица снова lazy, motion-чанк; критический путь ~932→~654 KB raw (фактически ~768 — motion-иконки шапки остались на критическом пути, снимает TASK-21.6/21.9) |
-| 12 | TASK-21.1 `ci-lint` | укрепление фундамента — см. §6.0.1 |
+| 12 | TASK-21.1 `ci-lint` | ✅ реализовано, PR #38 смержен — CI (tsc/test/build/lint/format/size-limit), ESLint+Prettier, бюджет 237.7/260 KB gzip; пойманы 2 реальных бага (условный hook в DndBoard, ref-запись в рендере CardDialog) |
 | 13 | TASK-21.2 `data-safety` | защита данных от потери — см. §6.0.1 |
 | 14 | TASK-21.3 `sw-fixes` | две строки в service worker — см. §6.0.1 |
 | 15 | TASK-21.4 `context-split` | рендер-производительность — см. §6.0.1 |
@@ -187,18 +187,10 @@
 
 Одна задача = одна ветка = один PR, порядок — как в таблице §6.0.
 
-#### TASK-21.1 — `ci-lint` · CI + ESLint + Prettier + бюджет бандла
+#### TASK-21.1 — `ci-lint` · CI + ESLint + Prettier + бюджет бандла ✅
 
-- **Что:** GitHub Actions (`npm ci`, `tsc -b --force`, `npm test`, `npm run build`,
-  `size-limit` с бюджетом на критический путь ≤260 KB gzip); ESLint +
-  `typescript-eslint` + `eslint-plugin-react-hooks` (поймает `exhaustive-deps` —
-  их в проекте 5 `eslint-disable`-комментариев при отсутствии самого линтера);
-  Prettier (форматирование дрейфует: в `storage.ts` отступ 3 пробела, везде 2);
-  `pool: 'vmThreads'` в `vitest.config.ts` — jsdom поднимается 1 раз вместо 30.
-- **Почему до TASK-22:** в монорепе с двумя пакетами и разными tsconfig
-  настраивать вдвое дороже; CI страхует все следующие PR.
-- **DoD:** CI зелёный на main; lint проходит (или все нарушения закрыты);
-  прогон тестов ускорился.
+- **Статус:** ✅ реализовано, PR #38 смержен — полное описание в
+  `ROADMAP-DONE.md`. Next: TASK-21.2.
 
 #### TASK-21.2 — `data-safety` · Защита от потери данных
 
