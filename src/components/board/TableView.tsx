@@ -223,19 +223,24 @@ export function TableView({
     const columnIndex = new Map(
       board.columns.map((col, index) => [col.id, index]),
     );
+    // `dir` multiplies only the numeric comparison of each key. The
+    // due-date null handling lives outside it, so undated cards stay last
+    // in BOTH sort directions (the reducer's sortColumn semantics).
     const cmp = (a: (typeof rows)[number], b: (typeof rows)[number]) => {
       switch (sort.key) {
         case "title":
-          return a.card.title.localeCompare(b.card.title, lang, {
-            sensitivity: "base",
-          });
+          return (
+            a.card.title.localeCompare(b.card.title, lang, {
+              sensitivity: "base",
+            }) * sort.dir
+          );
         case "column":
           return (
-            (columnIndex.get(a.column.id) ?? 0) -
-            (columnIndex.get(b.column.id) ?? 0)
+            ((columnIndex.get(a.column.id) ?? 0) -
+              (columnIndex.get(b.column.id) ?? 0)) *
+            sort.dir
           );
         case "due": {
-          // Undated cards always float to the bottom (like sortColumn).
           const aDue =
             typeof a.card.dueDate === "number" ? a.card.dueDate : null;
           const bDue =
@@ -243,13 +248,13 @@ export function TableView({
           if (aDue === null && bDue === null) return 0;
           if (aDue === null) return 1;
           if (bDue === null) return -1;
-          return aDue - bDue;
+          return (aDue - bDue) * sort.dir;
         }
         case "createdAt":
-          return a.card.createdAt - b.card.createdAt;
+          return (a.card.createdAt - b.card.createdAt) * sort.dir;
       }
     };
-    return [...rows].sort((a, b) => cmp(a, b) * sort.dir);
+    return [...rows].sort(cmp);
   })();
 
   const cycleSort = (key: SortKey) => {
