@@ -539,31 +539,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // Wrapper dispatch: apply the command, then record the undo step for the
   // board it targeted. Board-scoped actions get the active board id
   // injected when absent, and every command gets an idempotency key.
+  // Board-level actions (import / add / remove / archive / unarchive) do not
+  // go through here — their public methods call `apply` directly, which is
+  // the single path for them.
   const dispatch = useCallback(
     (action: BoardAction) => {
-      if (action.type === "IMPORT_BOARDS") {
-        // A new data set invalidates every history.
-        clearHistory();
-        apply(action);
-        return;
-      }
-      if (action.type === "ADD_BOARD") {
-        apply(action);
-        return;
-      }
-      if (action.type === "REMOVE_BOARD") {
-        dropHistory(action.boardId);
-        apply(action);
-        return;
-      }
-      if (
-        action.type === "ARCHIVE_BOARD" ||
-        action.type === "UNARCHIVE_BOARD"
-      ) {
-        // Organizational actions, not content edits — no undo entry.
-        apply(action);
-        return;
-      }
       const boardId =
         (action as { boardId?: string }).boardId ?? activeIdRef.current;
       if (!boardId) return;
@@ -582,7 +562,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         recordStep(boardId, before, scoped);
       }
     },
-    [apply, clearHistory, dropHistory, recordStep],
+    [apply, recordStep],
   );
 
   const importBoards = useCallback(
