@@ -48,10 +48,12 @@ export function parseExport(raw: string): BoardState {
   if (file.app !== EXPORT_APP) {
     throw new Error("Not a Janosik export");
   }
+  const version = file.schemaVersion;
   if (
-    !Number.isInteger(file.schemaVersion) ||
-    file.schemaVersion < 1 ||
-    file.schemaVersion > EXPORT_SCHEMA_VERSION
+    typeof version !== "number" ||
+    !Number.isInteger(version) ||
+    version < 1 ||
+    version > EXPORT_SCHEMA_VERSION
   ) {
     throw new Error("Unsupported schema version");
   }
