@@ -49,7 +49,8 @@ export function parseExport(raw: string): BoardState {
     throw new Error("Not a Janosik export");
   }
   if (
-    typeof file.schemaVersion !== "number" ||
+    !Number.isInteger(file.schemaVersion) ||
+    file.schemaVersion < 1 ||
     file.schemaVersion > EXPORT_SCHEMA_VERSION
   ) {
     throw new Error("Unsupported schema version");
