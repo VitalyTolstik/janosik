@@ -405,10 +405,15 @@ export function DndBoard({
           return;
         }
         const activeIndex = cols[activeContainer].indexOf(activeId);
+        // `over` can be the column body itself (a rapid drop right after the
+        // draft already moved the card in): `indexOf` would return -1 and the
+        // move would be silently lost, so a column id means "append".
         const toIndex =
           overId === activeId
             ? activeIndex
-            : cols[overContainer].indexOf(overId);
+            : overId in cols
+              ? cols[overContainer].length
+              : cols[overContainer].indexOf(overId);
         if (toIndex !== -1) {
           moveCard(activeId, fromColumn.id, activeContainer, toIndex);
         }
