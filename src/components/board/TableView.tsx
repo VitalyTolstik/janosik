@@ -390,12 +390,13 @@ export function TableView({
                 </th>
               ) : null}
               {visibleColumns.includes("createdAt") ? (
-                <th
-                  scope="col"
-                  className="w-28 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
-                >
-                  {t("view.table.createdAt")}
-                </th>
+                <SortHeader
+                  label={t("view.table.createdAt")}
+                  sortKey="createdAt"
+                  sort={sort}
+                  onCycle={cycleSort}
+                  className="w-28"
+                />
               ) : null}
               {visibleColumns.includes("updatedAt") ? (
                 <th
