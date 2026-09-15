@@ -96,33 +96,40 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
   // debounced touch commits one timestamp per editing session, so sorting
   // by "updated" doesn't reshuffle mid-typing and exports stay clean.
   const touchTimerRef = useRef<number | null>(null);
+  // The card the pending timer belongs to, captured when the timer is
+  // scheduled — a timer must never stamp a card the user has since opened.
+  const touchTargetRef = useRef<string | null>(null);
   const touchCardRef = useRef(touchCard);
-  const cardIdRef = useRef(cardId);
-  // Mirror the latest values into refs outside of render (the timer callback
-  // must see current ones without re-creating the timeout).
+  // Mirror the latest action into a ref outside of render (the timer
+  // callback must see it without re-creating the timeout).
   useEffect(() => {
     touchCardRef.current = touchCard;
-    cardIdRef.current = cardId;
-  }, [touchCard, cardId]);
-  const scheduleTouch = () => {
+  }, [touchCard]);
+  const scheduleTouch = (targetCardId: string) => {
     if (touchTimerRef.current !== null)
       window.clearTimeout(touchTimerRef.current);
+    touchTargetRef.current = targetCardId;
     touchTimerRef.current = window.setTimeout(() => {
       touchTimerRef.current = null;
-      if (cardIdRef.current) touchCardRef.current(cardIdRef.current);
+      const target = touchTargetRef.current;
+      touchTargetRef.current = null;
+      if (target) touchCardRef.current(target);
     }, QUIET_TOUCH_DELAY_MS);
   };
+  // Closing the dialog or switching to another card flushes the pending
+  // stamp to the card that was actually edited: no edit is dropped and no
+  // other card is falsely marked as updated.
   useEffect(
     () => () => {
-      // Flush a pending commit: closing the dialog right after typing
-      // must still stamp the final time, not drop it.
       if (touchTimerRef.current !== null) {
         window.clearTimeout(touchTimerRef.current);
         touchTimerRef.current = null;
-        if (cardIdRef.current) touchCardRef.current(cardIdRef.current);
       }
+      const target = touchTargetRef.current;
+      touchTargetRef.current = null;
+      if (target) touchCardRef.current(target);
     },
-    [],
+    [cardId, open],
   );
 
   if (!board || !cardId) {
@@ -245,7 +252,7 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                     { title: e.target.value },
                     { quiet: true },
                   );
-                  scheduleTouch();
+                  scheduleTouch(card.id);
                 }}
                 onFocus={(e) => e.target.select()}
                 rows={3}
@@ -303,13 +310,13 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                         },
                         { quiet: true },
                       );
-                      scheduleTouch();
+                      scheduleTouch(card.id);
                       setOverflowTick((n) => n + 1);
                       return;
                     }
                     overLimitRef.current = false;
                     updateCard(card.id, { description }, { quiet: true });
-                    scheduleTouch();
+                    scheduleTouch(card.id);
                   }}
                   placeholder={t("card.descriptionPlaceholder")}
                 />
