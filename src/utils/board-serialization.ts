@@ -41,7 +41,7 @@ export function parseExport(raw: string): BoardState {
   }
 
   if (typeof parsed !== "object" || parsed === null) {
-    throw new Error("MISSING-item");
+    throw new Error("Malformed export file");
   }
   const file = parsed as Partial<BoardExportFile>;
 
