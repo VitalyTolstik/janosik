@@ -62,6 +62,10 @@
 - Для shadcn/ui: установи компоненты через CLI и кастомизируй их в соответствии с дизайн‑токенами (измени CSS переменные в `globals.css`).
 - Структура проекта: предложи разумную организацию папок (components, hooks, types, utils, store).
 
+### File naming
+
+React components and their test files use PascalCase (e.g. `BoardContext.tsx`); everything else — utils, stores, hook siblings, config — uses kebab-case (e.g. `board-reducer.ts`, `use-undo-history.ts`). Existing deviations are accepted as-is and should not be renamed just to comply.
+
 ## Детерминизм редьюсера (TASK-21.7a — обязательное правило)
 
 `boardReducer` — чистая функция от `(state, action)`. Экшен **полностью
