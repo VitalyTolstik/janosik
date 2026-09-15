@@ -8,6 +8,56 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0a0a0f" />
     <title>Janosik — Boards</title>
+    <script>
+      /*
+       * Theme preflight — runs before first paint so the persisted theme is
+       * applied without a dark/light flash. Precedence: saved preference >
+       * system preference. It cannot import the app bundle (that loads
+       * later), so the storage keys are duplicated here as literals on
+       * purpose and kept in sync with src/utils/storage-keys.ts.
+       */
+      (function () {
+        try {
+          var saved = localStorage.getItem("janosik-theme");
+          if (saved === null) {
+            var legacy = localStorage.getItem("vortex-theme");
+            if (legacy !== null) {
+              try {
+                localStorage.setItem("janosik-theme", legacy);
+              } catch (e) {}
+              try {
+                localStorage.removeItem("vortex-theme");
+              } catch (e) {}
+              saved = legacy;
+            }
+          }
+          var dark =
+            saved === "light" || saved === "dark"
+              ? saved === "dark"
+              : window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var root = document.documentElement;
+          root.classList.toggle("dark", dark);
+          root.classList.toggle("light", !dark);
+        } catch (e) {}
+      })();
+    </script>
+    <style id="__janosik_preflight">
+      /*
+       * Pre-paint kill-switch: no color transition on the very first frame,
+       * and a themed backdrop before index.css loads. The hex literals are
+       * unavoidable here — this runs before the design tokens exist.
+       * App.tsx removes this element once React has painted.
+       */
+      * {
+        transition: none !important;
+      }
+      html {
+        background: #0a0a0f;
+      }
+      html.light {
+        background: #f4f5f6;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

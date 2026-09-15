@@ -13,8 +13,8 @@ import { migrateStorageKey } from "@/utils/storage";
 /**
  * Theme management: `dark` (default) | `light`.
  * The choice is persisted to localStorage and applied as a class on <html>.
- * main.tsx runs a preflight that applies the persisted theme before first
- * paint, so there is never a theme flash.
+ * The inline preflight in `index.html` applies the persisted theme before
+ * first paint, so there is never a theme flash.
  */
 
 export type Theme = "dark" | "light";
@@ -33,6 +33,25 @@ function readStoredTheme(): Theme | null {
   }
 }
 
+function systemTheme(): Theme {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+/**
+ * Resolve the initial theme. The preflight already applied the saved
+ * preference (or the OS setting) as classes on <html> before first paint, so
+ * the DOM is the source of truth; without it, fall back to the saved value
+ * and then the system preference.
+ */
+function readInitialTheme(): Theme {
+  const html = root();
+  if (html.classList.contains("light")) return "light";
+  if (html.classList.contains("dark")) return "dark";
+  return readStoredTheme() ?? systemTheme();
+}
+
 interface ThemeContextValue {
   theme: Theme;
   toggleTheme: () => void;
@@ -42,13 +61,7 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    const stored = readStoredTheme();
-    if (stored) return stored;
-    // During SSR-less preflight we already picked a default; keep in sync
-    // with the class applied by main.tsx.
-    return root().classList.contains("light") ? "light" : "dark";
-  });
+  const [theme, setThemeState] = useState<Theme>(readInitialTheme);
 
   useEffect(() => {
     const html = root();
