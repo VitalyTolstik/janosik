@@ -56,7 +56,11 @@ describe("board serialization", () => {
 
   it("rejects non-integer or non-positive schema versions", () => {
     for (const schemaVersion of [0, -1, 1.5, Number.NaN]) {
-      const raw = JSON.stringify({ app: EXPORT_APP, schemaVersion, boards: [] });
+      const raw = JSON.stringify({
+        app: EXPORT_APP,
+        schemaVersion,
+        boards: [],
+      });
       expect(() => parseExport(raw), `version ${schemaVersion}`).toThrow(
         "Unsupported schema version",
       );
