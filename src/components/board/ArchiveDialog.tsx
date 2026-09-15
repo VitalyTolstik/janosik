@@ -22,7 +22,8 @@ import { Check, X } from "lucide-react";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { routes } from "@/routes";
 import { useBoard } from "@/store/BoardContext";
-import type { Card } from "@/types/kanban";
+import { type Card } from "@/types/kanban";
+import { isColumnFull } from "@/utils/column-limits";
 
 /** Stable empty list for the closed dialog. */
 const NO_CARDS: Card[] = [];
@@ -188,16 +189,27 @@ export function ArchiveDialog({ open, onOpenChange }: ArchiveDialogProps) {
                             <DropdownMenuLabel>
                               {t("card.restoreTo")}
                             </DropdownMenuLabel>
-                            {board.columns.map((column) => (
-                              <DropdownMenuItem
-                                key={column.id}
-                                onSelect={() =>
-                                  unarchiveCard(card.id, column.id)
-                                }
-                              >
-                                {column.title}
-                              </DropdownMenuItem>
-                            ))}
+                            {board.columns.map((column) => {
+                              const full = isColumnFull(column);
+                              return (
+                                <DropdownMenuItem
+                                  key={column.id}
+                                  disabled={full}
+                                  onSelect={() =>
+                                    unarchiveCard(card.id, column.id)
+                                  }
+                                >
+                                  <span className="truncate">
+                                    {column.title}
+                                  </span>
+                                  {column.wipLimit !== undefined && (
+                                    <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                                      {column.cardIds.length}/{column.wipLimit}
+                                    </span>
+                                  )}
+                                </DropdownMenuItem>
+                              );
+                            })}
                           </DropdownMenuContent>
                         </DropdownMenu>
                         <Button

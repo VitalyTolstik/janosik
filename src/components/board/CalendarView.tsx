@@ -380,6 +380,20 @@ export function CalendarView({
     return daysByKey.get(key) ?? new Date();
   }
 
+  // The right refusal message for a column that cannot take a card: its
+  // own WIP limit when that is what filled up, the hard cap otherwise.
+  const fullColumnToast = (column: {
+    title: string;
+    cardIds: string[];
+    wipLimit?: number;
+  }) =>
+    column.wipLimit !== undefined && column.cardIds.length >= column.wipLimit
+      ? t("toast.wipLimitBlocked", {
+          title: column.title,
+          limit: column.wipLimit,
+        })
+      : t("limits.maxItems", { limit: LIMITS.cardsPerColumn });
+
   /** Creates a card due on `day` from the day-panel composer. */
   const createCardOn = (
     day: Date,
@@ -392,8 +406,10 @@ export function CalendarView({
     const column =
       board.columns.find((c) => c.id === columnId) ?? board.columns[0];
     if (!column) return;
-    if (column.cardIds.length >= LIMITS.cardsPerColumn) {
-      toast.error(t("limits.maxItems", { limit: LIMITS.cardsPerColumn }));
+    // Both limits, with the matching toast — the composers already disable
+    // full columns; this guard is the backstop.
+    if (isColumnFull(column)) {
+      toast.error(fullColumnToast(column));
       return;
     }
     pendingCreationRef.current = {
@@ -411,8 +427,8 @@ export function CalendarView({
     if (!trimmed) return;
     const column = board.columns[0];
     if (!column) return;
-    if (column.cardIds.length >= LIMITS.cardsPerColumn) {
-      toast.error(t("limits.maxItems", { limit: LIMITS.cardsPerColumn }));
+    if (isColumnFull(column)) {
+      toast.error(fullColumnToast(column));
       return;
     }
     addCard(column.id, trimmed);
@@ -767,6 +783,8 @@ export function CalendarView({
                         id: col.id,
                         title: col.title,
                         full: isColumnFull(col),
+                        count: col.cardIds.length,
+                        wipLimit: col.wipLimit,
                       }))}
                       labels={board.labels}
                       onSubmit={(title, labelIds, columnId) =>
@@ -842,8 +860,15 @@ function DayComposer({
   onSubmit,
   onCancel,
 }: {
-  /** `full` marks columns that cannot take another card right now. */
-  columns: { id: string; title: string; full: boolean }[];
+  /** `full` marks columns that cannot take another card right now; the
+   *  counter `count`/`wipLimit` is shown for WIP-limited ones. */
+  columns: {
+    id: string;
+    title: string;
+    full: boolean;
+    count?: number;
+    wipLimit?: number;
+  }[];
   labels?: Label[];
   onSubmit: (title: string, labelIds?: string[], columnId?: string) => void;
   /** Closes the day panel — same contract as the table composer's cancel. */
@@ -926,7 +951,12 @@ function DayComposer({
                   : undefined
               }
             >
-              {col.title}
+              <span className="truncate">{col.title}</span>
+              {col.wipLimit !== undefined && col.count !== undefined && (
+                <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                  {col.count}/{col.wipLimit}
+                </span>
+              )}
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>

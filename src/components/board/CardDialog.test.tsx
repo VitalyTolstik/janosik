@@ -417,3 +417,68 @@ describe("CardDialog duplicate (column limits)", () => {
     ).toBeEnabled();
   });
 });
+
+describe("CardDialog move (column limits)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  function seedBoard() {
+    localStorage.setItem(
+      "janosik-boards",
+      JSON.stringify([
+        {
+          id: "b-1",
+          title: "Limits board",
+          columns: [
+            { id: "col-1", title: "Home", cardIds: ["card-1"], createdAt: 0 },
+            {
+              id: "col-2",
+              title: "Full",
+              cardIds: ["card-2"],
+              wipLimit: 1,
+              createdAt: 0,
+            },
+            { id: "col-3", title: "Roomy", cardIds: [], createdAt: 0 },
+          ],
+          cards: {
+            "card-1": {
+              id: "card-1",
+              title: "Moving card",
+              labelIds: [],
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            "card-2": {
+              id: "card-2",
+              title: "Occupant",
+              labelIds: [],
+              createdAt: 0,
+              updatedAt: 0,
+            },
+          },
+          labels: [],
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      ]),
+    );
+  }
+
+  it("disables the move target that is over its WIP limit", async () => {
+    seedBoard();
+    renderBoard();
+    fireEvent.click(await screen.findByText("Moving card"));
+    await screen.findByRole("dialog");
+    // Radix DropdownMenu opens on pointerdown, not click.
+    await userEvent.click(screen.getByRole("button", { name: "Home" }));
+
+    // Radix menu items signal via aria-disabled, not the disabled attribute.
+    const full = await screen.findByRole("menuitem", { name: /Full/ });
+    expect(full).toHaveAttribute("aria-disabled", "true");
+    expect(full).toHaveTextContent("1/1");
+    expect(screen.getByRole("menuitem", { name: /Roomy/ })).not.toHaveAttribute(
+      "aria-disabled",
+    );
+  });
+});

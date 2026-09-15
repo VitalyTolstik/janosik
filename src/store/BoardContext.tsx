@@ -23,7 +23,7 @@ import {
   type BoardState,
   type ColumnSortBy,
 } from "@/store/board-reducer";
-import { BoardHistory } from "@/store/history";
+import { useUndoHistory } from "@/store/use-undo-history";
 import type { Board, CardCover, Label } from "@/types/kanban";
 import { migrateStorageKey, quarantineValue, readRaw } from "@/utils/storage";
 import { normalizeBoards } from "@/store/migrate";
@@ -291,9 +291,6 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }
   const persistence = persistenceRef.current;
 
-  // One undo/redo stack per board; created lazily, dropped on remove/import.
-  const historiesRef = useRef(new Map<string, BoardHistory>());
-
   // Bootstrap runs exactly once: it both seeds the reducer and reports what
   // was wrong with the stored data (corrupt / quarantined).
   const bootRef = useRef<BootState | null>(null);
@@ -306,17 +303,6 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const [dataIssue, setDataIssue] = useState<DataIssue | null>(boot.issue);
 
   /* eslint-enable react-hooks/refs */
-
-  // Undo availability, mirrored into state: `BoardHistory` is mutable, so
-  // reading it during render would be both impure and invisible to React.
-  // Every mutation path calls `syncHistory()` right after touching a stack.
-  // Two booleans rather than one object: React compares primitives, so an
-  // unchanged flag bails out exactly, and the context value below keeps its
-  // identity. (An updater returning a fresh object is re-run by React —
-  // eagerly and again while rendering — and each fresh object counts as a
-  // change, costing the header an extra render on every flip.)
-  const [canUndo, setCanUndo] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
 
   // Once dismissed, the quota-warning stays quiet until the data actually
   // drops under the threshold — otherwise the banner re-appears on every
@@ -423,15 +409,39 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // Latest active board id, readable from stable callbacks.
   const activeIdRef = useRef(board?.id);
 
-  // Publishes the active board's undo availability. Cheap and idempotent:
-  // unchanged flags are no state change at all, so the context value below
-  // keeps its identity and the header does not re-render.
-  const syncHistory = useCallback(() => {
+  // Readers the history hook calls when a command runs — refs, so they are
+  // stable and always see the state the last dispatch produced.
+  const getBoardById = useCallback(
+    (boardId: string) => stateRef.current.find((b) => b.id === boardId),
+    [],
+  );
+  const getActiveBoardId = useCallback(() => activeIdRef.current, []);
+  const getActiveBoard = useCallback(() => {
     const boardId = activeIdRef.current;
-    const stack = boardId ? historiesRef.current.get(boardId) : undefined;
-    setCanUndo(stack?.canUndo() ?? false);
-    setCanRedo(stack?.canRedo() ?? false);
-  }, []);
+    return boardId ? getBoardById(boardId) : undefined;
+  }, [getBoardById]);
+
+  // Undo/redo lives in its own hook (TASK-21.7d): one command stack per
+  // board, the two availability flags, and the keyboard shortcuts.
+  // Destructured on purpose: every function below is a stable callback,
+  // while the object itself is rebuilt each render — depending on the
+  // object would give `dispatch` (and with it the whole actions context) a
+  // new identity on every state change and undo the render isolation of
+  // TASK-21.4.
+  const {
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    record: recordStep,
+    drop: dropHistory,
+    clear: clearHistory,
+    sync: syncHistory,
+  } = useUndoHistory({
+    getBoard: getBoardById,
+    getActiveBoardId,
+    apply,
+  });
 
   const history = useMemo<BoardHistoryValue>(
     () => ({ canUndo, canRedo }),
@@ -525,15 +535,15 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     };
   }, [persistence]);
 
-  // Wrapper dispatch: record history for the targeted board, then apply.
-  // Board-scoped actions get the active board id injected when absent.
+  // Wrapper dispatch: apply the command, then record the undo step for the
+  // board it targeted. Board-scoped actions get the active board id
+  // injected when absent, and every command gets an idempotency key.
   const dispatch = useCallback(
     (action: BoardAction) => {
       if (action.type === "IMPORT_BOARDS") {
         // A new data set invalidates every history.
-        historiesRef.current.clear();
+        clearHistory();
         apply(action);
-        syncHistory();
         return;
       }
       if (action.type === "ADD_BOARD") {
@@ -541,9 +551,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (action.type === "REMOVE_BOARD") {
-        historiesRef.current.delete(action.boardId);
+        dropHistory(action.boardId);
         apply(action);
-        syncHistory();
         return;
       }
       if (
@@ -555,92 +564,34 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         return;
       }
       const boardId =
-        action.type === "RESTORE_BOARD"
-          ? (action.boardId ?? activeIdRef.current)
-          : ((action as { boardId?: string }).boardId ?? activeIdRef.current);
+        (action as { boardId?: string }).boardId ?? activeIdRef.current;
       if (!boardId) return;
-      const scoped = { ...action, boardId } as BoardAction;
-      if (scoped.type !== "RESTORE_BOARD") {
-        const current = stateRef.current.find((b) => b.id === boardId);
-        if (current) {
-          let stack = historiesRef.current.get(boardId);
-          if (!stack) {
-            stack = new BoardHistory();
-            historiesRef.current.set(boardId, stack);
-          }
-          stack.push(current, scoped);
-        }
-      }
+      const scoped = {
+        ...action,
+        boardId,
+        commandId: (action as { commandId?: string }).commandId ?? createId(),
+      } as BoardAction;
+      const before = stateRef.current.find((b) => b.id === boardId);
       apply(scoped);
-      syncHistory();
+      // A command the reducer turned into a no-op (a guard, a limit, an
+      // edit that changed nothing) is not a step: it would cost the user an
+      // undo press that does nothing visible.
+      const after = stateRef.current.find((b) => b.id === boardId);
+      if (before !== undefined && after !== before) {
+        recordStep(boardId, before, scoped);
+      }
     },
-    [apply, syncHistory],
+    [apply, clearHistory, dropHistory, recordStep],
   );
-
-  const undo = useCallback(() => {
-    const boardId = activeIdRef.current;
-    if (!boardId) return;
-    const stack = historiesRef.current.get(boardId);
-    const current = stateRef.current.find((b) => b.id === boardId);
-    const previous = stack && current ? stack.undo(current) : null;
-    if (previous) {
-      apply({ type: "RESTORE_BOARD", boardId, board: previous });
-    }
-    syncHistory();
-  }, [apply, syncHistory]);
-
-  const redo = useCallback(() => {
-    const boardId = activeIdRef.current;
-    if (!boardId) return;
-    const stack = historiesRef.current.get(boardId);
-    const current = stateRef.current.find((b) => b.id === boardId);
-    const next = stack && current ? stack.redo(current) : null;
-    if (next) {
-      apply({ type: "RESTORE_BOARD", boardId, board: next });
-    }
-    syncHistory();
-  }, [apply, syncHistory]);
 
   const importBoards = useCallback(
     (boards: BoardState) => {
       // A new data set invalidates any previous history.
-      historiesRef.current.clear();
+      clearHistory();
       apply({ type: "IMPORT_BOARDS", boards: normalizeBoards(boards) });
-      syncHistory();
     },
-    [apply, syncHistory],
+    [apply, clearHistory],
   );
-
-  // Hotkeys: Ctrl/⌘+Z undo, Ctrl/⌘+Shift+Z or Ctrl+Y redo. Skip while the
-  // user is typing inside an editable field (native text undo takes over).
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (
-        target &&
-        (target.isContentEditable ||
-          target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA")
-      ) {
-        return;
-      }
-      if (!(event.metaKey || event.ctrlKey)) return;
-      const key = event.key.toLowerCase();
-      if (key === "z") {
-        event.preventDefault();
-        if (event.shiftKey) {
-          redo();
-        } else {
-          undo();
-        }
-      } else if (key === "y") {
-        event.preventDefault();
-        redo();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo]);
 
   const addBoard = useCallback(
     (title: string): string => {
@@ -665,23 +616,22 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   const removeBoard = useCallback(
     (boardId: string) => {
-      historiesRef.current.delete(boardId);
+      dropHistory(boardId);
       apply({ type: "REMOVE_BOARD", boardId });
-      syncHistory();
     },
-    [apply, syncHistory],
+    [apply, dropHistory],
   );
 
   const archiveBoard = useCallback(
     (boardId: string) => {
-      apply({ type: "ARCHIVE_BOARD", boardId });
+      apply({ type: "ARCHIVE_BOARD", boardId, at: Date.now() });
     },
     [apply],
   );
 
   const unarchiveBoard = useCallback(
     (boardId: string) => {
-      apply({ type: "UNARCHIVE_BOARD", boardId });
+      apply({ type: "UNARCHIVE_BOARD", boardId, at: Date.now() });
     },
     [apply],
   );
@@ -696,7 +646,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       // `dispatch` is a stable callback that reads refs when *called*; here
       // it is only stored in closures, never invoked during render.
       // eslint-disable-next-line react-hooks/refs
-      ...createBoardActions(dispatch),
+      ...createBoardActions(dispatch, getActiveBoard),
       addBoard,
       removeBoard,
       archiveBoard,
@@ -708,6 +658,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     }),
     [
       dispatch,
+      getActiveBoard,
       addBoard,
       removeBoard,
       archiveBoard,
@@ -742,9 +693,19 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** Map raw dispatches to naming, typed convenience actions. */
+/**
+ * Map raw dispatches to naming, typed convenience actions.
+ *
+ * This is where a command becomes deterministic (TASK-21.7a): the caller
+ * mints the ids of everything the command creates, reads the clock once and
+ * resolves relative intent ("toggle this label") into the absolute value the
+ * reducer applies. `getBoard` reads the *current* active board at call time
+ * (the provider keeps it in a ref), so two dispatches in one event handler
+ * still each see the state the previous one produced.
+ */
 function createBoardActions(
   dispatch: (action: BoardAction) => void,
+  getBoard: () => Board | undefined,
 ): Pick<
   BoardActionsValue,
   | "addColumn"
@@ -779,55 +740,154 @@ function createBoardActions(
   | "setColumnWipLimit"
   | "sortColumn"
 > {
+  /** `n` fresh ids, for the activity events (or copies) a command produces. */
+  const ids = (n: number): string[] =>
+    Array.from({ length: n }, () => createId());
+
   return {
-    addColumn: (title: string) => dispatch({ type: "ADD_COLUMN", title }),
-    renameBoard: (title: string) => dispatch({ type: "RENAME_BOARD", title }),
+    addColumn: (title: string) =>
+      dispatch({
+        type: "ADD_COLUMN",
+        newColumnId: createId(),
+        title,
+        at: Date.now(),
+      }),
+    renameBoard: (title: string) =>
+      dispatch({ type: "RENAME_BOARD", title, at: Date.now() }),
     renameColumn: (columnId: string, title: string) =>
-      dispatch({ type: "RENAME_COLUMN", columnId, title }),
+      dispatch({ type: "RENAME_COLUMN", columnId, title, at: Date.now() }),
     deleteColumn: (columnId: string) =>
-      dispatch({ type: "DELETE_COLUMN", columnId }),
+      dispatch({ type: "DELETE_COLUMN", columnId, at: Date.now() }),
     addCard: (
       columnId: string,
       title: string,
       labelIds?: string[],
       atIndex?: number,
-    ) => dispatch({ type: "ADD_CARD", columnId, title, labelIds, atIndex }),
+    ) =>
+      dispatch({
+        type: "ADD_CARD",
+        newCardId: createId(),
+        columnId,
+        title,
+        labelIds,
+        atIndex,
+        activityIds: ids(1),
+        at: Date.now(),
+      }),
     updateCard: (
       cardId: string,
       patch: CardPatch,
       opts?: { quiet?: boolean },
     ) =>
-      dispatch({ type: "UPDATE_CARD", cardId, ...patch, quiet: opts?.quiet }),
-    touchCard: (cardId: string) => dispatch({ type: "TOUCH_CARD", cardId }),
-    deleteCard: (cardId: string) => dispatch({ type: "DELETE_CARD", cardId }),
-    archiveCard: (cardId: string) => dispatch({ type: "ARCHIVE_CARD", cardId }),
+      dispatch({
+        type: "UPDATE_CARD",
+        cardId,
+        ...patch,
+        quiet: opts?.quiet,
+        // Two slots: a title change and a description change can both land.
+        activityIds: ids(2),
+        at: Date.now(),
+      }),
+    touchCard: (cardId: string) =>
+      dispatch({ type: "TOUCH_CARD", cardId, at: Date.now() }),
+    deleteCard: (cardId: string) =>
+      dispatch({ type: "DELETE_CARD", cardId, at: Date.now() }),
+    archiveCard: (cardId: string) =>
+      dispatch({
+        type: "ARCHIVE_CARD",
+        cardId,
+        activityIds: ids(1),
+        at: Date.now(),
+      }),
     unarchiveCard: (cardId: string, columnId?: string) =>
-      dispatch({ type: "UNARCHIVE_CARD", cardId, columnId }),
-    archiveColumnCards: (columnId: string) =>
-      dispatch({ type: "ARCHIVE_COLUMN_CARDS", columnId }),
-    toggleCardLabel: (cardId: string, labelId: string) =>
-      dispatch({ type: "TOGGLE_CARD_LABEL", cardId, labelId }),
-    addLabel: (label: Label) => dispatch({ type: "ADD_LABEL", label }),
+      dispatch({
+        type: "UNARCHIVE_CARD",
+        cardId,
+        columnId,
+        activityIds: ids(1),
+        at: Date.now(),
+      }),
+    archiveColumnCards: (columnId: string) => {
+      const column = getBoard()?.columns.find((c) => c.id === columnId);
+      dispatch({
+        type: "ARCHIVE_COLUMN_CARDS",
+        columnId,
+        // One "archived" event per card in the column.
+        activityIds: ids(column?.cardIds.length ?? 0),
+        at: Date.now(),
+      });
+    },
+    toggleCardLabel: (cardId: string, labelId: string) => {
+      const card = getBoard()?.cards[cardId];
+      if (!card) return;
+      dispatch({
+        type: "SET_CARD_LABEL",
+        cardId,
+        labelId,
+        // Relative intent resolved here; the command carries the result.
+        on: !card.labelIds.includes(labelId),
+        activityIds: ids(1),
+        at: Date.now(),
+      });
+    },
+    addLabel: (label: Label) =>
+      dispatch({ type: "ADD_LABEL", label, at: Date.now() }),
     renameLabel: (labelId: string, name: string) =>
-      dispatch({ type: "RENAME_LABEL", labelId, name }),
+      dispatch({ type: "RENAME_LABEL", labelId, name, at: Date.now() }),
     setLabelColor: (labelId: string, color: Label["color"]) =>
-      dispatch({ type: "SET_LABEL_COLOR", labelId, color }),
+      dispatch({ type: "SET_LABEL_COLOR", labelId, color, at: Date.now() }),
     deleteLabel: (labelId: string) =>
-      dispatch({ type: "DELETE_LABEL", labelId }),
+      dispatch({ type: "DELETE_LABEL", labelId, at: Date.now() }),
     addChecklist: (cardId: string, title: string) =>
-      dispatch({ type: "ADD_CHECKLIST", cardId, title }),
+      dispatch({
+        type: "ADD_CHECKLIST",
+        cardId,
+        newChecklistId: createId(),
+        title,
+        at: Date.now(),
+      }),
     renameChecklist: (cardId: string, checklistId: string, title: string) =>
-      dispatch({ type: "RENAME_CHECKLIST", cardId, checklistId, title }),
+      dispatch({
+        type: "RENAME_CHECKLIST",
+        cardId,
+        checklistId,
+        title,
+        at: Date.now(),
+      }),
     deleteChecklist: (cardId: string, checklistId: string) =>
-      dispatch({ type: "DELETE_CHECKLIST", cardId, checklistId }),
+      dispatch({
+        type: "DELETE_CHECKLIST",
+        cardId,
+        checklistId,
+        at: Date.now(),
+      }),
     addChecklistItem: (cardId: string, checklistId: string, text: string) =>
-      dispatch({ type: "ADD_CHECKLIST_ITEM", cardId, checklistId, text }),
+      dispatch({
+        type: "ADD_CHECKLIST_ITEM",
+        cardId,
+        checklistId,
+        newItemId: createId(),
+        text,
+        at: Date.now(),
+      }),
     toggleChecklistItem: (
       cardId: string,
       checklistId: string,
       itemId: string,
-    ) =>
-      dispatch({ type: "TOGGLE_CHECKLIST_ITEM", cardId, checklistId, itemId }),
+    ) => {
+      const item = getBoard()
+        ?.cards[cardId]?.checklists?.find((c) => c.id === checklistId)
+        ?.items.find((i) => i.id === itemId);
+      if (!item) return;
+      dispatch({
+        type: "SET_CHECKLIST_ITEM_DONE",
+        cardId,
+        checklistId,
+        itemId,
+        done: !item.done,
+        at: Date.now(),
+      });
+    },
     renameChecklistItem: (
       cardId: string,
       checklistId: string,
@@ -840,40 +900,89 @@ function createBoardActions(
         checklistId,
         itemId,
         text,
+        at: Date.now(),
       }),
     deleteChecklistItem: (
       cardId: string,
       checklistId: string,
       itemId: string,
     ) =>
-      dispatch({ type: "DELETE_CHECKLIST_ITEM", cardId, checklistId, itemId }),
+      dispatch({
+        type: "DELETE_CHECKLIST_ITEM",
+        cardId,
+        checklistId,
+        itemId,
+        at: Date.now(),
+      }),
     setCardDueDate: (cardId: string, dueDate?: number) =>
-      dispatch({ type: "SET_CARD_DUE_DATE", cardId, dueDate }),
+      dispatch({
+        type: "SET_CARD_DUE_DATE",
+        cardId,
+        dueDate,
+        activityIds: ids(1),
+        at: Date.now(),
+      }),
     setCardCover: (cardId: string, cover?: CardCover) =>
-      dispatch({ type: "SET_CARD_COVER", cardId, cover }),
+      dispatch({ type: "SET_CARD_COVER", cardId, cover, at: Date.now() }),
     duplicateCard: (cardId: string, title?: string) =>
-      dispatch({ type: "DUPLICATE_CARD", cardId, title }),
-    duplicateColumn: (columnId: string, title?: string) =>
-      dispatch({ type: "DUPLICATE_COLUMN", columnId, title }),
+      dispatch({
+        type: "DUPLICATE_CARD",
+        cardId,
+        newCardId: createId(),
+        title,
+        activityIds: ids(1),
+        at: Date.now(),
+      }),
+    duplicateColumn: (columnId: string, title?: string) => {
+      const column = getBoard()?.columns.find((c) => c.id === columnId);
+      const count = column?.cardIds.length ?? 0;
+      dispatch({
+        type: "DUPLICATE_COLUMN",
+        columnId,
+        newColumnId: createId(),
+        // One id per source card, positionally matched by the reducer.
+        newCardIds: ids(count),
+        title,
+        activityIds: ids(count),
+        at: Date.now(),
+      });
+    },
     moveCard: (
       cardId: string,
       fromColumnId: string,
       toColumnId: string,
       toIndex: number,
-    ) =>
+    ) => {
+      const from = getBoard()?.columns.find((c) => c.id === fromColumnId);
       dispatch({
         type: "MOVE_CARD",
         cardId,
         fromColumnId,
+        // Recorded so the inverse move needs nothing but the command.
+        fromIndex: Math.max(0, from?.cardIds.indexOf(cardId) ?? 0),
         toColumnId,
         toIndex,
-      }),
+        activityIds: ids(1),
+        at: Date.now(),
+      });
+    },
     moveColumn: (columnId: string, fromIndex: number, toIndex: number) =>
-      dispatch({ type: "MOVE_COLUMN", columnId, fromIndex, toIndex }),
+      dispatch({
+        type: "MOVE_COLUMN",
+        columnId,
+        fromIndex,
+        toIndex,
+        at: Date.now(),
+      }),
     setColumnWipLimit: (columnId: string, wipLimit?: number) =>
-      dispatch({ type: "SET_COLUMN_WIP_LIMIT", columnId, wipLimit }),
+      dispatch({
+        type: "SET_COLUMN_WIP_LIMIT",
+        columnId,
+        wipLimit,
+        at: Date.now(),
+      }),
     sortColumn: (columnId: string, sortBy: ColumnSortBy) =>
-      dispatch({ type: "SORT_COLUMN", columnId, sortBy }),
+      dispatch({ type: "SORT_COLUMN", columnId, sortBy, at: Date.now() }),
   };
 }
 

@@ -251,6 +251,68 @@ describe("BoardSection", () => {
     expect(within(table).getByTestId("card-due-badge")).toBeInTheDocument();
   });
 
+  it("disables the WIP-full column in the table row's move menu", async () => {
+    localStorage.setItem(
+      "janosik-boards",
+      JSON.stringify([
+        {
+          id: "board-view",
+          title: "Views",
+          columns: [
+            {
+              id: "col-1",
+              title: "To Do",
+              cardIds: ["card-plain"],
+              createdAt: 1,
+            },
+            {
+              id: "col-2",
+              title: "Doing",
+              cardIds: ["card-occupant"],
+              wipLimit: 1,
+              createdAt: 1,
+            },
+          ],
+          cards: {
+            "card-plain": {
+              id: "card-plain",
+              title: "Plain card",
+              labelIds: [],
+              createdAt: 1,
+              updatedAt: 1,
+            },
+            "card-occupant": {
+              id: "card-occupant",
+              title: "Occupant",
+              labelIds: [],
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          },
+          labels: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ]),
+    );
+    renderBoard();
+
+    await openTableView();
+
+    // The move menu of the "Plain card" row: "Doing" is over its WIP limit.
+    const row = screen.getByText("Plain card").closest("tr") as HTMLElement;
+    // Radix DropdownMenu opens on pointerdown, not click.
+    fireEvent.pointerDown(within(row).getByTestId("table-column-cell"));
+
+    // Radix menu items signal via aria-disabled, not the disabled attribute.
+    const full = await screen.findByRole("menuitem", { name: /Doing/ });
+    expect(full).toHaveAttribute("aria-disabled", "true");
+    expect(full).toHaveTextContent("1/1");
+    // The card's own column stays disabled as before (✓ mark, no counter).
+    const own = screen.getByRole("menuitem", { name: /To Do/ });
+    expect(own).toHaveAttribute("aria-disabled", "true");
+  });
+
   it("opens the card dialog from a deep link and from a table row", async () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard("/board/board-view?card=card-plain");

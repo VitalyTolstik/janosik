@@ -180,16 +180,16 @@ export function TableView({
         (col) => col.id === toColumnId,
       );
       if (!target) return;
-      // WIP limit respected on inline moves too — same toast as board drag.
-      if (
-        target.wipLimit !== undefined &&
-        target.cardIds.length >= target.wipLimit
-      ) {
+      // Both limits respected on inline moves — same toasts as board drag.
+      if (isColumnFull(target)) {
         toast.error(
-          t("toast.wipLimitBlocked", {
-            title: target.title,
-            limit: target.wipLimit,
-          }),
+          target.wipLimit !== undefined &&
+            target.cardIds.length >= target.wipLimit
+            ? t("toast.wipLimitBlocked", {
+                title: target.title,
+                limit: target.wipLimit,
+              })
+            : t("limits.maxItems", { limit: LIMITS.cardsPerColumn }),
         );
         return;
       }
@@ -290,6 +290,8 @@ export function TableView({
                 id: col.id,
                 title: col.title,
                 full: isColumnFull(col),
+                count: col.cardIds.length,
+                wipLimit: col.wipLimit,
               }))}
               labels={board.labels}
               onSubmit={(columnId, title, labelIds) =>
@@ -608,15 +610,23 @@ function TableRowBody({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             <DropdownMenuLabel>{t("view.table.column")}</DropdownMenuLabel>
-            {columns.map((col) => (
-              <DropdownMenuItem
-                key={col.id}
-                disabled={col.id === columnId}
-                onSelect={() => onMoveToColumn(card.id, columnId, col.id)}
-              >
-                {col.title}
-              </DropdownMenuItem>
-            ))}
+            {columns.map((col) => {
+              const full = col.id !== columnId && isColumnFull(col);
+              return (
+                <DropdownMenuItem
+                  key={col.id}
+                  disabled={col.id === columnId || full}
+                  onSelect={() => onMoveToColumn(card.id, columnId, col.id)}
+                >
+                  <span className="truncate">{col.title}</span>
+                  {col.wipLimit !== undefined && (
+                    <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                      {col.cardIds.length}/{col.wipLimit}
+                    </span>
+                  )}
+                </DropdownMenuItem>
+              );
+            })}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               data-testid="table-archive-card"
@@ -807,8 +817,15 @@ function TableCardComposer({
   onSubmit,
   onCancel,
 }: {
-  /** `full` marks columns that cannot take another card right now. */
-  columns: { id: string; title: string; full: boolean }[];
+  /** `full` marks columns that cannot take another card right now; the
+   *  counter `count`/`wipLimit` is shown for WIP-limited ones. */
+  columns: {
+    id: string;
+    title: string;
+    full: boolean;
+    count?: number;
+    wipLimit?: number;
+  }[];
   labels?: Label[];
   onSubmit: (columnId: string, title: string, labelIds?: string[]) => void;
   onCancel: () => void;
@@ -884,7 +901,12 @@ function TableCardComposer({
                   : undefined
               }
             >
-              {col.title}
+              <span className="truncate">{col.title}</span>
+              {col.wipLimit !== undefined && col.count !== undefined && (
+                <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                  {col.count}/{col.wipLimit}
+                </span>
+              )}
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>

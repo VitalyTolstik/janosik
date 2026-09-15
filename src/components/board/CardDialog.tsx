@@ -364,16 +364,25 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
                     <DropdownMenuLabel>{t("card.moveTo")}</DropdownMenuLabel>
-                    {board.columns.map((column) => (
-                      <DropdownMenuItem
-                        key={column.id}
-                        disabled={column.id === currentColumn?.id}
-                        onClick={() => handleMove(column.id)}
-                      >
-                        {column.id === currentColumn?.id ? "✓ " : ""}
-                        {column.title}
-                      </DropdownMenuItem>
-                    ))}
+                    {board.columns.map((column) => {
+                      const full =
+                        column.id !== currentColumn?.id && isColumnFull(column);
+                      return (
+                        <DropdownMenuItem
+                          key={column.id}
+                          disabled={column.id === currentColumn?.id || full}
+                          onClick={() => handleMove(column.id)}
+                        >
+                          {column.id === currentColumn?.id ? "✓ " : ""}
+                          <span className="truncate">{column.title}</span>
+                          {column.wipLimit !== undefined && (
+                            <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                              {column.cardIds.length}/{column.wipLimit}
+                            </span>
+                          )}
+                        </DropdownMenuItem>
+                      );
+                    })}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -428,14 +437,23 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-48">
                   <DropdownMenuLabel>{t("card.restoreTo")}</DropdownMenuLabel>
-                  {board.columns.map((column) => (
-                    <DropdownMenuItem
-                      key={column.id}
-                      onClick={() => handleRestore(column.id)}
-                    >
-                      {column.title}
-                    </DropdownMenuItem>
-                  ))}
+                  {board.columns.map((column) => {
+                    const full = isColumnFull(column);
+                    return (
+                      <DropdownMenuItem
+                        key={column.id}
+                        disabled={full}
+                        onClick={() => handleRestore(column.id)}
+                      >
+                        <span className="truncate">{column.title}</span>
+                        {column.wipLimit !== undefined && (
+                          <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                            {column.cardIds.length}/{column.wipLimit}
+                          </span>
+                        )}
+                      </DropdownMenuItem>
+                    );
+                  })}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
