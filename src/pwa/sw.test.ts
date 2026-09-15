@@ -3,7 +3,11 @@ import path from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { cacheVersionFrom } from "../../vite/sw-plugin";
+import {
+  cacheVersionFrom,
+  entryAssetNames,
+  stampServiceWorkerSource,
+} from "../../vite/sw-plugin";
 
 /**
  * The service worker is plain script-scope JS, so it is loaded here the way
@@ -11,12 +15,13 @@ import { cacheVersionFrom } from "../../vite/sw-plugin";
  * (`self`, `caches`, `fetch`), and the registered listeners are driven with
  * fake events. That covers exactly what TASK-21.3 fixed — an error response
  * must never be cached as the app shell, and `activate` must drop the
- * previous deploy's cache.
+ * previous deploy's cache — plus the off-nominal branches of K-4/K-5/T-7.
  */
 
 const SW_SOURCE = path.resolve(import.meta.dirname, "./sw.js");
 const ORIGIN = "https://boards.test";
 const VERSION = "janosik-test";
+const ENTRY_ASSET = "/assets/index-abc123.js";
 
 interface FakeResponse {
   ok: boolean;
@@ -58,6 +63,10 @@ function createCaches(seed: Record<string, Record<string, FakeResponse>> = {}) {
         cache.set(url, response("shell"));
         return Promise.resolve();
       },
+      addAll: (urls: string[]) => {
+        for (const url of urls) cache.set(url, response("shell"));
+        return Promise.resolve();
+      },
       match: (request: string | { url: string }) =>
         Promise.resolve(
           cache.get(typeof request === "string" ? request : request.url),
@@ -93,6 +102,7 @@ interface FakeEvent {
 function loadWorker(
   cachesApi: unknown,
   fetchImpl: (request: unknown) => Promise<FakeResponse>,
+  precacheAssets: string[] = [],
 ) {
   const listeners = new Map<string, Listener>();
   const self = {
@@ -102,12 +112,13 @@ function loadWorker(
     skipWaiting: vi.fn(),
     clients: { claim: vi.fn() },
   };
-  const source = readFileSync(SW_SOURCE, "utf8").replaceAll(
-    "__CACHE_VERSION__",
-    VERSION,
-  );
   // The worker reads `caches`/`fetch` off the global scope; parameters of
   // the wrapper shadow them, which keeps the test free of global patching.
+  const source = stampServiceWorkerSource(
+    readFileSync(SW_SOURCE, "utf8"),
+    VERSION,
+    precacheAssets,
+  );
   const evaluate = new Function("self", "caches", "fetch", "Response", source);
   evaluate(self, cachesApi, fetchImpl, FakeResponseCtor);
 
@@ -148,11 +159,27 @@ const navigation = {
   mode: "navigate",
 };
 
+const asset = {
+  url: `${ORIGIN}${ENTRY_ASSET}`,
+  method: "GET",
+};
+
 describe("service worker", () => {
   let caches: ReturnType<typeof createCaches>;
 
   beforeEach(() => {
     caches = createCaches();
+  });
+
+  it("precaches the app shell and the entry assets on install", async () => {
+    const { dispatch, self } = loadWorker(caches.api, vi.fn(), [ENTRY_ASSET]);
+
+    await dispatch("install");
+
+    const installed = caches.store.get(VERSION);
+    expect(installed?.has("/")).toBe(true);
+    expect(installed?.has(ENTRY_ASSET)).toBe(true);
+    expect(self.skipWaiting).toHaveBeenCalled();
   });
 
   it("caches a successful navigation as the app shell", async () => {
@@ -187,6 +214,41 @@ describe("service worker", () => {
     expect(result).toMatchObject({ body: "<html>cached" });
   });
 
+  it("answers a failed navigation with 503 when nothing is cached", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new Error("offline"));
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", navigation);
+
+    expect(result).toMatchObject({ status: 503, body: "Offline" });
+  });
+
+  it("ignores non-GET requests", async () => {
+    const fetchImpl = vi.fn();
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", {
+      ...navigation,
+      method: "POST",
+    });
+
+    expect(result).toBeUndefined();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("ignores requests from other origins", async () => {
+    const fetchImpl = vi.fn();
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", {
+      url: "https://other.test/assets/index-abc123.js",
+      method: "GET",
+    });
+
+    expect(result).toBeUndefined();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("serves assets cache-first and only caches successful ones", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(response("chunk"));
     const { dispatch } = loadWorker(caches.api, fetchImpl);
@@ -213,17 +275,67 @@ describe("service worker", () => {
     ).toBe(false);
   });
 
-  it("drops caches from previous deploys on activate", async () => {
+  it("falls back to the offline response when an asset fetch rejects", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new Error("offline"));
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", asset);
+
+    expect(result).toMatchObject({ status: 503, body: "Offline" });
+    expect(caches.store.get(VERSION)?.has(`${ORIGIN}${ENTRY_ASSET}`)).toBe(
+      false,
+    );
+  });
+
+  it("drops only previous janosik caches on activate", async () => {
     caches = createCaches({
       [VERSION]: {},
       "janosik-oldbuild": { "/assets/old-1.js": response("stale") },
+      "unrelated-app-cache": { "/keep": response("keep") },
     });
     const { dispatch, self } = loadWorker(caches.api, vi.fn());
 
     await dispatch("activate");
 
-    expect([...caches.store.keys()]).toEqual([VERSION]);
+    expect([...caches.store.keys()].sort()).toEqual(
+      [VERSION, "unrelated-app-cache"].sort(),
+    );
     expect(self.clients.claim).toHaveBeenCalled();
+  });
+});
+
+describe("entryAssetNames", () => {
+  type Bundle = Parameters<typeof entryAssetNames>[0];
+
+  const chunk = (
+    isEntry: boolean,
+    imports: string[] = [],
+    css: string[] = [],
+  ) =>
+    ({
+      type: "chunk" as const,
+      isEntry,
+      imports,
+      viteMetadata: { importedCss: new Set(css) },
+    }) as unknown;
+
+  it("collects the entry chunk, its static imports and their css", () => {
+    const bundle = {
+      "assets/index-abc.js": chunk(
+        true,
+        ["assets/react-def.js"],
+        ["assets/index-abc.css"],
+      ),
+      "assets/react-def.js": chunk(false),
+      "assets/lazy-xyz.js": chunk(false),
+      "assets/icon.svg": { type: "asset" },
+    } as unknown as Bundle;
+
+    expect(entryAssetNames(bundle)).toEqual([
+      "/assets/index-abc.css",
+      "/assets/index-abc.js",
+      "/assets/react-def.js",
+    ]);
   });
 });
 
