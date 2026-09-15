@@ -35,8 +35,10 @@ describe("downloadTextFile", () => {
   beforeEach(() => {
     createObjectURL = vi.fn(() => "blob:mock-url");
     revokeObjectURL = vi.fn();
-    URL.createObjectURL = createObjectURL as unknown as typeof URL.createObjectURL;
-    URL.revokeObjectURL = revokeObjectURL as unknown as typeof URL.revokeObjectURL;
+    URL.createObjectURL =
+      createObjectURL as unknown as typeof URL.createObjectURL;
+    URL.revokeObjectURL =
+      revokeObjectURL as unknown as typeof URL.revokeObjectURL;
     // jsdom cannot navigate to a blob: URL — stub the click on every anchor.
     vi.spyOn(HTMLElement.prototype, "click").mockImplementation(() => {});
   });
