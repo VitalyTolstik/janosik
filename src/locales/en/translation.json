@@ -94,6 +94,7 @@
   "board.emptyNewHint": "Create your first board to get started.",
   "board.editTitleAria": "Board title",
   "board.editTitleHint": "Click to rename the board",
+  "board.untitled": "Untitled",
   "board.switcher.aria": "Switch board",
   "board.switcher.search": "Search boards…",
   "board.switcher.empty": "No boards match",

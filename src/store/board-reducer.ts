@@ -677,12 +677,7 @@ function guarded(action: BoardScopedAction): boolean {
   return action.inverse !== true;
 }
 
-interface ColumnShape {
-  id: string;
-  title: string;
-  cardIds: string[];
-  createdAt: number;
-}
+type ColumnShape = Omit<Column, "wipLimit">;
 
 function addColumn(board: Board, action: BoardScoped<AddColumnAction>): Board {
   if (board.columns.length >= LIMITS.columnsPerBoard) return board;
@@ -699,10 +694,16 @@ function addColumn(board: Board, action: BoardScoped<AddColumnAction>): Board {
 function renameColumn(board: Board, action: RenameColumnAction): Board {
   const title = clampText(action.title.trim(), LIMITS.columnTitle);
   if (!title) return board;
-  const columns = board.columns.map((col) =>
-    col.id === action.columnId ? { ...col, title } : col,
-  );
-  return { ...board, columns };
+  const column = board.columns.find((c) => c.id === action.columnId);
+  // Renaming to the same title (or a missing column) is a no-op, so no undo
+  // step is recorded and `updatedAt` is not bumped.
+  if (!column || column.title === title) return board;
+  return {
+    ...board,
+    columns: board.columns.map((col) =>
+      col.id === action.columnId ? { ...col, title } : col,
+    ),
+  };
 }
 
 function deleteColumn(board: Board, action: DeleteColumnAction): Board {
@@ -1120,22 +1121,29 @@ function addLabel(board: Board, action: AddLabelAction): Board {
 }
 
 function renameLabel(board: Board, action: RenameLabelAction): Board {
-  const labels = board.labels.map((label) =>
-    label.id === action.labelId
-      ? {
-          ...label,
-          name: clampText(action.name.trim(), LIMITS.labelName) || label.name,
-        }
-      : label,
-  );
-  return { ...board, labels };
+  const label = board.labels.find((l) => l.id === action.labelId);
+  if (!label) return board;
+  const name = clampText(action.name.trim(), LIMITS.labelName) || label.name;
+  // Same name (or empty input falling back to the current one) is a no-op.
+  if (name === label.name) return board;
+  return {
+    ...board,
+    labels: board.labels.map((l) =>
+      l.id === action.labelId ? { ...l, name } : l,
+    ),
+  };
 }
 
 function setLabelColor(board: Board, action: SetLabelColorAction): Board {
-  const labels = board.labels.map((label) =>
-    label.id === action.labelId ? { ...label, color: action.color } : label,
-  );
-  return { ...board, labels };
+  const label = board.labels.find((l) => l.id === action.labelId);
+  // Re-picking the same color (or an unknown label) is a no-op.
+  if (!label || label.color === action.color) return board;
+  return {
+    ...board,
+    labels: board.labels.map((l) =>
+      l.id === action.labelId ? { ...l, color: action.color } : l,
+    ),
+  };
 }
 
 function deleteLabel(board: Board, action: DeleteLabelAction): Board {

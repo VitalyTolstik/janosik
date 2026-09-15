@@ -181,6 +181,21 @@ describe("normalizeBoards", () => {
     expect(next.cards["c1"].checklists).toBeUndefined();
   });
 
+  it("drops a non-object card value instead of crashing (B-10)", () => {
+    const board = {
+      id: "b",
+      title: "B",
+      columns: [],
+      cards: { a: 5, b: null },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+
+    const [next] = normalizeBoards([board]);
+    expect(next.cards).toEqual({});
+  });
+
   it("filters malformed checklist entries and items", () => {
     const legacy = card({
       labelIds: ["x"],
@@ -215,6 +230,41 @@ describe("normalizeBoards", () => {
       // Empty checklists are valid user data — only malformed entries drop.
       { id: "cl-2", title: "Empty", items: [] },
     ]);
+  });
+});
+
+describe("normalizeBoards — label colors (N-9)", () => {
+  const boardWithLabels = (labels: unknown[]) =>
+    ({
+      id: "b",
+      title: "B",
+      columns: [],
+      cards: {},
+      labels,
+      createdAt: 1,
+      updatedAt: 1,
+    }) as unknown as Board;
+
+  it("falls back to the default color for an unknown label color", () => {
+    const [next] = normalizeBoards([
+      boardWithLabels([
+        { id: "l1", name: "Design", color: "brand" },
+        { id: "l2", name: "Urgent", color: "chartreuse" },
+        // The retired alias must survive.
+        { id: "l3", name: "Legacy", color: "amber" },
+      ]),
+    ]);
+
+    expect(next.labels.map((l) => l.color)).toEqual([
+      "brand",
+      "brand",
+      "amber",
+    ]);
+  });
+
+  it("leaves a board with valid label colors untouched (same reference)", () => {
+    const board = boardWithLabels([{ id: "l1", name: "Design", color: "red" }]);
+    expect(normalizeBoards([board])[0]).toBe(board);
   });
 });
 

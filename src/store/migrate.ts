@@ -4,8 +4,9 @@ import type {
   CardCover,
   Checklist,
   ChecklistItem,
+  LabelColor,
 } from "@/types/kanban";
-import { COVER_COLORS, COVER_GRADIENTS } from "@/types/kanban";
+import { COVER_COLORS, COVER_GRADIENTS, LABEL_COLORS } from "@/types/kanban";
 import type { BoardState } from "@/store/board-reducer";
 
 /**
@@ -37,6 +38,11 @@ import { CARD_ACTIVITY_TYPES, LIMITS, MAX_CARD_ACTIVITY } from "@/types/kanban";
 import type { CardActivityEvent } from "@/types/kanban";
 
 type LegacyCard = Card & { labelId?: unknown; labelIds?: unknown };
+
+/** A stored card must be a non-null object before any of its fields is read. */
+function isCardRecord(value: unknown): value is LegacyCard {
+  return typeof value === "object" && value !== null;
+}
 
 function toLabelIds(value: unknown): string[] {
   if (Array.isArray(value)) {
@@ -105,6 +111,30 @@ function toCover(value: unknown): CardCover | undefined {
       : undefined;
   }
   return undefined;
+}
+
+/** The palette plus the legacy `amber` alias labels may still carry. */
+const VALID_LABEL_COLORS: ReadonlySet<string> = new Set([
+  ...LABEL_COLORS,
+  "amber",
+]);
+
+/** Color assigned to a label whose stored color the app cannot render. */
+const DEFAULT_LABEL_COLOR: LabelColor = "brand";
+
+/** True when the stored label color is one the app can render. */
+function isLabelColorCurrent(value: unknown): boolean {
+  return typeof value === "string" && VALID_LABEL_COLORS.has(value);
+}
+
+/**
+ * An unknown or garbage label color (hand-edited import) falls back to the
+ * default so `LABEL_COLOR_DOT[color]` never renders an undefined class.
+ */
+function toLabelColor(value: unknown): LabelColor {
+  return isLabelColorCurrent(value)
+    ? (value as LabelColor)
+    : DEFAULT_LABEL_COLOR;
 }
 
 /**
@@ -213,12 +243,14 @@ export function normalizeBoard(board: Board): Board {
     labels: board.labels.slice(0, LIMITS.labelsPerBoard).map((label) => ({
       ...label,
       name: clampText(label.name, LIMITS.labelName),
+      color: toLabelColor(label.color),
     })),
     cards: Object.fromEntries(
-      Object.entries(board.cards).map(([id, card]) => [
-        id,
-        normalizeCard(card),
-      ]),
+      Object.entries(board.cards)
+        // A primitive (or null) value where a card should be is garbage:
+        // drop it rather than crash on `card.title` (B-10).
+        .filter(([, card]) => isCardRecord(card))
+        .map(([id, card]) => [id, normalizeCard(card)]),
     ),
   };
 }
@@ -234,8 +266,15 @@ export function normalizeBoards(state: BoardState): BoardState {
           !isWipLimitCurrent(column.wipLimit),
       ) ||
       board.labels.length > LIMITS.labelsPerBoard ||
-      board.labels.some((label) => label.name.length > LIMITS.labelName) ||
+      board.labels.some(
+        (label) =>
+          label.name.length > LIMITS.labelName ||
+          !isLabelColorCurrent(label.color),
+      ) ||
       Object.values(board.cards).some((card) => {
+        // A non-object value has no fields to inspect — let normalizeBoard
+        // drop it instead of reading `.title` off a primitive (B-10).
+        if (!isCardRecord(card)) return true;
         const legacy = card as LegacyCard;
         if (card.title.length > LIMITS.cardTitle) return true;
         if ((card.description ?? "").length > LIMITS.description) return true;

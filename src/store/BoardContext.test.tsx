@@ -279,6 +279,21 @@ describe("BoardContext split (TASK-21.4)", () => {
     expect(identity.title).toBe("Beta");
     expect(identityRenders).toBeGreaterThan(before);
   });
+
+  it("keeps the history when a board removal is refused (B-12)", () => {
+    renderSplitProbes();
+    act(() => api.addColumn("Doing"));
+    expect(flags.canUndo).toBe(true);
+
+    // The reducer refuses to remove the only board...
+    act(() => api.removeBoard("b-1"));
+    expect(live?.id).toBe("b-1");
+
+    // ...so the refused command must not silently drop its undo history.
+    expect(flags.canUndo).toBe(true);
+    act(() => api.undo());
+    expect(live?.columns.map((c) => c.title)).not.toContain("Doing");
+  });
 });
 
 /**

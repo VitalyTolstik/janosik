@@ -81,11 +81,14 @@ export async function createBackup(state: BoardState): Promise<void> {
     const store = tx.objectStore(STORE_NAME);
     const done = transactionDone(tx);
     const payload = JSON.stringify(state);
+    // UTF-8 byte length, not string length — `bytes` must reflect real
+    // storage cost for non-ASCII board text (Cyrillic, emoji).
+    const bytes = new TextEncoder().encode(payload).length;
     await requestResult(
       store.add({
         createdAt: Date.now(),
         boardCount: state.length,
-        bytes: payload.length,
+        bytes,
         boards: state,
       }),
     );

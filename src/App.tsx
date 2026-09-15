@@ -1,6 +1,5 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { Archive, Plus } from "lucide-react";
 
 import { BoardSection } from "@/components/BoardSection";
@@ -30,7 +29,9 @@ export function NoBoardRoute() {
 
   const allArchived = boards.length > 0;
   const handleCreate = () => {
-    navigate(routes.board(addBoard(t("board.switcher.new"))));
+    navigate(
+      routes.board(addBoard(t("board.switcher.new"), t("board.untitled"))),
+    );
   };
 
   return (

@@ -137,6 +137,25 @@ describe("createDebouncedLocalStoragePersistence", () => {
     expect(listener.mock.calls[0]?.[2]).toBe('{"n":1}'.length);
   });
 
+  it("reports the size in UTF-8 bytes, not UTF-16 string length", () => {
+    const persistence = createDebouncedLocalStoragePersistence<{
+      text: string;
+    }>("janosik-persist-test", 400);
+    const listener = vi.fn();
+    persistence.setWriteListener(listener);
+    const text = "Привет, мир";
+    persistence.queueSave({ text });
+    vi.advanceTimersByTime(400);
+
+    const json = JSON.stringify({ text });
+    // Cyrillic is 2 bytes per character in UTF-8, so the two measures
+    // differ — the listener must receive the byte count.
+    expect(json.length).not.toBe(new TextEncoder().encode(json).length);
+    expect(listener.mock.calls[0]?.[2]).toBe(
+      new TextEncoder().encode(json).length,
+    );
+  });
+
   it("writes nothing while writes are held back", () => {
     localStorage.setItem("janosik-persist-test", "{corrupt");
     const persistence = createDebouncedLocalStoragePersistence<{ n: number }>(
