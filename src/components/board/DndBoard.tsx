@@ -31,6 +31,7 @@ import { useCardList } from "@/hooks/use-card-list";
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
 import { useToast } from "@/components/Toast";
+import { isColumnFull } from "@/utils/column-limits";
 import { applyCardOver } from "@/utils/dnd";
 import { LIMITS, type Card, type Column, type Label } from "@/types/kanban";
 
@@ -368,28 +369,28 @@ export function DndBoard({
       if (!fromColumn) return;
 
       /**
-       * TASK-13: a WIP-limited destination refuses cards from other columns.
-       * The draft already shows the card in the target column (drag-over
-       * commits visually) — on a blocked drop the draft is discarded with
-       * it, so the card visually snaps back to its source column.
+       * TASK-13: a full destination refuses cards from other columns —
+       * its own WIP limit or the hard cards-per-column cap (the same
+       * condition the reducer's guard uses). The draft already shows the
+       * card in the target column (drag-over commits visually) — on a
+       * blocked drop the draft is discarded with it, so the card visually
+       * snaps back to its source column.
        */
       const isWipBlocked = (targetColumnId: string) => {
         if (targetColumnId === fromColumn.id) return false;
         const target = board.columns.find((col) => col.id === targetColumnId);
-        return (
-          target !== undefined &&
-          target.wipLimit !== undefined &&
-          target.cardIds.length >= target.wipLimit
-        );
+        return target !== undefined && isColumnFull(target);
       };
       const notifyWipBlocked = (targetColumnId: string) => {
         const target = board.columns.find((col) => col.id === targetColumnId);
-        if (!target || target.wipLimit === undefined) return;
+        if (!target) return;
         toast.error(
-          t("toast.wipLimitBlocked", {
-            title: target.title,
-            limit: target.wipLimit,
-          }),
+          target.wipLimit !== undefined
+            ? t("toast.wipLimitBlocked", {
+                title: target.title,
+                limit: target.wipLimit,
+              })
+            : t("limits.maxItems", { limit: LIMITS.cardsPerColumn }),
         );
       };
 

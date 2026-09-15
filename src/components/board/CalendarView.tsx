@@ -380,6 +380,20 @@ export function CalendarView({
     return daysByKey.get(key) ?? new Date();
   }
 
+  // The right refusal message for a column that cannot take a card: its
+  // own WIP limit when that is what filled up, the hard cap otherwise.
+  const fullColumnToast = (column: {
+    title: string;
+    cardIds: string[];
+    wipLimit?: number;
+  }) =>
+    column.wipLimit !== undefined && column.cardIds.length >= column.wipLimit
+      ? t("toast.wipLimitBlocked", {
+          title: column.title,
+          limit: column.wipLimit,
+        })
+      : t("limits.maxItems", { limit: LIMITS.cardsPerColumn });
+
   /** Creates a card due on `day` from the day-panel composer. */
   const createCardOn = (
     day: Date,
@@ -392,8 +406,10 @@ export function CalendarView({
     const column =
       board.columns.find((c) => c.id === columnId) ?? board.columns[0];
     if (!column) return;
-    if (column.cardIds.length >= LIMITS.cardsPerColumn) {
-      toast.error(t("limits.maxItems", { limit: LIMITS.cardsPerColumn }));
+    // Both limits, with the matching toast — the composers already disable
+    // full columns; this guard is the backstop.
+    if (isColumnFull(column)) {
+      toast.error(fullColumnToast(column));
       return;
     }
     pendingCreationRef.current = {
@@ -411,8 +427,8 @@ export function CalendarView({
     if (!trimmed) return;
     const column = board.columns[0];
     if (!column) return;
-    if (column.cardIds.length >= LIMITS.cardsPerColumn) {
-      toast.error(t("limits.maxItems", { limit: LIMITS.cardsPerColumn }));
+    if (isColumnFull(column)) {
+      toast.error(fullColumnToast(column));
       return;
     }
     addCard(column.id, trimmed);
