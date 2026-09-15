@@ -109,6 +109,25 @@ describe("boardReducer — columns", () => {
     expect(board.columns[0].title).toBe("Ideas");
   });
 
+  it("does not write a step when a column rename changes nothing", () => {
+    const board = freshBoard();
+    // Renaming to the current title leaves the board object untouched.
+    const same = reduceState([board], {
+      type: "RENAME_COLUMN",
+      columnId: "col-backlog",
+      title: board.columns[0].title,
+    })[0];
+    expect(same).toBe(board);
+
+    // A missing column is a no-op too, not a fresh board.
+    const missing = reduceState([board], {
+      type: "RENAME_COLUMN",
+      columnId: "col-missing",
+      title: "Ideas",
+    })[0];
+    expect(missing).toBe(board);
+  });
+
   it("deletes a column and cascades to its cards", () => {
     const board = reduceBoard(freshBoard(), {
       type: "DELETE_COLUMN",
@@ -286,6 +305,54 @@ describe("boardReducer — LABEL management", () => {
     expect(board.labels.find((l) => l.id === "label-design")?.color).toBe(
       "pink",
     );
+  });
+
+  it("does not write a step when a label rename changes nothing", () => {
+    const board = freshBoard();
+    const label = board.labels[0];
+
+    // Same name.
+    const same = reduceState([board], {
+      type: "RENAME_LABEL",
+      labelId: label.id,
+      name: label.name,
+    })[0];
+    expect(same).toBe(board);
+
+    // Blank input falls back to the current name — still a no-op.
+    const blank = reduceState([board], {
+      type: "RENAME_LABEL",
+      labelId: label.id,
+      name: "   ",
+    })[0];
+    expect(blank).toBe(board);
+
+    // Missing label.
+    const missing = reduceState([board], {
+      type: "RENAME_LABEL",
+      labelId: "label-missing",
+      name: "Docs",
+    })[0];
+    expect(missing).toBe(board);
+  });
+
+  it("does not write a step when a label recolor changes nothing", () => {
+    const board = freshBoard();
+    const label = board.labels[0];
+
+    const same = reduceState([board], {
+      type: "SET_LABEL_COLOR",
+      labelId: label.id,
+      color: label.color,
+    })[0];
+    expect(same).toBe(board);
+
+    const missing = reduceState([board], {
+      type: "SET_LABEL_COLOR",
+      labelId: "label-missing",
+      color: "pink",
+    })[0];
+    expect(missing).toBe(board);
   });
 
   it("deletes a label and strips it from every card", () => {
