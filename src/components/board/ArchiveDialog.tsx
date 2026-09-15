@@ -22,22 +22,11 @@ import { Check, X } from "lucide-react";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { routes } from "@/routes";
 import { useBoard } from "@/store/BoardContext";
-import { LIMITS, type Card, type Column } from "@/types/kanban";
+import { type Card } from "@/types/kanban";
+import { isColumnFull } from "@/utils/column-limits";
 
 /** Stable empty list for the closed dialog. */
 const NO_CARDS: Card[] = [];
-
-/**
- * Can this column take one more card? A restore into a full column is
- * refused by the reducer, so the option is shown disabled (with its
- * counter) instead of looking available and doing nothing.
- */
-function isFull(column: Column): boolean {
-  if (column.cardIds.length >= LIMITS.cardsPerColumn) return true;
-  return (
-    column.wipLimit !== undefined && column.cardIds.length >= column.wipLimit
-  );
-}
 
 interface ArchiveDialogProps {
   open: boolean;
@@ -201,7 +190,7 @@ export function ArchiveDialog({ open, onOpenChange }: ArchiveDialogProps) {
                               {t("card.restoreTo")}
                             </DropdownMenuLabel>
                             {board.columns.map((column) => {
-                              const full = isFull(column);
+                              const full = isColumnFull(column);
                               return (
                                 <DropdownMenuItem
                                   key={column.id}
