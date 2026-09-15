@@ -145,7 +145,7 @@
   `measuring`) — новый массив/объект меняет контекст dnd-kit и
   перерисовывает всех подписчиков `useSortable`/`useDroppable` в обход
   `memo` (наступали трижды, каждый раз находилось только замером).
-- **Тесты** — **519 тестов в 41 файле** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3; обратимость экшенов — `invert.test.ts`, TASK-21.7d). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
+- **Тесты** — **522 теста в 41 файле** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3; обратимость экшенов — `invert.test.ts`, TASK-21.7d). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
 
 ### 1.3. Ключи и точки интеграции
 
