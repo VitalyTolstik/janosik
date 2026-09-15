@@ -14,6 +14,7 @@ import { COVER_COLORS, COVER_GRADIENTS } from "@/types/kanban";
 
 export type { Board } from "@/types/kanban";
 import { createSeedBoard } from "@/store/seed-data";
+import { clampText } from "@/utils/text";
 
 /** Insert a value at `index`, returning a new array (no in-place mutation). */
 function insertAt<T>(array: T[], index: number, value: T): T[] {
@@ -29,15 +30,6 @@ function sameCardOrder(before: Column[], after: Column[]): boolean {
       col.cardIds.every((id, j) => id === previous[j])
     );
   });
-}
-
-/**
- * Clamp a text field to its `LIMITS` bound. The UI enforces the same limit
- * via `maxLength`; this is the second line of defense for callers that
- * bypass the inputs (imported JSON, console dispatches).
- */
-function clampText(value: string, limit: number): string {
-  return value.length > limit ? value.slice(0, limit) : value;
 }
 
 /**

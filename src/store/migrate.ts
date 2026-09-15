@@ -8,6 +8,7 @@ import type {
 } from "@/types/kanban";
 import { COVER_COLORS, COVER_GRADIENTS, LABEL_COLORS } from "@/types/kanban";
 import type { BoardState } from "@/store/board-reducer";
+import { clampText } from "@/utils/text";
 
 /**
  * Migration for boards saved by older versions of the app.
@@ -170,11 +171,6 @@ function toActivity(value: unknown): CardActivityEvent[] | undefined {
     .filter((event): event is CardActivityEvent => event !== null)
     .slice(-MAX_CARD_ACTIVITY);
   return events.length > 0 ? events : undefined;
-}
-
-/** Clamp text to its LIMITS bound (imports can bypass UI maxLength). */
-function clampText(value: string, limit: number): string {
-  return value.length > limit ? value.slice(0, limit) : value;
 }
 
 /**
