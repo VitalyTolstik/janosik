@@ -172,7 +172,9 @@ describe("GlobalSearch", () => {
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
 
     // The palette opens…
-    expect(await screen.findByTestId("global-search-input")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("global-search-input"),
+    ).toBeInTheDocument();
     // …and the board filter never reacted to the shortcut.
     expect(filterFocus).not.toHaveBeenCalled();
   });

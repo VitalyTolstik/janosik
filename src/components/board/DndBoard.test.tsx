@@ -82,7 +82,12 @@ function seedBoard() {
         id: "b-1",
         title: "DnD",
         columns: [
-          { id: "col-1", title: "To do", cardIds: ["card-1", "card-2"], createdAt: 1 },
+          {
+            id: "col-1",
+            title: "To do",
+            cardIds: ["card-1", "card-2"],
+            createdAt: 1,
+          },
           { id: "col-2", title: "Doing", cardIds: ["card-3"], createdAt: 2 },
           { id: "col-3", title: "Empty", cardIds: [], createdAt: 3 },
         ],
@@ -143,7 +148,9 @@ function renderBoard() {
 }
 
 function snapshot() {
-  return JSON.parse(screen.getByTestId("board-probe").textContent ?? "null") as {
+  return JSON.parse(
+    screen.getByTestId("board-probe").textContent ?? "null",
+  ) as {
     columnOrder: string[];
     cardIds: Record<string, string[]>;
   };

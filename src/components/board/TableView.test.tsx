@@ -133,7 +133,10 @@ describe("TableView sorting", () => {
 
   it("sorts by creation date in both directions", () => {
     // The creation date is an optional column — enable its header first.
-    localStorage.setItem("janosik-table-columns", JSON.stringify(["createdAt"]));
+    localStorage.setItem(
+      "janosik-table-columns",
+      JSON.stringify(["createdAt"]),
+    );
     renderTable();
     fireEvent.click(screen.getByTestId("table-sort-createdAt"));
     expect(rowTitles()).toEqual(["Gamma task", "Beta task", "Alpha task"]);
