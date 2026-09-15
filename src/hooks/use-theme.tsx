@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { migrateStorageKey } from "@/utils/storage";
+import { THEME_STORAGE_KEY } from "@/utils/storage-keys";
 
 /**
  * Theme management: `dark` (default) | `light`.
@@ -19,14 +20,13 @@ import { migrateStorageKey } from "@/utils/storage";
 
 export type Theme = "dark" | "light";
 
-const STORAGE_KEY = "janosik-theme";
 const root = () => document.documentElement;
 
 function readStoredTheme(): Theme | null {
   try {
     // One-time brand migration (Vortex → Janosik) — read before the new key.
-    migrateStorageKey("vortex-theme", STORAGE_KEY);
-    const stored = localStorage.getItem(STORAGE_KEY);
+    migrateStorageKey("vortex-theme", THEME_STORAGE_KEY);
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
     return stored === "light" || stored === "dark" ? stored : null;
   } catch {
     return null;
@@ -68,7 +68,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     html.classList.toggle("light", theme === "light");
     html.classList.toggle("dark", theme === "dark");
     try {
-      localStorage.setItem(STORAGE_KEY, theme);
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
     } catch {
       /* storage unavailable — theme still works for the session */
     }
