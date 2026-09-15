@@ -27,10 +27,10 @@ describe("formatBackupTimestamp", () => {
     expect(formatBackupTimestamp(ts, NOW, "ru")).toBe("11:00");
   });
 
-  it("prefaces yesterday with the word Yesterday", () => {
+  it("prefaces yesterday with the relative-day word", () => {
     const ts = new Date(2026, 8, 10, 9, 10).getTime();
-    expect(formatBackupTimestamp(ts, NOW, "en")).toBe("Yesterday, 09:10");
-    expect(formatBackupTimestamp(ts, NOW, "ru")).toBe("Вчера, 09:10");
+    expect(formatBackupTimestamp(ts, NOW, "en")).toBe("yesterday, 09:10");
+    expect(formatBackupTimestamp(ts, NOW, "ru")).toBe("вчера, 09:10");
   });
 
   it("falls back to full date and time for older backups", () => {
