@@ -471,8 +471,7 @@ export interface MoveColumnAction {
 }
 
 /** Available card-sort criteria for a column. */
-export const COLUMN_SORT_OPTIONS = ["createdAt", "dueDate", "title"] as const;
-export type ColumnSortBy = (typeof COLUMN_SORT_OPTIONS)[number];
+export type ColumnSortBy = "createdAt" | "dueDate" | "title";
 
 /** Sort a column's cards by a criterion (dragging restores manual order). */
 export interface SortColumnAction {

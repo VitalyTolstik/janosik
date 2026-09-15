@@ -221,7 +221,7 @@ function normalizeCard(card: LegacyCard): Card {
   };
 }
 
-export function normalizeBoard(board: Board): Board {
+function normalizeBoard(board: Board): Board {
   return {
     ...board,
     title: clampText(board.title, LIMITS.boardTitle),

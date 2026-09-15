@@ -234,7 +234,7 @@ export function saveTimeFormat(format: TimeFormat): void {
 }
 
 /** "19:30" → { hour: 19, minute: 30 } (internal, always 24h). */
-export function parseTime(value: string): { hour: number; minute: number } {
+function parseTime(value: string): { hour: number; minute: number } {
   const [hh, mm] = value.split(":").map((v) => Number.parseInt(v, 10));
   return { hour: hh || 0, minute: mm || 0 };
 }
