@@ -22,6 +22,7 @@ import {
   type BoardAction,
   type BoardState,
   type ColumnSortBy,
+  type UpdateCardAction,
 } from "@/store/board-reducer";
 import { useUndoHistory } from "@/store/use-undo-history";
 import type { Board, CardCover, Label } from "@/types/kanban";
@@ -133,7 +134,7 @@ function damagedData(
   };
 }
 
-type CardPatch = { title?: string; description?: string };
+type CardPatch = Pick<UpdateCardAction, "title" | "description">;
 
 /**
  * Everything that changes when the data changes. Read it through

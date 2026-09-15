@@ -677,12 +677,7 @@ function guarded(action: BoardScopedAction): boolean {
   return action.inverse !== true;
 }
 
-interface ColumnShape {
-  id: string;
-  title: string;
-  cardIds: string[];
-  createdAt: number;
-}
+type ColumnShape = Omit<Column, "wipLimit">;
 
 function addColumn(board: Board, action: BoardScoped<AddColumnAction>): Board {
   if (board.columns.length >= LIMITS.columnsPerBoard) return board;
