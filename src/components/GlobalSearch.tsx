@@ -30,14 +30,13 @@ import {
   type CardSearchHit,
   type SearchHit,
 } from "@/utils/filter";
+import { isMacPlatform } from "@/utils/platform";
 
 const SEARCH_DEBOUNCE_MS = 200;
 /** Dropdown cap (Jira-style) — enough context without an endless list. */
 const MAX_RESULTS = 20;
 
-const isMac =
-  typeof navigator !== "undefined" &&
-  /Mac|iPhone|iPad/.test(navigator.platform);
+const isMac = isMacPlatform();
 
 interface GlobalSearchProps {
   /** Exposed for tests (open via a normal click instead of the shortcut). */

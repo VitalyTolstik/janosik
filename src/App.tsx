@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { HashRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Archive, Plus } from "lucide-react";
 
 import { BoardSection } from "@/components/BoardSection";
@@ -83,7 +83,7 @@ export default function App() {
             <ToastProvider>
               <ErrorBoundary>
                 <TooltipProvider delayDuration={150}>
-                  <HashRouter>
+                  <BrowserRouter>
                     <BoardProvider>
                       <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
                         {/* Above the header: a data-at-risk warning outranks
@@ -103,7 +103,7 @@ export default function App() {
                         </Routes>
                       </div>
                     </BoardProvider>
-                  </HashRouter>
+                  </BrowserRouter>
                 </TooltipProvider>
               </ErrorBoundary>
             </ToastProvider>
