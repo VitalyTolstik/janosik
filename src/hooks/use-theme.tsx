@@ -72,11 +72,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } catch {
       /* storage unavailable — theme still works for the session */
     }
-    // Keep the meta theme-color in sync for mobile chrome.
+    // Keep the meta theme-color in sync for mobile chrome. Read the themed
+    // background token from CSS instead of duplicating the palette here.
     const meta = document.querySelector<HTMLMetaElement>(
       'meta[name="theme-color"]',
     );
-    meta?.setAttribute("content", theme === "dark" ? "#0a0a0f" : "#f4f5f6");
+    if (!meta) return;
+    const background = getComputedStyle(html)
+      .getPropertyValue("--background")
+      .trim();
+    if (background) meta.setAttribute("content", background);
   }, [theme]);
 
   const setTheme = useCallback((next: Theme) => setThemeState(next), []);
