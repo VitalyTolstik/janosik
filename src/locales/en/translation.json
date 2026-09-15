@@ -1,6 +1,8 @@
 {
   "common.cancel": "Cancel",
   "common.save": "Save",
+  "common.notifications": "Notifications",
+  "common.dismissNotification": "Dismiss notification",
   "theme.aria": "Toggle theme",
   "theme.tooltipLight": "Switch to light mode",
   "theme.tooltipDark": "Switch to dark mode",
