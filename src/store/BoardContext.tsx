@@ -27,6 +27,7 @@ import {
 import { useUndoHistory } from "@/store/use-undo-history";
 import type { Board, CardCover, Label } from "@/types/kanban";
 import { migrateStorageKey, quarantineValue, readRaw } from "@/utils/storage";
+import { BOARD_STORAGE_KEY } from "@/utils/storage-keys";
 import { normalizeBoards } from "@/store/migrate";
 import { createBackup } from "@/utils/backup";
 import { createId } from "@/utils/id";
@@ -59,7 +60,7 @@ import { useI18n } from "@/i18n";
  *   losing data silently must not be possible (TASK-21.2).
  */
 
-const STORAGE_KEY = "janosik-boards";
+const STORAGE_KEY = BOARD_STORAGE_KEY;
 const SAVE_DEBOUNCE_MS = 400;
 const BACKUP_THROTTLE_MS = 60_000;
 
