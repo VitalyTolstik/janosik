@@ -45,9 +45,11 @@ export default tseslint.config(
           ],
         },
       ],
-      // New in react-hooks v7 and currently opinionated about patterns the
-      // codebase relies on (dialog state reset on open, render-time clock).
-      // Demoted to warnings until the context split (TASK-21.4) and friends.
+      // New in react-hooks v7 and opinionated about patterns the codebase
+      // deliberately relies on (dialog state reset on open, render-time
+      // clock). The demotion is ongoing tech debt, not a temporary deferral:
+      // currently 13 warnings across 10 files. Revisit when those files are
+      // next touched by feature work and fix the flagged patterns then.
       "react-hooks/set-state-in-effect": "warn",
       "react-hooks/purity": "warn",
       "@typescript-eslint/no-unused-vars": [
