@@ -98,6 +98,7 @@
   "board.emptyNewHint": "Создайте первую доску, чтобы начать.",
   "board.editTitleAria": "Название доски",
   "board.editTitleHint": "Нажмите, чтобы переименовать доску",
+  "board.untitled": "Без названия",
   "board.switcher.aria": "Переключить доску",
   "board.switcher.search": "Поиск досок…",
   "board.switcher.empty": "Ничего не найдено",

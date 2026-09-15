@@ -242,7 +242,7 @@ interface BoardActionsValue {
   sortColumn: (columnId: string, sortBy: ColumnSortBy) => void;
   /* Board management (multi-board) */
   /** Creates an empty board and returns its id (for navigation). */
-  addBoard: (title: string) => string;
+  addBoard: (title: string, fallbackTitle?: string) => string;
   /** Removes a board; the caller must navigate away from it first/after. */
   removeBoard: (boardId: string) => void;
   /** Archives a board (data kept; hidden from the normal switcher list). */
@@ -575,14 +575,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   );
 
   const addBoard = useCallback(
-    (title: string): string => {
+    (title: string, fallbackTitle = "Untitled"): string => {
       const id = createId();
       const now = Date.now();
       apply({
         type: "ADD_BOARD",
         board: {
           id,
-          title: title.trim() || "Untitled",
+          title: title.trim() || fallbackTitle,
           columns: [],
           cards: {},
           labels: [],

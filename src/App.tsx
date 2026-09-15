@@ -30,7 +30,9 @@ export function NoBoardRoute() {
 
   const allArchived = boards.length > 0;
   const handleCreate = () => {
-    navigate(routes.board(addBoard(t("board.switcher.new"))));
+    navigate(
+      routes.board(addBoard(t("board.switcher.new"), t("board.untitled"))),
+    );
   };
 
   return (
