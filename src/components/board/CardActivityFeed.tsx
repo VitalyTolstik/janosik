@@ -14,7 +14,13 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import { formatDate, formatRelative, useHour12, useI18n } from "@/i18n";
+import {
+  formatDate,
+  formatRelative,
+  useHour12,
+  useI18n,
+  type MessageKey,
+} from "@/i18n";
 import type { CardActivityEvent, CardActivityType } from "@/types/kanban";
 
 /** Muted icon per event kind — the timeline's visual anchor. */
@@ -30,6 +36,23 @@ const ACTIVITY_ICONS: Record<CardActivityType, LucideIcon> = {
   archived: Archive,
   unarchived: ArchiveRestore,
 };
+
+/**
+ * Typed label key per event kind (N-6): a dictionary keyed by the known ids
+ * keeps `t()` on real `MessageKey`s and makes catalog drift a compile error.
+ */
+const ACTIVITY_KEYS = {
+  created: "activity.created",
+  renamed: "activity.renamed",
+  "description-changed": "activity.description-changed",
+  moved: "activity.moved",
+  "label-added": "activity.label-added",
+  "label-removed": "activity.label-removed",
+  "due-date-set": "activity.due-date-set",
+  "due-date-removed": "activity.due-date-removed",
+  archived: "activity.archived",
+  unarchived: "activity.unarchived",
+} satisfies Record<CardActivityType, MessageKey>;
 
 interface CardActivityFeedProps {
   activity?: CardActivityEvent[];
@@ -108,8 +131,7 @@ export function CardActivityFeed({
                   className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
                 />
                 <span className="min-w-0 flex-1 truncate text-foreground/90">
-                  {t(`activity.${event.type}`, {
-                    defaultValue: event.type,
+                  {t(ACTIVITY_KEYS[event.type], {
                     detail: event.detail ?? "",
                   })}
                 </span>

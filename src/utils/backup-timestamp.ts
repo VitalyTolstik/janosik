@@ -5,7 +5,7 @@ import type { Lang } from "@/i18n/i18n";
  * pattern (Google Docs / GitHub):
  *  - < 1 h ago  → relative minutes ("5 min ago" / «5 мин назад»)
  *  - today      → "14:32"
- *  - yesterday  → "Yesterday, 09:10" / «Вчера, 09:10»
+ *  - yesterday  → "yesterday, 09:10" / «вчера, 09:10»
  *  - older      → "Sep 11, 2026, 14:32" / «11 сент. 2026 г., 14:32»
  *
  * The caller renders the string as the visible label and keeps a full
@@ -21,10 +21,10 @@ export function formatBackupTimestamp(
   hour12 = false,
 ): string {
   const locale = lang === "ru" ? "ru-RU" : "en-US";
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
   const deltaMinutes = Math.round((timestamp - now) / MINUTE);
 
   if (Math.abs(deltaMinutes) < 60) {
-    const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
     // Clamp small clock drift into the past ("1 minute ago"), never "in 10 minutes".
     return rtf.format(Math.min(deltaMinutes, -1), "minute");
   }
@@ -42,8 +42,7 @@ export function formatBackupTimestamp(
   }).format(timestamp);
 
   if (daysBetween === 0) return time;
-  if (daysBetween === 1)
-    return lang === "ru" ? `Вчера, ${time}` : `Yesterday, ${time}`;
+  if (daysBetween === 1) return `${rtf.format(-1, "day")}, ${time}`;
 
   const date = new Intl.DateTimeFormat(locale, {
     year: "numeric",

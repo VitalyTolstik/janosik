@@ -9,6 +9,7 @@ import {
 } from "react";
 import { AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -48,6 +49,7 @@ const VARIANT_META = {
 const DISMISS_AFTER_MS = 4500;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextIdRef = useRef(0);
 
@@ -79,7 +81,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div
         className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-80 flex-col gap-2"
         role="region"
-        aria-label="Notifications"
+        aria-label={t("common.notifications")}
       >
         {toasts.map((item) => {
           const meta = VARIANT_META[item.variant];
@@ -101,7 +103,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               </p>
               <button
                 onClick={() => dismiss(item.id)}
-                aria-label="Dismiss notification"
+                aria-label={t("common.dismissNotification")}
                 className="rounded-md p-1 text-muted-foreground/70 transition-colors hover:bg-hover hover:text-foreground"
               >
                 <X className="h-3.5 w-3.5" />
