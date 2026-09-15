@@ -44,7 +44,7 @@ A premium, offline-first **Kanban board** — Trello-class drag & drop with a Sp
 | Drag & drop | `@dnd-kit/core` + `@dnd-kit/sortable` (board), native HTML5 DnD (calendar) |
 | Calendar | `react-day-picker` (lazy-loaded, locale on demand), `date-fns` |
 | State | React `useReducer` (pure reducer, 30+ actions) + context |
-| Router | `react-router-dom` (`HashRouter`, `/board/:id`, `?card=` deep links) |
+| Router | `react-router-dom` (`BrowserRouter`, `/board/:id`, `?card=` deep links; SPA-fallback: `deploy/nginx.conf`) |
 | PWA | Hand-rolled service worker + web manifest (zero extra deps) |
 | i18n | `i18next`, `react-i18next`, `i18next-browser-languagedetector` |
 | Fonts | `@fontsource/space-grotesk` (self-hosted, no CDN) |

@@ -14,11 +14,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
+import { isMacPlatform } from "@/utils/platform";
 
-const isMac =
-  typeof navigator !== "undefined" &&
-  /Mac|iPhone|iPad/.test(navigator.platform);
-const MOD = isMac ? "⌘" : "Ctrl+";
+const MOD = isMacPlatform() ? "⌘" : "Ctrl+";
 
 /** Guard: single-letter shortcuts must not fire while typing. */
 function isTypingTarget(target: EventTarget | null): boolean {

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
@@ -18,6 +18,20 @@ import { BoardProvider } from "@/store/BoardContext";
  * table projections of the same data, TASK-14).
  */
 
+/** Exposes the current URL query and a Back button to the test. */
+function RouteProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <span data-testid="route-probe">{location.search}</span>
+      <button data-testid="route-back" onClick={() => navigate(-1)}>
+        back
+      </button>
+    </>
+  );
+}
+
 function renderBoard(initialRoute = "/") {
   return render(
     <ThemeProvider>
@@ -29,6 +43,7 @@ function renderBoard(initialRoute = "/") {
                 <BoardProvider>
                   <Header />
                   <BoardSection />
+                  <RouteProbe />
                 </BoardProvider>
               </MemoryRouter>
             </TooltipProvider>
@@ -333,6 +348,26 @@ describe("BoardSection", () => {
     expect(
       within(screen.getByRole("dialog")).getByText("Plain card"),
     ).toBeInTheDocument();
+  });
+
+  it("mirrors the open card into ?card= and Back closes the dialog", async () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard("/board/board-view");
+
+    // A plain click opens the dialog and writes the shareable link into
+    // the address bar (the same behaviour as the search/archive paths).
+    fireEvent.click(await screen.findByText("Plain card"));
+    expect(
+      within(screen.getByRole("dialog")).getByText("Plain card"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("route-probe")).toHaveTextContent(
+      "card=card-plain",
+    );
+
+    // A history Back (the browser's) closes the dialog and drops the param.
+    fireEvent.click(screen.getByTestId("route-back"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByTestId("route-probe")).toHaveTextContent("");
   });
 });
 
