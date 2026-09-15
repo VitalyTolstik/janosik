@@ -38,6 +38,11 @@ import type { CardActivityEvent } from "@/types/kanban";
 
 type LegacyCard = Card & { labelId?: unknown; labelIds?: unknown };
 
+/** A stored card must be a non-null object before any of its fields is read. */
+function isCardRecord(value: unknown): value is LegacyCard {
+  return typeof value === "object" && value !== null;
+}
+
 function toLabelIds(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.filter((id): id is string => typeof id === "string");
@@ -215,10 +220,11 @@ export function normalizeBoard(board: Board): Board {
       name: clampText(label.name, LIMITS.labelName),
     })),
     cards: Object.fromEntries(
-      Object.entries(board.cards).map(([id, card]) => [
-        id,
-        normalizeCard(card),
-      ]),
+      Object.entries(board.cards)
+        // A primitive (or null) value where a card should be is garbage:
+        // drop it rather than crash on `card.title` (B-10).
+        .filter(([, card]) => isCardRecord(card))
+        .map(([id, card]) => [id, normalizeCard(card)]),
     ),
   };
 }
@@ -236,6 +242,9 @@ export function normalizeBoards(state: BoardState): BoardState {
       board.labels.length > LIMITS.labelsPerBoard ||
       board.labels.some((label) => label.name.length > LIMITS.labelName) ||
       Object.values(board.cards).some((card) => {
+        // A non-object value has no fields to inspect — let normalizeBoard
+        // drop it instead of reading `.title` off a primitive (B-10).
+        if (!isCardRecord(card)) return true;
         const legacy = card as LegacyCard;
         if (card.title.length > LIMITS.cardTitle) return true;
         if ((card.description ?? "").length > LIMITS.description) return true;

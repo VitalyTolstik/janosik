@@ -181,6 +181,21 @@ describe("normalizeBoards", () => {
     expect(next.cards["c1"].checklists).toBeUndefined();
   });
 
+  it("drops a non-object card value instead of crashing (B-10)", () => {
+    const board = {
+      id: "b",
+      title: "B",
+      columns: [],
+      cards: { a: 5, b: null },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+
+    const [next] = normalizeBoards([board]);
+    expect(next.cards).toEqual({});
+  });
+
   it("filters malformed checklist entries and items", () => {
     const legacy = card({
       labelIds: ["x"],
