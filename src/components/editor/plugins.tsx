@@ -101,6 +101,4 @@ export const descriptionEditorPlugins: RealmPlugin[] = [
   ...uiPlugins,
 ];
 
-export const descriptionPreviewPlugins: RealmPlugin[] = contentPlugins;
-
 export { editorTranslation, janosikIconFor };

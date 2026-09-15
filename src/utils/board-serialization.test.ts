@@ -54,6 +54,28 @@ describe("board serialization", () => {
     expect(() => parseExport(raw)).toThrow();
   });
 
+  it("rejects non-integer or non-positive schema versions", () => {
+    for (const schemaVersion of [0, -1, 1.5, Number.NaN]) {
+      const raw = JSON.stringify({
+        app: EXPORT_APP,
+        schemaVersion,
+        boards: [],
+      });
+      expect(() => parseExport(raw), `version ${schemaVersion}`).toThrow(
+        "Unsupported schema version",
+      );
+    }
+  });
+
+  it("accepts the current integer schema version", () => {
+    const raw = JSON.stringify({
+      app: EXPORT_APP,
+      schemaVersion: EXPORT_SCHEMA_VERSION,
+      boards: [],
+    });
+    expect(parseExport(raw)).toEqual([]);
+  });
+
   it("rejects missing or invalid board data", () => {
     expect(() =>
       parseExport(

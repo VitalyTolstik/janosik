@@ -5,9 +5,19 @@ on:
     branches: [main]
   pull_request:
 
+# One run per ref: a new push cancels the previous, still-running check.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege — the workflow only reads the repository.
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -19,12 +29,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
-        run: npx tsc -b --force
+      - name: Tests (with coverage gate)
+        run: npm run test:coverage
 
-      - name: Unit tests
-        run: npm test
-
+      # `npm run build` runs `tsc -b` first, so a dedicated typecheck step
+      # would duplicate the work.
       - name: Build
         run: npm run build
 
@@ -35,4 +44,4 @@ jobs:
         run: npm run format:check
 
       - name: Bundle budget (size-limit)
-        run: npx size-limit
+        run: npm run size
