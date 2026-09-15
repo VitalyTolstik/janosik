@@ -67,7 +67,7 @@ interface TableViewProps {
   onCardClick: (cardId: string) => void;
 }
 
-/** Sortable headers (TASK-14.1 п.7). */
+/** Sortable headers (TASK-14.1 item 7). */
 type SortKey = "title" | "column" | "due" | "createdAt";
 
 interface SortState {
@@ -75,7 +75,7 @@ interface SortState {
   dir: 1 | -1;
 }
 
-/** Optional columns beyond the four base ones (TASK-14.1 п.11). */
+/** Optional columns beyond the four base ones (TASK-14.1 item 11). */
 const OPTIONAL_COLUMNS = [
   "checklists",
   "description",
@@ -140,7 +140,7 @@ export function TableView({
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   // Row archive uses the same two-step confirm as the board card (✓ / ✗).
   const [archiveConfirmId, setArchiveConfirmId] = useState<string | null>(null);
-  // The "+ card" popover is controlled so the composer's Отмена can close it.
+  // The "+ card" popover is controlled so the composer's Cancel can close it.
   const [addOpen, setAddOpen] = useState(false);
 
   // The row callbacks must keep their identity, otherwise `memo` on
@@ -223,19 +223,24 @@ export function TableView({
     const columnIndex = new Map(
       board.columns.map((col, index) => [col.id, index]),
     );
+    // `dir` multiplies only the numeric comparison of each key. The
+    // due-date null handling lives outside it, so undated cards stay last
+    // in BOTH sort directions (the reducer's sortColumn semantics).
     const cmp = (a: (typeof rows)[number], b: (typeof rows)[number]) => {
       switch (sort.key) {
         case "title":
-          return a.card.title.localeCompare(b.card.title, lang, {
-            sensitivity: "base",
-          });
+          return (
+            a.card.title.localeCompare(b.card.title, lang, {
+              sensitivity: "base",
+            }) * sort.dir
+          );
         case "column":
           return (
-            (columnIndex.get(a.column.id) ?? 0) -
-            (columnIndex.get(b.column.id) ?? 0)
+            ((columnIndex.get(a.column.id) ?? 0) -
+              (columnIndex.get(b.column.id) ?? 0)) *
+            sort.dir
           );
         case "due": {
-          // Undated cards always float to the bottom (like sortColumn).
           const aDue =
             typeof a.card.dueDate === "number" ? a.card.dueDate : null;
           const bDue =
@@ -243,13 +248,13 @@ export function TableView({
           if (aDue === null && bDue === null) return 0;
           if (aDue === null) return 1;
           if (bDue === null) return -1;
-          return aDue - bDue;
+          return (aDue - bDue) * sort.dir;
         }
         case "createdAt":
-          return a.card.createdAt - b.card.createdAt;
+          return (a.card.createdAt - b.card.createdAt) * sort.dir;
       }
     };
-    return [...rows].sort((a, b) => cmp(a, b) * sort.dir);
+    return [...rows].sort(cmp);
   })();
 
   const cycleSort = (key: SortKey) => {
@@ -268,7 +273,7 @@ export function TableView({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/60 backdrop-blur-sm">
-      {/* Toolbar: + card composer and the column settings (TASK-14.1 п.10/11). */}
+      {/* Toolbar: + card composer and the column settings (TASK-14.1 item 10/11). */}
       <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
         <Popover open={addOpen} onOpenChange={setAddOpen}>
           <PopoverTrigger asChild>
@@ -385,12 +390,13 @@ export function TableView({
                 </th>
               ) : null}
               {visibleColumns.includes("createdAt") ? (
-                <th
-                  scope="col"
-                  className="w-28 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
-                >
-                  {t("view.table.createdAt")}
-                </th>
+                <SortHeader
+                  label={t("view.table.createdAt")}
+                  sortKey="createdAt"
+                  sort={sort}
+                  onCycle={cycleSort}
+                  className="w-28"
+                />
               ) : null}
               {visibleColumns.includes("updatedAt") ? (
                 <th
@@ -810,7 +816,7 @@ function SortHeader({
   );
 }
 
-/** "+ card" composer body: title, column chooser and label chips (TASK-14.1 п.10). */
+/** "+ card" composer body: title, column chooser and label chips (TASK-14.1 item 10). */
 function TableCardComposer({
   columns,
   labels,
@@ -931,7 +937,7 @@ function TableCardComposer({
         >
           {t("composer.submit")}
         </Button>
-        {/* Same pair as the board composer: Отмена just closes the popover. */}
+        {/* Same pair as the board composer: Cancel just closes the popover. */}
         <Button
           size="sm"
           variant="ghost"

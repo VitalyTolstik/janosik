@@ -67,6 +67,16 @@ export function NoBoardRoute() {
   );
 }
 
+/**
+ * The board route is keyed by board id, so switching boards remounts
+ * `BoardSection`: per-board UI state (the card filter above all) cannot leak
+ * from the previous board, whose label ids do not exist here.
+ */
+function BoardRoute() {
+  const { board } = useBoard();
+  return <BoardSection key={board?.id ?? "none"} />;
+}
+
 export default function App() {
   // First paint is done — drop the preflight kill-switch style (which
   // forced transition:none to avoid a theme-flash) and mark the document
@@ -98,7 +108,7 @@ export default function App() {
                           />
                           <Route
                             path={routes.boardPattern}
-                            element={<BoardSection />}
+                            element={<BoardRoute />}
                           />
                           <Route path="*" element={<NoBoardRoute />} />
                         </Routes>

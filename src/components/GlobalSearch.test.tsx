@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
 import { GlobalSearch } from "@/components/GlobalSearch";
@@ -160,5 +160,22 @@ describe("GlobalSearch", () => {
     const results = screen.getByTestId("global-search-results");
     expect(results).toHaveTextContent("Boards");
     expect(results).toHaveTextContent("Alpha");
+  });
+
+  it("handles Ctrl+K only in the palette, not the board filter (B-7)", async () => {
+    renderSearch();
+    const filterInput = screen.getByLabelText("Search cards", {
+      selector: "input",
+    });
+    const filterFocus = vi.spyOn(filterInput, "focus");
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+
+    // The palette opens…
+    expect(
+      await screen.findByTestId("global-search-input"),
+    ).toBeInTheDocument();
+    // …and the board filter never reacted to the shortcut.
+    expect(filterFocus).not.toHaveBeenCalled();
   });
 });

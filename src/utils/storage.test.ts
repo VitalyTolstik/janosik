@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   listQuarantineKeys,
-  loadJSON,
   migrateStorageKey,
   quarantineValue,
   readJSON,
@@ -21,32 +20,6 @@ import {
 afterEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
-});
-
-describe("loadJSON", () => {
-  it("round-trips a value saved via saveJSON", () => {
-    expect(saveJSON("janosik-test", { boards: 1, ok: true })).toBe(true);
-    expect(loadJSON<{ boards: number; ok: boolean }>("janosik-test")).toEqual({
-      boards: 1,
-      ok: true,
-    });
-  });
-
-  it("returns null for a missing key", () => {
-    expect(loadJSON("janosik-nope")).toBeNull();
-  });
-
-  it("returns null for invalid JSON", () => {
-    localStorage.setItem("janosik-bad", "{not json");
-    expect(loadJSON("janosik-bad")).toBeNull();
-  });
-
-  it("returns null when localStorage throws on read", () => {
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("storage disabled");
-    });
-    expect(loadJSON("janosik-any")).toBeNull();
-  });
 });
 
 describe("saveJSON", () => {
@@ -86,6 +59,14 @@ describe("migrateStorageKey", () => {
 });
 
 describe("readJSON", () => {
+  it("round-trips a value saved via saveJSON", () => {
+    expect(saveJSON("janosik-test", { boards: 1, ok: true })).toBe(true);
+    expect(readJSON<{ boards: number; ok: boolean }>("janosik-test")).toEqual({
+      status: "ok",
+      value: { boards: 1, ok: true },
+    });
+  });
+
   it("reports a missing key as missing, not as corrupt", () => {
     expect(readJSON("janosik-nope")).toEqual({ status: "missing" });
   });

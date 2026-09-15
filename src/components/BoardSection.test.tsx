@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
 import { Header } from "@/components/Header";
@@ -392,6 +392,27 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Week" }));
     expect(screen.getAllByTestId("calendar-day")).toHaveLength(7);
     expect(localStorage.getItem("janosik-calendar-scale")).toBe("week");
+  });
+
+  it("centers Today on the current week in week mode (B-4)", async () => {
+    // A mid-month date makes the first-week-of-month regression detectable.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 8, 16, 12, 0, 0));
+    try {
+      localStorage.setItem("janosik-boards", boardWithDueCard());
+      renderBoard();
+      await openCalendarView();
+
+      fireEvent.click(screen.getByRole("button", { name: "Week" }));
+      fireEvent.click(screen.getByRole("button", { name: "Today" }));
+
+      // The current week is on screen, not the week of the 1st of the month.
+      expect(
+        document.querySelector(`[data-date="${todayKey()}"]`),
+      ).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("plans an unscheduled card by dragging it onto a day", async () => {

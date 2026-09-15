@@ -41,16 +41,19 @@ export function parseExport(raw: string): BoardState {
   }
 
   if (typeof parsed !== "object" || parsed === null) {
-    throw new Error("MISSING-item");
+    throw new Error("Malformed export file");
   }
   const file = parsed as Partial<BoardExportFile>;
 
   if (file.app !== EXPORT_APP) {
     throw new Error("Not a Janosik export");
   }
+  const version = file.schemaVersion;
   if (
-    typeof file.schemaVersion !== "number" ||
-    file.schemaVersion > EXPORT_SCHEMA_VERSION
+    typeof version !== "number" ||
+    !Number.isInteger(version) ||
+    version < 1 ||
+    version > EXPORT_SCHEMA_VERSION
   ) {
     throw new Error("Unsupported schema version");
   }

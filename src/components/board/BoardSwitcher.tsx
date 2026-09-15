@@ -289,7 +289,7 @@ export function BoardSwitcher() {
                   <span
                     aria-hidden
                     className={cn(
-                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-white shadow-sm",
+                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-primary-foreground shadow-sm",
                       boardColor(b.id),
                     )}
                   >

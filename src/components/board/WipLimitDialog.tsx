@@ -71,7 +71,7 @@ export function WipLimitDialog({
           min={1}
           max={LIMITS.wipLimitMax}
           value={draft}
-          maxLength={2}
+          maxLength={String(LIMITS.wipLimitMax).length}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") save();
