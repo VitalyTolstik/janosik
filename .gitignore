@@ -19,7 +19,6 @@ pi-session-*.html
 # Env / secrets
 .env
 .env.*
-!.env.example
 
 # Logs
 npm-debug.log*
