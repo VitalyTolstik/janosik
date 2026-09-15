@@ -51,6 +51,25 @@
       "limit": "55 KB",
       "gzip": true,
       "running": false
+    },
+    {
+      "name": "lazy calendar chunks (react-day-picker + date-fns, gzip)",
+      "path": [
+        "dist/assets/daypicker-*.js",
+        "dist/assets/datefns-*.js"
+      ],
+      "limit": "27 KB",
+      "gzip": true,
+      "running": false
+    },
+    {
+      "name": "styles bundle (gzip)",
+      "path": [
+        "dist/assets/index-*.css"
+      ],
+      "limit": "18 KB",
+      "gzip": true,
+      "running": false
     }
   ],
   "scripts": {

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { LIMITS } from "@/types/kanban";
+import { clamp } from "@/utils/text";
 
 interface WipLimitDialogProps {
   open: boolean;
@@ -48,7 +49,7 @@ export function WipLimitDialog({
     } else {
       const parsed = Number.parseInt(trimmed, 10);
       const value = Number.isFinite(parsed)
-        ? Math.min(Math.max(parsed, 1), LIMITS.wipLimitMax)
+        ? clamp(parsed, 1, LIMITS.wipLimitMax)
         : undefined;
       onSave(value);
     }

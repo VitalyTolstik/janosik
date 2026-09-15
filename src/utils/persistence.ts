@@ -36,7 +36,7 @@ export interface DebouncedPersistence<T> {
 }
 
 /** Five megabytes is the common localStorage budget browsers grant. */
-export const ASSUMED_QUOTA_BYTES = 5 * 1024 * 1024;
+const ASSUMED_QUOTA_BYTES = 5 * 1024 * 1024;
 /** A write attempt this large deserves a warning before the quota refuses. */
 export const QUOTA_WARNING_BYTES = Math.round(ASSUMED_QUOTA_BYTES * 0.8);
 

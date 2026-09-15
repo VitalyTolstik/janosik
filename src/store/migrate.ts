@@ -8,6 +8,7 @@ import type {
 } from "@/types/kanban";
 import { COVER_COLORS, COVER_GRADIENTS, LABEL_COLORS } from "@/types/kanban";
 import type { BoardState } from "@/store/board-reducer";
+import { clamp, clampText } from "@/utils/text";
 
 /**
  * Migration for boards saved by older versions of the app.
@@ -172,18 +173,13 @@ function toActivity(value: unknown): CardActivityEvent[] | undefined {
   return events.length > 0 ? events : undefined;
 }
 
-/** Clamp text to its LIMITS bound (imports can bypass UI maxLength). */
-function clampText(value: string, limit: number): string {
-  return value.length > limit ? value.slice(0, limit) : value;
-}
-
 /**
  * A WIP limit is either absent or an integer inside the LIMITS range;
  * garbage (hand-edited imports) is dropped, out-of-range values are clamped.
  */
 function toWipLimit(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  return Math.min(Math.max(Math.round(value), 1), LIMITS.wipLimitMax);
+  return clamp(Math.round(value), 1, LIMITS.wipLimitMax);
 }
 
 /** True when the stored WIP limit is already `undefined` or in range. */
@@ -225,7 +221,7 @@ function normalizeCard(card: LegacyCard): Card {
   };
 }
 
-export function normalizeBoard(board: Board): Board {
+function normalizeBoard(board: Board): Board {
   return {
     ...board,
     title: clampText(board.title, LIMITS.boardTitle),

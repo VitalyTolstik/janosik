@@ -15,6 +15,7 @@ import {
   type MessageKey,
 } from "@/i18n";
 import { dueStatus, type DueStatus } from "@/utils/due-date";
+import { formatTimeOfDay } from "@/utils/time";
 
 /** Typed key per due status (N-6) — removes the redundant `as DueStatus`. */
 const DUE_STATUS_KEYS = {
@@ -38,11 +39,7 @@ export function DueBadge({ dueDate }: DueBadgeProps) {
   const hour12 = useHour12();
   const status = dueStatus(dueDate);
   const due = new Date(dueDate);
-  const dueTime = formatTime(
-    `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`,
-    lang,
-    hour12,
-  );
+  const dueTime = formatTime(formatTimeOfDay(due), lang, hour12);
 
   return (
     <Tooltip>

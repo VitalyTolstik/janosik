@@ -1,3 +1,5 @@
+import { DAY_MS } from "@/utils/duration";
+
 /**
  * Due-date status classification for card badges.
  *
@@ -7,10 +9,8 @@
  */
 export type DueStatus = "overdue" | "soon" | "later";
 
-const SOON_WINDOW_MS = 24 * 60 * 60 * 1000;
-
 export function dueStatus(due: number, now: number = Date.now()): DueStatus {
   if (due < now) return "overdue";
-  if (due - now <= SOON_WINDOW_MS) return "soon";
+  if (due - now <= DAY_MS) return "soon";
   return "later";
 }

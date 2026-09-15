@@ -1,5 +1,6 @@
 import type { Board, Card, Label } from "@/types/kanban";
 import { dueStatus } from "@/utils/due-date";
+import { DAY_MS } from "@/utils/duration";
 
 /**
  * Board filtering model, following the Trello/Linear conventions:
@@ -85,8 +86,6 @@ export function activeFacetCount(filter: CardFilter): number {
   return count;
 }
 
-const DAY_MS = 86_400_000;
-
 /**
  * Start-of-window timestamp for a `created` facet, or null when "any".
  * "today" means since the start of the current local day; 7d/30d are rolling
@@ -147,11 +146,7 @@ function matchesDueFilter(card: Card, due: DueFilter, now: number): boolean {
  * of its labels. Shared by the board filter and the global search so both
  * surfaces agree on what a query matches.
  */
-export function cardTextMatches(
-  card: Card,
-  labels: Label[],
-  query: string,
-): boolean {
+function cardTextMatches(card: Card, labels: Label[], query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (needle === "") return false;
   if (card.title.toLowerCase().includes(needle)) return true;

@@ -1,4 +1,5 @@
 import type { Lang } from "@/i18n/i18n";
+import { DAY_MS, MINUTE_MS } from "@/utils/duration";
 
 /**
  * Human-friendly backup timestamps, following the common version-history
@@ -12,8 +13,6 @@ import type { Lang } from "@/i18n/i18n";
  * `toLocaleString()` in the row's `title` attribute.
  */
 
-const MINUTE = 60_000;
-
 export function formatBackupTimestamp(
   timestamp: number,
   now: number,
@@ -22,7 +21,7 @@ export function formatBackupTimestamp(
 ): string {
   const locale = lang === "ru" ? "ru-RU" : "en-US";
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
-  const deltaMinutes = Math.round((timestamp - now) / MINUTE);
+  const deltaMinutes = Math.round((timestamp - now) / MINUTE_MS);
 
   if (Math.abs(deltaMinutes) < 60) {
     // Clamp small clock drift into the past ("1 minute ago"), never "in 10 minutes".
@@ -32,7 +31,7 @@ export function formatBackupTimestamp(
   const startOfDay = (d: Date) =>
     new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const daysBetween = Math.round(
-    (startOfDay(new Date(now)) - startOfDay(new Date(timestamp))) / 86_400_000,
+    (startOfDay(new Date(now)) - startOfDay(new Date(timestamp))) / DAY_MS,
   );
 
   const time = new Intl.DateTimeFormat(locale, {
