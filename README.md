@@ -6,7 +6,7 @@ A premium, offline-first **Kanban board** — Trello-class drag & drop with a Sp
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)](https://vite.dev)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38bdf8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
-[![Tests](https://img.shields.io/badge/tests-362%20passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-612%20passing-brightgreen)](#)
 
 > **Janosik** is a fully client-side board that installs as a **PWA** and works **offline**. All data lives in your browser (`localStorage`) with JSON export/import and automatic `IndexedDB` backups — no server required. Multi-user collaboration (accounts, shared boards, roles, realtime) is the active backend phase — see [ROADMAP.md §7](./ROADMAP.md).
 
@@ -48,7 +48,7 @@ A premium, offline-first **Kanban board** — Trello-class drag & drop with a Sp
 | PWA | Hand-rolled service worker + web manifest (zero extra deps) |
 | i18n | `i18next`, `react-i18next`, `i18next-browser-languagedetector` |
 | Fonts | `@fontsource/space-grotesk` (self-hosted, no CDN) |
-| Tests | Vitest + React Testing Library (362 tests / 29 files) |
+| Tests | Vitest + React Testing Library (612 tests / 58 files) |
 
 ---
 
