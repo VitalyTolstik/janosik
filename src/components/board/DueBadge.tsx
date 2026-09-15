@@ -12,8 +12,16 @@ import {
   formatTime,
   useHour12,
   useI18n,
+  type MessageKey,
 } from "@/i18n";
 import { dueStatus, type DueStatus } from "@/utils/due-date";
+
+/** Typed key per due status (N-6) — removes the redundant `as DueStatus`. */
+const DUE_STATUS_KEYS = {
+  overdue: "dueDate.overdue",
+  soon: "dueDate.soon",
+  later: "dueDate.later",
+} satisfies Record<DueStatus, MessageKey>;
 
 interface DueBadgeProps {
   /** The card's due date (Unix ms) — always defined here. */
@@ -57,7 +65,7 @@ export function DueBadge({ dueDate }: DueBadgeProps) {
         </span>
       </TooltipTrigger>
       <TooltipContent>
-        {t(`dueDate.${status as DueStatus}`, {
+        {t(DUE_STATUS_KEYS[status], {
           date: formatDate(dueDate, lang, hour12),
         })}
       </TooltipContent>
