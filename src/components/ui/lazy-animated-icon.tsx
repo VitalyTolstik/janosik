@@ -16,8 +16,6 @@ import {
 import type { ComponentType, LazyExoticComponent } from "react";
 import { Suspense, lazy, useEffect, useState } from "react";
 
-import { cn } from "@/lib/utils";
-
 // TASK-21.9 (motion-lazy): the lucide-animated icons pull the whole `motion`
 // runtime (~40 KB gzip) onto the critical path. They live behind this wrapper
 // so the animated chunk is fetched only after the page goes idle — the first
@@ -199,7 +197,7 @@ export function LazyAnimatedIcon({
   const fallback = (
     <Fallback
       size={size}
-      className={cn(className)}
+      className={className}
       data-lazy-state="static"
       {...rest}
     />
