@@ -102,12 +102,6 @@ export function readJSON<T>(key: string): LoadResult<T> {
   }
 }
 
-/** Read and JSON.parse a value; returns null when missing or corrupt. */
-export function loadJSON<T>(key: string): T | null {
-  const result = readJSON<T>(key);
-  return result.status === "ok" ? result.value : null;
-}
-
 /**
  * One-time key rename (e.g. the app rebrand Vortex → Janosik). If the new
  * key is missing but the old one holds data, copy it over and drop the old
