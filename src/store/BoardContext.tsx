@@ -617,8 +617,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   const removeBoard = useCallback(
     (boardId: string) => {
-      dropHistory(boardId);
+      const existed = stateRef.current.some((b) => b.id === boardId);
       apply({ type: "REMOVE_BOARD", boardId });
+      // Only forget the history when the board is actually gone: the
+      // reducer refuses to remove the last board, and losing its undo
+      // history for a refused command would be silent data loss.
+      if (existed && !stateRef.current.some((b) => b.id === boardId)) {
+        dropHistory(boardId);
+      }
     },
     [apply, dropHistory],
   );
