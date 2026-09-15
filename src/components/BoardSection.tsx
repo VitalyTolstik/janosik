@@ -79,18 +79,31 @@ export function BoardSection() {
   // The open card mirrors the `?card=` URL param (shareable card links and
   // the global-search "open the card itself" behaviour): navigating with the
   // param opens the dialog in any view; closing the dialog clears the param.
+  // Every open path — click included — writes the param, so the address bar
+  // is always a copy-pasteable link to the open card.
   const [openCardId, setOpenCardId] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
     const cardParam = searchParams.get("card");
     if (cardParam && board?.cards[cardParam] && openCardId !== cardParam) {
       setOpenCardId(cardParam);
+    } else if (!cardParam && openCardId) {
+      // The param disappeared without the dialog closing itself (browser
+      // Back after a click-open) — close the dialog with it.
+      setOpenCardId(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to URL changes only; including openCardId would reopen the dialog right after the user closes it (the close handler clears the param asynchronously)
   }, [searchParams, board]);
-  const handleCardClick = useCallback((cardId: string) => {
-    setOpenCardId(cardId);
-  }, []);
+  const handleCardClick = useCallback(
+    (cardId: string) => {
+      setOpenCardId(cardId);
+      // A history push, not a replace: Back then closes the dialog.
+      const next = new URLSearchParams(searchParams);
+      next.set("card", cardId);
+      setSearchParams(next);
+    },
+    [searchParams, setSearchParams],
+  );
 
   if (!board) {
     return (
