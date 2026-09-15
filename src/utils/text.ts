@@ -10,3 +10,8 @@
 export function clampText(value: string, limit: number): string {
   return value.length > limit ? value.slice(0, limit) : value;
 }
+
+/** Clamp a number into the inclusive `[min, max]` range. */
+export function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}

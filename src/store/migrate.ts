@@ -8,7 +8,7 @@ import type {
 } from "@/types/kanban";
 import { COVER_COLORS, COVER_GRADIENTS, LABEL_COLORS } from "@/types/kanban";
 import type { BoardState } from "@/store/board-reducer";
-import { clampText } from "@/utils/text";
+import { clamp, clampText } from "@/utils/text";
 
 /**
  * Migration for boards saved by older versions of the app.
@@ -179,7 +179,7 @@ function toActivity(value: unknown): CardActivityEvent[] | undefined {
  */
 function toWipLimit(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  return Math.min(Math.max(Math.round(value), 1), LIMITS.wipLimitMax);
+  return clamp(Math.round(value), 1, LIMITS.wipLimitMax);
 }
 
 /** True when the stored WIP limit is already `undefined` or in range. */

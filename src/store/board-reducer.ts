@@ -14,7 +14,7 @@ import { COVER_COLORS, COVER_GRADIENTS } from "@/types/kanban";
 
 export type { Board } from "@/types/kanban";
 import { createSeedBoard } from "@/store/seed-data";
-import { clampText } from "@/utils/text";
+import { clampText, clamp } from "@/utils/text";
 
 /** Insert a value at `index`, returning a new array (no in-place mutation). */
 function insertAt<T>(array: T[], index: number, value: T): T[] {
@@ -745,11 +745,7 @@ function addCard(
         return { ...col, cardIds: [...col.cardIds, newCard.id] };
       }
       const ids = [...col.cardIds];
-      ids.splice(
-        Math.max(0, Math.min(action.atIndex, ids.length)),
-        0,
-        newCard.id,
-      );
+      ids.splice(clamp(action.atIndex, 0, ids.length), 0, newCard.id);
       return { ...col, cardIds: ids };
     }),
     cards: { ...board.cards, [newCard.id]: newCard },
@@ -1151,10 +1147,6 @@ function deleteLabel(board: Board, action: DeleteLabelAction): Board {
     labels: board.labels.filter((l) => l.id !== action.labelId),
     cards,
   };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 /** Stamp the card's `updatedAt` after a burst of quiet live edits. */

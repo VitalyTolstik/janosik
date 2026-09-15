@@ -1,5 +1,6 @@
 import type { BoardAction } from "@/store/board-reducer";
 import type { Board, Card, CardActivityEvent } from "@/types/kanban";
+import { clamp } from "@/utils/text";
 
 /**
  * Inverse commands — the compensation half of undo (TASK-21.7d).
@@ -50,10 +51,6 @@ function cardsOf(board: Board, cardIds: readonly string[]): Card[] {
   return cardIds
     .map((id) => board.cards[id])
     .filter((card): card is Card => card !== undefined);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 /**
