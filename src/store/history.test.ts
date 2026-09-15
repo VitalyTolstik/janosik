@@ -7,6 +7,7 @@ import {
   type BoardAction,
   type Board,
 } from "@/store/board-reducer";
+import { MAX_CARD_ACTIVITY } from "@/types/kanban";
 
 /**
  * Tests for the undo/redo history after TASK-21.7d: it keeps command pairs
@@ -177,15 +178,20 @@ describe("BoardHistory", () => {
     expect(history.canRedo()).toBe(false);
   });
 
-  it("revertUndo puts a step back when its command changed nothing", () => {
+  it("dropUndone throws away a step whose command changed nothing", () => {
     const history = new BoardHistory();
-    history.push(freshBoard(), updateCard("card-1", "A"));
-    history.undo();
-    expect(history.canUndo()).toBe(false);
+    const board = freshBoard();
+    history.push(board, updateCard("card-1", "A"));
+    history.push(board, updateCard("card-2", "B"));
 
-    history.revertUndo();
-    expect(history.canUndo()).toBe(true);
+    // The step came out and turned out to be empty: it must not go back to
+    // either stack, or Ctrl+Z would keep landing on it and do nothing.
+    history.undo();
+    history.dropUndone();
     expect(history.canRedo()).toBe(false);
+    // The step below it is still there and still undoable.
+    expect(history.canUndo()).toBe(true);
+    expect(history.undo()).toMatchObject({ cardId: "card-1" });
   });
 
   /**
@@ -257,5 +263,49 @@ describe("BoardHistory", () => {
     const bytes = JSON.stringify(history.steps()).length;
     // A single seed board serializes to more than this on its own.
     expect(bytes).toBeLessThan(20_000);
+  });
+
+  it("stays in kilobytes even in the worst case for a card's feed", () => {
+    // The heaviest step there is: a card command whose inverse carries the
+    // card's activity feed back, on a card whose feed is already full, with
+    // the types alternating so nothing coalesces into one step.
+    const card = {
+      id: "card-1",
+      title: "Card",
+      labelIds: [] as string[],
+      createdAt: 1,
+      updatedAt: 1,
+      activity: Array.from({ length: MAX_CARD_ACTIVITY }, (_, i) => ({
+        id: `ev-${i}`,
+        type: "renamed" as const,
+        at: 1000 + i,
+        actorId: null,
+      })),
+    };
+    let board: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [
+        { id: "col-1", title: "Column", cardIds: ["card-1"], createdAt: 1 },
+      ],
+      cards: { "card-1": card },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const history = new BoardHistory();
+    for (let i = 0; i < 50; i++) {
+      const at = 2_000_000 + i * 5000;
+      const action: BoardAction =
+        i % 2 === 0
+          ? { type: "SET_CARD_DUE_DATE", cardId: "card-1", dueDate: at, at }
+          : { type: "UPDATE_CARD", cardId: "card-1", title: `T${i}`, at };
+      history.push(board, action);
+      board = boardReducer([board], action)[0];
+    }
+    expect(history.steps()).toHaveLength(50);
+    // Measured: ~167 KB. Fifty snapshots of a large board would be tens of
+    // megabytes — that is the whole point of keeping commands instead.
+    expect(JSON.stringify(history.steps()).length).toBeLessThan(300_000);
   });
 });

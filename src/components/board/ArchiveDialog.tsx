@@ -22,10 +22,22 @@ import { Check, X } from "lucide-react";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { routes } from "@/routes";
 import { useBoard } from "@/store/BoardContext";
-import type { Card } from "@/types/kanban";
+import { LIMITS, type Card, type Column } from "@/types/kanban";
 
 /** Stable empty list for the closed dialog. */
 const NO_CARDS: Card[] = [];
+
+/**
+ * Can this column take one more card? A restore into a full column is
+ * refused by the reducer, so the option is shown disabled (with its
+ * counter) instead of looking available and doing nothing.
+ */
+function isFull(column: Column): boolean {
+  if (column.cardIds.length >= LIMITS.cardsPerColumn) return true;
+  return (
+    column.wipLimit !== undefined && column.cardIds.length >= column.wipLimit
+  );
+}
 
 interface ArchiveDialogProps {
   open: boolean;
@@ -188,16 +200,27 @@ export function ArchiveDialog({ open, onOpenChange }: ArchiveDialogProps) {
                             <DropdownMenuLabel>
                               {t("card.restoreTo")}
                             </DropdownMenuLabel>
-                            {board.columns.map((column) => (
-                              <DropdownMenuItem
-                                key={column.id}
-                                onSelect={() =>
-                                  unarchiveCard(card.id, column.id)
-                                }
-                              >
-                                {column.title}
-                              </DropdownMenuItem>
-                            ))}
+                            {board.columns.map((column) => {
+                              const full = isFull(column);
+                              return (
+                                <DropdownMenuItem
+                                  key={column.id}
+                                  disabled={full}
+                                  onSelect={() =>
+                                    unarchiveCard(card.id, column.id)
+                                  }
+                                >
+                                  <span className="truncate">
+                                    {column.title}
+                                  </span>
+                                  {column.wipLimit !== undefined && (
+                                    <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                                      {column.cardIds.length}/{column.wipLimit}
+                                    </span>
+                                  )}
+                                </DropdownMenuItem>
+                              );
+                            })}
                           </DropdownMenuContent>
                         </DropdownMenu>
                         <Button

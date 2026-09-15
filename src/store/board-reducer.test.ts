@@ -585,6 +585,8 @@ describe("boardReducer — card archive (TASK-18.1)", () => {
       wipLimit: 1,
     });
     board = reduceBoard(board, { type: "ARCHIVE_CARD", cardId: "card-1" });
+    // The archive dialog's own restore respects the limit (the UI shows the
+    // full column disabled).
     expect(
       reduceBoard(board, {
         type: "UNARCHIVE_CARD",
@@ -592,6 +594,17 @@ describe("boardReducer — card archive (TASK-18.1)", () => {
         columnId: "col-done",
       }),
     ).toBe(board);
+
+    // The same command as an *undo* of the archive is never refused: the
+    // card goes back where it was, limit or no limit.
+    const undone = reduceBoard(board, {
+      type: "UNARCHIVE_CARD",
+      cardId: "card-1",
+      columnId: "col-done",
+      index: 0,
+      inverse: true,
+    });
+    expect(undone.columns[2].cardIds).toEqual(["card-1", "card-3"]);
   });
 
   it("archives every card of a column in one step", () => {
@@ -2049,6 +2062,17 @@ describe("boardReducer — restore commands (TASK-21.7c)", () => {
         index: 0,
       }),
     ).toBe(board);
+
+    // As an undo it goes through — a refused undo loses data for good,
+    // a column briefly over its limit does not.
+    const undone = reduceBoard(board, {
+      type: "RESTORE_CARD",
+      card: stranger,
+      columnId: "col-done",
+      index: 0,
+      inverse: true,
+    });
+    expect(undone.columns[2].cardIds).toEqual(["card-stranger", "card-3"]);
   });
 
   it("refuses a card restore past LIMITS.cardsPerColumn", () => {
@@ -2070,20 +2094,32 @@ describe("boardReducer — restore commands (TASK-21.7c)", () => {
       createdAt: 1,
       updatedAt: 1,
     };
+    const card: Card = {
+      id: "one-too-many",
+      title: "One too many",
+      labelIds: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
     expect(
       reduceBoard(board, {
         type: "RESTORE_CARD",
-        card: {
-          id: "one-too-many",
-          title: "One too many",
-          labelIds: [],
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        card,
         columnId: "col-packed",
         index: 0,
       }),
     ).toBe(board);
+
+    // An undo still goes through: the guard bounds new content, and this
+    // card was in the column a moment ago.
+    const undone = reduceBoard(board, {
+      type: "RESTORE_CARD",
+      card,
+      columnId: "col-packed",
+      index: 0,
+      inverse: true,
+    });
+    expect(undone.columns[0].cardIds).toHaveLength(LIMITS.cardsPerColumn + 1);
   });
 
   it("refuses a column restore past LIMITS.columnsPerBoard", () => {
@@ -2097,14 +2133,25 @@ describe("boardReducer — restore commands (TASK-21.7c)", () => {
       expect(state[0].columns.length).toBe(before + 1);
     }
     const board = state[0];
+    const column = { id: "col-back", title: "Back", cardIds: [], createdAt: 1 };
     expect(
       reduceBoard(board, {
         type: "RESTORE_COLUMN",
-        column: { id: "col-back", title: "Back", cardIds: [], createdAt: 1 },
+        column,
         index: 0,
         cards: [],
       }),
     ).toBe(board);
+
+    const undone = reduceBoard(board, {
+      type: "RESTORE_COLUMN",
+      column,
+      index: 0,
+      cards: [],
+      inverse: true,
+    });
+    expect(undone.columns[0].id).toBe("col-back");
+    expect(undone.columns).toHaveLength(LIMITS.columnsPerBoard + 1);
   });
 });
 

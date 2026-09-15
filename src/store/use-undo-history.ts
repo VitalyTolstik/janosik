@@ -92,9 +92,12 @@ export function useUndoHistory({
   );
 
   /**
-   * Dispatch one side of a step and keep the stacks honest: a command that
-   * changes nothing (a restore the column has no room for) must leave the
-   * step where it was instead of consuming a press.
+   * Dispatch one side of a step, and keep going until the board actually
+   * changes: a press of Ctrl+Z either undoes something visible or there is
+   * genuinely nothing left to undo. A step can only turn out empty when the
+   * thing it touched is gone (limits never refuse an inverse — see
+   * `BoardScopedAction.inverse`), and such a step is worth nothing to
+   * anybody, so it is dropped rather than left to swallow the next press.
    */
   const run = useCallback(
     (direction: "undo" | "redo") => {
@@ -102,8 +105,9 @@ export function useUndoHistory({
       if (!boardId) return;
       const stack = historiesRef.current.get(boardId);
       if (!stack) return;
-      const action = direction === "undo" ? stack.undo() : stack.redo();
-      if (action !== null) {
+      for (;;) {
+        const action = direction === "undo" ? stack.undo() : stack.redo();
+        if (action === null) break;
         const before = getBoard(boardId);
         // Undo happens now, so its own clock is now; redo re-sends the
         // original command verbatim (same `at`, so the step is replayed
@@ -114,10 +118,9 @@ export function useUndoHistory({
           ...(direction === "undo" ? { at: Date.now() } : {}),
           commandId: createId(),
         } as BoardAction);
-        if (before !== undefined && getBoard(boardId) === before) {
-          if (direction === "undo") stack.revertUndo();
-          else stack.revertRedo();
-        }
+        if (before === undefined || getBoard(boardId) !== before) break;
+        if (direction === "undo") stack.dropUndone();
+        else stack.dropRedone();
       }
       sync();
     },

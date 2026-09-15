@@ -17,14 +17,20 @@ import type { Card } from "@/types/kanban";
  * reading the clock and minting ids (TASK-21.7a) — with `Date.now()` inside
  * the reducer no two runs produced the same board.
  *
- * The comparison runs with the activity feed off (`withActivity: false` —
- * the mode the backend uses, §7.4.1): the feed is an append-only audit log,
- * so undoing a rename *adds* a "renamed" row instead of erasing one. Every
- * other byte, timestamps included, has to come back.
+ * "Byte for byte" is literal: the card order, the timestamps and the
+ * activity feed all come back (an inverse rewinds the feed it found instead
+ * of appending an event of its own). The invariant is checked twice — with
+ * the feed on, the way the app runs, and with `withActivity: false`, the
+ * way the backend will run the same reducer (§7.4.1).
  */
 
-/** Apply a command the way the backend would: data only, no activity feed. */
+/** Apply a command the way the app does. */
 function reduce(board: Board, action: BoardAction): Board {
+  return boardReducer([board], action)[0];
+}
+
+/** Apply a command the way the backend will: data only, no activity feed. */
+function reduceQuiet(board: Board, action: BoardAction): Board {
   return boardReducer([board], action, { withActivity: false })[0];
 }
 
@@ -117,11 +123,9 @@ function fixture(): Board {
  * - an array of commands: each must change the board, and its inverse must
  *   restore it byte for byte;
  * - `"no-inverse"`: the action has no undo step at all (whole-data-set and
- *   board-level bookkeeping);
- * - `{ inexact }`: the inverse exists but is not byte-exact — only used for
- *   `RESTORE_COLUMN_CARDS`, see the note below.
+ *   board-level bookkeeping).
  */
-type Plan = BoardAction[] | "no-inverse" | { inexact: BoardAction[] };
+type Plan = BoardAction[] | "no-inverse";
 
 const PLANS: Record<BoardAction["type"], Plan> = {
   /* columns */
@@ -458,24 +462,16 @@ const PLANS: Record<BoardAction["type"], Plan> = {
       at: AT,
     },
   ],
-  // Its inverse (a bulk archive) re-stamps `archivedAt`/`updatedAt` on every
-  // card it takes off the board, which the payload of one archive command
-  // cannot carry back per card. It costs nothing: this command is produced
-  // by `invert` to undo a bulk archive and is never itself a recorded step
-  // (redo re-sends the original archive, it does not invert the restore).
-  RESTORE_COLUMN_CARDS: {
-    inexact: [
-      {
-        type: "RESTORE_COLUMN_CARDS",
-        columnId: "col-c",
-        cardIds: ["c-arch"],
-        cards: [
-          card("c-arch", "Archived", { archivedAt: 400, updatedAt: 400 }),
-        ],
-        at: AT,
-      },
-    ],
-  },
+  // Undoes itself: the previous card objects plus the previous order.
+  RESTORE_COLUMN_CARDS: [
+    {
+      type: "RESTORE_COLUMN_CARDS",
+      columnId: "col-c",
+      cardIds: ["c-arch"],
+      cards: [card("c-arch", "Archived", { archivedAt: 400, updatedAt: 400 })],
+      at: AT,
+    },
+  ],
 
   /* no undo step at all */
   RESTORE_BOARD: "no-inverse",
@@ -497,12 +493,9 @@ describe("invert — every action is reversible", () => {
       continue;
     }
 
-    const exact = Array.isArray(plan);
-    const commands = Array.isArray(plan) ? plan : plan.inexact;
-
-    commands.forEach((command, i) => {
-      const label = commands.length > 1 ? `${type} #${i + 1}` : type;
-      it(`${label} — the inverse ${exact ? "restores the board" : "exists"}`, () => {
+    plan.forEach((command, i) => {
+      const label = plan.length > 1 ? `${type} #${i + 1}` : type;
+      it(`${label} — the inverse restores the board`, () => {
         const before = fixture();
         const after = reduce(before, command);
         // A sample that changes nothing would prove nothing.
@@ -510,11 +503,13 @@ describe("invert — every action is reversible", () => {
 
         const inverse = invert(before, command);
         expect(inverse).not.toBeNull();
+        expect(persisted(reduce(after, inverse!))).toEqual(persisted(before));
 
-        const back = reduce(after, inverse!);
-        if (exact) {
-          expect(persisted(back)).toEqual(persisted(before));
-        }
+        // The backend computes the same board from the same pair.
+        const quiet = reduceQuiet(before, command);
+        expect(persisted(reduceQuiet(quiet, inverse!))).toEqual(
+          persisted(before),
+        );
       });
     });
   }

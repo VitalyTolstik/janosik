@@ -130,8 +130,9 @@ export class BoardHistory {
 
   /**
    * The command that undoes the last step, or `null` when there is none.
-   * The caller dispatches it; if it turns out to change nothing (a limit
-   * refuses the restore), `revertUndo()` puts the step back.
+   * The caller dispatches it; if it turns out to change nothing (the entity
+   * it touched is gone), `dropUndone()` throws the empty step away so the
+   * next press reaches a step that does something.
    */
   undo(): BoardAction | null {
     this.lastAction = null;
@@ -161,16 +162,18 @@ export class BoardHistory {
     }
   }
 
-  /** Take back the last `undo()` — its command changed nothing. */
-  revertUndo(): void {
-    const entry = this.future.pop();
-    if (entry !== undefined) this.past.push(entry);
+  /**
+   * Throw away the step the last `undo()` handed out: its command changed
+   * nothing, so there is nothing to redo either. Keeping it would leave a
+   * step in the stack that makes `Ctrl+Z` do nothing, press after press.
+   */
+  dropUndone(): void {
+    this.future.pop();
   }
 
-  /** Take back the last `redo()` — its command changed nothing. */
-  revertRedo(): void {
-    const entry = this.past.pop();
-    if (entry !== undefined) this.future.push(entry);
+  /** Same for a `redo()` whose command changed nothing. */
+  dropRedone(): void {
+    this.past.pop();
   }
 
   canUndo(): boolean {

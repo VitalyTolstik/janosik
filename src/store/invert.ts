@@ -1,5 +1,5 @@
 import type { BoardAction } from "@/store/board-reducer";
-import type { Board, Card } from "@/types/kanban";
+import type { Board, Card, CardActivityEvent } from "@/types/kanban";
 
 /**
  * Inverse commands — the compensation half of undo (TASK-21.7d).
@@ -24,6 +24,14 @@ import type { Board, Card } from "@/types/kanban";
  * undoing a rename appends "renamed" rather than erasing the entry (the
  * invariant is asserted with the feed off — the mode the backend uses).
  */
+
+/**
+ * The card's activity feed as it stands — an inverse rewinds the feed to
+ * this instead of appending an event of its own (`cardActivity`).
+ */
+function feedOf(card: Card): CardActivityEvent[] {
+  return card.activity ?? [];
+}
 
 /** Where a card sits on the board: its column and index, if any. */
 function locate(
@@ -59,9 +67,14 @@ function clamp(value: number, min: number, max: number): number {
 export function invert(before: Board, action: BoardAction): BoardAction | null {
   const inverse = build(before, action);
   if (inverse === null) return null;
-  // Every inverse restores the board's own `updatedAt` as well: undo is a
-  // return to a previous state, not a fresh edit of the board.
-  return { ...inverse, boardUpdatedAt: before.updatedAt } as BoardAction;
+  return {
+    ...inverse,
+    // Undo is a return to a previous state, not a fresh edit: it restores
+    // the board's own `updatedAt`, and the collection guards step aside for
+    // it (`BoardScopedAction.inverse`) so an undo is never refused.
+    boardUpdatedAt: before.updatedAt,
+    inverse: true,
+  } as BoardAction;
 }
 
 function build(before: Board, action: BoardAction): BoardAction | null {
@@ -165,6 +178,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         // An empty string is how the reducer spells "no description".
         description: card.description ?? "",
         cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
       };
     }
 
@@ -207,6 +221,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         columnId: spot.columnId,
         index: spot.index,
         cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
       };
     }
 
@@ -220,6 +235,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         // Back into the archive with the date it had, not with today's.
         archivedAt: card.archivedAt,
         cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
       };
     }
 
@@ -235,12 +251,26 @@ function build(before: Board, action: BoardAction): BoardAction | null {
       };
     }
 
-    case "RESTORE_COLUMN_CARDS":
+    case "RESTORE_COLUMN_CARDS": {
+      const column = before.columns.find((c) => c.id === action.columnId);
+      if (!column) return null;
+      // The command undoes itself: the previous card objects (archive
+      // stamps included) and the previous order. A card the payload adds
+      // from nowhere cannot be un-added this way — that only happens for a
+      // hand-dispatched restore, which gets no undo step.
+      const cards = cardsOf(
+        before,
+        action.cards.map((card) => card.id),
+      );
+      if (cards.length !== action.cards.length) return null;
       return {
         ...head,
-        type: "ARCHIVE_COLUMN_CARDS",
-        columnId: action.columnId,
+        type: "RESTORE_COLUMN_CARDS",
+        columnId: column.id,
+        cardIds: [...column.cardIds],
+        cards,
       };
+    }
 
     case "MOVE_CARD": {
       const from = before.columns.find((c) => c.id === action.fromColumnId);
@@ -262,6 +292,9 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         fromIndex: landed,
         toColumnId: from.id,
         toIndex: action.fromIndex,
+        ...(before.cards[action.cardId]
+          ? { cardActivity: feedOf(before.cards[action.cardId]) }
+          : {}),
       };
     }
 
@@ -274,6 +307,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         cardId: card.id,
         dueDate: card.dueDate,
         cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
       };
     }
 
@@ -300,6 +334,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         cardId: card.id,
         labelId: action.labelId,
         on: !action.on,
+        cardActivity: feedOf(card),
         // Re-attaching puts the label back where it sat in the list.
         ...(index === -1 ? {} : { index }),
       };

@@ -98,11 +98,23 @@ function activityStamp(
 function appendActivity(
   card: Card,
   type: CardActivityType,
-  stamp: ActivityStamp,
+  action: BoardScopedAction,
+  index: number,
   options: ReduceOptions,
   detail?: string,
 ): Card {
   if (options.withActivity === false) return card;
+  // An inverse command rewinds the feed instead of growing it. Idempotent
+  // on purpose: a command that appends twice (a title *and* a description
+  // change) rewinds to the same feed both times.
+  if (action.cardActivity !== undefined) {
+    if (action.cardActivity.length === 0) {
+      const { activity: _dropped, ...rest } = card;
+      return rest as Card;
+    }
+    return { ...card, activity: [...action.cardActivity] };
+  }
+  const stamp = activityStamp(action, index);
   const { at } = stamp;
   const previous = card.activity ?? [];
   const last = previous[previous.length - 1];
@@ -180,6 +192,28 @@ export interface BoardScopedAction {
   boardUpdatedAt?: number;
   /** Inverse-only override: same idea for the touched card's `updatedAt`. */
   cardUpdatedAt?: number;
+  /**
+   * Set by `invert()`: this command undoes another one (TASK-21.7d).
+   *
+   * Collection guards — `LIMITS` on cards/columns/labels/checklists and the
+   * WIP limit — exist to stop *new* content from growing past what the app
+   * can hold. An inverse adds nothing new: it puts back what was just taken
+   * away, so it is never refused. A refused undo is the worst outcome
+   * available — Ctrl+Z silently does nothing and the card the user deleted
+   * by accident is gone for good; a column briefly over its limit is a
+   * state the app already has (an import, or a limit lowered under the
+   * current count) and shows honestly with a red counter until it is back
+   * under. Text clamps still apply: they bound a field, not a collection.
+   */
+  inverse?: boolean;
+  /**
+   * Inverse-only: the activity feed of the card this command touches, as
+   * it was before the command being undone. Undo takes its own tracks back
+   * instead of logging a second, contradictory event — the feed of a card
+   * whose rename was undone shows one rename, not two of them saying
+   * opposite things. An empty array means the card had no feed at all.
+   */
+  cardActivity?: CardActivityEvent[];
 }
 
 export type BoardScoped<T extends object> = T & BoardScopedAction;
@@ -518,13 +552,19 @@ export interface RestoreChecklistItemAction {
 }
 
 /**
- * Put a whole column's archived cards back in one step — the inverse of
- * `ARCHIVE_COLUMN_CARDS`, which empties a column at once.
+ * Write `cards` back exactly as they are given and set the column's order
+ * to `cardIds` — the inverse of `ARCHIVE_COLUMN_CARDS`, which empties a
+ * column at once.
+ *
+ * Cards the column gained *since* keep their place at the end; cards listed
+ * in `cards` but not in `cardIds` are taken out of the column (that is what
+ * makes the command the exact inverse of itself, and therefore undoable in
+ * its own right).
  */
 export interface RestoreColumnCardsAction {
   type: "RESTORE_COLUMN_CARDS";
   columnId: string;
-  /** The column's card order as it was before the bulk archive. */
+  /** The column's card order to write. */
   cardIds: string[];
   /** The cards as they were (archive timestamp and feed included). */
   cards: Card[];
@@ -627,6 +667,14 @@ function boardStamp(action: BoardScopedAction): number {
 /** Same for the `updatedAt` of the card a command touches. */
 function cardStamp(action: BoardScopedAction): number {
   return action.cardUpdatedAt ?? action.at;
+}
+
+/**
+ * Does this command have to obey the collection guards? An inverse does
+ * not — see `BoardScopedAction.inverse`.
+ */
+function guarded(action: BoardScopedAction): boolean {
+  return action.inverse !== true;
 }
 
 interface ColumnShape {
@@ -748,18 +796,14 @@ function updateCard(
     updatedAt: action.quiet ? target.updatedAt : cardStamp(action),
   };
   if (title !== target.title) {
-    nextCard = appendActivity(
-      nextCard,
-      "renamed",
-      activityStamp(action, 0),
-      options,
-    );
+    nextCard = appendActivity(nextCard, "renamed", action, 0, options);
   }
   if ((description ?? "") !== (target.description ?? "")) {
     nextCard = appendActivity(
       nextCard,
       "description-changed",
-      activityStamp(action, 1),
+      action,
+      1,
       options,
     );
   }
@@ -796,12 +840,7 @@ function archiveCard(
     archivedAt: action.archivedAt ?? action.at,
     updatedAt: cardStamp(action),
   };
-  nextCard = appendActivity(
-    nextCard,
-    "archived",
-    activityStamp(action, 0),
-    options,
-  );
+  nextCard = appendActivity(nextCard, "archived", action, 0, options);
   return {
     ...board,
     columns: board.columns.map((col) => ({
@@ -827,8 +866,10 @@ function unarchiveCard(
   const column =
     board.columns.find((col) => col.id === action.columnId) ?? board.columns[0];
   if (!column) return board;
-  if (column.cardIds.length >= LIMITS.cardsPerColumn) return board;
-  if (atWipLimit(column, true)) return board;
+  if (guarded(action)) {
+    if (column.cardIds.length >= LIMITS.cardsPerColumn) return board;
+    if (atWipLimit(column, true)) return board;
+  }
   const restoredCard: Card = {
     ...target,
     archivedAt: undefined,
@@ -839,7 +880,8 @@ function unarchiveCard(
   const nextCard = appendActivity(
     restoredCard,
     "unarchived",
-    activityStamp(action, 0),
+    action,
+    0,
     options,
   );
   return {
@@ -874,12 +916,7 @@ function archiveColumnCards(
     const target = cards[cardId];
     if (!target || target.archivedAt !== undefined) return;
     let nextCard: Card = { ...target, archivedAt: at, updatedAt: at };
-    nextCard = appendActivity(
-      nextCard,
-      "archived",
-      activityStamp(action, index),
-      options,
-    );
+    nextCard = appendActivity(nextCard, "archived", action, index, options);
     cards[cardId] = nextCard;
   });
   return {
@@ -1027,7 +1064,13 @@ function setCardLabel(
   // Already in the requested state — nothing to do.
   if (has === action.on) return board;
   // Adding is capped; removing a label is always allowed.
-  if (action.on && target.labelIds.length >= LIMITS.labelsPerCard) return board;
+  if (
+    action.on &&
+    guarded(action) &&
+    target.labelIds.length >= LIMITS.labelsPerCard
+  ) {
+    return board;
+  }
   const labelIds = action.on
     ? insertAt(
         target.labelIds,
@@ -1045,7 +1088,8 @@ function setCardLabel(
   const nextCard = appendActivity(
     { ...target, labelIds },
     action.on ? "label-added" : "label-removed",
-    activityStamp(action, 0),
+    action,
+    0,
     options,
     labelName,
   );
@@ -1284,14 +1328,13 @@ function setCardDueDate(
       : undefined;
   if (dueDate === target.dueDate) return board;
   let nextCard: Card = { ...target, updatedAt: cardStamp(action) };
-  const stamp = activityStamp(action, 0);
   if (dueDate === undefined) {
     // Drop the field entirely (no `dueDate: undefined` key left behind).
     delete nextCard.dueDate;
-    nextCard = appendActivity(nextCard, "due-date-removed", stamp, options);
+    nextCard = appendActivity(nextCard, "due-date-removed", action, 0, options);
   } else {
     nextCard.dueDate = dueDate;
-    nextCard = appendActivity(nextCard, "due-date-set", stamp, options);
+    nextCard = appendActivity(nextCard, "due-date-set", action, 0, options);
   }
   return {
     ...board,
@@ -1372,7 +1415,11 @@ function moveCard(
   }
 
   // A full (WIP-limited) destination refuses cards from other columns.
-  if (action.fromColumnId !== action.toColumnId && atWipLimit(to, true)) {
+  if (
+    action.fromColumnId !== action.toColumnId &&
+    guarded(action) &&
+    atWipLimit(to, true)
+  ) {
     return board;
   }
 
@@ -1403,7 +1450,8 @@ function moveCard(
       [action.cardId]: appendActivity(
         board.cards[action.cardId],
         "moved",
-        activityStamp(action, 0),
+        action,
+        0,
         options,
         to.title,
       ),
@@ -1496,7 +1544,7 @@ function restoreCard(
       ? undefined
       : board.columns.find((c) => c.id === action.columnId);
   if (action.columnId !== undefined && !column) return board;
-  if (column) {
+  if (column && guarded(action)) {
     if (column.cardIds.length >= LIMITS.cardsPerColumn) return board;
     if (atWipLimit(column, true)) return board;
   }
@@ -1527,7 +1575,9 @@ function restoreColumn(
 ): Board {
   const { column } = action;
   if (board.columns.some((c) => c.id === column.id)) return board;
-  if (board.columns.length >= LIMITS.columnsPerBoard) return board;
+  if (guarded(action) && board.columns.length >= LIMITS.columnsPerBoard) {
+    return board;
+  }
   const cards = { ...board.cards };
   for (const card of action.cards) cards[card.id] = card;
   return {
@@ -1548,12 +1598,16 @@ function restoreLabel(
 ): Board {
   const { label } = action;
   if (board.labels.some((l) => l.id === label.id)) return board;
-  if (board.labels.length >= LIMITS.labelsPerBoard) return board;
+  if (guarded(action) && board.labels.length >= LIMITS.labelsPerBoard) {
+    return board;
+  }
   const cards = { ...board.cards };
   for (const { cardId, index } of action.assignments ?? []) {
     const card = cards[cardId];
     if (!card || card.labelIds.includes(label.id)) continue;
-    if (card.labelIds.length >= LIMITS.labelsPerCard) continue;
+    if (guarded(action) && card.labelIds.length >= LIMITS.labelsPerCard) {
+      continue;
+    }
     cards[cardId] = {
       ...card,
       labelIds: insertAt(
@@ -1581,7 +1635,7 @@ function restoreChecklist(
 ): Board | null {
   return patchChecklists(board, action, (checklists) =>
     checklists.some((c) => c.id === action.checklist.id) ||
-    checklists.length >= LIMITS.checklistsPerCard
+    (guarded(action) && checklists.length >= LIMITS.checklistsPerCard)
       ? null
       : insertAt(
           checklists,
@@ -1599,7 +1653,7 @@ function restoreChecklistItem(
   return patchChecklists(board, action, (checklists) =>
     mapChecklistItems(checklists, action.checklistId, (items) =>
       items.some((item) => item.id === action.item.id) ||
-      items.length >= LIMITS.itemsPerChecklist
+      (guarded(action) && items.length >= LIMITS.itemsPerChecklist)
         ? null
         : insertAt(items, clamp(action.index, 0, items.length), action.item),
     ),
@@ -1611,11 +1665,10 @@ function restoreChecklistItem(
  * column gained in the meantime keep their place at the end — this is a
  * compensation for one command, not a snapshot of the whole column.
  *
- * Unlike the single-card restore this one ignores the WIP limit on
- * purpose: "archive everything in Done" is exactly what a column past its
- * limit is for, and a WIP check would make that step un-undoable. The
- * `Column.wipLimit` contract already allows undo to exceed the limit (the
- * counter turns red until the column is back under it).
+ * The cards in the payload are authoritative: whatever `cardIds` does not
+ * list is taken out of the column. So the command undoes itself — pass the
+ * previous card objects and the previous order and the column is exactly
+ * where it was.
  */
 function restoreColumnCards(
   board: Board,
@@ -1625,10 +1678,22 @@ function restoreColumnCards(
   if (!column) return board;
   const cards = { ...board.cards };
   for (const card of action.cards) cards[card.id] = card;
+  const written = new Set(action.cards.map((card) => card.id));
   const restored = action.cardIds.filter((id) => id in cards);
-  const extras = column.cardIds.filter((id) => !restored.includes(id));
+  // Kept: what the column gained meanwhile. Dropped: cards this command
+  // rewrote but left out of the order (they go back to the archive).
+  const extras = column.cardIds.filter(
+    (id) => !restored.includes(id) && !written.has(id),
+  );
   const cardIds = [...restored, ...extras];
-  if (cardIds.length > LIMITS.cardsPerColumn) return board;
+  if (guarded(action) && cardIds.length > LIMITS.cardsPerColumn) return board;
+  if (
+    cardIds.length === column.cardIds.length &&
+    cardIds.every((id, i) => id === column.cardIds[i]) &&
+    action.cards.every((card) => board.cards[card.id] === card)
+  ) {
+    return board;
+  }
   return {
     ...board,
     columns: board.columns.map((c) =>

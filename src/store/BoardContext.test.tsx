@@ -166,11 +166,13 @@ let api: ReturnType<typeof useBoardActions>;
 let flags: ReturnType<typeof useBoardHistory>;
 let identity: ReturnType<typeof useBoardIdentity>;
 let cardTitle: string | undefined;
+let live: Board | undefined;
 
 function StateProbe() {
   stateRenders += 1;
   const { board } = useBoardState();
   cardTitle = board?.cards["c-1"]?.title;
+  live = board;
   return null;
 }
 
@@ -276,5 +278,84 @@ describe("BoardContext split (TASK-21.4)", () => {
     act(() => api.renameBoard("Beta"));
     expect(identity.title).toBe("Beta");
     expect(identityRenders).toBeGreaterThan(before);
+  });
+});
+
+/**
+ * End-to-end proof of the inverse history (TASK-21.7d) through the real
+ * provider: a session of edits, then Ctrl+Z all the way back. Two promises
+ * are checked — every press changes something (no press is swallowed), and
+ * the board comes back exactly as it started, timestamps included.
+ */
+describe("undo walks a whole session back (TASK-21.7d)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    seedBoard();
+  });
+
+  it("returns the board to its starting state, press by press", () => {
+    renderSplitProbes();
+    const start = JSON.stringify(live);
+
+    // A session touching a bit of everything, including the commands whose
+    // undo has to restore deleted content and positions.
+    const session: (() => void)[] = [
+      () => api.addColumn("Doing"),
+      () => api.addCard("col-1", "Zebra card"),
+      () => api.updateCard("c-1", { title: "Renamed" }),
+      () => api.addLabel({ id: "l-1", name: "Red", color: "red" }),
+      () => api.toggleCardLabel("c-1", "l-1"),
+      // Sorting is destructive by nature: its undo is an explicit order.
+      () => api.addCard("col-1", "Aardvark"),
+      () => api.sortColumn("col-1", "title"),
+      () => api.setColumnWipLimit("col-1", 3),
+      () => api.archiveColumnCards("col-1"),
+      () => api.addCard("col-1", "After the archive"),
+      () => api.deleteLabel("l-1"),
+      () => api.renameBoard("Beta"),
+    ];
+    const states: string[] = [];
+    for (const step of session) {
+      states.push(JSON.stringify(live));
+      act(step);
+      // Every command in this session does change something — otherwise the
+      // walk back below would be testing fewer steps than it looks.
+      expect(JSON.stringify(live)).not.toEqual(states[states.length - 1]);
+    }
+
+    // Now back, one press per step, in reverse.
+    for (const expected of states.reverse()) {
+      expect(flags.canUndo).toBe(true);
+      act(() => api.undo());
+      expect(JSON.stringify(live)).toEqual(expected);
+    }
+    expect(flags.canUndo).toBe(false);
+    expect(JSON.stringify(live)).toEqual(start);
+
+    // And forward again: redo replays the very same session.
+    for (let i = 0; i < session.length; i++) {
+      expect(flags.canRedo).toBe(true);
+      act(() => api.redo());
+    }
+    expect(flags.canRedo).toBe(false);
+  });
+
+  it("undoes an archive of a WIP-full column without being refused", () => {
+    renderSplitProbes();
+    act(() => api.addCard("col-1", "Second"));
+    act(() => api.setColumnWipLimit("col-1", 2));
+    const full = live?.columns[0].cardIds;
+    expect(full).toHaveLength(2);
+
+    act(() => api.archiveColumnCards("col-1"));
+    expect(live?.columns[0].cardIds).toEqual([]);
+
+    act(() => api.undo());
+    // Back in the column, in the same order, even though the column was at
+    // its limit when the archive happened.
+    expect(live?.columns[0].cardIds).toEqual(full);
+    for (const id of full ?? []) {
+      expect(live?.cards[id].archivedAt).toBeUndefined();
+    }
   });
 });
