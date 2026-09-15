@@ -27,6 +27,7 @@ import {
 } from "@/types/kanban";
 import { LimitCounter } from "@/components/ui/limit-counter";
 import { showRemaining } from "@/utils/limit-format";
+import { pad2 } from "@/utils/time";
 import {
   activeFacetCount,
   EMPTY_FILTER,
@@ -64,8 +65,7 @@ function parseIsoDate(on: string): Date {
 }
 
 function formatIsoDate(day: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+  return `${day.getFullYear()}-${pad2(day.getMonth() + 1)}-${pad2(day.getDate())}`;
 }
 
 /** Locale-aware "15 June 2025" label for a stored YYYY-MM-DD day. */

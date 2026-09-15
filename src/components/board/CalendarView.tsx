@@ -43,6 +43,7 @@ import { useBoard } from "@/store/BoardContext";
 import { LABEL_COLOR_DOT, type Card, type Label, LIMITS } from "@/types/kanban";
 import { isColumnFull } from "@/utils/column-limits";
 import { dueStatus } from "@/utils/due-date";
+import { formatTimeOfDay } from "@/utils/time";
 
 /** Stable empty list, so the label resolver survives a board-less render. */
 const NO_LABELS: Label[] = [];
@@ -454,7 +455,7 @@ export function CalendarView({
         title={`${
           withTime
             ? `${formatTime(
-                `${String(new Date(card.dueDate as number).getHours()).padStart(2, "0")}:${String(new Date(card.dueDate as number).getMinutes()).padStart(2, "0")}`,
+                formatTimeOfDay(new Date(card.dueDate as number)),
                 lang,
                 hour12,
               )} · `
@@ -498,7 +499,7 @@ export function CalendarView({
           {withTime ? (
             <span className="shrink-0 tabular-nums opacity-70">
               {formatTime(
-                `${String(new Date(card.dueDate as number).getHours()).padStart(2, "0")}:${String(new Date(card.dueDate as number).getMinutes()).padStart(2, "0")}`,
+                formatTimeOfDay(new Date(card.dueDate as number)),
                 lang,
                 hour12,
               )}

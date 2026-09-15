@@ -3,12 +3,12 @@ import { Clock } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatTime, useHour12, useI18n } from "@/i18n";
+import { composeTime, pad2 } from "@/utils/time";
 
 /** Visible rows in each column (drives the column height). */
 const ROWS_VISIBLE = 7;
 const ROW_H_PX = 32;
 
-const pad = (n: number) => String(n).padStart(2, "0");
 const HOURS_24 = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = Array.from({ length: 60 }, (_, i) => i);
 
@@ -23,7 +23,7 @@ function hourOptions(
   hour12: boolean,
 ): { value: number; label: string; suffix?: string }[] {
   if (!hour12) {
-    return HOURS_24.map((h) => ({ value: h, label: pad(h) }));
+    return HOURS_24.map((h) => ({ value: h, label: pad2(h) }));
   }
   return HOURS_24.map((h) => {
     const suffix = h < 12 ? "AM" : "PM";
@@ -179,21 +179,19 @@ export function TimePickerPanel({
   const hour = Number.parseInt(value.split(":")[0], 10) || 0;
   const minute = Number.parseInt(value.split(":")[1], 10) || 0;
 
-  const compose = (h: number, m: number) => `${pad(h)}:${pad(m)}`;
-
   return (
     <div className="flex gap-2">
       <Column
         options={hourOptions(hour12)}
         selected={hour}
-        onSelect={(h) => onChange(compose(h, minute))}
+        onSelect={(h) => onChange(composeTime(h, minute))}
         label={t("dueDate.hoursLabel")}
       />
       <Column
-        options={MINUTES.map((m) => ({ value: m, label: pad(m) }))}
+        options={MINUTES.map((m) => ({ value: m, label: pad2(m) }))}
         selected={minute}
         onSelect={(m) => {
-          onChange(compose(hour, m));
+          onChange(composeTime(hour, m));
           onConfirm?.();
         }}
         label={t("dueDate.minutesLabel")}

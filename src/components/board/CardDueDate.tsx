@@ -14,16 +14,16 @@ import {
 } from "@/components/ui/popover";
 import { formatDateOnly, formatTime, useHour12, useI18n } from "@/i18n";
 import { useBoardActions } from "@/store/BoardContext";
+import { formatTimeOfDay } from "@/utils/time";
 
 /** Time-of-day applied when a date is picked without a time set yet. */
 const DEFAULT_TIME = "12:00";
 
 function dueParts(due: number): { date: Date; time: string } {
   const d = new Date(due);
-  const pad = (n: number) => String(n).padStart(2, "0");
   return {
     date: new Date(d.getFullYear(), d.getMonth(), d.getDate()),
-    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    time: formatTimeOfDay(d),
   };
 }
 
