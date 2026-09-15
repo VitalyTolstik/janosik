@@ -4,6 +4,7 @@ import { initReactI18next } from "react-i18next";
 
 import en from "@/locales/en/translation.json";
 import { migrateStorageKey } from "@/utils/storage";
+import { DAY_MS, HOUR_MS, MINUTE_MS } from "@/utils/duration";
 
 /**
  * i18next singleton — the de-facto standard React i18n layer.
@@ -179,16 +180,17 @@ export function formatRelative(
   const locale = lang.startsWith("ru") ? "ru-RU" : "en-US";
   const diff = timestamp - now;
   const abs = Math.abs(diff);
-  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const WEEK_MS = 7 * DAY_MS;
   if (abs >= WEEK_MS) return formatDate(timestamp, lang, hour12);
   try {
     const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
-    if (abs < 60_000) return rtf.format(Math.round(diff / 1000), "second");
-    if (abs < 3_600_000) return rtf.format(Math.round(diff / 60_000), "minute");
-    if (abs < 86_400_000) {
-      return rtf.format(Math.round(diff / 3_600_000), "hour");
+    if (abs < MINUTE_MS) return rtf.format(Math.round(diff / 1000), "second");
+    if (abs < HOUR_MS)
+      return rtf.format(Math.round(diff / MINUTE_MS), "minute");
+    if (abs < DAY_MS) {
+      return rtf.format(Math.round(diff / HOUR_MS), "hour");
     }
-    return rtf.format(Math.round(diff / 86_400_000), "day");
+    return rtf.format(Math.round(diff / DAY_MS), "day");
   } catch {
     return formatDate(timestamp, lang);
   }

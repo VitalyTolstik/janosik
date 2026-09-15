@@ -1,5 +1,6 @@
 import type { Board, Card, Label } from "@/types/kanban";
 import { dueStatus } from "@/utils/due-date";
+import { DAY_MS } from "@/utils/duration";
 
 /**
  * Board filtering model, following the Trello/Linear conventions:
@@ -84,8 +85,6 @@ export function activeFacetCount(filter: CardFilter): number {
   if (filter.due !== "any") count += 1;
   return count;
 }
-
-const DAY_MS = 86_400_000;
 
 /**
  * Start-of-window timestamp for a `created` facet, or null when "any".
