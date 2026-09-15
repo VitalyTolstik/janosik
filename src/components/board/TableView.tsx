@@ -67,7 +67,7 @@ interface TableViewProps {
   onCardClick: (cardId: string) => void;
 }
 
-/** Sortable headers (TASK-14.1 п.7). */
+/** Sortable headers (TASK-14.1 item 7). */
 type SortKey = "title" | "column" | "due" | "createdAt";
 
 interface SortState {
@@ -75,7 +75,7 @@ interface SortState {
   dir: 1 | -1;
 }
 
-/** Optional columns beyond the four base ones (TASK-14.1 п.11). */
+/** Optional columns beyond the four base ones (TASK-14.1 item 11). */
 const OPTIONAL_COLUMNS = [
   "checklists",
   "description",
@@ -140,7 +140,7 @@ export function TableView({
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   // Row archive uses the same two-step confirm as the board card (✓ / ✗).
   const [archiveConfirmId, setArchiveConfirmId] = useState<string | null>(null);
-  // The "+ card" popover is controlled so the composer's Отмена can close it.
+  // The "+ card" popover is controlled so the composer's Cancel can close it.
   const [addOpen, setAddOpen] = useState(false);
 
   // The row callbacks must keep their identity, otherwise `memo` on
@@ -273,7 +273,7 @@ export function TableView({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/60 backdrop-blur-sm">
-      {/* Toolbar: + card composer and the column settings (TASK-14.1 п.10/11). */}
+      {/* Toolbar: + card composer and the column settings (TASK-14.1 item 10/11). */}
       <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
         <Popover open={addOpen} onOpenChange={setAddOpen}>
           <PopoverTrigger asChild>
@@ -816,7 +816,7 @@ function SortHeader({
   );
 }
 
-/** "+ card" composer body: title, column chooser and label chips (TASK-14.1 п.10). */
+/** "+ card" composer body: title, column chooser and label chips (TASK-14.1 item 10). */
 function TableCardComposer({
   columns,
   labels,
@@ -937,7 +937,7 @@ function TableCardComposer({
         >
           {t("composer.submit")}
         </Button>
-        {/* Same pair as the board composer: Отмена just closes the popover. */}
+        {/* Same pair as the board composer: Cancel just closes the popover. */}
         <Button
           size="sm"
           variant="ghost"

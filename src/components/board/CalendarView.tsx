@@ -523,7 +523,7 @@ export function CalendarView({
           onPick={stepTo}
         />
         {/* Navigation cluster stays on the left: scale toggle, then the
-            arrows with «Сегодня» between them; the right side keeps only
+            arrows with "Today" between them; the right side keeps only
             the helper text. */}
         <div
           role="group"
@@ -858,7 +858,7 @@ export function CalendarView({
   );
 }
 
-/** Mini-composer at the top of the day panel (TASK-14.1 п.4) — same body
+/** Mini-composer at the top of the day panel (TASK-14.1 item 4) — same body
  * as the table composer: title, column chooser, label chips, buttons. */
 function DayComposer({
   columns,
@@ -973,7 +973,7 @@ function DayComposer({
         onToggle={toggleLabel}
         testId="day-composer-labels"
       />
-      {/* Same Добавить/Отмена pair as the board composer — Отмена just
+      {/* Same Add/Cancel pair as the board composer — Cancel just
           clears the draft, the panel itself stays open. */}
       <div className="flex items-center gap-1.5">
         <Button
