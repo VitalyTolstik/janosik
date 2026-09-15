@@ -1,11 +1,12 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   boardReducer,
   initialBoardState,
   type BoardAction,
+  type BoardState,
 } from "@/store/board-reducer";
-import type { Board } from "@/types/kanban";
+import type { Board, Card } from "@/types/kanban";
 import { LIMITS } from "@/types/kanban";
 
 /**
@@ -19,8 +20,70 @@ function freshBoard(): Board {
   return initialBoardState()[0];
 }
 
-function reduceBoard(seed: Board, action: BoardAction): Board {
-  return boardReducer([seed], action)[0];
+/**
+ * Fields the reducer no longer invents (TASK-21.7a): the command clock and
+ * the ids of whatever a command creates. A test that does not care about
+ * the exact value leaves them out and the helpers below stamp one; a test
+ * that asserts on them passes them explicitly and the stamp steps aside.
+ */
+type Stamped =
+  | "at"
+  | "commandId"
+  | "activityIds"
+  | "fromIndex"
+  | "newCardId"
+  | "newCardIds"
+  | "newColumnId"
+  | "newChecklistId"
+  | "newItemId";
+
+type Unstamped<A> = A extends unknown
+  ? Omit<A, Stamped> & Partial<Pick<A, Extract<keyof A, Stamped>>>
+  : never;
+
+/** A command as a test writes it: only what the test actually cares about. */
+type TestAction = Unstamped<BoardAction>;
+
+// Later than the seed board's own timestamps, so "bumped the stamp"
+// assertions stay true, and one millisecond per command so repeats keep
+// their order.
+const CLOCK = Date.now();
+let commands = 0;
+
+function stamp(action: TestAction): BoardAction {
+  commands += 1;
+  const filled = { at: CLOCK + commands, ...action } as Record<
+    string,
+    unknown
+  > & { type: string };
+  const id = (kind: string) => `${kind}-${commands}`;
+  if (filled.type === "ADD_COLUMN") filled.newColumnId ??= id("new-col");
+  if (filled.type === "ADD_CARD") filled.newCardId ??= id("new-card");
+  if (filled.type === "DUPLICATE_CARD") filled.newCardId ??= id("copy-card");
+  if (filled.type === "DUPLICATE_COLUMN") {
+    filled.newColumnId ??= id("copy-col");
+    // Positional ids for the copies; the reducer uses as many as the source
+    // column has cards and ignores the rest.
+    filled.newCardIds ??= Array.from(
+      { length: LIMITS.cardsPerColumn },
+      (_, i) => `${id("copy-card")}-${i}`,
+    );
+  }
+  if (filled.type === "ADD_CHECKLIST") {
+    filled.newChecklistId ??= id("new-checklist");
+  }
+  if (filled.type === "ADD_CHECKLIST_ITEM") filled.newItemId ??= id("new-item");
+  // The reducer moves a card by id; the index only matters to the inverse.
+  if (filled.type === "MOVE_CARD") filled.fromIndex ??= 0;
+  return filled as unknown as BoardAction;
+}
+
+function reduceState(state: BoardState, action: TestAction): BoardState {
+  return boardReducer(state, stamp(action));
+}
+
+function reduceBoard(seed: Board, action: TestAction): Board {
+  return reduceState([seed], action)[0];
 }
 
 describe("boardReducer — columns", () => {
@@ -165,28 +228,31 @@ describe("boardReducer — cards", () => {
     expect(progress?.cardIds).toEqual(["card-4"]);
   });
 
-  it("toggles a label on and off a card", () => {
+  it("attaches and detaches a label on a card", () => {
     const board = reduceBoard(freshBoard(), {
-      type: "TOGGLE_CARD_LABEL",
+      type: "SET_CARD_LABEL",
       cardId: "card-2",
       labelId: "label-urgent",
+      on: true,
     });
     expect(board.cards["card-2"].labelIds).toContain("label-urgent");
 
     const cleared = reduceBoard(board, {
-      type: "TOGGLE_CARD_LABEL",
+      type: "SET_CARD_LABEL",
       cardId: "card-2",
       labelId: "label-urgent",
+      on: false,
     });
     expect(cleared.cards["card-2"].labelIds).not.toContain("label-urgent");
   });
 
-  it("ignores toggles for unknown labels", () => {
+  it("ignores unknown labels", () => {
     const board = freshBoard();
     const next = reduceBoard(board, {
-      type: "TOGGLE_CARD_LABEL",
+      type: "SET_CARD_LABEL",
       cardId: "card-2",
       labelId: "no-such-label",
+      on: true,
     });
     // Seed card-2 already carries the Development label — unchanged.
     expect(next.cards["card-2"].labelIds).toEqual(["label-dev"]);
@@ -227,9 +293,10 @@ describe("boardReducer — LABEL management", () => {
     // card-5 has Urgent from the seed; give card-1 the label too.
     expect(board.cards["card-5"].labelIds).toContain("label-urgent");
     const withLabel = reduceBoard(board, {
-      type: "TOGGLE_CARD_LABEL",
+      type: "SET_CARD_LABEL",
       cardId: "card-1",
       labelId: "label-urgent",
+      on: true,
     });
     expect(withLabel.cards["card-1"].labelIds).toContain("label-urgent");
 
@@ -445,16 +512,13 @@ describe("boardReducer — quiet updatedAt (TASK-18)", () => {
     expect(touched.cards["card-1"].updatedAt).toBe(987654);
   });
 
-  it("bumps updatedAt to now when TOUCH_CARD has no explicit at", () => {
-    vi.useFakeTimers();
-    try {
-      const board = freshBoard();
-      vi.advanceTimersByTime(5000);
-      const next = reduceBoard(board, { type: "TOUCH_CARD", cardId: "card-1" });
-      expect(next.cards["card-1"].updatedAt).toBe(Date.now());
-    } finally {
-      vi.useRealTimers();
-    }
+  it("stamps updatedAt from the command clock, not from a clock read", () => {
+    const next = reduceBoard(freshBoard(), {
+      type: "TOUCH_CARD",
+      cardId: "card-1",
+      at: 424242,
+    });
+    expect(next.cards["card-1"].updatedAt).toBe(424242);
   });
 
   it("ignores TOUCH_CARD for a missing card", () => {
@@ -515,43 +579,34 @@ describe("boardReducer — card archive (TASK-18.1)", () => {
   });
 
   it("refuses a restore into a column at its WIP limit", () => {
-    vi.useFakeTimers();
-    try {
-      let board = reduceBoard(freshBoard(), {
-        type: "SET_COLUMN_WIP_LIMIT",
+    let board = reduceBoard(freshBoard(), {
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: "col-done",
+      wipLimit: 1,
+    });
+    board = reduceBoard(board, { type: "ARCHIVE_CARD", cardId: "card-1" });
+    expect(
+      reduceBoard(board, {
+        type: "UNARCHIVE_CARD",
+        cardId: "card-1",
         columnId: "col-done",
-        wipLimit: 1,
-      });
-      board = reduceBoard(board, { type: "ARCHIVE_CARD", cardId: "card-1" });
-      expect(
-        reduceBoard(board, {
-          type: "UNARCHIVE_CARD",
-          cardId: "card-1",
-          columnId: "col-done",
-        }),
-      ).toBe(board);
-    } finally {
-      vi.useRealTimers();
-    }
+      }),
+    ).toBe(board);
   });
 
   it("archives every card of a column in one step", () => {
-    vi.useFakeTimers();
-    try {
-      vi.advanceTimersByTime(1000);
-      const board = reduceBoard(freshBoard(), {
-        type: "ARCHIVE_COLUMN_CARDS",
-        columnId: "col-backlog",
-      });
-      expect(board.columns[0].cardIds).toEqual([]);
-      for (const id of ["card-1", "card-2", "card-6"]) {
-        expect(board.cards[id]?.archivedAt).toBe(Date.now());
-      }
-      // Cards of other columns stay untouched.
-      expect(board.columns[1].cardIds.length).toBeGreaterThan(0);
-    } finally {
-      vi.useRealTimers();
+    const board = reduceBoard(freshBoard(), {
+      type: "ARCHIVE_COLUMN_CARDS",
+      columnId: "col-backlog",
+      at: 555_000,
+    });
+    expect(board.columns[0].cardIds).toEqual([]);
+    for (const id of ["card-1", "card-2", "card-6"]) {
+      // One archive stamp for the whole command.
+      expect(board.cards[id]?.archivedAt).toBe(555_000);
     }
+    // Cards of other columns stay untouched.
+    expect(board.columns[1].cardIds.length).toBeGreaterThan(0);
   });
 
   it("is a no-op for an empty or missing column", () => {
@@ -585,7 +640,7 @@ describe("boardReducer — RESTORE_BOARD and IMPORT_BOARDS", () => {
       updatedAt: 1234, // untouched by restore
     };
     const two = [seed, { ...seed, id: "board-2", title: "Second" }];
-    const next = boardReducer(two, { type: "RESTORE_BOARD", board: restored });
+    const next = reduceState(two, { type: "RESTORE_BOARD", board: restored });
     expect(next[0].title).toBe("Restored");
     expect(next[0].updatedAt).toBe(1234);
     expect(next[1]?.id).toBe("board-2");
@@ -598,7 +653,7 @@ describe("boardReducer — RESTORE_BOARD and IMPORT_BOARDS", () => {
       id: "board-imported",
       title: "Imported",
     };
-    const next = boardReducer([seed], {
+    const next = reduceState([seed], {
       type: "IMPORT_BOARDS",
       boards: [imported],
     });
@@ -708,18 +763,20 @@ describe("boardReducer — checklists", () => {
     ]);
 
     const toggled = reduceBoard(added, {
-      type: "TOGGLE_CHECKLIST_ITEM",
+      type: "SET_CHECKLIST_ITEM_DONE",
       cardId: "card-1",
       checklistId,
       itemId,
+      done: true,
     });
     expect(toggled.cards["card-1"].checklists?.[0].items[0].done).toBe(true);
 
     const untoggled = reduceBoard(toggled, {
-      type: "TOGGLE_CHECKLIST_ITEM",
+      type: "SET_CHECKLIST_ITEM_DONE",
       cardId: "card-1",
       checklistId,
       itemId,
+      done: false,
     });
     expect(untoggled.cards["card-1"].checklists?.[0].items[0].done).toBe(false);
   });
@@ -785,13 +842,14 @@ describe("boardReducer — checklists", () => {
     expect(deleted.cards["card-1"].checklists?.[0].items).toEqual([]);
   });
 
-  it("toggling an unknown item is a no-op", () => {
+  it("checking an unknown item is a no-op", () => {
     const { board, checklistId } = withChecklist();
     const next = reduceBoard(board, {
-      type: "TOGGLE_CHECKLIST_ITEM",
+      type: "SET_CHECKLIST_ITEM_DONE",
       cardId: "card-1",
       checklistId,
       itemId: "no-such-item",
+      done: true,
     });
     expect(next.cards["card-1"]).toBe(board.cards["card-1"]);
   });
@@ -1077,7 +1135,7 @@ describe("boardReducer — multi-board routing", () => {
   it("routes a board-scoped action to the board with the matching boardId", () => {
     const first = freshBoard();
     const second = secondBoard();
-    const next = boardReducer([first, second], {
+    const next = reduceState([first, second], {
       type: "ADD_COLUMN",
       title: "Only on second",
       boardId: "board-2",
@@ -1090,7 +1148,7 @@ describe("boardReducer — multi-board routing", () => {
   it("applies actions without boardId to the first board", () => {
     const first = freshBoard();
     const second = secondBoard();
-    const next = boardReducer([first, second], {
+    const next = reduceState([first, second], {
       type: "ADD_COLUMN",
       title: "On first",
     });
@@ -1099,7 +1157,7 @@ describe("boardReducer — multi-board routing", () => {
   });
 
   it("ignores board-scoped actions with an unknown boardId", () => {
-    const state = boardReducer([freshBoard()], {
+    const state = reduceState([freshBoard()], {
       type: "ADD_COLUMN",
       title: "Nowhere",
       boardId: "ghost",
@@ -1110,7 +1168,7 @@ describe("boardReducer — multi-board routing", () => {
 
   it("ADD_BOARD appends a board with a fresh id", () => {
     const board = secondBoard();
-    const next = boardReducer([freshBoard()], {
+    const next = reduceState([freshBoard()], {
       type: "ADD_BOARD",
       board,
     });
@@ -1121,7 +1179,7 @@ describe("boardReducer — multi-board routing", () => {
 
   it("ADD_BOARD ignores a duplicate board id", () => {
     const seed = freshBoard();
-    const next = boardReducer([seed], {
+    const next = reduceState([seed], {
       type: "ADD_BOARD",
       board: { ...seed },
     });
@@ -1129,7 +1187,7 @@ describe("boardReducer — multi-board routing", () => {
   });
 
   it("REMOVE_BOARD removes the targeted board and keeps the rest", () => {
-    const next = boardReducer([freshBoard(), secondBoard()], {
+    const next = reduceState([freshBoard(), secondBoard()], {
       type: "REMOVE_BOARD",
       boardId: "board-2",
     });
@@ -1139,7 +1197,7 @@ describe("boardReducer — multi-board routing", () => {
 
   it("REMOVE_BOARD refuses to remove the last remaining board", () => {
     const seed = freshBoard();
-    const next = boardReducer([seed], {
+    const next = reduceState([seed], {
       type: "REMOVE_BOARD",
       boardId: seed.id,
     });
@@ -1148,7 +1206,7 @@ describe("boardReducer — multi-board routing", () => {
 
   it("ARCHIVE_BOARD sets archivedAt and keeps all board data", () => {
     const seed = freshBoard();
-    const next = boardReducer([seed], {
+    const next = reduceState([seed], {
       type: "ARCHIVE_BOARD",
       boardId: seed.id,
     });
@@ -1161,7 +1219,7 @@ describe("boardReducer — multi-board routing", () => {
 
   it("ARCHIVE_BOARD is idempotent (does not move the timestamp)", () => {
     const seed = { ...freshBoard(), archivedAt: 42 };
-    const next = boardReducer([seed], {
+    const next = reduceState([seed], {
       type: "ARCHIVE_BOARD",
       boardId: seed.id,
     });
@@ -1170,7 +1228,7 @@ describe("boardReducer — multi-board routing", () => {
 
   it("UNARCHIVE_BOARD clears archivedAt", () => {
     const seed = { ...freshBoard(), archivedAt: 42 };
-    const next = boardReducer([seed], {
+    const next = reduceState([seed], {
       type: "UNARCHIVE_BOARD",
       boardId: seed.id,
     });
@@ -1180,7 +1238,7 @@ describe("boardReducer — multi-board routing", () => {
 
   it("UNARCHIVE_BOARD on a non-archived board is a no-op", () => {
     const seed = freshBoard();
-    const next = boardReducer([seed], {
+    const next = reduceState([seed], {
       type: "UNARCHIVE_BOARD",
       boardId: seed.id,
     });
@@ -1191,7 +1249,7 @@ describe("boardReducer — multi-board routing", () => {
     const first = freshBoard();
     const second = secondBoard();
     const snapshot = { ...second, title: "Restored" };
-    const next = boardReducer([first, second], {
+    const next = reduceState([first, second], {
       type: "RESTORE_BOARD",
       boardId: "board-2",
       board: snapshot,
@@ -1287,7 +1345,7 @@ describe("boardReducer — SORT_COLUMN", () => {
     expect(sorted.columns[0].cardIds).not.toEqual(seed.columns[0].cardIds);
     // The history snapshot mechanism stores the pre-sort board — restoring
     // it brings the manual order back.
-    const restored = boardReducer([sorted], {
+    const restored = reduceState([sorted], {
       type: "RESTORE_BOARD",
       board: seed,
     })[0];
@@ -1302,7 +1360,7 @@ describe("boardReducer — SORT_COLUMN", () => {
         { id: "col-y", title: "Y", cardIds: [], createdAt: 2 },
       ],
     };
-    const next = boardReducer([seed], {
+    const next = reduceState([seed], {
       type: "SORT_COLUMN",
       columnId: "col-x",
       sortBy: "title",
@@ -1348,12 +1406,12 @@ describe("boardReducer — card activity (TASK-12)", () => {
   });
 
   it("coalesces rapid same-type edits into one event", () => {
-    let state = boardReducer([freshBoard()], {
+    let state = reduceState([freshBoard()], {
       type: "UPDATE_CARD",
       cardId: "card-1",
       title: "First",
     });
-    state = boardReducer(state, {
+    state = reduceState(state, {
       type: "UPDATE_CARD",
       cardId: "card-1",
       title: "Second",
@@ -1363,21 +1421,23 @@ describe("boardReducer — card activity (TASK-12)", () => {
     expect(activity[0].type).toBe("renamed");
   });
 
-  it("records label toggles with a name snapshot", () => {
-    // card-1 already wears "label-design" — toggle a label it doesn't have.
+  it("records label changes with a name snapshot", () => {
+    // card-1 already wears "label-design" — attach one it doesn't have.
     const labelId = "label-dev";
     const added = reduceBoard(freshBoard(), {
-      type: "TOGGLE_CARD_LABEL",
+      type: "SET_CARD_LABEL",
       cardId: "card-1",
       labelId,
+      on: true,
     });
     const addEvent = added.cards["card-1"].activity!.at(-1)!;
     expect(addEvent.type).toBe("label-added");
     expect(addEvent.detail).toBe("Development");
     const removed = reduceBoard(added, {
-      type: "TOGGLE_CARD_LABEL",
+      type: "SET_CARD_LABEL",
       cardId: "card-1",
       labelId,
+      on: false,
     });
     expect(removed.cards["card-1"].activity!.at(-1)!.type).toBe(
       "label-removed",
@@ -1438,7 +1498,7 @@ describe("boardReducer — card activity (TASK-12)", () => {
     let state = [freshBoard()];
     // Due-date flips are never coalesced — one distinct event per pass.
     for (let i = 0; i < MAX_CARD_ACTIVITY + 5; i++) {
-      state = boardReducer(state, {
+      state = reduceState(state, {
         type: "SET_CARD_DUE_DATE",
         cardId: "card-1",
         dueDate: 1700000000000 + i,
@@ -1530,7 +1590,7 @@ describe("boardReducer — collection limits (TASK-20)", () => {
   it("refuses new checklists beyond LIMITS.checklistsPerCard", () => {
     let state = [freshBoard()];
     for (let i = 0; i < LIMITS.checklistsPerCard + 3; i++) {
-      state = boardReducer(state, {
+      state = reduceState(state, {
         type: "ADD_CHECKLIST",
         cardId: "card-1",
         title: `Checklist ${i}`,
@@ -1542,14 +1602,14 @@ describe("boardReducer — collection limits (TASK-20)", () => {
   });
 
   it("refuses new checklist items beyond LIMITS.itemsPerChecklist", () => {
-    let state = boardReducer([freshBoard()], {
+    let state = reduceState([freshBoard()], {
       type: "ADD_CHECKLIST",
       cardId: "card-1",
       title: "Steps",
     });
     const checklistId = state[0].cards["card-1"].checklists![0].id;
     for (let i = 0; i < LIMITS.itemsPerChecklist + 3; i++) {
-      state = boardReducer(state, {
+      state = reduceState(state, {
         type: "ADD_CHECKLIST_ITEM",
         cardId: "card-1",
         checklistId,
@@ -1565,16 +1625,17 @@ describe("boardReducer — collection limits (TASK-20)", () => {
     // 25 board labels, then try to wear them all — the reducer stops at 20.
     let state = [freshBoard()];
     for (let i = 0; i < 25; i++) {
-      state = boardReducer(state, {
+      state = reduceState(state, {
         type: "ADD_LABEL",
         label: { id: `extra-${i}`, name: `Extra ${i}`, color: "red" },
       });
     }
     for (const label of state[0].labels) {
-      state = boardReducer(state, {
-        type: "TOGGLE_CARD_LABEL",
+      state = reduceState(state, {
+        type: "SET_CARD_LABEL",
         cardId: "card-1",
         labelId: label.id,
+        on: true,
       });
     }
     expect(state[0].cards["card-1"].labelIds).toHaveLength(
@@ -1586,7 +1647,7 @@ describe("boardReducer — collection limits (TASK-20)", () => {
     let state = [freshBoard()];
     const base = state[0].labels.length;
     for (let i = 0; i < 5; i++) {
-      state = boardReducer(state, {
+      state = reduceState(state, {
         type: "ADD_LABEL",
         label: { id: `extra-${i}`, name: `Extra ${i}`, color: "red" },
       });
@@ -1603,7 +1664,7 @@ describe("boardReducer — collection limits (TASK-20)", () => {
     const { LIMITS: L } = await import("@/types/kanban");
     let state = [freshBoard()];
     while (state.length < L.boardsCount) {
-      state = boardReducer(state, {
+      state = reduceState(state, {
         type: "ADD_BOARD",
         board: {
           id: `b-${state.length}`,
@@ -1616,7 +1677,7 @@ describe("boardReducer — collection limits (TASK-20)", () => {
         },
       });
     }
-    const next = boardReducer(state, {
+    const next = reduceState(state, {
       type: "ADD_BOARD",
       board: {
         id: "overflow",
@@ -1765,5 +1826,317 @@ describe("boardReducer — SET_COLUMN_WIP_LIMIT (TASK-13)", () => {
     const copy = next.columns.find((c) => c.title === "Done copy");
     expect(copy?.wipLimit).toBe(1);
     expect(copy?.cardIds).toHaveLength(1);
+  });
+});
+
+/**
+ * TASK-21.7b/c — the commands undo is built on: an absolute card order and
+ * the restore family. The invariant that they actually invert their
+ * counterparts lives in `invert.test.ts`; what matters here is that they
+ * respect positions and the same guards as any other command.
+ */
+describe("boardReducer — explicit card order (TASK-21.7b)", () => {
+  it("rewrites a column's order", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "SET_COLUMN_CARD_ORDER",
+      columnId: "col-backlog",
+      cardIds: ["card-6", "card-1", "card-2"],
+    });
+    expect(board.columns[0].cardIds).toEqual(["card-6", "card-1", "card-2"]);
+  });
+
+  it("ignores an order that is not a permutation of the column", () => {
+    const board = freshBoard();
+    for (const cardIds of [
+      ["card-1", "card-2"], // one short
+      ["card-1", "card-2", "card-6", "card-3"], // a foreign card
+      ["card-1", "card-1", "card-2"], // a duplicate
+    ]) {
+      expect(
+        reduceBoard(board, {
+          type: "SET_COLUMN_CARD_ORDER",
+          columnId: "col-backlog",
+          cardIds,
+        }),
+      ).toBe(board);
+    }
+  });
+});
+
+describe("boardReducer — restore commands (TASK-21.7c)", () => {
+  it("returns a deleted card to its exact position", () => {
+    const seed = freshBoard();
+    const card = seed.cards["card-1"];
+    const deleted = reduceBoard(seed, {
+      type: "DELETE_CARD",
+      cardId: "card-1",
+    });
+    expect(deleted.cards["card-1"]).toBeUndefined();
+
+    const restored = reduceBoard(deleted, {
+      type: "RESTORE_CARD",
+      card,
+      columnId: "col-backlog",
+      index: 0,
+    });
+    expect(restored.columns[0].cardIds).toEqual(seed.columns[0].cardIds);
+    expect(restored.cards["card-1"]).toEqual(card);
+  });
+
+  it("returns an archived card that belonged to no column", () => {
+    const seed = reduceBoard(freshBoard(), {
+      type: "ARCHIVE_CARD",
+      cardId: "card-1",
+    });
+    const card = seed.cards["card-1"];
+    const deleted = reduceBoard(seed, {
+      type: "DELETE_CARD",
+      cardId: "card-1",
+    });
+    const restored = reduceBoard(deleted, { type: "RESTORE_CARD", card });
+    expect(restored.cards["card-1"]).toEqual(card);
+    expect(restored.columns.flatMap((c) => c.cardIds)).not.toContain("card-1");
+  });
+
+  it("returns a deleted column with its cards, at its old index", () => {
+    const seed = freshBoard();
+    const column = seed.columns[0];
+    const cards = column.cardIds.map((id) => seed.cards[id]);
+    const deleted = reduceBoard(seed, {
+      type: "DELETE_COLUMN",
+      columnId: column.id,
+    });
+
+    const restored = reduceBoard(deleted, {
+      type: "RESTORE_COLUMN",
+      column,
+      index: 0,
+      cards,
+    });
+    expect(restored.columns.map((c) => c.id)).toEqual(
+      seed.columns.map((c) => c.id),
+    );
+    expect(restored.columns[0]).toEqual(column);
+    for (const card of cards) expect(restored.cards[card.id]).toEqual(card);
+  });
+
+  it("returns a deleted label at its index and where it was worn", () => {
+    const seed = freshBoard();
+    const label = seed.labels[0]; // label-design, worn by card-1
+    const deleted = reduceBoard(seed, {
+      type: "DELETE_LABEL",
+      labelId: label.id,
+    });
+    expect(deleted.cards["card-1"].labelIds).not.toContain(label.id);
+
+    const restored = reduceBoard(deleted, {
+      type: "RESTORE_LABEL",
+      label,
+      index: 0,
+      assignments: [{ cardId: "card-1", index: 0 }],
+    });
+    expect(restored.labels[0]).toEqual(label);
+    expect(restored.cards["card-1"].labelIds).toEqual(
+      seed.cards["card-1"].labelIds,
+    );
+  });
+
+  it("returns a deleted checklist and item to their positions", () => {
+    let board = reduceBoard(freshBoard(), {
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      newChecklistId: "cl-1",
+      title: "Steps",
+    });
+    board = reduceBoard(board, {
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      newChecklistId: "cl-2",
+      title: "Later",
+    });
+    for (const [id, text] of [
+      ["it-1", "First"],
+      ["it-2", "Second"],
+    ]) {
+      board = reduceBoard(board, {
+        type: "ADD_CHECKLIST_ITEM",
+        cardId: "card-1",
+        checklistId: "cl-1",
+        newItemId: id,
+        text,
+      });
+    }
+    const checklists = board.cards["card-1"].checklists!;
+    const first = checklists[0];
+
+    const withoutItem = reduceBoard(board, {
+      type: "DELETE_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId: "cl-1",
+      itemId: "it-1",
+    });
+    const itemBack = reduceBoard(withoutItem, {
+      type: "RESTORE_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId: "cl-1",
+      item: first.items[0],
+      index: 0,
+    });
+    expect(itemBack.cards["card-1"].checklists?.[0].items).toEqual(first.items);
+
+    const withoutList = reduceBoard(board, {
+      type: "DELETE_CHECKLIST",
+      cardId: "card-1",
+      checklistId: "cl-1",
+    });
+    const listBack = reduceBoard(withoutList, {
+      type: "RESTORE_CHECKLIST",
+      cardId: "card-1",
+      checklist: first,
+      index: 0,
+    });
+    expect(listBack.cards["card-1"].checklists).toEqual(checklists);
+  });
+
+  it("returns a bulk-archived column, keeping cards added since", () => {
+    const seed = freshBoard();
+    const column = seed.columns[0];
+    const cards = column.cardIds.map((id) => seed.cards[id]);
+    let board = reduceBoard(seed, {
+      type: "ARCHIVE_COLUMN_CARDS",
+      columnId: column.id,
+    });
+    board = reduceBoard(board, {
+      type: "ADD_CARD",
+      newCardId: "card-later",
+      columnId: column.id,
+      title: "Added after the archive",
+    });
+
+    const restored = reduceBoard(board, {
+      type: "RESTORE_COLUMN_CARDS",
+      columnId: column.id,
+      cardIds: column.cardIds,
+      cards,
+    });
+    // The archived cards come back in their old order; the newcomer keeps
+    // its place at the end instead of being thrown away.
+    expect(restored.columns[0].cardIds).toEqual([
+      ...column.cardIds,
+      "card-later",
+    ]);
+    for (const card of cards) expect(restored.cards[card.id]).toEqual(card);
+  });
+
+  it("refuses a card restore into a column at its WIP limit", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: "col-done", // holds card-3
+      wipLimit: 1,
+    });
+    const stranger: Card = {
+      id: "card-stranger",
+      title: "Stranger",
+      labelIds: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    expect(
+      reduceBoard(board, {
+        type: "RESTORE_CARD",
+        card: stranger,
+        columnId: "col-done",
+        index: 0,
+      }),
+    ).toBe(board);
+  });
+
+  it("refuses a card restore past LIMITS.cardsPerColumn", () => {
+    const cardIds = Array.from(
+      { length: LIMITS.cardsPerColumn },
+      (_, i) => `p-${i}`,
+    );
+    const board: Board = {
+      id: "b-packed",
+      title: "Packed",
+      columns: [{ id: "col-packed", title: "Packed", cardIds, createdAt: 1 }],
+      cards: Object.fromEntries(
+        cardIds.map((id) => [
+          id,
+          { id, title: id, labelIds: [], createdAt: 1, updatedAt: 1 },
+        ]),
+      ),
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    expect(
+      reduceBoard(board, {
+        type: "RESTORE_CARD",
+        card: {
+          id: "one-too-many",
+          title: "One too many",
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        columnId: "col-packed",
+        index: 0,
+      }),
+    ).toBe(board);
+  });
+
+  it("refuses a column restore past LIMITS.columnsPerBoard", () => {
+    let state = [freshBoard()];
+    while (state[0].columns.length < LIMITS.columnsPerBoard) {
+      const before = state[0].columns.length;
+      state = reduceState(state, {
+        type: "ADD_COLUMN",
+        title: `Extra ${before}`,
+      });
+      expect(state[0].columns.length).toBe(before + 1);
+    }
+    const board = state[0];
+    expect(
+      reduceBoard(board, {
+        type: "RESTORE_COLUMN",
+        column: { id: "col-back", title: "Back", cardIds: [], createdAt: 1 },
+        index: 0,
+        cards: [],
+      }),
+    ).toBe(board);
+  });
+});
+
+describe("boardReducer — the activity feed is optional (TASK-21.7a)", () => {
+  it("writes no feed at all when withActivity is false", () => {
+    const seed = freshBoard();
+    const state = boardReducer(
+      [seed],
+      stamp({
+        type: "ADD_CARD",
+        newCardId: "card-quiet",
+        columnId: "col-done",
+        title: "No feed",
+      }),
+      { withActivity: false },
+    );
+    // The backend derives card events from the command log (§7.4.1), so
+    // the very same reducer must not produce an `activity` array there.
+    expect(state[0].cards["card-quiet"]).not.toHaveProperty("activity");
+
+    const renamed = boardReducer(
+      state,
+      stamp({ type: "UPDATE_CARD", cardId: "card-quiet", title: "Still none" }),
+      { withActivity: false },
+    );
+    expect(renamed[0].cards["card-quiet"].activity).toBeUndefined();
+    // With the default options the same command does record the event.
+    const loud = reduceState(state, {
+      type: "UPDATE_CARD",
+      cardId: "card-quiet",
+      title: "Recorded",
+    });
+    expect(loud[0].cards["card-quiet"].activity?.at(-1)?.type).toBe("renamed");
   });
 });
