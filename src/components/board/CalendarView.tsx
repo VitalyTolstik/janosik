@@ -572,7 +572,13 @@ export function CalendarView({
           variant="ghost"
           size="sm"
           className="h-7 px-2 text-xs"
-          onClick={() => setAnchor(startOfMonth(new Date()))}
+          onClick={() =>
+            setAnchor(
+              isWeek
+                ? startOfWeek(new Date(), { weekStartsOn })
+                : startOfMonth(new Date()),
+            )
+          }
         >
           {t("view.calendar.today")}
         </Button>
