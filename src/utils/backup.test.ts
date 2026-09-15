@@ -37,6 +37,19 @@ describe("backups", () => {
     expect(backups[0].boardCount).toBe(1);
   });
 
+  it("records the byte size of the snapshot, not the string length", async () => {
+    const state = initialBoardState();
+    state[0] = { ...state[0], title: "План запуска" };
+    await createBackup(state);
+
+    const [meta] = await listBackups();
+    const payload = JSON.stringify(state);
+    // Cyrillic is 2 bytes per character in UTF-8; the stored `bytes` must be
+    // the real storage cost, not the code-unit count.
+    expect(payload.length).not.toBe(new TextEncoder().encode(payload).length);
+    expect(meta.bytes).toBe(new TextEncoder().encode(payload).length);
+  });
+
   it("loads back the full board state", async () => {
     const state = initialBoardState();
     await createBackup(state);

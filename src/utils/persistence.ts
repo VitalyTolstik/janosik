@@ -52,8 +52,12 @@ export function createDebouncedLocalStoragePersistence<T>(
 
   function write(value: T): void {
     // Serialized once here for the size report; saveJSON stringifies again —
-    // this runs on debounced writes only, not per keystroke.
-    const bytes = JSON.stringify(value).length;
+    // this runs on debounced writes only, not per keystroke. The size is the
+    // UTF-8 byte length, not the UTF-16 string length: localStorage is
+    // budgeted in bytes, so non-ASCII text (Cyrillic, emoji) costs more than
+    // one unit per character.
+    const json = JSON.stringify(value);
+    const bytes = new TextEncoder().encode(json).length;
     const ok = saveJSON(key, value);
     writeListener?.(
       ok,
