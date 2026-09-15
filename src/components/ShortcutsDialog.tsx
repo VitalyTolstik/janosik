@@ -1,4 +1,4 @@
-import { KeyboardIcon } from "@/components/ui/keyboard";
+import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -87,7 +87,7 @@ export function ShortcutsDialog() {
             aria-label={t("shortcuts.aria")}
             onClick={() => setOpen(true)}
           >
-            <KeyboardIcon size={20} />
+            <LazyAnimatedIcon name="keyboard" size={20} />
           </Button>
         </TooltipTrigger>
         <TooltipContent>

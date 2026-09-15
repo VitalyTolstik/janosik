@@ -150,7 +150,7 @@
   `measuring`) — новый массив/объект меняет контекст dnd-kit и
   перерисовывает всех подписчиков `useSortable`/`useDroppable` в обход
   `memo` (наступали трижды, каждый раз находилось только замером).
-- **Тесты** — **530 тестов в 43 файлах** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3; обратимость экшенов — `invert.test.ts`, TASK-21.7d; платформа и BrowserRouter deep-links — TASK-21.8). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
+- **Тесты** — **534 теста в 44 файлах** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3; обратимость экшенов — `invert.test.ts`, TASK-21.7d; платформа и BrowserRouter deep-links — TASK-21.8; ленивые иконки шапки — `lazy-animated-icon.test.tsx`, TASK-21.9). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
 
 ### 1.3. Ключи и точки интеграции
 
@@ -215,7 +215,7 @@
 | 8 | TASK-19 `bundle-split` | ✅ реализовано, PR #34 смержен — критический путь 1539→503 KB raw, FCP 344→212 мс |
 | 9 | TASK-15 `pwa-offline` | ✅ реализовано, PR #35 смержен — манифест, иконки, SW поверх финального бандла |
 | 10 | TASK-33 `undo-history-fix` | ✅ реализовано, PR #36 — точные снапшоты истории при нескольких dispatch в одном тике |
-| 11 | TASK-34 `lazy-views` | ✅ реализовано, PR #37 — календарь/таблица снова lazy, motion-чанк; критический путь ~932→~654 KB raw (фактически ~768 — motion-иконки шапки остались на критическом пути, снимает TASK-21.6/21.9) |
+| 11 | TASK-34 `lazy-views` | ✅ реализовано, PR #37 — календарь/таблица снова lazy, motion-чанк; критический путь ~932→~654 KB raw (фактически ~768 — motion-иконки шапки оставались на критическом пути; снято в TASK-21.9) |
 | 12 | TASK-21.1 `ci-lint` | ✅ реализовано, PR #38 смержен — CI (tsc/test/build/lint/format/size-limit), ESLint+Prettier, бюджет 237.7/260 KB gzip; пойманы 2 реальных бага (условный hook в DndBoard, ref-запись в рендере CardDialog) |
 | 13 | TASK-42 `dnd-spacing-jump` | ✅ реализовано, PR #39 — прыжок колонки на 8px при старте драга/фильтра (зоны вставки = спейсеры всегда); в коммите ошибочно назван TASK-35 — см. запись в `ROADMAP-DONE.md` |
 | 13 | TASK-21.2 `data-safety` | ✅ реализовано, ветка `feature/TASK-21.2-data-safety` — баннер вместо тоста, карантин битого JSON, подтверждение+автоэкспорт в ErrorBoundary |
@@ -229,7 +229,7 @@
 | 20 | TASK-21.7c `restore-actions` | ✅ реализовано, та же ветка — `RESTORE_CARD/COLUMN/LABEL/CHECKLIST/CHECKLIST_ITEM` + `RESTORE_COLUMN_CARDS` (инверсия массового архива) |
 | 21 | TASK-21.7d `inverse-history` | ✅ реализовано, та же ветка — `invert.ts` + property-тест, `BoardHistory` на парах `{do, undo}`, история вынесена в `useUndoHistory` |
 | 22 | TASK-21.8 `browser-router` | ✅ реализовано, ветка `feature/TASK-21.8-browser-router` — BrowserRouter (`/board/:id`, `?card=`), контракт SPA-fallback — `deploy/nginx.conf`; `navigator.platform` → UA-CH с фоллбаком |
-| 23 | TASK-21.9 `motion-lazy` | анимированные иконки шапки — лениво после загрузки (решено: вариант Б) — см. §6.0.1 |
+| 23 | TASK-21.9 `motion-lazy` | ✅ реализовано, ветка `task-21-9` — motion-чанк вне критического пути: иконки шапки грузятся после idle (вариант Б), критический путь ~786→~653 KB raw / 239.2→197.9 KB gzip, отдельный size-бюджет на ленивый чанк — см. §6.0.1 |
 | 24 | TASK-21.10 `touch-dnd` | тач-DnD доски: TouchSensor dnd-kit (переехал из TASK-31; тач-слой календаря/таблицы остаётся в TASK-31) — см. §6.0.1 |
 | — | TASK-22…32, 35…41 | бэкенд, совместный UI, релиз и полировка — **порядок и DoD в §7.7** (19 шагов); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. Старт после TASK-21.10 |
 
@@ -331,18 +331,30 @@
   `userAgentData?.platform` с фоллбаком, общий хелпер `isMacPlatform`
   для ShortcutsDialog и GlobalSearch. Next: TASK-21.9.
 
-#### TASK-21.9 — `motion-lazy` · Анимированные иконки вне критического пути (решено)
+#### TASK-21.9 — `motion-lazy` · Анимированные иконки вне критического пути ✅
 
+- **Статус:** ✅ реализовано, ветка `task-21-9` — обёртка
+  `src/components/ui/lazy-animated-icon.tsx` (`React.lazy` + `Suspense`,
+  статичный lucide-двойник как fallback) грузит motion-иконки после
+  `requestIdleCallback` (фоллбэк — `setTimeout`); все потребители (шапка,
+  свитчеры фона/языка/времени, поиск, архив, шорткаты, стекло колонок)
+  переведены на неё. **Факты замера:** критический путь ~786→~653 KB raw
+  (239.2→197.9 KB gzip), `motion-*.js` больше нет в `modulepreload`
+  `dist/index.html`; 12 иконок уехали в отдельные чанки (~8.9 KB gzip) вместе
+  с `motion` (40.9 KB gzip), грузятся после idle. `size-limit` разбит на два
+  бюджета: критический **210 KB** (факт 197.9) и ленивые иконки **55 KB**
+  (факт 49.4); второй — `running: false`, гоняется только по размеру.
+  Next: TASK-21.10.
 - **Решение пользователя:** вариант Б — motion остаётся, анимированные иконки
   шапки грузятся лениво после `requestIdleCallback`; статичные `lucide-react`
   иконки на первом рендере.
 - **Что:** обёртка `LazyAnimatedIcon` (React.lazy + Suspense со статичной
   иконкой как fallback), хедер импортирует только её; motion-чанк исключается
   из `modulepreload`.
-- **Эффект:** −40 KB gzip с критического пути (~768→~643 KB raw); бренд без
+- **Эффект:** −41.4 KB gzip с критического пути (~786→~653 KB raw); бренд без
   изменений; минус — короткая подмена иконки при первом рендере.
 - **DoD:** motion-чанка нет в `modulepreload` `dist/index.html`; иконки
-  анимируются после idle; size-limit бюджет обновлён.
+  анимируются после idle; size-limit бюджет обновлён. ✅
 
 #### TASK-21.10 — `touch-dnd` · Тач-DnD доски
 

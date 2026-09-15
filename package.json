@@ -31,13 +31,26 @@
         "dist/assets/rolldown-runtime-*.js",
         "dist/assets/react-*.js",
         "dist/assets/utils-*.js",
+        "dist/assets/createLucideIcon-*.js",
         "dist/assets/i18n-*.js",
         "dist/assets/radix-*.js",
-        "dist/assets/dndkit-*.js",
-        "dist/assets/motion-*.js"
+        "dist/assets/dndkit-*.js"
       ],
-      "limit": "260 KB",
+      "limit": "210 KB",
       "gzip": true
+    },
+    {
+      "name": "lazy animated icons (motion vendor + per-icon chunks, gzip)",
+      "path": [
+        "dist/assets/motion-*.js",
+        "dist/assets/*-icon-*.js",
+        "dist/assets/keyboard-*.js",
+        "dist/assets/search-*.js",
+        "dist/assets/settings-*.js"
+      ],
+      "limit": "55 KB",
+      "gzip": true,
+      "running": false
     }
   ],
   "scripts": {

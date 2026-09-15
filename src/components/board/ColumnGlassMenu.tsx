@@ -1,4 +1,4 @@
-import { SettingsIcon } from "@/components/icons/settings";
+import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -40,8 +40,8 @@ export function ColumnGlassMenu() {
               aria-haspopup="menu"
             >
               {/* lucide-animated SettingsIcon — spring-spins 180° on
-                  hover (motion-powered, see lucide-animated.com). */}
-              <SettingsIcon size={20} aria-hidden />
+                  hover (motion-powered, lazy after idle — TASK-21.9). */}
+              <LazyAnimatedIcon name="settings" size={20} aria-hidden />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
