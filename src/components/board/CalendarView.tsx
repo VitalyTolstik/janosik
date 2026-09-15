@@ -783,6 +783,8 @@ export function CalendarView({
                         id: col.id,
                         title: col.title,
                         full: isColumnFull(col),
+                        count: col.cardIds.length,
+                        wipLimit: col.wipLimit,
                       }))}
                       labels={board.labels}
                       onSubmit={(title, labelIds, columnId) =>
@@ -858,8 +860,15 @@ function DayComposer({
   onSubmit,
   onCancel,
 }: {
-  /** `full` marks columns that cannot take another card right now. */
-  columns: { id: string; title: string; full: boolean }[];
+  /** `full` marks columns that cannot take another card right now; the
+   *  counter `count`/`wipLimit` is shown for WIP-limited ones. */
+  columns: {
+    id: string;
+    title: string;
+    full: boolean;
+    count?: number;
+    wipLimit?: number;
+  }[];
   labels?: Label[];
   onSubmit: (title: string, labelIds?: string[], columnId?: string) => void;
   /** Closes the day panel — same contract as the table composer's cancel. */
@@ -942,7 +951,12 @@ function DayComposer({
                   : undefined
               }
             >
-              {col.title}
+              <span className="truncate">{col.title}</span>
+              {col.wipLimit !== undefined && col.count !== undefined && (
+                <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                  {col.count}/{col.wipLimit}
+                </span>
+              )}
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
