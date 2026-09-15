@@ -239,6 +239,25 @@ describe("BoardHistory", () => {
       // Two steps: the foreign command ended the typing session.
       expect(history.steps()).toHaveLength(2);
     });
+
+    it("never revive a dead step — a new edit starts a fresh one", () => {
+      const history = new BoardHistory();
+      const board = freshBoard();
+      history.push(board, updateCard("card-1", "T"));
+      history.push(board, updateCard("card-1", "Theirs"), { foreign: true });
+      history.push(board, updateCard("card-1", "Ty"));
+
+      // A fresh second step, not the dead one extended.
+      expect(history.steps()).toHaveLength(2);
+      // Undo skips the dead step and lands on the new one — the undo of
+      // the fresh step (harness feeds one static `before`, so the base
+      // title comes back), not the dead step's command.
+      expect(history.canUndo()).toBe(true);
+      expect(history.undo()).toMatchObject({
+        title: "Design the new onboarding flow",
+      });
+      expect(history.canUndo()).toBe(false);
+    });
   });
 
   it("keeps commands, not boards — 50 steps stay in kilobytes", () => {

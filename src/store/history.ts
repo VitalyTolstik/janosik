@@ -110,13 +110,16 @@ export class BoardHistory {
     const coalesce =
       cardId !== null &&
       previous !== undefined &&
+      // A dead step stays dead: it was overtaken by someone else's edit
+      // (SSE, TASK-29/30), so the new edit starts a fresh step rather than
+      // resurrecting a range whose undo would clobber that edit.
+      !previous.dead &&
       this.lastAction !== null &&
       coalescibleCardId(this.lastAction) === cardId;
 
     if (coalesce && previous) {
       // Keep the oldest "before" (`previous.undo`), take the newest "after".
       previous.do = action;
-      delete previous.dead;
     } else {
       this.past.push({ do: action, undo: undoAction });
       if (this.past.length > this.limit) this.past.shift();
