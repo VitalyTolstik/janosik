@@ -6,6 +6,7 @@ import type { BoardState } from "@/store/board-reducer";
 import { serializeExport } from "@/utils/board-serialization";
 import { downloadTextFile, timestampedFilename } from "@/utils/download";
 import { readRaw } from "@/utils/storage";
+import { BOARD_STORAGE_KEY } from "@/utils/storage-keys";
 
 /**
  * Error boundary — catches render errors below it and shows a branded,
@@ -23,7 +24,6 @@ import { readRaw } from "@/utils/storage";
  * anything is erased.
  */
 
-const BOARDS_KEY = "janosik-boards";
 const APP_KEY_PREFIXES = ["janosik-", "vortex-"];
 /** Give the browser a moment to start the download before the page reloads. */
 const RELOAD_DELAY_MS = 400;
@@ -74,7 +74,7 @@ export class ErrorBoundary extends Component<
  * the raw text as-is — damaged data is still data.
  */
 function downloadDataBeforeReset(): void {
-  const raw = readRaw(BOARDS_KEY);
+  const raw = readRaw(BOARD_STORAGE_KEY);
   if (raw === null) return;
   let payload = raw;
   try {

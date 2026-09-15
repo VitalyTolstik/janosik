@@ -7,7 +7,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { useI18n } from "@/i18n";
+import { useI18n, type MessageKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 import {
   COVER_COLORS,
@@ -26,6 +26,34 @@ interface CardCoverPickerProps {
   /** Current cover, absent when unset. */
   cover?: CardCover;
 }
+
+/**
+ * Typed key dictionaries for the dynamic cover labels (N-6): keyed by the
+ * known ids so `t()` receives real `MessageKey`s instead of `as never`.
+ */
+const COVER_COLOR_KEYS = {
+  red: "card.coverColor.red",
+  orange: "card.coverColor.orange",
+  yellow: "card.coverColor.yellow",
+  green: "card.coverColor.green",
+  teal: "card.coverColor.teal",
+  cyan: "card.coverColor.cyan",
+  blue: "card.coverColor.blue",
+  indigo: "card.coverColor.indigo",
+  brand: "card.coverColor.brand",
+  fuchsia: "card.coverColor.fuchsia",
+  pink: "card.coverColor.pink",
+  slate: "card.coverColor.slate",
+} satisfies Record<CoverColor, MessageKey>;
+
+const COVER_GRADIENT_KEYS = {
+  sunset: "card.coverGradient.sunset",
+  ocean: "card.coverGradient.ocean",
+  forest: "card.coverGradient.forest",
+  candy: "card.coverGradient.candy",
+  grape: "card.coverGradient.grape",
+  steel: "card.coverGradient.steel",
+} satisfies Record<CoverGradient, MessageKey>;
 
 /** Small rounded swatch rendering a solid color (label-swatch scale). */
 function ColorSwatch({
@@ -139,7 +167,7 @@ export function CardCoverPicker({ cardId, cover }: CardCoverPickerProps) {
                   onClick={() =>
                     setCardCover(cardId, { type: "color", value: color })
                   }
-                  label={t(`card.coverColor.${color}` as never)}
+                  label={t(COVER_COLOR_KEYS[color])}
                 />
               ))}
             </div>
@@ -163,7 +191,7 @@ export function CardCoverPicker({ cardId, cover }: CardCoverPickerProps) {
                   onClick={() =>
                     setCardCover(cardId, { type: "gradient", value: gradient })
                   }
-                  label={t(`card.coverGradient.${gradient}` as never)}
+                  label={t(COVER_GRADIENT_KEYS[gradient])}
                 />
               ))}
             </div>

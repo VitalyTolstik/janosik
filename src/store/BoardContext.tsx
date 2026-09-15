@@ -22,6 +22,7 @@ import {
   type BoardAction,
   type BoardState,
   type ColumnSortBy,
+  type UpdateCardAction,
 } from "@/store/board-reducer";
 import { useUndoHistory } from "@/store/use-undo-history";
 import type { Board, CardCover, Label } from "@/types/kanban";
@@ -133,7 +134,7 @@ function damagedData(
   };
 }
 
-type CardPatch = { title?: string; description?: string };
+type CardPatch = Pick<UpdateCardAction, "title" | "description">;
 
 /**
  * Everything that changes when the data changes. Read it through
@@ -241,7 +242,7 @@ interface BoardActionsValue {
   sortColumn: (columnId: string, sortBy: ColumnSortBy) => void;
   /* Board management (multi-board) */
   /** Creates an empty board and returns its id (for navigation). */
-  addBoard: (title: string) => string;
+  addBoard: (title: string, fallbackTitle?: string) => string;
   /** Removes a board; the caller must navigate away from it first/after. */
   removeBoard: (boardId: string) => void;
   /** Archives a board (data kept; hidden from the normal switcher list). */
@@ -538,31 +539,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // Wrapper dispatch: apply the command, then record the undo step for the
   // board it targeted. Board-scoped actions get the active board id
   // injected when absent, and every command gets an idempotency key.
+  // Board-level actions (import / add / remove / archive / unarchive) do not
+  // go through here — their public methods call `apply` directly, which is
+  // the single path for them.
   const dispatch = useCallback(
     (action: BoardAction) => {
-      if (action.type === "IMPORT_BOARDS") {
-        // A new data set invalidates every history.
-        clearHistory();
-        apply(action);
-        return;
-      }
-      if (action.type === "ADD_BOARD") {
-        apply(action);
-        return;
-      }
-      if (action.type === "REMOVE_BOARD") {
-        dropHistory(action.boardId);
-        apply(action);
-        return;
-      }
-      if (
-        action.type === "ARCHIVE_BOARD" ||
-        action.type === "UNARCHIVE_BOARD"
-      ) {
-        // Organizational actions, not content edits — no undo entry.
-        apply(action);
-        return;
-      }
       const boardId =
         (action as { boardId?: string }).boardId ?? activeIdRef.current;
       if (!boardId) return;
@@ -581,7 +562,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         recordStep(boardId, before, scoped);
       }
     },
-    [apply, clearHistory, dropHistory, recordStep],
+    [apply, recordStep],
   );
 
   const importBoards = useCallback(
@@ -594,14 +575,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   );
 
   const addBoard = useCallback(
-    (title: string): string => {
+    (title: string, fallbackTitle = "Untitled"): string => {
       const id = createId();
       const now = Date.now();
       apply({
         type: "ADD_BOARD",
         board: {
           id,
-          title: title.trim() || "Untitled",
+          title: title.trim() || fallbackTitle,
           columns: [],
           cards: {},
           labels: [],
@@ -616,8 +597,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   const removeBoard = useCallback(
     (boardId: string) => {
-      dropHistory(boardId);
+      const existed = stateRef.current.some((b) => b.id === boardId);
       apply({ type: "REMOVE_BOARD", boardId });
+      // Only forget the history when the board is actually gone: the
+      // reducer refuses to remove the last board, and losing its undo
+      // history for a refused command would be silent data loss.
+      if (existed && !stateRef.current.some((b) => b.id === boardId)) {
+        dropHistory(boardId);
+      }
     },
     [apply, dropHistory],
   );

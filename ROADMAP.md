@@ -53,6 +53,49 @@
    - Данные (названия карточек, колонок, досок) **не переводятся** — только UI-хром.
    - Дизайн-токены: не хардкодить цвета — только переменные из `src/index.css`.
 
+### 0.1. Оркестрация субагентов (Orca) — шпаргалка
+
+Параллельная работа нескольких агентов по кластерам задач (обкатано на
+аудите 2026-09): координатор — главный агент в терминале main-worktree,
+субагенты — opencode в worktree Orca.
+
+- **CLI:** полный путь `/Applications/Orca.app/Contents/Resources/bin/orca`
+  (симлинк `/usr/local/bin/orca` бывает битым). Repo-селектор для создания:
+  `path:/Users/vitaltol/Dev/janosik` — форма `id:<uuid>::<path>` в
+  `worktree create` отвечает `repo_not_found`.
+1. **Worktree под каждого субагента** (ветка = имя):
+   `orca worktree create --repo path:… --name <slug> --setup run --json`
+   → `/Users/vitaltol/orca/workspaces/janosik/<slug>`, `node_modules`
+   ставится setup-хууком.
+2. **Модель субагента** — НЕ через `worker-start --model` (работает только
+   для Claude/Codex/Cursor). Пишется `<worktree>/opencode.json`:
+   `{"$schema":"https://opencode.ai/config.json","model":"openrouter/deepseek/deepseek-v4.1-flash"}`.
+   Файл скрыт через общий `.git/info/exclude` главного репозитория
+   (per-worktree `info/exclude` git не читает).
+3. **Ран:** `orca orchestration run-create --objective … --json`.
+   Если `worker-start` отвечает `consumer_fenced` — из координаторского
+   терминала выполнить `orca orchestration run-use --id <run_id> --json`
+   и повторить; привязку показывает `run-current`.
+4. **Старт воркера:** `orca orchestration worker-start --run <run>
+   --worktree name:<slug> --agent opencode --task-title "…" --spec "<ТЗ>" --json`
+   → возвращает `taskId`/`dispatchId` (записывать). Спека — самодостаточный
+   текст: контекст и база (тесты/линт), список находок, **граница файлов**,
+   запреты (не пушить/не мержить/не трогать общие файлы), формат отчёта.
+5. **Мониторинг:** `orca orchestration check --run <run> [--wait]`.
+   Доставка FIFO: недоставленное реплеится, поэтому **акать сразу** —
+   `orca orchestration check --run <run> --ack <delivery_id>`.
+   Ответить воркеру: `orca orchestration send` / `reply`.
+6. **Жизненный цикл:** после `worker_done` — ревью диффа, затем
+   `worker-retain --dispatch <id>` (терминал жив для follow-up; без
+   `--comment`), follow-up тем же воркером: `worker-start --spec …
+   --terminal <handle> --worktree <id>`. Отпустить совсем:
+   `worker-release --dispatch <id>` (снимает и терминал, и worktree).
+7. **Практика параллелизации:** резать работу по **файлам**, не по
+   категориям находок; cross-cutting правки (общие утилиты, каталоги i18n)
+   — отдельной волной после вливания первой; общие файлы (`README.md`,
+   `CONCLUSIONS.md`, `ROADMAP.md`) правит только координатор; перед
+   стартом сверять базу воркера: `git -C <worktree> log --oneline -1`.
+
 ---
 
 ## 1. Текущее состояние (что уже сделано)

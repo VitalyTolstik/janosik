@@ -237,11 +237,6 @@ export function parseTime(value: string): { hour: number; minute: number } {
   return { hour: hh || 0, minute: mm || 0 };
 }
 
-/** { hour: 19, minute: 30 } → "19:30" (internal, always 24h). */
-export function composeTime(hour: number, minute: number): string {
-  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-}
-
 /**
  * Locale-aware time formatter for badges/triggers: "19:30" (ru) or
  * "7:30 PM" (en). `hour12` forces 12/24-hour rendering on top of the

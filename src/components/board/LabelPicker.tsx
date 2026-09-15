@@ -25,7 +25,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useI18n } from "@/i18n";
+import { useI18n, type MessageKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 import {
   LABEL_COLOR_DOT,
@@ -48,6 +48,27 @@ interface LabelPickerProps {
   onDelete: (labelId: string) => void;
 }
 
+/**
+ * Localized name per picker color — a typed dictionary instead of a template
+ * string so `t()` still receives real `MessageKey`s (N-6).
+ */
+const LABEL_COLOR_KEYS = {
+  red: "label.color.red",
+  orange: "label.color.orange",
+  yellow: "label.color.yellow",
+  brown: "label.color.brown",
+  green: "label.color.green",
+  teal: "label.color.teal",
+  cyan: "label.color.cyan",
+  blue: "label.color.blue",
+  indigo: "label.color.indigo",
+  brand: "label.color.brand",
+  fuchsia: "label.color.fuchsia",
+  pink: "label.color.pink",
+  slate: "label.color.slate",
+  plain: "label.color.plain",
+} satisfies Record<(typeof LABEL_COLORS)[number], MessageKey>;
+
 /** Row of color swatches — used for the "new label" form and recolor menu. */
 function ColorSwatches({
   value,
@@ -56,14 +77,15 @@ function ColorSwatches({
   value: LabelColor;
   onPick: (color: LabelColor) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {LABEL_COLORS.map((color) => (
         <button
           key={color}
           type="button"
-          title={color}
-          aria-label={color}
+          title={t(LABEL_COLOR_KEYS[color])}
+          aria-label={t(LABEL_COLOR_KEYS[color])}
           onClick={() => onPick(color)}
           className={cn(
             "flex h-5 w-5 items-center justify-center rounded-full transition-transform hover:scale-110",
