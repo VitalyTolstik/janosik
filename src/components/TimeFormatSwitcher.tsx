@@ -1,7 +1,7 @@
 import { Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { ClockIcon } from "@/components/ui/clock-icon";
+import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,7 +44,7 @@ export function TimeFormatSwitcher() {
               size="icon"
               aria-label={t("timeFormat.aria")}
             >
-              <ClockIcon size={20} />
+              <LazyAnimatedIcon name="clock" size={20} />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>

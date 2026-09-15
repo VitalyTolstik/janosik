@@ -1,7 +1,7 @@
 import { Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { PaletteIcon } from "@/components/ui/palette-icon";
+import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,7 +40,7 @@ export function BackgroundSwitcher() {
               aria-label={t("bg.aria")}
               aria-haspopup="menu"
             >
-              <PaletteIcon size={20} />
+              <LazyAnimatedIcon name="palette" size={20} />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>

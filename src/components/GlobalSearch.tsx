@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { SearchIcon } from "@/components/ui/search";
+import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -137,7 +137,7 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
             <span className="hidden text-xs font-medium sm:inline">
               {t("search.label")}
             </span>
-            <SearchIcon size={20} />
+            <LazyAnimatedIcon name="search" size={20} />
           </Button>
         </TooltipTrigger>
         <TooltipContent>

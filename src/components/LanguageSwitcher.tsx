@@ -1,7 +1,7 @@
 import { Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { LanguagesIcon } from "@/components/ui/languages-icon";
+import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +25,7 @@ export function LanguageSwitcher() {
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" aria-label={t("lang.aria")}>
-              <LanguagesIcon size={20} />
+              <LazyAnimatedIcon name="languages" size={20} />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>

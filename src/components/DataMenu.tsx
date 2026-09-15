@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { ArchiveIcon } from "@/components/ui/archive-icon";
+import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import {
   Archive,
   Download,
@@ -124,7 +124,7 @@ export function DataMenu() {
               >
                 {/* Cloud + restore-cycle: the recognizable “backup” symbol
                  * (same as OneDrive/iCloud sync badges). Intentionally static. */}
-                <ArchiveIcon size={20} />
+                <LazyAnimatedIcon name="archive" size={20} />
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>

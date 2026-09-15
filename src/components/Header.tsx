@@ -6,10 +6,7 @@ import { GlobalSearch } from "@/components/GlobalSearch";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ShortcutsDialog } from "@/components/ShortcutsDialog";
 import { TimeFormatSwitcher } from "@/components/TimeFormatSwitcher";
-import { ArrowLeftIcon } from "@/components/ui/arrow-left-icon";
-import { ArrowRightIcon } from "@/components/ui/arrow-right-icon";
-import { MoonIcon } from "@/components/ui/moon-icon";
-import { SunDimIcon } from "@/components/ui/sun-dim-icon";
+import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -115,7 +112,7 @@ export function Header() {
               disabled={!canUndo}
               onClick={undo}
             >
-              <ArrowLeftIcon size={20} />
+              <LazyAnimatedIcon name="arrow-left" size={20} />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{t("undo.tooltip")}</TooltipContent>
@@ -130,7 +127,7 @@ export function Header() {
               disabled={!canRedo}
               onClick={redo}
             >
-              <ArrowRightIcon size={20} />
+              <LazyAnimatedIcon name="arrow-right" size={20} />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{t("redo.tooltip")}</TooltipContent>
@@ -146,7 +143,11 @@ export function Header() {
               aria-label={t("theme.aria")}
               onClick={toggleTheme}
             >
-              {isDark ? <SunDimIcon size={20} /> : <MoonIcon size={20} />}
+              {isDark ? (
+                <LazyAnimatedIcon name="sun-dim" size={20} />
+              ) : (
+                <LazyAnimatedIcon name="moon" size={20} />
+              )}
             </Button>
           </TooltipTrigger>
           <TooltipContent>
