@@ -173,7 +173,8 @@ function CheckRow({ checked, onCheckedChange, children }: CheckRowProps) {
  * behind a single "Filters" popover button, with a badge showing how many
  * facets are active.
  *
- * - `/` or Ctrl/Cmd+K focuses the search input (outside of text fields).
+ * - `/` focuses the search input (outside of text fields). Ctrl/Cmd+K is
+ *   owned solely by the global search palette (GlobalSearch).
  * - Esc in the search clears the query, a second Esc blurs.
  * - While a filter is active, drag & drop is disabled (see DndBoard) — a
  *   hint explains why.
@@ -201,9 +202,8 @@ export function FilterBar({
           target.tagName === "TEXTAREA" ||
           target.isContentEditable);
       const slash = e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey;
-      const kShortcut = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k";
 
-      if ((slash || kShortcut) && !typing) {
+      if (slash && !typing) {
         e.preventDefault();
         inputRef.current?.focus();
         return;
