@@ -150,7 +150,7 @@
   `measuring`) — новый массив/объект меняет контекст dnd-kit и
   перерисовывает всех подписчиков `useSortable`/`useDroppable` в обход
   `memo` (наступали трижды, каждый раз находилось только замером).
-- **Тесты** — **523 теста в 41 файле** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3; обратимость экшенов — `invert.test.ts`, TASK-21.7d). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
+- **Тесты** — **530 тестов в 43 файлах** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3; обратимость экшенов — `invert.test.ts`, TASK-21.7d; платформа и BrowserRouter deep-links — TASK-21.8). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
 
 ### 1.3. Ключи и точки интеграции
 
@@ -228,7 +228,7 @@
 | 19 | TASK-21.7b `invertible-actions` | ✅ реализовано, та же ветка — id в `ADD_*`/`DUPLICATE_*`, `TOGGLE_*`→`SET_*{on,done}`, `MOVE_CARD.fromIndex`, `UNARCHIVE_CARD.index`, `SET_COLUMN_CARD_ORDER` |
 | 20 | TASK-21.7c `restore-actions` | ✅ реализовано, та же ветка — `RESTORE_CARD/COLUMN/LABEL/CHECKLIST/CHECKLIST_ITEM` + `RESTORE_COLUMN_CARDS` (инверсия массового архива) |
 | 21 | TASK-21.7d `inverse-history` | ✅ реализовано, та же ветка — `invert.ts` + property-тест, `BoardHistory` на парах `{do, undo}`, история вынесена в `useUndoHistory` |
-| 22 | TASK-21.8 `browser-router` | HashRouter → BrowserRouter до лендинга — см. §6.0.1 |
+| 22 | TASK-21.8 `browser-router` | ✅ реализовано, ветка `feature/TASK-21.8-browser-router` — BrowserRouter (`/board/:id`, `?card=`), контракт SPA-fallback — `deploy/nginx.conf`; `navigator.platform` → UA-CH с фоллбаком |
 | 23 | TASK-21.9 `motion-lazy` | анимированные иконки шапки — лениво после загрузки (решено: вариант Б) — см. §6.0.1 |
 | 24 | TASK-21.10 `touch-dnd` | тач-DnD доски: TouchSensor dnd-kit (переехал из TASK-31; тач-слой календаря/таблицы остаётся в TASK-31) — см. §6.0.1 |
 | — | TASK-22…32, 35…41 | бэкенд, совместный UI, релиз и полировка — **порядок и DoD в §7.7** (19 шагов); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. Старт после TASK-21.10 |
@@ -294,7 +294,7 @@
 - **Статус:** ✅ реализовано (21.7a+b+c+d), ветка
   `feature/TASK-21.7-history-inverse` — по прямой просьбе пользователя все
   четыре шага сделаны одним PR (разбивка ниже сохранена как порядок
-  коммитов). Полное описание — в `ROADMAP-DONE.md`. Next: TASK-21.8.
+  коммитов). Полное описание — в `ROADMAP-DONE.md`. Next: TASK-21.9.
 
 #### TASK-21.7a — `deterministic-actions` · Детерминизм редьюсера (корень) ✅
 
@@ -320,15 +320,16 @@
   есть задел: `BoardHistory.push(..., { foreign: true })` не пускает чужую
   команду в стек, не чистит redo и помечает пересечённые шаги `dead`.
 
-#### TASK-21.8 — `browser-router` · HashRouter → BrowserRouter
+#### TASK-21.8 — `browser-router` · HashRouter → BrowserRouter ✅
 
-- **Что:** замена роутера (SW уже делает SPA-fallback network-first на `/` —
-  переход почти бесплатный, нужен только конфиг хостинга) + мелочи:
-  `navigator.platform` → `userAgentData?.platform` fallback.
-- **Почему до TASK-32:** хеш-URL мешают лендингу, OAuth-редиректам бэкенда,
-  аналитике и embed-снапшоту.
-- **DoD:** deep-links `/board/:id` и `?card=` работают после прямого захода
-  по URL; деплой-конфиг обновлён.
+- **Статус:** ✅ реализовано, ветка `feature/TASK-21.8-browser-router` —
+  роутер в App заменён на BrowserRouter; неизвестные пути по-прежнему
+  работают как home (редирект на активную доску — поведение не менялось);
+  контракт хостинга для deep-links закреплён в `deploy/nginx.conf`
+  (`try_files … /index.html`; полный деплой-стек — в TASK-38);
+  `navigator.platform` (deprecated, пустой на части Android) →
+  `userAgentData?.platform` с фоллбаком, общий хелпер `isMacPlatform`
+  для ShortcutsDialog и GlobalSearch. Next: TASK-21.9.
 
 #### TASK-21.9 — `motion-lazy` · Анимированные иконки вне критического пути (решено)
 
