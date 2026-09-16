@@ -18,6 +18,20 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: janosik
+          POSTGRES_PASSWORD: janosik
+          POSTGRES_DB: janosik_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U janosik -d janosik_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -39,6 +53,14 @@ jobs:
       # `shared/`), so a dedicated typecheck step would duplicate the work.
       - name: Build (ui)
         run: npm run build -w ui
+
+      - name: Backend tests (unit + e2e against the postgres service)
+        run: npm run test:ci -w backend
+        env:
+          DATABASE_URL: postgresql://janosik:janosik@localhost:5433/janosik_test
+
+      - name: Backend typecheck/build
+        run: npm run build:backend
 
       - name: Lint (ESLint)
         run: npm run lint

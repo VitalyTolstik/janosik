@@ -1,0 +1,47 @@
+{
+  "name": "@janosik/backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Janosik API — NestJS + Prisma + PostgreSQL (see ROADMAP §7).",
+  "license": "MIT",
+  "type": "commonjs",
+  "scripts": {
+    "prebuild": "prisma generate",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/src/main.js",
+    "lint": "eslint .",
+    "prisma:generate": "prisma generate",
+    "prisma:deploy": "prisma migrate deploy",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "jest --selectProjects unit",
+    "test:e2e": "npm run prisma:deploy && jest --selectProjects e2e",
+    "test:ci": "npm run test"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-express": "^11.1.6",
+    "@nestjs/throttler": "^6.4.0",
+    "@prisma/client": "^6.16.2",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "dotenv": "^17.2.2",
+    "helmet": "^8.1.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.1.6",
+    "@types/express": "^5.0.3",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.18.0",
+    "@types/supertest": "^6.0.3",
+    "eslint": "^9.36.0",
+    "jest": "^29.7.0",
+    "prisma": "^6.16.2",
+    "supertest": "^7.1.4",
+    "ts-jest": "^29.4.4",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.44.0"
+  }
+}
