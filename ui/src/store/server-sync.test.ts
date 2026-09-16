@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { BoardAction, CommandResponse } from "@janosik/shared";
 import { ApiError } from "@/api/client";
-import { ServerSync } from "@/store/server-sync";
+import { ServerSync, textEntityKey } from "@/store/server-sync";
 
 function renameColumn(commandId: string): BoardAction {
   return {
@@ -172,5 +172,167 @@ describe("ServerSync", () => {
     control.release?.();
     await pending;
     expect(sync.isBusy("b-1")).toBe(false);
+  });
+});
+
+describe("ServerSync lifecycle, flushing and touch keys", () => {
+  it("refuses work after dispose and accepts it again after revive", async () => {
+    const sent: string[] = [];
+    const sync = new ServerSync({
+      send: async () => {
+        sent.push("sent");
+        return okResponse();
+      },
+    });
+
+    sync.dispose();
+    const refused = await sync.enqueue("b-1", renameColumn("cd-1"));
+    expect(refused).toEqual({ ok: false, failure: { kind: "offline" } });
+    expect(sent).toEqual([]);
+
+    sync.revive();
+    const accepted = await sync.enqueue("b-1", renameColumn("cd-2"));
+    expect(accepted.ok).toBe(true);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("drops coalescing timers on dispose", async () => {
+    vi.useFakeTimers();
+    const sent: string[] = [];
+    const sync = new ServerSync({
+      send: async () => {
+        sent.push("sent");
+        return okResponse();
+      },
+    });
+
+    void sync.enqueue("b-1", quietEdit("cd-1", "typed"));
+    sync.dispose();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(sent).toEqual([]);
+  });
+
+  it("flushes the quiet edits of every board on demand", async () => {
+    vi.useFakeTimers();
+    const sent: string[] = [];
+    const sync = new ServerSync({
+      send: async (_boardId, request) => {
+        sent.push(request.action.type);
+        return okResponse();
+      },
+    });
+
+    void sync.enqueue("b-1", quietEdit("cd-1", "a"));
+    void sync.enqueue("b-2", quietEdit("cd-2", "b"));
+    sync.flush();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent).toEqual(["UPDATE_CARD", "UPDATE_CARD"]);
+  });
+
+  it("flushes one board without touching the other", async () => {
+    vi.useFakeTimers();
+    const sent: string[] = [];
+    const sync = new ServerSync({
+      send: async (_boardId, request) => {
+        sent.push(request.action.type);
+        return okResponse();
+      },
+    });
+
+    void sync.enqueue("b-1", quietEdit("cd-1", "a"));
+    void sync.enqueue("b-2", quietEdit("cd-2", "b"));
+    sync.flush("b-1");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent).toEqual(["UPDATE_CARD"]);
+
+    await vi.advanceTimersByTimeAsync(400);
+    expect(sent).toEqual(["UPDATE_CARD", "UPDATE_CARD"]);
+  });
+
+  it("reports busy while a quiet edit is still coalescing", async () => {
+    vi.useFakeTimers();
+    const sync = new ServerSync({
+      send: async () => okResponse(),
+    });
+    const pending = sync.enqueue("b-1", quietEdit("cd-1", "typed"));
+    expect(sync.isBusy("b-1")).toBe(true);
+    expect(sync.isBusy("b-2")).toBe(false);
+    sync.flush("b-1");
+    await vi.advanceTimersByTimeAsync(0);
+    await pending;
+    expect(sync.isBusy("b-1")).toBe(false);
+  });
+
+  it("passes commandId and version preconditions through", async () => {
+    let request: {
+      commandId: string;
+      ifMatchVersions?: Record<string, number>;
+    };
+    const sync = new ServerSync({
+      send: async (_boardId, sent) => {
+        request = sent;
+        return okResponse();
+      },
+    });
+    await sync.enqueue("b-1", renameColumn("cmd-9"), { "column:col-1": 3 });
+    expect(request!.commandId).toBe("cmd-9");
+    expect(request!.ifMatchVersions).toEqual({ "column:col-1": 3 });
+  });
+
+  it("maps text commands to their touch key and everything else to null", () => {
+    expect(
+      textEntityKey("b-1", { type: "UPDATE_CARD", cardId: "c", at: 1 }),
+    ).toBe("card:c");
+    expect(
+      textEntityKey("b-1", {
+        type: "RENAME_COLUMN",
+        columnId: "col",
+        title: "x",
+        at: 1,
+      }),
+    ).toBe("column:col");
+    expect(
+      textEntityKey("b-1", { type: "RENAME_BOARD", title: "x", at: 1 }),
+    ).toBe("board:b-1");
+    expect(
+      textEntityKey("b-1", {
+        type: "RENAME_LABEL",
+        labelId: "l",
+        name: "x",
+        at: 1,
+      }),
+    ).toBe("label:l");
+    expect(
+      textEntityKey("b-1", {
+        type: "RENAME_CHECKLIST",
+        cardId: "c",
+        checklistId: "ch",
+        title: "x",
+        at: 1,
+      }),
+    ).toBe("checklist:ch");
+    expect(
+      textEntityKey("b-1", {
+        type: "RENAME_CHECKLIST_ITEM",
+        cardId: "c",
+        checklistId: "ch",
+        itemId: "i",
+        text: "x",
+        at: 1,
+      }),
+    ).toBe("checklistItem:i");
+    expect(textEntityKey("b-1", moveCard("cd-1"))).toBeNull();
+    // Malformed payloads (missing ids) never produce a key.
+    for (const type of [
+      "UPDATE_CARD",
+      "RENAME_COLUMN",
+      "RENAME_LABEL",
+      "RENAME_CHECKLIST",
+      "RENAME_CHECKLIST_ITEM",
+    ]) {
+      expect(
+        textEntityKey("b-1", { type, at: 1 } as unknown as BoardAction),
+      ).toBeNull();
+    }
   });
 });

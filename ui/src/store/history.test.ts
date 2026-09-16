@@ -328,3 +328,124 @@ describe("BoardHistory", () => {
     expect(JSON.stringify(history.steps()).length).toBeLessThan(300_000);
   });
 });
+
+/**
+ * TASK-29: a command the server refused must not stay in the history —
+ * `rollbackStep` hands the exact inverse back (the caller applies it) and
+ * removes the step; a step buried under newer commands is only marked dead.
+ */
+describe("BoardHistory rollback (TASK-29)", () => {
+  it("reverts and removes the newest step", () => {
+    const history = new BoardHistory();
+    const board = freshBoard();
+    const action = updateCard("card-1", "Mine");
+    history.push(board, action);
+
+    const outcome = history.rollbackStep(action);
+    expect(outcome.kind).toBe("reverted");
+    if (outcome.kind === "reverted") {
+      expect(outcome.undo).toMatchObject({
+        type: "UPDATE_CARD",
+        cardId: "card-1",
+        title: board.cards["card-1"].title,
+      });
+    }
+    expect(history.canUndo()).toBe(false);
+    expect(history.canRedo()).toBe(false);
+  });
+
+  it("finds the step by commandId when the object differs", () => {
+    const history = new BoardHistory();
+    const board = freshBoard();
+    const action = {
+      ...updateCard("card-1", "Mine"),
+      commandId: "cmd-1",
+    } as BoardAction;
+    history.push(board, action);
+
+    const outcome = history.rollbackStep({
+      ...updateCard("card-1", "Mine"),
+      commandId: "cmd-1",
+    } as BoardAction);
+    expect(outcome.kind).toBe("reverted");
+  });
+
+  it("marks a buried step dead instead of reverting it", () => {
+    const history = new BoardHistory();
+    const board = freshBoard();
+    const first = updateCard("card-1", "A");
+    history.push(board, first);
+    history.push(board, updateCard("card-2", "B"));
+
+    expect(history.rollbackStep(first)).toEqual({ kind: "dead" });
+    // Undo skips the buried step and reaches the newer one.
+    expect(history.undo()).toMatchObject({ cardId: "card-2" });
+  });
+
+  it("reports none for a command that recorded no step", () => {
+    const history = new BoardHistory();
+    expect(history.rollbackStep(updateCard("card-1", "X"))).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("restores an undone step when its undo never reached the server", () => {
+    const history = new BoardHistory();
+    const board = freshBoard();
+    history.push(board, updateCard("card-1", "A"));
+    history.undo();
+    history.restoreUndone();
+    expect(history.canUndo()).toBe(true);
+    expect(history.canRedo()).toBe(false);
+    expect(history.undo()).toMatchObject({ cardId: "card-1" });
+  });
+
+  it("restores a redone step when its redo never reached the server", () => {
+    const history = new BoardHistory();
+    const board = freshBoard();
+    history.push(board, updateCard("card-1", "A"));
+    history.undo();
+    history.redo();
+    history.restoreRedone();
+    expect(history.canUndo()).toBe(false);
+    expect(history.canRedo()).toBe(true);
+  });
+
+  it("restores nothing on an empty stack", () => {
+    const history = new BoardHistory();
+    expect(() => {
+      history.restoreUndone();
+      history.restoreRedone();
+    }).not.toThrow();
+  });
+});
+
+describe("BoardHistory foreign marking from the refetch (TASK-29)", () => {
+  it("marks overtaken steps dead and counts what undo skipped", () => {
+    const history = new BoardHistory();
+    history.push(freshBoard(), updateCard("card-1", "Mine"));
+    history.markForeign(["card-1"]);
+
+    expect(history.canUndo()).toBe(false);
+    expect(history.undo()).toBeNull();
+    expect(history.consumeSkippedDead()).toBe(1);
+    expect(history.consumeSkippedDead()).toBe(0);
+  });
+
+  it("counts dead steps skipped by redo as well", () => {
+    const history = new BoardHistory();
+    history.push(freshBoard(), updateCard("card-1", "Mine"));
+    history.undo();
+    history.markForeign(["card-1"]);
+
+    expect(history.redo()).toBeNull();
+    expect(history.consumeSkippedDead()).toBe(1);
+  });
+
+  it("ignores an empty id list", () => {
+    const history = new BoardHistory();
+    history.push(freshBoard(), updateCard("card-1", "Mine"));
+    history.markForeign([]);
+    expect(history.canUndo()).toBe(true);
+  });
+});

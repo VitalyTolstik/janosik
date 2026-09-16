@@ -16,7 +16,7 @@ import { I18nProvider } from "@/i18n";
 import { ToastProvider } from "@/components/Toast";
 import { BoardProvider, useBoard } from "@/store/BoardContext";
 import { useBoardActions } from "@/store/BoardContext";
-import { FakeServer } from "@/test/fake-server";
+import { FakeServer, emptyBoard } from "@/test/fake-server";
 
 /**
  * Server-mode integration (TASK-29) against the in-memory fake API: the
@@ -51,6 +51,7 @@ function seedBoard(): Board {
 function Probe() {
   const { board, boards, syncStatus, canUndo } = useBoard();
   const actions = useBoardActions();
+  const second = boards.find((entry) => entry.id === "b-2");
   return (
     <div>
       <div data-testid="status">{syncStatus}</div>
@@ -61,6 +62,9 @@ function Probe() {
       </div>
       <div data-testid="board-count">{String(boards.length)}</div>
       <div data-testid="can-undo">{String(canUndo)}</div>
+      <div data-testid="second-archived">
+        {String(second?.archivedAt !== undefined)}
+      </div>
       <button
         type="button"
         data-testid="add-column"
@@ -79,6 +83,30 @@ function Probe() {
         onClick={() => actions.updateCard("c-1", { title: "Mine" })}
       />
       <button type="button" data-testid="undo" onClick={() => actions.undo()} />
+      <button
+        type="button"
+        data-testid="archive-second"
+        onClick={() => actions.archiveBoard("b-2")}
+      />
+      <button
+        type="button"
+        data-testid="unarchive-second"
+        onClick={() => actions.unarchiveBoard("b-2")}
+      />
+      <button
+        type="button"
+        data-testid="remove-second"
+        onClick={() => {
+          void actions.removeBoard("b-2");
+        }}
+      />
+      <button
+        type="button"
+        data-testid="import-board"
+        onClick={() => {
+          void actions.importBoards([emptyBoard("imported-1", "Imported")]);
+        }}
+      />
     </div>
   );
 }
@@ -305,6 +333,183 @@ describe("BoardProvider in server mode", () => {
       expect(
         [...server.boards.values()][0]?.columns.map((c) => c.title),
       ).toEqual(["Todo", "New"]),
+    );
+  });
+});
+
+describe("BoardProvider server-mode failures and board management", () => {
+  it("archives and unarchives a board through commands", async () => {
+    const server = new FakeServer([
+      seedBoard(),
+      { ...seedBoard(), id: "b-2", title: "Second" },
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+
+    fireEvent.click(screen.getByTestId("archive-second"));
+    await waitFor(() =>
+      expect(screen.getByTestId("second-archived").textContent).toBe("true"),
+    );
+    await waitFor(() =>
+      expect(typeof server.boards.get("b-2")?.archivedAt).toBe("number"),
+    );
+
+    fireEvent.click(screen.getByTestId("unarchive-second"));
+    await waitFor(() =>
+      expect(screen.getByTestId("second-archived").textContent).toBe("false"),
+    );
+    expect(server.boards.get("b-2")?.archivedAt).toBeUndefined();
+  });
+
+  it("restores the board snapshot when a board-level command is refused", async () => {
+    const server = new FakeServer([
+      seedBoard(),
+      { ...seedBoard(), id: "b-2", title: "Second" },
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+
+    server.failNextRequest(403, { message: "Only an ADMIN can archive" });
+    fireEvent.click(screen.getByTestId("archive-second"));
+    await waitFor(() =>
+      expect(screen.getByTestId("second-archived").textContent).toBe("false"),
+    );
+    expect(server.boards.get("b-2")?.archivedAt).toBeUndefined();
+  });
+
+  it("rolls back and keeps the queue usable when the network drops", async () => {
+    const server = new FakeServer([seedBoard()]);
+    let dropCommands = false;
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (dropCommands && (init?.method ?? "GET") === "POST") {
+          throw new TypeError("Failed to fetch");
+        }
+        return server.handle(input, init);
+      },
+    );
+    renderApp();
+    await waitReady();
+
+    dropCommands = true;
+    fireEvent.click(screen.getByTestId("add-column"));
+    await waitFor(() =>
+      expect(screen.getByTestId("columns").textContent).toBe("Todo"),
+    );
+    expect(screen.getByTestId("can-undo").textContent).toBe("false");
+    expect(server.boards.get("b-1")?.columns).toHaveLength(1);
+
+    dropCommands = false;
+    fireEvent.click(screen.getByTestId("add-column"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.columns.map((c) => c.title)).toEqual([
+        "Todo",
+        "New",
+      ]),
+    );
+  });
+
+  it("shows the error state when hydration fails", async () => {
+    vi.stubGlobal("fetch", async () => new Response("{}", { status: 500 }));
+    renderApp();
+    await waitFor(() =>
+      expect(screen.getByTestId("status").textContent).toBe("error"),
+    );
+  });
+
+  it("keeps the list unchanged when a REST create fails", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+
+    server.failNextRequest(500, { message: "boom" });
+    fireEvent.click(screen.getByTestId("add-board"));
+    await waitFor(() =>
+      expect(
+        server.requests.filter(
+          (r) => r.method === "POST" && r.path === "/api/v1/boards",
+        ),
+      ).toHaveLength(1),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("board-count").textContent).toBe("1");
+    expect(server.boards.size).toBe(1);
+  });
+
+  it("deletes a board over REST, and keeps it when the server refuses", async () => {
+    const server = new FakeServer([
+      seedBoard(),
+      { ...seedBoard(), id: "b-2", title: "Second" },
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+
+    server.failNextRequest(403, { message: "nope" });
+    fireEvent.click(screen.getByTestId("remove-second"));
+    await waitFor(() =>
+      expect(server.requests.filter((r) => r.method === "DELETE")).toHaveLength(
+        1,
+      ),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("board-count").textContent).toBe("2");
+
+    fireEvent.click(screen.getByTestId("remove-second"));
+    await waitFor(() =>
+      expect(screen.getByTestId("board-count").textContent).toBe("1"),
+    );
+    expect(server.boards.size).toBe(1);
+  });
+
+  it("imports boards over REST and re-hydrates, or leaves the list alone on failure", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+
+    server.failNextRequest(500, { message: "boom" });
+    fireEvent.click(screen.getByTestId("import-board"));
+    await waitFor(() =>
+      expect(
+        server.requests.filter((r) => r.path === "/api/v1/boards/import"),
+      ).toHaveLength(1),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(server.boards.size).toBe(1);
+
+    fireEvent.click(screen.getByTestId("import-board"));
+    await waitFor(() =>
+      expect(screen.getByTestId("board-count").textContent).toBe("2"),
+    );
+    expect(server.boards.size).toBe(2);
+  });
+
+  it("refetches on visibilitychange as well", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+
+    server.overwriteBoard("b-1", (board) => {
+      board.title = "Remote title";
+      return board;
+    });
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("title").textContent).toBe("Remote title"),
     );
   });
 });

@@ -62,6 +62,7 @@ export class FakeServer {
   private readonly versions = new Map<string, Map<string, number>>();
   private readonly seq = new Map<string, number>();
   private nextFailure: { status: number; body: unknown } | null = null;
+  private nextRequestFailure: { status: number; body: unknown } | null = null;
   private boardCounter = 0;
 
   constructor(seed: Board[] = []) {
@@ -75,6 +76,11 @@ export class FakeServer {
   /** Make the next command answer with this error once (rollback tests). */
   failNextCommand(status: number, body: unknown): void {
     this.nextFailure = { status, body };
+  }
+
+  /** Make the next request of any kind answer with this error once. */
+  failNextRequest(status: number, body: unknown): void {
+    this.nextRequestFailure = { status, body };
   }
 
   /** Simulate a foreign writer (no command row): replace the board. */
@@ -111,6 +117,11 @@ export class FakeServer {
   };
 
   private route(method: string, path: string, body: unknown): Response {
+    if (this.nextRequestFailure !== null) {
+      const failure = this.nextRequestFailure;
+      this.nextRequestFailure = null;
+      return json(failure.status, failure.body);
+    }
     if (path === "/api/v1/auth/refresh" && method === "POST") {
       return this.refreshValid
         ? json(200, this.session())
