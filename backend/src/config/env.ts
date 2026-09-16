@@ -55,8 +55,11 @@ export const env = cleanEnv(process.env, {
     example: "postgresql://user:password@localhost:5433/janosik_test",
   }),
   JWT_SECRET: str({
-    desc: "Secret for signing JWT access tokens; must be a long random string (generate with: openssl rand -hex 32)",
+    desc: "Secret for signing JWT access tokens",
     example: "c15a6f2e9d84b0173ac6f8e5d21b4a0973e8c5d0f1a2b3c4d5e6f7a8b9c0d1e2",
+    validate: (v) =>
+      v.length >= 32 ||
+      "JWT_SECRET must be at least 32 characters (generate with: openssl rand -hex 32)",
   }),
   ACCESS_TOKEN_TTL: str({
     desc: "Access token lifetime, a vercel/ms duration string",
