@@ -1377,3 +1377,42 @@ payload, которых нет в `cardIds`, из колонки убирают�
 - **Известное ограничение:** stylus/pen больше не запускает drag
   (PointerSensor покрывал pen, Mouse+Touch — нет); вне DoD, зафиксировано
   координатором при ревью.
+
+## TASK-21.11 — `dialog-reset-touch-dbltap` · Сброс диалогов + двойной тап ✅
+
+- **Статус:** ✅ реализовано, ветка `VitalyTolstik/dev-task-21-11`, PR #64 —
+  пайплайн dev→qa (ROADMAP §0.1 п.8); qa-вердикт «принято».
+- **Сброс диалогов (бывшая находка N-5 аудита).** Три паттерна (useEffect
+  по `open`, императивный сброс в `onOpenChange`, `key`-remount) заменены
+  одним: draft-стейт живёт в дочернем компоненте внутри
+  `DialogContent`/`PopoverContent` — Radix размонтирует его при закрытии,
+  каждое открытие монтирует чистый экземпляр (семантика ремоунта, сброс
+  нельзя забыть/рассинхронизировать). Переписаны: WipLimitDialog
+  (WipLimitForm), RenameColumnDialog (RenameColumnForm), ArchiveDialog,
+  BackupDialog, BoardSwitcher (BoardSwitcherPanel вместо handleOpenChange-
+  сброса), LabelPicker (RenameLabelForm), GlobalSearch (GlobalSearchPalette,
+  заодно убран focus-эффект), CardDialog (CardDeleteAction владеет
+  confirm-диалогом). DataMenu не менялся — draft-стейта нет. Правило
+  «сброс ремоунтом, отклонения — с обоснованием» — в `AGENT.md`.
+- **Двойной тач-тап по заголовку колонки.** Диагностика (headless Chrome +
+  CDP, touch emulation): синтетический `dblclick` от программных тапов
+  доходил до `h3` и диалог открывался — программно баг не воспроизводится;
+  дефект структурный: переименование целиком зависело от браузерного
+  `dblclick` на элементе, который владеет dnd-kit listeners (TouchSensor
+  delay 220) — гарантий синтеза `dblclick` на реальных устройствах нет.
+  Фикс: хук `src/hooks/use-double-tap.ts` читает двойной тап из
+  pointer-потока (touch/pen; gap ≤ 300 мс, slop 24 px, long-press > 500 мс
+  отбрасывается, pointercancel очищает); mouse остался на нативном
+  `onDoubleClick` (хук игнорирует `pointerType: "mouse"`). Доказательство:
+  при блокировке `dblclick` через document capture двойной тап всё равно
+  открывает `RenameColumnDialog`.
+- **Тесты:** 616 → **622 в 60 файлах**; новые: `ColumnView.double-tap.test.tsx`
+  (touch-двойной тап открывает, одиночный нет, mouse dblclick работает —
+  падает без хука), WipLimitDialog reset-on-reopen, CardDialog
+  delete-confirm.
+- **Проверки qa:** vitest --coverage 622/622 (92.73/87.62/95.75/97.68 ≥
+  порогов 88/83/91/93), lint 0 ошибок / 9 warnings (было 13 — демоушен-
+  warnings частично ушли вместе с open-reset эффектами), build/format/size
+  в бюджетах (198.76/49.41/21.55/14.54 KB gzip), CDP-смоук 14/14: сбросы
+  Rename/WIP/поиска/свитчера/Archive/Backup, двойной тап=rename, одиночный
+  =нет, long-press=drag колонки, мышь не сломана, консоль чистая.
