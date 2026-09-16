@@ -203,6 +203,13 @@
 
 ### 1.2. Архитектура (кратко)
 
+> **Layout (TASK-22):** monorepo npm workspaces — фронт в `ui/`
+> (бывший корень: `ui/src/…`), общий домен и контракт API в `shared/`
+> (`@janosik/shared`, source-only): модель+LIMITS, детерминированный
+> `board-reducer`, `invert`, migrate/seed, `column-limits` (atWipLimit),
+> envelope экспорта, storage-keys, DTO/SSE-контракт `api.ts`.
+> Пути ниже читаются как `ui/<путь>`.
+
 - **Модель** — `Board { columns[], cards: Record<string,Card>, labels[] }`,
   `Card { id, title, description?, checklists?, labelIds[], dueDate?, cover?,
   archivedAt?, createdAt, updatedAt }` (`Checklist { id, title, items:
@@ -343,7 +350,9 @@
 | 23 | TASK-21.9 `motion-lazy` | ✅ реализовано, ветка `task-21-9` — motion-чанк вне критического пути: иконки шапки грузятся после idle (вариант Б), критический путь ~786→~653 KB raw / 239.2→197.9 KB gzip, отдельный size-бюджет на ленивый чанк — см. §6.0.1 |
 | 24 | TASK-21.10 `touch-dnd` | ✅ реализовано, PR #62 смержен — тач-DnD доски (Mouse+Touch+Keyboard сенсоры dnd-kit); тач-слой календаря/таблицы остаётся в TASK-31 |
 | 25 | TASK-21.11 `dialog-reset-touch-dbltap` | ✅ реализовано, PR #64 смержен — сброс диалогов единым ремоунтом (+ правило в AGENT.md), двойной тач-тап по заголовку колонки открывает переименование (`use-double-tap`) |
-| — | TASK-22…32, 35…41 | бэкенд, совместный UI, релиз и полировка — **порядок и DoD в §7.7** (19 шагов); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. Старт после TASK-21.11 |
+| — | touch-хотфиксы | ✅ PR #65/#66 смержены — ховер-кнопки не «невидимо тапабельны» на таче (вариант `no-hover`); создание карточки на таче через концевую зону (`touchVisible`) |
+| 26 | TASK-22 `monorepo-restructure` | ✅ реализовано, PR #67 смержен — npm workspaces: `ui/` + `shared/` (`@janosik/shared`: модель, редьюсер, invert, envelope, storage-keys, DTO/SSE-контракт `api.ts`), алиасы vite/tsconfig/vitest, CI с `-w ui`; гейты без изменений — 627 тестов (ui 397 + shared 230) |
+| — | TASK-23…32, 35…41 | бэкенд, совместный UI, релиз и полировка — **порядок и DoD в §7.7** (19 шагов, TASK-22 сделан); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. Следующий — TASK-23 `backend-scaffold` |
 
 ### 6.0.1. Укрепление фундамента перед бэкендом (TASK-21.1…21.11)
 
@@ -1212,7 +1221,7 @@ TASK-36 и TASK-37.)*
 
 | # | TASK | Ветка | Суть | DoD (кратко) |
 | --- | --- | --- | --- | --- |
-| 1 | TASK-22 `monorepo-restructure` | `feature/TASK-22-monorepo` | `git mv` фронта в `ui/`, workspaces, `@janosik/shared` (модель+LIMITS+envelope+STORAGE_KEYS+**DTO-типы API и `BoardAction` — контракт фронт↔бэк, форма экшенов к этому моменту финализирована TASK-21.7a/b**; envelope сверить с сериалайзером архива/обложек/сроков — round-trip §7.4), `SAVE_DEBOUNCE_MS` в константы, алиасы vite/tsconfig/vitest | все фронт-тесты зелёные в новом layout (на момент старта — 364 в 30 файлах, сверить `npx vitest run`); tsc/build зелёные |
+| 1 | TASK-22 `monorepo-restructure` ✅ | `feature/TASK-22-monorepo` | `git mv` фронта в `ui/`, workspaces, `@janosik/shared` (модель+LIMITS+envelope+STORAGE_KEYS+**DTO-типы API и `BoardAction` — контракт фронт↔бэк, форма экшенов к этому моменту финализирована TASK-21.7a/b**; envelope сверить с сериалайзером архива/обложек/сроков — round-trip §7.4), `SAVE_DEBOUNCE_MS` в константы, алиасы vite/tsconfig/vitest | все фронт-тесты зелёные в новом layout, tsc/build зелёные. **Выполнено: PR #67** — 627 тестов (ui 397 + shared 230), coverage выше порогов у обоих пакетов, migrate/seed/text переехали как жёсткие зависимости редьюсера; envelope round-trip подтверждён перенесённым тестом |
 | 2 | TASK-23 `backend-scaffold` | `feature/TASK-23-backend-scaffold` | NestJS + Prisma + docker-compose(postgres:16), `/health`, модули-заглушки, общий tsconfig/ESLint, helmet + rate-limit на auth-роутах сразу | `/health` 200; e2e-пайплайн работает; backend-команды DoD в AGENT.md |
 | 3 | TASK-24 `backend-auth` | `feature/TASK-24-backend-auth` | register/login/refresh/logout/me, argon2id, `displayName`, `isSuperAdmin` (первый юзер), ротация refresh + детект реюза, JwtGuard | e2e: полный цикл auth + реюз revoked → отзыв сессий; guard-роуты 401; rate-limit на /auth/login |
 | 4 | TASK-25 `boards-members` | `feature/TASK-25-boards-members` | Полная схема §7.3 + миграции **включая soft-delete (`deletedAt`) и `version` — с первого дня, каскады проставлением флага** (§7.0); boards CRUD, membership с ролями ADMIN/MEMBER/VIEWER + `expiresAt` (invite/смена роли — только ADMIN, протухший VIEWER → 403), `GET /boards/:id` агрегат (активные cardIds + cards с archivedAt), import/export с round-trip cover/due/wip/archived | e2e: CRUD, роли (VIEWER-мутация → 403, expiresAt → 403), 403 чужой доске; aggregate shape = модель фронта (включая архив); soft-delete: DELETE прячет сущность, выборки фильтруют `deletedAt` |
