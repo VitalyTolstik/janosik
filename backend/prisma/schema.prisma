@@ -1,5 +1,5 @@
-// Janosik schema — TASK-23 ships the User table only; the full §7.3 schema
-// (Board/Column/Card/Command/...) lands with TASK-24/25.
+// Janosik schema — TASK-24 ships User + RefreshToken (auth); the full §7.3
+// schema (Board/Column/Card/Command/...) lands with TASK-25.
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,10 +10,20 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  displayName  String?
-  isSuperAdmin Boolean  @default(false) // first registered user
-  createdAt    DateTime @default(now())
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  displayName   String?
+  isSuperAdmin  Boolean  @default(false) // first registered user
+  createdAt     DateTime @default(now())
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  user      User      @relation(fields: [userId], references: [id])
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime? // rotation; reuse of a revoked token revokes all user sessions
 }

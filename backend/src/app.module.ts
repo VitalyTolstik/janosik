@@ -11,8 +11,8 @@ import { ActivityModule } from "@/activity/activity.module";
 import { CommentsModule } from "@/comments/comments.module";
 
 /**
- * TASK-23 scaffold: app skeleton with the §7.2 stub modules.
- * The auth/boards/commands/... routes are filled in from TASK-24 on.
+ * TASK-24: auth routes are live (register/login/refresh/logout/me).
+ * The boards/commands/... stubs land from TASK-25 on.
  */
 @Module({
   imports: [
