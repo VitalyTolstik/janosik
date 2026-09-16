@@ -57,7 +57,12 @@
 
 Параллельная работа нескольких агентов по кластерам задач (обкатано на
 аудите 2026-09): координатор — главный агент в терминале main-worktree,
-субагенты — opencode в worktree Orca.
+субагенты — opencode в worktree Orca. **Приоритет правил:** при расхождении
+этого файла с CLI-гайдами (`orca skills get …`) действуют правила этого
+файла: recovery-механика CLI (`--task` + `--retry-of`, `worker-abandon`)
+здесь НЕ применяется (наступали 2026-09-16 — уводила из пайплайна к
+`--agent claude` и замороженной спеке); сбойный воркер заменяется новым
+`worker-start` с `--spec` (п.9).
 
 - **CLI:** полный путь `/Applications/Orca.app/Contents/Resources/bin/orca`
   (симлинк `/usr/local/bin/orca` бывает битым).
@@ -83,10 +88,18 @@
 1. **Worktree под каждого субагента** (ветка = имя):
    `orca worktree create --repo path:… --name <slug> --setup run --json`
    → `/Users/vitaltol/orca/workspaces/janosik/<slug>`, `node_modules`
-   ставится setup-хууком.
+   ставится setup-хууком. До `worker-start`: (а) дождаться setup-хуука —
+   `ls <worktree>/node_modules/.bin` непуст; (б) скопировать секреты
+   координатором: `cp /Users/vitaltol/Dev/janosik/backend/.env <worktree>/backend/.env` —
+   воркер не должен ходить в пути вне своего worktree (чужой каталог =
+   permission-промпт «Access external directory» и пауза; проверено
+   2026-09-16).
 2. **Модель субагента** — НЕ через `worker-start --model` (работает только
    для Claude/Codex/Cursor). Пишется `<worktree>/opencode.json`:
-   `{"$schema":"https://opencode.ai/config.json","model":"openrouter/deepseek/deepseek-v4.1-flash"}`.
+   `{"$schema":"https://opencode.ai/config.json","model":"openrouter/deepseek/deepseek-v4.1-flash","permission":{"edit":"allow","bash":"allow","webfetch":"allow"}}`
+   — блок `permission` обязателен, иначе воркер спрашивает разрешения
+   (решено пользователем 2026-09-16; то же в глобальном
+   `~/.config/opencode/opencode.jsonc` — действует на все сессии).
    Файл скрыт через общий `.git/info/exclude` главного репозитория
    (per-worktree `info/exclude` git не читает).
 3. **Ран:** `orca orchestration run-create --objective … --json`.
@@ -98,9 +111,20 @@
    → возвращает `taskId`/`dispatchId` (записывать). Спека — самодостаточный
    текст: контекст и база (тесты/линт), список находок, **граница файлов**,
    запреты (не пушить/не мержить/не трогать общие файлы), формат отчёта.
+   Длинную спеку писать в файл и подставлять `--spec "$(cat <file>)"`.
+   Нюансы (проверено 2026-09-16): `--task` и `--spec` взаимоисключающие,
+   спека созданной таски заморожена — перезапуск всегда НОВЫМ
+   `worker-start` с `--spec`; placement — только `--worktree name:<slug>`
+   из п.1 (не `new-child`/`current` — они создают worktree без setup-хуука
+   и без opencode.json); воркер коммитит в ветку worktree
+   `VitalyTolstik/<slug>`, feature/TASK-…-ветки не создаёт.
 5. **Мониторинг:** `orca orchestration check --run <run> [--wait]`.
    Доставка FIFO: недоставленное реплеится, поэтому **акать сразу** —
-   `orca orchestration check --run <run> --ack <delivery_id>`.
+   `orca orchestration check --run <run> --ack <deliveryId>`; акается батч
+   целиком, id — из поля `deliveryId` ответа (`delivery_…`; `msg_…` даёт
+   `stale_delivery`). `--json` пишет keepalive-строки в stderr — парсить
+   stdout. `--wait` гонять циклом с таймаутом 10–15 мин: работающий
+   воркер может молчать десятки минут (heartbeat'ы «alive» — норма).
    Ответить воркеру: `orca orchestration send` / `reply`.
    **Правило координатора (решение пользователя 2026-09-16):** пока
    хотя бы один воркер работает, координатор занят — ждёт и слушает
@@ -110,13 +134,19 @@
    другим делам.
 6. **Жизненный цикл (решение пользователя 2026-09-16):** воркер сдал
    задачу → ревью координатора → `worker-release --dispatch <id>`
-   (снимает терминал и worktree). **Новая задача = всегда НОВЫЙ воркер
-   с чистым контекстом в новом worktree** — освободившихся не
-   переиспользуем, `worker-retain`/follow-up только для мелких правок
-   текущей задачи того же воркера. ⚠️ `worker-release` НЕ убирает
-   шелл-терминалы из UI — после релиза чистить явно:
+   (снимает терминал; **worktree релизом НЕ удаляется** — отдельно:
+   `orca worktree rm --worktree path:<wt> [--force]`). **Новая задача =
+   всегда НОВЫЙ воркер с чистым контекстом в новом worktree** —
+   освободившихся не переиспользуем, `worker-retain`/follow-up только
+   для мелких правок текущей задачи того же воркера. ⚠️ `worker-release`
+   НЕ убирает шелл-терминалы из UI — после релиза чистить явно:
    `orca terminal close --worktree path:<released-worktree> --all`
-   (иначе «висят»), сверяться: `orca terminal list`.
+   (иначе «висят»), сверяться: `orca terminal list`. `worker-release`
+   работает только по settled-диспатчу (succeeded/failed): на живом
+   вернёт `retained` — тогда послать воркеру «принято, освобождаю»,
+   дождаться exit его терминала (`terminal read` → `status: exited`) и
+   повторить; `retained` при уже мёртвом терминале безвреден, остаточные
+   записи диспатчей в `worker-list` не мешают.
 7. **Практика параллелизации:** резать работу по **файлам**, не по
    категориям находок; cross-cutting правки (общие утилиты, каталоги i18n)
    — отдельной волной после вливания первой; общие файлы (`README.md`,
@@ -131,20 +161,26 @@
      создаётся от ветки — незакоммиченное состояние туда не попадёт;
      повторено после dev-touch-dnd 2026-09-16), затем шлёт координатору
      «готово» с описанием изменений, хешем коммита и как проверить.
-   - **qa** (воркер `qa-<slug>`, worktree `qa-<slug>`, создаётся от
-     ветки dev: `--base-branch <dev-branch>`) — **код не пишет**. Только
-     запускает проверки (`npx vitest run --coverage`, `npm run lint`,
-     `npm run build`, `npm run format:check`, `npm run size`) и при
-     UI-задачах делает браузерный смоук (`npm run preview`). Обновляет
-     проверяемое состояние форвард-мержем ветки dev
-     (`git merge --ff-only <dev-branch>`).
+   - **qa** (воркер `qa-<slug>`, worktree `qa-<slug>`, создаётся от main
+     по п.1) — **код не пишет**. Обновляет проверяемое состояние
+     форвард-мержем ветки dev (`git merge --ff-only <dev-branch>`, затем
+     `npm install` + `npx prisma generate`, если менялись
+     зависимости/схема). Проверки по типу задачи: UI — `npm test`
+     (+ `--coverage`), `npm run build -w ui` (внутри `tsc -b`; голый
+     `tsc -b` от корня не работает — нет корневого tsconfig, qa поймал
+     2026-09-16), `npm run lint`, `npm run format:check`,
+     `npm run size -w ui`, браузерный смоук (`npm run preview`);
+     backend — `npm test -w backend`, `npm run build:backend`; общие —
+     lint/format:check.
    - **Цикл до принятия:** qa нашёл ошибку → вердикт координатору → тот
      пересылает dev'у (dev жив: retain, не release) → dev правит → qa
      перепроверяет → … пока qa не примет.
    - **Координатор после принятия:** дифф ревьюит **на логику, тесты сам
      не гоняет** (qa уже прогнал, факт прогонов — в вердикте qa);
-     обновляет доки (ROADMAP/README), открывает PR, ждёт CI
-     и мержит; затем release dev и qa + чистка терминалов/worktree (п.6).
+     обновляет доки (ROADMAP/README), пушит ветку dev, открывает PR,
+     ждёт CI и **докладывает — мерж только по явной команде
+     пользователя** («мержи», §0 п.1); после мержа — docs-коммит,
+     release dev и qa + чистка терминалов/worktree (п.6).
    - Правило чистого контекста (п.6) действует на обе роли: новая
      задача = новые `dev-<slug>` и `qa-<slug>`, освободившихся не
      переиспользуем.
@@ -156,13 +192,27 @@
      dispatch:<id>`); освобождает dev сам координатор
      (`worker-release`) после мержа. **qa:** вердикт
      «принято»/«ошибка» — сообщением в ран, затем **сразу финальный
-     done, без ожидания подтверждения координатора** — работа qa на
-     этом закончена; повторная проверка после правок dev — координатор
-     через `worker-retain --dispatch <id>` + `terminal send --terminal
-     <handle>` (handle из `worker-show`). Финальный done закрывает
-     диспатч навсегда (`send --to dispatch:<id>` отвечает
-     `dispatch_inactive` — это не поломка CLI); сообщения воркера в
-     ран работают и после закрытия.
+      done, без ожидания подтверждения координатора** — работа qa на
+      этом закончена; повторная проверка после правок dev — координатор
+      через `worker-retain --dispatch <id>` + `terminal send --terminal
+      <handle>` (handle из `worker-show`). Финальный done закрывает
+      диспатч навсегда (`send --to dispatch:<id>` отвечает
+      `dispatch_inactive` — это не поломка CLI); сообщения воркера в
+      ран работают и после закрытия. Спеки обеих ролей включают эти
+      правила явным текстом — воркер не догадается сам.
+
+9. **Сбойный старт воркера (2026-09-16):** `failed` в `agent_readiness`
+   (trust/permission-промпт), `outcome_unknown` (`turn_start_unobserved`)
+   или молчащий агент — сначала инспекция, а не cleanup:
+   `worker-list --run <run>` (liveness + `nextAction`) и `terminal read`;
+   `unverifiable` ≠ «мёртв» (это отсутствие доказательств — ждать или
+   инспектировать). Видимый промпт в терминале — снять (п.5). Только
+   позитивное доказательство exit (`status: exited`, пустой шелл-промпт)
+   разрешает: `worker-stop`/`worker-release`, затем
+   `worktree rm --worktree path:<wt> --force` и старт нового воркера
+   по п.1–4 с той же спекой. Хвосты неудавшегося `worker-start`
+   (терминалы, worktree без setup) чистить руками — список в
+   `residualResources` у `worker-show`.
 
 ---
 
