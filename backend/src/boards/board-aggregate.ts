@@ -1,0 +1,158 @@
+import type {
+  Board as BoardRow,
+  BoardMember as BoardMemberRow,
+  Column as ColumnRow,
+  Label as LabelRow,
+  Prisma,
+  User as UserRow,
+} from "@prisma/client";
+import type {
+  BoardAggregate,
+  BoardCounters,
+  BoardMemberDto,
+  BoardSummary,
+  Card,
+  CardCover,
+  Checklist,
+  LabelColor,
+} from "@janosik/shared";
+
+/** A card row with the relations the aggregate needs (labels + checklists). */
+export type CardWithRelations = Prisma.CardGetPayload<{
+  include: {
+    labels: true;
+    checklists: { include: { items: true } };
+  };
+}>;
+
+/** A membership row with its user, as loaded for `GET /boards/:id/members`. */
+export type MemberWithUser = BoardMemberRow & { user: UserRow };
+
+/**
+ * Map normalized Prisma rows onto the frontend `Board` model (§7.4).
+ *
+ * Contract (ROADMAP §7.0 / TASK-25):
+ * - `column.cardIds` holds **only active** cards, in `position` order;
+ * - archived cards stay in the `cards` map and carry `archivedAt`;
+ * - soft-deleted rows never reach here (callers filter `deletedAt: null`);
+ * - timestamps are Unix ms, matching the UI model.
+ */
+export function toBoardAggregate(
+  board: BoardRow,
+  columns: ColumnRow[],
+  cards: CardWithRelations[],
+  labels: LabelRow[],
+): BoardAggregate {
+  const boardLabelIds = new Set(labels.map((label) => label.id));
+
+  const cardsMap: Record<string, Card> = {};
+  for (const card of cards) {
+    cardsMap[card.id] = toCard(card, boardLabelIds);
+  }
+
+  return {
+    id: board.id,
+    title: board.title,
+    columns: columns.map((column) => {
+      const cardIds = cards
+        .filter(
+          (card) =>
+            card.columnId === column.id &&
+            card.archivedAt === null &&
+            card.deletedAt === null,
+        )
+        .map((card) => card.id);
+      return {
+        id: column.id,
+        title: column.title,
+        cardIds,
+        // Keep the "omit when unset" invariant of the UI model.
+        ...(column.wipLimit !== null ? { wipLimit: column.wipLimit } : {}),
+        createdAt: column.createdAt.getTime(),
+      };
+    }),
+    cards: cardsMap,
+    labels: labels.map((label) => ({
+      id: label.id,
+      name: label.name,
+      color: label.color as LabelColor,
+    })),
+    createdAt: board.createdAt.getTime(),
+    updatedAt: board.updatedAt.getTime(),
+    ...(board.archivedAt ? { archivedAt: board.archivedAt.getTime() } : {}),
+  };
+}
+
+function toCard(card: CardWithRelations, boardLabelIds: Set<string>): Card {
+  const labelIds = [...card.labels]
+    .filter((link) => boardLabelIds.has(link.labelId))
+    .sort((a, b) => a.position - b.position)
+    .map((link) => link.labelId);
+
+  const checklists = toChecklists(card.checklists);
+
+  return {
+    id: card.id,
+    title: card.title,
+    ...(card.description !== null ? { description: card.description } : {}),
+    ...(checklists ? { checklists } : {}),
+    ...(card.dueDate ? { dueDate: card.dueDate.getTime() } : {}),
+    ...(card.coverType && card.coverValue
+      ? {
+          cover: {
+            type: card.coverType as CardCover["type"],
+            value: card.coverValue as CardCover["value"],
+          } as CardCover,
+        }
+      : {}),
+    labelIds,
+    createdAt: card.createdAt.getTime(),
+    updatedAt: card.updatedAt.getTime(),
+    ...(card.archivedAt ? { archivedAt: card.archivedAt.getTime() } : {}),
+  };
+}
+
+function toChecklists(
+  rows: CardWithRelations["checklists"],
+): Checklist[] | undefined {
+  if (rows.length === 0) {
+    return undefined;
+  }
+  return [...rows]
+    .sort((a, b) => a.position - b.position)
+    .map((checklist) => ({
+      id: checklist.id,
+      title: checklist.title,
+      items: [...checklist.items]
+        .sort((a, b) => a.position - b.position)
+        .map((item) => ({
+          id: item.id,
+          text: item.text,
+          done: item.done,
+        })),
+    }));
+}
+
+/** `GET /boards` entry: identity + counters, never the whole aggregate. */
+export function toBoardSummary(
+  board: BoardRow,
+  counters: BoardCounters,
+): BoardSummary {
+  return {
+    id: board.id,
+    title: board.title,
+    ...(board.archivedAt ? { archivedAt: board.archivedAt.getTime() } : {}),
+    counters,
+  };
+}
+
+/** `GET /boards/:id/members` row (§7.4). */
+export function toMemberDto(member: MemberWithUser): BoardMemberDto {
+  return {
+    userId: member.userId,
+    displayName: member.user.displayName,
+    email: member.user.email,
+    role: member.role,
+    expiresAt: member.expiresAt ? member.expiresAt.getTime() : null,
+  };
+}

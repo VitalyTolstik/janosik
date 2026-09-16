@@ -11,6 +11,7 @@ const tsJest = {
 const mapper = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
+    "^@janosik/shared$": "<rootDir>/../shared/src/index.ts",
   },
 };
 
