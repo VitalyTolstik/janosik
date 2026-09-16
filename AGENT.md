@@ -242,7 +242,13 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   (ADMIN/MEMBER/VIEWER + `expiresAt`, last-ADMIN защищён) под
   MembershipGuard, агрегат `GET /boards/:id` = модель фронта,
   import/export через `@janosik/shared` (симлинк `backend/src/shared`).
-  Остальные модули (users/commands/activity/comments) — заглушки;
+- **Commands живые (TASK-26):** `POST /boards/:id/commands` — команда
+  редьюсера, идемпотентная по `commandId`; строгий `validate` из shared →
+  `400 {field}`, WIP/лимиты → `409 {conflict:"wip"}`, `ifMatch` → `409
+  {conflict:"version"}`; команды одной доски сериализуются `FOR UPDATE`.
+  `GET ?since=<seq>` — дельта-догон; per-action writers зеркалят
+  `boardReducer` в таблицы §7.3 (контрактный e2e).
+  Остальные модули (users/activity/comments) — заглушки;
   `/health` живой (пингует БД).
 
 ### Pre-commit (husky)

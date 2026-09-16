@@ -1,10 +1,10 @@
 # Janosik — архив закрытых задач (ROADMAP-DONE)
 
-> Полные описания реализованных задач TASK-1…21 (Фазы A/B/C+) и аудит-фиксов
-> TASK-33/34. Вынесены из `ROADMAP.md`, чтобы обязательное чтение агента
-> (§0 ROADMAP) оставалось компактным. Статус и порядок — в таблице §6.0
-> `ROADMAP.md`; решения и «что сделано» — здесь. Номера задач не
-> переиспользуются.
+> Полные описания реализованных задач TASK-1…21 (Фазы A/B/C+), аудит-фиксов
+> TASK-33/34 и бэкенд-задач TASK-22…26. Вынесены из `ROADMAP.md`, чтобы
+> обязательное чтение агента (§0 ROADMAP) оставалось компактным. Статус и
+> порядок — в таблице §6.0 `ROADMAP.md`; решения и «что сделано» — здесь.
+> Номера задач не переиспользуются.
 >
 > **Все задачи в этом файле — закрыты (`✅`).** Если запись выглядит как план
 > в будущем времени — это форма исходной постановки, а не признак незакрытой
@@ -1518,3 +1518,16 @@ PR #69, merge `679aa1f` (dev-коммит `bb26b41` на ветке `VitalyTolst
 - **`@janosik/shared` в backend** без build-степа shared: workspace-dep, tsconfig paths, jest moduleNameMapper (оба проекта), симлинк `backend/src/shared → ../../shared/src` + tsc-alias — dist/main.js живёт.
 - **Документированные отклонения:** §7.3 `Board.cards` не дублируется (карточки через колонки — Prisma требует opposite-relation); порядок label'ов не персистится (нет position в §7.3); удаление expired-VIEWER-строки ленивое (до следующего guarded-запроса строка видна в GET members); `expiresAt` игнорируется для ADMIN/MEMBER (семантика — time-limited VIEWER, §7.0).
 - **Гейты (независимый qa):** backend 21 unit + 31 e2e (CRUD, матрица ролей, протухший VIEWER, чужая доска, last-ADMIN, форма агрегата, soft-delete, import→export→import), build/lint/format зелёные, ui 397 + shared 230 не тронуты (shared +42 additive-типа в `api.ts`), ui typecheck, runtime-смоук (2 юзера, инвайт, агрегат, экспорт).
+
+## TASK-26 `columns-cards` — выполнено (2026-09-16)
+
+PR #70, merge `25d0448` (ветка `VitalyTolstik/dev-task26`; коммиты `3a63f0f` feat, `b4d15fa` фиксы по находкам qa, `6382129` фикс гонки `ifMatch`). Независимую перепроверку диффа, всех гейтов и live-смоука выполнил координатор.
+
+- **Командный транспорт §7.4:** `POST /boards/:id/commands {commandId, action, ifMatch?}` → `200 {seq, versions}`. `commandId` — primary key командного лога: повтор возвращает сохранённый `result`, второй `seq` не тратится, дубликата сущностей нет; тот же `commandId` на другой доске → 409. Строгий `validateBoardAction` из shared → `400 {field}` (неизвестный/TASK-27-экшен, пустой заголовок, отсутствующий `fromIndex`); WIP-лимит и коллекционные лимиты (общий `atWipLimit`) → `409 {conflict:"wip"}`; stale `ifMatch` → `409 {conflict:"version", currentVersion}`. Команды одной доски сериализуются блокировкой строки Board (`SELECT … FOR UPDATE`) — конкурентные same-`ifMatch` дают ровно один 200 / один 409 (гонка 200/200 воспроизведена на ревью и закрыта).
+- **Чтение:** `GET /boards/:id/commands?since=<seq>` — дельта-догон после обрыва SSE (порядок по `seq`, `actorId`; мусорный `since` → 400); роли — MEMBER мутирует, VIEWER читает, чужой/несуществующий → 403/404 (MembershipGuard).
+- **Контракт двух редьюсеров:** сервер применяет **тот же** `boardReducer` из shared (`withActivity: false`) и зеркалит результат в таблицы §7.3 per-action writers-ами (§7.4.1 вариант В). Контрактный e2e по всему набору действий: `GET /boards/:id` после команды deep-equal `boardReducer(before, action)`.
+- **Детерминизм:** writers не зовут `randomUUID()`/`Date.now()` — id и время только из payload; позиционные апдейты — raw SQL, чтобы `@updatedAt` не штамповался wall-clock при reorder; `touches`/`versions` согласованы (включая soft-deleted чек-листы/пункты при каскаде).
+- **Каскады §7.3:** `DELETE_COLUMN` гасит активные карточки (и их чек-листы/items, m2m-строки), архивные остаются в `cards`; undo-команды (`RESTORE_CARD/COLUMN/COLUMN_CARDS/CHECKLIST/CHECKLIST_ITEM`) не отклоняются гвардами; `RESTORE_CARD` без колонки паркует карточку в служебную soft-deleted колонку `orphan:<boardId>` — агрегат показывает её в `cards` и ни в одной колонке (байт-в-байт результат редьюсера).
+- **Артефакты:** `backend/src/commands/{commands.module,commands.controller,commands.service,command-writers,dto/create-command.dto}.ts`, `backend/test/commands-columns-cards.e2e-spec.ts` (46 e2e), `shared/src/store/validate.ts` + `validate.test.ts` (+62 теста: shared 230→292).
+- **Гейты:** backend 21 unit + 46 e2e, build/lint/format; shared 292; ui 397 + build. Live-смоук координатора на dev-БД (прод-сборка `node dist/main.js`): CRUD/move/duplicate/archive↔unarchive, идемпотентный replay, WIP/version 409, `400 {field}`, каскад колонки с выживанием архивной карточки, orphan-restore, `?since=`-дельта, конкурентная пара команд.
+- **Заметки на будущее:** no-op для неизвестных сущностей — сознательное зеркало редьюсера (ошибка клиента не диагностируется, контракт важнее); `writeCardPositions` — N UPDATE на reorder (в лимитах 200/колонку ок); orphan-колонка помечена префиксом `orphan:` — будущий UI восстановления колонок обязан её прятать; `backend/package.json` — `engines.node >=22.17` (shared резолвится как TS, `dist` стартует на Node 22.17+).
