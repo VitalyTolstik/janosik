@@ -67,12 +67,50 @@ function boardInitial(title: string): string {
 
 export function BoardSwitcher() {
   const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={t("board.switcher.aria")}
+          aria-expanded={open}
+          className="h-8 w-6 shrink-0 text-muted-foreground hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 data-[state=open]:text-foreground"
+        >
+          <ChevronDown size={16} className={open ? "rotate-180" : ""} />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={8}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        className="w-[340px] overflow-hidden rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
+      >
+        {/* All draft state (search, inline create, keyboard cursor, pending
+            confirms) lives in this panel. Radix unmounts `PopoverContent`
+            when the popover closes, so every open mounts a clean panel —
+            reset by remount, never imperatively in `onOpenChange`
+            (AGENT.md). */}
+        <BoardSwitcherPanel onClose={() => setOpen(false)} />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+interface BoardSwitcherPanelProps {
+  /** Closes the surrounding popover (used after navigating/creating). */
+  onClose: () => void;
+}
+
+function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
+  const { t } = useI18n();
   const toast = useToast();
   const navigate = useNavigate();
   const { boards, board, addBoard, removeBoard, archiveBoard, unarchiveBoard } =
     useBoard();
 
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [createDraft, setCreateDraft] = useState("");
@@ -113,7 +151,6 @@ export function BoardSwitcher() {
   // document bubble phase and scroll the list manually when the default was
   // suppressed (same workaround as the DataMenu / TimePicker columns).
   useEffect(() => {
-    if (!open) return;
     const onWheel = (e: WheelEvent) => {
       const list = listRef.current;
       if (e.defaultPrevented && list && list.contains(e.target as Node)) {
@@ -122,26 +159,10 @@ export function BoardSwitcher() {
     };
     document.addEventListener("wheel", onWheel, { passive: true });
     return () => document.removeEventListener("wheel", onWheel);
-  }, [open]);
-
-  const resetAndClose = () => {
-    setOpen(false);
-  };
-
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next);
-    if (next) {
-      setQuery("");
-      setCreating(false);
-      setCreateDraft("");
-      setHighlighted(0);
-      setConfirmArchiveId(null);
-      setConfirmDeleteId(null);
-    }
-  };
+  }, []);
 
   const openBoard = (target: Board) => {
-    resetAndClose();
+    onClose();
     navigate(routes.board(target.id));
   };
 
@@ -157,7 +178,7 @@ export function BoardSwitcher() {
       return;
     }
     const id = addBoard(title);
-    resetAndClose();
+    onClose();
     navigate(routes.board(id));
   };
 
@@ -207,115 +228,177 @@ export function BoardSwitcher() {
   const showCreateAsNamed = queryTrimmed.length > 0;
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t("board.switcher.aria")}
-          aria-expanded={open}
-          className="h-8 w-6 shrink-0 text-muted-foreground hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 data-[state=open]:text-foreground"
-        >
-          <ChevronDown size={16} className={open ? "rotate-180" : ""} />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={8}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        className="w-[340px] overflow-hidden rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
-      >
-        {/* Search */}
-        <div className="relative flex items-center gap-2 border-b px-3 py-2.5">
-          <Search size={15} className="shrink-0 text-muted-foreground" />
-          <input
-            name="board-search"
-            ref={searchRef}
-            value={query}
-            maxLength={LIMITS.query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setHighlighted(0);
-            }}
-            onKeyDown={onSearchKeyDown}
-            placeholder={t("board.switcher.search")}
-            aria-label={t("board.switcher.search")}
-            autoFocus
-            className="h-6 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          />
-          <LimitCounter
-            length={query.length}
-            limit={LIMITS.query}
-            position="below"
-            className="left-9"
-            testId="switcher-search-limit"
-          />
-        </div>
+    <>
+      {/* Search */}
+      <div className="relative flex items-center gap-2 border-b px-3 py-2.5">
+        <Search size={15} className="shrink-0 text-muted-foreground" />
+        <input
+          name="board-search"
+          ref={searchRef}
+          value={query}
+          maxLength={LIMITS.query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setHighlighted(0);
+          }}
+          onKeyDown={onSearchKeyDown}
+          placeholder={t("board.switcher.search")}
+          aria-label={t("board.switcher.search")}
+          autoFocus
+          className="h-6 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        />
+        <LimitCounter
+          length={query.length}
+          limit={LIMITS.query}
+          position="below"
+          className="left-9"
+          testId="switcher-search-limit"
+        />
+      </div>
 
-        {/* Board list */}
-        <div
-          ref={listRef}
-          role="listbox"
-          aria-label={t("board.switcher.aria")}
-          className="max-h-[300px] overflow-y-auto p-1.5"
-        >
-          {filtered.length === 0 ? (
-            <p className="px-2.5 py-6 text-center text-sm text-muted-foreground">
-              {t("board.switcher.empty")}
+      {/* Board list */}
+      <div
+        ref={listRef}
+        role="listbox"
+        aria-label={t("board.switcher.aria")}
+        className="max-h-[300px] overflow-y-auto p-1.5"
+      >
+        {filtered.length === 0 ? (
+          <p className="px-2.5 py-6 text-center text-sm text-muted-foreground">
+            {t("board.switcher.empty")}
+          </p>
+        ) : (
+          filtered.map((b, index) => {
+            const isActive = b.id === board?.id;
+            const isHighlighted = index === highlighted;
+            const isConfirming = confirmArchiveId === b.id;
+            return (
+              <div
+                key={b.id}
+                data-index={index}
+                role="option"
+                aria-selected={isActive}
+                tabIndex={-1}
+                onMouseEnter={() => setHighlighted(index)}
+                onClick={() => {
+                  if (isConfirming) return;
+                  openBoard(b);
+                }}
+                className={cn(
+                  "group/row flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 outline-none",
+                  isHighlighted && "bg-hover",
+                  isActive && !isHighlighted && "bg-primary/5",
+                )}
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-primary-foreground shadow-sm",
+                    boardColor(b.id),
+                  )}
+                >
+                  {boardInitial(b.title)}
+                </span>
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-left text-sm",
+                    isActive
+                      ? "font-medium text-foreground"
+                      : "text-foreground/90",
+                  )}
+                >
+                  {b.title}
+                </span>
+                {isConfirming ? (
+                  <span className="flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground">
+                      {t("board.switcher.archiveConfirm")}
+                    </span>
+                    <button
+                      aria-label={t("board.switcher.archiveConfirmYes")}
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-danger hover:bg-danger/10"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleArchive(b);
+                      }}
+                    >
+                      <Check size={14} />
+                    </button>
+                    <button
+                      aria-label={t("common.cancel")}
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmArchiveId(null);
+                      }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </span>
+                ) : (
+                  <>
+                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                      {Object.keys(b.cards).length}
+                    </span>
+                    <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+                      {isActive && (
+                        <Check
+                          size={15}
+                          className="absolute text-primary transition-opacity group-hover/row:opacity-0"
+                          aria-hidden
+                        />
+                      )}
+                      <button
+                        aria-label={t("board.switcher.archive")}
+                        className="absolute inset-0 flex items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/row:opacity-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmArchiveId(b.id);
+                        }}
+                      >
+                        <Archive size={14} />
+                      </button>
+                    </span>
+                  </>
+                )}
+              </div>
+            );
+          })
+        )}
+        {/* Archived boards: kept out of navigation, restorable. */}
+        {filteredArchived.length > 0 ? (
+          <div className="mt-1 border-t pt-1.5" data-testid="archived-section">
+            <p className="flex items-center gap-1.5 px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <Archive size={12} aria-hidden />
+              {t("board.switcher.archived")}
             </p>
-          ) : (
-            filtered.map((b, index) => {
-              const isActive = b.id === board?.id;
-              const isHighlighted = index === highlighted;
-              const isConfirming = confirmArchiveId === b.id;
+            {filteredArchived.map((b) => {
+              const isConfirming = confirmDeleteId === b.id;
               return (
                 <div
                   key={b.id}
-                  data-index={index}
-                  role="option"
-                  aria-selected={isActive}
-                  tabIndex={-1}
-                  onMouseEnter={() => setHighlighted(index)}
-                  onClick={() => {
-                    if (isConfirming) return;
-                    openBoard(b);
-                  }}
-                  className={cn(
-                    "group/row flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 outline-none",
-                    isHighlighted && "bg-hover",
-                    isActive && !isHighlighted && "bg-primary/5",
-                  )}
+                  className="group/archived flex items-center gap-2.5 rounded-lg px-2 py-1.5"
                 >
                   <span
                     aria-hidden
-                    className={cn(
-                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-primary-foreground shadow-sm",
-                      boardColor(b.id),
-                    )}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground"
                   >
                     {boardInitial(b.title)}
                   </span>
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate text-left text-sm",
-                      isActive
-                        ? "font-medium text-foreground"
-                        : "text-foreground/90",
-                    )}
-                  >
+                  <span className="min-w-0 flex-1 truncate text-left text-sm text-muted-foreground">
                     {b.title}
                   </span>
                   {isConfirming ? (
                     <span className="flex items-center gap-1">
                       <span className="text-xs text-muted-foreground">
-                        {t("board.switcher.archiveConfirm")}
+                        {t("board.switcher.deleteConfirm")}
                       </span>
                       <button
-                        aria-label={t("board.switcher.archiveConfirmYes")}
+                        aria-label={t("board.switcher.deleteConfirmYes")}
                         className="flex h-6 w-6 items-center justify-center rounded-md text-danger hover:bg-danger/10"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleArchive(b);
+                          handleDeleteArchived(b);
                         }}
                       >
                         <Check size={14} />
@@ -325,7 +408,7 @@ export function BoardSwitcher() {
                         className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setConfirmArchiveId(null);
+                          setConfirmDeleteId(null);
                         }}
                       >
                         <X size={14} />
@@ -333,174 +416,91 @@ export function BoardSwitcher() {
                     </span>
                   ) : (
                     <>
-                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                        {Object.keys(b.cards).length}
-                      </span>
-                      <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
-                        {isActive && (
-                          <Check
-                            size={15}
-                            className="absolute text-primary transition-opacity group-hover/row:opacity-0"
-                            aria-hidden
-                          />
-                        )}
-                        <button
-                          aria-label={t("board.switcher.archive")}
-                          className="absolute inset-0 flex items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/row:opacity-100"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmArchiveId(b.id);
-                          }}
-                        >
-                          <Archive size={14} />
-                        </button>
-                      </span>
+                      <button
+                        aria-label={t("board.switcher.restore")}
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-primary/10 hover:text-primary focus-visible:opacity-100 group-hover/archived:opacity-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          unarchiveBoard(b.id);
+                        }}
+                      >
+                        <ArchiveRestore size={14} />
+                      </button>
+                      <button
+                        aria-label={t("board.switcher.delete")}
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger focus-visible:opacity-100 group-hover/archived:opacity-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmDeleteId(b.id);
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </>
                   )}
                 </div>
               );
-            })
-          )}
-          {/* Archived boards: kept out of navigation, restorable. */}
-          {filteredArchived.length > 0 ? (
-            <div
-              className="mt-1 border-t pt-1.5"
-              data-testid="archived-section"
-            >
-              <p className="flex items-center gap-1.5 px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                <Archive size={12} aria-hidden />
-                {t("board.switcher.archived")}
-              </p>
-              {filteredArchived.map((b) => {
-                const isConfirming = confirmDeleteId === b.id;
-                return (
-                  <div
-                    key={b.id}
-                    className="group/archived flex items-center gap-2.5 rounded-lg px-2 py-1.5"
-                  >
-                    <span
-                      aria-hidden
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground"
-                    >
-                      {boardInitial(b.title)}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-left text-sm text-muted-foreground">
-                      {b.title}
-                    </span>
-                    {isConfirming ? (
-                      <span className="flex items-center gap-1">
-                        <span className="text-xs text-muted-foreground">
-                          {t("board.switcher.deleteConfirm")}
-                        </span>
-                        <button
-                          aria-label={t("board.switcher.deleteConfirmYes")}
-                          className="flex h-6 w-6 items-center justify-center rounded-md text-danger hover:bg-danger/10"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteArchived(b);
-                          }}
-                        >
-                          <Check size={14} />
-                        </button>
-                        <button
-                          aria-label={t("common.cancel")}
-                          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmDeleteId(null);
-                          }}
-                        >
-                          <X size={14} />
-                        </button>
-                      </span>
-                    ) : (
-                      <>
-                        <button
-                          aria-label={t("board.switcher.restore")}
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-primary/10 hover:text-primary focus-visible:opacity-100 group-hover/archived:opacity-100"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            unarchiveBoard(b.id);
-                          }}
-                        >
-                          <ArchiveRestore size={14} />
-                        </button>
-                        <button
-                          aria-label={t("board.switcher.delete")}
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger focus-visible:opacity-100 group-hover/archived:opacity-100"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmDeleteId(b.id);
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
+            })}
+          </div>
+        ) : null}
+      </div>
 
-        {/* Create row */}
-        <div className="border-t p-1.5">
-          {creating ? (
-            <div className="relative flex items-center gap-2 rounded-lg px-2 py-1 ring-1 ring-primary/30">
-              <Plus size={15} className="shrink-0 text-primary" />
-              <input
-                name="board-create"
-                ref={createRef}
-                value={createDraft}
-                maxLength={LIMITS.boardTitle}
-                onChange={(e) => setCreateDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleCreate();
-                  } else if (e.key === "Escape") {
-                    e.stopPropagation();
-                    setCreating(false);
-                    setCreateDraft("");
-                  }
-                }}
-                placeholder={t("board.switcher.newPlaceholder")}
-                aria-label={t("board.switcher.newPlaceholder")}
-                autoFocus
-                className="h-7 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-              />
-              <LimitCounter
-                length={createDraft.length}
-                limit={LIMITS.boardTitle}
-                position="below"
-                className="left-6"
-                testId="switcher-create-limit"
-              />
-            </div>
-          ) : (
-            <button
-              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground"
-              onClick={() => {
-                if (queryTrimmed) {
-                  createBoard(queryTrimmed);
-                } else {
-                  setCreating(true);
+      {/* Create row */}
+      <div className="border-t p-1.5">
+        {creating ? (
+          <div className="relative flex items-center gap-2 rounded-lg px-2 py-1 ring-1 ring-primary/30">
+            <Plus size={15} className="shrink-0 text-primary" />
+            <input
+              name="board-create"
+              ref={createRef}
+              value={createDraft}
+              maxLength={LIMITS.boardTitle}
+              onChange={(e) => setCreateDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleCreate();
+                } else if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setCreating(false);
+                  setCreateDraft("");
                 }
               }}
-            >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-dashed border-border">
-                <Plus size={15} />
-              </span>
-              <span className="truncate">
-                {showCreateAsNamed
-                  ? t("board.switcher.createWithName", { name: queryTrimmed })
-                  : t("board.switcher.new")}
-              </span>
-            </button>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
+              placeholder={t("board.switcher.newPlaceholder")}
+              aria-label={t("board.switcher.newPlaceholder")}
+              autoFocus
+              className="h-7 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+            <LimitCounter
+              length={createDraft.length}
+              limit={LIMITS.boardTitle}
+              position="below"
+              className="left-6"
+              testId="switcher-create-limit"
+            />
+          </div>
+        ) : (
+          <button
+            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground"
+            onClick={() => {
+              if (queryTrimmed) {
+                createBoard(queryTrimmed);
+              } else {
+                setCreating(true);
+              }
+            }}
+          >
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-dashed border-border">
+              <Plus size={15} />
+            </span>
+            <span className="truncate">
+              {showCreateAsNamed
+                ? t("board.switcher.createWithName", { name: queryTrimmed })
+                : t("board.switcher.new")}
+            </span>
+          </button>
+        )}
+      </div>
+    </>
   );
 }

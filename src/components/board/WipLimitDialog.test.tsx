@@ -68,4 +68,50 @@ describe("WipLimitDialog", () => {
     expect(onSave).toHaveBeenCalledWith(undefined);
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it("discards the draft when the dialog is reopened (reset by remount)", () => {
+    // Draft state lives inside DialogContent, which Radix unmounts on close —
+    // reopening must show the current limit, never the abandoned edit.
+    const { rerender } = render(
+      <I18nProvider>
+        <WipLimitDialog
+          open
+          columnTitle="Backlog"
+          initialLimit={3}
+          onOpenChange={() => {}}
+          onSave={() => {}}
+        />
+      </I18nProvider>,
+    );
+    fireEvent.change(screen.getByRole("spinbutton"), {
+      target: { value: "7" },
+    });
+    expect(screen.getByRole("spinbutton")).toHaveValue(7);
+
+    rerender(
+      <I18nProvider>
+        <WipLimitDialog
+          open={false}
+          columnTitle="Backlog"
+          initialLimit={3}
+          onOpenChange={() => {}}
+          onSave={() => {}}
+        />
+      </I18nProvider>,
+    );
+    expect(screen.queryByRole("spinbutton")).toBeNull();
+
+    rerender(
+      <I18nProvider>
+        <WipLimitDialog
+          open
+          columnTitle="Backlog"
+          initialLimit={3}
+          onOpenChange={() => {}}
+          onSave={() => {}}
+        />
+      </I18nProvider>,
+    );
+    expect(screen.getByRole("spinbutton")).toHaveValue(3);
+  });
 });

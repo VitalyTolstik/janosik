@@ -53,14 +53,8 @@ interface GlobalSearchProps {
  */
 export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
   const { t } = useI18n();
-  const { boards } = useBoard();
-  const navigate = useNavigate();
 
   const [open, setOpen] = useState(false);
-  const [rawQuery, setRawQuery] = useState("");
-  const [query, setQuery] = useState("");
-  const [activeIndex, setActiveIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const setOpenBoth = useCallback(
     (next: boolean) => {
@@ -69,12 +63,6 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
     },
     [onOpenChange],
   );
-
-  // Debounce the query before the (synchronous) search runs over it.
-  useEffect(() => {
-    const timer = setTimeout(() => setQuery(rawQuery), SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [rawQuery]);
 
   // Ctrl/Cmd+K opens the palette — the Linear/Notion/Jira convention.
   // Both modifiers are accepted on every platform (Ctrl+K is unbound
@@ -89,37 +77,6 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, setOpenBoth]);
-
-  // Reset the search state whenever the palette closes.
-  useEffect(() => {
-    if (!open) {
-      setRawQuery("");
-      setQuery("");
-      setActiveIndex(0);
-    } else {
-      // Focus on open (DialogTrigger would do it; the shortcut path needs this).
-      requestAnimationFrame(() => inputRef.current?.focus());
-    }
-  }, [open]);
-
-  const hits = useMemo(
-    () => searchBoards(boards, query).slice(0, MAX_RESULTS),
-    [boards, query],
-  );
-
-  useEffect(() => setActiveIndex(0), [query]);
-
-  const openHit = (hit: SearchHit) => {
-    setOpenBoth(false);
-    navigate(
-      hit.kind === "card"
-        ? `${routes.board(hit.boardId)}?card=${hit.card.id}`
-        : routes.board(hit.boardId),
-    );
-  };
-
-  const cardHits = hits.filter((h): h is CardSearchHit => h.kind === "card");
-  const boardHits = hits.filter((h) => h.kind === "board");
 
   return (
     <>
@@ -151,129 +108,175 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
           <DialogDescription className="sr-only">
             {t("search.hint")}
           </DialogDescription>
-          <div className="relative border-b border-border p-3">
-            <Input
-              ref={inputRef}
-              name="global-search"
-              value={rawQuery}
-              maxLength={LIMITS.query}
-              aria-describedby={
-                showRemaining(rawQuery.length, LIMITS.query)
-                  ? "search-query-limit"
-                  : undefined
-              }
-              onChange={(event) => setRawQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && hits[activeIndex]) {
-                  openHit(hits[activeIndex]);
-                } else if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  setActiveIndex((i) => Math.min(i + 1, hits.length - 1));
-                } else if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setActiveIndex((i) => Math.max(i - 1, 0));
-                }
-              }}
-              placeholder={t("search.placeholder")}
-              aria-label={t("search.aria")}
-              className="h-9 border-0 shadow-none focus-visible:ring-0"
-              data-testid="global-search-input"
-            />
-            <LimitCounter
-              id="search-query-limit"
-              length={rawQuery.length}
-              limit={LIMITS.query}
-              position="below"
-              testId="search-query-limit"
-            />
-          </div>
-
-          <div
-            className="max-h-[60vh] overflow-y-auto p-2"
-            data-testid="global-search-results"
-          >
-            {query.trim() === "" ? (
-              <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                {t("search.hint")}
-              </p>
-            ) : hits.length === 0 ? (
-              <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                {t("search.empty")}
-              </p>
-            ) : (
-              <>
-                {cardHits.length > 0 ? (
-                  <SearchSection title={t("search.cards")}>
-                    {cardHits.map((hit) => (
-                      <ResultRow
-                        key={`card-${hit.card.id}`}
-                        active={hits.indexOf(hit) === activeIndex}
-                        onClick={() => openHit(hit)}
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate text-sm text-foreground">
-                            <HighlightedText
-                              text={hit.card.title}
-                              query={query}
-                            />
-                          </div>
-                          <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <span className="truncate">
-                              {hit.boardTitle}
-                              {hit.columnTitle ? ` › ${hit.columnTitle}` : ""}
-                            </span>
-                            {hit.boardArchived || hit.cardArchived ? (
-                              <ArchivedBadge>
-                                {t("search.archived")}
-                              </ArchivedBadge>
-                            ) : null}
-                          </div>
-                          <LabelChips
-                            labels={hit.boardLabels}
-                            cardLabelIds={hit.card.labelIds}
-                          />
-                          <Snippet
-                            text={hit.card.description ?? ""}
-                            query={query}
-                            show={hit.matchIn === "description"}
-                          />
-                        </div>
-                      </ResultRow>
-                    ))}
-                  </SearchSection>
-                ) : null}
-                {boardHits.length > 0 ? (
-                  <SearchSection title={t("search.boards")}>
-                    {boardHits.map((hit) => (
-                      <ResultRow
-                        key={`board-${hit.boardId}`}
-                        active={hits.indexOf(hit) === activeIndex}
-                        onClick={() => openHit(hit)}
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium text-foreground">
-                            <HighlightedText
-                              text={hit.boardTitle}
-                              query={query}
-                            />
-                          </div>
-                          {hit.boardArchived ? (
-                            <div className="mt-0.5">
-                              <ArchivedBadge>
-                                {t("search.archived")}
-                              </ArchivedBadge>
-                            </div>
-                          ) : null}
-                        </div>
-                      </ResultRow>
-                    ))}
-                  </SearchSection>
-                ) : null}
-              </>
-            )}
-          </div>
+          {/* Query/results state lives in the palette body, which Radix
+              unmounts on close — every open starts clean with no `open`
+              reset effect (AGENT.md: reset by remount). */}
+          <GlobalSearchPalette onClose={() => setOpenBoth(false)} />
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
+
+interface GlobalSearchPaletteProps {
+  /** Closes the palette after navigating to a hit. */
+  onClose: () => void;
+}
+
+function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
+  const { t } = useI18n();
+  const { boards } = useBoard();
+  const navigate = useNavigate();
+
+  const [rawQuery, setRawQuery] = useState("");
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Debounce the query before the (synchronous) search runs over it.
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(rawQuery), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [rawQuery]);
+
+  // Focus on mount: the DialogTrigger covers the click path, this covers
+  // the Ctrl/Cmd+K path (previously done by an `open` effect).
+  useEffect(() => {
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
+
+  const hits = useMemo(
+    () => searchBoards(boards, query).slice(0, MAX_RESULTS),
+    [boards, query],
+  );
+
+  useEffect(() => setActiveIndex(0), [query]);
+
+  const openHit = (hit: SearchHit) => {
+    onClose();
+    navigate(
+      hit.kind === "card"
+        ? `${routes.board(hit.boardId)}?card=${hit.card.id}`
+        : routes.board(hit.boardId),
+    );
+  };
+
+  const cardHits = hits.filter((h): h is CardSearchHit => h.kind === "card");
+  const boardHits = hits.filter((h) => h.kind === "board");
+
+  return (
+    <>
+      <div className="relative border-b border-border p-3">
+        <Input
+          ref={inputRef}
+          name="global-search"
+          value={rawQuery}
+          maxLength={LIMITS.query}
+          aria-describedby={
+            showRemaining(rawQuery.length, LIMITS.query)
+              ? "search-query-limit"
+              : undefined
+          }
+          onChange={(event) => setRawQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && hits[activeIndex]) {
+              openHit(hits[activeIndex]);
+            } else if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setActiveIndex((i) => Math.min(i + 1, hits.length - 1));
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setActiveIndex((i) => Math.max(i - 1, 0));
+            }
+          }}
+          placeholder={t("search.placeholder")}
+          aria-label={t("search.aria")}
+          className="h-9 border-0 shadow-none focus-visible:ring-0"
+          data-testid="global-search-input"
+        />
+        <LimitCounter
+          id="search-query-limit"
+          length={rawQuery.length}
+          limit={LIMITS.query}
+          position="below"
+          testId="search-query-limit"
+        />
+      </div>
+
+      <div
+        className="max-h-[60vh] overflow-y-auto p-2"
+        data-testid="global-search-results"
+      >
+        {query.trim() === "" ? (
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+            {t("search.hint")}
+          </p>
+        ) : hits.length === 0 ? (
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+            {t("search.empty")}
+          </p>
+        ) : (
+          <>
+            {cardHits.length > 0 ? (
+              <SearchSection title={t("search.cards")}>
+                {cardHits.map((hit) => (
+                  <ResultRow
+                    key={`card-${hit.card.id}`}
+                    active={hits.indexOf(hit) === activeIndex}
+                    onClick={() => openHit(hit)}
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm text-foreground">
+                        <HighlightedText text={hit.card.title} query={query} />
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="truncate">
+                          {hit.boardTitle}
+                          {hit.columnTitle ? ` › ${hit.columnTitle}` : ""}
+                        </span>
+                        {hit.boardArchived || hit.cardArchived ? (
+                          <ArchivedBadge>{t("search.archived")}</ArchivedBadge>
+                        ) : null}
+                      </div>
+                      <LabelChips
+                        labels={hit.boardLabels}
+                        cardLabelIds={hit.card.labelIds}
+                      />
+                      <Snippet
+                        text={hit.card.description ?? ""}
+                        query={query}
+                        show={hit.matchIn === "description"}
+                      />
+                    </div>
+                  </ResultRow>
+                ))}
+              </SearchSection>
+            ) : null}
+            {boardHits.length > 0 ? (
+              <SearchSection title={t("search.boards")}>
+                {boardHits.map((hit) => (
+                  <ResultRow
+                    key={`board-${hit.boardId}`}
+                    active={hits.indexOf(hit) === activeIndex}
+                    onClick={() => openHit(hit)}
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-foreground">
+                        <HighlightedText text={hit.boardTitle} query={query} />
+                      </div>
+                      {hit.boardArchived ? (
+                        <div className="mt-0.5">
+                          <ArchivedBadge>{t("search.archived")}</ArchivedBadge>
+                        </div>
+                      ) : null}
+                    </div>
+                  </ResultRow>
+                ))}
+              </SearchSection>
+            ) : null}
+          </>
+        )}
+      </div>
     </>
   );
 }

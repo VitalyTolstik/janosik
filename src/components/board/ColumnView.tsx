@@ -24,6 +24,7 @@ import { RenameColumnDialog } from "@/components/board/RenameColumnDialog";
 import { SortableCard } from "@/components/board/SortableCard";
 import { WipLimitDialog } from "@/components/board/WipLimitDialog";
 import { useCardLabels } from "@/hooks/use-card-labels";
+import { useDoubleTap } from "@/hooks/use-double-tap";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { useBoardActions } from "@/store/BoardContext";
@@ -99,6 +100,13 @@ function ColumnViewBody({
   } = useBoardActions();
   const { t, tp } = useI18n();
   const [renameOpen, setRenameOpen] = useState(false);
+  const openRename = useCallback(() => setRenameOpen(true), []);
+  // Touch has no reliable `dblclick` here: the header owns dnd-kit's
+  // TouchSensor listeners, so the second tap can be consumed as a pending
+  // drag and the browser skips the synthetic `dblclick`. Read the double tap
+  // from the pointer stream instead; mouse still uses `onDoubleClick`
+  // (TASK-21.11).
+  const doubleTapHandlers = useDoubleTap(openRename);
   const [wipLimitOpen, setWipLimitOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmArchiveCards, setConfirmArchiveCards] = useState(false);
@@ -230,7 +238,8 @@ function ColumnViewBody({
         >
           <h3
             className="truncate text-sm font-semibold text-foreground"
-            onDoubleClick={() => setRenameOpen(true)}
+            onDoubleClick={openRename}
+            {...doubleTapHandlers}
           >
             {column.title}
           </h3>
@@ -253,7 +262,7 @@ function ColumnViewBody({
               {wipLimit !== undefined ? `${count}/${wipLimit}` : count}
             </span>
             <ColumnMenu
-              onRename={() => setRenameOpen(true)}
+              onRename={openRename}
               onDuplicate={() =>
                 duplicateColumn(
                   column.id,

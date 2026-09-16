@@ -482,3 +482,52 @@ describe("CardDialog move (column limits)", () => {
     );
   });
 });
+
+describe("CardDialog delete confirmation (TASK-21.11)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("deletes the card through the nested confirmation", async () => {
+    const dialog = await openCardDialog("Design the new onboarding flow");
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Delete card" }),
+    );
+    const confirm = await screen.findByRole("dialog", {
+      name: "Delete this card?",
+    });
+    await userEvent.click(
+      within(confirm).getByRole("button", { name: "Delete" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByText("Design the new onboarding flow")).toBeNull(),
+    );
+  });
+
+  it("drops a cancelled confirmation on reopen (reset by remount)", async () => {
+    const dialog = await openCardDialog("Design the new onboarding flow");
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Delete card" }),
+    );
+    const confirm = await screen.findByRole("dialog", {
+      name: "Delete this card?",
+    });
+    await userEvent.click(
+      within(confirm).getByRole("button", { name: "Cancel" }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Delete this card?" }),
+    ).toBeNull();
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    fireEvent.click(screen.getByText("Design the new onboarding flow"));
+    await screen.findByRole("dialog");
+
+    expect(
+      screen.queryByRole("dialog", { name: "Delete this card?" }),
+    ).toBeNull();
+  });
+});

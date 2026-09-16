@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
@@ -34,13 +34,39 @@ export function WipLimitDialog({
   onOpenChange,
   onSave,
 }: WipLimitDialogProps) {
-  const { t } = useI18n();
-  const [draft, setDraft] = useState("");
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        {/* Draft inside `DialogContent`: Radix unmounts it on close, so each
+            open gets a fresh draft (AGENT.md: reset by remount). */}
+        <WipLimitForm
+          columnTitle={columnTitle}
+          initialLimit={initialLimit}
+          onOpenChange={onOpenChange}
+          onSave={onSave}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-  // Reset the draft whenever the dialog (re)opens for a column.
-  useEffect(() => {
-    if (open) setDraft(initialLimit === undefined ? "" : String(initialLimit));
-  }, [open, initialLimit]);
+interface WipLimitFormProps {
+  columnTitle: string;
+  initialLimit?: number;
+  onOpenChange: (open: boolean) => void;
+  onSave: (wipLimit?: number) => void;
+}
+
+function WipLimitForm({
+  columnTitle,
+  initialLimit,
+  onOpenChange,
+  onSave,
+}: WipLimitFormProps) {
+  const { t } = useI18n();
+  const [draft, setDraft] = useState(
+    initialLimit === undefined ? "" : String(initialLimit),
+  );
 
   const save = () => {
     const trimmed = draft.trim();
@@ -57,53 +83,51 @@ export function WipLimitDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle>
-            {t("column.wipLimitDialogTitle", { title: columnTitle })}
-          </DialogTitle>
-        </DialogHeader>
-        <Input
-          autoFocus
-          name="wip-limit"
-          type="number"
-          inputMode="numeric"
-          min={1}
-          max={LIMITS.wipLimitMax}
-          value={draft}
-          maxLength={String(LIMITS.wipLimitMax).length}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") save();
-            if (e.key === "Escape") onOpenChange(false);
-          }}
-          onFocus={(e) => e.target.select()}
-          aria-label={t("column.wipLimit")}
-          placeholder={t("column.wipLimitPlaceholder")}
-        />
-        <p className="text-xs text-muted-foreground">
-          {t("column.wipLimitHint")}
-        </p>
-        <DialogFooter className="mt-2">
-          {initialLimit !== undefined && (
-            <Button
-              variant="outline"
-              className="text-destructive focus:text-destructive"
-              onClick={() => {
-                onSave(undefined);
-                onOpenChange(false);
-              }}
-            >
-              {t("column.wipLimitRemove")}
-            </Button>
-          )}
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t("common.cancel")}
+    <>
+      <DialogHeader>
+        <DialogTitle>
+          {t("column.wipLimitDialogTitle", { title: columnTitle })}
+        </DialogTitle>
+      </DialogHeader>
+      <Input
+        autoFocus
+        name="wip-limit"
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={LIMITS.wipLimitMax}
+        value={draft}
+        maxLength={String(LIMITS.wipLimitMax).length}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+          if (e.key === "Escape") onOpenChange(false);
+        }}
+        onFocus={(e) => e.target.select()}
+        aria-label={t("column.wipLimit")}
+        placeholder={t("column.wipLimitPlaceholder")}
+      />
+      <p className="text-xs text-muted-foreground">
+        {t("column.wipLimitHint")}
+      </p>
+      <DialogFooter className="mt-2">
+        {initialLimit !== undefined && (
+          <Button
+            variant="outline"
+            className="text-destructive focus:text-destructive"
+            onClick={() => {
+              onSave(undefined);
+              onOpenChange(false);
+            }}
+          >
+            {t("column.wipLimitRemove")}
           </Button>
-          <Button onClick={save}>{t("common.save")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        )}
+        <Button variant="outline" onClick={() => onOpenChange(false)}>
+          {t("common.cancel")}
+        </Button>
+        <Button onClick={save}>{t("common.save")}</Button>
+      </DialogFooter>
+    </>
   );
 }

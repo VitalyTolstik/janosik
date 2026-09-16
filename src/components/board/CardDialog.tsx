@@ -86,7 +86,6 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
   const { t, lang } = useI18n();
   const hour12 = useHour12();
   const toast = useToast();
-  const [confirmDelete, setConfirmDelete] = useState(false);
   // Fires the "too long" toast once per crossing (not on every keystroke
   // past the limit) and remounts the editor with the clamped markdown —
   // otherwise the editor DOM keeps the oversized text the store rejected.
@@ -177,7 +176,6 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
 
   const handleDelete = () => {
     deleteCard(card.id);
-    setConfirmDelete(false);
     onOpenChange(false);
   };
 
@@ -464,39 +462,63 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            <Button
-              variant="ghost"
-              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash2 className="h-4 w-4" />
-              {card.archivedAt !== undefined
-                ? t("card.deleteForever")
-                : t("card.delete")}
-            </Button>
+            <CardDeleteAction
+              archived={card.archivedAt !== undefined}
+              title={card.title}
+              onConfirm={handleDelete}
+            />
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               {t("card.close")}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
 
+interface CardDeleteActionProps {
+  archived: boolean;
+  title: string;
+  onConfirm: () => void;
+}
+
+/**
+ * Delete button + its confirmation dialog. The pending-confirm flag lives
+ * here, inside the card's `DialogContent`, so closing the card dialog
+ * unmounts it and the next open never re-opens a stale confirmation
+ * (AGENT.md: reset by remount — no `open` effect).
+ */
+function CardDeleteAction({
+  archived,
+  title,
+  onConfirm,
+}: CardDeleteActionProps) {
+  const { t } = useI18n();
+  const [confirm, setConfirm] = useState(false);
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+        onClick={() => setConfirm(true)}
+      >
+        <Trash2 className="h-4 w-4" />
+        {archived ? t("card.deleteForever") : t("card.delete")}
+      </Button>
       <ConfirmDialog
-        open={confirmDelete}
-        onOpenChange={setConfirmDelete}
-        title={
-          card.archivedAt !== undefined
-            ? t("card.deleteForeverTitle")
-            : t("card.deleteTitle")
-        }
+        open={confirm}
+        onOpenChange={setConfirm}
+        title={archived ? t("card.deleteForeverTitle") : t("card.deleteTitle")}
         description={
-          card.archivedAt !== undefined
-            ? t("card.deleteForeverDescription", { title: card.title })
-            : t("card.deleteDescription", { title: card.title })
+          archived
+            ? t("card.deleteForeverDescription", { title })
+            : t("card.deleteDescription", { title })
         }
         confirmLabel={t("card.deleteConfirm")}
         destructive
-        onConfirm={handleDelete}
+        onConfirm={onConfirm}
       />
     </>
   );
