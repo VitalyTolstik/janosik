@@ -744,7 +744,7 @@ export function CalendarView({
                               setOpenDayKey(isDayOpen ? null : key);
                             }}
                             className={cn(
-                              "flex h-5 w-5 items-center justify-center rounded-md bg-primary/15 text-primary opacity-0 transition-opacity hover:bg-primary/25 group-hover/cell:opacity-100 focus-visible:opacity-100",
+                              "no-hover:opacity-100 flex h-5 w-5 items-center justify-center rounded-md bg-primary/15 text-primary opacity-0 transition-opacity hover:bg-primary/25 group-hover/cell:opacity-100 focus-visible:opacity-100",
                               isDayOpen && "opacity-100",
                             )}
                           >

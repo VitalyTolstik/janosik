@@ -295,4 +295,36 @@ describe("BoardSwitcher", () => {
       ).toBeInTheDocument();
     });
   });
+
+  it("keeps board actions reachable on touch (no-hover) devices", async () => {
+    localStorage.setItem(
+      "janosik-boards",
+      JSON.stringify([
+        JSON.parse(boardJson("b-1", "Alpha")),
+        { ...JSON.parse(boardJson("b-2", "Beta")), archivedAt: 123 },
+      ]),
+    );
+    renderSwitcher();
+    const listbox = await openSwitcher();
+    // The swap slot trades the checkmark for the archive action on touch —
+    // the row is the only path to archive a board.
+    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    expect(
+      within(alphaRow).getByRole("button", { name: "Archive board" }).className,
+    ).toContain("no-hover:opacity-100");
+    expect(
+      alphaRow.querySelector("svg.lucide-check")?.getAttribute("class"),
+    ).toContain("no-hover:hidden");
+    // Archived rows: restore/delete stay visible — the switcher is their
+    // only path.
+    const archivedSection = screen.getByTestId("archived-section");
+    expect(
+      within(archivedSection).getByRole("button", { name: "Restore board" })
+        .className,
+    ).toContain("no-hover:opacity-100");
+    expect(
+      within(archivedSection).getByRole("button", { name: "Delete board" })
+        .className,
+    ).toContain("no-hover:opacity-100");
+  });
 });

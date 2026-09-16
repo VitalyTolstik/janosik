@@ -158,4 +158,13 @@ describe("TableView sorting", () => {
     const table = within(screen.getByRole("table"));
     expect(table.getAllByTestId("card-due-badge")).toHaveLength(2);
   });
+
+  it("hides the row hover archive on touch — row menu and dialog cover it", () => {
+    renderTable();
+    const archiveButtons = screen.getAllByTestId("table-archive-btn");
+    expect(archiveButtons.length).toBeGreaterThan(0);
+    for (const btn of archiveButtons) {
+      expect(btn.className).toContain("no-hover:hidden");
+    }
+  });
 });

@@ -340,17 +340,20 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
                     <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                       {Object.keys(b.cards).length}
                     </span>
+                    {/* Touch has no hover: the checkmark yields its slot to
+                        the archive action (always visible there) — the row
+                        is the only path to archive a board. */}
                     <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
                       {isActive && (
                         <Check
                           size={15}
-                          className="absolute text-primary transition-opacity group-hover/row:opacity-0"
+                          className="no-hover:hidden absolute text-primary transition-opacity group-hover/row:opacity-0"
                           aria-hidden
                         />
                       )}
                       <button
                         aria-label={t("board.switcher.archive")}
-                        className="absolute inset-0 flex items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/row:opacity-100"
+                        className="no-hover:opacity-100 absolute inset-0 flex items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/row:opacity-100"
                         onClick={(e) => {
                           e.stopPropagation();
                           setConfirmArchiveId(b.id);
@@ -418,7 +421,7 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
                     <>
                       <button
                         aria-label={t("board.switcher.restore")}
-                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-primary/10 hover:text-primary focus-visible:opacity-100 group-hover/archived:opacity-100"
+                        className="no-hover:opacity-100 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-primary/10 hover:text-primary focus-visible:opacity-100 group-hover/archived:opacity-100"
                         onClick={(e) => {
                           e.stopPropagation();
                           unarchiveBoard(b.id);
@@ -428,7 +431,7 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
                       </button>
                       <button
                         aria-label={t("board.switcher.delete")}
-                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger focus-visible:opacity-100 group-hover/archived:opacity-100"
+                        className="no-hover:opacity-100 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger focus-visible:opacity-100 group-hover/archived:opacity-100"
                         onClick={(e) => {
                           e.stopPropagation();
                           setConfirmDeleteId(b.id);

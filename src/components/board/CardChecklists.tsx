@@ -280,7 +280,7 @@ function ChecklistCard({
               type="button"
               onClick={() => onDeleteItem(item.id)}
               aria-label={t("checklist.itemDelete")}
-              className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/item:opacity-100"
+              className="no-hover:opacity-100 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/item:opacity-100"
             >
               <X className="h-3.5 w-3.5" />
             </button>
