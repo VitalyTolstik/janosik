@@ -22,8 +22,8 @@ interface LimitCounterProps {
 }
 
 /**
- * The "осталось N символов / N characters left" hint shared by every
- * text input (TASK-20). Turns red when the remainder gets critical.
+ * The "N characters left" hint (localized; the ru wording differs) shared
+ * by every text input (TASK-20). Turns red when the remainder gets critical.
  */
 export function LimitCounter({
   length,

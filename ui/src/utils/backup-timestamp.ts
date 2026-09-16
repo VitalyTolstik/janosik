@@ -4,13 +4,14 @@ import { DAY_MS, MINUTE_MS } from "@/utils/duration";
 /**
  * Human-friendly backup timestamps, following the common version-history
  * pattern (Google Docs / GitHub):
- *  - < 1 h ago  → relative minutes ("5 min ago" / «5 мин назад»)
+ *  - < 1 h ago  → relative minutes ("5 min ago"; ru prints its own form)
  *  - today      → "14:32"
- *  - yesterday  → "yesterday, 09:10" / «вчера, 09:10»
- *  - older      → "Sep 11, 2026, 14:32" / «11 сент. 2026 г., 14:32»
+ *  - yesterday  → "yesterday, 09:10"
+ *  - older      → "Sep 11, 2026, 14:32"
  *
- * The caller renders the string as the visible label and keeps a full
- * `toLocaleString()` in the row's `title` attribute.
+ * Exact ru output is pinned by the unit tests. The caller renders the
+ * string as the visible label and keeps a full `toLocaleString()` in the
+ * row's `title` attribute.
  */
 
 export function formatBackupTimestamp(

@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 
-/** Language picker (English / Русский) — a globe icon with a dropdown. */
+/** Language picker (English / Russian) — a globe icon with a dropdown. */
 export function LanguageSwitcher() {
   const { lang, setLang, t } = useI18n();
 

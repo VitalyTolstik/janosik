@@ -153,7 +153,7 @@ export function formatDate(
   }
 }
 
-/** Locale-aware short date-only formatter, e.g. "10 февр." — for badges. */
+/** Locale-aware short date-only formatter, e.g. "Sep 10" — for badges. */
 export function formatDateOnly(timestamp: number, lang: string): string {
   try {
     return new Date(timestamp).toLocaleDateString(
@@ -167,7 +167,7 @@ export function formatDateOnly(timestamp: number, lang: string): string {
 
 /**
  * Locale-aware relative time for recent moments — "5 minutes ago" /
- * "5 минут назад", "yesterday" / "вчера" (Intl.RelativeTimeFormat with
+ * localized equivalents, "yesterday" etc. (Intl.RelativeTimeFormat with
  * `numeric: "auto"`). Beyond a week it degrades to the exact short
  * date(time), which reads better than "3 months ago".
  */
