@@ -3,3 +3,9 @@ coverage
 package-lock.json
 node_modules
 *.md
+ui/dist
+ui/coverage
+ui/node_modules
+shared/coverage
+shared/node_modules
+*.tsbuildinfo

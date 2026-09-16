@@ -1416,3 +1416,31 @@ payload, которых нет в `cardIds`, из колонки убирают�
   в бюджетах (198.76/49.41/21.55/14.54 KB gzip), CDP-смоук 14/14: сбросы
   Rename/WIP/поиска/свитчера/Archive/Backup, двойной тап=rename, одиночный
   =нет, long-press=drag колонки, мышь не сломана, консоль чистая.
+
+## TASK-22 — `monorepo-restructure` · npm workspaces: ui/ + @janosik/shared ✅
+
+- **Статус:** ✅ реализовано, ветка `VitalyTolstik/dev-task-22` (коммит
+  `076361e`), PR #67 — пайплайн dev→qa; qa-вердикт «принято» (8/8 проверок).
+- **Layout:** корень = npm workspaces `["ui","shared"]` + скрипты-делегаты
+  (`npm test` = ui + shared). Фронт целиком в `ui/` (`git mv`: src, public,
+  index.html, vite/vitest/tsconfig/eslint-конфиги, components.json).
+  `deploy/`, `.github/`, prettier-конфиги, доки — в корне.
+- **`@janosik/shared`** (source-only, `main: ./src/index.ts`, без build):
+  модель+LIMITS (`types/kanban`), детерминированный `board-reducer` (сервер
+  применит тот же редьюсер — §7.0), `invert`, `migrate`+`seed-data`, `text`,
+  `column-limits` (включая `atWipLimit` — общий отказ WIP), envelope экспорта
+  `board-serialization` (round-trip cover/due/wip/archived подтверждён
+  перенесённым тестом), `storage-keys`, **новый `api.ts`** — минимальный
+  контракт: `CommandRequest {commandId, action, ifMatch?}`,
+  `CommandResponse {seq, versions}`, `ConflictError {conflict,
+  currentVersion}`, SSE `command`/`presence`/`activity`. Внутри shared
+  алиасов `@/` нет; ui импортирует `@janosik/shared` (alias vite/tsconfig/
+  vitest → `../shared/src`). `SAVE_DEBOUNCE_MS` вынесен в константы ui.
+- **CI:** `npm ci` с корня, шаги с `-w ui` (build = `tsc -b`, типчекает
+  и shared); ESLint shared реэкспортирует конфиг ui; AGENT.md — блок команд
+  обновлён.
+- **Гейты (dev и qa независимо):** 627 тестов / 60 файлов (ui 397 + shared
+  230), coverage ui 94.98/87.84/91.41/96.96 и shared 90.48/86.86/99.11/97.69
+  (пороги 88/83/91/93), lint 0 ошибок / 9 warnings, build/format/size в
+  бюджетах (198.72/49.41/21.55/14.3 KB gzip), смоук preview: HTTP 200 `/`
+  и deep-link, 0 ошибок консоли.

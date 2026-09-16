@@ -191,3 +191,24 @@ Draft‑состояние диалога (значение формы, стро
 - Убедись, что код чистый и самодокументированный.
 
 **Важно**: после каждой итерации выводи отчёт: что сделано, какие файлы изменены, как проверить вручную, и останавливайся. Я затем выполню `/compact` и дам команду продолжать.
+
+## Команды (monorepo, после TASK-22)
+
+Репозиторий — npm workspaces: `ui/` (фронт), `shared/` (`@janosik/shared`,
+без build-степа). Гейты гоняются и с корня (скрипты-делегаты), и из пакета:
+
+```bash
+npm install            # на корне: ставит и линкует workspaces
+npm test               # корень: тесты ui + shared
+npm test -w ui         # только фронт-тесты
+npm test -w shared     # только тесты shared
+npm run test:coverage  # корень: покрытие ui + shared (пороги 88/83/91/93)
+npm run build -w ui    # tsc -b (типчекает и shared) + vite build
+npm run lint           # корень: ESLint по ui и shared
+npm run format:check   # Prettier по всему репо
+npm run size -w ui     # бюджеты бандла (4 шт.)
+```
+
+Внутри `shared/` алиасов `@/` нет — только относительные импорты; фронт
+импортит пакет как `@janosik/shared` (alias в vite/tsconfig/vitest).
+

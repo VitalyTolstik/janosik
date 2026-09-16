@@ -29,13 +29,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Tests (with coverage gate)
-        run: npm run test:coverage
+      - name: Shared tests (with coverage gate)
+        run: npm run test:coverage -w shared
 
-      # `npm run build` runs `tsc -b` first, so a dedicated typecheck step
-      # would duplicate the work.
-      - name: Build
-        run: npm run build
+      - name: UI tests (with coverage gate)
+        run: npm run test:coverage -w ui
+
+      # `npm run build -w ui` runs `tsc -b` first (which also type-checks
+      # `shared/`), so a dedicated typecheck step would duplicate the work.
+      - name: Build (ui)
+        run: npm run build -w ui
 
       - name: Lint (ESLint)
         run: npm run lint
@@ -44,4 +47,4 @@ jobs:
         run: npm run format:check
 
       - name: Bundle budget (size-limit)
-        run: npm run size
+        run: npm run size -w ui

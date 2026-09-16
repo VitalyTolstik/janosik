@@ -23,117 +23,22 @@
   ],
   "private": true,
   "type": "module",
-  "size-limit": [
-    {
-      "name": "critical path (entry + modulepreload chunks, gzip)",
-      "path": [
-        "dist/assets/index-*.js",
-        "dist/assets/rolldown-runtime-*.js",
-        "dist/assets/react-*.js",
-        "dist/assets/utils-*.js",
-        "dist/assets/createLucideIcon-*.js",
-        "dist/assets/i18n-*.js",
-        "dist/assets/radix-*.js",
-        "dist/assets/dndkit-*.js"
-      ],
-      "limit": "210 KB",
-      "gzip": true
-    },
-    {
-      "name": "lazy animated icons (motion vendor + per-icon chunks, gzip)",
-      "path": [
-        "dist/assets/motion-*.js",
-        "dist/assets/*-icon-*.js",
-        "dist/assets/keyboard-*.js",
-        "dist/assets/search-*.js",
-        "dist/assets/settings-*.js"
-      ],
-      "limit": "55 KB",
-      "gzip": true,
-      "running": false
-    },
-    {
-      "name": "lazy calendar chunks (react-day-picker + date-fns, gzip)",
-      "path": [
-        "dist/assets/daypicker-*.js",
-        "dist/assets/datefns-*.js"
-      ],
-      "limit": "27 KB",
-      "gzip": true,
-      "running": false
-    },
-    {
-      "name": "styles bundle (gzip)",
-      "path": [
-        "dist/assets/index-*.css"
-      ],
-      "limit": "18 KB",
-      "gzip": true,
-      "running": false
-    }
+  "workspaces": [
+    "ui",
+    "shared"
   ],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "lint": "eslint .",
+    "dev": "npm run dev -w ui",
+    "build": "npm run build -w ui",
+    "preview": "npm run preview -w ui",
+    "test": "npm run test -w ui && npm run test -w shared",
+    "test:coverage": "npm run test:coverage -w ui && npm run test:coverage -w shared",
+    "lint": "npm run lint -w ui && npm run lint -w shared",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
-    "size": "size-limit"
-  },
-  "dependencies": {
-    "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/sortable": "^10.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
-    "@fontsource/space-grotesk": "^5.3.0",
-    "@mdxeditor/editor": "^4.2.4",
-    "@radix-ui/react-dialog": "^1.1.23",
-    "@radix-ui/react-dropdown-menu": "^2.1.24",
-    "@radix-ui/react-label": "^2.1.15",
-    "@radix-ui/react-popover": "^1.1.23",
-    "@radix-ui/react-slot": "^1.3.3",
-    "@radix-ui/react-tooltip": "^1.2.16",
-    "@tailwindcss/vite": "^4.3.3",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "date-fns": "^4.4.0",
-    "i18next": "^26.4.2",
-    "i18next-browser-languagedetector": "^8.2.1",
-    "lucide-react": "^1.41.0",
-    "motion": "^13.2.0",
-    "react": "^18.3.1",
-    "react-day-picker": "^10.0.1",
-    "react-dom": "^18.3.1",
-    "react-i18next": "^17.0.13",
-    "react-router-dom": "^7.18.3",
-    "tailwind-merge": "^3.6.0",
-    "tailwindcss": "^4.3.3"
+    "size": "npm run size -w ui"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@size-limit/preset-app": "^13.1.1",
-    "@testing-library/jest-dom": "^7.0.1",
-    "@testing-library/react": "^16.3.3",
-    "@testing-library/user-event": "^14.6.7",
-    "@types/node": "^26.4.1",
-    "@types/react": "^18.3.31",
-    "@types/react-dom": "^18.3.7",
-    "@vitejs/plugin-react": "^6.1.1",
-    "@vitest/coverage-v8": "^5.0.1",
-    "eslint": "^10.10.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.6",
-    "fake-indexeddb": "^6.2.5",
-    "globals": "^17.12.0",
-    "jsdom": "^29.1.1",
-    "prettier": "^3.9.6",
-    "size-limit": "^13.1.1",
-    "typescript": "~5.9.0",
-    "typescript-eslint": "^8.70.0",
-    "vite": "^8.2.2",
-    "vitest": "^5.0.0"
+    "prettier": "^3.9.6"
   }
 }
