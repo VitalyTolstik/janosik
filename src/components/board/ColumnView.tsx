@@ -223,7 +223,7 @@ function ColumnViewBody({
         )}
       >
         <header
-          className="flex cursor-grab items-center justify-between gap-1 px-2 py-2.5 pl-3 active:cursor-grabbing"
+          className="flex cursor-grab touch-manipulation items-center justify-between gap-1 px-2 py-2.5 pl-3 active:cursor-grabbing"
           {...attributes}
           {...listeners}
           title={t("column.dragHint")}

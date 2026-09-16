@@ -53,6 +53,10 @@ function SortableCardView({
   return (
     <div
       ref={setNodeRef}
+      // `touch-manipulation` keeps native scroll alive on the card while
+      // removing double-tap zoom, so the TouchSensor's long-press can win
+      // the gesture without blocking the column's swipe scroll (TASK-21.10).
+      className="touch-manipulation"
       style={{
         transform: CSS.Transform.toString(transform),
         // No transition while active — the dragged card must follow the
