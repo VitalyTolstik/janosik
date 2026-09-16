@@ -1,5 +1,15 @@
-// Janosik schema — TASK-24 ships User + RefreshToken (auth); the full §7.3
-// schema (Board/Column/Card/Command/...) lands with TASK-25.
+// Janosik schema — full §7.3 (TASK-25): normalized kanban board, membership
+// roles, soft-delete flags and per-entity versions from day one.
+//
+// Conventions (ROADMAP §7.0):
+// - Every deletable entity carries `deletedAt` (soft-delete); cascades are
+//   app-level flag propagation, never DB `onDelete: Cascade` (default
+//   RESTRICT keeps referential integrity until the purge job runs).
+// - Every entity holding editable text carries `version` for `ifMatch` → 409
+//   undo-conflict handling: Board, Column, Card, Label, Checklist, ChecklistItem.
+// - `@db.VarChar(N)` bounds mirror `LIMITS` from `@janosik/shared` (Prisma
+//   cannot import TS constants — keep these numbers in sync manually).
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,12 +20,17 @@ datasource db {
 }
 
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
+  id            String         @id @default(cuid())
+  email         String         @unique
   passwordHash  String
   displayName   String?
-  isSuperAdmin  Boolean  @default(false) // first registered user
-  createdAt     DateTime @default(now())
+  isSuperAdmin  Boolean        @default(false) // first registered user
+  createdAt     DateTime       @default(now())
+  memberships   BoardMember[]
+  activity      Activity[]
+  comments      Comment[]
+  apiTokens     ApiToken[]
+  commands      Command[]
   refreshTokens RefreshToken[]
 }
 
@@ -26,4 +41,187 @@ model RefreshToken {
   userId    String
   expiresAt DateTime
   revokedAt DateTime? // rotation; reuse of a revoked token revokes all user sessions
+}
+
+model Board {
+  id         String        @id @default(cuid())
+  title      String        @db.VarChar(100) // LIMITS.boardTitle
+  archivedAt DateTime?
+  deletedAt  DateTime? // soft-delete (§7.0)
+  version    Int           @default(0) // ifMatch → 409 (title editable)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  members    BoardMember[]
+  columns    Column[]
+  labels     Label[]
+  activity   Activity[]
+  commands   Command[]
+}
+
+model BoardMember {
+  id        String    @id @default(cuid())
+  board     Board     @relation(fields: [boardId], references: [id])
+  boardId   String
+  user      User      @relation(fields: [userId], references: [id])
+  userId    String
+  role      Role      @default(MEMBER) // ADMIN | MEMBER | VIEWER
+  expiresAt DateTime? // VIEWER on a time budget; expired → 403
+  createdAt DateTime  @default(now())
+  @@unique([boardId, userId])
+  @@index([userId]) // "my boards"
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+model ApiToken {
+  id         String    @id @default(cuid())
+  user       User      @relation(fields: [userId], references: [id])
+  userId     String
+  name       String // "CI", "integration …"
+  tokenHash  String    @unique // shown once, only the hash is stored
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  @@index([userId])
+}
+
+model Command {
+  id        String   @id // = client commandId → idempotent retries
+  board     Board    @relation(fields: [boardId], references: [id])
+  boardId   String
+  actor     User     @relation(fields: [actorId], references: [id])
+  actorId   String
+  seq       BigInt   @default(autoincrement()) // monotonic board version; ?since=
+  type      String // BoardAction type
+  payload   Json // whole action (deterministic — TASK-21.7a)
+  result    Json // first apply result {seq, versions}
+  touches   String[] // ["card:c1","column:col-2"] — touched entities
+  createdAt DateTime @default(now())
+  @@index([boardId, seq])
+  @@index([boardId, touches]) // activity feeds per entity (§7.4)
+}
+
+model Column {
+  id        String    @id // client-provided id
+  board     Board     @relation(fields: [boardId], references: [id])
+  boardId   String
+  title     String    @db.VarChar(100)
+  wipLimit  Int? // TASK-13
+  position  Int
+  deletedAt DateTime? // soft-delete (§7.0)
+  version   Int       @default(0) // ifMatch → 409 (§7.0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  cards     Card[]
+  @@index([boardId, position])
+}
+
+model Card {
+  id          String      @id
+  column      Column      @relation(fields: [columnId], references: [id])
+  columnId    String
+  title       String      @db.VarChar(300) // LIMITS.cardTitle
+  description String?     @db.Text // markdown, LIMITS.description
+  coverType   String? // color | gradient
+  coverValue  String?
+  dueDate     DateTime?
+  archivedAt  DateTime? // TASK-18.1: card archive
+  deletedAt   DateTime? // soft-delete (§7.0)
+  version     Int         @default(0) // ifMatch → 409 (§7.0)
+  position    Int
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  lastActorId String? // TASK-36 "who changed it" denormalization
+  labels      CardLabel[]
+  checklists  Checklist[]
+  activity    Activity[]
+  comments    Comment[]
+  @@index([columnId, position])
+}
+
+model Label {
+  id        String      @id
+  board     Board       @relation(fields: [boardId], references: [id])
+  boardId   String
+  name      String      @db.VarChar(50) // LIMITS.labelName
+  color     String // one of the 14 palette colors
+  deletedAt DateTime? // soft-delete (§7.0)
+  version   Int         @default(0) // ifMatch → 409 (§7.0)
+  cards     CardLabel[]
+  @@index([boardId])
+}
+
+model CardLabel {
+  card     Card  @relation(fields: [cardId], references: [id])
+  cardId   String
+  label    Label @relation(fields: [labelId], references: [id])
+  labelId  String
+  position Int   @default(0)
+  @@id([cardId, labelId])
+  @@index([labelId]) // label cascade
+}
+
+model Checklist {
+  id        String          @id
+  card      Card            @relation(fields: [cardId], references: [id])
+  cardId    String
+  title     String          @db.VarChar(100)
+  position  Int
+  deletedAt DateTime? // soft-delete (§7.0)
+  version   Int             @default(0) // ifMatch → 409 (title editable)
+  items     ChecklistItem[]
+  @@index([cardId, position])
+}
+
+model ChecklistItem {
+  id          String    @id
+  checklist   Checklist @relation(fields: [checklistId], references: [id])
+  checklistId String
+  text        String    @db.VarChar(200)
+  done        Boolean   @default(false)
+  position    Int
+  deletedAt   DateTime? // soft-delete (§7.0)
+  version     Int       @default(0) // ifMatch → 409 (text editable)
+  @@index([checklistId, position])
+}
+
+// Boundary with the Command log (decided with variant B):
+//   Command  — everything that is a `BoardAction` (column/card/label/checklist
+//              create/edit/move/archive). Card activity events are derived
+//              FROM it, nothing to duplicate here.
+//   Activity — only what the reducer action is NOT and therefore cannot live
+//              in Command (payload is typed as BoardAction): membership
+//              (invite / role change / removal) and comments.
+// Feed = merge of both sources by `createdAt` (composite cursor).
+model Activity {
+  id        String   @id @default(cuid())
+  board     Board    @relation(fields: [boardId], references: [id])
+  boardId   String
+  card      Card?    @relation(fields: [cardId], references: [id])
+  cardId    String?
+  type      String // member_invited | member_role_changed | member_removed | comment_added
+  actor     User     @relation(fields: [actorId], references: [id])
+  actorId   String // now a real user
+  details   Json? // snapshot details (email, role, …)
+  createdAt DateTime @default(now())
+  @@index([boardId, createdAt])
+  @@index([cardId, createdAt])
+}
+
+model Comment {
+  id        String    @id @default(cuid())
+  card      Card      @relation(fields: [cardId], references: [id])
+  cardId    String
+  author    User      @relation(fields: [authorId], references: [id])
+  authorId  String
+  text      String    @db.VarChar(2000) // LIMITS.comment — plain text
+  deletedAt DateTime? // soft-delete (§7.0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  @@index([cardId, createdAt])
 }

@@ -18,6 +18,7 @@
     "test:ci": "npm run test"
   },
   "dependencies": {
+    "@janosik/shared": "*",
     "@nestjs/common": "^11.1.6",
     "@nestjs/core": "^11.1.6",
     "@nestjs/jwt": "^11.0.2",

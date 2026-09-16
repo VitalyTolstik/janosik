@@ -8,6 +8,8 @@
  */
 
 import type { BoardAction } from "./store/board-reducer";
+import type { Board } from "./types/kanban";
+import type { BoardExportFile } from "./utils/board-serialization";
 
 /** Body of `POST /boards/:id/commands` (§7.0). */
 export interface CommandRequest {
@@ -74,3 +76,43 @@ export interface ActivitySseEvent {
 /** Discriminated union of every `GET /boards/:id/events` event (§7.4). */
 export type BoardSseEvent =
   CommandSseEvent | PresenceSseEvent | ActivitySseEvent;
+
+/**
+ * Board membership roles (§7.0) — mirrors the backend Prisma `Role` enum.
+ * ADMIN manages the board and members; MEMBER edits content; VIEWER reads.
+ */
+export type BoardRole = "ADMIN" | "MEMBER" | "VIEWER";
+
+/** A row of `GET /boards/:id/members` (avatars/member modal, TASK-35). */
+export interface BoardMemberDto {
+  userId: string;
+  displayName: string | null;
+  email: string;
+  role: BoardRole;
+  /** Unix ms expiry of a time-limited VIEWER; `null` when unbounded. */
+  expiresAt: number | null;
+}
+
+/** Board counters shown in the switcher (`GET /boards`). */
+export interface BoardCounters {
+  cards: number;
+  columns: number;
+}
+
+/** A `GET /boards` entry — boards the caller is a member of. */
+export interface BoardSummary {
+  id: string;
+  title: string;
+  /** Unix ms when the board is archived; omitted while active. */
+  archivedAt?: number;
+  counters: BoardCounters;
+}
+
+/** Aggregate of `GET /boards/:id` — exactly the frontend `Board` model. */
+export type BoardAggregate = Board;
+
+/**
+ * JSON envelope shared with the UI file format (§7.4): body of
+ * `POST /boards/import` and payload of `GET /boards/:id/export`.
+ */
+export type BoardEnvelope = BoardExportFile;

@@ -17,8 +17,10 @@
     "isolatedModules": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@janosik/shared": ["src/shared"]
     },
+    "preserveSymlinks": true,
     "noEmit": true,
     "types": ["node", "jest"]
   },

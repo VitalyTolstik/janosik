@@ -9,3 +9,4 @@ ui/node_modules
 shared/coverage
 shared/node_modules
 *.tsbuildinfo
+opencode.json
