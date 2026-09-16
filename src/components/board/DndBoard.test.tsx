@@ -20,9 +20,9 @@ import { BoardProvider, useBoard } from "@/store/BoardContext";
 /**
  * DndBoard orchestration (finding T-6): the real `handleDragStart/Over/End`
  * callbacks are captured off the rendered `DndContext` and driven directly —
- * `PointerSensor`/`KeyboardSensor` still mount, but the pointer geometry is
- * supplied by the test. Covers cross-column drops (including an EMPTY
- * column, the B-6 regression) and column reordering.
+ * `MouseSensor`/`TouchSensor`/`KeyboardSensor` still mount, but the pointer
+ * geometry is supplied by the test. Covers cross-column drops (including an
+ * EMPTY column, the B-6 regression) and column reordering.
  */
 
 const dnd = vi.hoisted(() => ({

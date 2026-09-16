@@ -5,9 +5,10 @@ import {
   getFirstCollision,
   KeyboardSensor,
   MeasuringStrategy,
+  MouseSensor,
   pointerWithin,
-  PointerSensor,
   rectIntersection,
+  TouchSensor,
   useSensor,
   useSensors,
   type CollisionDetection,
@@ -65,8 +66,21 @@ const KEYBOARD_SENSOR_OPTIONS = {
   coordinateGetter: sortableKeyboardCoordinates,
 } as const;
 
-const POINTER_SENSOR_OPTIONS = {
+const MOUSE_SENSOR_OPTIONS = {
   activationConstraint: { distance: 5 },
+} as const;
+
+/**
+ * Touch drag (TASK-21.10): a long-press starts the drag, a finger moving
+ * inside the delay window stays a scroll and cancels the pending drag.
+ * A plain tap therefore never becomes a drag — the card still opens its
+ * dialog on click. Both constraints are kept as stable module constants
+ * (project rule §1.2): a fresh object here would re-create the descriptor
+ * on every render, and dnd-kit's `DndContext` would re-render every
+ * sortable consumer through its context.
+ */
+const TOUCH_SENSOR_OPTIONS = {
+  activationConstraint: { delay: 220, tolerance: 8 },
 } as const;
 
 /**
@@ -211,8 +225,12 @@ export function DndBoard({
     [board],
   );
 
+  // Mouse + Touch are mutually exclusive (dnd-kit's recommended pairing):
+  // the PointerSensor handles both but lets a scroll gesture and a drag
+  // fight over the same pointer on phones, which is what broke touch drag.
   const sensors = useSensors(
-    useSensor(PointerSensor, POINTER_SENSOR_OPTIONS),
+    useSensor(MouseSensor, MOUSE_SENSOR_OPTIONS),
+    useSensor(TouchSensor, TOUCH_SENSOR_OPTIONS),
     useSensor(KeyboardSensor, KEYBOARD_SENSOR_OPTIONS),
   );
 
