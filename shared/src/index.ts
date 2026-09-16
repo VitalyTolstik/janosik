@@ -9,6 +9,7 @@ export * from "./types/kanban";
 export * from "./store/board-reducer";
 export * from "./store/invert";
 export * from "./store/migrate";
+export * from "./store/validate";
 export * from "./store/seed-data";
 export * from "./utils/text";
 export * from "./utils/column-limits";

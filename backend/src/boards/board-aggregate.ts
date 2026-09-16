@@ -29,6 +29,55 @@ export type CardWithRelations = Prisma.CardGetPayload<{
 export type MemberWithUser = BoardMemberRow & { user: UserRow };
 
 /**
+ * Load a board's aggregate with one query set, from either the pooled
+ * `PrismaService` or an active transaction.
+ *
+ * Archived cards of a soft-deleted column stay visible: `DELETE_COLUMN`
+ * keeps them in the reducer's `cards` map (only `column.cardIds` is
+ * emptied), so the card filter walks live cards by `boardId` rather than
+ * through `column.deletedAt`. Cards of a deleted board are filtered by the
+ * board lookup itself and by their own `deletedAt` cascade.
+ */
+export async function loadBoardAggregate(
+  db: Prisma.TransactionClient,
+  boardId: string,
+): Promise<BoardAggregate | null> {
+  const board = await db.board.findFirst({
+    where: { id: boardId, deletedAt: null },
+  });
+  if (!board) return null;
+
+  const [columns, labels, cards] = await Promise.all([
+    db.column.findMany({
+      where: { boardId, deletedAt: null },
+      orderBy: { position: "asc" },
+    }),
+    db.label.findMany({
+      where: { boardId, deletedAt: null },
+    }),
+    db.card.findMany({
+      where: { column: { boardId }, deletedAt: null },
+      orderBy: { position: "asc" },
+      include: {
+        labels: true,
+        checklists: {
+          where: { deletedAt: null },
+          orderBy: { position: "asc" },
+          include: {
+            items: {
+              where: { deletedAt: null },
+              orderBy: { position: "asc" },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+
+  return toBoardAggregate(board, columns, cards, labels);
+}
+
+/**
  * Map normalized Prisma rows onto the frontend `Board` model (§7.4).
  *
  * Contract (ROADMAP §7.0 / TASK-25):
