@@ -54,6 +54,9 @@ jobs:
       - name: Build (ui)
         run: npm run build -w ui
 
+      - name: Prisma generate (backend)
+        run: npm run prisma:generate -w backend
+
       - name: Backend tests (unit + e2e against the postgres service)
         run: npm run test:ci -w backend
         env:
