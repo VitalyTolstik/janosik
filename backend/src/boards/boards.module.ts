@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
 
-/** Заглушка модуля boards (§7.2); наполняется в последующих TASK. */
+/** Stub module for boards (§7.2); filled in by later TASKs. */
 @Module({})
 export class BoardsModule {}

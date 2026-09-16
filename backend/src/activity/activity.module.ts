@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
 
-/** Заглушка модуля activity (§7.2); наполняется в последующих TASK. */
+/** Stub module for activity (§7.2); filled in by later TASKs. */
 @Module({})
 export class ActivityModule {}

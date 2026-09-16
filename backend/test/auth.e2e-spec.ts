@@ -6,9 +6,10 @@ import request from "supertest";
 import { AppModule } from "../src/app.module";
 
 /**
- * Rate-limit на auth-роутах включён уже в скелете (§7.7 TASK-23): 5 запросов
- * в минуту на IP, 6-й получает 429. Счётчик in-memory и живёт в рамках
- * одного инстанса приложения, поэтому тест самодостаточен.
+ * Rate limiting on auth routes ships with the scaffold (§7.7 TASK-23):
+ * 5 requests per minute per IP, the 6th gets a 429. The counter is
+ * in-memory and lives inside a single app instance, so the test is
+ * self-contained.
  */
 describe("Auth rate limit (e2e)", () => {
   let app: INestApplication;
@@ -33,7 +34,7 @@ describe("Auth rate limit (e2e)", () => {
       await request(app.getHttpServer())
         .post("/api/v1/auth/login")
         .send({ email: "user@example.com", password: "secret" })
-        .expect(501); // заглушка до TASK-24
+        .expect(501); // stub until TASK-24
     }
     await request(app.getHttpServer())
       .post("/api/v1/auth/login")

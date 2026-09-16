@@ -21,7 +21,7 @@ export class PrismaService
     await this.$disconnect();
   }
 
-  /** Лёгкая проверка живости БД для /health. */
+  /** Lightweight DB liveness probe for /health. */
   async ping(): Promise<void> {
     await this.$queryRaw`SELECT 1`;
   }

@@ -11,8 +11,8 @@ import { ActivityModule } from "./activity/activity.module";
 import { CommentsModule } from "./comments/comments.module";
 
 /**
- * TASK-23 scaffold: каркас приложения с модулями-заглушками §7.2.
- * Роуты auth/boards/commands/... наполняются с TASK-24 и далее.
+ * TASK-23 scaffold: app skeleton with the §7.2 stub modules.
+ * The auth/boards/commands/... routes are filled in from TASK-24 on.
  */
 @Module({
   imports: [

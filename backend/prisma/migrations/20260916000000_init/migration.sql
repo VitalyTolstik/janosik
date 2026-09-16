@@ -1,4 +1,4 @@
--- TASK-23: минимальная таблица User (полная схема §7.3 — с TASK-24/25).
+-- TASK-23: minimal User table (full §7.3 schema arrives with TASK-24/25).
 CREATE TABLE "User" (
     "id"           TEXT        NOT NULL,
     "email"        TEXT        NOT NULL,

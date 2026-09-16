@@ -14,6 +14,6 @@ model User {
   email        String   @unique
   passwordHash String
   displayName  String?
-  isSuperAdmin Boolean  @default(false) // первый зарегистрированный пользователь
+  isSuperAdmin Boolean  @default(false) // first registered user
   createdAt    DateTime @default(now())
 }
