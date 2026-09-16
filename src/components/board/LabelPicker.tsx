@@ -129,7 +129,6 @@ export function LabelPicker({
   const [draftColor, setDraftColor] = useState<LabelColor>("brand");
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameDraft, setRenameDraft] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const submitCreate = () => {
@@ -141,18 +140,8 @@ export function LabelPicker({
     setCreating(false);
   };
 
-  const openRename = (label: Label) => {
-    setRenamingId(label.id);
-    setRenameDraft(label.name);
-  };
-
-  const submitRename = () => {
-    if (renamingId && renameDraft.trim())
-      onRename(renamingId, renameDraft.trim());
-    setRenamingId(null);
-  };
-
   const deletingLabel = labels.find((l) => l.id === deletingId);
+  const renamingLabel = labels.find((l) => l.id === renamingId);
 
   return (
     <div className="space-y-3">
@@ -208,7 +197,7 @@ export function LabelPicker({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-48">
                   <DropdownMenuLabel>{label.name}</DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => openRename(label)}>
+                  <DropdownMenuItem onClick={() => setRenamingId(label.id)}>
                     <Pencil className="h-4 w-4" />
                     {t("label.rename")}
                   </DropdownMenuItem>
@@ -310,30 +299,15 @@ export function LabelPicker({
           <DialogHeader>
             <DialogTitle>{t("label.renameDialogTitle")}</DialogTitle>
           </DialogHeader>
-          <Input
-            autoFocus
-            name="label-rename"
-            value={renameDraft}
-            maxLength={LIMITS.labelName}
-            onChange={(e) => setRenameDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") submitRename();
-              if (e.key === "Escape") setRenamingId(null);
-            }}
-            onFocus={(e) => e.target.select()}
-            placeholder={t("label.namePlaceholder")}
-          />
-          <LimitCounter
-            length={renameDraft.length}
-            limit={LIMITS.labelName}
-            testId="label-rename-limit"
-          />
-          <DialogFooter className="mt-2">
-            <Button variant="outline" onClick={() => setRenamingId(null)}>
-              {t("common.cancel")}
-            </Button>
-            <Button onClick={submitRename}>{t("common.save")}</Button>
-          </DialogFooter>
+          {/* The draft lives in the remounted form, not in a parent state
+              cleared by `onOpenChange` (AGENT.md: reset by remount). */}
+          {renamingLabel ? (
+            <RenameLabelForm
+              label={renamingLabel}
+              onClose={() => setRenamingId(null)}
+              onRename={onRename}
+            />
+          ) : null}
         </DialogContent>
       </Dialog>
 
@@ -354,5 +328,50 @@ export function LabelPicker({
         }}
       />
     </div>
+  );
+}
+
+interface RenameLabelFormProps {
+  label: Label;
+  onClose: () => void;
+  onRename: (labelId: string, name: string) => void;
+}
+
+function RenameLabelForm({ label, onClose, onRename }: RenameLabelFormProps) {
+  const { t } = useI18n();
+  const [draft, setDraft] = useState(label.name);
+
+  const submit = () => {
+    if (draft.trim()) onRename(label.id, draft.trim());
+    onClose();
+  };
+
+  return (
+    <>
+      <Input
+        autoFocus
+        name="label-rename"
+        value={draft}
+        maxLength={LIMITS.labelName}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit();
+          if (e.key === "Escape") onClose();
+        }}
+        onFocus={(e) => e.target.select()}
+        placeholder={t("label.namePlaceholder")}
+      />
+      <LimitCounter
+        length={draft.length}
+        limit={LIMITS.labelName}
+        testId="label-rename-limit"
+      />
+      <DialogFooter className="mt-2">
+        <Button variant="outline" onClick={onClose}>
+          {t("common.cancel")}
+        </Button>
+        <Button onClick={submit}>{t("common.save")}</Button>
+      </DialogFooter>
+    </>
   );
 }

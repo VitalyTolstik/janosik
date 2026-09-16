@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
@@ -30,13 +30,36 @@ export function RenameColumnDialog({
   onOpenChange,
   onSave,
 }: RenameColumnDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        {/* The draft lives inside `DialogContent`, which Radix unmounts when
+            the dialog closes — every open mounts a fresh form, so the draft
+            reset cannot be forgotten or desynced (AGENT.md: reset by
+            remount, never by an `open` effect). */}
+        <RenameColumnForm
+          initialTitle={initialTitle}
+          onOpenChange={onOpenChange}
+          onSave={onSave}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface RenameColumnFormProps {
+  initialTitle: string;
+  onOpenChange: (open: boolean) => void;
+  onSave: (title: string) => void;
+}
+
+function RenameColumnForm({
+  initialTitle,
+  onOpenChange,
+  onSave,
+}: RenameColumnFormProps) {
   const { t } = useI18n();
   const [title, setTitle] = useState(initialTitle);
-
-  // Reset the draft whenever the dialog (re)opens with a new value.
-  useEffect(() => {
-    if (open) setTitle(initialTitle);
-  }, [open, initialTitle]);
 
   const handleSave = () => {
     const trimmed = title.trim();
@@ -45,38 +68,36 @@ export function RenameColumnDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle>{t("column.renameDialogTitle")}</DialogTitle>
-        </DialogHeader>
-        <Input
-          name="column-rename"
-          autoFocus
-          value={title}
-          maxLength={LIMITS.columnTitle}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleSave();
-            if (e.key === "Escape") onOpenChange(false);
-          }}
-          onFocus={(e) => e.target.select()}
-          aria-describedby="column-rename-limit"
-          placeholder={t("column.renamePlaceholder")}
-        />
-        <LimitCounter
-          id="column-rename-limit"
-          length={title.length}
-          limit={LIMITS.columnTitle}
-          testId="column-rename-limit"
-        />
-        <DialogFooter className="mt-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t("common.cancel")}
-          </Button>
-          <Button onClick={handleSave}>{t("common.save")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <DialogHeader>
+        <DialogTitle>{t("column.renameDialogTitle")}</DialogTitle>
+      </DialogHeader>
+      <Input
+        name="column-rename"
+        autoFocus
+        value={title}
+        maxLength={LIMITS.columnTitle}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") handleSave();
+          if (e.key === "Escape") onOpenChange(false);
+        }}
+        onFocus={(e) => e.target.select()}
+        aria-describedby="column-rename-limit"
+        placeholder={t("column.renamePlaceholder")}
+      />
+      <LimitCounter
+        id="column-rename-limit"
+        length={title.length}
+        limit={LIMITS.columnTitle}
+        testId="column-rename-limit"
+      />
+      <DialogFooter className="mt-2">
+        <Button variant="outline" onClick={() => onOpenChange(false)}>
+          {t("common.cancel")}
+        </Button>
+        <Button onClick={handleSave}>{t("common.save")}</Button>
+      </DialogFooter>
+    </>
   );
 }
