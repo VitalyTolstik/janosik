@@ -5,6 +5,9 @@
   "description": "Janosik API — NestJS + Prisma + PostgreSQL (see ROADMAP §7).",
   "license": "MIT",
   "type": "commonjs",
+  "engines": {
+    "node": ">=22.17"
+  },
   "scripts": {
     "prebuild": "prisma generate",
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",

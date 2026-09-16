@@ -619,6 +619,37 @@ describe("Commands API (e2e)", () => {
       expect(ok.body.seq).toBeGreaterThan(first.seq);
     });
 
+    it("serializes concurrent commands: same ifMatch yields one 200, one 409", async () => {
+      const boardId = await createBoard("ifMatch race board");
+      const first = await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-race",
+          title: "Race",
+        }),
+      );
+
+      const fire = (title: string) =>
+        server()
+          .post(`/api/v1/boards/${boardId}/commands`)
+          .set(auth(adminToken))
+          .send({
+            commandId: randomUUID(),
+            action: scoped(boardId, {
+              type: "RENAME_COLUMN",
+              columnId: "col-race",
+              title,
+            }),
+            ifMatch: first.seq,
+          });
+
+      const [a, b] = await Promise.all([fire("A"), fire("B")]);
+      expect([a.status, b.status].sort()).toEqual([200, 409]);
+      const loser = a.status === 409 ? a : b;
+      expect(loser.body.conflict).toBe("version");
+    });
+
     it("mirrors the reducer's hard cardsPerColumn cap as 409", async () => {
       const boardId = await createBoard("Hard cap board");
       await apply(

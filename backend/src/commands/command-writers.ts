@@ -733,7 +733,9 @@ function orphanColumnId(boardId: string): string {
 /**
  * The soft-deleted column that holds revived cards the reducer did not place
  * into any column. It never appears in the aggregate (`deletedAt` is set),
- * but gives such a card a valid `Card.columnId`.
+ * but gives such a card a valid `Card.columnId`. The `orphan:` id prefix
+ * marks it as internal — any future UI that lists deleted columns must
+ * filter it out.
  */
 async function ensureOrphanColumn(
   tx: Tx,

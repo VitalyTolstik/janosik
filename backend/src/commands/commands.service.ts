@@ -35,6 +35,10 @@ import type { CreateCommandDto } from "./dto/create-command.dto";
  *
  * TASK-27 (labels/checklists) and later tasks are rejected up front: this
  * module implements column and card actions only, on purpose.
+ *
+ * Commands that reference unknown entities no-op exactly like the reducer
+ * and are still recorded (a replay returns the stored no-op result): the
+ * API mirrors the reducer instead of second-guessing it (§7.4.1).
  */
 const SUPPORTED_ACTIONS = new Set<string>([
   "ADD_COLUMN",
@@ -89,6 +93,20 @@ export class CommandsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // Serialize commands per board on the board row itself: concurrent
+      // requests queue here, so the `ifMatch` check below sees every
+      // committed predecessor. Without this lock two parallel commands with
+      // the same `ifMatch` would both pass under Read Committed (reproduced
+      // in review, 2026-09-16). Other boards never block each other.
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "Board"
+        WHERE "id" = ${boardId} AND "deletedAt" IS NULL
+        FOR UPDATE
+      `;
+      if (locked.length === 0) {
+        throw new NotFoundException("Board not found");
+      }
+
       const existing = await tx.command.findUnique({
         where: { id: dto.commandId },
       });
