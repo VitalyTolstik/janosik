@@ -5,6 +5,7 @@ import {
   Download,
   HardDrive,
   HardDriveDownload,
+  LogOut,
   Upload,
 } from "lucide-react";
 
@@ -16,6 +17,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
@@ -28,6 +30,8 @@ import { useI18n } from "@/i18n";
 import { MAX_IMPORT_BYTES } from "@janosik/shared";
 import { useBoard } from "@/store/BoardContext";
 import { parseExport, serializeExport } from "@janosik/shared";
+import { isApiEnabled } from "@/api/client";
+import { useAuth } from "@/auth/AuthContext";
 import { downloadTextFile } from "@/utils/download";
 import { createBackup, listBackups } from "@/utils/backup";
 
@@ -36,13 +40,17 @@ import { createBackup, listBackups } from "@/utils/backup";
  * manual backup copy, plus two entry points that open dedicated dialogs:
  * the card archive and the automatic backups browser (keeps the dropdown
  * compact no matter how many entries pile up). Export failures and import
- * validation errors surface as toasts.
+ * validation errors surface as toasts. With a server (TASK-29) import goes
+ * to `POST /boards/import` and the menu also hosts the account row with
+ * sign-out.
  */
 
 export function DataMenu() {
   const { t } = useI18n();
   const toast = useToast();
   const { boards, board, importBoards } = useBoard();
+  const { user, logout } = useAuth();
+  const serverMode = isApiEnabled();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [backupCount, setBackupCount] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -89,7 +97,9 @@ export function DataMenu() {
     try {
       const text = await file.text();
       const boards = parseExport(text);
-      importBoards(boards);
+      // Server mode: the boards land in the database, then the list is
+      // re-hydrated; a refusal is caught here like a malformed file.
+      await importBoards(boards);
       toast.success(t("data.importSuccess"));
     } catch {
       toast.error(t("data.importError"));
@@ -162,6 +172,23 @@ export function DataMenu() {
               ? `${t("data.backupTitle")} · ${backupCount}`
               : t("data.backupTitle")}
           </DropdownMenuItem>
+          {serverMode ? (
+            <>
+              <DropdownMenuSeparator />
+              {user !== null ? (
+                <DropdownMenuLabel className="truncate font-normal text-muted-foreground">
+                  {t("auth.signedInAs", { email: user.email })}
+                </DropdownMenuLabel>
+              ) : null}
+              <DropdownMenuItem
+                data-testid="data-logout"
+                onClick={() => void logout()}
+              >
+                <LogOut className="h-4 w-4" />
+                {t("auth.logout")}
+              </DropdownMenuItem>
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
       <input

@@ -248,6 +248,34 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
   const boardTouch = touch.board(boardId);
 
   switch (action.type) {
+    case "RENAME_BOARD": {
+      // `after.title` is already trimmed/clamped by the reducer. The board
+      // row's `updatedAt`/`version` are bumped once for every command in
+      // `applyCommandWrites`, like the reducer's `commit` stamps the board.
+      await tx.board.update({
+        where: { id: boardId },
+        data: { title: after.title },
+      });
+      return [boardTouch];
+    }
+
+    case "ARCHIVE_BOARD": {
+      // The reducer keeps every byte and only sets `archivedAt` = `at`.
+      await tx.board.update({
+        where: { id: boardId },
+        data: { archivedAt: new Date(ctx.at) },
+      });
+      return [boardTouch];
+    }
+
+    case "UNARCHIVE_BOARD": {
+      await tx.board.update({
+        where: { id: boardId },
+        data: { archivedAt: null },
+      });
+      return [boardTouch];
+    }
+
     case "ADD_COLUMN": {
       const column = columnOf(after, action.newColumnId);
       if (!column) return [boardTouch];

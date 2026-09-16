@@ -10,6 +10,7 @@ import type {
   BoardAggregate,
   BoardCounters,
   BoardMemberDto,
+  BoardRole,
   BoardSummary,
   Card,
   CardCover,
@@ -183,16 +184,18 @@ function toChecklists(
     }));
 }
 
-/** `GET /boards` entry: identity + counters, never the whole aggregate. */
+/** `GET /boards` entry: identity + counters + the caller's role. */
 export function toBoardSummary(
   board: BoardRow,
   counters: BoardCounters,
+  role: BoardRole,
 ): BoardSummary {
   return {
     id: board.id,
     title: board.title,
     ...(board.archivedAt ? { archivedAt: board.archivedAt.getTime() } : {}),
     counters,
+    role,
   };
 }
 

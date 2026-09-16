@@ -24,12 +24,31 @@ import {
   type ColumnSortBy,
   type UpdateCardAction,
 } from "@janosik/shared";
+import { api, isApiEnabled } from "@/api/client";
 import { useUndoHistory } from "@/store/use-undo-history";
 import { SAVE_DEBOUNCE_MS } from "@/store/constants";
-import type { Board, CardCover, Label } from "@janosik/shared";
-import { migrateStorageKey, quarantineValue, readRaw } from "@/utils/storage";
+import type {
+  Board,
+  BoardEnvelope,
+  BoardRole,
+  CardCover,
+  Label,
+} from "@janosik/shared";
+import {
+  migrateStorageKey,
+  quarantineValue,
+  readJSON,
+  readRaw,
+} from "@/utils/storage";
 import { BOARD_STORAGE_KEY } from "@janosik/shared";
-import { normalizeBoards } from "@janosik/shared";
+import { normalizeBoards, serializeExport } from "@janosik/shared";
+import { changedEntityIds } from "@/store/board-diff";
+import {
+  ServerSync,
+  textEntityKey,
+  type SendFailure,
+  type SendOutcome,
+} from "@/store/server-sync";
 import { createBackup } from "@/utils/backup";
 import { createId } from "@/utils/id";
 import {
@@ -59,10 +78,45 @@ import { useI18n } from "@/i18n";
  * - Data-safety: a failing write (quota, private mode) and unparsable
  *   stored data both raise a `dataIssue` the UI turns into a banner —
  *   losing data silently must not be possible (TASK-21.2).
+ * - **Server mode (TASK-29):** with a backend configured every board is
+ *   hydrated from `GET /boards`, every command travels through
+ *   `POST /boards/:id/commands` (optimistic apply first, rollback + toast
+ *   when the server refuses), undo/redo send their inverse commands, and
+ *   window focus refetches the active aggregate. Board create/delete/import
+ *   are aggregate REST calls. The local schema and components stay exactly
+ *   as they were — the server speaks the same model.
  */
 
 const STORAGE_KEY = BOARD_STORAGE_KEY;
 const BACKUP_THROTTLE_MS = 60_000;
+
+/**
+ * The pre-server board data, if any (schema-validated). Read once on the
+ * first server login: an account with zero boards inherits the local boards
+ * through `POST /boards/import`, and the key is dropped afterwards so the
+ * same data cannot be imported twice (TASK-29 migration, archived cards
+ * included — the export envelope carries them).
+ */
+function readLegacyBoards(): BoardState | null {
+  const stored = readJSON<BoardState>(STORAGE_KEY);
+  if (stored.status !== "ok" || !Array.isArray(stored.value)) return null;
+  if (stored.value.length === 0) return null;
+  return normalizeBoards(stored.value);
+}
+
+/** Drop the migrated local board data; failures are irrelevant (quota). */
+function clearLegacyBoards(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* storage unavailable — the key stays, import is skipped next time */
+  }
+}
+
+/** Wrap a live board in the import envelope the API expects. */
+function toEnvelope(boards: BoardState): BoardEnvelope {
+  return JSON.parse(serializeExport(boards)) as BoardEnvelope;
+}
 
 /**
  * A data problem the user has to know about.
@@ -148,6 +202,12 @@ interface BoardStateValue {
   boards: Board[];
   /** Non-null while the data is at risk — rendered as a banner. */
   dataIssue: DataIssue | null;
+  /**
+   * Server-mode load status: `loading` while the boards are being fetched
+   * (the shell shows a splash), `error` when they could not be fetched at
+   * all (offline boot, server down) — always `ready` in local mode.
+   */
+  syncStatus: "loading" | "ready" | "error";
 }
 
 /**
@@ -176,6 +236,12 @@ interface BoardHistoryValue {
  */
 interface BoardActionsValue {
   dispatch: (action: BoardAction) => void;
+  /**
+   * The caller's role on a board, when the server said so — `ADMIN` for
+   * every board in local mode. Drives the ADMIN-only switcher actions
+   * (archive/delete), which the server would refuse anyway (TASK-29).
+   */
+  roleOf: (boardId: string) => BoardRole | undefined;
   /* Convenience actions */
   addColumn: (title: string) => void;
   renameBoard: (title: string) => void;
@@ -242,10 +308,17 @@ interface BoardActionsValue {
   /** Sorts a column's cards (createdAt / dueDate / title). */
   sortColumn: (columnId: string, sortBy: ColumnSortBy) => void;
   /* Board management (multi-board) */
-  /** Creates an empty board and returns its id (for navigation). */
-  addBoard: (title: string, fallbackTitle?: string) => string;
+  /**
+   * Creates an empty board and resolves with its id (for navigation), or
+   * `null` when the server refused the create (a toast was shown). Local
+   * mode resolves synchronously — `await` works for both.
+   */
+  addBoard: (
+    title: string,
+    fallbackTitle?: string,
+  ) => string | Promise<string | null>;
   /** Removes a board; the caller must navigate away from it first/after. */
-  removeBoard: (boardId: string) => void;
+  removeBoard: (boardId: string) => void | Promise<void>;
   /** Archives a board (data kept; hidden from the normal switcher list). */
   archiveBoard: (boardId: string) => void;
   /** Brings an archived board back to the active list. */
@@ -254,7 +327,7 @@ interface BoardActionsValue {
   undo: () => void;
   redo: () => void;
   /* Import replaces the whole data set (and resets history). */
-  importBoards: (boards: BoardState) => void;
+  importBoards: (boards: BoardState) => void | Promise<void>;
   /* Data safety (TASK-21.2) */
   /** Acknowledges a `corrupt-load` notice (releases held-back writes). */
   dismissDataIssue: () => void;
@@ -275,6 +348,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const toast = useToast();
   const location = useLocation();
   const navigate = useNavigate();
+  // Server mode is a build property, not a prop: dev/production builds talk
+  // to the API, unit tests stay local unless they stub `VITE_API_URL`.
+  const serverMode = isApiEnabled();
 
   /* eslint-disable react-hooks/refs -- deliberate once-per-provider lazy
      init. A `useState` initializer would be the lint-clean spelling, but
@@ -294,17 +370,110 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const persistence = persistenceRef.current;
 
   // Bootstrap runs exactly once: it both seeds the reducer and reports what
-  // was wrong with the stored data (corrupt / quarantined).
+  // was wrong with the stored data (corrupt / quarantined). In server mode
+  // the boards arrive from the API instead — the local key is only migration
+  // input, read after the first login (never a board source of truth).
   const bootRef = useRef<BootState | null>(null);
   if (bootRef.current === null) {
-    bootRef.current = loadInitialState(persistence);
+    bootRef.current = serverMode
+      ? { state: [], issue: null }
+      : loadInitialState(persistence);
   }
   const boot = bootRef.current;
 
   const [state, dispatchRaw] = useReducer(boardReducer, boot.state);
   const [dataIssue, setDataIssue] = useState<DataIssue | null>(boot.issue);
+  const [syncStatus, setSyncStatus] = useState<BoardStateValue["syncStatus"]>(
+    serverMode ? "loading" : "ready",
+  );
+  const [roles, setRoles] = useState<Record<string, BoardRole>>({});
 
   /* eslint-enable react-hooks/refs */
+
+  // Per-board entity versions seen in command responses — the basis for the
+  // undo preconditions that stop a stale undo from clobbering foreign text.
+  const versionsRef = useRef(new Map<string, Record<string, number>>());
+
+  // One outgoing queue for the account; disposed with the provider (logout
+  // unmounts it, so no command survives the session).
+  /* eslint-disable react-hooks/refs -- deliberate once-per-provider lazy init
+     (same reason as the persistence/boot refs above): a `useState`
+     initializer would build a second queue under StrictMode. */
+  const syncRef = useRef<ServerSync | null>(null);
+  if (syncRef.current === null) {
+    syncRef.current = new ServerSync({
+      send: (boardId, request) => api.sendCommand(boardId, request),
+    });
+  }
+  const sync = syncRef.current;
+  /* eslint-enable react-hooks/refs */
+
+  // Stops async hydration/refetch from applying after unmount (logout).
+  // StrictMode runs setup → cleanup → setup on mount: `aliveRef` must be
+  // re-armed and the queue revived, or the second mount would stay stuck on
+  // "loading" and every command would answer as offline.
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    sync.revive();
+    return () => {
+      aliveRef.current = false;
+      sync.dispose();
+    };
+  }, [sync]);
+
+  const mergeVersions = useCallback(
+    (boardId: string, versions: Record<string, number>) => {
+      if (Object.keys(versions).length === 0) return;
+      const current = versionsRef.current.get(boardId) ?? {};
+      Object.assign(current, versions);
+      versionsRef.current.set(boardId, current);
+    },
+    [],
+  );
+
+  /** Toast for a command the server refused or the network dropped. */
+  const showFailure = useCallback(
+    (failure: SendFailure) => {
+      switch (failure.kind) {
+        case "offline":
+          toast.error(t("sync.offline"));
+          break;
+        case "wip":
+          toast.error(t("toast.wipLimitBlocked"));
+          break;
+        case "version":
+          toast.error(t("sync.foreignEdit"));
+          break;
+        default:
+          toast.error(t("sync.rejected"));
+      }
+    },
+    [toast, t],
+  );
+
+  const onForeignSkipped = useCallback(
+    () => toast.info(t("sync.foreignEdit")),
+    [toast, t],
+  );
+
+  /**
+   * Version preconditions for an undo/redo command: only text edits carry
+   * them (§7.0). Unknown versions are simply omitted — a fresh session that
+   * has not seen the entity since login plays last-write-wins.
+   */
+  const preconditionsFor = useCallback(
+    (
+      boardId: string,
+      action: BoardAction,
+    ): Record<string, number> | undefined => {
+      const key = textEntityKey(boardId, action);
+      if (key === null) return undefined;
+      const version = versionsRef.current.get(boardId)?.[key];
+      return version === undefined ? undefined : { [key]: version };
+    },
+    [],
+  );
 
   // Once dismissed, the quota-warning stays quiet until the data actually
   // drops under the threshold — otherwise the banner re-appears on every
@@ -423,6 +592,25 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     return boardId ? getBoardById(boardId) : undefined;
   }, [getBoardById]);
 
+  /**
+   * Undo/redo transport (TASK-29): the inverse command rides the same queue
+   * as ordinary commands, with version preconditions for text so a stale
+   * undo is refused instead of overwriting someone else's edit. Responses
+   * feed the version map for the next precondition.
+   */
+  const sendUndoRedo = useCallback(
+    async (boardId: string, action: BoardAction): Promise<SendOutcome> => {
+      const outcome = await sync.enqueue(
+        boardId,
+        action,
+        preconditionsFor(boardId, action),
+      );
+      if (outcome.ok) mergeVersions(boardId, outcome.versions);
+      return outcome;
+    },
+    [sync, preconditionsFor, mergeVersions],
+  );
+
   // Undo/redo lives in its own hook (TASK-21.7d): one command stack per
   // board, the two availability flags, and the keyboard shortcuts.
   // Destructured on purpose: every function below is a stable callback,
@@ -439,10 +627,19 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     drop: dropHistory,
     clear: clearHistory,
     sync: syncHistory,
+    rollback: rollbackStep,
+    markForeign,
   } = useUndoHistory({
     getBoard: getBoardById,
     getActiveBoardId,
     apply,
+    ...(serverMode
+      ? {
+          send: sendUndoRedo,
+          onSendFailed: showFailure,
+          onForeignSkipped,
+        }
+      : {}),
   });
 
   const history = useMemo<BoardHistoryValue>(
@@ -477,10 +674,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     }
   }, [routeBoardId, state, location.pathname, navigate, cardParam]);
 
-  // Debounced persistence + throttled auto-backup after every change.
+  // Debounced persistence + throttled auto-backup after every change. Both
+  // are local-mode only: with a server the boards live in the database, and
+  // mirroring them into localStorage would leak one account's data into the
+  // next session on the same browser (TASK-29).
   useEffect(() => {
+    if (serverMode) return;
     persistence.queueSave(state);
-  }, [persistence, state]);
+  }, [persistence, state, serverMode]);
 
   // Leading + trailing throttle: the first change is snapshotted at once,
   // later ones coalesce into a single backup at the end of the window.
@@ -505,7 +706,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (state.length === 0) return;
+    if (serverMode || state.length === 0) return;
     pendingBackupRef.current = state;
     const elapsed = Date.now() - lastBackupRef.current;
     if (elapsed >= BACKUP_THROTTLE_MS) {
@@ -516,7 +717,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         BACKUP_THROTTLE_MS - elapsed,
       );
     }
-  }, [state, flushBackup]);
+  }, [state, flushBackup, serverMode]);
 
   // Unmount must not drop a snapshot the throttle was still holding, so it
   // takes it now (best effort — an IndexedDB write started on unload may
@@ -537,12 +738,118 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     };
   }, [persistence]);
 
+  /**
+   * Server hydration (TASK-29): list the boards, then load every aggregate
+   * into the local model (≤ LIMITS.boardsCount boards — the multi-board UI,
+   * global search and export keep working on the same shape). An account
+   * with zero boards inherits the pre-server localStorage data through
+   * `POST /boards/import` once, archived cards included; the local key is
+   * dropped afterwards so the same data cannot be imported twice.
+   */
+  const runHydration = useCallback(async (): Promise<void> => {
+    const summaries = await api.listBoards();
+    const nextRoles: Record<string, BoardRole> = {};
+    for (const summary of summaries) nextRoles[summary.id] = summary.role;
+
+    let boards: Board[] = [];
+    if (summaries.length === 0) {
+      const legacy = readLegacyBoards();
+      if (legacy !== null) {
+        const imported = await api.importBoards(toEnvelope(legacy));
+        clearLegacyBoards();
+        for (const board of imported) nextRoles[board.id] = "ADMIN";
+        boards = imported;
+      }
+    } else {
+      boards = await Promise.all(
+        summaries.map((summary) => api.getBoard(summary.id)),
+      );
+    }
+
+    if (!aliveRef.current) return;
+    setRoles(nextRoles);
+    // A fresh hydration replaces everything: history from a previous data
+    // set would describe entities that no longer exist.
+    clearHistory();
+    apply({ type: "IMPORT_BOARDS", boards });
+  }, [apply, clearHistory]);
+
+  // StrictMode mounts the provider twice (setup → cleanup → setup); sharing
+  // the in-flight hydration keeps the one-shot legacy import from running —
+  // and importing the same localStorage data — twice.
+  const hydrationRef = useRef<Promise<void> | null>(null);
+  const hydrateBoards = useCallback((): Promise<void> => {
+    if (hydrationRef.current === null) {
+      hydrationRef.current = runHydration().finally(() => {
+        hydrationRef.current = null;
+      });
+    }
+    return hydrationRef.current;
+  }, [runHydration]);
+
+  useEffect(() => {
+    if (!serverMode) return;
+    let cancelled = false;
+    // The initial state is already "loading" in server mode; the effect only
+    // reports how hydration ended.
+    void hydrateBoards()
+      .then(() => {
+        if (!cancelled && aliveRef.current) setSyncStatus("ready");
+      })
+      .catch(() => {
+        if (!cancelled && aliveRef.current) setSyncStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [serverMode, hydrateBoards]);
+
+  /**
+   * Focus refetch (TASK-29 MVP, replaced by SSE in TASK-30): coming back to
+   * the tab pulls the active aggregate — unless commands are in flight,
+   * whose optimistic state must not be overwritten. Entities the server has
+   * moved on from are marked foreign in the history first, so undo skips
+   * them with a toast instead of clobbering another member's edit (§7.0).
+   */
+  const refetchActiveBoard = useCallback(async (): Promise<void> => {
+    const boardId = activeIdRef.current;
+    if (!serverMode || boardId === undefined) return;
+    if (sync.isBusy(boardId)) return;
+    try {
+      const fresh = await api.getBoard(boardId);
+      if (!aliveRef.current || activeIdRef.current !== boardId) return;
+      const local = stateRef.current.find((b) => b.id === boardId);
+      if (local === undefined) return;
+      const foreignIds = changedEntityIds(local, fresh);
+      if (foreignIds.length > 0) markForeign(boardId, foreignIds);
+      apply({ type: "RESTORE_BOARD", boardId, board: fresh });
+    } catch {
+      /* offline / server down — the next focus tries again */
+    }
+  }, [serverMode, sync, markForeign, apply]);
+
+  useEffect(() => {
+    if (!serverMode) return;
+    const onFocus = () => void refetchActiveBoard();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refetchActiveBoard();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [serverMode, refetchActiveBoard]);
+
   // Wrapper dispatch: apply the command, then record the undo step for the
   // board it targeted. Board-scoped actions get the active board id
   // injected when absent, and every command gets an idempotency key.
-  // Board-level actions (import / add / remove / archive / unarchive) do not
-  // go through here — their public methods call `apply` directly, which is
-  // the single path for them.
+  // Board-level actions: create/delete/import are aggregate REST calls
+  // (their public methods below) — rename/archive/unarchive are commands and
+  // travel through here like any other. In server mode the command reaches
+  // the API afterwards; a refusal rolls the optimistic state back and shows
+  // a toast (TASK-29).
   const dispatch = useCallback(
     (action: BoardAction) => {
       const boardId =
@@ -562,28 +869,85 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       if (before !== undefined && after !== before) {
         recordStep(boardId, before, scoped);
       }
+      if (!serverMode) return;
+      void sync.enqueue(boardId, scoped).then((outcome) => {
+        if (outcome.ok) {
+          mergeVersions(boardId, outcome.versions);
+          return;
+        }
+        showFailure(outcome.failure);
+        if (before === undefined) return;
+        const rollback = rollbackStep(boardId, scoped);
+        if (rollback.kind === "reverted") {
+          apply(rollback.undo);
+        } else if (rollback.kind === "none") {
+          // Nothing was recorded (board-level command) — restore the exact
+          // pre-command snapshot instead.
+          apply({ type: "RESTORE_BOARD", boardId, board: before });
+        }
+        // "dead": newer commands sit on top; the optimistic state stays and
+        // reconciles with the next focus refetch.
+      });
     },
-    [apply, recordStep],
+    [
+      apply,
+      recordStep,
+      serverMode,
+      sync,
+      mergeVersions,
+      showFailure,
+      rollbackStep,
+    ],
   );
 
   const importBoards = useCallback(
-    (boards: BoardState) => {
+    (boards: BoardState): void | Promise<void> => {
+      if (serverMode) {
+        // The server keeps the existing boards and adds the imported ones;
+        // re-hydrating shows the whole set (import resets history, exactly
+        // as it always did locally). Nothing local changed yet, so a failure
+        // needs no rollback — it is a toast.
+        return api
+          .importBoards(toEnvelope(normalizeBoards(boards)))
+          .then(() => hydrateBoards())
+          .catch(() => {
+            toast.error(t("data.importError"));
+          });
+      }
       // A new data set invalidates any previous history.
       clearHistory();
       apply({ type: "IMPORT_BOARDS", boards: normalizeBoards(boards) });
     },
-    [apply, clearHistory],
+    [apply, clearHistory, serverMode, hydrateBoards, toast, t],
   );
 
   const addBoard = useCallback(
-    (title: string, fallbackTitle = "Untitled"): string => {
+    (
+      title: string,
+      fallbackTitle = "Untitled",
+    ): string | Promise<string | null> => {
+      const resolved = title.trim() || fallbackTitle;
+      if (serverMode) {
+        return api
+          .createBoard(resolved)
+          .then((created) => {
+            if (!aliveRef.current) return null;
+            apply({ type: "ADD_BOARD", board: created });
+            setRoles((prev) => ({ ...prev, [created.id]: "ADMIN" }));
+            return created.id;
+          })
+          .catch(() => {
+            toast.error(t("sync.rejected"));
+            return null;
+          });
+      }
       const id = createId();
       const now = Date.now();
       apply({
         type: "ADD_BOARD",
         board: {
           id,
-          title: title.trim() || fallbackTitle,
+          title: resolved,
           columns: [],
           cards: {},
           labels: [],
@@ -593,11 +957,27 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       });
       return id;
     },
-    [apply],
+    [apply, serverMode, toast, t],
   );
 
   const removeBoard = useCallback(
-    (boardId: string) => {
+    (boardId: string): void | Promise<void> => {
+      if (serverMode) {
+        return api
+          .deleteBoard(boardId)
+          .then(() => {
+            if (!aliveRef.current) return;
+            apply({ type: "REMOVE_BOARD", boardId });
+            dropHistory(boardId);
+            setRoles((prev) => {
+              const { [boardId]: _removed, ...rest } = prev;
+              return rest;
+            });
+          })
+          .catch(() => {
+            toast.error(t("sync.rejected"));
+          });
+      }
       const existed = stateRef.current.some((b) => b.id === boardId);
       apply({ type: "REMOVE_BOARD", boardId });
       // Only forget the history when the board is actually gone: the
@@ -607,21 +987,38 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         dropHistory(boardId);
       }
     },
-    [apply, dropHistory],
+    [apply, dropHistory, serverMode, toast, t],
   );
 
   const archiveBoard = useCallback(
     (boardId: string) => {
+      // Server mode: a board-level command (ADMIN-only, checked server-side);
+      // the generic failure path restores the snapshot when it is refused.
+      if (serverMode) {
+        dispatch({ type: "ARCHIVE_BOARD", boardId, at: Date.now() });
+        return;
+      }
       apply({ type: "ARCHIVE_BOARD", boardId, at: Date.now() });
     },
-    [apply],
+    [apply, dispatch, serverMode],
   );
 
   const unarchiveBoard = useCallback(
     (boardId: string) => {
+      if (serverMode) {
+        dispatch({ type: "UNARCHIVE_BOARD", boardId, at: Date.now() });
+        return;
+      }
       apply({ type: "UNARCHIVE_BOARD", boardId, at: Date.now() });
     },
-    [apply],
+    [apply, dispatch, serverMode],
+  );
+
+  /** The caller's role: from `GET /boards` in server mode, ADMIN locally. */
+  const roleOf = useCallback(
+    (boardId: string): BoardRole | undefined =>
+      serverMode ? roles[boardId] : "ADMIN",
+    [serverMode, roles],
   );
 
   // Assembled once: every member is a `useCallback` with stable
@@ -631,6 +1028,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const actions = useMemo<BoardActionsValue>(
     () => ({
       dispatch,
+      roleOf,
       // `dispatch` is a stable callback that reads refs when *called*; here
       // it is only stored in closures, never invoked during render.
       // eslint-disable-next-line react-hooks/refs
@@ -646,6 +1044,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     }),
     [
       dispatch,
+      roleOf,
       getActiveBoard,
       addBoard,
       removeBoard,
@@ -659,8 +1058,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   );
 
   const stateValue = useMemo<BoardStateValue>(
-    () => ({ board, boards: state, dataIssue }),
-    [board, state, dataIssue],
+    () => ({ board, boards: state, dataIssue, syncStatus }),
+    [board, state, dataIssue, syncStatus],
   );
 
   const identity = useMemo<BoardIdentityValue>(

@@ -56,10 +56,14 @@ export class BoardsService {
         where: { column: { boardId: membership.boardId }, deletedAt: null },
       });
       summaries.push(
-        toBoardSummary(membership.board, {
-          cards,
-          columns: membership.board._count.columns,
-        }),
+        toBoardSummary(
+          membership.board,
+          {
+            cards,
+            columns: membership.board._count.columns,
+          },
+          membership.role,
+        ),
       );
     }
     return summaries;

@@ -1,9 +1,11 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { Role } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import type {
   Board,
@@ -33,16 +35,20 @@ import type { CreateCommandDto } from "./dto/create-command.dto";
  * key, so a retry returns the stored `result` without a second entity or a
  * second `seq`.
  *
- * `SUPPORTED_ACTIONS` is the board-scoped reducer surface (columns, cards,
- * labels, checklists — TASK-26/27). Board-level actions (RENAME_BOARD,
- * archive/import) are aggregate REST operations, not commands, and are
- * rejected here instead of being half-applied.
+ * `SUPPORTED_ACTIONS` is the command surface the reducer and the writers
+ * understand: board-scoped columns, cards, labels, checklists (TASK-26/27)
+ * plus the board-level `RENAME_BOARD`/`ARCHIVE_BOARD`/`UNARCHIVE_BOARD`
+ * commands (TASK-29). Only array-level/aggregate REST operations (board
+ * create/import/delete) are rejected here instead of being half-applied.
  *
  * Commands that reference unknown entities no-op exactly like the reducer
  * and are still recorded (a replay returns the stored no-op result): the
  * API mirrors the reducer instead of second-guessing it (§7.4.1).
  */
 const SUPPORTED_ACTIONS = new Set<string>([
+  "RENAME_BOARD",
+  "ARCHIVE_BOARD",
+  "UNARCHIVE_BOARD",
   "ADD_COLUMN",
   "RENAME_COLUMN",
   "DELETE_COLUMN",
@@ -102,7 +108,7 @@ export class CommandsService {
     const action = validation.action;
     if (!SUPPORTED_ACTIONS.has(action.type)) {
       throw new BadRequestException({
-        message: `Unsupported command type in TASK-26: ${action.type}`,
+        message: `Unsupported command type: ${action.type}`,
         field: "action.type",
       });
     }
@@ -140,7 +146,15 @@ export class CommandsService {
         throw new NotFoundException("Board not found");
       }
 
+      await this.assertBoardManagement(tx, boardId, actorId, action.type);
+
       const currentVersion = await this.currentSeq(tx, boardId);
+      await this.assertVersionPreconditions(
+        tx,
+        boardId,
+        dto.ifMatchVersions,
+        currentVersion,
+      );
       if (dto.ifMatch !== undefined && dto.ifMatch !== currentVersion) {
         throw new ConflictException({
           conflict: "version",
@@ -228,6 +242,75 @@ export class CommandsService {
       _max: { seq: true },
     });
     return aggregate._max.seq === null ? 0 : Number(aggregate._max.seq);
+  }
+
+  /**
+   * Board management is ADMIN-only in the service, not in the route guard:
+   * the command endpoint allows ADMIN/MEMBER for every action (§7.0), while
+   * `@BoardRoles` metadata cannot vary by action type. Renaming stays
+   * collaborative; archiving/unarchiving is board administration (TASK-29).
+   */
+  private async assertBoardManagement(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    actorId: string,
+    actionType: string,
+  ): Promise<void> {
+    if (actionType !== "ARCHIVE_BOARD" && actionType !== "UNARCHIVE_BOARD") {
+      return;
+    }
+    const membership = await tx.boardMember.findUnique({
+      where: { boardId_userId: { boardId, userId: actorId } },
+      select: { role: true },
+    });
+    if (membership?.role !== Role.ADMIN) {
+      throw new ForbiddenException(
+        "Only an ADMIN can archive or unarchive the board",
+      );
+    }
+  }
+
+  /**
+   * Enforce the per-entity preconditions from `CommandRequest.ifMatchVersions`
+   * (TASK-29 §7.0): undo of a text edit must not clobber a foreign edit, so
+   * every `touch` key the client sends must still hold the version it last
+   * saw. Positional changes stay last-write-wins and simply omit the map.
+   * A stale or missing entity is `409 { conflict: "version" }` carrying the
+   * board's `currentVersion`; an unknown key or a non-integer value is a
+   * client bug answered with `400 { field: "ifMatchVersions" }`.
+   */
+  private async assertVersionPreconditions(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    preconditions: Record<string, number> | undefined,
+    currentVersion: number,
+  ): Promise<void> {
+    if (!preconditions) return;
+    for (const [key, expected] of Object.entries(preconditions)) {
+      if (!Number.isInteger(expected) || expected < 0) {
+        throw new BadRequestException({
+          message: `Invalid ifMatchVersions value for ${key}: must be an integer >= 0`,
+          field: "ifMatchVersions",
+        });
+      }
+      const match =
+        /^(board|column|card|label|checklist|checklistItem):(.+)$/.exec(key);
+      // A `board:` key is only meaningful for the board the command targets;
+      // any other board id is a client bug, not a precondition to check.
+      if (!match || (match[1] === "board" && match[2] !== boardId)) {
+        throw new BadRequestException({
+          message: `Unknown ifMatchVersions key: ${key}`,
+          field: "ifMatchVersions",
+        });
+      }
+      const actual = await entityVersion(tx, match[1], match[2]);
+      if (actual === null || actual !== expected) {
+        throw new ConflictException({
+          conflict: "version",
+          currentVersion,
+        } satisfies ConflictError);
+      }
+    }
   }
 
   /**
@@ -368,4 +451,62 @@ function stableStringify(value: unknown): string {
     }
     return entry;
   });
+}
+
+/**
+ * Current `version` of one `touch` target (`board:<id>`, `card:<id>`, …), or
+ * `null` when no such row exists (soft-deleted rows keep theirs, exactly like
+ * `collectVersions` reports them).
+ */
+async function entityVersion(
+  tx: Prisma.TransactionClient,
+  entity: string,
+  id: string,
+): Promise<number | null> {
+  switch (entity) {
+    case "board": {
+      const row = await tx.board.findUnique({
+        where: { id },
+        select: { version: true },
+      });
+      return row?.version ?? null;
+    }
+    case "column": {
+      const row = await tx.column.findUnique({
+        where: { id },
+        select: { version: true },
+      });
+      return row?.version ?? null;
+    }
+    case "card": {
+      const row = await tx.card.findUnique({
+        where: { id },
+        select: { version: true },
+      });
+      return row?.version ?? null;
+    }
+    case "label": {
+      const row = await tx.label.findUnique({
+        where: { id },
+        select: { version: true },
+      });
+      return row?.version ?? null;
+    }
+    case "checklist": {
+      const row = await tx.checklist.findUnique({
+        where: { id },
+        select: { version: true },
+      });
+      return row?.version ?? null;
+    }
+    case "checklistItem": {
+      const row = await tx.checklistItem.findUnique({
+        where: { id },
+        select: { version: true },
+      });
+      return row?.version ?? null;
+    }
+    default:
+      return null;
+  }
 }

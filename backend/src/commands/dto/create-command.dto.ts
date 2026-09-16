@@ -23,4 +23,13 @@ export class CreateCommandDto {
   @IsInt()
   @Min(0)
   ifMatch?: number;
+
+  /**
+   * Per-entity optimistic-concurrency preconditions (TASK-29), keyed by the
+   * `touch` label (`board:<id>`, `card:<id>`, …). Keys and integer values are
+   * validated in `CommandsService` (see `CommandRequest.ifMatchVersions`).
+   */
+  @IsOptional()
+  @IsObject()
+  ifMatchVersions?: Record<string, number>;
 }

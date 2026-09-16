@@ -213,6 +213,9 @@ const validActions: BoardAction[] = [
     checklistId: "cl-1",
     itemId: "it-1",
   }),
+  action({ type: "RENAME_BOARD", title: "Renamed board" }),
+  action({ type: "ARCHIVE_BOARD" }),
+  action({ type: "UNARCHIVE_BOARD" }),
 ] as unknown as BoardAction[];
 
 describe("validateBoardAction — accepted shapes", () => {
@@ -242,7 +245,7 @@ describe("validateBoardAction — rejected shapes", () => {
     ["an array", [], "action"],
     ["a missing type", { at: 1 }, "action.type"],
     ["a non-string type", { type: 7, at: 1 }, "action.type"],
-    ["an unknown type", action({ type: "ARCHIVE_BOARD" }), "action.type"],
+    ["an unknown type", action({ type: "ADD_BOARD" }), "action.type"],
     ["a missing clock", { type: "DELETE_CARD", cardId: "c" }, "action.at"],
     [
       "a non-finite clock",
@@ -277,6 +280,19 @@ describe("validateBoardAction — rejected shapes", () => {
       "a missing columnId",
       action({ type: "RENAME_COLUMN", title: "x" }),
       "action.columnId",
+    ],
+    [
+      "a blank board title",
+      action({ type: "RENAME_BOARD", title: "  " }),
+      "action.title",
+    ],
+    [
+      "an over-long board title",
+      action({
+        type: "RENAME_BOARD",
+        title: "x".repeat(LIMITS.boardTitle + 1),
+      }),
+      "action.title",
     ],
     [
       "a negative move index",

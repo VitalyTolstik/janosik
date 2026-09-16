@@ -16,9 +16,10 @@ import {
  * rejects a command with the offending field so the endpoint can answer
  * `400 { field }` and the client learns what it got wrong.
  *
- * Only the board-scoped column/card/label/checklist actions are understood;
- * anything else (array-level BoardActions, unknown types) is rejected here
- * rather than guessed at.
+ * Only the board-scoped column/card/label/checklist actions plus the
+ * board-level commands (`RENAME_BOARD`, `ARCHIVE_BOARD`, `UNARCHIVE_BOARD`)
+ * are understood; anything else (array-level `BoardAction`s, unknown types)
+ * is rejected here rather than guessed at.
  */
 
 /** Result of validating one `BoardAction`. */
@@ -286,6 +287,17 @@ function parseAction(action: Record<string, unknown>): BoardAction {
     case "DELETE_COLUMN":
       common(action);
       readString(action, "columnId", "action.columnId", { nonBlank: true });
+      break;
+    case "RENAME_BOARD":
+      common(action);
+      readString(action, "title", "action.title", {
+        nonBlank: true,
+        max: LIMITS.boardTitle,
+      });
+      break;
+    case "ARCHIVE_BOARD":
+    case "UNARCHIVE_BOARD":
+      common(action);
       break;
     case "MOVE_COLUMN":
       common(action);

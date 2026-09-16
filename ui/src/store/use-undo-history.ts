@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Board, BoardAction } from "@janosik/shared";
-import { BoardHistory } from "@/store/history";
+import { invert } from "@janosik/shared";
+import { BoardHistory, type RollbackOutcome } from "@/store/history";
+import type { SendFailure, SendOutcome } from "@/store/server-sync";
 import { createId } from "@/utils/id";
 
 /**
@@ -37,6 +39,17 @@ export interface UndoHistory {
   clear: () => void;
   /** Re-publish availability — the active board changed. */
   sync: () => void;
+  /**
+   * Take back a step whose command the server refused (TASK-29): the
+   * opposite side (`undo` inside `do`) is returned for the caller to apply,
+   * or the step is only marked dead when newer commands sit on top.
+   */
+  rollback: (boardId: string, action: BoardAction) => RollbackOutcome;
+  /**
+   * Mark steps invalidated by a foreign change (focus refetch, TASK-29) —
+   * undo will skip them instead of clobbering the other writer's edit.
+   */
+  markForeign: (boardId: string, ids: readonly string[]) => void;
 }
 
 interface Options {
@@ -46,12 +59,21 @@ interface Options {
   getActiveBoardId: () => string | undefined;
   /** Sends a command through the provider's single state funnel. */
   apply: (action: BoardAction) => void;
+  /** Server send for undo/redo commands; absent in local mode. */
+  send?: (boardId: string, action: BoardAction) => Promise<SendOutcome>;
+  /** Called when an undo/redo command failed on the server (toast hook). */
+  onSendFailed?: (failure: SendFailure) => void;
+  /** Called when undo skipped steps a foreign change had overtaken. */
+  onForeignSkipped?: () => void;
 }
 
 export function useUndoHistory({
   getBoard,
   getActiveBoardId,
   apply,
+  send,
+  onSendFailed,
+  onForeignSkipped,
 }: Options): UndoHistory {
   // One undo/redo stack per board; created lazily, dropped on remove/import.
   const historiesRef = useRef(new Map<string, BoardHistory>());
@@ -98,6 +120,13 @@ export function useUndoHistory({
    * thing it touched is gone (limits never refuse an inverse — see
    * `BoardScopedAction.inverse`), and such a step is worth nothing to
    * anybody, so it is dropped rather than left to swallow the next press.
+   *
+   * On the server (TASK-29) the command is sent after the optimistic apply;
+   * a refusal reverts the apply (the inverse of the inverse is the original
+   * command, computed against the pre-apply board), puts the stack entry
+   * back where it came from and reports the failure for a toast — undo/redo
+   * silently succeeding locally while the server rejected it would desync
+   * the board.
    */
   const run = useCallback(
     (direction: "undo" | "redo") => {
@@ -105,30 +134,76 @@ export function useUndoHistory({
       if (!boardId) return;
       const stack = historiesRef.current.get(boardId);
       if (!stack) return;
-      for (;;) {
-        const action = direction === "undo" ? stack.undo() : stack.redo();
-        if (action === null) break;
-        const before = getBoard(boardId);
-        // Undo happens now, so its own clock is now; redo re-sends the
-        // original command verbatim (same `at`, so the step is replayed
-        // rather than re-dated). Both get a fresh idempotency key — the
-        // original one is spent.
-        apply({
-          ...action,
-          ...(direction === "undo" ? { at: Date.now() } : {}),
-          commandId: createId(),
-        } as BoardAction);
-        if (before === undefined || getBoard(boardId) !== before) break;
-        if (direction === "undo") stack.dropUndone();
-        else stack.dropRedone();
-      }
-      sync();
+      void (async () => {
+        for (;;) {
+          const action = direction === "undo" ? stack.undo() : stack.redo();
+          if (action === null) break;
+          const before = getBoard(boardId);
+          // Undo happens now, so its own clock is now; redo re-sends the
+          // original command verbatim (same `at`, so the step is replayed
+          // rather than re-dated). Both get a fresh idempotency key — the
+          // original one is spent.
+          const applied = {
+            ...action,
+            ...(direction === "undo" ? { at: Date.now() } : {}),
+            commandId: createId(),
+          } as BoardAction;
+          apply(applied);
+          if (before !== undefined && getBoard(boardId) !== before) {
+            if (send !== undefined) {
+              const outcome = await send(boardId, applied);
+              if (!outcome.ok) {
+                const revert = invert(before, applied);
+                if (revert !== null) apply(revert);
+                if (direction === "undo") stack.restoreUndone();
+                else stack.restoreRedone();
+                onSendFailed?.(outcome.failure);
+                sync();
+                return;
+              }
+            }
+            break;
+          }
+          if (direction === "undo") stack.dropUndone();
+          else stack.dropRedone();
+        }
+        // Skipping happens when a foreign change overtook a step: the user
+        // gets told why Ctrl+Z skipped their edit instead of undoing it.
+        if (stack.consumeSkippedDead() > 0) onForeignSkipped?.();
+        sync();
+      })();
     },
-    [apply, getBoard, getActiveBoardId, sync],
+    [
+      apply,
+      getBoard,
+      getActiveBoardId,
+      sync,
+      send,
+      onSendFailed,
+      onForeignSkipped,
+    ],
   );
 
   const undo = useCallback(() => run("undo"), [run]);
   const redo = useCallback(() => run("redo"), [run]);
+
+  const rollback = useCallback(
+    (boardId: string, action: BoardAction): RollbackOutcome => {
+      const outcome = stackFor(boardId).rollbackStep(action);
+      // The step is gone: the header's undo button must not offer it.
+      sync();
+      return outcome;
+    },
+    [stackFor, sync],
+  );
+
+  const markForeign = useCallback(
+    (boardId: string, ids: readonly string[]) => {
+      historiesRef.current.get(boardId)?.markForeign(ids);
+      sync();
+    },
+    [sync],
+  );
 
   const drop = useCallback(
     (boardId: string) => {
@@ -174,5 +249,16 @@ export function useUndoHistory({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [undo, redo]);
 
-  return { canUndo, canRedo, record, undo, redo, drop, clear, sync };
+  return {
+    canUndo,
+    canRedo,
+    record,
+    undo,
+    redo,
+    drop,
+    clear,
+    sync,
+    rollback,
+    markForeign,
+  };
 }

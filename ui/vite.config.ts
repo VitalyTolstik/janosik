@@ -14,6 +14,13 @@ import { serviceWorkerPlugin } from "./vite/sw-plugin.ts";
 // rolldown's require interop across chunks (crash at <Lazy> in prod).
 export default defineConfig({
   plugins: [react(), tailwindcss(), serviceWorkerPlugin()],
+  // Same-origin API in dev (TASK-29): the UI calls `/api/v1`, Vite forwards
+  // to the backend on :3000 — production nginx proxies the same path.
+  server: {
+    proxy: {
+      "/api": "http://localhost:3000",
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),

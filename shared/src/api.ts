@@ -19,6 +19,16 @@ export interface CommandRequest {
   action: BoardAction;
   /** Expected board version; a mismatch is answered with `ConflictError`. */
   ifMatch?: number;
+  /**
+   * Per-entity optimistic-concurrency preconditions (TASK-29), keyed by the
+   * touch key (`card:<id>`, `column:<id>`, …) with the entity `version` the
+   * client last saw. Used for undo of text edits: if another writer has
+   * changed the entity since, the server refuses with `409 {conflict:
+   * "version"}` and the client refuses the undo instead of clobbering the
+   * foreign text (§7.0). Omitted keys are not checked (positional changes
+   * stay last-write-wins).
+   */
+  ifMatchVersions?: Record<string, number>;
 }
 
 /** Per-entity versions returned so the client can reconcile its optimistic state. */
@@ -120,6 +130,8 @@ export interface BoardSummary {
   /** Unix ms when the board is archived; omitted while active. */
   archivedAt?: number;
   counters: BoardCounters;
+  /** The caller's role on this board — drives the ADMIN-only UI (TASK-29). */
+  role: BoardRole;
 }
 
 /** Aggregate of `GET /boards/:id` — exactly the frontend `Board` model. */
@@ -193,3 +205,20 @@ export interface CommentPage {
  * `POST /boards/import` and payload of `GET /boards/:id/export`.
  */
 export type BoardEnvelope = BoardExportFile;
+
+/** Public user projection returned by the auth endpoints (§7.4, TASK-24). */
+export interface AuthUserDto {
+  id: string;
+  email: string;
+  displayName: string | null;
+  isSuperAdmin: boolean;
+}
+
+/**
+ * Body of register/login/refresh: `{ accessToken, user }` — the refresh
+ * token never appears in the body, it rides the httpOnly cookie (§7.0).
+ */
+export interface AuthResponseDto {
+  accessToken: string;
+  user: AuthUserDto;
+}

@@ -1,15 +1,17 @@
 import { useEffect } from "react";
 import { BrowserRouter, Route, Routes, useNavigate } from "react-router-dom";
-import { Archive, Plus } from "lucide-react";
+import { Archive, Loader2, Plus } from "lucide-react";
 
 import { BoardSection } from "@/components/BoardSection";
 import { DataSafetyBanner } from "@/components/DataSafetyBanner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Header } from "@/components/Header";
+import { LoginPage } from "@/components/auth/LoginPage";
 import { ToastProvider } from "@/components/Toast";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
+import { AuthProvider, useAuth } from "@/auth/AuthContext";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider, useBoard } from "@/store/BoardContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -29,9 +31,10 @@ export function NoBoardRoute() {
 
   const allArchived = boards.length > 0;
   const handleCreate = () => {
-    navigate(
-      routes.board(addBoard(t("board.switcher.new"), t("board.untitled"))),
-    );
+    void (async () => {
+      const id = await addBoard(t("board.switcher.new"), t("board.untitled"));
+      if (id) navigate(routes.board(id));
+    })();
   };
 
   return (
@@ -77,6 +80,88 @@ function BoardRoute() {
   return <BoardSection key={board?.id ?? "none"} />;
 }
 
+/**
+ * The authenticated shell. In server mode the boards are still being
+ * fetched on the first paint — showing the empty state then would claim
+ * "no boards" when the truth is "not loaded yet", so the shell waits; a
+ * failed load (offline boot, server down) offers a retry instead of an
+ * empty board list (TASK-29).
+ */
+function BoardShell() {
+  const { syncStatus } = useBoard();
+  const { t } = useI18n();
+
+  if (syncStatus !== "ready") {
+    return (
+      <main className="flex flex-1 items-center justify-center p-6">
+        <div className="flex max-w-sm flex-col items-center gap-3 text-center text-muted-foreground">
+          {syncStatus === "loading" ? (
+            <>
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+              <p className="text-sm">{t("sync.loading")}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm">{t("sync.loadFailed")}</p>
+              <button
+                type="button"
+                data-testid="sync-retry"
+                onClick={() => window.location.reload()}
+                className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+              >
+                {t("sync.retry")}
+              </button>
+            </>
+          )}
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <>
+      {/* Above the header: a data-at-risk warning outranks everything else
+          on the screen (TASK-21.2). */}
+      <DataSafetyBanner />
+      <Header />
+      <Routes>
+        <Route path={routes.home} element={<NoBoardRoute />} />
+        <Route path={routes.boardPattern} element={<BoardRoute />} />
+        <Route path="*" element={<NoBoardRoute />} />
+      </Routes>
+    </>
+  );
+}
+
+/**
+ * Auth gate (TASK-29): the session decides what the shell shows. While the
+ * refresh cookie is being checked the app shows a splash instead of
+ * flashing the login screen; an anonymous session gets the login screen; an
+ * authenticated one mounts the board provider — and unmounts it again on
+ * logout, so no board data outlives the session.
+ */
+function AppGate() {
+  const { status } = useAuth();
+  const { t } = useI18n();
+
+  return (
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      {status === "authenticated" ? (
+        <BoardProvider>
+          <BoardShell />
+        </BoardProvider>
+      ) : status === "anonymous" ? (
+        <LoginPage />
+      ) : (
+        <main className="flex flex-1 items-center justify-center gap-2 p-6 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          <span className="text-sm">{t("auth.restoring")}</span>
+        </main>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   // First paint is done — drop the preflight kill-switch style (which
   // forced transition:none to avoid a theme-flash) and mark the document
@@ -95,25 +180,9 @@ export default function App() {
               <ErrorBoundary>
                 <TooltipProvider delayDuration={150}>
                   <BrowserRouter>
-                    <BoardProvider>
-                      <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
-                        {/* Above the header: a data-at-risk warning outranks
-                            everything else on the screen (TASK-21.2). */}
-                        <DataSafetyBanner />
-                        <Header />
-                        <Routes>
-                          <Route
-                            path={routes.home}
-                            element={<NoBoardRoute />}
-                          />
-                          <Route
-                            path={routes.boardPattern}
-                            element={<BoardRoute />}
-                          />
-                          <Route path="*" element={<NoBoardRoute />} />
-                        </Routes>
-                      </div>
-                    </BoardProvider>
+                    <AuthProvider>
+                      <AppGate />
+                    </AuthProvider>
                   </BrowserRouter>
                 </TooltipProvider>
               </ErrorBoundary>

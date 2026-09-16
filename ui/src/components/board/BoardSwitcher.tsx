@@ -108,8 +108,15 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
   const { t } = useI18n();
   const toast = useToast();
   const navigate = useNavigate();
-  const { boards, board, addBoard, removeBoard, archiveBoard, unarchiveBoard } =
-    useBoard();
+  const {
+    boards,
+    board,
+    addBoard,
+    removeBoard,
+    archiveBoard,
+    unarchiveBoard,
+    roleOf,
+  } = useBoard();
 
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
@@ -169,15 +176,18 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
   const handleCreate = () => {
     const title = createDraft.trim();
     if (!title) return;
-    createBoard(title);
+    void createBoard(title);
   };
 
-  const createBoard = (title: string) => {
+  const createBoard = async (title: string) => {
     if (boards.length >= LIMITS.boardsCount) {
       toast.error(t("limits.maxBoards", { limit: LIMITS.boardsCount }));
       return;
     }
-    const id = addBoard(title);
+    // Server mode creates the board over REST — the id arrives when the
+    // server has it, so navigation waits; a refusal was already toasted.
+    const id = await addBoard(title);
+    if (!id) return;
     onClose();
     navigate(routes.board(id));
   };
@@ -197,7 +207,8 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
 
   const handleDeleteArchived = (target: Board) => {
     setConfirmDeleteId(null);
-    removeBoard(target.id);
+    // REST delete in server mode; a refusal surfaces as a toast.
+    void removeBoard(target.id);
   };
 
   const onSearchKeyDown = (e: React.KeyboardEvent) => {
@@ -272,6 +283,9 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
             const isActive = b.id === board?.id;
             const isHighlighted = index === highlighted;
             const isConfirming = confirmArchiveId === b.id;
+            // Only ADMINs manage a board (the server enforces it too); in
+            // local mode every board is ADMIN, so the action stays visible.
+            const canManage = roleOf(b.id) === "ADMIN";
             return (
               <div
                 key={b.id}
@@ -351,16 +365,18 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
                           aria-hidden
                         />
                       )}
-                      <button
-                        aria-label={t("board.switcher.archive")}
-                        className="no-hover:opacity-100 absolute inset-0 flex items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/row:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setConfirmArchiveId(b.id);
-                        }}
-                      >
-                        <Archive size={14} />
-                      </button>
+                      {canManage ? (
+                        <button
+                          aria-label={t("board.switcher.archive")}
+                          className="no-hover:opacity-100 absolute inset-0 flex items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/row:opacity-100"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmArchiveId(b.id);
+                          }}
+                        >
+                          <Archive size={14} />
+                        </button>
+                      ) : null}
                     </span>
                   </>
                 )}
@@ -419,26 +435,30 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
                     </span>
                   ) : (
                     <>
-                      <button
-                        aria-label={t("board.switcher.restore")}
-                        className="no-hover:opacity-100 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-primary/10 hover:text-primary focus-visible:opacity-100 group-hover/archived:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          unarchiveBoard(b.id);
-                        }}
-                      >
-                        <ArchiveRestore size={14} />
-                      </button>
-                      <button
-                        aria-label={t("board.switcher.delete")}
-                        className="no-hover:opacity-100 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger focus-visible:opacity-100 group-hover/archived:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setConfirmDeleteId(b.id);
-                        }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {roleOf(b.id) === "ADMIN" ? (
+                        <>
+                          <button
+                            aria-label={t("board.switcher.restore")}
+                            className="no-hover:opacity-100 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-primary/10 hover:text-primary focus-visible:opacity-100 group-hover/archived:opacity-100"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              unarchiveBoard(b.id);
+                            }}
+                          >
+                            <ArchiveRestore size={14} />
+                          </button>
+                          <button
+                            aria-label={t("board.switcher.delete")}
+                            className="no-hover:opacity-100 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger focus-visible:opacity-100 group-hover/archived:opacity-100"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeleteId(b.id);
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </>
+                      ) : null}
                     </>
                   )}
                 </div>
