@@ -318,7 +318,7 @@
   `measuring`) — новый массив/объект меняет контекст dnd-kit и
   перерисовывает всех подписчиков `useSortable`/`useDroppable` в обход
   `memo` (наступали трижды, каждый раз находилось только замером).
-- **Тесты** — **714 тестов: ui 397 (55 файлов) + shared 317 (6 файлов)** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3; обратимость экшенов — `invert.test.ts`, TASK-21.7d; платформа и BrowserRouter deep-links — TASK-21.8; ленивые иконки шапки — `lazy-animated-icon.test.tsx`, TASK-21.9; конфигурация сенсоров тач-DnD — `DndBoard.sensors.test.tsx`, TASK-21.10; сброс диалогов и двойной тап — `ColumnView.double-tap.test.tsx`, TASK-21.11; строгий валидатор команд (включая метки/чек-листы) — `shared/src/store/validate.test.ts`, TASK-26/27). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
+- **Тесты** — **748 тестов: ui 426 (60 файлов) + shared 322 (6 файлов)** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3; обратимость экшенов — `invert.test.ts`, TASK-21.7d; платформа и BrowserRouter deep-links — TASK-21.8; ленивые иконки шапки — `lazy-animated-icon.test.tsx`, TASK-21.9; конфигурация сенсоров тач-DnD — `DndBoard.sensors.test.tsx`, TASK-21.10; сброс диалогов и двойной тап — `ColumnView.double-tap.test.tsx`, TASK-21.11; строгий валидатор команд (включая метки/чек-листы и board-level) — `shared/src/store/validate.test.ts`, TASK-26/27/29; серверный режим — `api/client.test.ts`, `store/server-sync.test.ts`, `store/board-diff.test.ts`, `store/BoardContext.server.test.tsx` (fake-сервер на общем редьюсере), `components/auth/LoginPage.test.tsx`, TASK-29). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
 
 ### 1.3. Ключи и точки интеграции
 
@@ -408,7 +408,8 @@
 | 30 | TASK-26 `columns-cards` | ✅ реализовано (PR #70 смержен, merge `25d0448`) — командный лог колонок/карточек §7.4: `POST /boards/:id/commands` (идемпотентность по `commandId`, строгий validate → `400 {field}`, WIP/лимиты → `409 {conflict:"wip"}`, `ifMatch` → `409 {conflict:"version"}` + FOR UPDATE-сериализация доски), `GET ?since=<seq>` — дельта, per-action writers §7.4.1 вариант В, контрактный e2e «агрегат == boardReducer» | гейты: backend 21 unit + 46 e2e, build/lint/format, shared 292, ui 397; live-смоук на dev-БД |
 | 31 | TASK-27 `labels-checklists` | ✅ реализовано — команды меток (`ADD_LABEL`, `RENAME_LABEL`, `SET_LABEL_COLOR`, `DELETE_LABEL`, `RESTORE_LABEL` с `assignments`) и чек-листов с пунктами (`ADD/RENAME/DELETE_CHECKLIST`, `ADD/SET_CHECKLIST_ITEM_DONE/RENAME/DELETE_CHECKLIST_ITEM`); m2m `CardLabel.position`, каскад метки soft-delete, лимиты коллекций → `409 {conflict:"wip"}`, инверсии не отклоняются; контрактный e2e + `Label.position` (миграция) | гейты: backend 21 unit + 65 e2e, build/lint/format, shared 317, ui 397; live-смоук 41/41 |
 | 32 | TASK-28 `activity-comments` | ✅ реализовано — ленты `GET /boards/:id/activity` и `GET /cards/:id/activity` (слияние Command + Activity по времени, составной курсор, `?limit=`), member-события (invited/role/expiry/removed) со снапшот-`details`, комментарии REST (`POST`/`GET /cards/:id/comments`, `DELETE /comments/:id` — только автор, `LIMITS.comment`), `CardAccessGuard` для card/comment-роутов | гейты: backend 21 unit + 65 e2e, build/lint/format, shared 317, ui 397; live-смоук 41/41 |
-| — | TASK-29…32, 35…41 | бэкенд, совместный UI, релиз и полировка — **порядок и DoD в §7.7** (19 шагов, TASK-22…28 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. Следующий — TASK-29 `optimistic-adapter` |
+| 33 | TASK-29 `optimistic-adapter` | ✅ реализовано — серверный режим UI: адаптер команд (`POST /boards/:id/commands`, FIFO-очередь на доску, коалесинг quiet-правок), `ifMatchVersions` (undo текста не затирает чужую правку → `409 {conflict:"version"}`), старт-гидратация `GET /boards` + агрегаты, login/register-экран, миграция localStorage через `POST /boards/import` (архивные карточки включительно), refetch на focus с пометкой чужих сущностей dead, откаты с тостами; + board-level команды `RENAME_BOARD`/`ARCHIVE_BOARD`/`UNARCHIVE_BOARD` (archive/unarchive — ADMIN в сервисе) и `role` в `GET /boards` | гейты: ui 426 (397+29), shared 322, backend 21 unit + 72 e2e, build/lint/format, size 204.07/210 KB; live-смоук: Orca-браузер (register → миграция → команда «Done» → reload), API 12/12 |
+| — | TASK-35…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. Следующий — TASK-35 `board-members-ui` |
 
 ### 6.0.1. Укрепление фундамента перед бэкендом (TASK-21.1…21.11)
 
@@ -1009,7 +1010,7 @@ endpoint'ом.
 
 | Метод | Путь | Назначение |
 | --- | --- | --- |
-| POST | `/boards/:id/commands` | `{commandId, action, ifMatch?}` → `200 {seq, versions}` · `400` (validate) · `409 {conflict, currentVersion}` |
+| POST | `/boards/:id/commands` | `{commandId, action, ifMatch?, ifMatchVersions?}` → `200 {seq, versions}` · `400` (validate) · `409 {conflict, currentVersion}`. `ifMatchVersions` (TASK-29) — позаписные предусловия (`card:<id>` → version) для undo текста: чужая правка → `409 {conflict:"version"}` |
 | GET | `/boards/:id/commands?since=<seq>` | дельта-догон после обрыва SSE (вместо перезапроса агрегата) |
 
 Сервер: `validate()` (строгий, §7.0) → `boardReducer(board, action)` из
@@ -1057,7 +1058,7 @@ endpoint'ом.
 
 | Метод | Путь | Назначение |
 | --- | --- | --- |
-| GET | `/boards` | мои доски (по membership): title, archivedAt, счётчики |
+| GET | `/boards` | мои доски (по membership): title, archivedAt, счётчики, **`role` вызывающего (TASK-29 — ADMIN-only действия UI)** |
 | POST | `/boards` | создать (REST, aggregate-level: доска + первый ADMIN-membership; не экшен редьюсера) |
 | GET | `/boards/:id` | **агрегат доски** — колонки (только активные `cardIds`) + cards-мапа **включая архив** (`archivedAt`) + метки (+ чеклисты) одной выборкой — стартовое состояние UI |
 | DELETE | `/boards/:id` | только ADMIN (последний ADMIN защищён); rename/archive доски — команды `RENAME_BOARD`/`ARCHIVE_BOARD` |
@@ -1149,6 +1150,33 @@ Member/comment-события и снапшот-детали (`details` — им
   тем же `boardReducer`; обрыв — догон `?since=` дельтой.
 - **Офлайн:** тост «нет сети, изменения не сохранены», очередь команд —
   с PWA (TASK-15).
+
+**Реализация (TASK-29) — решения и отклонения:**
+
+- **Серверный режим включается окружением:** `VITE_API_URL` (default
+  `/api/v1`; dev-прокси Vite → `:3000`), в vitest режим выключен — прежние
+  компонентные тесты остаются локальными, а серверный путь покрыт
+  интеграционными тестами с fake-сервером на том же `boardReducer`.
+- **Board-level команды:** `RENAME_BOARD`/`ARCHIVE_BOARD`/`UNARCHIVE_BOARD`
+  добавлены в backend (по §7.4 они и должны были быть командами):
+  archive/unarchive — ADMIN в сервисе (гвард не умеет роли по типу экшена),
+  `role` отдаётся в `GET /boards` для ADMIN-only действий UI.
+- **Позаписные предусловия вместо board-`ifMatch`:** `ifMatch` блокировал бы
+  undo текста при любой чужой команде, а позиции — LWW (§7.0). Клиент шлёт
+  `ifMatchVersions` только для текстовых сущностей в undo/redo; сервер
+  отвечает `409 {conflict:"version"}`.
+- **Гидратация тянет все агрегаты** (≤`LIMITS.boardsCount`): multi-board UI,
+  глобальный поиск и экспорт работают без изменений; ленивая подгрузка —
+  при росте числа досок.
+- **localStorage в серверном режиме не пишется** (иначе доски одного
+  аккаунта утекали бы в сессию другого на общем браузере); авто-бэкапы
+  выключены, ручной бэкап/экспорт остаются локальной страховкой.
+- **StrictMode:** гидратация одиночная (in-flight promise), `ServerSync`
+  `revive()/dispose()` — двойной маунт dev-режима не дублирует импорт и не
+  блокирует очередь.
+- **Undo чужого текста:** focus-refetch сравнивает агрегат с локальной
+  доской и помечает затронутые шаги dead — undo пропускает их с тостом
+  `sync.foreignEdit`; незамеченная гонка ловится `ifMatchVersions`.
 
 ### 7.6. Разблокированные фичи (после TASK-29, по запросу — не запланированы)
 
@@ -1285,7 +1313,7 @@ TASK-36 и TASK-37.)*
 | 5 | TASK-26 `columns-cards` ✅ | `feature/TASK-26-columns-cards` | Команды колонок/карточек (CRUD, move/reorder с позициями, duplicate — id копии от клиента, archive/unarchive/mass-archive, TOGGLE→SET, SET_COLUMN_CARD_ORDER) поверх командного лога; WIP — отказ команды общим `atWipLimit`; каскады — soft-delete §7.3. **Предусловие: решён §7.4.1** (как результат редьюсера ложится в таблицы) — от него зависит форма всего модуля | e2e: команды apply/reject; повтор `commandId` возвращает сохранённый `result`, дубля нет; позиции стабильны; archive round-trip; WIP 409; каскад колонки; `ifMatch` 409; **контрактный тест §7.4.1: агрегат после команды == `boardReducer(before, action)`**. **Выполнено: PR #70, merge `25d0448`** — гейты: backend 21 unit + 46 e2e + build/lint/format, shared 292, ui 397; live-смоук на dev-БД (идемпотентный replay, WIP/version 409, `400 {field}`, каскад DELETE_COLUMN, RESTORE_CARD-orphan, `?since=`); конкурентные same-`ifMatch` сериализованы `FOR UPDATE` (один 200 / один 409) |
 | 6 | TASK-27 `labels-checklists` ✅ | `feature/TASK-27-labels-checklists` | Команды меток (доска+карточка, m2m с позицией) и чек-листов + пунктов (включая `SET_CHECKLIST_ITEM_DONE`, RESTORE_*) | e2e: m2m round-trip, каскад метки (soft-delete), лимиты коллекций, restore-команды возвращают состояние. **Выполнено:** 13 команд меток/чек-листов, per-action writers зеркалят редьюсер (обновлён и `RESTORE_CHECKLIST` — перенумерация), `assertNoWipConflict` зеркалит лимиты (`labelsPerBoard`/`labelsPerCard`/`checklistsPerCard`/`itemsPerChecklist`, инверсии не отклоняются), схема: `Label.position` + миграция `20260916190000_label_position` (иначе порядок меток в агрегате недетерминирован), strict-validate в shared (+25 тестов); гейты: backend 21 unit + 65 e2e, build/lint/format, shared 317, ui 397; live-смоук |
 | 7 | TASK-28 `activity-comments` ✅ | `feature/TASK-28-activity-comments` | Ленты активности поверх Command-лога (курсор по `seq`, фильтр по сущностям), member/comment-события в логе, комментарии (REST; UI позже — §7.6) | e2e: каждая мутирующая команда видна в лентах, actorId верный, пагинация, догон `?since=` отдаёт дельту без перезапроса агрегата. **Выполнено:** `ActivityService` сливает Command (`touches has card:<id>`) и `Activity` составным курсором `at:source:key` (команда раньше activity при равном мс, tie-break `seq`/`id` desc), member-события со снапшот-`details` (invite/role/expiry/remove), комментарии REST (plain text, только автор удаляет, `LIMITS.comment` добавлен в shared), `CardAccessGuard` (card/comment → board); гейты: backend 21 unit + 65 e2e, build/lint/format, shared 317, ui 397; live-смоук 41/41 |
-| 8 | TASK-29 `optimistic-adapter` | `feature/TASK-29-optimistic-adapter` | Sync-слой: экшен→`POST /commands {commandId, action, ifMatch}`→`{seq, versions}`/`409`, undo=инверсная команда из стора (TASK-21.7d) с политикой конфликтов §7.0 (текст → отказ с тостом, позиции → LWW), 401/refresh single-flight, откаты, старт-агрегат → REPLACE_STATE, login-экран, миграция localStorage (включая архивные карточки) | UI полностью живёт с сервера; undo/redo и офлайн-тосты работают; undo при чужой правке текста отказывается с тостом, правка другого участника не теряется; 362+ фронт-тестов зелёные |
+| 8 | TASK-29 `optimistic-adapter` ✅ | `feature/TASK-29-optimistic-adapter` | Sync-слой: экшен→`POST /commands {commandId, action, ifMatch}`→`{seq, versions}`/`409`, undo=инверсная команда из стора (TASK-21.7d) с политикой конфликтов §7.0 (текст → отказ с тостом, позиции → LWW), 401/refresh single-flight, откаты, старт-агрегат → REPLACE_STATE, login-экран, миграция localStorage (включая архивные карточки) | UI полностью живёт с сервера; undo/redo и офлайн-тосты работают; undo при чужой правке текста отказывается с тостом, правка другого участника не теряется; 362+ фронт-тестов зелёные. **Выполнено** (координатором напрямую в `main`, ветка не заводилась): `ui/src/api/client.ts` (fetch-клиент, токен в памяти, single-flight refresh, retry 401), `auth/AuthContext` + `LoginPage` (login/register, i18n en+ru), `store/server-sync.ts` (FIFO-очередь на доску, коалесинг quiet-UPDATE_CARD, классификация отказов), `store/board-diff.ts` (dead-пометка чужих сущностей при focus-refetch), `BoardContext` серверный режим (гидратация `GET /boards`+агрегаты, откаты с тостами, `ifMatchVersions` для undo текста, миграция localStorage→`POST /boards/import`, REST create/delete/import, роли, без localStorage-записи), backend: board-level команды + `role` в `GET /boards` + `ifMatchVersions` (e2e); dev-прокси Vite. Гейты: ui 426 (397+29), shared 322, backend 21 unit + 72 e2e, build/lint/format, size 204.07/210 KB; live: Orca-браузер (register→миграция «Legacy Smoke»→колонка «Done»→reload) + API-смоук 12/12 |
 | 9 | TASK-35 `board-members-ui` | `feature/TASK-35-board-members-ui` | §7.6.1: модалка «Участники», инвайт по email, смена роли, `expiresAt` для VIEWER, базовый `UserAvatar`. **Идёт до TASK-30:** без неё второго участника на доску не добавить, и DoD «два браузера» нечем выполнить | ADMIN приглашает, роль меняется, VIEWER read-only + 403 на мутацию, последний ADMIN защищён; en+ru; тесты |
 | 10 | TASK-30 `realtime-sse` | `feature/TASK-30-realtime-sse` | SSE `{type, seq, action, actorId}` + применение чужих экшенов тем же `boardReducer`, refetch-on-focus остаётся fallback; в идеале — rebase pending-команд через инверсии | два браузера видят изменения друг друга без перезагрузки; обрыв SSE догоняет `?since=` дельтой |
 | 11 | TASK-36 `presence-attribution` | `feature/TASK-36-presence-attribution` | §7.6.1: `Card.lastActorId` + аватар на карточке, аватары в ленте активности, стопка «сейчас на доске» (SSE-событие `presence`), подсветка чужого изменения | оба браузера видят аватар друг друга; чужая правка подсвечена; лента показывает кто; вкладку закрыли — аватар ушёл за ≤60 с |

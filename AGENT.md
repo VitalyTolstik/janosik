@@ -201,6 +201,7 @@ Draft‑состояние диалога (значение формы, стро
 ```bash
 npm install            # на корне: ставит и линкует workspaces
 npm test               # корень: тесты ui + shared
+npm run dev -w ui      # vite dev :5173, /api проксируется на backend :3000
 npm test -w ui         # только фронт-тесты
 npm test -w shared     # только тесты shared
 npm run test:coverage  # корень: покрытие ui + shared (пороги 88/83/91/93)
@@ -212,6 +213,26 @@ npm run size -w ui     # бюджеты бандла (4 шт.)
 
 Внутри `shared/` алиасов `@/` нет — только относительные импорты; фронт
 импортит пакет как `@janosik/shared` (alias в vite/tsconfig/vitest).
+
+### UI: серверный режим (с TASK-29)
+
+- Режим включается окружением: `VITE_API_URL` (default `/api/v1`).
+  В сборках/dev UI **живёт с сервера**; в vitest (`MODE=test`) режим
+  выключен — компонентные тесты остаются локальными (localStorage), а
+  серверный путь покрыт интеграционными с fake-сервером на общем
+  `boardReducer` (`ui/src/test/fake-server.ts`).
+- Ключевые файлы: `ui/src/api/client.ts` (fetch, access-токен в памяти,
+  single-flight refresh, retry 401, `ApiError.offline/conflict/field`),
+  `ui/src/auth/AuthContext.tsx` + `components/auth/LoginPage.tsx`,
+  `ui/src/store/server-sync.ts` (FIFO-очередь на доску, коалесинг
+  quiet-правок), `ui/src/store/board-diff.ts` (dead-пометка чужих правок
+  при focus-refetch), серверный режим внутри `store/BoardContext.tsx`
+  (гидратация, откаты, `ifMatchVersions` для undo текста, миграция
+  `janosik-boards` → `POST /boards/import`, REST create/delete/import).
+- **В серверном режиме localStorage для досок не пишется** (изоляция
+  аккаунтов на общем браузере), авто-бэкапы выключены. Undo остаётся
+  клиентским: инверсия уезжает командой, отказ → обратный откат + тост.
+- Локальные диалоги/черновики — по правилу «сброс только ремаунтом».
 
 ### Backend (с TASK-23)
 
@@ -242,14 +263,18 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   (ADMIN/MEMBER/VIEWER + `expiresAt`, last-ADMIN защищён) под
   MembershipGuard, агрегат `GET /boards/:id` = модель фронта,
   import/export через `@janosik/shared` (симлинк `backend/src/shared`).
-- **Commands живые (TASK-26/27):** `POST /boards/:id/commands` — команда
-  редьюсера (колонки, карточки, метки, чек-листы), идемпотентная по
+- **Commands живые (TASK-26/27/29):** `POST /boards/:id/commands` — команда
+  редьюсера (колонки, карточки, метки, чек-листы + board-level
+  `RENAME_BOARD`/`ARCHIVE_BOARD`/`UNARCHIVE_BOARD`), идемпотентная по
   `commandId`; строгий `validate` из shared → `400 {field}`, WIP/лимиты →
   `409 {conflict:"wip"}`, `ifMatch` → `409 {conflict:"version"}`; команды
-  одной доски сериализуются `FOR UPDATE`. `GET ?since=<seq>` — дельта-догон;
+  одной доски сериализуются `FOR UPDATE`. `ifMatchVersions` (TASK-29) —
+  позаписные предусловия (`card:<id>` → version) для undo текста; archive/
+  unarchive доски — ADMIN в сервисе. `GET ?since=<seq>` — дельта-догон;
   per-action writers зеркалят `boardReducer` в таблицы §7.3 (контрактный
   e2e). Метки доски упорядочены `Label.position` (отклонение от §7.3,
   миграция TASK-27); `RESTORE_LABEL` восстанавливает m2m по `assignments`.
+  `GET /boards` отдаёт `role` вызывающего (ADMIN-only действия UI).
 - **Activity/Comments живые (TASK-28):** `GET /boards/:id/activity` и
   `GET /cards/:id/activity` — слияние Command-лога и `Activity`-строк
   составным курсором (newest-first, `?limit=` ≤ 100); member-события
