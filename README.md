@@ -6,7 +6,7 @@ A premium, offline-first **Kanban board** — Trello-class drag & drop with a Sp
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)](https://vite.dev)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38bdf8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
-[![Tests](https://img.shields.io/badge/tests-773%20passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-801%20passing-brightgreen)](#)
 
 > **Janosik** is an offline-first board that installs as a **PWA** — and, since the backend phase landed, it also runs **server-backed**: accounts, shared boards and a command-log sync (`POST /boards/:id/commands`) on top of the very same reducer, with optimistic updates and undo. Point the UI at the API (`VITE_API_URL`, `/api/v1` by default) for server mode; without it the app keeps the original client-side mode (all data in `localStorage`, JSON export/import, automatic `IndexedDB` backups). Members UI, presence, comments UI and realtime SSE are next — see [ROADMAP.md §7](./ROADMAP.md).
 
@@ -25,6 +25,7 @@ A premium, offline-first **Kanban board** — Trello-class drag & drop with a Sp
 - **Keyboard-first** — shortcut palette (`?`), `j/k` cursor navigation, `n`/`c` composers, `e`/`Enter` edit.
 - **Undo / redo** — 50-step history with coalescing, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`, `Ctrl+Y`, header buttons.
 - **PWA / offline** — installable (manifest + icons), service worker caches the app shell and all hashed chunks; the board keeps working with the network fully cut.
+- **Master panel** — a separate `/admin` area for the platform operator: metrics, all users and boards, command log, audit trail and moderation (block a user and their sessions die instantly, revoke API tokens, archive/soft-delete a board, create accounts with a one-time password). Master accounts live outside the user table, have their own login, cookie and JWT audience, and are created only by the server CLI (`npm run admin:create -w backend`); `OWNER` can add more masters, `OPERATOR` cannot.
 - **Server mode** — sign in, and boards live in PostgreSQL: every edit travels the command log (`POST /boards/:id/commands`) through the same `boardReducer`, optimistic first, with rollback + toast on refusal; typed text is protected by per-entity version preconditions so undo never clobbers another member's edit. The local-only mode stays as the no-API fallback.
 - **Fast by construction** — code-split bundle (editor & calendar load on demand), vendor chunks with stable cache keys; first paint ~212 ms on throttled CPU.
 - **Data safety** — debounced saves, JSON export/import, automatic backups (20 snapshots, rotated), error boundary + toasts, input/collection limits everywhere.
@@ -49,7 +50,7 @@ A premium, offline-first **Kanban board** — Trello-class drag & drop with a Sp
 | PWA | Hand-rolled service worker + web manifest (zero extra deps) |
 | i18n | `i18next`, `react-i18next`, `i18next-browser-languagedetector` |
 | Fonts | `@fontsource/space-grotesk` (self-hosted, no CDN) |
-| Tests | Vitest + React Testing Library (622 tests / 60 files) |
+| Tests | Vitest + React Testing Library (801 tests: ui + shared) |
 
 ---
 
@@ -69,6 +70,29 @@ npm run dev -- --port 5199 --strictPort
 ```
 
 On first launch the app shows a seeded **"Product Launch"** demo board. Everything you change is persisted locally. In production the app is installable (PWA) and keeps working offline.
+
+---
+
+## Master panel (platform admin)
+
+Regular accounts are **not** admins — the panel at **`/admin`** belongs to the platform operator (the "master"), and there is deliberately no HTTP endpoint that can create a master: registration always creates a regular user, and no request can grant master rights. Masters live in their own table with their own login, cookie and JWT audience, so a user session can never open `/admin` (and a master token never works on user routes).
+
+Create the first master on the server (the machine that runs the backend):
+
+```bash
+# from the repository root, backend deps installed, DATABASE_URL pointing at your DB
+npm run admin:create -w backend -- --email me@example.com
+# Password: ********        (hidden prompt; or set ADMIN_PASSWORD=... for automation)
+
+# self-hosted in Docker:
+docker compose exec backend npm run admin:create -- --email me@example.com
+```
+
+- The **first** master is an **OWNER** automatically; others are operators unless `--owner` is passed. Owners can add/block/reset masters right in the panel (**Masters** page); operators have full data access but cannot manage masters, so a stolen operator session cannot escalate.
+- Other CLI helpers: `npm run admin:passwd -w backend -- --email me@example.com` (re-keys and revokes that master's sessions) and `npm run admin:list -w backend`.
+- Sign in at `http://localhost:5173/admin` (dev) or `https://your-host/admin` (self-hosted).
+- What you get there: metrics with 14-day sparklines, all users (search, filter, create with a one-time password, block → sessions die instantly, revoke API tokens), all boards (create for an owner, archive/restore, soft-delete), the cross-board command log, and the audit trail of every master action.
+- Hardening that ships with it: argon2id hashes, 5-failed-login lockout (15 min) plus rate limiting, per-entity refresh rotation with reuse detection, response shapes that never include password/token hashes, and an audit row for every login attempt and mutation.
 
 ---
 

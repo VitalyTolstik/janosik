@@ -11,7 +11,6 @@ const user: AuthUserDto = {
   id: "u-1",
   email: "admin@example.com",
   displayName: "Admin",
-  isSuperAdmin: false,
 };
 
 function json(body: unknown, status = 200): Response {

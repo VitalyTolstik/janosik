@@ -51,6 +51,14 @@
       "limit": "18 KB",
       "gzip": true,
       "running": false
+    },
+    {
+      "name": "admin panel chunk (lazy, gzip)",
+      "path": [
+        "dist/assets/AdminApp-*.js"
+      ],
+      "limit": "30 KB",
+      "gzip": true
     }
   ],
   "scripts": {

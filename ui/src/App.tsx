@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { BrowserRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { Archive, Loader2, Plus } from "lucide-react";
 
@@ -17,6 +17,13 @@ import { BoardProvider, useBoard } from "@/store/BoardContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { routes } from "@/routes";
 import { useI18n } from "@/i18n";
+
+/**
+ * The master panel lives on its own route tree and its own chunk: regular
+ * users never download it, and neither provider tree can mount the other
+ * (TASK-36).
+ */
+const AdminApp = lazy(() => import("@/admin/AdminApp"));
 
 /**
  * `/` and unknown URLs: the empty-state screen (Trello's boards home).
@@ -162,6 +169,18 @@ function AppGate() {
   );
 }
 
+/** Suspense fallback while the master-panel chunk is fetched. */
+function RouteSplash() {
+  return (
+    <div className="flex h-screen items-center justify-center bg-background">
+      <Loader2
+        className="h-5 w-5 animate-spin text-muted-foreground"
+        aria-hidden
+      />
+    </div>
+  );
+}
+
 export default function App() {
   // First paint is done — drop the preflight kill-switch style (which
   // forced transition:none to avoid a theme-flash) and mark the document
@@ -180,9 +199,22 @@ export default function App() {
               <ErrorBoundary>
                 <TooltipProvider delayDuration={150}>
                   <BrowserRouter>
-                    <AuthProvider>
-                      <AppGate />
-                    </AuthProvider>
+                    <Suspense fallback={<RouteSplash />}>
+                      <Routes>
+                        <Route
+                          path={routes.adminPattern}
+                          element={<AdminApp />}
+                        />
+                        <Route
+                          path="*"
+                          element={
+                            <AuthProvider>
+                              <AppGate />
+                            </AuthProvider>
+                          }
+                        />
+                      </Routes>
+                    </Suspense>
                   </BrowserRouter>
                 </TooltipProvider>
               </ErrorBoundary>

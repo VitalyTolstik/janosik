@@ -1,0 +1,346 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+
+import { I18nProvider } from "@/i18n";
+import { ToastProvider } from "@/components/Toast";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { adminApi } from "./admin-client";
+import AdminApp from "./AdminApp";
+import { adminMessage } from "./admin-i18n";
+import {
+  FakeAdminServer,
+  adminBoard,
+  adminMaster,
+  adminUser,
+} from "./test/fake-admin-server";
+
+/**
+ * Master panel integration (TASK-36) against the in-memory fake admin API:
+ * session boot, login, every page, moderation flows, one-time passwords and
+ * the owner-only masters area.
+ */
+
+const t = (
+  key: Parameters<typeof adminMessage>[0],
+  params?: Record<string, string | number>,
+) => adminMessage(key, "en", params);
+
+function renderAdmin(initialPath = "/admin") {
+  return render(
+    <I18nProvider>
+      <ToastProvider>
+        <TooltipProvider>
+          <MemoryRouter initialEntries={[initialPath]}>
+            <Routes>
+              <Route path="/admin/*" element={<AdminApp />} />
+            </Routes>
+          </MemoryRouter>
+        </TooltipProvider>
+      </ToastProvider>
+    </I18nProvider>,
+  );
+}
+
+function jsonResponse(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+async function login() {
+  fireEvent.change(screen.getByTestId("admin-login-email"), {
+    target: { value: "master@example.com" },
+  });
+  fireEvent.change(screen.getByTestId("admin-login-password"), {
+    target: { value: "secret pass" },
+  });
+  fireEvent.click(screen.getByTestId("admin-login-submit"));
+}
+
+function serverWith(state?: ConstructorParameters<typeof FakeAdminServer>[0]) {
+  return new FakeAdminServer(state);
+}
+
+beforeEach(() => {
+  vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+  adminApi.clearAccessToken();
+  adminApi.onAuthLost = null;
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
+
+describe("AdminApp", () => {
+  it("shows the master login when no session exists", async () => {
+    const server = serverWith();
+    server.sessionAlive = false;
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin();
+
+    expect(await screen.findByTestId("admin-login-form")).toBeTruthy();
+    expect(screen.queryByText(t("admin.nav.dashboard"))).toBeNull();
+  });
+
+  it("rejects wrong credentials with an inline error", async () => {
+    const server = serverWith();
+    server.sessionAlive = false;
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin();
+
+    await screen.findByTestId("admin-login-form");
+    fireEvent.change(screen.getByTestId("admin-login-email"), {
+      target: { value: "master@example.com" },
+    });
+    fireEvent.change(screen.getByTestId("admin-login-password"), {
+      target: { value: "wrong" },
+    });
+    fireEvent.click(screen.getByTestId("admin-login-submit"));
+
+    expect(await screen.findByText(t("admin.login.error"))).toBeTruthy();
+  });
+
+  it("restores a cookie session and renders the dashboard", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin();
+
+    expect(
+      await screen.findByText(t("admin.dashboard.registrations")),
+    ).toBeTruthy();
+    expect(screen.getByTestId("admin-logout")).toBeTruthy();
+    expect(screen.queryByTestId("admin-login-form")).toBeNull();
+  });
+
+  it("signs in, and signs out back to the login screen", async () => {
+    const server = serverWith();
+    server.sessionAlive = false;
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin();
+
+    await screen.findByTestId("admin-login-form");
+    await login();
+    expect(await screen.findByText(t("admin.dashboard.activity"))).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("admin-logout"));
+    expect(await screen.findByTestId("admin-login-form")).toBeTruthy();
+  });
+
+  it("lists users, blocks one and keeps the action recorded", async () => {
+    const state = serverWith().state;
+    state.users = [adminUser()];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users");
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-user-menu-member@example.com"),
+      { button: 0 },
+    );
+    fireEvent.click(await screen.findByText(t("admin.users.action.disable")));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByText(t("admin.users.action.disable")));
+
+    await waitFor(() => {
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "PATCH" &&
+            request.path === "/admin/users/u-1" &&
+            (request.body as { disabled?: boolean }).disabled === true,
+        ),
+      ).toBe(true);
+    });
+    expect(
+      await screen.findByText(t("admin.users.status.disabled")),
+    ).toBeTruthy();
+  });
+
+  it("creates a user and reveals the generated password once", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users");
+
+    fireEvent.click(await screen.findByTestId("admin-create-user"));
+    fireEvent.change(screen.getByTestId("admin-user-email"), {
+      target: { value: "new@example.com" },
+    });
+    fireEvent.click(screen.getByTestId("admin-user-submit"));
+
+    expect(
+      await screen.findByTestId("admin-created-password"),
+    ).toHaveTextContent("generated-pass-123");
+    fireEvent.click(screen.getByText(t("admin.users.created.done")));
+    expect(await screen.findByText("new@example.com")).toBeTruthy();
+  });
+
+  it("surfaces a list failure and retries on demand", async () => {
+    const server = serverWith();
+    server.failNext = ["/admin/users"];
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users");
+
+    expect(await screen.findByText(t("admin.common.error"))).toBeTruthy();
+    fireEvent.click(screen.getByText(t("admin.common.retry")));
+    await waitFor(() => {
+      expect(screen.queryByText(t("admin.common.error"))).toBeNull();
+    });
+  });
+
+  it("creates a board for a user and archives it", async () => {
+    const state = serverWith().state;
+    state.users = [adminUser()];
+    state.boards = [adminBoard()];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/boards");
+
+    fireEvent.click(await screen.findByTestId("admin-create-board"));
+    fireEvent.change(screen.getByTestId("admin-board-title"), {
+      target: { value: "Launch" },
+    });
+    fireEvent.change(screen.getByTestId("admin-board-owner"), {
+      target: { value: "member@example.com" },
+    });
+    fireEvent.click(screen.getByTestId("admin-board-submit"));
+    expect(await screen.findByText("Launch")).toBeTruthy();
+
+    fireEvent.pointerDown(await screen.findByTestId("admin-board-menu-b-1"), {
+      button: 0,
+    });
+    fireEvent.click(await screen.findByText(t("admin.boards.action.archive")));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByText(t("admin.boards.action.archive")));
+    expect(
+      await screen.findByText(t("admin.boards.status.archived")),
+    ).toBeTruthy();
+  });
+
+  it("renders the command log and the audit trail", async () => {
+    const state = serverWith().state;
+    state.commands = [
+      {
+        id: "c-1",
+        boardId: "b-1",
+        boardTitle: "Roadmap",
+        actorEmail: "member@example.com",
+        type: "ADD_CARD",
+        seq: 12,
+        createdAt: 1_760_000_000_000,
+      },
+    ];
+    state.audit = [
+      {
+        id: "a-1",
+        adminEmail: "master@example.com",
+        action: "admin.login",
+        targetType: null,
+        targetId: null,
+        details: null,
+        createdAt: 1_760_000_000_000,
+      },
+    ];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    const view = renderAdmin("/admin/log");
+
+    expect(await screen.findByText("ADD_CARD")).toBeTruthy();
+    expect(screen.getByText("Roadmap")).toBeTruthy();
+
+    view.unmount();
+    renderAdmin("/admin/audit");
+    expect(await screen.findByText("admin.login")).toBeTruthy();
+  });
+
+  it("lets an owner add a master and shows the one-time password", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/masters");
+
+    fireEvent.click(await screen.findByTestId("admin-create-master"));
+    fireEvent.change(screen.getByTestId("admin-master-email"), {
+      target: { value: "second@example.com" },
+    });
+    fireEvent.click(screen.getByTestId("admin-master-submit"));
+
+    expect(
+      await screen.findByTestId("admin-master-password"),
+    ).toHaveTextContent("one-time-master-pass");
+    fireEvent.click(screen.getByTestId("admin-master-done"));
+    expect(await screen.findByText("second@example.com")).toBeTruthy();
+    expect(screen.getByText(t("admin.masters.operatorBadge"))).toBeTruthy();
+  });
+
+  it("hides the masters area from operators and shows the 403 error there", async () => {
+    const server = serverWith();
+    server.sessionRole = "OPERATOR";
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users");
+
+    await screen.findByTestId("admin-create-user");
+    expect(
+      screen.queryByRole("link", { name: t("admin.nav.masters") }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: t("admin.nav.dashboard") }),
+    ).not.toBeNull();
+  });
+
+  it("resets a master password from the roster", async () => {
+    const server = serverWith();
+    server.masters = [adminMaster()];
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/masters");
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-master-menu-operator@example.com"),
+      { button: 0 },
+    );
+    fireEvent.click(
+      await screen.findByText(t("admin.masters.action.resetPassword")),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByText(t("admin.masters.action.resetPassword")),
+    );
+
+    expect(
+      await screen.findByTestId("admin-master-password"),
+    ).toHaveTextContent("reset-one-time-pass");
+  });
+
+  it("surfaces a rejected login lockout as a dedicated message", async () => {
+    const server = serverWith();
+    server.sessionAlive = false;
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = new URL(
+          typeof input === "string" ? input : input.toString(),
+          "http://api.test",
+        ).pathname;
+        if (path.endsWith("/admin/auth/login")) {
+          return jsonResponse(
+            { message: "Account is temporarily locked" },
+            429,
+          );
+        }
+        return server.fetchImpl(input, init);
+      },
+    );
+    renderAdmin();
+
+    await screen.findByTestId("admin-login-form");
+    await login();
+    expect(await screen.findByText(t("admin.login.locked"))).toBeTruthy();
+  });
+});

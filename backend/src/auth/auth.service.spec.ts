@@ -1,4 +1,8 @@
-import { ConflictException, UnauthorizedException } from "@nestjs/common";
+import {
+  ConflictException,
+  ForbiddenException,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { Prisma, type User } from "@prisma/client";
 import argon2 from "argon2";
@@ -8,7 +12,6 @@ import { AuthService } from "./auth.service";
 
 const prismaMock = {
   user: {
-    count: jest.fn(),
     create: jest.fn(),
     findUnique: jest.fn(),
   },
@@ -18,7 +21,7 @@ const prismaMock = {
     updateMany: jest.fn(),
   },
 } as unknown as PrismaService & {
-  user: Record<"count" | "create" | "findUnique", jest.Mock>;
+  user: Record<"create" | "findUnique", jest.Mock>;
   refreshToken: Record<"create" | "findUnique" | "updateMany", jest.Mock>;
 };
 
@@ -31,7 +34,7 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   email: "user@example.com",
   passwordHash: "",
   displayName: null,
-  isSuperAdmin: false,
+  disabledAt: null,
   createdAt: new Date("2026-09-01T00:00:00Z"),
   ...overrides,
 });
@@ -50,14 +53,12 @@ describe("AuthService", () => {
   });
 
   describe("register", () => {
-    it("hashes the password with argon2id and makes the first user a super-admin", async () => {
-      prismaMock.user.count.mockResolvedValue(0);
+    it("hashes the password with argon2id and starts a session", async () => {
       prismaMock.user.create.mockImplementation(async ({ data }) =>
         makeUser({
           email: data.email,
           passwordHash: data.passwordHash,
           displayName: data.displayName,
-          isSuperAdmin: data.isSuperAdmin,
         }),
       );
 
@@ -71,9 +72,14 @@ describe("AuthService", () => {
         id: "user-1",
         email: "user@example.com",
         displayName: "Vera",
-        isSuperAdmin: true,
       });
       expect(result.accessToken).toBe("access-token");
+      // Audience isolation (TASK-36): user tokens are signed for this
+      // contour only, so they can never pass the admin strategy.
+      expect(jwtMock.signAsync).toHaveBeenCalledWith(
+        { sub: "user-1" },
+        { audience: "janosik-user" },
+      );
       const { passwordHash } = prismaMock.user.create.mock.calls[0][0].data;
       expect(passwordHash.startsWith("$argon2id$")).toBe(true);
       expect(await argon2.verify(passwordHash, "correct horse battery")).toBe(
@@ -82,7 +88,6 @@ describe("AuthService", () => {
     });
 
     it("stores only the sha256 hash of the refresh token", async () => {
-      prismaMock.user.count.mockResolvedValue(0);
       prismaMock.user.create.mockResolvedValue(makeUser());
 
       const result = await service.register({
@@ -97,22 +102,7 @@ describe("AuthService", () => {
       expect(stored.tokenHash).not.toBe(result.refreshToken);
     });
 
-    it("does not grant super-admin to a later user", async () => {
-      prismaMock.user.count.mockResolvedValue(3);
-      prismaMock.user.create.mockImplementation(async ({ data }) =>
-        makeUser({ isSuperAdmin: data.isSuperAdmin }),
-      );
-
-      const result = await service.register({
-        email: "second@example.com",
-        password: "correct horse battery",
-      });
-
-      expect(result.user.isSuperAdmin).toBe(false);
-    });
-
     it("maps a unique-constraint violation to 409", async () => {
-      prismaMock.user.count.mockResolvedValue(0);
       prismaMock.user.create.mockRejectedValue(
         new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
           code: "P2002",
@@ -143,6 +133,23 @@ describe("AuthService", () => {
 
       expect(result.user.email).toBe("user@example.com");
       expect(result.accessToken).toBe("access-token");
+    });
+
+    it("refuses a disabled account with 403 after a correct password", async () => {
+      const passwordHash = await argon2.hash("correct horse battery", {
+        type: argon2.argon2id,
+      });
+      prismaMock.user.findUnique.mockResolvedValue(
+        makeUser({ passwordHash, disabledAt: new Date() }),
+      );
+
+      await expect(
+        service.login({
+          email: "user@example.com",
+          password: "correct horse battery",
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
     });
 
     it("answers 401 with the same generic message for wrong password", async () => {
@@ -236,6 +243,27 @@ describe("AuthService", () => {
 
       await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
         UnauthorizedException,
+      );
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: "user-1", revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+      expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it("kills every session of a disabled account", async () => {
+      prismaMock.refreshToken.findUnique.mockResolvedValue({
+        id: "token-1",
+        tokenHash: sha256(rawToken),
+        userId: "user-1",
+        expiresAt: new Date(Date.now() + 60_000),
+        revokedAt: null,
+        user: makeUser({ disabledAt: new Date() }),
+      });
+      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+
+      await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
+        ForbiddenException,
       );
       expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
         where: { userId: "user-1", revokedAt: null },

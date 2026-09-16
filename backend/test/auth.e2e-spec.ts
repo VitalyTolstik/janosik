@@ -16,9 +16,9 @@ const sha256 = (value: string) =>
 
 /**
  * Full auth cycle (§7.7 TASK-24 DoD). The user table is emptied up front so
- * first-user (super-admin) semantics stay deterministic no matter which
- * order jest runs the e2e specs in. Tests share sessions on purpose: the
- * strict 5/min rate limit on login/register leaves no headroom for repeats.
+ * the specs stay deterministic no matter which order jest runs them in.
+ * Tests share sessions on purpose: the strict 5/min rate limit on
+ * login/register leaves no headroom for repeats.
  */
 describe("Auth API (e2e)", () => {
   let app: INestApplication;
@@ -45,7 +45,7 @@ describe("Auth API (e2e)", () => {
 
   const server = () => request(app.getHttpServer());
 
-  it("registers the first user as a super-admin and sets the refresh cookie", async () => {
+  it("registers a user and sets the refresh cookie", async () => {
     const res = await server()
       .post("/api/v1/auth/register")
       .send({ email: FIRST_EMAIL, password: PASSWORD, displayName: "Vera" })
@@ -54,8 +54,10 @@ describe("Auth API (e2e)", () => {
     expect(res.body.user).toMatchObject({
       email: FIRST_EMAIL,
       displayName: "Vera",
-      isSuperAdmin: true,
     });
+    // TASK-36: no account is ever auto-promoted — the master account is a
+    // separate identity created only by the `admin:create` CLI.
+    expect(res.body.user.isSuperAdmin).toBeUndefined();
     expect(typeof res.body.accessToken).toBe("string");
     expect(res.body.refreshToken).toBeUndefined();
     firstUserAccessToken = res.body.accessToken;
@@ -78,7 +80,6 @@ describe("Auth API (e2e)", () => {
       id: expect.any(String),
       email: FIRST_EMAIL,
       displayName: "Vera",
-      isSuperAdmin: true,
     });
   });
 
@@ -118,12 +119,13 @@ describe("Auth API (e2e)", () => {
     expect(unknownEmail.body.message).toBe(wrongPassword.body.message);
   });
 
-  it("does not make the second registered user a super-admin", async () => {
+  it("registers a second account with the same projection", async () => {
     const res = await server()
       .post("/api/v1/auth/register")
       .send({ email: SECOND_EMAIL, password: PASSWORD })
       .expect(201);
-    expect(res.body.user.isSuperAdmin).toBe(false);
+    expect(res.body.user.email).toBe(SECOND_EMAIL);
+    expect(res.body.user.isSuperAdmin).toBeUndefined();
   });
 
   it("refresh rotates the cookie and revokes the old token", async () => {

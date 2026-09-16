@@ -24,7 +24,7 @@ model User {
   email         String         @unique
   passwordHash  String
   displayName   String?
-  isSuperAdmin  Boolean        @default(false) // first registered user
+  disabledAt    DateTime? // master block (TASK-36); login/refresh → 403
   createdAt     DateTime       @default(now())
   memberships   BoardMember[]
   activity      Activity[]
@@ -76,6 +76,14 @@ enum Role {
   ADMIN
   MEMBER
   VIEWER
+}
+
+// Master tiers (TASK-36). OWNER manages masters from the panel; OPERATOR
+// has full data access but cannot create or block masters, so a compromised
+// operator session cannot escalate privileges or lock the owner out.
+enum AdminRole {
+  OWNER
+  OPERATOR
 }
 
 model ApiToken {
@@ -239,4 +247,62 @@ model Comment {
   updatedAt DateTime  @updatedAt
 
   @@index([cardId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Platform operator — the "master account" (TASK-36).
+//
+// Deliberately NOT a `User`: it never appears in the public registration,
+// never shows up in user listings and can never be a board member. The only
+// way to create one is the `npm run admin:create` CLI on the server; the
+// admin panel authenticates through its own JWT audience, its own cookie
+// path and its own refresh-token table, so a stolen user session cannot
+// reach a single `/admin` route and vice versa.
+// ---------------------------------------------------------------------------
+model AdminUser {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  displayName  String?
+  // Tier of this master (TASK-36): OWNER | OPERATOR — see `enum AdminRole`.
+  role         AdminRole @default(OPERATOR)
+  failedLogins Int       @default(0) // lockout counter
+  lockedUntil  DateTime? // set after N consecutive failures
+  disabledAt   DateTime?
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  refreshTokens AdminRefreshToken[]
+  auditLogs     AdminAuditLog[]
+}
+
+model AdminRefreshToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique // sha256 of the raw token, never the token
+  admin     AdminUser @relation(fields: [adminId], references: [id])
+  adminId   String
+  expiresAt DateTime
+  revokedAt DateTime? // rotation; reuse of a revoked token kills all sessions
+  createdAt DateTime  @default(now())
+
+  @@index([adminId])
+}
+
+// Accountability layer (§ admin panel best practices, TASK-36): every login
+// attempt and every mutation lands here. `adminEmail` is a snapshot so the
+// trail stays readable even for unknown-email login attempts.
+model AdminAuditLog {
+  id         String     @id @default(cuid())
+  admin      AdminUser? @relation(fields: [adminId], references: [id])
+  adminId    String?
+  adminEmail String
+  action     String // admin.login | admin.login_failed | user.create | …
+  targetType String? // user | board | session | token | admin
+  targetId   String?
+  details    Json?
+  createdAt  DateTime   @default(now())
+
+  @@index([createdAt])
+  @@index([adminId, createdAt])
+  @@index([targetType, targetId])
 }

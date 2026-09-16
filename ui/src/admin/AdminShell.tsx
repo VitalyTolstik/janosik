@@ -1,0 +1,169 @@
+import { NavLink, Outlet } from "react-router-dom";
+import {
+  Activity,
+  ArrowLeft,
+  LayoutDashboard,
+  LogOut,
+  ScrollText,
+  ShieldCheck,
+  Users,
+  KanbanSquare,
+} from "lucide-react";
+
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { cn } from "@/lib/utils";
+import { routes } from "@/routes";
+import { useAdminT, type AdminMessageKey } from "./admin-i18n";
+import { useAdminAuth } from "./AdminAuthContext";
+
+/**
+ * Master panel shell (TASK-36): fixed sidebar, dense content area, compact
+ * type scale. Every navigation entry is a client-side link — the server
+ * still answers 401 to anything unauthenticated.
+ */
+
+const NAV_SECTIONS: Array<{
+  labelKey: AdminMessageKey | null;
+  items: Array<{
+    to: string;
+    end?: boolean;
+    labelKey: AdminMessageKey;
+    icon: typeof LayoutDashboard;
+    ownerOnly?: boolean;
+  }>;
+}> = [
+  {
+    labelKey: null,
+    items: [
+      {
+        to: "/admin",
+        end: true,
+        labelKey: "admin.nav.dashboard",
+        icon: LayoutDashboard,
+      },
+    ],
+  },
+  {
+    labelKey: null,
+    items: [
+      { to: "/admin/users", labelKey: "admin.nav.users", icon: Users },
+      { to: "/admin/boards", labelKey: "admin.nav.boards", icon: KanbanSquare },
+    ],
+  },
+  {
+    labelKey: null,
+    items: [
+      { to: "/admin/log", labelKey: "admin.nav.log", icon: Activity },
+      { to: "/admin/audit", labelKey: "admin.nav.audit", icon: ScrollText },
+      {
+        to: "/admin/masters",
+        labelKey: "admin.nav.masters",
+        icon: ShieldCheck,
+        ownerOnly: true,
+      },
+    ],
+  },
+];
+
+function Brand() {
+  const t = useAdminT();
+  return (
+    <div className="flex items-center gap-2.5 px-4 py-4">
+      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary">
+        <ShieldCheck className="h-4 w-4" aria-hidden />
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold tracking-tight text-foreground">
+          Janosik
+        </p>
+        <p className="truncate text-[10px] uppercase tracking-widest text-muted-foreground">
+          {t("admin.nav.masterBadge")}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function AdminShell() {
+  const t = useAdminT();
+  const { admin, logout } = useAdminAuth();
+  const isOwner = admin?.role === "OWNER";
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-background text-[13px] text-foreground">
+      <aside className="flex w-52 shrink-0 flex-col border-r border-border bg-card/40">
+        <Brand />
+        <nav className="flex flex-1 flex-col gap-5 overflow-y-auto px-2 pb-3">
+          {NAV_SECTIONS.map((section, index) => (
+            <div key={index} className="space-y-0.5">
+              {section.items
+                .filter((item) => item.ownerOnly !== true || isOwner)
+                .map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    className={({ isActive }) =>
+                      cn(
+                        "flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
+                        isActive
+                          ? "bg-primary/15 text-foreground"
+                          : "text-muted-foreground hover:bg-hover hover:text-foreground",
+                      )
+                    }
+                  >
+                    <item.icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    {t(item.labelKey)}
+                  </NavLink>
+                ))}
+            </div>
+          ))}
+        </nav>
+
+        <div className="space-y-2 border-t border-border px-3 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <LanguageSwitcher />
+            <NavLink
+              to={routes.home}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+              {t("admin.nav.backToBoards")}
+            </NavLink>
+          </div>
+        </div>
+      </aside>
+
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Top bar: who is signed in and the way out. Logout is always one
+            click away — the sidebar repeats it for muscle memory. */}
+        <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-card/30 px-6">
+          <p className="truncate text-xs text-muted-foreground">
+            {t("admin.nav.signedInAs")}{" "}
+            <span className="font-medium text-foreground">{admin?.email}</span>
+            {admin?.role === "OWNER" ? (
+              <span className="ml-2 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-primary">
+                {t("admin.nav.masterBadge")}
+              </span>
+            ) : null}
+          </p>
+          <button
+            type="button"
+            onClick={() => void logout()}
+            data-testid="admin-logout"
+            className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-background/50 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+          >
+            <LogOut className="h-3.5 w-3.5" aria-hidden />
+            {t("admin.nav.logout")}
+          </button>
+        </header>
+
+        <main className="flex-1 overflow-y-auto">
+          <div className="mx-auto flex max-w-[1200px] flex-col gap-5 px-6 py-5">
+            <Outlet />
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}

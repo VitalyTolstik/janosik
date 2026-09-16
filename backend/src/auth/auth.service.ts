@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -10,6 +11,7 @@ import { argon2id, hash as argonHash, verify as argonVerify } from "argon2";
 import { createHash, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
+import { USER_JWT_AUDIENCE } from "./auth.types";
 import type { AuthResult, AuthUser } from "./auth.types";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
@@ -34,8 +36,6 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResult> {
-    // §7.0: the first registered user becomes the system super-admin.
-    const isSuperAdmin = (await this.prisma.user.count()) === 0;
     const passwordHash = await argonHash(dto.password, { type: argon2id });
     let user: User;
     try {
@@ -44,7 +44,6 @@ export class AuthService {
           email: dto.email,
           passwordHash,
           displayName: dto.displayName ?? null,
-          isSuperAdmin,
         },
       });
     } catch (error) {
@@ -70,6 +69,11 @@ export class AuthService {
     const valid = await argonVerify(user.passwordHash, dto.password);
     if (!valid) {
       throw new UnauthorizedException("Invalid credentials");
+    }
+    // Moderation block (TASK-36): the master can disable an account; the
+    // password stays correct but no session may be started.
+    if (user.disabledAt !== null) {
+      throw new ForbiddenException("Account is disabled");
     }
     return this.startSession(user);
   }
@@ -97,6 +101,11 @@ export class AuthService {
     }
     if (stored.expiresAt.getTime() <= Date.now()) {
       throw new UnauthorizedException("Refresh token expired");
+    }
+    // A disabled account cannot keep a session alive either (TASK-36).
+    if (stored.user.disabledAt !== null) {
+      await this.revokeAllSessions(stored.userId);
+      throw new ForbiddenException("Account is disabled");
     }
     // Rotate atomically: if a concurrent request revoked this token first,
     // it is the same theft signal as presenting a revoked token.
@@ -126,7 +135,13 @@ export class AuthService {
   }
 
   private async startSession(user: User): Promise<AuthResult> {
-    const accessToken = await this.jwtService.signAsync({ sub: user.id });
+    // The audience separates the two auth contours (TASK-36): a user token
+    // fails the admin strategy and an admin token fails this one, so a
+    // leaked session can never be replayed against the other surface.
+    const accessToken = await this.jwtService.signAsync(
+      { sub: user.id },
+      { audience: USER_JWT_AUDIENCE },
+    );
     const refreshToken = await this.issueRefreshToken(user.id);
     return {
       accessToken,
@@ -164,7 +179,6 @@ export class AuthService {
       id: user.id,
       email: user.email,
       displayName: user.displayName,
-      isSuperAdmin: user.isSuperAdmin,
     };
   }
 

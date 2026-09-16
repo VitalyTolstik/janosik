@@ -318,7 +318,7 @@
   `measuring`) — новый массив/объект меняет контекст dnd-kit и
   перерисовывает всех подписчиков `useSortable`/`useDroppable` в обход
   `memo` (наступали трижды, каждый раз находилось только замером).
-- **Тесты** — **773 теста: ui 451 (60 файлов) + shared 322 (6 файлов)** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3; обратимость экшенов — `invert.test.ts`, TASK-21.7d; платформа и BrowserRouter deep-links — TASK-21.8; ленивые иконки шапки — `lazy-animated-icon.test.tsx`, TASK-21.9; конфигурация сенсоров тач-DnD — `DndBoard.sensors.test.tsx`, TASK-21.10; сброс диалогов и двойной тап — `ColumnView.double-tap.test.tsx`, TASK-21.11; строгий валидатор команд (включая метки/чек-листы и board-level) — `shared/src/store/validate.test.ts`, TASK-26/27/29; серверный режим — `api/client.test.ts`, `store/server-sync.test.ts`, `store/board-diff.test.ts`, `store/BoardContext.server.test.tsx` (fake-сервер на общем редьюсере), `components/auth/LoginPage.test.tsx`, TASK-29). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
+- **Тесты** — **801 тест: ui 476 (63 файла) + shared 325 (7 файлов)** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3; обратимость экшенов — `invert.test.ts`, TASK-21.7d; платформа и BrowserRouter deep-links — TASK-21.8; ленивые иконки шапки — `lazy-animated-icon.test.tsx`, TASK-21.9; конфигурация сенсоров тач-DnD — `DndBoard.sensors.test.tsx`, TASK-21.10; сброс диалогов и двойной тап — `ColumnView.double-tap.test.tsx`, TASK-21.11; строгий валидатор команд (включая метки/чек-листы и board-level) — `shared/src/store/validate.test.ts`, TASK-26/27/29; серверный режим — `api/client.test.ts`, `store/server-sync.test.ts`, `store/board-diff.test.ts`, `store/BoardContext.server.test.tsx` (fake-сервер на общем редьюсере), `components/auth/LoginPage.test.tsx`, TASK-29; мастер-панель — `admin/admin-client.test.ts`, `admin/admin-i18n.test.ts`, `admin/AdminApp.test.tsx` (fake admin-API), TASK-43). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
 
 ### 1.3. Ключи и точки интеграции
 
@@ -409,7 +409,8 @@
 | 31 | TASK-27 `labels-checklists` | ✅ реализовано — команды меток (`ADD_LABEL`, `RENAME_LABEL`, `SET_LABEL_COLOR`, `DELETE_LABEL`, `RESTORE_LABEL` с `assignments`) и чек-листов с пунктами (`ADD/RENAME/DELETE_CHECKLIST`, `ADD/SET_CHECKLIST_ITEM_DONE/RENAME/DELETE_CHECKLIST_ITEM`); m2m `CardLabel.position`, каскад метки soft-delete, лимиты коллекций → `409 {conflict:"wip"}`, инверсии не отклоняются; контрактный e2e + `Label.position` (миграция) | гейты: backend 21 unit + 65 e2e, build/lint/format, shared 317, ui 397; live-смоук 41/41 |
 | 32 | TASK-28 `activity-comments` | ✅ реализовано — ленты `GET /boards/:id/activity` и `GET /cards/:id/activity` (слияние Command + Activity по времени, составной курсор, `?limit=`), member-события (invited/role/expiry/removed) со снапшот-`details`, комментарии REST (`POST`/`GET /cards/:id/comments`, `DELETE /comments/:id` — только автор, `LIMITS.comment`), `CardAccessGuard` для card/comment-роутов | гейты: backend 21 unit + 65 e2e, build/lint/format, shared 317, ui 397; live-смоук 41/41 |
 | 33 | TASK-29 `optimistic-adapter` | ✅ реализовано — серверный режим UI: адаптер команд (`POST /boards/:id/commands`, FIFO-очередь на доску, коалесинг quiet-правок), `ifMatchVersions` (undo текста не затирает чужую правку → `409 {conflict:"version"}`), старт-гидратация `GET /boards` + агрегаты, login/register-экран, миграция localStorage через `POST /boards/import` (архивные карточки включительно), refetch на focus с пометкой чужих сущностей dead, откаты с тостами; + board-level команды `RENAME_BOARD`/`ARCHIVE_BOARD`/`UNARCHIVE_BOARD` (archive/unarchive — ADMIN в сервисе) и `role` в `GET /boards` | гейты: ui 451 (397+54, покрытие 95.3/87.8/93.4/97.7), shared 322, backend 21 unit + 72 e2e, build/lint/format, size 204.07/210 KB; live-смоук: Orca-браузер (register → миграция → команда «Done» → reload), API 12/12 |
-| — | TASK-35…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. Следующий — TASK-35 `board-members-ui` |
+| 34 | TASK-43 `master-admin-panel` | ✅ реализовано вне очереди по запросу — мастер-контур (§7.0/§7.4): `AdminUser` (OWNER/OPERATOR, отдельные cookie/JWT-аудиенция/refresh-таблица), `/admin/auth/*` + `/admin/*` (метрики, юзеры, доски, журнал команд, аудит), модерация (блок юзера + ревок сессий/токенов, архив/soft-delete доски), управление мастерами только у OWNER, CLI `admin:create/passwd/list`, аудит каждого действия, lockout и anti-timing логина, удаление `User.isSuperAdmin` | гейты: ui 476 (451+25), shared 325, backend 22 unit + 94 e2e, build/lint/format, size 204.63/210 KB + ленивый admin-чанк 16.03/30 KB; live-смоук: CLI → браузер (вход мастера, создание мастера из панели, блок юзера) |
+| — | TASK-35…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. Следующий — TASK-35 `board-members-ui` |
 
 ### 6.0.1. Укрепление фундамента перед бэкендом (TASK-21.1…21.11)
 
@@ -675,14 +676,24 @@
   участников, архив/удаление, invite); **MEMBER** («клиент») — создавать/
   редактировать/архивировать карточки; **VIEWER** — только чтение,
   опционально **с ограничением по времени** (`expiresAt` — протух → guard
-  отдаёт 403, запись чистится лениво). Отдельно **супер-админ системы**
-  (`User.isSuperAdmin`, первый зарегистрированный): видит и управляет
-  всеми досками/юзерами. Guard проверяет роль на каждом board-scoped
-  endpoint; `actorId` во всей активности — реальный юзер.
+  отдаёт 403, запись чистится лениво). Guard проверяет роль на каждом
+  board-scoped endpoint; `actorId` во всей активности — реальный юзер.
+  **Платформенные роли — только мастер-контур (TASK-43):** `AdminUser`
+  живёт отдельно от `User` и не появляется в регистрации; вход — свой
+  `/admin/auth/*`, отдельные cookie (`admin_refresh_token`,
+  `path=/api/v1/admin/auth`) и JWT-аудиенция (`janosik-admin`), так что
+  юзер-токен не проходит в `/admin`, а мастер-токен — в юзер-API. Два
+  уровня: **OWNER** (создаётся только CLI; управляет мастерами из панели:
+  создаёт/блокирует/ресетит пароли) и **OPERATOR** (полный доступ к данным,
+  управления мастерами нет — украденная сессия оператора не эскалирует).
+  Пароли — argon2id, lockout после 5 ошибок, каждое действие — в
+  `AdminAuditLog`. Авто-выдача прав по «первому зарегистрированному»
+  удалена: эскалация возможна только через CLI на сервере или owner-сессию.
 - **API-токены (после ядра, §7.6):** персональные токены «вместо пароля»
   для скриптов/интеграций — действуют от имени своего юзера (его роли),
-  в БД только hash, показ один раз, ревокация и `lastUsedAt`; супер-админ
-  может выпускать/отзывать токены юзеров.
+  в БД только hash, показ один раз, ревокация и `lastUsedAt`; мастер
+  может выпускать/отзывать токены юзеров (TASK-43: ревок всех активных
+  токенов юзера из панели).
 - **Синхронизация мульти-юзеров:** MVP — refetch агрегата доски при focus
   окна; затем **SSE** (`GET /boards/:id/events`) в TASK-30 — живые чужие
   изменения, в TASK-36 к ним добавляется присутствие. Курсоров в реальном
@@ -762,6 +773,7 @@ backend/
 │   ├── commands/            # POST /commands: validate → boardReducer(shared) → лог+таблицы; догон ?since=
 │   ├── activity/            # ленты (доска/карточка) поверх Command-лога, курсорная пагинация
 │   ├── comments/            # комментарии
+│   ├── admin/               # мастер-контур (§7.6): /admin/auth + /admin, owner-guard, аудит (TASK-43)
 │   └── common/              # MembershipGuard, exception-фильтры, normalize/validate (shared)
 ├── test/                    # e2e supertest
 └── docker-compose.yml       # postgres:16
@@ -775,7 +787,7 @@ model User {
   email         String         @unique
   passwordHash  String
   displayName   String?
-  isSuperAdmin  Boolean        @default(false)   // первый юзер; управление системой
+  disabledAt    DateTime?                        // блок мастером (TASK-43): вход/refresh → 403
   createdAt     DateTime       @default(now())
   memberships   BoardMember[]
   activity      Activity[]
@@ -824,6 +836,47 @@ model BoardMember {
 }
 
 enum Role { ADMIN MEMBER VIEWER }
+
+enum AdminRole { OWNER OPERATOR }                // мастер-контур (TASK-43)
+
+model AdminUser {                                // «мастер» — не User, отдельный контур входа
+  id            String         @id @default(cuid())
+  email         String         @unique
+  passwordHash  String
+  displayName   String?
+  role          AdminRole      @default(OPERATOR) // OWNER управляет мастерами из панели
+  failedLogins  Int            @default(0)        // lockout-счётчик
+  lockedUntil   DateTime?                         // после 5 ошибок — 15 мин
+  disabledAt    DateTime?
+  lastLoginAt   DateTime?
+  createdAt     DateTime       @default(now())
+}
+
+model AdminRefreshToken {                        // своя cookie/аудиенция, не пересекается с юзерской
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  admin     AdminUser @relation(fields: [adminId], references: [id])
+  adminId   String
+  expiresAt DateTime
+  revokedAt DateTime?                            // ротация; реюз revoked → отзыв всех сессий мастера
+  createdAt DateTime  @default(now())
+  @@index([adminId])
+}
+
+model AdminAuditLog {                            // каждое действие мастера, включая логины
+  id         String     @id @default(cuid())
+  admin      AdminUser? @relation(fields: [adminId], references: [id])
+  adminId    String?
+  adminEmail String                                // снапшот (в т.ч. для неизвестного email)
+  action     String                                // admin.login | user.create | board.archive | …
+  targetType String?
+  targetId   String?
+  details    Json?
+  createdAt  DateTime   @default(now())
+  @@index([createdAt])
+  @@index([adminId, createdAt])
+  @@index([targetType, targetId])
+}
 
 model ApiToken {                          // после ядра (§7.6), схема сразу
   id          String    @id @default(cuid())
@@ -1094,6 +1147,28 @@ endpoint'ом.
 что экшеном редьюсера не является). Курсор составной (`seq` + `createdAt`),
 порядок — по времени. Лимит 50/карточку снят — история хранится целиком.
 
+**Мастер-контур (TASK-43; отдельные аудиенция и cookie, guard `AdminJwtAuthGuard`):**
+
+| Метод | Путь | Назначение |
+| --- | --- | --- |
+| POST | `/admin/auth/login` · `refresh` · `logout` · GET `me` | вход мастера; cookie `admin_refresh_token`, `Path=/api/v1/admin/auth`, ротация + детект реюза; логин 10/мин + lockout 5 ошибок/15 мин |
+| GET | `/admin/metrics` | счётчики платформы + 14-дневные серии регистраций/команд |
+| GET | `/admin/users?search&status&limit&offset` | все юзеры: счётчики досок/сессий/токенов, `disabledAt` |
+| POST | `/admin/users` | создать юзера; без пароля — сгенерированный, показывается один раз |
+| PATCH | `/admin/users/:id` | `{disabled?, displayName?}`; блок немедленно ревокает сессии |
+| POST | `/admin/users/:id/sessions/revoke` · `/tokens/revoke` | ревок всех сессий / API-токенов |
+| GET | `/admin/boards?search&status` | все доски: владелец, участники, счётчики, архив/soft-delete |
+| POST | `/admin/boards` | создать доску для владельца (он становится ADMIN) |
+| POST | `/admin/boards/:id/archive` · `/unarchive` · DELETE | модерация доски (soft-delete — тот же каскад, что у юзеров) |
+| GET | `/admin/commands?search` | журнал команд по всем доскам |
+| GET | `/admin/audit?search` | аудит действий мастеров |
+| GET/POST/PATCH | `/admin/admins…` | **только OWNER**: список мастеров, создание (пароль один раз), блок/разблок, `POST /admin/admins/:id/password/reset`, `POST /admin/admins/:id/sessions/revoke`; себя заблокировать нельзя, последний активный OWNER защищён |
+
+Всё содержимое панели отдаётся без секретов: `passwordHash`, `tokenHash` и
+сырые refresh-токены не выбираются ни в одном запросе. Все мутации
+мастер-контура пишут `AdminAuditLog` (кто, что, объект, детали); создание
+мастеров вне CLI невозможно.
+
 **Импорт/экспорт:**
 
 | POST | `/boards/import` | envelope `parseExport` → создание доски целиком |
@@ -1203,9 +1278,12 @@ Member/comment-события и снапшот-детали (`details` — им
   принимает и PAT (hash-lookup, `lastUsedAt` тикает); супер-админ выпускает/
   отзывает токены юзеров (`POST /admin/users/:id/tokens`). Схема
   `ApiToken` уже в §7.3.
-- **Супер-админ** — `SuperAdminGuard` (`User.isSuperAdmin`): список юзеров и
-  досок, блокировка юзера, доступ к любой доске без membership, выдача
-  ролей системы. Минимум UI — годится отдельная простая страница.
+- **Мастер-панель** — ✅ сделано вне очереди по запросу: TASK-43
+  `master-admin-panel` (§7.4, `ROADMAP-DONE.md`). Отдельный вход, роль
+  OWNER/OPERATOR, аудит; юзеров можно создавать/блокировать/ревокать их
+  сессии и токены, доски — архивировать/удалять, у OWNER — управление
+  мастерами. `User.isSuperAdmin` из плана удалён как мёртвый флаг
+  (миграция `20260917120000_master_admin`).
 - **Исполнители (assignee)** — `Card.assigneeId?`, колонка таблицы и бейдж
   на карточке; membership-проверка, что юзер состоит в доске.
 - **Embed-снапшот доски** — `GET /embed/:token`, публичный read-only SSR HTML.
@@ -1325,6 +1403,7 @@ TASK-36 и TASK-37.)*
 | 17 | TASK-41 `e2e-multiuser` | `feature/TASK-41-e2e-multiuser` | §7.8: Playwright, **ровно шесть** сценариев на два браузера (undo не затирает чужое, конфликт текста, живое прилетание, догон `?since=`, идемпотентность, presence). Правка §0 п.4 — запрет сужается, а не снимается. Гоняется в CI против `docker compose` из TASK-38b | все шесть зелёные в CI; прогон ≤5 мин; §0 и README обновлены |
 | 18 | TASK-31 `mobile-ux` | `feature/TASK-31-mobile-ux` | Тач-слой для календаря/таблицы (HTML5 DnD на тачах не работает; доска уже покрыта TASK-21.10), адаптив шапки/фильтров/диалогов | drag-сроки и перенос строк работают на тач-эмуляторе; вёрстка не ломается на 390px |
 | 19 | TASK-32 `landing-intro` | `feature/TASK-32-landing-intro` | Презентационная страница для неавторизованных + маршруты «войти / создать аккаунт» (auth готов с TASK-24; роутер уже BrowserRouter — TASK-21.8) | неавторизованный видит лендинг, после логина попадает на доску; deep-links не сломаны |
+| 20 | TASK-43 `master-admin-panel` ✅ | `main` (вне очереди, по запросу) | Мастер-контур §7.0/§7.4: `AdminUser` OWNER/OPERATOR отдельно от `User`, свой вход/аудиенция/cookie, админ-панель `/admin` (дашборд, юзеры, доски, журнал, аудит, мастера), CLI `admin:create/passwd/list`, модерация и аудит; `User.isSuperAdmin` удалён | вход мастера из браузера; из панели создаётся оператор и не может управлять мастерами; юзер-токен в `/admin` → 401 и наоборот; блок юзера убивает сессии; всё в аудите; e2e на запреты |
 
 Последовательность выстроена так, что **каждый шаг демонстрируем**: после
 TASK-29 приложение живёт с сервера, после TASK-35 на доску можно позвать

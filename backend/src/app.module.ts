@@ -9,11 +9,12 @@ import { BoardsModule } from "@/boards/boards.module";
 import { CommandsModule } from "@/commands/commands.module";
 import { ActivityModule } from "@/activity/activity.module";
 import { CommentsModule } from "@/comments/comments.module";
+import { AdminModule } from "@/admin/admin.module";
 
 /**
- * TASK-28 state: auth, boards/membership, commands (columns/cards/labels/
- * checklists), activity feeds and comments are live; users/api-tokens
- * remain stubs (§7.6).
+ * TASK-36 state: auth, boards/membership, commands (columns/cards/labels/
+ * checklists), activity feeds, comments and the master-account admin module
+ * are live; users/api-tokens remain stubs (§7.6).
  */
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { CommentsModule } from "@/comments/comments.module";
     CommandsModule,
     ActivityModule,
     CommentsModule,
+    AdminModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

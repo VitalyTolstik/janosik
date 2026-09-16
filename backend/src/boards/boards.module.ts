@@ -9,5 +9,7 @@ import { BoardsService } from "./boards.service";
   imports: [AuthModule],
   controllers: [BoardsController],
   providers: [BoardsService, MembershipGuard],
+  // Reused by the master-account admin module (create/soft-delete board).
+  exports: [BoardsService],
 })
 export class BoardsModule {}

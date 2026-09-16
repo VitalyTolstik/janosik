@@ -247,7 +247,6 @@ export class FakeServer {
       id: this.account.id,
       email: this.account.email,
       displayName: this.account.displayName,
-      isSuperAdmin: false,
     };
   }
 

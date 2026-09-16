@@ -283,6 +283,23 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   `LIMITS.comment` = 2000). Доступ — `CardAccessGuard` (card/comment →
   board).
   Остальные модули: users — заглушка; `/health` живой (пингует БД).
+- **Мастер-контур живой (TASK-43):** `AdminUser` — отдельная от `User`
+  сущность с ролью `AdminRole` (`OWNER` управляет мастерами из панели,
+  `OPERATOR` — нет). Вход мастера — `/api/v1/admin/auth/*` со своими
+  cookie (`admin_refresh_token`, `Path=/api/v1/admin/auth`) и JWT-audience
+  `janosik-admin`; юзер-токен в `/admin` и мастер-токен в юзер-API
+  отклоняются на уровне стратегий. Пароли argon2id, lockout 5/15 мин,
+  каждое действие — в `AdminAuditLog`. Создание мастеров — только CLI:
+  `npm run admin:create -w backend -- --email x [--display-name y] [--owner]`
+  (пароль — скрытый prompt или `ADMIN_PASSWORD`), `admin:passwd`,
+  `admin:list`; публичного HTTP-пути создания мастера нет.
+  Панель `/admin` в UI — ленивый чанк, свой `AdminApiClient`/`AdminAuthProvider`;
+  таблицы отдают контент без `passwordHash`/`tokenHash`/сырых refresh-токенов.
+  Модерация: блок юзера (`disabledAt` — вход/refresh 403, access-токены
+  умирают сразу), ревок сессий/API-токенов, архив/soft-delete доски
+  (каскад — тем же сервисом, что у юзеров), создание юзера с одноразовым
+  паролем. Любая секретная строка (пароль, токен) в ответах и логах
+  не появляется.
 
 ### Pre-commit (husky)
 

@@ -11,4 +11,7 @@ export const routes = {
   /** Canonical board address. */
   boardPattern: "/board/:boardId",
   board: (boardId: string) => `/board/${boardId}`,
+  /** Master panel (TASK-36) — lazy-loaded, never linked from user UI. */
+  admin: "/admin",
+  adminPattern: "/admin/*",
 } as const;
