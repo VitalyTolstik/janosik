@@ -149,3 +149,33 @@ describe("CardItem hover duplicate (column limits)", () => {
     ).toBeDisabled();
   });
 });
+
+describe("CardItem touch (no-hover) quick actions", () => {
+  it("drops the hover quick actions on touch — the dialog owns them", () => {
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <CardItem
+            card={baseCard}
+            labels={[]}
+            onDuplicate={vi.fn()}
+            onArchive={vi.fn()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+    // `(hover: none)` devices: both quick actions are display:none — on
+    // touch they used to be invisible yet still tappable.
+    expect(screen.getByRole("button", { name: "Archive" }).className).toContain(
+      "no-hover:hidden",
+    );
+    expect(
+      screen.getByRole("button", { name: "Duplicate card" }).closest("span")
+        ?.className,
+    ).toContain("no-hover:hidden");
+    // Desktop hover-reveal stays as is.
+    expect(screen.getByRole("button", { name: "Archive" }).className).toContain(
+      "group-hover:opacity-100",
+    );
+  });
+});

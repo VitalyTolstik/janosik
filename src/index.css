@@ -8,6 +8,11 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Touch (no hover): the card's hover-revealed quick actions are hidden
+   entirely — on touch they were invisible but still tappable. Full
+   duplicate/archive actions live in the card dialog. */
+@custom-variant no-hover (@media (hover: none));
+
 :root {
   /* Column glass defaults (overridden at runtime by BoardGlassProvider,
      see use-board-glass.tsx): transparency 0-100 (100 = no fill),

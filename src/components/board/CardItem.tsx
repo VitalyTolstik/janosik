@@ -147,14 +147,17 @@ function CardItemView({
       {/* Hover duplicate (Trello quick-edit style): a compact icon in the
           top-right corner, visible only while hovered. Hidden while dragging
           and when there is nowhere to put the copy handler. Disabled when
-          the card's column is full — the reducer would refuse the copy. */}
+          the card's column is full — the reducer would refuse the copy.
+          Touch devices have no hover: there the button would stay invisible
+          yet tappable, so it is removed entirely (`no-hover`) — the card
+          dialog owns duplicate/archive on touch. */}
       {onDuplicate && !isDragging && !confirmArchive ? (
         <Tooltip>
           <TooltipTrigger asChild>
             {/* Positioning and hover-visibility live on the wrapper: a
                 disabled button drops pointer events, and the tooltip needs
                 an element that still receives them. */}
-            <span className="absolute right-1.5 top-1.5 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            <span className="no-hover:hidden absolute right-1.5 top-1.5 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
               <button
                 type="button"
                 aria-label={t("card.duplicate")}
@@ -215,7 +218,7 @@ function CardItemView({
                 type="button"
                 aria-label={t("card.archive")}
                 data-testid="card-archive"
-                className="absolute right-8 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 hover:bg-warning/10 hover:text-warning group-hover:opacity-100"
+                className="no-hover:hidden absolute right-8 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 hover:bg-warning/10 hover:text-warning group-hover:opacity-100"
                 onClick={(e) => {
                   // Don't let the click open the card dialog.
                   e.stopPropagation();
