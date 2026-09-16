@@ -1,9 +1,9 @@
-import { INestApplication, ValidationPipe } from "@nestjs/common";
+import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import helmet from "helmet";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import "@/config/env";
+import { setupApp } from "@/common/app-setup";
 
 describe("Health (e2e)", () => {
   let app: INestApplication;
@@ -13,9 +13,7 @@ describe("Health (e2e)", () => {
       imports: [AppModule],
     }).compile();
     app = moduleRef.createNestApplication();
-    app.use(helmet());
-    app.setGlobalPrefix("api/v1");
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    setupApp(app);
     await app.init();
   });
 

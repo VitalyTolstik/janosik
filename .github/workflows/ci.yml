@@ -61,6 +61,7 @@ jobs:
         run: npm run test:ci -w backend
         env:
           DATABASE_URL: postgresql://janosik:janosik@localhost:5433/janosik_test
+          JWT_SECRET: 00000000000000000000000000000000000000000000000000000000000000ff
 
       - name: Backend typecheck/build
         run: npm run build:backend
