@@ -97,3 +97,41 @@ describe("AddCardZone", () => {
     expect(counter.icons).toBe(iconsAfterMount);
   });
 });
+
+describe("AddCardZone touch (no-hover)", () => {
+  it("renders a persistent tappable ghost when it is the create path", () => {
+    const onInsert = vi.fn();
+    render(
+      <I18nProvider>
+        <ul>
+          <AddCardZone index={2} onInsert={onInsert} touchVisible />
+        </ul>
+      </I18nProvider>,
+    );
+    const zone = screen.getByTestId("card-insert-zone-2");
+    const button = screen.getByTestId("card-insert-2");
+    // `(hover: none)`: expanded zone, button clickable without hover —
+    // on touch this is the only way to create a card.
+    expect(zone.className).toContain("no-hover:h-8");
+    expect(button.className).toContain("no-hover:pointer-events-auto");
+    expect(button.className).toContain("no-hover:opacity-100");
+    button.click();
+    expect(onInsert).toHaveBeenCalledWith(2);
+  });
+
+  it("keeps gap zones hover-only (no touch affordance)", () => {
+    render(
+      <I18nProvider>
+        <ul>
+          <AddCardZone index={1} onInsert={vi.fn()} />
+        </ul>
+      </I18nProvider>,
+    );
+    expect(screen.getByTestId("card-insert-zone-1").className).not.toContain(
+      "no-hover:",
+    );
+    expect(screen.getByTestId("card-insert-1").className).not.toContain(
+      "no-hover:",
+    );
+  });
+});

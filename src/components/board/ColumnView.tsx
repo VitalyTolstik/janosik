@@ -313,7 +313,11 @@ function ColumnViewBody({
                     : t("column.empty")}
                 </div>
                 {inlineAddAllowed && (
-                  <AddCardZone index={0} onInsert={handleInsertAt} />
+                  <AddCardZone
+                    index={0}
+                    onInsert={handleInsertAt}
+                    touchVisible
+                  />
                 )}
               </div>
             )
@@ -375,6 +379,7 @@ function ColumnViewBody({
                     index={count}
                     interactive={inlineAddAllowed}
                     onInsert={handleInsertAt}
+                    touchVisible
                   />
                 )}
                 {inlineAddAllowed && inlineAdd?.index === count && (
