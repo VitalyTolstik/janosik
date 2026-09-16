@@ -1,7 +1,7 @@
 # Janosik — архив закрытых задач (ROADMAP-DONE)
 
 > Полные описания реализованных задач TASK-1…21 (Фазы A/B/C+), аудит-фиксов
-> TASK-33/34 и бэкенд-задач TASK-22…26. Вынесены из `ROADMAP.md`, чтобы
+> TASK-33/34 и бэкенд-задач TASK-22…28. Вынесены из `ROADMAP.md`, чтобы
 > обязательное чтение агента (§0 ROADMAP) оставалось компактным. Статус и
 > порядок — в таблице §6.0 `ROADMAP.md`; решения и «что сделано» — здесь.
 > Номера задач не переиспользуются.
@@ -1531,3 +1531,29 @@ PR #70, merge `25d0448` (ветка `VitalyTolstik/dev-task26`; коммиты `
 - **Артефакты:** `backend/src/commands/{commands.module,commands.controller,commands.service,command-writers,dto/create-command.dto}.ts`, `backend/test/commands-columns-cards.e2e-spec.ts` (46 e2e), `shared/src/store/validate.ts` + `validate.test.ts` (+62 теста: shared 230→292).
 - **Гейты:** backend 21 unit + 46 e2e, build/lint/format; shared 292; ui 397 + build. Live-смоук координатора на dev-БД (прод-сборка `node dist/main.js`): CRUD/move/duplicate/archive↔unarchive, идемпотентный replay, WIP/version 409, `400 {field}`, каскад колонки с выживанием архивной карточки, orphan-restore, `?since=`-дельта, конкурентная пара команд.
 - **Заметки на будущее:** no-op для неизвестных сущностей — сознательное зеркало редьюсера (ошибка клиента не диагностируется, контракт важнее); `writeCardPositions` — N UPDATE на reorder (в лимитах 200/колонку ок); orphan-колонка помечена префиксом `orphan:` — будущий UI восстановления колонок обязан её прятать; `backend/package.json` — `engines.node >=22.17` (shared резолвится как TS, `dist` стартует на Node 22.17+).
+
+## TASK-27 `labels-checklists` — выполнено (2026-09-16)
+
+Ветка не заводилась: работа выполнена напрямую в `main` «одним промом» по запросу пользователя (без Orca-воркеров и PR).
+
+- **Команды:** 13 новых типов в `POST /boards/:id/commands` — `SET_CARD_LABEL` (абсолютный on/off + `index`), `ADD_LABEL`, `RENAME_LABEL`, `SET_LABEL_COLOR`, `DELETE_LABEL`, `RESTORE_LABEL` (с `assignments: [{cardId,index}]`), `ADD_CHECKLIST`, `RENAME_CHECKLIST`, `DELETE_CHECKLIST`, `ADD_CHECKLIST_ITEM`, `SET_CHECKLIST_ITEM_DONE`, `RENAME_CHECKLIST_ITEM`, `DELETE_CHECKLIST_ITEM`. Контрактный e2e «агрегат == boardReducer» покрывает весь набор, включая порядок меток на доске, порядок `card.labelIds`, порядок чек-листов/пунктов и восстановление на прежние позиции.
+- **Writers §7.4.1:** `CardLabel` переписываются из итогового `labelIds` (позиция = индекс); `DELETE_LABEL` — soft-delete метки + hard-delete m2m (карточки не трогаются — редьюсер тоже не меняет их `updatedAt`); `RESTORE_LABEL` — upsert + перенумерация остальных меток (raw SQL, без version-шума) + восстановление m2m по `assignments`; чек-листы/пункты — upsert/soft-delete + перенумерация позиций, карточка бампается (`updatedAt` из after + version++). `RESTORE_CHECKLIST` перенумеровывает соседние чек-листы, чтобы восстановление на `index` совпадало с редьюсером.
+- **Лимиты:** `assertNoWipConflict` зеркалит редьюсер точно: 51-я метка на доске, 21-я на карточке, 21-й чек-лист, 101-й пункт → `409 {conflict:"wip"}`; дубликат id и unknown-сущности — no-op без отказа; инверсии (`inverse:true`) не отклоняются никогда.
+- **Схема:** добавлен `Label.position Int @default(0)` + индекс `[boardId, position]` (миграция `20260916190000_label_position`) — **отклонение от §7.3** (там колонки не было): без неё порядок меток в агрегате недетерминирован (Postgres heap после UPDATE), а `RESTORE_LABEL.index` бессмыслен. `§7.3` в ROADMAP обновлён, `board-import` пишет позиции.
+- **Валидация:** строгие правила в shared (`validateLabel`, `validateLabelColor` — палитра 14 + legacy `amber`, `readBoolean`, assignments) → `400 {field}`; +25 тестов shared (292→317).
+- **Артефакты:** `backend/src/commands/{commands.service,command-writers}.ts`, `backend/test/commands-labels-checklists.e2e-spec.ts` (10 e2e), `shared/src/store/validate.ts`.
+- **Гейты:** backend 21 unit + 65 e2e, build/lint/format; shared 317; ui 397 + build; live-смоук на dev-БД: 41/41 проверок (метки/чек-листы/каскад/restore, идемпотентность, ленты, комментарии, пагинация курсором).
+
+## TASK-28 `activity-comments` — выполнено (2026-09-16)
+
+Ветка не заводилась: TASK-28 сделан вместе с TASK-27 напрямую в `main` (тот же заход).
+
+- **Ленты §7.4:** `GET /boards/:id/activity` и `GET /cards/:id/activity` — слияние `Command`-лога (в карточной ленте — фильтр `touches has "card:<id>"`) и `Activity`-строк по времени. Формат записи `ActivityFeedEntry {source, id, seq?, at, type, actorId, cardId?, details?}`; страница `{items, nextCursor}` newest-first, `?limit=` 1…100 (по умолчанию 50), мусорный курсор/лимит → 400.
+- **Курсор:** составной `at:source:key` (`key` = `seq` для команд, `id` для activity). При равном `createdAt` команда идёт раньше activity, внутри источника — `seq`/`id` desc. SQL-догон и merge используют один и тот же порядок, поэтому пагинация не дублирует и не пропускает записи (e2e: пошаговый обход `limit=2` даёт ровно полную ленту; live-смоук: обход `limit=1`).
+- **Member-события:** `inviteMember`/`updateMember`/`removeMember` пишут `Activity` тем же актором-ADMIN: `member_invited`, `member_role_changed`, `member_expiry_changed` (только срок, без смены роли), `member_removed`, у каждого снапшот-`details` (email, роли/сроки). Патч без изменений события не пишет.
+- **Комментарии (REST):** `POST /cards/:id/comments` (ADMIN/MEMBER, plain text, trim, `LIMITS.comment = 2000` — константа добавлена в shared), `GET /cards/:id/comments` (любая роль, newest-first, курсор `at:id`), `DELETE /comments/:id` (только автор; VIEWER не пишет; 404 на повторное удаление). Каждая запись пишет `comment_added`/`comment_deleted` в `Activity` (details `{commentId, text}` для added).
+- **Доступ:** новый `CardAccessGuard` (наследник `MembershipGuard` через защищённые `resolveBoardId`/`enforceMembership`) резолвит доску из `cardId` или `commentId` и применяет те же проверки membership/expiry/`@BoardRoles`; чужой → 403, неизвестная карточка/комментарий → 404.
+- **Отклонение от плана:** `GET /cards/:id` (агрегат карточки, §7.4) не реализован — UI берёт карточку из агрегата доски, а история есть в `/cards/:id/activity`; вернуться к нему при TASK-37, если секции диалога понадобится отдельная выборка.
+- **Артефакты:** `backend/src/activity/{activity.module,activity.controller,activity.service}.ts`, `backend/src/comments/{comments.module,comments.controller,comments.service,dto/create-comment.dto}.ts`, `backend/src/common/card-access.guard.ts`, `backend/test/activity-comments.e2e-spec.ts` (9 e2e).
+- **Гейты:** backend 21 unit + 65 e2e, build/lint/format; shared 317; ui 397 + build; live-смоук 41/41.
+- **Заметки на будущее:** курсор — контракт «клиент не парсит»; `details` — снапшот (переживает удаление комментария); запись `comment_deleted` остаётся в ленте после soft-delete; SSE-событие `activity` (тип уже в shared) — TASK-30/37.

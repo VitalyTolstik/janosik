@@ -242,14 +242,22 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   (ADMIN/MEMBER/VIEWER + `expiresAt`, last-ADMIN защищён) под
   MembershipGuard, агрегат `GET /boards/:id` = модель фронта,
   import/export через `@janosik/shared` (симлинк `backend/src/shared`).
-- **Commands живые (TASK-26):** `POST /boards/:id/commands` — команда
-  редьюсера, идемпотентная по `commandId`; строгий `validate` из shared →
-  `400 {field}`, WIP/лимиты → `409 {conflict:"wip"}`, `ifMatch` → `409
-  {conflict:"version"}`; команды одной доски сериализуются `FOR UPDATE`.
-  `GET ?since=<seq>` — дельта-догон; per-action writers зеркалят
-  `boardReducer` в таблицы §7.3 (контрактный e2e).
-  Остальные модули (users/activity/comments) — заглушки;
-  `/health` живой (пингует БД).
+- **Commands живые (TASK-26/27):** `POST /boards/:id/commands` — команда
+  редьюсера (колонки, карточки, метки, чек-листы), идемпотентная по
+  `commandId`; строгий `validate` из shared → `400 {field}`, WIP/лимиты →
+  `409 {conflict:"wip"}`, `ifMatch` → `409 {conflict:"version"}`; команды
+  одной доски сериализуются `FOR UPDATE`. `GET ?since=<seq>` — дельта-догон;
+  per-action writers зеркалят `boardReducer` в таблицы §7.3 (контрактный
+  e2e). Метки доски упорядочены `Label.position` (отклонение от §7.3,
+  миграция TASK-27); `RESTORE_LABEL` восстанавливает m2m по `assignments`.
+- **Activity/Comments живые (TASK-28):** `GET /boards/:id/activity` и
+  `GET /cards/:id/activity` — слияние Command-лога и `Activity`-строк
+  составным курсором (newest-first, `?limit=` ≤ 100); member-события
+  (invite/role/expiry/remove) со снапшот-`details`; комментарии REST:
+  `POST/GET /cards/:id/comments`, `DELETE /comments/:id` (только автор,
+  `LIMITS.comment` = 2000). Доступ — `CardAccessGuard` (card/comment →
+  board).
+  Остальные модули: users — заглушка; `/health` живой (пингует БД).
 
 ### Pre-commit (husky)
 
