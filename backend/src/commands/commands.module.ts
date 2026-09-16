@@ -9,5 +9,7 @@ import { CommandsService } from "./commands.service";
   imports: [AuthModule],
   controllers: [CommandsController],
   providers: [CommandsService, MembershipGuard],
+  // Reused by the master panel to edit board content as the owner (TASK-43).
+  exports: [CommandsService],
 })
 export class CommandsModule {}

@@ -62,6 +62,24 @@ function StatCard({
   );
 }
 
+function RuntimeItem({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="flex items-baseline gap-1.5">
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span className="font-mono text-xs text-foreground">{value}</span>
+    </span>
+  );
+}
+
+function formatUptime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m ${seconds % 60}s`;
+}
+
 function Sparkline({
   points,
   accent,
@@ -182,6 +200,28 @@ export function DashboardPage() {
           accent="text-primary"
         />
       </div>
+
+      <Panel className="flex flex-wrap items-center gap-x-8 gap-y-2 px-4 py-3">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {t("admin.dashboard.runtime")}
+        </h2>
+        <RuntimeItem
+          label={t("admin.dashboard.version")}
+          value={metrics.runtime.version}
+        />
+        <RuntimeItem
+          label={t("admin.dashboard.uptime")}
+          value={formatUptime(metrics.runtime.uptimeSec)}
+        />
+        <RuntimeItem
+          label={t("admin.dashboard.database")}
+          value={`${metrics.runtime.databaseLatencyMs} ms`}
+        />
+        <RuntimeItem
+          label={t("admin.dashboard.environment")}
+          value={metrics.runtime.nodeEnv}
+        />
+      </Panel>
 
       <div className="grid gap-3 lg:grid-cols-2">
         <Panel className="space-y-3 p-4">

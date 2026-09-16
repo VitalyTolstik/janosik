@@ -1,3 +1,5 @@
+import type { BoardAction } from "./store/board-reducer";
+
 /**
  * Admin (master account) wire contract — §7.4, TASK-36.
  *
@@ -83,6 +85,17 @@ export interface AdminDayPoint {
   count: number;
 }
 
+/** Runtime info for the dashboard infrastructure card (TASK-43). */
+export interface AdminRuntimeDto {
+  /** Backend version from package.json. */
+  version: string;
+  /** Process uptime in seconds. */
+  uptimeSec: number;
+  nodeEnv: string;
+  /** Round-trip of a `SELECT 1` against PostgreSQL, ms. */
+  databaseLatencyMs: number;
+}
+
 /** `GET /admin/metrics` — the dashboard’s whole dataset. */
 export interface AdminMetricsDto {
   users: { total: number; last7d: number; disabled: number };
@@ -92,6 +105,8 @@ export interface AdminMetricsDto {
   comments: { total: number };
   sessions: { active: number };
   admins: { total: number };
+  /** Process/database runtime — rendered as the infra card. */
+  runtime: AdminRuntimeDto;
   /** Registrations per day, last 14 days, oldest first. */
   registrationsByDay: AdminDayPoint[];
   /** Commands per day, last 14 days, oldest first. */
@@ -126,6 +141,62 @@ export interface AdminBoardRowDto {
   /** Unix ms. */
   updatedAt: number;
   archivedAt: number | null;
+  deletedAt: number | null;
+}
+
+/** A row of `GET /admin/cards` — every card on the platform (TASK-43). */
+export interface AdminCardRowDto {
+  id: string;
+  title: string;
+  boardId: string;
+  boardTitle: string;
+  columnTitle: string;
+  /** Unix ms. */
+  createdAt: number;
+  /** Unix ms. */
+  updatedAt: number;
+  archivedAt: number | null;
+  deletedAt: number | null;
+  /** Comments on the card, soft-deleted excluded. */
+  comments: number;
+}
+
+/** A row of `GET /admin/sessions` — an active refresh session (TASK-43). */
+export interface AdminSessionRowDto {
+  id: string;
+  userEmail: string;
+  /** Unix ms. */
+  createdAt: number;
+  /** Unix ms. */
+  expiresAt: number;
+}
+
+/** A row of `GET /admin/tokens` — a personal API token (TASK-43). */
+export interface AdminTokenRowDto {
+  id: string;
+  userEmail: string;
+  name: string;
+  /** Unix ms. */
+  createdAt: number;
+  /** Unix ms; `null` until first use. */
+  lastUsedAt: number | null;
+  /** Unix ms; `null` when non-expiring. */
+  expiresAt: number | null;
+  /** Unix ms; `null` while active. */
+  revokedAt: number | null;
+}
+
+/** A row of `GET /admin/comments` — cross-board comment moderation. */
+export interface AdminCommentRowDto {
+  id: string;
+  cardId: string;
+  cardTitle: string;
+  boardTitle: string;
+  authorEmail: string;
+  text: string;
+  /** Unix ms. */
+  createdAt: number;
+  /** Unix ms; `null` while visible. */
   deletedAt: number | null;
 }
 
@@ -191,6 +262,17 @@ export interface AdminCreateBoardRequest {
   ownerEmail: string;
 }
 
+/**
+ * Body of `POST /admin/boards/:id/commands` (TASK-43): a board content
+ * command applied **through the command log** on behalf of the board owner,
+ * so the reducer stays the single source of truth (§7.4.1). `commandId` is
+ * generated server-side when omitted; retries may pass the same id.
+ */
+export interface AdminBoardCommandRequest {
+  commandId?: string;
+  action: BoardAction;
+}
+
 /** Every action the audit log can carry (TASK-36). */
 export const ADMIN_AUDIT_ACTIONS = [
   "admin.login",
@@ -215,6 +297,13 @@ export const ADMIN_AUDIT_ACTIONS = [
   "board.archive",
   "board.unarchive",
   "board.delete",
+  "board.command",
+  "card.archive",
+  "card.unarchive",
+  "card.delete",
+  "session.revoke",
+  "token.revoke",
+  "comment.delete",
 ] as const;
 
 export type AdminAuditAction = (typeof ADMIN_AUDIT_ACTIONS)[number];

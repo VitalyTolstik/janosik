@@ -431,6 +431,180 @@ describe("Admin API (e2e)", () => {
     expect(audit).not.toBeNull();
   });
 
+  describe("content and security pages", () => {
+    let cardId: string;
+    let sessionId: string;
+    let tokenId: string;
+    let commentId: string;
+
+    beforeAll(async () => {
+      const board = await prisma.board.create({
+        data: { title: "Moderation board" },
+      });
+      await prisma.boardMember.create({
+        data: { boardId: board.id, userId, role: "ADMIN" },
+      });
+      const column = await prisma.column.create({
+        data: {
+          id: "mod-column",
+          boardId: board.id,
+          title: "Backlog",
+          position: 0,
+        },
+      });
+      const card = await prisma.card.create({
+        data: {
+          id: "mod-card",
+          columnId: column.id,
+          title: "Moderate me",
+          position: 0,
+        },
+      });
+      cardId = card.id;
+      const comment = await prisma.comment.create({
+        data: { cardId: card.id, authorId: userId, text: "spam-ish" },
+      });
+      commentId = comment.id;
+      const session = await prisma.refreshToken.create({
+        data: {
+          tokenHash: "mod-session-hash",
+          userId,
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+      sessionId = session.id;
+      const token = await prisma.apiToken.create({
+        data: { userId, name: "moderation", tokenHash: "mod-token-hash" },
+      });
+      tokenId = token.id;
+    });
+
+    it("lists cards with board context and moderates them", async () => {
+      const found = await server()
+        .get("/api/v1/admin/cards?search=Moderate")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(found.body.total).toBe(1);
+      expect(found.body.items[0]).toMatchObject({
+        title: "Moderate me",
+        boardTitle: "Moderation board",
+        columnTitle: "Backlog",
+        archivedAt: null,
+        deletedAt: null,
+        comments: 1,
+      });
+
+      await server()
+        .post(`/api/v1/admin/cards/${cardId}/archive`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+      const archived = await server()
+        .get("/api/v1/admin/cards?status=archived")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(archived.body.total).toBe(1);
+
+      await server()
+        .post(`/api/v1/admin/cards/${cardId}/unarchive`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+
+      await server()
+        .delete(`/api/v1/admin/cards/${cardId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      const deleted = await server()
+        .get("/api/v1/admin/cards?status=deleted")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(deleted.body.total).toBe(1);
+
+      const audit = await server()
+        .get("/api/v1/admin/audit?search=card.delete")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(audit.body.total).toBe(1);
+    });
+
+    it("lists and revokes individual sessions", async () => {
+      const found = await server()
+        .get(`/api/v1/admin/sessions?search=${USER_EMAIL}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      const row = found.body.items.find(
+        (item: { id: string }) => item.id === sessionId,
+      );
+      expect(row).toBeDefined();
+      expect(row.userEmail).toBe(USER_EMAIL);
+
+      const revoked = await server()
+        .post(`/api/v1/admin/sessions/${sessionId}/revoke`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+      expect(revoked.body.revoked).toBe(1);
+
+      const again = await server()
+        .post(`/api/v1/admin/sessions/${sessionId}/revoke`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+      expect(again.body.revoked).toBe(0);
+    });
+
+    it("lists and revokes API tokens", async () => {
+      const found = await server()
+        .get(`/api/v1/admin/tokens?search=moderation`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(found.body.total).toBe(1);
+      expect(found.body.items[0].userEmail).toBe(USER_EMAIL);
+      expect(JSON.stringify(found.body)).not.toContain("mod-token-hash");
+
+      const revoked = await server()
+        .post(`/api/v1/admin/tokens/${tokenId}/revoke`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+      expect(revoked.body.revoked).toBe(1);
+    });
+
+    it("moderates comments across boards", async () => {
+      const found = await server()
+        .get("/api/v1/admin/comments?search=spam")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(found.body.total).toBe(1);
+      expect(found.body.items[0]).toMatchObject({
+        cardTitle: "Moderate me",
+        boardTitle: "Moderation board",
+        authorEmail: USER_EMAIL,
+        deletedAt: null,
+      });
+
+      await server()
+        .delete(`/api/v1/admin/comments/${commentId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+
+      const after = await server()
+        .get("/api/v1/admin/comments?search=spam")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(after.body.items[0].deletedAt).toBeGreaterThan(0);
+    });
+
+    it("reports runtime and database latency on the dashboard", async () => {
+      const res = await server()
+        .get("/api/v1/admin/metrics")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(res.body.runtime).toMatchObject({
+        version: expect.any(String),
+        nodeEnv: "test",
+      });
+      expect(res.body.runtime.uptimeSec).toBeGreaterThanOrEqual(0);
+      expect(res.body.runtime.databaseLatencyMs).toBeGreaterThanOrEqual(0);
+    });
+  });
+
   describe("master management (owners only)", () => {
     let operatorToken: string;
     let operatorId: string;

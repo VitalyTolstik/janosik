@@ -1,10 +1,17 @@
+import { boardReducer } from "@janosik/shared";
 import type {
+  BoardAction,
+  BoardAggregate,
   AdminAuditRowDto,
   AdminBoardRowDto,
+  AdminCardRowDto,
   AdminCommandRowDto,
+  AdminCommentRowDto,
   AdminMasterRowDto,
   AdminMetricsDto,
   AdminRole,
+  AdminSessionRowDto,
+  AdminTokenRowDto,
   AdminUserRowDto,
 } from "@janosik/shared";
 
@@ -29,12 +36,105 @@ export interface FakeAdminState {
   boards: AdminBoardRowDto[];
   commands: AdminCommandRowDto[];
   audit: AdminAuditRowDto[];
+  cards: AdminCardRowDto[];
+  sessions: AdminSessionRowDto[];
+  tokens: AdminTokenRowDto[];
+  comments: AdminCommentRowDto[];
+  /** Aggregate served to the board content editor; grown by commands. */
+  contentBoard: BoardAggregate | null;
 }
 
 const now = 1_760_000_000_000;
 
 export function emptyAdminState(): FakeAdminState {
-  return { admins: [], users: [], boards: [], commands: [], audit: [] };
+  return {
+    admins: [],
+    users: [],
+    boards: [],
+    commands: [],
+    audit: [],
+    cards: [],
+    sessions: [],
+    tokens: [],
+    comments: [],
+    contentBoard: null,
+  };
+}
+
+export function contentBoard(
+  overrides: Partial<BoardAggregate> = {},
+): BoardAggregate {
+  return {
+    id: "b-1",
+    title: "Roadmap",
+    columns: [],
+    cards: {},
+    labels: [],
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+export function adminCard(
+  overrides: Partial<AdminCardRowDto> = {},
+): AdminCardRowDto {
+  return {
+    id: "card-1",
+    title: "Moderate me",
+    boardId: "b-1",
+    boardTitle: "Roadmap",
+    columnTitle: "Backlog",
+    createdAt: now,
+    updatedAt: now,
+    archivedAt: null,
+    deletedAt: null,
+    comments: 1,
+    ...overrides,
+  };
+}
+
+export function adminSession(
+  overrides: Partial<AdminSessionRowDto> = {},
+): AdminSessionRowDto {
+  return {
+    id: "session-1",
+    userEmail: "member@example.com",
+    createdAt: now,
+    expiresAt: now + 86_400_000,
+    ...overrides,
+  };
+}
+
+export function adminToken(
+  overrides: Partial<AdminTokenRowDto> = {},
+): AdminTokenRowDto {
+  return {
+    id: "token-1",
+    userEmail: "member@example.com",
+    name: "CI",
+    createdAt: now,
+    lastUsedAt: null,
+    expiresAt: null,
+    revokedAt: null,
+    ...overrides,
+  };
+}
+
+export function adminComment(
+  overrides: Partial<AdminCommentRowDto> = {},
+): AdminCommentRowDto {
+  return {
+    id: "comment-1",
+    cardId: "card-1",
+    cardTitle: "Moderate me",
+    boardTitle: "Roadmap",
+    authorEmail: "member@example.com",
+    text: "Looks good",
+    createdAt: now,
+    deletedAt: null,
+    ...overrides,
+  };
 }
 
 export function adminUser(
@@ -352,6 +452,86 @@ export class FakeAdminServer {
       return this.json({ status: "ok" });
     }
 
+    const boardContent = path.match(/^\/admin\/boards\/([^/]+)\/content$/);
+    if (boardContent && method === "GET") {
+      const board = this.state.contentBoard ?? contentBoard();
+      return this.json({ ...board, id: boardContent[1] });
+    }
+    const boardCommand = path.match(/^\/admin\/boards\/([^/]+)\/commands$/);
+    if (boardCommand && method === "POST") {
+      const action = (jsonBody?.action ?? {}) as BoardAction;
+      const current = this.state.contentBoard ?? contentBoard();
+      try {
+        const next = boardReducer([current], {
+          ...(action as BoardAction & { at?: number }),
+          boardId: current.id,
+          at: (action as { at?: number }).at ?? Date.now(),
+        } as BoardAction);
+        this.state.contentBoard = next[0];
+      } catch (error) {
+        return this.json({ message: String(error) }, 400);
+      }
+      return this.json({ seq: 1, versions: {} });
+    }
+
+    if (path === "/admin/cards" && method === "GET") {
+      return this.json(this.page(this.state.cards, url));
+    }
+    const cardArchive = path.match(
+      /^\/admin\/cards\/([^/]+)\/(archive|unarchive)$/,
+    );
+    if (cardArchive && method === "POST") {
+      const card = this.state.cards.find((item) => item.id === cardArchive[1]);
+      if (!card) return this.json({ message: "Card not found" }, 404);
+      card.archivedAt = cardArchive[2] === "archive" ? now : null;
+      return this.json({ status: "ok" }, 201);
+    }
+    const cardDelete = path.match(/^\/admin\/cards\/([^/]+)$/);
+    if (cardDelete && method === "DELETE") {
+      const card = this.state.cards.find((item) => item.id === cardDelete[1]);
+      if (card) card.deletedAt = now;
+      return this.json({ status: "ok" });
+    }
+
+    if (path === "/admin/sessions" && method === "GET") {
+      return this.json(this.page(this.state.sessions, url));
+    }
+    const sessionRevoke = path.match(/^\/admin\/sessions\/([^/]+)\/revoke$/);
+    if (sessionRevoke && method === "POST") {
+      const found = this.state.sessions.some(
+        (item) => item.id === sessionRevoke[1],
+      );
+      this.state.sessions = this.state.sessions.filter(
+        (item) => item.id !== sessionRevoke[1],
+      );
+      return this.json({ revoked: found ? 1 : 0 }, 201);
+    }
+
+    if (path === "/admin/tokens" && method === "GET") {
+      return this.json(this.page(this.state.tokens, url));
+    }
+    const tokenRevoke = path.match(/^\/admin\/tokens\/([^/]+)\/revoke$/);
+    if (tokenRevoke && method === "POST") {
+      const token = this.state.tokens.find(
+        (item) => item.id === tokenRevoke[1],
+      );
+      const revoked = token !== undefined && token.revokedAt === null ? 1 : 0;
+      if (token) token.revokedAt = now;
+      return this.json({ revoked }, 201);
+    }
+
+    if (path === "/admin/comments" && method === "GET") {
+      return this.json(this.page(this.state.comments, url));
+    }
+    const commentDelete = path.match(/^\/admin\/comments\/([^/]+)$/);
+    if (commentDelete && method === "DELETE") {
+      const comment = this.state.comments.find(
+        (item) => item.id === commentDelete[1],
+      );
+      if (comment) comment.deletedAt = now;
+      return this.json({ status: "ok" });
+    }
+
     if (path === "/admin/commands") {
       return this.json(this.page(this.state.commands, url));
     }
@@ -369,8 +549,14 @@ export class FakeAdminServer {
       cards: { active: 5, archived: 0 },
       commands: { last24h: 3, last7d: 9 },
       comments: { total: 2 },
-      sessions: { active: 4 },
+      sessions: { active: this.state.sessions.length },
       admins: { total: this.state.admins.length },
+      runtime: {
+        version: "0.1.0-test",
+        uptimeSec: 42,
+        nodeEnv: "test",
+        databaseLatencyMs: 3,
+      },
       registrationsByDay: Array.from({ length: 14 }, (_, index) => ({
         date: `2026-09-${String(index + 1).padStart(2, "0")}`,
         count: index % 3,

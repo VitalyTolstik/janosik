@@ -1,8 +1,10 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import {
   AlertTriangle,
+  Check,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Loader2,
   Search,
 } from "lucide-react";
@@ -156,6 +158,38 @@ export function FilterTabs<T extends string>({
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * Row identifier, DB-style: eight characters, monospace, click to copy the
+ * full id (the tooltip carries it too). Support work starts with an id.
+ */
+export function IdChip({ id, className }: { id: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      title={id}
+      data-testid={`admin-id-${id}`}
+      onClick={() => {
+        void navigator.clipboard
+          ?.writeText(id)
+          .then(() => setCopied(true))
+          .catch(() => setCopied(false));
+      }}
+      className={cn(
+        "inline-flex items-center gap-1 rounded font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground",
+        className,
+      )}
+    >
+      {id.slice(0, 8)}
+      {copied ? (
+        <Check className="h-3 w-3 text-success" aria-hidden />
+      ) : (
+        <Copy className="h-3 w-3 opacity-60" aria-hidden />
+      )}
+    </button>
   );
 }
 

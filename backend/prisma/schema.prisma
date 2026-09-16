@@ -41,6 +41,9 @@ model RefreshToken {
   userId    String
   expiresAt DateTime
   revokedAt DateTime? // rotation; reuse of a revoked token revokes all user sessions
+  createdAt DateTime  @default(now()) // session review page (TASK-43)
+
+  @@index([userId, createdAt])
 }
 
 model Board {

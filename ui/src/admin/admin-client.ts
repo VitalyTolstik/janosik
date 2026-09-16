@@ -1,20 +1,27 @@
 import type {
   AdminAuditRowDto,
   AdminAuthResponseDto,
+  AdminBoardCommandRequest,
   AdminBoardRowDto,
+  AdminCardRowDto,
   AdminCommandRowDto,
+  AdminCommentRowDto,
   AdminCreateBoardRequest,
   AdminCreateMasterRequest,
   AdminCreateMasterResponse,
   AdminCreateUserRequest,
   AdminCreateUserResponse,
   AdminMasterRowDto,
+  AdminSessionRowDto,
+  AdminTokenRowDto,
   AdminMetricsDto,
   AdminPage,
   AdminUpdateMasterRequest,
   AdminUpdateUserRequest,
   AdminUserDto,
   AdminUserRowDto,
+  BoardAggregate,
+  CommandResponse,
 } from "@janosik/shared";
 import { ApiError, apiBaseUrl } from "@/api/client";
 
@@ -205,6 +212,22 @@ export class AdminApiClient {
     });
   }
 
+  /** Aggregate of one board for the content editor (same shape as the UI). */
+  getBoardContent(boardId: string): Promise<BoardAggregate> {
+    return this.request<BoardAggregate>(`/admin/boards/${boardId}/content`);
+  }
+
+  /** Apply a board content command as the owner, through the command log. */
+  sendBoardCommand(
+    boardId: string,
+    request: AdminBoardCommandRequest,
+  ): Promise<CommandResponse> {
+    return this.request<CommandResponse>(`/admin/boards/${boardId}/commands`, {
+      method: "POST",
+      body: request,
+    });
+  }
+
   archiveBoard(boardId: string): Promise<AdminBoardRowDto> {
     return this.request<AdminBoardRowDto>(`/admin/boards/${boardId}/archive`, {
       method: "POST",
@@ -220,6 +243,76 @@ export class AdminApiClient {
 
   deleteBoard(boardId: string): Promise<{ status: "ok" }> {
     return this.request<{ status: "ok" }>(`/admin/boards/${boardId}`, {
+      method: "DELETE",
+    });
+  }
+
+  listCards(params: AdminListParams = {}): Promise<AdminPage<AdminCardRowDto>> {
+    return this.request<AdminPage<AdminCardRowDto>>(
+      `/admin/cards${this.query(params)}`,
+    );
+  }
+
+  archiveCard(cardId: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(`/admin/cards/${cardId}/archive`, {
+      method: "POST",
+    });
+  }
+
+  unarchiveCard(cardId: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(`/admin/cards/${cardId}/unarchive`, {
+      method: "POST",
+    });
+  }
+
+  deleteCard(cardId: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(`/admin/cards/${cardId}`, {
+      method: "DELETE",
+    });
+  }
+
+  listSessions(
+    params: AdminListParams = {},
+  ): Promise<AdminPage<AdminSessionRowDto>> {
+    return this.request<AdminPage<AdminSessionRowDto>>(
+      `/admin/sessions${this.query(params)}`,
+    );
+  }
+
+  revokeSession(sessionId: string): Promise<{ revoked: number }> {
+    return this.request<{ revoked: number }>(
+      `/admin/sessions/${sessionId}/revoke`,
+      { method: "POST" },
+    );
+  }
+
+  listTokens(
+    params: AdminListParams = {},
+  ): Promise<AdminPage<AdminTokenRowDto>> {
+    return this.request<AdminPage<AdminTokenRowDto>>(
+      `/admin/tokens${this.query(params)}`,
+    );
+  }
+
+  revokeToken(tokenId: string): Promise<{ revoked: number }> {
+    return this.request<{ revoked: number }>(
+      `/admin/tokens/${tokenId}/revoke`,
+      {
+        method: "POST",
+      },
+    );
+  }
+
+  listComments(
+    params: AdminListParams = {},
+  ): Promise<AdminPage<AdminCommentRowDto>> {
+    return this.request<AdminPage<AdminCommentRowDto>>(
+      `/admin/comments${this.query(params)}`,
+    );
+  }
+
+  deleteComment(commentId: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(`/admin/comments/${commentId}`, {
       method: "DELETE",
     });
   }

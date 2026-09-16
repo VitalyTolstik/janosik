@@ -10,20 +10,28 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type {
+  AdminBoardCommandRequest,
   AdminBoardRowDto,
+  AdminCardRowDto,
   AdminCommandRowDto,
+  AdminCommentRowDto,
   AdminCreateMasterResponse,
   AdminCreateUserResponse,
   AdminMasterRowDto,
   AdminMetricsDto,
+  AdminSessionRowDto,
+  AdminTokenRowDto,
   AdminPage,
   AdminAuditRowDto,
   AdminUserRowDto,
+  BoardAggregate,
+  CommandResponse,
 } from "@janosik/shared";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
 import { AdminService } from "./admin.service";
 import { CurrentAdmin } from "./current-admin.decorator";
 import type { AdminPrincipal } from "./admin.types";
+import { AdminBoardCommandDto } from "./dto/admin-board-command.dto";
 import { AdminCreateBoardDto } from "./dto/admin-create-board.dto";
 import { AdminCreateMasterDto } from "./dto/admin-create-master.dto";
 import { AdminUpdateMasterDto } from "./dto/admin-update-master.dto";
@@ -45,6 +53,84 @@ export class AdminController {
   @Get("metrics")
   metrics(): Promise<AdminMetricsDto> {
     return this.admin.metrics();
+  }
+
+  // ------------------------------------------------- content & security
+
+  @Get("cards")
+  listCards(
+    @Query() query: AdminListQueryDto,
+  ): Promise<AdminPage<AdminCardRowDto>> {
+    return this.admin.listCards(query);
+  }
+
+  @Post("cards/:id/archive")
+  archiveCard(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    return this.admin.setCardArchived(id, true, admin);
+  }
+
+  @Post("cards/:id/unarchive")
+  unarchiveCard(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    return this.admin.setCardArchived(id, false, admin);
+  }
+
+  @Delete("cards/:id")
+  deleteCard(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    return this.admin.deleteCard(id, admin);
+  }
+
+  @Get("sessions")
+  listSessions(
+    @Query() query: AdminListQueryDto,
+  ): Promise<AdminPage<AdminSessionRowDto>> {
+    return this.admin.listSessions(query);
+  }
+
+  @Post("sessions/:id/revoke")
+  revokeSession(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ revoked: number }> {
+    return this.admin.revokeSession(id, admin);
+  }
+
+  @Get("tokens")
+  listTokens(
+    @Query() query: AdminListQueryDto,
+  ): Promise<AdminPage<AdminTokenRowDto>> {
+    return this.admin.listTokens(query);
+  }
+
+  @Post("tokens/:id/revoke")
+  revokeToken(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ revoked: number }> {
+    return this.admin.revokeToken(id, admin);
+  }
+
+  @Get("comments")
+  listComments(
+    @Query() query: AdminListQueryDto,
+  ): Promise<AdminPage<AdminCommentRowDto>> {
+    return this.admin.listComments(query);
+  }
+
+  @Delete("comments/:id")
+  deleteComment(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    return this.admin.deleteComment(id, admin);
   }
 
   // --------------------------------------------------------------- masters
@@ -142,6 +228,21 @@ export class AdminController {
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminBoardRowDto> {
     return this.admin.createBoard(dto, admin);
+  }
+
+  @Get("boards/:id/content")
+  boardContent(@Param("id") id: string): Promise<BoardAggregate> {
+    return this.admin.getBoardContent(id);
+  }
+
+  @Post("boards/:id/commands")
+  boardCommand(
+    @Param("id") id: string,
+    @Body() dto: AdminBoardCommandDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<CommandResponse> {
+    const request: AdminBoardCommandRequest = dto;
+    return this.admin.applyBoardCommand(id, request, admin);
   }
 
   @Post("boards/:id/archive")

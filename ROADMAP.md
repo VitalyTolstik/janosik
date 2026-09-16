@@ -318,7 +318,7 @@
   `measuring`) — новый массив/объект меняет контекст dnd-kit и
   перерисовывает всех подписчиков `useSortable`/`useDroppable` в обход
   `memo` (наступали трижды, каждый раз находилось только замером).
-- **Тесты** — **801 тест: ui 476 (63 файла) + shared 325 (7 файлов)** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3; обратимость экшенов — `invert.test.ts`, TASK-21.7d; платформа и BrowserRouter deep-links — TASK-21.8; ленивые иконки шапки — `lazy-animated-icon.test.tsx`, TASK-21.9; конфигурация сенсоров тач-DnD — `DndBoard.sensors.test.tsx`, TASK-21.10; сброс диалогов и двойной тап — `ColumnView.double-tap.test.tsx`, TASK-21.11; строгий валидатор команд (включая метки/чек-листы и board-level) — `shared/src/store/validate.test.ts`, TASK-26/27/29; серверный режим — `api/client.test.ts`, `store/server-sync.test.ts`, `store/board-diff.test.ts`, `store/BoardContext.server.test.tsx` (fake-сервер на общем редьюсере), `components/auth/LoginPage.test.tsx`, TASK-29; мастер-панель — `admin/admin-client.test.ts`, `admin/admin-i18n.test.ts`, `admin/AdminApp.test.tsx` (fake admin-API), TASK-43). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
+- **Тесты** — **807 тестов: ui 482 (63 файла) + shared 325 (7 файлов)** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3; обратимость экшенов — `invert.test.ts`, TASK-21.7d; платформа и BrowserRouter deep-links — TASK-21.8; ленивые иконки шапки — `lazy-animated-icon.test.tsx`, TASK-21.9; конфигурация сенсоров тач-DnD — `DndBoard.sensors.test.tsx`, TASK-21.10; сброс диалогов и двойной тап — `ColumnView.double-tap.test.tsx`, TASK-21.11; строгий валидатор команд (включая метки/чек-листы и board-level) — `shared/src/store/validate.test.ts`, TASK-26/27/29; серверный режим — `api/client.test.ts`, `store/server-sync.test.ts`, `store/board-diff.test.ts`, `store/BoardContext.server.test.tsx` (fake-сервер на общем редьюсере), `components/auth/LoginPage.test.tsx`, TASK-29; мастер-панель — `admin/admin-client.test.ts`, `admin/admin-i18n.test.ts`, `admin/AdminApp.test.tsx` (fake admin-API), TASK-43). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
 
 ### 1.3. Ключи и точки интеграции
 
@@ -409,7 +409,7 @@
 | 31 | TASK-27 `labels-checklists` | ✅ реализовано — команды меток (`ADD_LABEL`, `RENAME_LABEL`, `SET_LABEL_COLOR`, `DELETE_LABEL`, `RESTORE_LABEL` с `assignments`) и чек-листов с пунктами (`ADD/RENAME/DELETE_CHECKLIST`, `ADD/SET_CHECKLIST_ITEM_DONE/RENAME/DELETE_CHECKLIST_ITEM`); m2m `CardLabel.position`, каскад метки soft-delete, лимиты коллекций → `409 {conflict:"wip"}`, инверсии не отклоняются; контрактный e2e + `Label.position` (миграция) | гейты: backend 21 unit + 65 e2e, build/lint/format, shared 317, ui 397; live-смоук 41/41 |
 | 32 | TASK-28 `activity-comments` | ✅ реализовано — ленты `GET /boards/:id/activity` и `GET /cards/:id/activity` (слияние Command + Activity по времени, составной курсор, `?limit=`), member-события (invited/role/expiry/removed) со снапшот-`details`, комментарии REST (`POST`/`GET /cards/:id/comments`, `DELETE /comments/:id` — только автор, `LIMITS.comment`), `CardAccessGuard` для card/comment-роутов | гейты: backend 21 unit + 65 e2e, build/lint/format, shared 317, ui 397; live-смоук 41/41 |
 | 33 | TASK-29 `optimistic-adapter` | ✅ реализовано — серверный режим UI: адаптер команд (`POST /boards/:id/commands`, FIFO-очередь на доску, коалесинг quiet-правок), `ifMatchVersions` (undo текста не затирает чужую правку → `409 {conflict:"version"}`), старт-гидратация `GET /boards` + агрегаты, login/register-экран, миграция localStorage через `POST /boards/import` (архивные карточки включительно), refetch на focus с пометкой чужих сущностей dead, откаты с тостами; + board-level команды `RENAME_BOARD`/`ARCHIVE_BOARD`/`UNARCHIVE_BOARD` (archive/unarchive — ADMIN в сервисе) и `role` в `GET /boards` | гейты: ui 451 (397+54, покрытие 95.3/87.8/93.4/97.7), shared 322, backend 21 unit + 72 e2e, build/lint/format, size 204.07/210 KB; live-смоук: Orca-браузер (register → миграция → команда «Done» → reload), API 12/12 |
-| 34 | TASK-43 `master-admin-panel` | ✅ реализовано вне очереди по запросу — мастер-контур (§7.0/§7.4): `AdminUser` (OWNER/OPERATOR, отдельные cookie/JWT-аудиенция/refresh-таблица), `/admin/auth/*` + `/admin/*` (метрики, юзеры, доски, журнал команд, аудит), модерация (блок юзера + ревок сессий/токенов, архив/soft-delete доски), управление мастерами только у OWNER, CLI `admin:create/passwd/list`, аудит каждого действия, lockout и anti-timing логина, удаление `User.isSuperAdmin` | гейты: ui 476 (451+25), shared 325, backend 22 unit + 94 e2e, build/lint/format, size 204.63/210 KB + ленивый admin-чанк 16.03/30 KB; live-смоук: CLI → браузер (вход мастера, создание мастера из панели, блок юзера) |
+| 34 | TASK-43 `master-admin-panel` | ✅ реализовано вне очереди по запросу — мастер-контур (§7.0/§7.4): `AdminUser` (OWNER/OPERATOR, отдельные cookie/JWT-аудиенция/refresh-таблица), `/admin/auth/*` + `/admin/*` (метрики с runtime, юзеры, доски, **карточки, комментарии, сессии, API-токены**, журнал команд, аудит), **редактор контента доски через командный лог от имени владельца**, модерация (блок юзера + ревок сессий/токенов по одной, архив/soft-delete доски и карточки, удаление комментария), управление мастерами только у OWNER, CLI `admin:create/passwd/list`, аудит каждого действия, lockout и anti-timing логина, ID всех сущностей с копированием, поиск по ID, удаление `User.isSuperAdmin` | гейты: ui 482, shared 325, backend 22 unit + 99 e2e, build/lint/format, size 204.66/210 KB + ленивый admin-чанк 21.1/30 KB; live-смоук: CLI → браузер (вход мастера, создание мастера из панели, блок юзера, Playwright-смоук) |
 | — | TASK-35…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. Следующий — TASK-35 `board-members-ui` |
 
 ### 6.0.1. Укрепление фундамента перед бэкендом (TASK-21.1…21.11)
@@ -804,6 +804,8 @@ model RefreshToken {
   userId    String
   expiresAt DateTime
   revokedAt DateTime?              // ротация; реюз revoked → отзыв всех сессий
+  createdAt DateTime  @default(now()) // страница «Сессии» в панели (TASK-43)
+  @@index([userId, createdAt])
 }
 
 model Board {
@@ -1152,12 +1154,22 @@ endpoint'ом.
 | Метод | Путь | Назначение |
 | --- | --- | --- |
 | POST | `/admin/auth/login` · `refresh` · `logout` · GET `me` | вход мастера; cookie `admin_refresh_token`, `Path=/api/v1/admin/auth`, ротация + детект реюза; логин 10/мин + lockout 5 ошибок/15 мин |
-| GET | `/admin/metrics` | счётчики платформы + 14-дневные серии регистраций/команд |
+| GET | `/admin/metrics` | счётчики платформы + 14-дневные серии регистраций/команд + `runtime` (версия, uptime, латентность БД, env) |
 | GET | `/admin/users?search&status&limit&offset` | все юзеры: счётчики досок/сессий/токенов, `disabledAt` |
 | POST | `/admin/users` | создать юзера; без пароля — сгенерированный, показывается один раз |
 | PATCH | `/admin/users/:id` | `{disabled?, displayName?}`; блок немедленно ревокает сессии |
 | POST | `/admin/users/:id/sessions/revoke` · `/tokens/revoke` | ревок всех сессий / API-токенов |
 | GET | `/admin/boards?search&status` | все доски: владелец, участники, счётчики, архив/soft-delete |
+| GET | `/admin/boards/:id/content` | агрегат доски для редактора контента (та же модель, что у UI) |
+| POST | `/admin/boards/:id/commands` | контент-команда `BoardAction` **от имени владельца доски** — через командный лог, а не прямыми записями; аудит `board.command` |
+| GET | `/admin/cards?search&status` | все карточки: доска/колонка, счётчик комментариев, архив/soft-delete |
+| POST | `/admin/cards/:id/archive` · `/unarchive` · DELETE | модерация карточки (soft-delete каскадом на чек-листы) |
+| GET | `/admin/sessions?search` | активные refresh-сессии всех юзеров (кто/вход/истекает) |
+| POST | `/admin/sessions/:id/revoke` | ревок **одной** сессии |
+| GET | `/admin/tokens?search&status` | все персональные API-токены (`name`, `lastUsedAt`, `expiresAt`, revoked) |
+| POST | `/admin/tokens/:id/revoke` | ревок одного токена |
+| GET | `/admin/comments?search` | все комментарии (модерация), включая удалённые |
+| DELETE | `/admin/comments/:id` | soft-delete любого комментария |
 | POST | `/admin/boards` | создать доску для владельца (он становится ADMIN) |
 | POST | `/admin/boards/:id/archive` · `/unarchive` · DELETE | модерация доски (soft-delete — тот же каскад, что у юзеров) |
 | GET | `/admin/commands?search` | журнал команд по всем доскам |

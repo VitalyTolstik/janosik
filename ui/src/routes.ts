@@ -14,4 +14,6 @@ export const routes = {
   /** Master panel (TASK-36) — lazy-loaded, never linked from user UI. */
   admin: "/admin",
   adminPattern: "/admin/*",
+  /** Content editor of one board inside the master panel (TASK-43). */
+  adminBoardContent: (boardId: string) => `/admin/boards/${boardId}/content`,
 } as const;

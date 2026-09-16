@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import type { StringValue } from "ms";
 import { BoardsModule } from "@/boards/boards.module";
+import { CommandsModule } from "@/commands/commands.module";
 import { env } from "@/config/env";
 import { AdminAuthController } from "./admin-auth.controller";
 import { AdminAuthService } from "./admin-auth.service";
@@ -12,8 +13,9 @@ import { AdminService } from "./admin.service";
 
 /**
  * Master-account module (TASK-36): its own auth contour and data plane.
- * `BoardsModule` is imported for the tested soft-delete/create board logic —
- * business rules are reused, never copied.
+ * `BoardsModule`/`CommandsModule` are imported so board content is created
+ * and moderated through the very same services the user API uses — the
+ * command log stays the single source of truth, nothing is written twice.
  */
 @Module({
   imports: [
@@ -22,6 +24,7 @@ import { AdminService } from "./admin.service";
       signOptions: { expiresIn: env.ACCESS_TOKEN_TTL as StringValue },
     }),
     BoardsModule,
+    CommandsModule,
   ],
   controllers: [AdminAuthController, AdminController],
   providers: [

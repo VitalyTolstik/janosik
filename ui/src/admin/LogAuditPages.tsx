@@ -8,6 +8,7 @@ import {
   Badge,
   EmptyState,
   ErrorState,
+  IdChip,
   LoadingState,
   PageHeader,
   Pagination,
@@ -53,6 +54,7 @@ export function LogPage() {
           <Table>
             <thead>
               <tr>
+                <Th>{t("admin.common.id")}</Th>
                 <Th>{t("admin.log.col.time")}</Th>
                 <Th>{t("admin.log.col.board")}</Th>
                 <Th>{t("admin.log.col.actor")}</Th>
@@ -66,6 +68,9 @@ export function LogPage() {
                   key={command.id}
                   className="transition-colors hover:bg-hover/50"
                 >
+                  <Td>
+                    <IdChip id={command.id} />
+                  </Td>
                   <Td className="tabular-nums text-muted-foreground">
                     {formatDate(command.createdAt, lang, hour12)}
                   </Td>
@@ -133,6 +138,7 @@ export function AuditPage() {
           <Table>
             <thead>
               <tr>
+                <Th>{t("admin.common.id")}</Th>
                 <Th>{t("admin.audit.col.time")}</Th>
                 <Th>{t("admin.audit.col.admin")}</Th>
                 <Th>{t("admin.audit.col.action")}</Th>
@@ -146,6 +152,9 @@ export function AuditPage() {
                   key={entry.id}
                   className="transition-colors hover:bg-hover/50"
                 >
+                  <Td>
+                    <IdChip id={entry.id} />
+                  </Td>
                   <Td className="tabular-nums text-muted-foreground">
                     {formatDate(entry.createdAt, lang, hour12)}
                   </Td>

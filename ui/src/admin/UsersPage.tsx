@@ -37,6 +37,7 @@ import {
   EmptyState,
   ErrorState,
   FilterTabs,
+  IdChip,
   LoadingState,
   PageHeader,
   Pagination,
@@ -376,6 +377,7 @@ export function UsersPage() {
           <Table>
             <thead>
               <tr>
+                <Th>{t("admin.common.id")}</Th>
                 <Th>{t("admin.users.col.email")}</Th>
                 <Th>{t("admin.users.col.name")}</Th>
                 <Th className="text-right">{t("admin.users.col.boards")}</Th>
@@ -392,6 +394,9 @@ export function UsersPage() {
                   key={user.id}
                   className="transition-colors hover:bg-hover/50"
                 >
+                  <Td>
+                    <IdChip id={user.id} />
+                  </Td>
                   <Td className="font-medium">{user.email}</Td>
                   <Td className="text-muted-foreground">
                     {user.displayName ?? "—"}

@@ -8,7 +8,10 @@ import { DashboardPage } from "./DashboardPage";
 import { UsersPage } from "./UsersPage";
 import { BoardsPage } from "./BoardsPage";
 import { AuditPage, LogPage } from "./LogAuditPages";
+import { CardsPage, CommentsPage } from "./ContentPages";
+import { SessionsPage, TokensPage } from "./SecurityPages";
 import { MastersPage } from "./MastersPage";
+import { BoardContentPage } from "./BoardContentPage";
 
 /**
  * Master panel entry (TASK-36), lazy-loaded from `/admin/*`.
@@ -40,6 +43,11 @@ function AdminGate() {
         <Route index element={<DashboardPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="boards" element={<BoardsPage />} />
+        <Route path="boards/:boardId/content" element={<BoardContentPage />} />
+        <Route path="cards" element={<CardsPage />} />
+        <Route path="comments" element={<CommentsPage />} />
+        <Route path="sessions" element={<SessionsPage />} />
+        <Route path="tokens" element={<TokensPage />} />
         <Route path="log" element={<LogPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="masters" element={<MastersPage />} />

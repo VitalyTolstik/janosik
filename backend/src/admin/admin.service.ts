@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -10,8 +11,14 @@ import { randomBytes } from "node:crypto";
 import type {
   AdminAuditAction,
   AdminAuditRowDto,
+  AdminBoardCommandRequest,
   AdminBoardRowDto,
+  AdminCardRowDto,
   AdminCommandRowDto,
+  AdminCommentRowDto,
+  AdminRuntimeDto,
+  AdminSessionRowDto,
+  AdminTokenRowDto,
   AdminCreateBoardRequest,
   AdminCreateMasterRequest,
   AdminCreateMasterResponse,
@@ -26,13 +33,29 @@ import type {
   AdminUserRowDto,
 } from "@janosik/shared";
 import { ADMIN_PAGE_LIMITS } from "@janosik/shared";
+import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
+import { env } from "@/config/env";
+import type { CommandResponse } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardsService } from "@/boards/boards.service";
+import { CommandsService } from "@/commands/commands.service";
 import type { AdminPrincipal } from "./admin.types";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SPARKLINE_DAYS = 14;
+
+/** Backend package version, read once for the infra card. */
+const BACKEND_VERSION: string = (() => {
+  try {
+    const localRequire = createRequire(__filename);
+    const pkg = localRequire("../package.json") as { version?: string };
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+})();
 
 /**
  * Master-account data plane (§7.4, TASK-36): cross-tenant reads, metrics and
@@ -52,6 +75,7 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly boards: BoardsService,
+    private readonly commands: CommandsService,
   ) {}
 
   // ---------------------------------------------------------------- metrics
@@ -67,6 +91,10 @@ export class AdminService {
       todayUtc.getUTCDate(),
     );
     const sinceSpark = new Date(midnightUtc - (SPARKLINE_DAYS - 1) * DAY_MS);
+
+    const dbStarted = Date.now();
+    await this.prisma.$queryRaw`SELECT 1`;
+    const databaseLatencyMs = Date.now() - dbStarted;
 
     const [
       usersTotal,
@@ -132,6 +160,7 @@ export class AdminService {
       comments: { total: commentsTotal },
       sessions: { active: sessionsActive },
       admins: { total: adminsTotal },
+      runtime: this.runtime(databaseLatencyMs),
       registrationsByDay: this.toDaySeries(
         recentUsers.map((row) => row.createdAt),
         sinceSpark,
@@ -151,6 +180,7 @@ export class AdminService {
     const where: Prisma.UserWhereInput = {};
     if (query.search) {
       where.OR = [
+        { id: { contains: query.search } },
         { email: { contains: query.search, mode: "insensitive" } },
         { displayName: { contains: query.search, mode: "insensitive" } },
       ];
@@ -616,7 +646,10 @@ export class AdminService {
   ): Promise<AdminPage<AdminBoardRowDto>> {
     const where: Prisma.BoardWhereInput = {};
     if (query.search) {
-      where.title = { contains: query.search, mode: "insensitive" };
+      where.OR = [
+        { id: { contains: query.search } },
+        { title: { contains: query.search, mode: "insensitive" } },
+      ];
     }
     if (query.status === "active") {
       where.deletedAt = null;
@@ -765,6 +798,62 @@ export class AdminService {
     return { status: "ok" };
   }
 
+  /**
+   * Read the whole board for the content editor. Same aggregate the board
+   * UI gets — cards, columns, labels and checklists in one payload.
+   */
+  getBoardContent(
+    boardId: string,
+  ): Promise<import("@janosik/shared").BoardAggregate> {
+    return this.boards.getAggregate(boardId);
+  }
+
+  /**
+   * Apply a board content command on behalf of the board owner (TASK-43).
+   *
+   * Master moderation deliberately reuses the command log instead of
+   * writing rows: the reducer stays the single source of truth, versions
+   * stay coherent, and the command itself is the audit trail. The actor is
+   * the board's first ADMIN (its creator), because `Command.actorId` must
+   * be a real user — the master's own action is recorded in
+   * `AdminAuditLog` right after.
+   */
+  async applyBoardCommand(
+    boardId: string,
+    dto: AdminBoardCommandRequest,
+    admin: AdminPrincipal,
+  ): Promise<CommandResponse> {
+    const board = await this.prisma.board.findUnique({
+      where: { id: boardId },
+      select: { id: true, title: true, deletedAt: true },
+    });
+    if (!board || board.deletedAt !== null) {
+      throw new NotFoundException("Board not found");
+    }
+    const owner = await this.prisma.boardMember.findFirst({
+      where: { boardId, role: "ADMIN" },
+      orderBy: { createdAt: "asc" },
+      select: { user: { select: { id: true, email: true } } },
+    });
+    if (!owner) {
+      throw new BadRequestException("Board has no owner to act for");
+    }
+
+    const response = await this.commands.apply(boardId, owner.user.id, {
+      commandId: dto.commandId ?? randomUUID(),
+      // `CreateCommandDto.action` is deliberately loose (the strict shared
+      // validator owns its shape); the wire type is already a BoardAction.
+      action: dto.action as unknown as Record<string, unknown>,
+    });
+    await this.audit(admin, "board.command", "board", boardId, {
+      title: board.title,
+      type: dto.action.type,
+      actorEmail: owner.user.email,
+      seq: response.seq,
+    });
+    return response;
+  }
+
   /** One enriched board row (counters + owner) for mutation responses. */
   private async boardRow(boardId: string): Promise<AdminBoardRowDto> {
     const board = await this.prisma.board.findUnique({
@@ -807,6 +896,378 @@ export class AdminService {
     };
   }
 
+  // ----------------------------------------------------------------- cards
+
+  /** Every card on the platform with its board/column context (TASK-43). */
+  async listCards(
+    query: AdminListQueryDto,
+  ): Promise<AdminPage<AdminCardRowDto>> {
+    const where: Prisma.CardWhereInput = {};
+    if (query.search) {
+      where.OR = [
+        { id: { contains: query.search } },
+        { title: { contains: query.search, mode: "insensitive" } },
+        {
+          column: {
+            board: { title: { contains: query.search, mode: "insensitive" } },
+          },
+        },
+      ];
+    }
+    if (query.status === "active") {
+      where.deletedAt = null;
+      where.archivedAt = null;
+    }
+    if (query.status === "archived") {
+      where.deletedAt = null;
+      where.archivedAt = { not: null };
+    }
+    if (query.status === "deleted") where.deletedAt = { not: null };
+
+    const { limit, offset } = this.window(query);
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.card.findMany({
+        where,
+        orderBy: { updatedAt: "desc" },
+        skip: offset,
+        take: limit,
+        select: {
+          id: true,
+          title: true,
+          createdAt: true,
+          updatedAt: true,
+          archivedAt: true,
+          deletedAt: true,
+          column: {
+            select: {
+              title: true,
+              boardId: true,
+              board: { select: { title: true } },
+            },
+          },
+          _count: { select: { comments: { where: { deletedAt: null } } } },
+        },
+      }),
+      this.prisma.card.count({ where }),
+    ]);
+
+    return {
+      items: items.map((card) => ({
+        id: card.id,
+        title: card.title,
+        boardId: card.column.boardId,
+        boardTitle: card.column.board.title,
+        columnTitle: card.column.title,
+        createdAt: card.createdAt.getTime(),
+        updatedAt: card.updatedAt.getTime(),
+        archivedAt: card.archivedAt?.getTime() ?? null,
+        deletedAt: card.deletedAt?.getTime() ?? null,
+        comments: card._count.comments,
+      })),
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  /** Archive/restore a card — moderation, recorded in the audit log. */
+  async setCardArchived(
+    cardId: string,
+    archived: boolean,
+    admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    const card = await this.prisma.card.findUnique({
+      where: { id: cardId },
+      select: { id: true, title: true },
+    });
+    if (!card) {
+      throw new NotFoundException("Card not found");
+    }
+    await this.prisma.card.update({
+      where: { id: cardId },
+      data: { archivedAt: archived ? new Date() : null },
+    });
+    await this.audit(
+      admin,
+      archived ? "card.archive" : "card.unarchive",
+      "card",
+      cardId,
+      { title: card.title },
+    );
+    return { status: "ok" };
+  }
+
+  /** Soft-delete a card; its children keep their rows for the purge job. */
+  async deleteCard(
+    cardId: string,
+    admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    const card = await this.prisma.card.findUnique({
+      where: { id: cardId },
+      select: { id: true, title: true },
+    });
+    if (!card) {
+      throw new NotFoundException("Card not found");
+    }
+    await this.prisma.$transaction([
+      this.prisma.checklistItem.updateMany({
+        where: { checklist: { cardId } },
+        data: { deletedAt: new Date() },
+      }),
+      this.prisma.checklist.updateMany({
+        where: { cardId },
+        data: { deletedAt: new Date() },
+      }),
+      this.prisma.card.update({
+        where: { id: cardId },
+        data: { deletedAt: new Date() },
+      }),
+    ]);
+    await this.audit(admin, "card.delete", "card", cardId, {
+      title: card.title,
+    });
+    return { status: "ok" };
+  }
+
+  // -------------------------------------------------------------- sessions
+
+  /** Active refresh sessions across all users — security review page. */
+  async listSessions(
+    query: AdminListQueryDto,
+  ): Promise<AdminPage<AdminSessionRowDto>> {
+    const where: Prisma.RefreshTokenWhereInput = {
+      revokedAt: null,
+      expiresAt: { gt: new Date() },
+    };
+    if (query.search) {
+      where.OR = [
+        { id: { contains: query.search } },
+        { user: { email: { contains: query.search, mode: "insensitive" } } },
+      ];
+    }
+    const { limit, offset } = this.window(query);
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.refreshToken.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: offset,
+        take: limit,
+        select: {
+          id: true,
+          createdAt: true,
+          expiresAt: true,
+          user: { select: { email: true } },
+        },
+      }),
+      this.prisma.refreshToken.count({ where }),
+    ]);
+
+    return {
+      items: items.map((session) => ({
+        id: session.id,
+        userEmail: session.user.email,
+        createdAt: session.createdAt.getTime(),
+        expiresAt: session.expiresAt.getTime(),
+      })),
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  /** Revoke one concrete session (the user keeps the others). */
+  async revokeSession(
+    sessionId: string,
+    admin: AdminPrincipal,
+  ): Promise<{ revoked: number }> {
+    const session = await this.prisma.refreshToken.findUnique({
+      where: { id: sessionId },
+      select: { id: true, revokedAt: true, user: { select: { email: true } } },
+    });
+    if (!session) {
+      throw new NotFoundException("Session not found");
+    }
+    const revoked = await this.prisma.refreshToken.updateMany({
+      where: { id: sessionId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    if (revoked.count > 0) {
+      await this.audit(admin, "session.revoke", "session", sessionId, {
+        userEmail: session.user.email,
+      });
+    }
+    return { revoked: revoked.count };
+  }
+
+  // ---------------------------------------------------------------- tokens
+
+  /** Personal API tokens across all users (TASK-43, §7.6). */
+  async listTokens(
+    query: AdminListQueryDto,
+  ): Promise<AdminPage<AdminTokenRowDto>> {
+    const where: Prisma.ApiTokenWhereInput = {};
+    if (query.search) {
+      where.OR = [
+        { id: { contains: query.search } },
+        { name: { contains: query.search, mode: "insensitive" } },
+        {
+          user: { email: { contains: query.search, mode: "insensitive" } },
+        },
+      ];
+    }
+    if (query.status === "active") where.revokedAt = null;
+    if (query.status === "disabled") where.revokedAt = { not: null };
+
+    const { limit, offset } = this.window(query);
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.apiToken.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: offset,
+        take: limit,
+        select: {
+          id: true,
+          name: true,
+          createdAt: true,
+          lastUsedAt: true,
+          expiresAt: true,
+          revokedAt: true,
+          user: { select: { email: true } },
+        },
+      }),
+      this.prisma.apiToken.count({ where }),
+    ]);
+
+    return {
+      items: items.map((token) => ({
+        id: token.id,
+        userEmail: token.user.email,
+        name: token.name,
+        createdAt: token.createdAt.getTime(),
+        lastUsedAt: token.lastUsedAt?.getTime() ?? null,
+        expiresAt: token.expiresAt?.getTime() ?? null,
+        revokedAt: token.revokedAt?.getTime() ?? null,
+      })),
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  async revokeToken(
+    tokenId: string,
+    admin: AdminPrincipal,
+  ): Promise<{ revoked: number }> {
+    const token = await this.prisma.apiToken.findUnique({
+      where: { id: tokenId },
+      select: { id: true, name: true, user: { select: { email: true } } },
+    });
+    if (!token) {
+      throw new NotFoundException("API token not found");
+    }
+    const revoked = await this.prisma.apiToken.updateMany({
+      where: { id: tokenId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    if (revoked.count > 0) {
+      await this.audit(admin, "token.revoke", "token", tokenId, {
+        userEmail: token.user.email,
+        name: token.name,
+      });
+    }
+    return { revoked: revoked.count };
+  }
+
+  // -------------------------------------------------------------- comments
+
+  /** Cross-board comment moderation feed. */
+  async listComments(
+    query: AdminListQueryDto,
+  ): Promise<AdminPage<AdminCommentRowDto>> {
+    const where: Prisma.CommentWhereInput = {};
+    if (query.search) {
+      where.OR = [
+        { id: { contains: query.search } },
+        { cardId: { contains: query.search } },
+        { text: { contains: query.search, mode: "insensitive" } },
+        {
+          card: { title: { contains: query.search, mode: "insensitive" } },
+        },
+        {
+          card: {
+            column: {
+              board: { title: { contains: query.search, mode: "insensitive" } },
+            },
+          },
+        },
+        {
+          author: { email: { contains: query.search, mode: "insensitive" } },
+        },
+      ];
+    }
+    const { limit, offset } = this.window(query);
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.comment.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: offset,
+        take: limit,
+        select: {
+          id: true,
+          cardId: true,
+          text: true,
+          createdAt: true,
+          deletedAt: true,
+          card: {
+            select: {
+              title: true,
+              column: { select: { board: { select: { title: true } } } },
+            },
+          },
+          author: { select: { email: true } },
+        },
+      }),
+      this.prisma.comment.count({ where }),
+    ]);
+
+    return {
+      items: items.map((comment) => ({
+        id: comment.id,
+        cardId: comment.cardId,
+        cardTitle: comment.card.title,
+        boardTitle: comment.card.column.board.title,
+        authorEmail: comment.author.email,
+        text: comment.text,
+        createdAt: comment.createdAt.getTime(),
+        deletedAt: comment.deletedAt?.getTime() ?? null,
+      })),
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  async deleteComment(
+    commentId: string,
+    admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    const comment = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+      select: { id: true, author: { select: { email: true } } },
+    });
+    if (!comment) {
+      throw new NotFoundException("Comment not found");
+    }
+    await this.prisma.comment.update({
+      where: { id: commentId },
+      data: { deletedAt: new Date() },
+    });
+    await this.audit(admin, "comment.delete", "comment", commentId, {
+      authorEmail: comment.author.email,
+    });
+    return { status: "ok" };
+  }
+
   // ------------------------------------------------------- log and audit
 
   async listCommands(
@@ -815,6 +1276,9 @@ export class AdminService {
     const where: Prisma.CommandWhereInput = {};
     if (query.search) {
       where.OR = [
+        { id: { contains: query.search } },
+        { boardId: { contains: query.search } },
+        { actorId: { contains: query.search } },
         { type: { contains: query.search, mode: "insensitive" } },
         {
           board: { title: { contains: query.search, mode: "insensitive" } },
@@ -866,6 +1330,7 @@ export class AdminService {
     const where: Prisma.AdminAuditLogWhereInput = {};
     if (query.search) {
       where.OR = [
+        { id: { contains: query.search } },
         { action: { contains: query.search, mode: "insensitive" } },
         { adminEmail: { contains: query.search, mode: "insensitive" } },
         { targetId: { contains: query.search, mode: "insensitive" } },
@@ -942,6 +1407,15 @@ export class AdminService {
       points.push({ date: key, count: counts.get(key) ?? 0 });
     }
     return points;
+  }
+
+  private runtime(databaseLatencyMs: number): AdminRuntimeDto {
+    return {
+      version: BACKEND_VERSION,
+      uptimeSec: Math.round(process.uptime()),
+      nodeEnv: env.NODE_ENV,
+      databaseLatencyMs,
+    };
   }
 
   private dayKey(date: Date): string {

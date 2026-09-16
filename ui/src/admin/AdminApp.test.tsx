@@ -17,8 +17,13 @@ import { adminMessage } from "./admin-i18n";
 import {
   FakeAdminServer,
   adminBoard,
+  adminCard,
+  adminComment,
   adminMaster,
+  adminSession,
+  adminToken,
   adminUser,
+  contentBoard,
 } from "./test/fake-admin-server";
 
 /**
@@ -342,5 +347,127 @@ describe("AdminApp", () => {
     await screen.findByTestId("admin-login-form");
     await login();
     expect(await screen.findByText(t("admin.login.locked"))).toBeTruthy();
+  });
+});
+
+describe("admin content and security pages", () => {
+  it("archives a card from the global cards page", async () => {
+    const state = serverWith().state;
+    state.cards = [adminCard()];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/cards");
+
+    fireEvent.pointerDown(await screen.findByTestId("admin-card-menu-card-1"), {
+      button: 0,
+    });
+    fireEvent.click(await screen.findByText(t("admin.cards.action.archive")));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByText(t("admin.cards.action.archive")));
+
+    expect(
+      await screen.findByText(t("admin.cards.status.archived")),
+    ).toBeTruthy();
+    expect(
+      server.requests.some(
+        (request) => request.path === "/admin/cards/card-1/archive",
+      ),
+    ).toBe(true);
+  });
+
+  it("revokes a single session", async () => {
+    const state = serverWith().state;
+    state.sessions = [adminSession()];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/sessions");
+
+    fireEvent.click(
+      await screen.findByTestId("admin-session-revoke-session-1"),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByText(t("admin.sessions.action.revoke")),
+    );
+
+    expect(await screen.findByText(t("admin.sessions.empty"))).toBeTruthy();
+    expect(
+      server.requests.some(
+        (request) => request.path === "/admin/sessions/session-1/revoke",
+      ),
+    ).toBe(true);
+  });
+
+  it("revokes an API token", async () => {
+    const state = serverWith().state;
+    state.tokens = [adminToken()];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/tokens");
+
+    fireEvent.click(await screen.findByTestId("admin-token-revoke-token-1"));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByText(t("admin.tokens.action.revoke")));
+
+    expect(
+      await screen.findByText(t("admin.tokens.status.revoked")),
+    ).toBeTruthy();
+  });
+
+  it("deletes a comment", async () => {
+    const state = serverWith().state;
+    state.comments = [adminComment()];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/comments");
+
+    fireEvent.click(
+      await screen.findByTestId("admin-comment-delete-comment-1"),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByText(t("admin.comments.action.delete")),
+    );
+
+    expect(
+      await screen.findByText(t("admin.comments.status.deleted")),
+    ).toBeTruthy();
+  });
+
+  it("creates a column and a card through the command log", async () => {
+    const state = serverWith().state;
+    state.contentBoard = contentBoard();
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/boards/b-1/content");
+
+    fireEvent.change(await screen.findByTestId("admin-new-column"), {
+      target: { value: "To Do" },
+    });
+    fireEvent.click(screen.getByTestId("admin-add-column"));
+    expect(await screen.findByText("To Do")).toBeTruthy();
+
+    fireEvent.change(screen.getByTestId("admin-new-card"), {
+      target: { value: "Hello" },
+    });
+    fireEvent.click(screen.getByTestId("admin-add-card"));
+    expect(await screen.findByText("Hello")).toBeTruthy();
+
+    const commands = server.requests
+      .filter((request) => request.path.endsWith("/commands"))
+      .map(
+        (request) => (request.body as { action: { type: string } }).action.type,
+      );
+    expect(commands).toEqual(["ADD_COLUMN", "ADD_CARD"]);
+  });
+
+  it("shows the runtime card on the dashboard", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin");
+
+    expect(await screen.findByText("0.1.0-test")).toBeTruthy();
+    expect(screen.getByText("0m 42s")).toBeTruthy();
+    expect(screen.getByText("test")).toBeTruthy();
   });
 });

@@ -37,6 +37,7 @@ import {
   ConfirmDialog,
   EmptyState,
   ErrorState,
+  IdChip,
   LoadingState,
   PageHeader,
   Panel,
@@ -397,6 +398,7 @@ export function MastersPage() {
           <Table>
             <thead>
               <tr>
+                <Th>{t("admin.common.id")}</Th>
                 <Th>{t("admin.masters.col.email")}</Th>
                 <Th>{t("admin.masters.col.name")}</Th>
                 <Th>{t("admin.masters.col.sessions")}</Th>
@@ -411,6 +413,9 @@ export function MastersPage() {
                   key={master.id}
                   className="transition-colors hover:bg-hover/50"
                 >
+                  <Td>
+                    <IdChip id={master.id} />
+                  </Td>
                   <Td>
                     <span className="inline-flex items-center gap-1.5 font-medium">
                       {master.email}

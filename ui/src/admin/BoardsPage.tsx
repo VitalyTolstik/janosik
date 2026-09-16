@@ -3,9 +3,11 @@ import {
   Archive,
   ArchiveRestore,
   MoreHorizontal,
+  PencilRuler,
   Plus,
   Trash2,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import type { AdminBoardRowDto } from "@janosik/shared";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
@@ -24,6 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
+import { routes } from "@/routes";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminList } from "./use-admin-list";
@@ -33,6 +36,7 @@ import {
   EmptyState,
   ErrorState,
   FilterTabs,
+  IdChip,
   LoadingState,
   PageHeader,
   Pagination,
@@ -275,6 +279,7 @@ export function BoardsPage() {
           <Table>
             <thead>
               <tr>
+                <Th>{t("admin.common.id")}</Th>
                 <Th>{t("admin.boards.col.title")}</Th>
                 <Th>{t("admin.boards.col.owner")}</Th>
                 <Th className="text-right">{t("admin.boards.col.members")}</Th>
@@ -291,6 +296,9 @@ export function BoardsPage() {
                   key={board.id}
                   className="transition-colors hover:bg-hover/50"
                 >
+                  <Td>
+                    <IdChip id={board.id} />
+                  </Td>
                   <Td className="font-medium">{board.title}</Td>
                   <Td className="text-muted-foreground">
                     {board.ownerEmail ?? "—"}
@@ -314,7 +322,13 @@ export function BoardsPage() {
                           <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
                         </button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-48 text-xs">
+                      <DropdownMenuContent align="end" className="w-56 text-xs">
+                        <DropdownMenuItem asChild>
+                          <Link to={routes.adminBoardContent(board.id)}>
+                            <PencilRuler className="h-3.5 w-3.5" aria-hidden />
+                            {t("admin.boards.action.content")}
+                          </Link>
+                        </DropdownMenuItem>
                         {board.archivedAt === null ? (
                           <DropdownMenuItem
                             onSelect={() =>

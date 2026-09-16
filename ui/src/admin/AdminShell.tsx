@@ -2,12 +2,15 @@ import { NavLink, Outlet } from "react-router-dom";
 import {
   Activity,
   ArrowLeft,
+  KeyRound,
+  KanbanSquare,
   LayoutDashboard,
   LogOut,
+  MessageSquare,
   ScrollText,
   ShieldCheck,
   Users,
-  KanbanSquare,
+  Archive,
 } from "lucide-react";
 
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -23,7 +26,7 @@ import { useAdminAuth } from "./AdminAuthContext";
  */
 
 const NAV_SECTIONS: Array<{
-  labelKey: AdminMessageKey | null;
+  labelKey: AdminMessageKey;
   items: Array<{
     to: string;
     end?: boolean;
@@ -33,7 +36,7 @@ const NAV_SECTIONS: Array<{
   }>;
 }> = [
   {
-    labelKey: null,
+    labelKey: "admin.nav.section.monitoring",
     items: [
       {
         to: "/admin",
@@ -41,20 +44,37 @@ const NAV_SECTIONS: Array<{
         labelKey: "admin.nav.dashboard",
         icon: LayoutDashboard,
       },
+      { to: "/admin/log", labelKey: "admin.nav.log", icon: Activity },
+      { to: "/admin/audit", labelKey: "admin.nav.audit", icon: ScrollText },
     ],
   },
   {
-    labelKey: null,
+    labelKey: "admin.nav.section.content",
     items: [
       { to: "/admin/users", labelKey: "admin.nav.users", icon: Users },
       { to: "/admin/boards", labelKey: "admin.nav.boards", icon: KanbanSquare },
+      { to: "/admin/cards", labelKey: "admin.nav.cards", icon: Archive },
+      {
+        to: "/admin/comments",
+        labelKey: "admin.nav.comments",
+        icon: MessageSquare,
+      },
     ],
   },
   {
-    labelKey: null,
+    labelKey: "admin.nav.section.security",
     items: [
-      { to: "/admin/log", labelKey: "admin.nav.log", icon: Activity },
-      { to: "/admin/audit", labelKey: "admin.nav.audit", icon: ScrollText },
+      {
+        to: "/admin/sessions",
+        labelKey: "admin.nav.sessions",
+        icon: ShieldCheck,
+      },
+      { to: "/admin/tokens", labelKey: "admin.nav.tokens", icon: KeyRound },
+    ],
+  },
+  {
+    labelKey: "admin.nav.section.access",
+    items: [
       {
         to: "/admin/masters",
         labelKey: "admin.nav.masters",
@@ -94,8 +114,11 @@ export function AdminShell() {
       <aside className="flex w-52 shrink-0 flex-col border-r border-border bg-card/40">
         <Brand />
         <nav className="flex flex-1 flex-col gap-5 overflow-y-auto px-2 pb-3">
-          {NAV_SECTIONS.map((section, index) => (
-            <div key={index} className="space-y-0.5">
+          {NAV_SECTIONS.map((section) => (
+            <div key={section.labelKey} className="space-y-0.5">
+              <p className="px-2.5 pb-0.5 text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                {t(section.labelKey)}
+              </p>
               {section.items
                 .filter((item) => item.ownerOnly !== true || isOwner)
                 .map((item) => (
