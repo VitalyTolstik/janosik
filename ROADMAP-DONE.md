@@ -1489,3 +1489,20 @@ payload, которых нет в `cardIds`, из колонки убирают�
   падает без них с понятной ошибкой); алиас `@/` → `src/` в backend
   (tsconfig paths + jest moduleNameMapper + tsc-alias на билде);
   все комменты в коде — English.
+
+---
+
+## TASK-24 `backend-auth` — выполнено (2026-09-16)
+
+Merge `6a0e215` (feature-ветка: `b668ad5` feat + `5a4e628` fail-fast fix). Реализация — dev-сабагент, независимая приёмка — qa-сабагент (verdict PASS).
+
+- **Эндпоинты** (prefix `/api/v1`): `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout` (идемпотентен), `GET /auth/me` (JwtGuard → `{id,email,displayName,isSuperAdmin}`).
+- **Пароли:** argon2id; на login с незнакомым email — dummy-verify, чтобы время ответа не выдавало существование email; неверный пароль и незнакомый email — одинаковый 401 `Invalid credentials`; дубликат email → 409.
+- **Токены:** access JWT 15 м (`{sub}`; TTL через env `ACCESS_TOKEN_TTL`), refresh — opaque 48 байт (base64url), в БД только sha256 (`RefreshToken.tokenHash`), сырьё — httpOnly-кука `SameSite=Strict; Path=/api/v1/auth`, `secure` только в production. TTL refresh — `REFRESH_TOKEN_TTL_DAYS` (30).
+- **Ротация и реюз:** refresh атомарно гасит старый токен (`updateMany … revokedAt: null`, count=0 ⇒ трактуют как реюз); **предъявление revoked-токена → 401 + отзыв всех активных сессий юзера** (детект кражи).
+- **Первый юзер** → `isSuperAdmin=true` (супер-админ системы, §7.0).
+- **Env:** `JWT_SECRET` обязателен, ≥32 симв. (envalid validate — пустая/короткая строка не даёт стартовать); CI — dummy-секрет в шаге backend-тестов.
+- **Prisma:** модель `RefreshToken` (§7.3) + миграция `20260916000001_add_refresh_token`; user-таблица не менялась.
+- **Тесты:** backend 16 unit + 15 e2e — полный цикл (register→me→refresh-ротация→logout), реюз revoked → все сессии мертвы (проверка и по HTTP, и в БД), guard-роуты 401 (нет заголовка / мусор / чужой ключ), бёрсты login и register → 429, e2e `--runInBand` (общая тест-БД + in-memory throttle-хранилище делают параллельные воркеры гонкими).
+- **Заглушки:** auth больше не 501; users/boards/commands/activity/comments — заглушки до TASK-25+.
+- **Гейты:** ui 397 + shared 230 не тронуты; lint/format/build зелёные; runtime-смоук dist (куки, ротация, реюз, 401/409/429) пройден qa вручную.

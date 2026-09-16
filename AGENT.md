@@ -229,11 +229,16 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   слои: `.env` → `.env.${NODE_ENV}` → `.env.local` (позже перезаписывает).
   В тестовом прогоне (jest ставит NODE_ENV=test) `DATABASE_URL`
   автоматически подменяется на `TEST_DATABASE_URL`.
+  `JWT_SECRET` обязателен (≥32 симв.) — без него процесс не стартует.
 - `backend/.env` — секреты и DATABASE_URL, в git не попадает
   (шаблон: `backend/.env.example`); CI поднимает свой postgres-сервис.
 - Импорты внутри backend — через алиас `@/` → `src/` (в tsconfig paths,
   jest moduleNameMapper, tsc-alias на билде).
-- Роуты до TASK-24 — заглушки 501; `/health` живой (пингует БД).
+- **Auth живой (TASK-24):** register/login/refresh/logout/me под
+  `/api/v1/auth`; access JWT в теле ответа, refresh — httpOnly-кука
+  (sha256-hash в БД, ротация, реюз revoked отзывает все сессии юзера).
+  Остальные модули (users/boards/commands/activity/comments) — заглушки
+  501; `/health` живой (пингует БД).
 
 ### Pre-commit (husky)
 
