@@ -41,6 +41,20 @@ export interface ConflictError {
   currentVersion: number;
 }
 
+/**
+ * One entry of `GET /boards/:id/commands?since=<seq>` — the delta catch-up
+ * after an SSE gap. Carries the committed action so a client replays it
+ * through `boardReducer`.
+ */
+export interface CommandDeltaEntry {
+  /** Monotonic board sequence of the command. */
+  seq: number;
+  /** The committed action, exactly as it was applied. */
+  action: BoardAction;
+  /** Who issued the command. */
+  actorId: string;
+}
+
 /** Server-sent event describing a committed command (TASK-30). */
 export interface CommandSseEvent {
   type: "command";

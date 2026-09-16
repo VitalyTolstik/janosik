@@ -15,7 +15,7 @@ import type {
 import { parseExport, serializeExport } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import {
-  toBoardAggregate,
+  loadBoardAggregate,
   toBoardSummary,
   toMemberDto,
 } from "./board-aggregate";
@@ -86,41 +86,11 @@ export class BoardsService {
 
   /** The whole board aggregate in the frontend `Board` shape (§7.4). */
   async getAggregate(boardId: string): Promise<BoardAggregate> {
-    const board = await this.prisma.board.findFirst({
-      where: { id: boardId, deletedAt: null },
-    });
-    if (!board) {
+    const aggregate = await loadBoardAggregate(this.prisma, boardId);
+    if (!aggregate) {
       throw new NotFoundException("Board not found");
     }
-
-    const [columns, labels, cards] = await Promise.all([
-      this.prisma.column.findMany({
-        where: { boardId, deletedAt: null },
-        orderBy: { position: "asc" },
-      }),
-      this.prisma.label.findMany({
-        where: { boardId, deletedAt: null },
-      }),
-      this.prisma.card.findMany({
-        where: { column: { boardId, deletedAt: null }, deletedAt: null },
-        orderBy: { position: "asc" },
-        include: {
-          labels: true,
-          checklists: {
-            where: { deletedAt: null },
-            orderBy: { position: "asc" },
-            include: {
-              items: {
-                where: { deletedAt: null },
-                orderBy: { position: "asc" },
-              },
-            },
-          },
-        },
-      }),
-    ]);
-
-    return toBoardAggregate(board, columns, cards, labels);
+    return aggregate;
   }
 
   /**
