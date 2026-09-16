@@ -159,9 +159,12 @@ export class BoardsService {
    *
    * `expiresAt` is meaningful for VIEWER only — a time-limited read-only
    * guest (§7.0). For ADMIN/MEMBER it is ignored and stored as null.
+   * Membership is an `Activity` event (not a reducer command), so the feed
+   * records who invited whom with an email/role snapshot.
    */
   async inviteMember(
     boardId: string,
+    actorId: string,
     dto: InviteMemberDto,
   ): Promise<BoardMemberDto> {
     const user = await this.prisma.user.findUnique({
@@ -179,9 +182,25 @@ export class BoardsService {
     }
 
     const expiresAt = this.resolveExpiresAt(dto.role, dto.expiresAt, null);
-    const member = await this.prisma.boardMember.create({
-      data: { boardId, userId: user.id, role: dto.role, expiresAt },
-      include: { user: true },
+    const member = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.boardMember.create({
+        data: { boardId, userId: user.id, role: dto.role, expiresAt },
+        include: { user: true },
+      });
+      await tx.activity.create({
+        data: {
+          boardId,
+          type: "member_invited",
+          actorId,
+          details: {
+            userId: user.id,
+            email: user.email,
+            role: dto.role,
+            expiresAt: expiresAt ? expiresAt.toISOString() : null,
+          },
+        },
+      });
+      return created;
     });
     return toMemberDto(member);
   }
@@ -190,15 +209,19 @@ export class BoardsService {
    * Change a member's role and/or VIEWER expiry (ADMIN only).
    *
    * The last ADMIN of a board can never be demoted — otherwise nobody could
-   * manage the board anymore (§7.4).
+   * manage the board anymore (§7.4). The change lands in the feed as
+   * `member_role_changed` / `member_expiry_changed`; a patch that changes
+   * nothing writes no event.
    */
   async updateMember(
     boardId: string,
+    actorId: string,
     targetUserId: string,
     dto: UpdateMemberDto,
   ): Promise<BoardMemberDto> {
     const member = await this.prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId, userId: targetUserId } },
+      include: { user: true },
     });
     if (!member) {
       throw new NotFoundException("Board member not found");
@@ -214,18 +237,50 @@ export class BoardsService {
       dto.expiresAt,
       member.expiresAt,
     );
-    const updated = await this.prisma.boardMember.update({
-      where: { id: member.id },
-      data: { role, expiresAt },
-      include: { user: true },
+    const roleChanged = role !== member.role;
+    const expiryChanged =
+      (expiresAt?.getTime() ?? null) !== (member.expiresAt?.getTime() ?? null);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.boardMember.update({
+        where: { id: member.id },
+        data: { role, expiresAt },
+        include: { user: true },
+      });
+      if (roleChanged || expiryChanged) {
+        await tx.activity.create({
+          data: {
+            boardId,
+            type: roleChanged ? "member_role_changed" : "member_expiry_changed",
+            actorId,
+            details: {
+              userId: member.userId,
+              email: member.user.email,
+              ...(roleChanged ? { from: member.role, to: role } : {}),
+              ...(expiryChanged
+                ? {
+                    from: member.expiresAt?.toISOString() ?? null,
+                    to: expiresAt?.toISOString() ?? null,
+                  }
+                : {}),
+            },
+          },
+        });
+      }
+      return row;
     });
     return toMemberDto(updated);
   }
 
   /** Remove a member (ADMIN only); the last ADMIN cannot be removed. */
-  async removeMember(boardId: string, targetUserId: string): Promise<void> {
+  async removeMember(
+    boardId: string,
+    actorId: string,
+    targetUserId: string,
+  ): Promise<void> {
     const member = await this.prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId, userId: targetUserId } },
+      include: { user: true },
     });
     if (!member) {
       throw new NotFoundException("Board member not found");
@@ -233,7 +288,21 @@ export class BoardsService {
     if (member.role === Role.ADMIN) {
       await this.assertNotLastAdmin(boardId, targetUserId, "remove");
     }
-    await this.prisma.boardMember.delete({ where: { id: member.id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.boardMember.delete({ where: { id: member.id } });
+      await tx.activity.create({
+        data: {
+          boardId,
+          type: "member_removed",
+          actorId,
+          details: {
+            userId: member.userId,
+            email: member.user.email,
+            role: member.role,
+          },
+        },
+      });
+    });
   }
 
   /**

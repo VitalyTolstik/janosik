@@ -88,9 +88,10 @@ export class BoardsController {
   @Post(":id/members")
   invite(
     @Param("id") id: string,
+    @CurrentUser() user: AuthUser,
     @Body() dto: InviteMemberDto,
   ): Promise<BoardMemberDto> {
-    return this.boards.inviteMember(id, dto);
+    return this.boards.inviteMember(id, user.id, dto);
   }
 
   @UseGuards(MembershipGuard)
@@ -99,9 +100,10 @@ export class BoardsController {
   updateMember(
     @Param("id") id: string,
     @Param("userId") userId: string,
+    @CurrentUser() user: AuthUser,
     @Body() dto: UpdateMemberDto,
   ): Promise<BoardMemberDto> {
-    return this.boards.updateMember(id, userId, dto);
+    return this.boards.updateMember(id, user.id, userId, dto);
   }
 
   @UseGuards(MembershipGuard)
@@ -111,8 +113,9 @@ export class BoardsController {
   async removeMember(
     @Param("id") id: string,
     @Param("userId") userId: string,
+    @CurrentUser() user: AuthUser,
   ): Promise<{ status: "ok" }> {
-    await this.boards.removeMember(id, userId);
+    await this.boards.removeMember(id, user.id, userId);
     return { status: "ok" };
   }
 

@@ -54,6 +54,7 @@ export async function loadBoardAggregate(
     }),
     db.label.findMany({
       where: { boardId, deletedAt: null },
+      orderBy: { position: "asc" },
     }),
     db.card.findMany({
       where: { column: { boardId }, deletedAt: null },

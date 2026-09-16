@@ -67,6 +67,7 @@ model BoardMember {
   role      Role      @default(MEMBER) // ADMIN | MEMBER | VIEWER
   expiresAt DateTime? // VIEWER on a time budget; expired → 403
   createdAt DateTime  @default(now())
+
   @@unique([boardId, userId])
   @@index([userId]) // "my boards"
 }
@@ -87,6 +88,7 @@ model ApiToken {
   expiresAt  DateTime?
   revokedAt  DateTime?
   createdAt  DateTime  @default(now())
+
   @@index([userId])
 }
 
@@ -102,6 +104,7 @@ model Command {
   result    Json // first apply result {seq, versions}
   touches   String[] // ["card:c1","column:col-2"] — touched entities
   createdAt DateTime @default(now())
+
   @@index([boardId, seq])
   @@index([boardId, touches]) // activity feeds per entity (§7.4)
 }
@@ -118,6 +121,7 @@ model Column {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   cards     Card[]
+
   @@index([boardId, position])
 }
 
@@ -141,6 +145,7 @@ model Card {
   checklists  Checklist[]
   activity    Activity[]
   comments    Comment[]
+
   @@index([columnId, position])
 }
 
@@ -150,18 +155,24 @@ model Label {
   boardId   String
   name      String      @db.VarChar(50) // LIMITS.labelName
   color     String // one of the 14 palette colors
+  // Order in `board.labels` (TASK-27). §7.3 omitted it, but the aggregate
+  // and the reducer both treat the label list as ordered (RESTORE_LABEL
+  // carries an insertion `index`), so the order must be stored.
+  position  Int         @default(0)
   deletedAt DateTime? // soft-delete (§7.0)
   version   Int         @default(0) // ifMatch → 409 (§7.0)
   cards     CardLabel[]
-  @@index([boardId])
+
+  @@index([boardId, position])
 }
 
 model CardLabel {
-  card     Card  @relation(fields: [cardId], references: [id])
+  card     Card   @relation(fields: [cardId], references: [id])
   cardId   String
-  label    Label @relation(fields: [labelId], references: [id])
+  label    Label  @relation(fields: [labelId], references: [id])
   labelId  String
-  position Int   @default(0)
+  position Int    @default(0)
+
   @@id([cardId, labelId])
   @@index([labelId]) // label cascade
 }
@@ -175,6 +186,7 @@ model Checklist {
   deletedAt DateTime? // soft-delete (§7.0)
   version   Int             @default(0) // ifMatch → 409 (title editable)
   items     ChecklistItem[]
+
   @@index([cardId, position])
 }
 
@@ -187,6 +199,7 @@ model ChecklistItem {
   position    Int
   deletedAt   DateTime? // soft-delete (§7.0)
   version     Int       @default(0) // ifMatch → 409 (text editable)
+
   @@index([checklistId, position])
 }
 
@@ -209,6 +222,7 @@ model Activity {
   actorId   String // now a real user
   details   Json? // snapshot details (email, role, …)
   createdAt DateTime @default(now())
+
   @@index([boardId, createdAt])
   @@index([cardId, createdAt])
 }
@@ -223,5 +237,6 @@ model Comment {
   deletedAt DateTime? // soft-delete (§7.0)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+
   @@index([cardId, createdAt])
 }

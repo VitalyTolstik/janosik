@@ -33,8 +33,10 @@ import type { CreateCommandDto } from "./dto/create-command.dto";
  * key, so a retry returns the stored `result` without a second entity or a
  * second `seq`.
  *
- * TASK-27 (labels/checklists) and later tasks are rejected up front: this
- * module implements column and card actions only, on purpose.
+ * `SUPPORTED_ACTIONS` is the board-scoped reducer surface (columns, cards,
+ * labels, checklists — TASK-26/27). Board-level actions (RENAME_BOARD,
+ * archive/import) are aggregate REST operations, not commands, and are
+ * rejected here instead of being half-applied.
  *
  * Commands that reference unknown entities no-op exactly like the reducer
  * and are still recorded (a replay returns the stored no-op result): the
@@ -60,9 +62,22 @@ const SUPPORTED_ACTIONS = new Set<string>([
   "SET_CARD_COVER",
   "MOVE_CARD",
   "DUPLICATE_CARD",
+  "SET_CARD_LABEL",
+  "ADD_LABEL",
+  "RENAME_LABEL",
+  "SET_LABEL_COLOR",
+  "DELETE_LABEL",
+  "ADD_CHECKLIST",
+  "RENAME_CHECKLIST",
+  "DELETE_CHECKLIST",
+  "ADD_CHECKLIST_ITEM",
+  "SET_CHECKLIST_ITEM_DONE",
+  "RENAME_CHECKLIST_ITEM",
+  "DELETE_CHECKLIST_ITEM",
   "RESTORE_CARD",
   "RESTORE_COLUMN",
   "RESTORE_COLUMN_CARDS",
+  "RESTORE_LABEL",
   "RESTORE_CHECKLIST",
   "RESTORE_CHECKLIST_ITEM",
 ]);
@@ -284,6 +299,50 @@ export class CommandsService {
       case "DUPLICATE_COLUMN":
       case "RESTORE_COLUMN": {
         if (board.columns.length >= LIMITS.columnsPerBoard) reject();
+        return;
+      }
+      case "ADD_LABEL":
+      case "RESTORE_LABEL": {
+        // A duplicate id is a reducer no-op, not a limit violation.
+        if (board.labels.some((label) => label.id === action.label.id)) return;
+        if (board.labels.length >= LIMITS.labelsPerBoard) reject();
+        return;
+      }
+      case "SET_CARD_LABEL": {
+        if (!action.on) return;
+        const card = board.cards[action.cardId];
+        if (!card || card.labelIds.includes(action.labelId)) return;
+        // An unknown label never attaches (the reducer ignores it).
+        if (!board.labels.some((label) => label.id === action.labelId)) return;
+        if (card.labelIds.length >= LIMITS.labelsPerCard) reject();
+        return;
+      }
+      case "ADD_CHECKLIST":
+      case "RESTORE_CHECKLIST": {
+        const card = board.cards[action.cardId];
+        if (!card) return;
+        const checklists = card.checklists ?? [];
+        const id =
+          action.type === "ADD_CHECKLIST"
+            ? action.newChecklistId
+            : action.checklist.id;
+        if (checklists.some((checklist) => checklist.id === id)) return;
+        if (checklists.length >= LIMITS.checklistsPerCard) reject();
+        return;
+      }
+      case "ADD_CHECKLIST_ITEM":
+      case "RESTORE_CHECKLIST_ITEM": {
+        const card = board.cards[action.cardId];
+        if (!card) return;
+        const items =
+          card.checklists?.find((c) => c.id === action.checklistId)?.items ??
+          [];
+        const id =
+          action.type === "ADD_CHECKLIST_ITEM"
+            ? action.newItemId
+            : action.item.id;
+        if (items.some((item) => item.id === id)) return;
+        if (items.length >= LIMITS.itemsPerChecklist) reject();
         return;
       }
       default:

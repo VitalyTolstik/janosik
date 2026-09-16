@@ -138,6 +138,81 @@ const validActions: BoardAction[] = [
     item: { ...item },
     index: 0,
   }),
+  action({
+    type: "SET_CARD_LABEL",
+    cardId: "card-1",
+    labelId: "label-1",
+    on: true,
+    index: 0,
+  }),
+  action({
+    type: "SET_CARD_LABEL",
+    cardId: "card-1",
+    labelId: "label-1",
+    on: false,
+  }),
+  action({
+    type: "ADD_LABEL",
+    label: { id: "label-2", name: "Bug", color: "red" },
+  }),
+  action({ type: "RENAME_LABEL", labelId: "label-1", name: "Renamed" }),
+  action({ type: "SET_LABEL_COLOR", labelId: "label-1", color: "brand" }),
+  action({ type: "DELETE_LABEL", labelId: "label-1" }),
+  action({
+    type: "RESTORE_LABEL",
+    label: { id: "label-1", name: "Bug", color: "amber" },
+    index: 0,
+    assignments: [{ cardId: "card-1", index: 0 }],
+  }),
+  action({
+    type: "RESTORE_LABEL",
+    label: { id: "l", name: "B", color: "red" },
+    index: 0,
+  }),
+  action({
+    type: "ADD_CHECKLIST",
+    cardId: "card-1",
+    newChecklistId: "cl-2",
+    title: "Steps",
+  }),
+  action({
+    type: "RENAME_CHECKLIST",
+    cardId: "card-1",
+    checklistId: "cl-1",
+    title: "Renamed",
+  }),
+  action({
+    type: "DELETE_CHECKLIST",
+    cardId: "card-1",
+    checklistId: "cl-1",
+  }),
+  action({
+    type: "ADD_CHECKLIST_ITEM",
+    cardId: "card-1",
+    checklistId: "cl-1",
+    newItemId: "it-2",
+    text: "two",
+  }),
+  action({
+    type: "SET_CHECKLIST_ITEM_DONE",
+    cardId: "card-1",
+    checklistId: "cl-1",
+    itemId: "it-1",
+    done: true,
+  }),
+  action({
+    type: "RENAME_CHECKLIST_ITEM",
+    cardId: "card-1",
+    checklistId: "cl-1",
+    itemId: "it-1",
+    text: "renamed",
+  }),
+  action({
+    type: "DELETE_CHECKLIST_ITEM",
+    cardId: "card-1",
+    checklistId: "cl-1",
+    itemId: "it-1",
+  }),
 ] as unknown as BoardAction[];
 
 describe("validateBoardAction — accepted shapes", () => {
@@ -167,7 +242,7 @@ describe("validateBoardAction — rejected shapes", () => {
     ["an array", [], "action"],
     ["a missing type", { at: 1 }, "action.type"],
     ["a non-string type", { type: 7, at: 1 }, "action.type"],
-    ["an unknown type", action({ type: "SET_CARD_LABEL" }), "action.type"],
+    ["an unknown type", action({ type: "ARCHIVE_BOARD" }), "action.type"],
     ["a missing clock", { type: "DELETE_CARD", cardId: "c" }, "action.at"],
     [
       "a non-finite clock",
@@ -363,6 +438,87 @@ describe("validateBoardAction — rejected shapes", () => {
         index: 0,
       }),
       "action.item.done",
+    ],
+    [
+      "a missing label id",
+      action({ type: "SET_CARD_LABEL", cardId: "c", on: true }),
+      "action.labelId",
+    ],
+    [
+      "a non-boolean label flag",
+      action({ type: "SET_CARD_LABEL", cardId: "c", labelId: "l", on: "yes" }),
+      "action.on",
+    ],
+    [
+      "an over-long label name",
+      action({
+        type: "RENAME_LABEL",
+        labelId: "l",
+        name: "x".repeat(LIMITS.labelName + 1),
+      }),
+      "action.name",
+    ],
+    [
+      "an unknown label color",
+      action({ type: "SET_LABEL_COLOR", labelId: "l", color: "mauve" }),
+      "action.color",
+    ],
+    [
+      "a malformed label",
+      action({ type: "ADD_LABEL", label: { id: "l", name: "B", color: 7 } }),
+      "action.label.color",
+    ],
+    [
+      "restore label assignments not an array",
+      action({
+        type: "RESTORE_LABEL",
+        label: { id: "l", name: "B", color: "red" },
+        index: 0,
+        assignments: "x",
+      }),
+      "action.assignments",
+    ],
+    [
+      "a malformed restore label assignment",
+      action({
+        type: "RESTORE_LABEL",
+        label: { id: "l", name: "B", color: "red" },
+        index: 0,
+        assignments: [{ cardId: "c" }],
+      }),
+      "action.assignments[0].index",
+    ],
+    [
+      "a blank checklist title",
+      action({
+        type: "ADD_CHECKLIST",
+        cardId: "c",
+        newChecklistId: "cl",
+        title: "  ",
+      }),
+      "action.title",
+    ],
+    [
+      "a non-boolean checklist item done flag",
+      action({
+        type: "SET_CHECKLIST_ITEM_DONE",
+        cardId: "c",
+        checklistId: "cl",
+        itemId: "i",
+        done: 1,
+      }),
+      "action.done",
+    ],
+    [
+      "an over-long checklist item text",
+      action({
+        type: "RENAME_CHECKLIST_ITEM",
+        cardId: "c",
+        checklistId: "cl",
+        itemId: "i",
+        text: "x".repeat(LIMITS.checklistItem + 1),
+      }),
+      "action.text",
     ],
   ])("rejects %s", (_label, input, field) => {
     const result = validateBoardAction(input);

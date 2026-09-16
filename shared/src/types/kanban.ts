@@ -170,6 +170,8 @@ export const LIMITS = {
   checklistTitle: 100,
   /** Checklist item text (add + rename). */
   checklistItem: 200,
+  /** Card comment (plain text, TASK-28 REST / TASK-37 UI). */
+  comment: 2000,
   /** Ephemeral search/filter queries (board filter, ⌘K, switcher). */
   query: 200,
 

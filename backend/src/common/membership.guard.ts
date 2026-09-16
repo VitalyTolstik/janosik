@@ -12,6 +12,13 @@ import type { AuthUser } from "@/auth/auth.types";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BOARD_ROLES_KEY } from "./board-roles.decorator";
 
+/** Shape of the express request bits the guards read (params only). */
+export interface GuardedRequest {
+  params?: Record<string, string | undefined>;
+  user?: AuthUser;
+  boardMembership?: unknown;
+}
+
 /**
  * Board-scoped access guard (§7.0): authenticates the JWT, resolves the
  * caller's membership for the board in the route params and enforces the
@@ -26,13 +33,14 @@ import { BOARD_ROLES_KEY } from "./board-roles.decorator";
  * - role not allowed by `@BoardRoles()` → 403.
  *
  * The resolved membership is attached to `req.boardMembership` and is
- * available through `@CurrentMembership()`.
+ * available through `@CurrentMembership()`. `CardAccessGuard` extends this
+ * class with card/comment → board resolution.
  */
 @Injectable()
 export class MembershipGuard extends AuthGuard("jwt") implements CanActivate {
   constructor(
-    private readonly reflector: Reflector,
-    private readonly prisma: PrismaService,
+    protected readonly reflector: Reflector,
+    protected readonly prisma: PrismaService,
   ) {
     super();
   }
@@ -43,14 +51,30 @@ export class MembershipGuard extends AuthGuard("jwt") implements CanActivate {
       return false;
     }
 
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<GuardedRequest>();
     const user = request.user as AuthUser;
-    const boardId: string | undefined =
-      request.params?.id ?? request.params?.boardId;
+    const boardId = await this.resolveBoardId(request);
     if (!boardId) {
       throw new NotFoundException("Board not found");
     }
 
+    return this.enforceMembership(context, request, user, boardId);
+  }
+
+  /** Which board does this route target? Board routes answer from params. */
+  protected async resolveBoardId(
+    request: GuardedRequest,
+  ): Promise<string | undefined> {
+    return request.params?.id ?? request.params?.boardId;
+  }
+
+  /** The shared membership/role check once the target board is known. */
+  protected async enforceMembership(
+    context: ExecutionContext,
+    request: GuardedRequest,
+    user: AuthUser,
+    boardId: string,
+  ): Promise<boolean> {
     const board = await this.prisma.board.findFirst({
       where: { id: boardId, deletedAt: null },
       select: { id: true },

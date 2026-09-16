@@ -476,9 +476,9 @@ describe("Commands API (e2e)", () => {
       expect(third.seq).toBeGreaterThan(first.seq);
     });
 
-    it("rejects an unknown or TASK-27 action with 400", async () => {
+    it("rejects an unsupported or unknown action with 400", async () => {
       const boardId = await createBoard("Validation board");
-      for (const type of ["RENAME_BOARD", "ADD_LABEL", "ADD_CHECKLIST"]) {
+      for (const type of ["RENAME_BOARD", "ARCHIVE_BOARD", "MOVE_LABEL"]) {
         const res = await post(
           boardId,
           scoped(boardId, { type, title: "x" } as unknown as Record<

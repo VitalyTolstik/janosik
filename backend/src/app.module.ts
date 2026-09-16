@@ -11,8 +11,9 @@ import { ActivityModule } from "@/activity/activity.module";
 import { CommentsModule } from "@/comments/comments.module";
 
 /**
- * TASK-24: auth routes are live (register/login/refresh/logout/me).
- * The boards/commands/... stubs land from TASK-25 on.
+ * TASK-28 state: auth, boards/membership, commands (columns/cards/labels/
+ * checklists), activity feeds and comments are live; users/api-tokens
+ * remain stubs (§7.6).
  */
 @Module({
   imports: [

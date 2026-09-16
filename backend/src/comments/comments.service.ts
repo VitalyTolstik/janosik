@@ -1,0 +1,168 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import type { Comment } from "@prisma/client";
+import type { CommentDto, CommentPage } from "@janosik/shared";
+import { PrismaService } from "@/common/prisma/prisma.service";
+import type { CreateCommentDto } from "./dto/create-comment.dto";
+
+/** Default page size of `GET /cards/:id/comments` (`?limit=`). */
+const DEFAULT_LIMIT = 50;
+/** Upper bound for `?limit=`. */
+const MAX_LIMIT = 100;
+
+/**
+ * Card comments (§7.4, TASK-28) — plain text, ordinary REST.
+ *
+ * Comments are not reducer actions, so each write also records an
+ * `Activity` row (`comment_added` / `comment_deleted`) that the activity
+ * feeds pick up. Deletion is soft (a purge job reclaims rows later) and
+ * only the author may delete their own comment.
+ */
+@Injectable()
+export class CommentsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async create(
+    cardId: string,
+    authorId: string,
+    dto: CreateCommentDto,
+  ): Promise<CommentDto> {
+    const text = dto.text.trim();
+    if (text.length === 0) {
+      throw new BadRequestException({
+        message: "text must not be blank",
+        field: "text",
+      });
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const card = await tx.card.findFirst({
+        where: { id: cardId, deletedAt: null },
+        select: { id: true, column: { select: { boardId: true } } },
+      });
+      if (!card) {
+        throw new NotFoundException("Card not found");
+      }
+      const comment = await tx.comment.create({
+        data: { cardId, authorId, text },
+      });
+      await tx.activity.create({
+        data: {
+          boardId: card.column.boardId,
+          cardId,
+          type: "comment_added",
+          actorId: authorId,
+          details: { commentId: comment.id, text },
+        },
+      });
+      return toCommentDto(comment);
+    });
+  }
+
+  /** Newest-first page with an opaque `at:id` cursor. */
+  async list(
+    cardId: string,
+    cursorRaw?: string,
+    limitRaw?: string,
+  ): Promise<CommentPage> {
+    const limit = parseLimit(limitRaw);
+    const cursor = cursorRaw ? parseCursor(cursorRaw) : null;
+    const rows = await this.prisma.comment.findMany({
+      where: {
+        cardId,
+        deletedAt: null,
+        ...(cursor
+          ? {
+              OR: [
+                { createdAt: { lt: new Date(cursor.at) } },
+                { createdAt: new Date(cursor.at), id: { lt: cursor.id } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+    });
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page[page.length - 1];
+    return {
+      items: page.map(toCommentDto),
+      nextCursor:
+        hasMore && last ? `${last.createdAt.getTime()}:${last.id}` : null,
+    };
+  }
+
+  /** Soft-delete the caller's own comment (ADMIN/MEMBER enforced by guard). */
+  async remove(commentId: string, userId: string): Promise<void> {
+    const comment = await this.prisma.comment.findFirst({
+      where: { id: commentId, deletedAt: null },
+      select: {
+        id: true,
+        authorId: true,
+        cardId: true,
+        card: { select: { column: { select: { boardId: true } } } },
+      },
+    });
+    if (!comment) {
+      throw new NotFoundException("Comment not found");
+    }
+    if (comment.authorId !== userId) {
+      throw new ForbiddenException("Only the author can delete a comment");
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.comment.update({
+        where: { id: comment.id },
+        data: { deletedAt: new Date() },
+      });
+      await tx.activity.create({
+        data: {
+          boardId: comment.card.column.boardId,
+          cardId: comment.cardId,
+          type: "comment_deleted",
+          actorId: userId,
+          details: { commentId: comment.id },
+        },
+      });
+    });
+  }
+}
+
+function toCommentDto(comment: Comment): CommentDto {
+  return {
+    id: comment.id,
+    cardId: comment.cardId,
+    authorId: comment.authorId,
+    text: comment.text,
+    createdAt: comment.createdAt.getTime(),
+  };
+}
+
+interface CommentCursor {
+  at: number;
+  id: string;
+}
+
+function parseCursor(raw: string): CommentCursor {
+  const match = /^(\d+):(.+)$/.exec(raw);
+  if (!match) {
+    throw new BadRequestException("cursor is malformed");
+  }
+  const at = Number(match[1]);
+  if (!Number.isSafeInteger(at)) {
+    throw new BadRequestException("cursor is malformed");
+  }
+  return { at, id: match[2] };
+}
+
+function parseLimit(raw: string | undefined): number {
+  if (raw === undefined || raw === "") return DEFAULT_LIMIT;
+  const limit = Number(raw);
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) {
+    throw new BadRequestException(`limit must be an integer 1…${MAX_LIMIT}`);
+  }
+  return limit;
+}

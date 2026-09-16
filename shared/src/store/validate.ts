@@ -1,5 +1,10 @@
 import type { BoardAction } from "./board-reducer";
-import { COVER_COLORS, COVER_GRADIENTS, LIMITS } from "../types/kanban";
+import {
+  COVER_COLORS,
+  COVER_GRADIENTS,
+  LABEL_COLORS,
+  LIMITS,
+} from "../types/kanban";
 
 /**
  * Strict command validation for the API boundary (ROADMAP §7.0 two modes).
@@ -143,6 +148,16 @@ function readStringArray(
   return value as string[];
 }
 
+function readBoolean(
+  obj: Record<string, unknown>,
+  key: string,
+  field: string,
+): boolean {
+  const value = obj[key];
+  if (typeof value !== "boolean") fail(field, "must be a boolean");
+  return value;
+}
+
 /** Board-scoped commands all carry the deterministic clock and routing. */
 function common(action: Record<string, unknown>): void {
   readNumber(action, "at", "action.at");
@@ -221,6 +236,27 @@ function validateCover(value: unknown, field: string): void {
     return;
   }
   fail(`${field}.type`, 'must be "color" or "gradient"');
+}
+
+/**
+ * Label colors accepted on the wire: the current picker palette plus the
+ * retired `amber` (persisted labels may still carry it, TASK-16).
+ */
+function validateLabelColor(value: unknown, field: string): void {
+  const known = [...LABEL_COLORS, "amber"] as readonly string[];
+  if (typeof value !== "string" || !known.includes(value)) {
+    fail(field, "must be a known label color");
+  }
+}
+
+function validateLabel(value: unknown, field: string): void {
+  const label = asRecord(value, field);
+  readString(label, "id", `${field}.id`, { nonBlank: true });
+  readString(label, "name", `${field}.name`, {
+    nonBlank: true,
+    max: LIMITS.labelName,
+  });
+  validateLabelColor(label.color, `${field}.color`);
 }
 
 /** Validate one command payload and return it narrowed to `BoardAction`. */
@@ -422,6 +458,131 @@ function parseAction(action: Record<string, unknown>): BoardAction {
       });
       validateChecklistItem(action.item, "action.item");
       readInteger(action, "index", "action.index");
+      break;
+    case "SET_CARD_LABEL":
+      common(action);
+      readString(action, "cardId", "action.cardId", { nonBlank: true });
+      readString(action, "labelId", "action.labelId", { nonBlank: true });
+      readBoolean(action, "on", "action.on");
+      readOptionalInteger(action, "index", "action.index");
+      break;
+    case "ADD_LABEL":
+      common(action);
+      validateLabel(action.label, "action.label");
+      break;
+    case "RENAME_LABEL":
+      common(action);
+      readString(action, "labelId", "action.labelId", { nonBlank: true });
+      readString(action, "name", "action.name", {
+        nonBlank: true,
+        max: LIMITS.labelName,
+      });
+      break;
+    case "SET_LABEL_COLOR":
+      common(action);
+      readString(action, "labelId", "action.labelId", { nonBlank: true });
+      validateLabelColor(action.color, "action.color");
+      break;
+    case "DELETE_LABEL":
+      common(action);
+      readString(action, "labelId", "action.labelId", { nonBlank: true });
+      break;
+    case "RESTORE_LABEL": {
+      common(action);
+      validateLabel(action.label, "action.label");
+      readInteger(action, "index", "action.index");
+      if (action.assignments !== undefined) {
+        if (!Array.isArray(action.assignments)) {
+          fail("action.assignments", "must be an array");
+        }
+        (action.assignments as unknown[]).forEach((entry, index) => {
+          const assignment = asRecord(entry, `action.assignments[${index}]`);
+          readString(
+            assignment,
+            "cardId",
+            `action.assignments[${index}].cardId`,
+            {
+              nonBlank: true,
+            },
+          );
+          readInteger(
+            assignment,
+            "index",
+            `action.assignments[${index}].index`,
+          );
+        });
+      }
+      break;
+    }
+    case "ADD_CHECKLIST":
+      common(action);
+      readString(action, "cardId", "action.cardId", { nonBlank: true });
+      readString(action, "newChecklistId", "action.newChecklistId", {
+        nonBlank: true,
+      });
+      readString(action, "title", "action.title", {
+        nonBlank: true,
+        max: LIMITS.checklistTitle,
+      });
+      break;
+    case "RENAME_CHECKLIST":
+      common(action);
+      readString(action, "cardId", "action.cardId", { nonBlank: true });
+      readString(action, "checklistId", "action.checklistId", {
+        nonBlank: true,
+      });
+      readString(action, "title", "action.title", {
+        nonBlank: true,
+        max: LIMITS.checklistTitle,
+      });
+      break;
+    case "DELETE_CHECKLIST":
+      common(action);
+      readString(action, "cardId", "action.cardId", { nonBlank: true });
+      readString(action, "checklistId", "action.checklistId", {
+        nonBlank: true,
+      });
+      break;
+    case "ADD_CHECKLIST_ITEM":
+      common(action);
+      readString(action, "cardId", "action.cardId", { nonBlank: true });
+      readString(action, "checklistId", "action.checklistId", {
+        nonBlank: true,
+      });
+      readString(action, "newItemId", "action.newItemId", { nonBlank: true });
+      readString(action, "text", "action.text", {
+        nonBlank: true,
+        max: LIMITS.checklistItem,
+      });
+      break;
+    case "SET_CHECKLIST_ITEM_DONE":
+      common(action);
+      readString(action, "cardId", "action.cardId", { nonBlank: true });
+      readString(action, "checklistId", "action.checklistId", {
+        nonBlank: true,
+      });
+      readString(action, "itemId", "action.itemId", { nonBlank: true });
+      readBoolean(action, "done", "action.done");
+      break;
+    case "RENAME_CHECKLIST_ITEM":
+      common(action);
+      readString(action, "cardId", "action.cardId", { nonBlank: true });
+      readString(action, "checklistId", "action.checklistId", {
+        nonBlank: true,
+      });
+      readString(action, "itemId", "action.itemId", { nonBlank: true });
+      readString(action, "text", "action.text", {
+        nonBlank: true,
+        max: LIMITS.checklistItem,
+      });
+      break;
+    case "DELETE_CHECKLIST_ITEM":
+      common(action);
+      readString(action, "cardId", "action.cardId", { nonBlank: true });
+      readString(action, "checklistId", "action.checklistId", {
+        nonBlank: true,
+      });
+      readString(action, "itemId", "action.itemId", { nonBlank: true });
       break;
     default:
       fail("action.type", `unsupported action type: ${type}`);

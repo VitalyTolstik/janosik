@@ -14,8 +14,8 @@ import type { Board, BoardAction, Card, Checklist } from "@janosik/shared";
  * Rules the writers follow, all inherited from the reducer:
  * - positions are rewritten for every column a command touches, because the
  *   aggregate derives `column.cardIds` from `Card.position`;
- * - `version` is incremented on every written text-bearing row (Board,
- *   Column, Card, Checklist, ChecklistItem);
+ * - `version` is incremented on every written versioned row (Board, Column,
+ *   Card, Label, Checklist, ChecklistItem);
  * - soft-delete is propagated by flag, never by cascade — deleting a column
  *   soft-deletes its active cards and their checklists, while archived cards
  *   stay (the aggregate keeps them in the `cards` map);
@@ -41,6 +41,7 @@ export const touch = {
   board: (id: string) => `board:${id}`,
   column: (id: string) => `column:${id}`,
   card: (id: string) => `card:${id}`,
+  label: (id: string) => `label:${id}`,
   checklist: (id: string) => `checklist:${id}`,
   checklistItem: (id: string) => `checklistItem:${id}`,
 };
@@ -163,6 +164,18 @@ async function writeCardLabels(
       await tx.cardLabel.create({ data: { cardId, labelId, position } });
     }
   }
+}
+
+/**
+ * Stamp the card's `updatedAt` and bump its `version` — the bookkeeping every
+ * label/checklist command does on the card it edits (the reducer's
+ * `cardStamp`, including inverse `cardUpdatedAt`).
+ */
+async function bumpCard(tx: Tx, card: Card): Promise<void> {
+  await tx.card.update({
+    where: { id: card.id },
+    data: { updatedAt: new Date(card.updatedAt), version: { increment: 1 } },
+  });
 }
 
 /** Upsert a checklist and its items, reviving soft-deleted rows on restore. */
@@ -554,19 +567,242 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       return touchList;
     }
 
-    case "RESTORE_CHECKLIST": {
+    case "SET_CARD_LABEL": {
       const card = after.cards[action.cardId];
       if (!card) return [boardTouch];
-      const position =
-        card.checklists?.findIndex((c) => c.id === action.checklist.id) ?? 0;
-      await tx.card.update({
-        where: { id: card.id },
+      await writeCardLabels(tx, boardId, card.id, card.labelIds);
+      await bumpCard(tx, card);
+      return [boardTouch, touch.card(card.id)];
+    }
+
+    case "ADD_LABEL": {
+      const position = after.labels.findIndex((l) => l.id === action.label.id);
+      const label = after.labels[position];
+      if (!label) return [boardTouch];
+      await tx.label.create({
         data: {
-          updatedAt: new Date(card.updatedAt),
+          id: label.id,
+          boardId,
+          name: label.name,
+          color: label.color,
+          position,
+        },
+      });
+      return [boardTouch, touch.label(label.id)];
+    }
+
+    case "RENAME_LABEL":
+    case "SET_LABEL_COLOR": {
+      const label = after.labels.find((l) => l.id === action.labelId);
+      if (!label) return [boardTouch];
+      await tx.label.update({
+        where: { id: label.id },
+        data: {
+          name: label.name,
+          color: label.color,
           version: { increment: 1 },
         },
       });
+      return [boardTouch, touch.label(label.id)];
+    }
+
+    case "DELETE_LABEL": {
+      const links = await tx.cardLabel.findMany({
+        where: { labelId: action.labelId },
+        select: { cardId: true },
+      });
+      await tx.cardLabel.deleteMany({ where: { labelId: action.labelId } });
+      await tx.label.update({
+        where: { id: action.labelId },
+        data: { deletedAt: new Date(ctx.at), version: { increment: 1 } },
+      });
+      return [
+        boardTouch,
+        touch.label(action.labelId),
+        ...links.map((link) => touch.card(link.cardId)),
+      ];
+    }
+
+    case "RESTORE_LABEL": {
+      const label = action.label;
+      const position = after.labels.findIndex((l) => l.id === label.id);
+      if (position === -1) return [boardTouch];
+      await tx.label.upsert({
+        where: { id: label.id },
+        create: {
+          id: label.id,
+          boardId,
+          name: label.name,
+          color: label.color,
+          position,
+        },
+        update: {
+          name: label.name,
+          color: label.color,
+          position,
+          deletedAt: null,
+          version: { increment: 1 },
+        },
+      });
+      // Renumber the labels after it (raw SQL: the order is bookkeeping and
+      // no other label's version should move).
+      for (const [index, entry] of after.labels.entries()) {
+        if (entry.id === label.id) continue;
+        await tx.$executeRaw`
+          UPDATE "Label" SET "position" = ${index} WHERE "id" = ${entry.id}
+        `;
+      }
+      const touched = [touch.label(label.id)];
+      for (const { cardId } of action.assignments ?? []) {
+        const card = after.cards[cardId];
+        if (!card || !card.labelIds.includes(label.id)) continue;
+        await writeCardLabels(tx, boardId, card.id, card.labelIds);
+        touched.push(touch.card(card.id));
+      }
+      return [boardTouch, ...touched];
+    }
+
+    case "ADD_CHECKLIST": {
+      const card = after.cards[action.cardId];
+      const checklists = card?.checklists ?? [];
+      const position = checklists.findIndex(
+        (c) => c.id === action.newChecklistId,
+      );
+      const checklist = checklists[position];
+      if (!card || !checklist) return [boardTouch];
+      await tx.checklist.create({
+        data: {
+          id: checklist.id,
+          cardId: card.id,
+          title: checklist.title,
+          position,
+        },
+      });
+      await bumpCard(tx, card);
+      return [boardTouch, touch.card(card.id), touch.checklist(checklist.id)];
+    }
+
+    case "RENAME_CHECKLIST": {
+      const card = after.cards[action.cardId];
+      const checklist = card?.checklists?.find(
+        (c) => c.id === action.checklistId,
+      );
+      if (!card || !checklist) return [boardTouch];
+      await tx.checklist.update({
+        where: { id: checklist.id },
+        data: { title: checklist.title, version: { increment: 1 } },
+      });
+      await bumpCard(tx, card);
+      return [boardTouch, touch.card(card.id), touch.checklist(checklist.id)];
+    }
+
+    case "DELETE_CHECKLIST": {
+      const card = after.cards[action.cardId];
+      if (!card) return [boardTouch];
+      const now = new Date(ctx.at);
+      const items = await tx.checklistItem.findMany({
+        where: { checklistId: action.checklistId },
+        select: { id: true },
+      });
+      await tx.checklistItem.updateMany({
+        where: { id: { in: items.map((item) => item.id) } },
+        data: { deletedAt: now, version: { increment: 1 } },
+      });
+      await tx.checklist.update({
+        where: { id: action.checklistId },
+        data: { deletedAt: now, version: { increment: 1 } },
+      });
+      await bumpCard(tx, card);
+      return [
+        boardTouch,
+        touch.card(card.id),
+        touch.checklist(action.checklistId),
+        ...items.map((item) => touch.checklistItem(item.id)),
+      ];
+    }
+
+    case "ADD_CHECKLIST_ITEM": {
+      const card = after.cards[action.cardId];
+      const checklist = card?.checklists?.find(
+        (c) => c.id === action.checklistId,
+      );
+      const position =
+        checklist?.items.findIndex((i) => i.id === action.newItemId) ?? -1;
+      const item = checklist?.items[position];
+      if (!card || !checklist || !item) return [boardTouch];
+      await tx.checklistItem.create({
+        data: {
+          id: item.id,
+          checklistId: checklist.id,
+          text: item.text,
+          done: item.done,
+          position,
+        },
+      });
+      await bumpCard(tx, card);
+      return [
+        boardTouch,
+        touch.card(card.id),
+        touch.checklist(checklist.id),
+        touch.checklistItem(item.id),
+      ];
+    }
+
+    case "SET_CHECKLIST_ITEM_DONE":
+    case "RENAME_CHECKLIST_ITEM": {
+      const card = after.cards[action.cardId];
+      const checklist = card?.checklists?.find(
+        (c) => c.id === action.checklistId,
+      );
+      const item = checklist?.items.find((i) => i.id === action.itemId);
+      if (!card || !checklist || !item) return [boardTouch];
+      // Both commands write the item's state as the reducer left it; the
+      // unchanged field is written with its current value.
+      await tx.checklistItem.update({
+        where: { id: item.id },
+        data: { text: item.text, done: item.done, version: { increment: 1 } },
+      });
+      await bumpCard(tx, card);
+      return [
+        boardTouch,
+        touch.card(card.id),
+        touch.checklist(checklist.id),
+        touch.checklistItem(item.id),
+      ];
+    }
+
+    case "DELETE_CHECKLIST_ITEM": {
+      const card = after.cards[action.cardId];
+      if (!card) return [boardTouch];
+      await tx.checklistItem.update({
+        where: { id: action.itemId },
+        data: { deletedAt: new Date(ctx.at), version: { increment: 1 } },
+      });
+      await bumpCard(tx, card);
+      return [
+        boardTouch,
+        touch.card(card.id),
+        touch.checklist(action.checklistId),
+        touch.checklistItem(action.itemId),
+      ];
+    }
+
+    case "RESTORE_CHECKLIST": {
+      const card = after.cards[action.cardId];
+      const position =
+        card?.checklists?.findIndex((c) => c.id === action.checklist.id) ?? -1;
+      if (!card || position === -1) return [boardTouch];
+      await bumpCard(tx, card);
       await upsertChecklist(tx, card.id, action.checklist, position);
+      // Renumber the card's other live checklists so the restored one is
+      // back at its old index (Checklist has no `updatedAt` to disturb).
+      for (const [index, checklist] of (card.checklists ?? []).entries()) {
+        if (checklist.id === action.checklist.id) continue;
+        await tx.checklist.update({
+          where: { id: checklist.id },
+          data: { position: index },
+        });
+      }
       return [
         boardTouch,
         touch.card(card.id),
@@ -810,6 +1046,14 @@ export async function collectVersions(
       prefix: "card",
       load: (ids) =>
         tx.card.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, version: true },
+        }),
+    },
+    {
+      prefix: "label",
+      load: (ids) =>
+        tx.label.findMany({
           where: { id: { in: ids } },
           select: { id: true, version: true },
         }),

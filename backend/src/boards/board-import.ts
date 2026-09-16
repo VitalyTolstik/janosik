@@ -37,13 +37,19 @@ export async function persistBoard(
     data: { boardId: created.id, userId, role: "ADMIN" },
   });
 
-  // §7.3 has no order column on Label, so only the ids are remapped.
+  // Labels keep their order from the envelope (`Label.position`, TASK-27).
   const labelIdMap = new Map<string, string>();
-  for (const label of board.labels) {
+  for (const [index, label] of board.labels.entries()) {
     const id = randomUUID();
     labelIdMap.set(label.id, id);
     await tx.label.create({
-      data: { id, boardId: created.id, name: label.name, color: label.color },
+      data: {
+        id,
+        boardId: created.id,
+        name: label.name,
+        color: label.color,
+        position: index,
+      },
     });
   }
 

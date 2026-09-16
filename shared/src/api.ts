@@ -126,6 +126,69 @@ export interface BoardSummary {
 export type BoardAggregate = Board;
 
 /**
+ * A non-command event type stored in `Activity` (§7.3): membership changes
+ * and comments — everything a `BoardAction` cannot express (TASK-28).
+ */
+export const ACTIVITY_EVENT_TYPES = [
+  "member_invited",
+  "member_role_changed",
+  "member_expiry_changed",
+  "member_removed",
+  "comment_added",
+  "comment_deleted",
+] as const;
+
+export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[number];
+
+/** Where a feed entry came from: the command log or an `Activity` row. */
+export type ActivityFeedSource = "command" | "activity";
+
+/**
+ * One entry of `GET /boards/:id/activity` or `GET /cards/:id/activity`
+ * (§7.4). The feed merges the Command log with `Activity` rows by time; the
+ * cursor is opaque and pages are newest-first.
+ */
+export interface ActivityFeedEntry {
+  source: ActivityFeedSource;
+  /** `commandId` for commands, `Activity.id` otherwise. */
+  id: string;
+  /** Command `seq` — present on command entries (the composite tie-break). */
+  seq?: number;
+  /** Creation time, Unix ms — the primary sort key. */
+  at: number;
+  /** `BoardAction.type` or `Activity.type`. */
+  type: string;
+  /** Who caused the entry (real user id). */
+  actorId: string;
+  /** Command entries: the single card the command touched, when unambiguous. */
+  cardId?: string;
+  /** `Activity.details` snapshot (member email/role, comment text, …). */
+  details?: Record<string, unknown> | null;
+}
+
+/** A page of an activity feed, newest-first (`nextCursor: null` = end). */
+export interface ActivityFeedPage {
+  items: ActivityFeedEntry[];
+  nextCursor: string | null;
+}
+
+/** A card comment (plain text, TASK-28; UI in TASK-37). */
+export interface CommentDto {
+  id: string;
+  cardId: string;
+  authorId: string;
+  text: string;
+  /** Unix ms. */
+  createdAt: number;
+}
+
+/** A page of `GET /cards/:id/comments`, newest-first. */
+export interface CommentPage {
+  items: CommentDto[];
+  nextCursor: string | null;
+}
+
+/**
  * JSON envelope shared with the UI file format (§7.4): body of
  * `POST /boards/import` and payload of `GET /boards/:id/export`.
  */
