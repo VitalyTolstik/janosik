@@ -31,3 +31,5 @@ pnpm-debug.log*
 Thumbs.db
 .idea/
 *.swp
+# Keep the env example (backend/.env.example)
+!.env.example

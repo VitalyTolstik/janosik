@@ -1,0 +1,24 @@
+# Janosik backend — postgres 16 (dev БД `janosik`, тестовая `janosik_test`).
+# USAGE: docker compose -f backend/docker-compose.yml up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: janosik-postgres
+    environment:
+      POSTGRES_USER: janosik
+      POSTGRES_PASSWORD: janosik
+      POSTGRES_DB: janosik
+    ports:
+      # 5433 — чтобы не конфликтовать с локальным postgres на 5432
+      - "5433:5432"
+    volumes:
+      - janosik-pgdata:/var/lib/postgresql/data
+      - ./docker/init-test-db.sh:/docker-entrypoint-initdb.d/01-init-test-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U janosik -d janosik"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  janosik-pgdata:

@@ -1,0 +1,19 @@
+// Janosik schema — TASK-23 ships the User table only; the full §7.3 schema
+// (Board/Column/Card/Command/...) lands with TASK-24/25.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String?
+  isSuperAdmin Boolean  @default(false) // первый зарегистрированный пользователь
+  createdAt    DateTime @default(now())
+}

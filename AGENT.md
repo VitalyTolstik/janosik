@@ -195,7 +195,8 @@ Draft‑состояние диалога (значение формы, стро
 ## Команды (monorepo, после TASK-22)
 
 Репозиторий — npm workspaces: `ui/` (фронт), `shared/` (`@janosik/shared`,
-без build-степа). Гейты гоняются и с корня (скрипты-делегаты), и из пакета:
+без build-степа), `backend/` (`@janosik/backend`, NestJS — с TASK-23).
+Гейты гоняются и с корня (скрипты-делегаты), и из пакета:
 
 ```bash
 npm install            # на корне: ставит и линкует workspaces
@@ -204,11 +205,26 @@ npm test -w ui         # только фронт-тесты
 npm test -w shared     # только тесты shared
 npm run test:coverage  # корень: покрытие ui + shared (пороги 88/83/91/93)
 npm run build -w ui    # tsc -b (типчекает и shared) + vite build
-npm run lint           # корень: ESLint по ui и shared
+npm run lint           # корень: ESLint по ui, shared и backend
 npm run format:check   # Prettier по всему репо
 npm run size -w ui     # бюджеты бандла (4 шт.)
 ```
 
 Внутри `shared/` алиасов `@/` нет — только относительные импорты; фронт
 импортит пакет как `@janosik/shared` (alias в vite/tsconfig/vitest).
+
+### Backend (с TASK-23)
+
+```bash
+docker compose -f backend/docker-compose.yml up -d
+                       # postgres 16 на localhost:5433 (БД janosik + janosik_test)
+npm test -w backend    # unit + e2e (e2e = prisma migrate deploy + supertest
+                       # против janosik_test; DATABASE_URL из backend/.env)
+npm run build:backend  # prisma generate + tsc -p tsconfig.build.json
+npm run prisma:deploy -w backend   # накатить миграции на dev-БД
+```
+
+- `backend/.env` — секреты и DATABASE_URL, в git не попадает
+  (шаблон: `backend/.env.example`); CI поднимает свой postgres-сервис.
+- Роуты до TASK-24 — заглушки 501; `/health` живой (пингует БД).
 

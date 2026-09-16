@@ -1444,3 +1444,39 @@ payload, которых нет в `cardIds`, из колонки убирают�
   (пороги 88/83/91/93), lint 0 ошибок / 9 warnings, build/format/size в
   бюджетах (198.72/49.41/21.55/14.3 KB gzip), смоук preview: HTTP 200 `/`
   и deep-link, 0 ошибок консоли.
+
+## TASK-23 — `backend-scaffold` · NestJS + Prisma каркас ✅
+
+- **Статус:** ✅ реализовано лично координатором (без dev/qa-воркеров),
+  ветка `feature/TASK-23-backend-scaffold`, PR смержен в main.
+- **Что сделано:** workspace `backend/` (`@janosik/backend`, NestJS 11,
+  CommonJS): `main.ts` — helmet, префикс `api/v1`, ValidationPipe
+  (whitelist+transform), shutdown hooks; `AppModule` с модулями §7.2 —
+  заглушки users/boards/commands/activity/comments (пустые), auth — контроллер
+  с POST register/login (501) и `@Throttle` 5/мин на IP (самая жёсткая квота,
+  глобальный ThrottlerModule 100/мин через APP_GUARD).
+- **`/api/v1/health`** — пингует БД (`SELECT 1` через PrismaService):
+  200 `{status:"ok", db:"up"}` / 503 `{status:"error", db:"down"}`.
+- **Prisma 6:** schema только с User (полная §7.3 — с TASK-24/25),
+  ручная миграция `20260916000000_init` (таблица "User", unique email),
+  `prisma generate` на prebuild; `PrismaService` global в `common/prisma`.
+- **docker-compose** (backend/): postgres:16-alpine на 5433 (не конфликтует
+  с локальным 5432), БД `janosik` + тестовая `janosik_test` (init-скрипт,
+  chmod +x обязателен — alpine-энтрипоинт исполняет скрипты напрямую),
+  healthcheck pg_isready, volume janosik-pgdata.
+- **Тесты:** Jest с двумя projects — unit (`src/**/*.spec.ts`,
+  HealthService c мок-Prisma) и e2e (`test/*.e2e-spec.ts`, supertest:
+  health 200 + db up; 404 Nest-envelope; auth-бёрст 5×501 → 429; login и
+  register считаются раздельно). `npm test -w backend` = migrate deploy
+  (janosik_test из backend/.env) + оба projects; root `npm test` остался
+  ui+shared, добавлен `npm run test:backend`.
+- **CI:** verify-job получил postgres:16-alpine service (5433) — backend
+  unit+e2e и `build:backend` гоняются в CI; root `npm run lint` теперь
+  включает backend (собственный flat-config, ESLint 9 + typescript-eslint).
+- **Секреты:** `backend/.env` в gitignore (исключение для `.env.example`);
+  в git не попадает. e2e читает `DATABASE_URL` через dotenv.
+- **Гейты:** ui 397 + shared 230 тестов; backend 2 unit + 4 e2e; builds
+  (vite + tsc backend) зелёные; lint 0 ошибок; prettier чисто; size в
+  бюджетах (198.72/210, 49.41/55, 21.55/27, 14.3/18 KB gzip).
+- **AGENT.md:** блок «Backend (с TASK-23)» — compose, `npm test -w backend`,
+  `build:backend`, `prisma:deploy`.
