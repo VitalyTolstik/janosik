@@ -1,9 +1,9 @@
-import "dotenv/config";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import helmet from "helmet";
 import request from "supertest";
-import { AppModule } from "../src/app.module";
+import { AppModule } from "@/app.module";
+import "@/config/env";
 
 /**
  * Rate limiting on auth routes ships with the scaffold (§7.7 TASK-23):

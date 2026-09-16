@@ -1,7 +1,7 @@
 {
   "name": "janosik",
   "version": "0.1.0",
-  "description": "Self-hosted Kanban board — offline-first PWA with drag & drop, calendar and table views, undo/redo, WIP limits and i18n.",
+  "description": "Self-hosted Kanban board \u2014 offline-first PWA with drag & drop, calendar and table views, undo/redo, WIP limits and i18n.",
   "license": "MIT",
   "author": "Vitali Toustsik",
   "homepage": "https://github.com/VitalyTolstik/janosik#readme",
@@ -39,9 +39,12 @@
     "lint": "npm run lint -w ui && npm run lint -w shared && npm run lint -w backend",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
-    "size": "npm run size -w ui"
+    "size": "npm run size -w ui",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "prettier": "^3.9.6"
   }
 }

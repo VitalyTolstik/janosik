@@ -1480,3 +1480,12 @@ payload, которых нет в `cardIds`, из колонки убирают�
   бюджетах (198.72/210, 49.41/55, 21.55/27, 14.3/18 KB gzip).
 - **AGENT.md:** блок «Backend (с TASK-23)» — compose, `npm test -w backend`,
   `build:backend`, `prisma:deploy`.
+- **Follow-up (пользовательские запросы):** husky pre-commit (`npm run
+  build` + lint-staged: prettier по стейдженным, eslint --fix по
+  workspaces); envalid в backend (слои `.env` → `.env.${NODE_ENV}` →
+  `.env.local`, fail-fast на невалидных переменных, в тестах
+  DATABASE_URL → TEST_DATABASE_URL — e2e больше не трогает dev-БД);
+  креды postgres выведены из docker-compose в backend/.env (compose
+  падает без них с понятной ошибкой); алиас `@/` → `src/` в backend
+  (tsconfig paths + jest moduleNameMapper + tsc-alias на билде);
+  все комменты в коде — English.

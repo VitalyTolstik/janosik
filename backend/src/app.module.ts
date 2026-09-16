@@ -1,14 +1,14 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
-import { PrismaModule } from "./common/prisma/prisma.module";
-import { HealthModule } from "./health/health.module";
-import { AuthModule } from "./auth/auth.module";
-import { UsersModule } from "./users/users.module";
-import { BoardsModule } from "./boards/boards.module";
-import { CommandsModule } from "./commands/commands.module";
-import { ActivityModule } from "./activity/activity.module";
-import { CommentsModule } from "./comments/comments.module";
+import { PrismaModule } from "@/common/prisma/prisma.module";
+import { HealthModule } from "@/health/health.module";
+import { AuthModule } from "@/auth/auth.module";
+import { UsersModule } from "@/users/users.module";
+import { BoardsModule } from "@/boards/boards.module";
+import { CommandsModule } from "@/commands/commands.module";
+import { ActivityModule } from "@/activity/activity.module";
+import { CommentsModule } from "@/comments/comments.module";
 
 /**
  * TASK-23 scaffold: app skeleton with the §7.2 stub modules.

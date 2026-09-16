@@ -1,6 +1,6 @@
 import { HttpException } from "@nestjs/common";
 import { HealthService } from "./health.service";
-import type { PrismaService } from "../common/prisma/prisma.service";
+import type { PrismaService } from "@/common/prisma/prisma.service";
 
 const prismaMock = {
   ping: jest.fn(),

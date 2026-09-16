@@ -8,6 +8,12 @@ const tsJest = {
   ],
 };
 
+const mapper = {
+  moduleNameMapper: {
+    "^@/(.*)$": "<rootDir>/src/$1",
+  },
+};
+
 module.exports = {
   testEnvironment: "node",
   projects: [
@@ -15,11 +21,13 @@ module.exports = {
       displayName: "unit",
       testMatch: ["<rootDir>/src/**/*.spec.ts"],
       transform: tsJest,
+      ...mapper,
     },
     {
       displayName: "e2e",
       testMatch: ["<rootDir>/test/**/*.e2e-spec.ts"],
       transform: tsJest,
+      ...mapper,
     },
   ],
 };

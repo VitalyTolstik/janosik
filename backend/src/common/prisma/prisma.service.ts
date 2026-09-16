@@ -5,6 +5,7 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
+import { env } from "@/config/env";
 
 @Injectable()
 export class PrismaService
@@ -12,6 +13,10 @@ export class PrismaService
   implements OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new Logger(PrismaService.name);
+
+  constructor() {
+    super({ datasources: { db: { url: env.DATABASE_URL } } });
+  }
 
   async onModuleInit(): Promise<void> {
     await this.$connect();
