@@ -60,9 +60,26 @@
 субагенты — opencode в worktree Orca.
 
 - **CLI:** полный путь `/Applications/Orca.app/Contents/Resources/bin/orca`
-  (симлинк `/usr/local/bin/orca` бывает битым). Repo-селектор для создания:
-  `path:/Users/vitaltol/Dev/janosik` — форма `id:<uuid>::<path>` в
-  `worktree create` отвечает `repo_not_found`.
+  (симлинк `/usr/local/bin/orca` бывает битым).
+- **⚠️ Неймспейс (не путать):** команды оркестрации — только под
+  `orca orchestration …`: `run-create`, `run-use`, `run-current`,
+  `run-show`, `check`, `send`, `reply`, `inbox`, `worker-start`,
+  `worker-show`, `worker-read`, `worker-stop`, `worker-retain`,
+  `worker-release`, `worker-list`. Голых `orca run-current` /
+  `orca run …` НЕ существует — «Unknown command» значит «забыл неймспейс»,
+  а не «CLI сломался» (наступали 2026-09-16). Верхнеуровневые команды —
+  `worktree`, `terminal`, `repo`: `worktree create|list|show|set|rm`,
+  `terminal list|create|read|send|wait|close`, `repo list|show`.
+  Свежая шпаргалка по CLI — `orca skills get orca-cli` (гайд
+  версионируется с бинарем; при расхождении с этим файлом — править
+  сюда).
+- **Селекторы (проверено 2026-09-16, после обновления CLI):** `--repo`
+  принимает и `path:/Users/vitaltol/Dev/janosik`, и `id:<repoId>`;
+  worktree-селекторы — `id:<repoId>::<abs path>` (полный id из
+  `create`/`list`), `path:<abs>`, `name:<display>`, `branch:<ветка>`.
+  Прежняя заметка «`id:` в `worktree create` отвечает
+  `repo_not_found`» устарела: форма `id:` рабочая (проверено
+  create+show+rm пробного worktree).
 1. **Worktree под каждого субагента** (ветка = имя):
    `orca worktree create --repo path:… --name <slug> --setup run --json`
    → `/Users/vitaltol/orca/workspaces/janosik/<slug>`, `node_modules`
