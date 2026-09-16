@@ -237,8 +237,13 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
 - **Auth живой (TASK-24):** register/login/refresh/logout/me под
   `/api/v1/auth`; access JWT в теле ответа, refresh — httpOnly-кука
   (sha256-hash в БД, ротация, реюз revoked отзывает все сессии юзера).
-  Остальные модули (users/boards/commands/activity/comments) — заглушки
-  501; `/health` живой (пингует БД).
+- **Boards живые (TASK-25):** полная схема §7.3 в Prisma (soft-delete
+  `deletedAt` + `version`), boards CRUD + membership
+  (ADMIN/MEMBER/VIEWER + `expiresAt`, last-ADMIN защищён) под
+  MembershipGuard, агрегат `GET /boards/:id` = модель фронта,
+  import/export через `@janosik/shared` (симлинк `backend/src/shared`).
+  Остальные модули (users/commands/activity/comments) — заглушки;
+  `/health` живой (пингует БД).
 
 ### Pre-commit (husky)
 
