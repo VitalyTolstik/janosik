@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import type { Board, BoardAction, Card, Checklist } from "@janosik/shared";
 
@@ -21,7 +20,10 @@ import type { Board, BoardAction, Card, Checklist } from "@janosik/shared";
  *   soft-deletes its active cards and their checklists, while archived cards
  *   stay (the aggregate keeps them in the `cards` map);
  * - archived cards are never in `column.cardIds`, so they are left alone by
- *   reorder writers.
+ *   reorder writers;
+ * - writers are deterministic: ids and timestamps come only from the action
+ *   payload (never `randomUUID()` / `Date.now()`), so replaying a command
+ *   produces byte-identical rows.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -68,6 +70,22 @@ async function writeCardPositions(
     await tx.$executeRaw`
       UPDATE "Card" SET "columnId" = ${columnId}, "position" = ${position}
       WHERE "id" = ${id}
+    `;
+  }
+}
+
+/**
+ * Persist the horizontal order of the board's columns. Raw SQL for the same
+ * reason as `writeCardPositions`: `Column.updatedAt` carries `@updatedAt`
+ * and a reorder must not stamp it with the wall clock.
+ */
+async function writeColumnPositions(
+  tx: Tx,
+  columns: Board["columns"],
+): Promise<void> {
+  for (const [position, column] of columns.entries()) {
+    await tx.$executeRaw`
+      UPDATE "Column" SET "position" = ${position} WHERE "id" = ${column.id}
     `;
   }
 }
@@ -256,14 +274,21 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         select: { id: true },
       });
       const activeIds = activeCards.map((card) => card.id);
+      let checklistIds: string[] = [];
+      let itemIds: string[] = [];
       if (activeIds.length > 0) {
         const checklists = await tx.checklist.findMany({
           where: { cardId: { in: activeIds } },
           select: { id: true },
         });
-        const checklistIds = checklists.map((checklist) => checklist.id);
-        await tx.checklistItem.updateMany({
+        checklistIds = checklists.map((checklist) => checklist.id);
+        const items = await tx.checklistItem.findMany({
           where: { checklistId: { in: checklistIds } },
+          select: { id: true },
+        });
+        itemIds = items.map((item) => item.id);
+        await tx.checklistItem.updateMany({
+          where: { id: { in: itemIds } },
           data: { deletedAt: now, version: { increment: 1 } },
         });
         await tx.checklist.updateMany({
@@ -273,7 +298,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         await tx.cardLabel.deleteMany({ where: { cardId: { in: activeIds } } });
         await tx.card.updateMany({
           where: { id: { in: activeIds } },
-          data: { deletedAt: now, version: { increment: 1 } },
+          data: { deletedAt: now, updatedAt: now, version: { increment: 1 } },
         });
       }
       await tx.column.update({
@@ -284,6 +309,8 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         boardTouch,
         touch.column(action.columnId),
         ...touchCards(activeIds),
+        ...checklistIds.map((id) => touch.checklist(id)),
+        ...itemIds.map((id) => touch.checklistItem(id)),
       ];
     }
 
@@ -316,16 +343,12 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         });
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
       }
+      await writeColumnPositions(tx, after.columns);
       return [boardTouch, touch.column(copy.id), ...touchCards(copy.cardIds)];
     }
 
     case "MOVE_COLUMN": {
-      for (const [position, column] of after.columns.entries()) {
-        await tx.column.update({
-          where: { id: column.id },
-          data: { position },
-        });
-      }
+      await writeColumnPositions(tx, after.columns);
       return [boardTouch, ...after.columns.map((c) => touch.column(c.id))];
     }
 
@@ -388,20 +411,31 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         where: { cardId: card.id },
         select: { id: true },
       });
+      const checklistIds = checklists.map((c) => c.id);
+      const items = await tx.checklistItem.findMany({
+        where: { checklistId: { in: checklistIds } },
+        select: { id: true },
+      });
+      const itemIds = items.map((item) => item.id);
       await tx.checklistItem.updateMany({
-        where: { checklistId: { in: checklists.map((c) => c.id) } },
+        where: { id: { in: itemIds } },
         data: { deletedAt: now, version: { increment: 1 } },
       });
       await tx.checklist.updateMany({
-        where: { cardId: card.id },
+        where: { id: { in: checklistIds } },
         data: { deletedAt: now, version: { increment: 1 } },
       });
       await tx.cardLabel.deleteMany({ where: { cardId: card.id } });
       await tx.card.update({
         where: { id: card.id },
-        data: { deletedAt: now, version: { increment: 1 } },
+        data: { deletedAt: now, updatedAt: now, version: { increment: 1 } },
       });
-      return [boardTouch, touch.card(card.id)];
+      return [
+        boardTouch,
+        touch.card(card.id),
+        ...checklistIds.map((id) => touch.checklist(id)),
+        ...itemIds.map((id) => touch.checklistItem(id)),
+      ];
     }
 
     case "TOUCH_CARD": {
@@ -440,22 +474,25 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
 
     case "RESTORE_CARD": {
       const card = action.card;
+      // The reducer only inserts into a column when the command names one
+      // that exists; then the aggregate must list the card in that column.
       const column = after.columns.find((c) => c.cardIds.includes(card.id));
-      const columnId =
-        column?.id ??
-        action.columnId ??
-        after.columns[0]?.id ??
-        (await placeholderColumnId(tx, boardId));
-      const position = column ? column.cardIds.indexOf(card.id) : 0;
-      await upsertCard(tx, card, columnId, position);
+      if (column) {
+        await upsertCard(tx, card, column.id, column.cardIds.indexOf(card.id));
+        await writeCardLabels(tx, boardId, card.id, card.labelIds);
+        await writeChecklists(tx, card.id, card.checklists);
+        await writeCardPositions(tx, column.id, column.cardIds);
+        return [boardTouch, touch.card(card.id), touch.column(column.id)];
+      }
+      // No target column: the reducer puts the card back only into the
+      // `cards` map and changes no `column.cardIds`. Park it in the board's
+      // deterministic, soft-deleted orphan column so the aggregate returns
+      // it in `cards` and in no column — byte-for-byte the reducer's result.
+      const orphanId = await ensureOrphanColumn(tx, boardId, ctx.at);
+      await upsertCard(tx, card, orphanId, 0);
       await writeCardLabels(tx, boardId, card.id, card.labelIds);
       await writeChecklists(tx, card.id, card.checklists);
-      if (column) await writeCardPositions(tx, column.id, column.cardIds);
-      return [
-        boardTouch,
-        touch.card(card.id),
-        ...(column ? [touch.column(column.id)] : []),
-      ];
+      return [boardTouch, touch.card(card.id)];
     }
 
     case "RESTORE_COLUMN": {
@@ -483,13 +520,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           version: { increment: 1 },
         },
       });
-      for (const [index, other] of after.columns.entries()) {
-        if (other.id === action.column.id) continue;
-        await tx.column.update({
-          where: { id: other.id },
-          data: { position: index },
-        });
-      }
+      await writeColumnPositions(tx, after.columns);
       const touchList = [boardTouch, touch.column(action.column.id)];
       for (const card of action.cards) {
         const cardPosition = column
@@ -691,19 +722,40 @@ async function writeCardAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
   }
 }
 
-/** A hidden column for a card with no column to live in (archived restore). */
-async function placeholderColumnId(tx: Tx, boardId: string): Promise<string> {
-  const existing = await tx.column.findFirst({
-    where: { boardId, deletedAt: null },
-    orderBy: { position: "asc" },
-    select: { id: true },
+/**
+ * Deterministic id of a board's orphan column. Derived from the board id so
+ * replaying a restore writes the same row twice — no `randomUUID()`.
+ */
+function orphanColumnId(boardId: string): string {
+  return `orphan:${boardId}`;
+}
+
+/**
+ * The soft-deleted column that holds revived cards the reducer did not place
+ * into any column. It never appears in the aggregate (`deletedAt` is set),
+ * but gives such a card a valid `Card.columnId`.
+ */
+async function ensureOrphanColumn(
+  tx: Tx,
+  boardId: string,
+  at: number,
+): Promise<string> {
+  const id = orphanColumnId(boardId);
+  const deletedAt = new Date(at);
+  await tx.column.upsert({
+    where: { id },
+    create: {
+      id,
+      boardId,
+      title: "Orphaned cards",
+      position: 0,
+      deletedAt,
+      createdAt: deletedAt,
+      updatedAt: deletedAt,
+    },
+    update: { deletedAt },
   });
-  if (existing) return existing.id;
-  const created = await tx.column.create({
-    data: { id: randomUUID(), boardId, title: "Archive", position: 0 },
-    select: { id: true },
-  });
-  return created.id;
+  return id;
 }
 
 /** Persist a command's result, bumping the board once. */

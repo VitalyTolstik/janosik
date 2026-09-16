@@ -867,6 +867,86 @@ describe("Commands API (e2e)", () => {
         }),
       );
     });
+
+    it("reports the soft-deleted checklists/items in versions and touches", async () => {
+      const boardId = await importBoard("Version fields", {
+        checklists: [
+          {
+            id: "cl-1",
+            title: "Steps",
+            items: [{ id: "item-1", text: "one", done: false }],
+          },
+        ],
+      });
+      const aggregate = await getAggregate(boardId);
+      const cardId = Object.keys(aggregate.cards)[0];
+      const checklist = aggregate.cards[cardId].checklists![0];
+      const item = checklist.items[0];
+
+      const res = await post(
+        boardId,
+        scoped(boardId, { type: "DELETE_CARD", cardId }),
+      ).expect(200);
+
+      const versions = res.body.versions as Record<string, number>;
+      expect(versions[`card:${cardId}`]).toEqual(expect.any(Number));
+      expect(versions[`checklist:${checklist.id}`]).toEqual(expect.any(Number));
+      expect(versions[`checklistItem:${item.id}`]).toEqual(expect.any(Number));
+
+      const command = await prisma.command.findFirst({ where: { boardId } });
+      expect(command?.touches).toEqual(
+        expect.arrayContaining([
+          `card:${cardId}`,
+          `checklist:${checklist.id}`,
+          `checklistItem:${item.id}`,
+        ]),
+      );
+    });
+  });
+
+  describe("RESTORE_CARD without a column", () => {
+    it("restores the card into the map without touching any column", async () => {
+      const boardId = await createBoard("Orphan restore board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-orphan",
+          title: "Column",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-orphan",
+          columnId: "col-orphan",
+          title: "Orphan",
+        }),
+      );
+
+      const before = await getAggregate(boardId);
+      const snapshot = before.cards["card-orphan"];
+      await apply(
+        boardId,
+        scoped(boardId, { type: "DELETE_CARD", cardId: "card-orphan" }),
+      );
+
+      // No columnId: the reducer only puts the card back into the cards map.
+      const after = await applyAndAssert(
+        boardId,
+        scoped(boardId, { type: "RESTORE_CARD", card: snapshot }),
+      );
+      expect(after.cards["card-orphan"]).toMatchObject({
+        id: "card-orphan",
+        title: "Orphan",
+      });
+      expect(
+        after.columns.every(
+          (column) => !column.cardIds.includes("card-orphan"),
+        ),
+      ).toBe(true);
+    });
   });
 
   describe("delta catch-up", () => {
