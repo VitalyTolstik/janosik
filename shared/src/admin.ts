@@ -40,12 +40,12 @@ export interface AdminMasterRowDto {
   disabledAt: number | null;
   /** Unix ms of the lockout window; `null` when not locked. */
   lockedUntil: number | null;
+  /** Consecutive failed logins since the last success (lockout counter). */
+  failedLogins: number;
   /** Unix ms; `null` until the first successful login. */
   lastLoginAt: number | null;
   /** Unix ms. */
   createdAt: number;
-  /** Active refresh sessions. */
-  sessions: number;
 }
 
 /** Body of `POST /admin/admins` (owners only). */
@@ -122,20 +122,23 @@ export interface AdminUserRowDto {
   createdAt: number;
   /** Unix ms when the master blocked the account; `null` while active. */
   disabledAt: number | null;
-  boards: number;
-  sessions: number;
-  apiTokens: number;
 }
 
-/** A row of `GET /admin/boards`. */
+/**
+ * A row of `GET /admin/boards` — `Board` columns plus the owner reference.
+ *
+ * `Board` has no owner column: the owner is the first `BoardMember` with
+ * role ADMIN, so the row carries that membership's `userId` (the join key
+ * support actually needs — board titles are not unique). `ownerEmail` is
+ * only a human label next to the id.
+ */
 export interface AdminBoardRowDto {
   id: string;
   title: string;
-  /** Email of the first ADMIN (the creator); `null` for an orphan board. */
+  /** `BoardMember.userId` of the first ADMIN; `null` for an orphan board. */
+  userId: string | null;
+  /** Label for `userId`; `null` alongside a null owner. */
   ownerEmail: string | null;
-  members: number;
-  columns: number;
-  cards: number;
   /** Unix ms. */
   createdAt: number;
   /** Unix ms. */
@@ -144,26 +147,36 @@ export interface AdminBoardRowDto {
   deletedAt: number | null;
 }
 
-/** A row of `GET /admin/cards` — every card on the platform (TASK-43). */
+/**
+ * A row of `GET /admin/cards` — every card on the platform (TASK-43) keyed
+ * by its foreign keys. Titles ride along as labels only: a card is located
+ * by `boardId`/`columnId`, never by a board title (titles are not unique).
+ */
 export interface AdminCardRowDto {
   id: string;
   title: string;
+  /** `Card.column.boardId` — the board join key. */
   boardId: string;
   boardTitle: string;
+  /** `Card.columnId` — the column join key. */
+  columnId: string;
   columnTitle: string;
+  /** `Comment.id` of every visible comment on the card. */
+  commentIds: string[];
   /** Unix ms. */
   createdAt: number;
   /** Unix ms. */
   updatedAt: number;
   archivedAt: number | null;
   deletedAt: number | null;
-  /** Comments on the card, soft-deleted excluded. */
-  comments: number;
 }
 
 /** A row of `GET /admin/sessions` — an active refresh session (TASK-43). */
 export interface AdminSessionRowDto {
   id: string;
+  /** `RefreshToken.userId` — the session's user join key. */
+  userId: string;
+  /** Label for `userId`. */
   userEmail: string;
   /** Unix ms. */
   createdAt: number;
@@ -174,6 +187,9 @@ export interface AdminSessionRowDto {
 /** A row of `GET /admin/tokens` — a personal API token (TASK-43). */
 export interface AdminTokenRowDto {
   id: string;
+  /** `ApiToken.userId` — the token's user join key. */
+  userId: string;
+  /** Label for `userId`. */
   userEmail: string;
   name: string;
   /** Unix ms. */
@@ -189,22 +205,30 @@ export interface AdminTokenRowDto {
 /** A row of `GET /admin/comments` — cross-board comment moderation. */
 export interface AdminCommentRowDto {
   id: string;
+  /** `Comment.cardId` — the card join key. */
   cardId: string;
   cardTitle: string;
-  boardTitle: string;
+  /** `Comment.authorId` — the author join key. */
+  authorId: string;
+  /** Label for `authorId`. */
   authorEmail: string;
   text: string;
   /** Unix ms. */
   createdAt: number;
   /** Unix ms; `null` while visible. */
+  updatedAt: number;
   deletedAt: number | null;
 }
 
 /** A row of `GET /admin/commands` — the cross-board command log. */
 export interface AdminCommandRowDto {
   id: string;
+  /** `Command.boardId`. */
   boardId: string;
   boardTitle: string;
+  /** `Command.actorId`. */
+  actorId: string;
+  /** Label for `actorId`. */
   actorEmail: string;
   /** `BoardAction.type`. */
   type: string;
@@ -216,6 +240,9 @@ export interface AdminCommandRowDto {
 /** A row of `GET /admin/audit` — who did what in the admin panel. */
 export interface AdminAuditRowDto {
   id: string;
+  /** `AdminAuditLog.adminId`; `null` for unknown-email login attempts. */
+  adminId: string | null;
+  /** Denormalized `AdminAuditLog.adminEmail`, kept when the admin is gone. */
   adminEmail: string;
   action: string;
   targetType: string | null;

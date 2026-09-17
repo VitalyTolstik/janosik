@@ -193,6 +193,52 @@ export function IdChip({ id, className }: { id: string; className?: string }) {
   );
 }
 
+/**
+ * A foreign key: the id is the value, the human label is secondary (muted,
+ * with the full value in its tooltip). Board/column titles are not unique,
+ * so support work has to go through ids.
+ */
+export function RefId({
+  id,
+  label,
+  testId,
+}: {
+  id: string | null;
+  label?: string | null;
+  testId?: string;
+}) {
+  if (id === null) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return (
+    <span
+      data-testid={testId}
+      className="inline-flex max-w-[16rem] items-center gap-2"
+    >
+      <IdChip id={id} />
+      {label ? (
+        <span className="truncate text-muted-foreground" title={label}>
+          {label}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** A list of related ids (e.g. every comment on a card). No counts. */
+export function IdList({ ids }: { ids: string[] }) {
+  if (ids.length === 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+      {ids.map((id) => (
+        <IdChip key={id} id={id} />
+      ))}
+    </span>
+  );
+}
+
 export function Spinner({ className }: { className?: string }) {
   return (
     <Loader2
@@ -234,10 +280,28 @@ export function EmptyState({ message }: { message?: string }) {
   );
 }
 
-export function Table({ children }: { children: ReactNode }) {
+/**
+ * Table viewport: the panel owns a fixed slice of the viewport height and
+ * scrolls both axes inside it, so the horizontal bar sits in the panel
+ * (right below the visible rows) instead of at the bottom of a very tall
+ * page, and the header stays put while rows scroll under it.
+ */
+export function Table({
+  children,
+  className,
+  maxHeight = "calc(100vh - 14rem)",
+}: {
+  children: ReactNode;
+  className?: string;
+  maxHeight?: string;
+}) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-left text-xs">
+    <div
+      data-testid="admin-table-scroll"
+      className={cn("overflow-auto overscroll-contain", className)}
+      style={{ maxHeight }}
+    >
+      <table className="w-max min-w-full border-collapse text-left text-xs">
         {children}
       </table>
     </div>
@@ -254,7 +318,7 @@ export function Th({
   return (
     <th
       className={cn(
-        "whitespace-nowrap border-b border-border px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground",
+        "sticky top-0 z-10 whitespace-nowrap border-b border-border bg-card px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground",
         className,
       )}
     >

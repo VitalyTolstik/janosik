@@ -201,15 +201,6 @@ export class AdminService {
           displayName: true,
           createdAt: true,
           disabledAt: true,
-          _count: {
-            select: {
-              memberships: true,
-              apiTokens: { where: { revokedAt: null } },
-              refreshTokens: {
-                where: { revokedAt: null, expiresAt: { gt: new Date() } },
-              },
-            },
-          },
         },
       }),
       this.prisma.user.count({ where }),
@@ -222,9 +213,6 @@ export class AdminService {
         displayName: user.displayName,
         createdAt: user.createdAt.getTime(),
         disabledAt: user.disabledAt?.getTime() ?? null,
-        boards: user._count.memberships,
-        sessions: user._count.refreshTokens,
-        apiTokens: user._count.apiTokens,
       })),
       total,
       limit,
@@ -270,9 +258,6 @@ export class AdminService {
         displayName: user.displayName,
         createdAt: user.createdAt.getTime(),
         disabledAt: null,
-        boards: 0,
-        sessions: 0,
-        apiTokens: 0,
       },
       temporaryPassword: generated ? password : null,
     };
@@ -288,15 +273,6 @@ export class AdminService {
         displayName: true,
         createdAt: true,
         disabledAt: true,
-        _count: {
-          select: {
-            memberships: true,
-            apiTokens: { where: { revokedAt: null } },
-            refreshTokens: {
-              where: { revokedAt: null, expiresAt: { gt: new Date() } },
-            },
-          },
-        },
       },
     });
     if (!user) {
@@ -308,9 +284,6 @@ export class AdminService {
       displayName: user.displayName,
       createdAt: user.createdAt.getTime(),
       disabledAt: user.disabledAt?.getTime() ?? null,
-      boards: user._count.memberships,
-      sessions: user._count.refreshTokens,
-      apiTokens: user._count.apiTokens,
     };
   }
 
@@ -418,13 +391,7 @@ export class AdminService {
         lockedUntil: true,
         lastLoginAt: true,
         createdAt: true,
-        _count: {
-          select: {
-            refreshTokens: {
-              where: { revokedAt: null, expiresAt: { gt: new Date() } },
-            },
-          },
-        },
+        failedLogins: true,
       },
     });
     return {
@@ -469,7 +436,7 @@ export class AdminService {
       via: "panel",
     });
     return {
-      admin: this.toMasterRow({ ...created, _count: { refreshTokens: 0 } }),
+      admin: this.toMasterRow(created),
       temporaryPassword: password,
     };
   }
@@ -521,15 +488,8 @@ export class AdminService {
         ? await this.prisma.adminUser.update({
             where: { id: masterId },
             data,
-            include: {
-              _count: {
-                select: {
-                  refreshTokens: { where: { revokedAt: null } },
-                },
-              },
-            },
           })
-        : { ...target, _count: { refreshTokens: 0 } };
+        : target;
 
     if (dto.disabled === true) {
       await this.audit(admin, "admin.disable", "admin", masterId, {
@@ -565,9 +525,6 @@ export class AdminService {
       this.prisma.adminUser.update({
         where: { id: masterId },
         data: { passwordHash, failedLogins: 0, lockedUntil: null },
-        include: {
-          _count: { select: { refreshTokens: { where: { revokedAt: null } } } },
-        },
       }),
       // A re-keyed password invalidates every existing session.
       this.prisma.adminRefreshToken.updateMany({
@@ -618,7 +575,7 @@ export class AdminService {
     lockedUntil: Date | null;
     lastLoginAt: Date | null;
     createdAt: Date;
-    _count: { refreshTokens: number };
+    failedLogins: number;
   }): AdminMasterRowDto {
     return {
       id: entry.id,
@@ -635,7 +592,7 @@ export class AdminService {
           : null,
       lastLoginAt: entry.lastLoginAt?.getTime() ?? null,
       createdAt: entry.createdAt.getTime(),
-      sessions: entry._count.refreshTokens,
+      failedLogins: entry.failedLogins,
     };
   }
 
@@ -649,6 +606,18 @@ export class AdminService {
       where.OR = [
         { id: { contains: query.search } },
         { title: { contains: query.search, mode: "insensitive" } },
+        // Join keys: a board is found by its owner/member id, not by a
+        // title (titles are not unique).
+        { members: { some: { userId: { contains: query.search } } } },
+        {
+          members: {
+            some: {
+              user: {
+                email: { contains: query.search, mode: "insensitive" },
+              },
+            },
+          },
+        },
       ];
     }
     if (query.status === "active") {
@@ -679,54 +648,19 @@ export class AdminService {
             where: { role: Role.ADMIN },
             orderBy: { createdAt: "asc" },
             take: 1,
-            select: { user: { select: { email: true } } },
-          },
-          _count: {
-            select: {
-              members: true,
-              columns: { where: { deletedAt: null } },
-            },
+            select: { userId: true, user: { select: { email: true } } },
           },
         },
       }),
       this.prisma.board.count({ where }),
     ]);
 
-    const cardsByBoard = await this.prisma.card.groupBy({
-      by: ["columnId"],
-      where: {
-        deletedAt: null,
-        column: { boardId: { in: items.map((board) => board.id) } },
-      },
-      _count: { _all: true },
-    });
-    // A card count is grouped by column, so resolve the board per column.
-    const columns = await this.prisma.column.findMany({
-      where: { boardId: { in: items.map((board) => board.id) } },
-      select: { id: true, boardId: true },
-    });
-    const boardByColumn = new Map(
-      columns.map((column) => [column.id, column.boardId]),
-    );
-    const cardCounts = new Map<string, number>();
-    for (const group of cardsByBoard) {
-      const boardId = boardByColumn.get(group.columnId);
-      if (boardId) {
-        cardCounts.set(
-          boardId,
-          (cardCounts.get(boardId) ?? 0) + group._count._all,
-        );
-      }
-    }
-
     return {
       items: items.map((board) => ({
         id: board.id,
         title: board.title,
+        userId: board.members[0]?.userId ?? null,
         ownerEmail: board.members[0]?.user.email ?? null,
-        members: board._count.members,
-        columns: board._count.columns,
-        cards: cardCounts.get(board.id) ?? 0,
         createdAt: board.createdAt.getTime(),
         updatedAt: board.updatedAt.getTime(),
         archivedAt: board.archivedAt?.getTime() ?? null,
@@ -869,26 +803,18 @@ export class AdminService {
           where: { role: Role.ADMIN },
           orderBy: { createdAt: "asc" },
           take: 1,
-          select: { user: { select: { email: true } } },
-        },
-        _count: {
-          select: { members: true, columns: { where: { deletedAt: null } } },
+          select: { userId: true, user: { select: { email: true } } },
         },
       },
     });
     if (!board) {
       throw new NotFoundException("Board not found");
     }
-    const cards = await this.prisma.card.count({
-      where: { deletedAt: null, column: { boardId } },
-    });
     return {
       id: board.id,
       title: board.title,
+      userId: board.members[0]?.userId ?? null,
       ownerEmail: board.members[0]?.user.email ?? null,
-      members: board._count.members,
-      columns: board._count.columns,
-      cards,
       createdAt: board.createdAt.getTime(),
       updatedAt: board.updatedAt.getTime(),
       archivedAt: board.archivedAt?.getTime() ?? null,
@@ -907,6 +833,9 @@ export class AdminService {
       where.OR = [
         { id: { contains: query.search } },
         { title: { contains: query.search, mode: "insensitive" } },
+        // Join keys: boardId / columnId locate a card when titles collide.
+        { columnId: { contains: query.search } },
+        { column: { boardId: { contains: query.search } } },
         {
           column: {
             board: { title: { contains: query.search, mode: "insensitive" } },
@@ -938,6 +867,7 @@ export class AdminService {
           updatedAt: true,
           archivedAt: true,
           deletedAt: true,
+          columnId: true,
           column: {
             select: {
               title: true,
@@ -945,7 +875,11 @@ export class AdminService {
               board: { select: { title: true } },
             },
           },
-          _count: { select: { comments: { where: { deletedAt: null } } } },
+          comments: {
+            where: { deletedAt: null },
+            orderBy: { createdAt: "asc" },
+            select: { id: true },
+          },
         },
       }),
       this.prisma.card.count({ where }),
@@ -957,12 +891,13 @@ export class AdminService {
         title: card.title,
         boardId: card.column.boardId,
         boardTitle: card.column.board.title,
+        columnId: card.columnId,
         columnTitle: card.column.title,
+        commentIds: card.comments.map((comment) => comment.id),
         createdAt: card.createdAt.getTime(),
         updatedAt: card.updatedAt.getTime(),
         archivedAt: card.archivedAt?.getTime() ?? null,
         deletedAt: card.deletedAt?.getTime() ?? null,
-        comments: card._count.comments,
       })),
       total,
       limit,
@@ -1042,6 +977,7 @@ export class AdminService {
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },
+        { userId: { contains: query.search } },
         { user: { email: { contains: query.search, mode: "insensitive" } } },
       ];
     }
@@ -1054,6 +990,7 @@ export class AdminService {
         take: limit,
         select: {
           id: true,
+          userId: true,
           createdAt: true,
           expiresAt: true,
           user: { select: { email: true } },
@@ -1065,6 +1002,7 @@ export class AdminService {
     return {
       items: items.map((session) => ({
         id: session.id,
+        userId: session.userId,
         userEmail: session.user.email,
         createdAt: session.createdAt.getTime(),
         expiresAt: session.expiresAt.getTime(),
@@ -1109,6 +1047,7 @@ export class AdminService {
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },
+        { userId: { contains: query.search } },
         { name: { contains: query.search, mode: "insensitive" } },
         {
           user: { email: { contains: query.search, mode: "insensitive" } },
@@ -1127,6 +1066,7 @@ export class AdminService {
         take: limit,
         select: {
           id: true,
+          userId: true,
           name: true,
           createdAt: true,
           lastUsedAt: true,
@@ -1141,6 +1081,7 @@ export class AdminService {
     return {
       items: items.map((token) => ({
         id: token.id,
+        userId: token.userId,
         userEmail: token.user.email,
         name: token.name,
         createdAt: token.createdAt.getTime(),
@@ -1189,7 +1130,11 @@ export class AdminService {
       where.OR = [
         { id: { contains: query.search } },
         { cardId: { contains: query.search } },
+        { authorId: { contains: query.search } },
         { text: { contains: query.search, mode: "insensitive" } },
+        // Join keys: find a comment by its board/column too.
+        { card: { columnId: { contains: query.search } } },
+        { card: { column: { boardId: { contains: query.search } } } },
         {
           card: { title: { contains: query.search, mode: "insensitive" } },
         },
@@ -1215,15 +1160,12 @@ export class AdminService {
         select: {
           id: true,
           cardId: true,
+          authorId: true,
           text: true,
           createdAt: true,
+          updatedAt: true,
           deletedAt: true,
-          card: {
-            select: {
-              title: true,
-              column: { select: { board: { select: { title: true } } } },
-            },
-          },
+          card: { select: { title: true } },
           author: { select: { email: true } },
         },
       }),
@@ -1235,10 +1177,11 @@ export class AdminService {
         id: comment.id,
         cardId: comment.cardId,
         cardTitle: comment.card.title,
-        boardTitle: comment.card.column.board.title,
+        authorId: comment.authorId,
         authorEmail: comment.author.email,
         text: comment.text,
         createdAt: comment.createdAt.getTime(),
+        updatedAt: comment.updatedAt.getTime(),
         deletedAt: comment.deletedAt?.getTime() ?? null,
       })),
       total,
@@ -1301,6 +1244,7 @@ export class AdminService {
           type: true,
           seq: true,
           createdAt: true,
+          actorId: true,
           board: { select: { title: true } },
           actor: { select: { email: true } },
         },
@@ -1313,6 +1257,7 @@ export class AdminService {
         id: command.id,
         boardId: command.boardId,
         boardTitle: command.board.title,
+        actorId: command.actorId,
         actorEmail: command.actor.email,
         type: command.type,
         seq: Number(command.seq),
@@ -1331,6 +1276,7 @@ export class AdminService {
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },
+        { adminId: { contains: query.search } },
         { action: { contains: query.search, mode: "insensitive" } },
         { adminEmail: { contains: query.search, mode: "insensitive" } },
         { targetId: { contains: query.search, mode: "insensitive" } },
@@ -1350,6 +1296,7 @@ export class AdminService {
     return {
       items: items.map((entry) => ({
         id: entry.id,
+        adminId: entry.adminId,
         adminEmail: entry.adminEmail,
         action: entry.action,
         targetType: entry.targetType,

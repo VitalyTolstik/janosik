@@ -398,12 +398,14 @@ export function MastersPage() {
           <Table>
             <thead>
               <tr>
-                <Th>{t("admin.common.id")}</Th>
-                <Th>{t("admin.masters.col.email")}</Th>
-                <Th>{t("admin.masters.col.name")}</Th>
-                <Th>{t("admin.masters.col.sessions")}</Th>
-                <Th>{t("admin.masters.col.lastLogin")}</Th>
-                <Th>{t("admin.masters.col.status")}</Th>
+                <Th>AdminUser.id</Th>
+                <Th>AdminUser.email</Th>
+                <Th>AdminUser.role</Th>
+                <Th>AdminUser.displayName</Th>
+                <Th className="text-right">AdminUser.failedLogins</Th>
+                <Th>AdminUser.lastLoginAt</Th>
+                <Th>AdminUser.lockedUntil</Th>
+                <Th>AdminUser.disabledAt</Th>
                 <Th className="w-10" />
               </tr>
             </thead>
@@ -416,32 +418,37 @@ export function MastersPage() {
                   <Td>
                     <IdChip id={master.id} />
                   </Td>
+                  <Td className="font-medium">{master.email}</Td>
                   <Td>
-                    <span className="inline-flex items-center gap-1.5 font-medium">
-                      {master.email}
-                      {master.role === "OWNER" ? (
-                        <span
-                          title={t("admin.masters.ownerBadge")}
-                          className="inline-flex items-center gap-0.5 rounded border border-primary/30 bg-primary/10 px-1 py-0.5 text-[10px] text-primary"
-                        >
-                          <Crown className="h-2.5 w-2.5" aria-hidden />
-                          {t("admin.masters.ownerBadge")}
-                        </span>
-                      ) : (
-                        <span className="rounded border border-border bg-hover/60 px-1 py-0.5 text-[10px] text-muted-foreground">
-                          {t("admin.masters.operatorBadge")}
-                        </span>
-                      )}
-                    </span>
+                    {master.role === "OWNER" ? (
+                      <span
+                        title={t("admin.masters.ownerBadge")}
+                        className="inline-flex items-center gap-0.5 rounded border border-primary/30 bg-primary/10 px-1 py-0.5 text-[10px] text-primary"
+                      >
+                        <Crown className="h-2.5 w-2.5" aria-hidden />
+                        {t("admin.masters.ownerBadge")}
+                      </span>
+                    ) : (
+                      <span className="rounded border border-border bg-hover/60 px-1 py-0.5 text-[10px] text-muted-foreground">
+                        {t("admin.masters.operatorBadge")}
+                      </span>
+                    )}
                   </Td>
                   <Td className="text-muted-foreground">
                     {master.displayName ?? "—"}
                   </Td>
-                  <Td className="tabular-nums">{master.sessions}</Td>
+                  <Td className="text-right tabular-nums">
+                    {master.failedLogins}
+                  </Td>
                   <Td className="text-muted-foreground">
                     {master.lastLoginAt === null
                       ? t("admin.common.never")
                       : formatDate(master.lastLoginAt, lang, hour12)}
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {master.lockedUntil === null
+                      ? "—"
+                      : formatDate(master.lockedUntil, lang, hour12)}
                   </Td>
                   <Td>{statusBadge(master)}</Td>
                   <Td>

@@ -13,6 +13,7 @@ import {
   PageHeader,
   Pagination,
   Panel,
+  RefId,
   SearchInput,
   Table,
   Td,
@@ -54,12 +55,12 @@ export function LogPage() {
           <Table>
             <thead>
               <tr>
-                <Th>{t("admin.common.id")}</Th>
-                <Th>{t("admin.log.col.time")}</Th>
-                <Th>{t("admin.log.col.board")}</Th>
-                <Th>{t("admin.log.col.actor")}</Th>
-                <Th>{t("admin.log.col.type")}</Th>
-                <Th className="text-right">{t("admin.log.col.seq")}</Th>
+                <Th>Command.id</Th>
+                <Th>Command.createdAt</Th>
+                <Th>Command.boardId</Th>
+                <Th>Command.actorId</Th>
+                <Th>Command.type</Th>
+                <Th className="text-right">Command.seq</Th>
               </tr>
             </thead>
             <tbody>
@@ -74,9 +75,19 @@ export function LogPage() {
                   <Td className="tabular-nums text-muted-foreground">
                     {formatDate(command.createdAt, lang, hour12)}
                   </Td>
-                  <Td className="font-medium">{command.boardTitle}</Td>
-                  <Td className="text-muted-foreground">
-                    {command.actorEmail}
+                  <Td>
+                    <RefId
+                      id={command.boardId}
+                      label={command.boardTitle}
+                      testId={`admin-command-board-${command.id}`}
+                    />
+                  </Td>
+                  <Td>
+                    <RefId
+                      id={command.actorId}
+                      label={command.actorEmail}
+                      testId={`admin-command-actor-${command.id}`}
+                    />
                   </Td>
                   <Td>
                     <Badge variant="primary">{command.type}</Badge>
@@ -138,12 +149,12 @@ export function AuditPage() {
           <Table>
             <thead>
               <tr>
-                <Th>{t("admin.common.id")}</Th>
-                <Th>{t("admin.audit.col.time")}</Th>
-                <Th>{t("admin.audit.col.admin")}</Th>
-                <Th>{t("admin.audit.col.action")}</Th>
-                <Th>{t("admin.audit.col.target")}</Th>
-                <Th>{t("admin.audit.col.details")}</Th>
+                <Th>AdminAuditLog.id</Th>
+                <Th>AdminAuditLog.createdAt</Th>
+                <Th>AdminAuditLog.adminId</Th>
+                <Th>AdminAuditLog.action</Th>
+                <Th>AdminAuditLog.targetType / targetId</Th>
+                <Th>AdminAuditLog.details</Th>
               </tr>
             </thead>
             <tbody>
@@ -158,7 +169,13 @@ export function AuditPage() {
                   <Td className="tabular-nums text-muted-foreground">
                     {formatDate(entry.createdAt, lang, hour12)}
                   </Td>
-                  <Td>{entry.adminEmail}</Td>
+                  <Td>
+                    <RefId
+                      id={entry.adminId}
+                      label={entry.adminEmail}
+                      testId={`admin-audit-admin-${entry.id}`}
+                    />
+                  </Td>
                   <Td>
                     <Badge
                       variant={
@@ -176,10 +193,10 @@ export function AuditPage() {
                   </Td>
                   <Td className="text-muted-foreground">
                     {entry.targetType ? (
-                      <span className="inline-flex items-center gap-1">
+                      <span className="inline-flex items-center gap-2">
                         <History className="h-3 w-3" aria-hidden />
                         {entry.targetType}
-                        {entry.targetId ? `:${entry.targetId.slice(0, 8)}` : ""}
+                        {entry.targetId ? <IdChip id={entry.targetId} /> : null}
                       </span>
                     ) : (
                       "—"

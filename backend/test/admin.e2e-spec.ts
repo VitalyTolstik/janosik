@@ -215,11 +215,13 @@ describe("Admin API (e2e)", () => {
       .expect(200);
     expect(all.body.total).toBe(1);
     expect(all.body.items[0]).toMatchObject({
+      id: userId,
       email: USER_EMAIL,
       disabledAt: null,
-      boards: 0,
-      sessions: 1,
     });
+    // Schema-first rows carry no aggregate counters.
+    expect(all.body.items[0].boards).toBeUndefined();
+    expect(all.body.items[0].sessions).toBeUndefined();
     expect(all.body.items[0].passwordHash).toBeUndefined();
     expect(JSON.stringify(all.body)).not.toContain("$argon2");
 
@@ -284,7 +286,12 @@ describe("Admin API (e2e)", () => {
       .send({ disabled: true })
       .expect(200);
     expect(disabled.body.disabledAt).toBeGreaterThan(0);
-    expect(disabled.body.sessions).toBe(0);
+    // Blocking kills the live sessions: the security page shows none left.
+    const live = await server()
+      .get(`/api/v1/admin/sessions?search=${userId}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    expect(live.body.total).toBe(0);
 
     await server()
       .post("/api/v1/auth/login")
@@ -336,8 +343,8 @@ describe("Admin API (e2e)", () => {
       .expect(201);
     expect(created.body).toMatchObject({
       title: "Master board",
+      userId,
       ownerEmail: USER_EMAIL,
-      members: 1,
       archivedAt: null,
     });
     const boardId = created.body.id;
@@ -432,6 +439,7 @@ describe("Admin API (e2e)", () => {
   });
 
   describe("content and security pages", () => {
+    let boardId: string;
     let cardId: string;
     let sessionId: string;
     let tokenId: string;
@@ -441,6 +449,7 @@ describe("Admin API (e2e)", () => {
       const board = await prisma.board.create({
         data: { title: "Moderation board" },
       });
+      boardId = board.id;
       await prisma.boardMember.create({
         data: { boardId: board.id, userId, role: "ADMIN" },
       });
@@ -479,6 +488,72 @@ describe("Admin API (e2e)", () => {
       tokenId = token.id;
     });
 
+    it("finds rows by their foreign keys, not by titles", async () => {
+      // Board titles are not unique; every listing must be reachable by
+      // the ids that actually link the rows.
+      const boards = await server()
+        .get(`/api/v1/admin/boards?search=${userId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      const board = boards.body.items.find(
+        (item: { id: string }) => item.id === boardId,
+      );
+      expect(board).toBeDefined();
+      expect(board.userId).toBe(userId);
+
+      for (const key of [boardId, "mod-column"]) {
+        const cards = await server()
+          .get(`/api/v1/admin/cards?search=${key}`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .expect(200);
+        const card = cards.body.items.find(
+          (item: { id: string }) => item.id === cardId,
+        );
+        expect(card).toBeDefined();
+        expect(card.boardId).toBe(boardId);
+        expect(card.columnId).toBe("mod-column");
+      }
+
+      const comments = await server()
+        .get(`/api/v1/admin/comments?search=${userId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(
+        comments.body.items.some(
+          (item: { id: string }) => item.id === commentId,
+        ),
+      ).toBe(true);
+
+      const sessions = await server()
+        .get(`/api/v1/admin/sessions?search=${userId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(
+        sessions.body.items.some(
+          (item: { id: string; userId: string }) =>
+            item.id === sessionId && item.userId === userId,
+        ),
+      ).toBe(true);
+
+      const tokens = await server()
+        .get(`/api/v1/admin/tokens?search=${userId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(
+        tokens.body.items.some(
+          (item: { id: string; userId: string }) =>
+            item.id === tokenId && item.userId === userId,
+        ),
+      ).toBe(true);
+
+      const audit = await server()
+        .get(`/api/v1/admin/audit?search=${adminId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(audit.body.total).toBeGreaterThan(0);
+      expect(audit.body.items[0].adminId).toBe(adminId);
+    });
+
     it("lists cards with board context and moderates them", async () => {
       const found = await server()
         .get("/api/v1/admin/cards?search=Moderate")
@@ -487,11 +562,13 @@ describe("Admin API (e2e)", () => {
       expect(found.body.total).toBe(1);
       expect(found.body.items[0]).toMatchObject({
         title: "Moderate me",
+        boardId,
         boardTitle: "Moderation board",
+        columnId: "mod-column",
         columnTitle: "Backlog",
+        commentIds: [commentId],
         archivedAt: null,
         deletedAt: null,
-        comments: 1,
       });
 
       await server()
@@ -535,6 +612,7 @@ describe("Admin API (e2e)", () => {
         (item: { id: string }) => item.id === sessionId,
       );
       expect(row).toBeDefined();
+      expect(row.userId).toBe(userId);
       expect(row.userEmail).toBe(USER_EMAIL);
 
       const revoked = await server()
@@ -556,6 +634,7 @@ describe("Admin API (e2e)", () => {
         .set("Authorization", `Bearer ${adminToken}`)
         .expect(200);
       expect(found.body.total).toBe(1);
+      expect(found.body.items[0].userId).toBe(userId);
       expect(found.body.items[0].userEmail).toBe(USER_EMAIL);
       expect(JSON.stringify(found.body)).not.toContain("mod-token-hash");
 
@@ -573,8 +652,9 @@ describe("Admin API (e2e)", () => {
         .expect(200);
       expect(found.body.total).toBe(1);
       expect(found.body.items[0]).toMatchObject({
+        cardId,
         cardTitle: "Moderate me",
-        boardTitle: "Moderation board",
+        authorId: userId,
         authorEmail: USER_EMAIL,
         deletedAt: null,
       });
@@ -673,6 +753,10 @@ describe("Admin API (e2e)", () => {
         (item: { email: string }) => item.email === ADMIN_EMAIL,
       );
       expect(owner.role).toBe("OWNER");
+      // Schema-literal master rows: lockout counter instead of a count of
+      // live sessions (gone — sessions have their own page).
+      expect(owner.failedLogins).toBeGreaterThanOrEqual(0);
+      expect(owner.sessions).toBeUndefined();
       expect(JSON.stringify(res.body)).not.toContain("$argon2");
     });
 

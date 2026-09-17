@@ -8,7 +8,6 @@ import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminList } from "./use-admin-list";
 import {
-  Badge,
   ConfirmDialog,
   EmptyState,
   ErrorState,
@@ -17,6 +16,7 @@ import {
   PageHeader,
   Pagination,
   Panel,
+  RefId,
   SearchInput,
   Table,
   Td,
@@ -75,10 +75,10 @@ export function SessionsPage() {
           <Table>
             <thead>
               <tr>
-                <Th>{t("admin.common.id")}</Th>
-                <Th>{t("admin.sessions.col.user")}</Th>
-                <Th>{t("admin.sessions.col.created")}</Th>
-                <Th>{t("admin.sessions.col.expires")}</Th>
+                <Th>RefreshToken.id</Th>
+                <Th>RefreshToken.userId</Th>
+                <Th>RefreshToken.createdAt</Th>
+                <Th>RefreshToken.expiresAt</Th>
                 <Th className="w-40" />
               </tr>
             </thead>
@@ -91,7 +91,13 @@ export function SessionsPage() {
                   <Td>
                     <IdChip id={session.id} />
                   </Td>
-                  <Td className="font-medium">{session.userEmail}</Td>
+                  <Td>
+                    <RefId
+                      id={session.userId}
+                      label={session.userEmail}
+                      testId={`admin-session-user-${session.id}`}
+                    />
+                  </Td>
                   <Td className="text-muted-foreground">
                     {formatDate(session.createdAt, lang, hour12)}
                   </Td>
@@ -186,13 +192,13 @@ export function TokensPage() {
           <Table>
             <thead>
               <tr>
-                <Th>{t("admin.common.id")}</Th>
-                <Th>{t("admin.tokens.col.user")}</Th>
-                <Th>{t("admin.tokens.col.name")}</Th>
-                <Th>{t("admin.tokens.col.created")}</Th>
-                <Th>{t("admin.tokens.col.lastUsed")}</Th>
-                <Th>{t("admin.tokens.col.expires")}</Th>
-                <Th>{t("admin.tokens.col.status")}</Th>
+                <Th>ApiToken.id</Th>
+                <Th>ApiToken.userId</Th>
+                <Th>ApiToken.name</Th>
+                <Th>ApiToken.createdAt</Th>
+                <Th>ApiToken.lastUsedAt</Th>
+                <Th>ApiToken.expiresAt</Th>
+                <Th>ApiToken.revokedAt</Th>
                 <Th className="w-24" />
               </tr>
             </thead>
@@ -205,7 +211,13 @@ export function TokensPage() {
                   <Td>
                     <IdChip id={token.id} />
                   </Td>
-                  <Td className="font-medium">{token.userEmail}</Td>
+                  <Td>
+                    <RefId
+                      id={token.userId}
+                      label={token.userEmail}
+                      testId={`admin-token-user-${token.id}`}
+                    />
+                  </Td>
                   <Td>
                     <span className="inline-flex items-center gap-1.5 text-muted-foreground">
                       <KeyRound className="h-3 w-3" aria-hidden />
@@ -225,16 +237,10 @@ export function TokensPage() {
                       ? "—"
                       : formatDate(token.expiresAt, lang, hour12)}
                   </Td>
-                  <Td>
-                    {token.revokedAt === null ? (
-                      <Badge variant="success">
-                        {t("admin.tokens.status.active")}
-                      </Badge>
-                    ) : (
-                      <Badge variant="danger">
-                        {t("admin.tokens.status.revoked")}
-                      </Badge>
-                    )}
+                  <Td className="text-muted-foreground">
+                    {token.revokedAt === null
+                      ? "—"
+                      : formatDate(token.revokedAt, lang, hour12)}
                   </Td>
                   <Td className="text-right">
                     {token.revokedAt === null ? (
