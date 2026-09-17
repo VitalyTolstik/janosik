@@ -209,6 +209,45 @@ async function listAdmins() {
   }
 }
 
+function printUsage() {
+  console.log(`Master-account CLI — the only way to create admin accounts.
+
+Usage:
+  npm run admin:create -w backend -- --email <email> [--display-name <name>] [--owner]
+  npm run admin:passwd -w backend -- --email <email>
+  npm run admin:list   -w backend
+
+Commands:
+  create   Create a master account. The email is required and normalized to
+           lowercase. The FIRST master in an empty database becomes OWNER
+           automatically; every later one is OPERATOR unless --owner is
+           passed. --display-name is optional (shown in the panel).
+  passwd   Set a new password for an existing master: re-keys the account,
+           revokes all of its refresh sessions and clears any lockout.
+  list     Print every master (email, role, display name, last login,
+           disabled/locked flags). No secrets are shown.
+
+Password (create/passwd):
+  - 8-100 characters. Never passed in argv — it would leak into \`ps\`
+    output and shell history.
+  - Interactive: a hidden "Password:" prompt, then a confirmation prompt
+    (they must match). Needs a TTY; without one the CLI refuses.
+  - Non-interactive/CI: set the ADMIN_PASSWORD environment variable.
+    Prefer \`read -s ADMIN_PASSWORD && export ADMIN_PASSWORD\` so the value
+    never reaches the shell history, then \`unset ADMIN_PASSWORD\`.
+
+Examples:
+  npm run admin:create -w backend -- --email me@example.com
+  npm run admin:create -w backend -- --email me@example.com --display-name "Ops" --owner
+  ADMIN_PASSWORD='...' npm run admin:create -w backend -- --email ci@example.com
+  npm run admin:passwd -w backend -- --email me@example.com
+  npm run admin:list -w backend
+
+Requirements: run from the repository root with backend dependencies
+installed and backend/.env present (DATABASE_URL must point at the
+database that the API uses).`);
+}
+
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
   const args = parseArgs(rest);
@@ -216,10 +255,17 @@ async function main() {
     if (command === "create") await createAdmin(args);
     else if (command === "passwd") await changePassword(args);
     else if (command === "list") await listAdmins();
-    else {
-      console.log(
-        "Usage: admin-cli.cjs <create|passwd|list> [--email x] [--display-name y] [--owner]",
-      );
+    else if (
+      command === undefined ||
+      command === "help" ||
+      command === "--help" ||
+      command === "-h"
+    ) {
+      printUsage();
+      if (command === undefined) process.exitCode = 1;
+    } else {
+      console.error(`Unknown command: ${command}\n`);
+      printUsage();
       process.exitCode = 1;
     }
   } catch (error) {

@@ -150,17 +150,48 @@ Register an account in the UI — the boards now live in PostgreSQL and sync thr
 
 Regular accounts are **not** admins — the panel at **`/admin`** belongs to the platform operator (the "master"), and there is deliberately no HTTP endpoint that can create a master: registration always creates a regular user, and no request can grant master rights. Masters live in their own table with their own login, cookie and JWT audience, so a user session can never open `/admin` (and a master token never works on user routes).
 
-Create the first master on the server (the machine that runs the backend):
+### Creating a master account (`admin:create`)
+
+The CLI is the only door: registration always creates regular users, and no API call can grant master rights. Run the commands from the repository root, with backend dependencies installed and `backend/.env` present (its `DATABASE_URL` must point at the same database the API uses).
 
 ```bash
-# from the repository root, with backend deps installed and backend/.env
-# present (DATABASE_URL pointing at your database)
+# 1. Interactive (recommended) — the password is typed at a hidden prompt
+#    twice (it must match), nothing lands in the shell history.
 npm run admin:create -w backend -- --email me@example.com
-# Password: ********        (hidden prompt; or set ADMIN_PASSWORD=... for automation)
+# Password: ********
+# Repeat password: ********
+# Master account created: me@example.com (owner)   ← first master ⇒ OWNER
+
+# 2. Non-interactive (CI/automation) — password via environment, never argv.
+#    `read -s` keeps it out of the shell history too.
+read -s ADMIN_PASSWORD && export ADMIN_PASSWORD
+npm run admin:create -w backend -- --email ci@example.com
+unset ADMIN_PASSWORD
+
+# 3. Explicit role and display name: --owner makes this master an OWNER
+#    (without it a second master is created as OPERATOR).
+npm run admin:create -w backend -- --email ops@example.com \
+  --display-name "Ops" --owner
+
+# 4. Re-key an existing master: sets a new password, revokes every session
+#    of that master and clears any lockout. Same password rules.
+npm run admin:passwd -w backend -- --email me@example.com
+
+# 5. Who exists: email, role, display name, last login, disabled/locked
+#    flags. No secrets are ever printed.
+npm run admin:list -w backend
+# me@example.com  owner  -  never logged in
+
+# Full reference, straight from the CLI:
+npm run admin:create -w backend -- --help
 ```
 
-- The **first** master is an **OWNER** automatically; others are operators unless `--owner` is passed. Owners can add/block/reset masters right in the panel (**Masters** page); operators have full data access but cannot manage masters, so a stolen operator session cannot escalate.
-- Other CLI helpers: `npm run admin:passwd -w backend -- --email me@example.com` (re-keys and revokes that master's sessions) and `npm run admin:list -w backend`.
+Rules worth knowing:
+
+- **Password**: 8–100 characters. There is deliberately **no `--password` flag** — a password in `argv` leaks into `ps` output and shell history. Without a TTY and without `ADMIN_PASSWORD` the CLI refuses to run.
+- **Role**: the **first** master in an empty database becomes `OWNER` automatically; every later CLI master is `OPERATOR` unless `--owner` is passed. Owners can add/block/reset masters right in the panel (**Masters** page); operators have full data access but cannot manage masters, so a stolen operator session cannot escalate.
+- **Email** is required and normalized to lowercase; creating a duplicate fails with a hint to use `admin:passwd`.
+- **Audit**: every create/re-key writes an `AdminAuditLog` row (`via: "cli"`), visible on the panel's **Audit** page.
 - Sign in at `http://localhost:5173/admin` (dev) or `https://your-host/admin` (self-hosted). Sign-out sits in the top-right corner.
 - What you get there: metrics with 14-day sparklines plus a runtime card (version, uptime, DB latency), all users (search, filter, create with a one-time password, block → sessions die instantly, revoke API tokens), all boards (create for an owner, archive/restore, soft-delete), all cards and comments (search + moderation), active sessions and personal API tokens with per-row revoke, the cross-board command log, and the audit trail of every master action. Tables follow the database schema (see Highlights) and search matches foreign-key IDs. The board content editor (`/admin/boards/:id/content`) creates and renames columns and cards **through the command log on behalf of the board owner**, so the board UI stays consistent.
 - Hardening that ships with it: argon2id hashes, 5-failed-login lockout (15 min) plus rate limiting, per-entity refresh rotation with reuse detection, response shapes that never include password/token hashes, and an audit row for every login attempt and mutation.
