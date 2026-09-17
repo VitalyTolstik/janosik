@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BoardSseEvent, CommandSseEvent } from "@janosik/shared";
 import { ApiError } from "@/api/client";
-import { BoardRealtime, parseBlock, parseEventStream } from "@/store/realtime";
+import {
+  BoardRealtime,
+  parseBlock,
+  parseEventStream,
+  touchedEntityIds,
+} from "@/store/realtime";
 
 /**
  * The realtime transport (TASK-30): SSE parsing, the resume-from-seq
@@ -14,6 +19,7 @@ const COMMAND: CommandSseEvent = {
   seq: 1,
   action: { type: "RENAME_BOARD", title: "New", at: 1 },
   actorId: "user-1",
+  touches: [],
 };
 
 function frame(event: CommandSseEvent): string {
@@ -69,6 +75,25 @@ describe("parseEventStream", () => {
     expect(parseBlock(`data: ${JSON.stringify(COMMAND)}`)).toEqual(COMMAND);
     expect(parseBlock("data: ping")).toBeNull();
     expect(parseBlock("event: message")).toBeNull();
+  });
+});
+
+describe("touchedEntityIds", () => {
+  it("strips known touch prefixes down to plain ids", () => {
+    expect(
+      touchedEntityIds([
+        "board:b-1",
+        "card:c-1",
+        "column:col-1",
+        "label:l-1",
+        "checklist:ck-1",
+        "checklistItem:ck-1-item-2",
+      ]),
+    ).toEqual(["b-1", "c-1", "col-1", "l-1", "ck-1", "ck-1-item-2"]);
+  });
+
+  it("skips unknown prefixes and unlabelled entries", () => {
+    expect(touchedEntityIds(["future:thing", "nonsense", ""])).toEqual([]);
   });
 });
 

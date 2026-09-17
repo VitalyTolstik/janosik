@@ -318,7 +318,7 @@
   `measuring`) — новый массив/объект меняет контекст dnd-kit и
   перерисовывает всех подписчиков `useSortable`/`useDroppable` в обход
   `memo` (наступали трижды, каждый раз находилось только замером).
-- **Тесты** — **847 тестов: ui 522 (70 файлов) + shared 325 (7 файлов)** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3; обратимость экшенов — `invert.test.ts`, TASK-21.7d; платформа и BrowserRouter deep-links — TASK-21.8; ленивые иконки шапки — `lazy-animated-icon.test.tsx`, TASK-21.9; конфигурация сенсоров тач-DnD — `DndBoard.sensors.test.tsx`, TASK-21.10; сброс диалогов и двойной тап — `ColumnView.double-tap.test.tsx`, TASK-21.11; строгий валидатор команд (включая метки/чек-листы и board-level) — `shared/src/store/validate.test.ts`, TASK-26/27/29; серверный режим — `api/client.test.ts`, `store/server-sync.test.ts`, `store/board-diff.test.ts`, `store/BoardContext.server.test.tsx` (fake-сервер на общем редьюсере), `components/auth/LoginPage.test.tsx`, TASK-29; мастер-панель — `admin/admin-client.test.ts`, `admin/admin-i18n.test.ts`, `admin/AdminApp.test.tsx` (fake admin-API), TASK-43; участники и read-only — `components/ui/user-avatar.test.tsx`, `components/board/BoardMembersDialog.test.tsx`, `components/board/read-only.test.tsx`, `components/BoardSection.roles.test.tsx` (fake-сервер с ролью VIEWER), TASK-35; realtime — `store/realtime.test.ts` (SSE-парсер, reconnect/backoff) и три live-кейса в `store/BoardContext.server.test.tsx` (чужая команда, догон `?since=`, другой таб), TASK-30). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
+- **Тесты** — **866 тестов: ui 533 (70 файлов) + shared 333 (7 файлов)** (reducer, history, persistence, serialization, backup, backup-timestamp, dnd, filter, storage, migrate, i18n, pwa, editor-import, интеграционные BoardSection + CardDialog + свитчер; изоляция рендеров и троттл бэкапа — TASK-21.4/21.4.1; поведение service worker'а — TASK-21.3; обратимость экшенов — `invert.test.ts`, TASK-21.7d; платформа и BrowserRouter deep-links — TASK-21.8; ленивые иконки шапки — `lazy-animated-icon.test.tsx`, TASK-21.9; конфигурация сенсоров тач-DnD — `DndBoard.sensors.test.tsx`, TASK-21.10; сброс диалогов и двойной тап — `ColumnView.double-tap.test.tsx`, TASK-21.11; строгий валидатор команд (включая метки/чек-листы и board-level) — `shared/src/store/validate.test.ts`, TASK-26/27/29; серверный режим — `api/client.test.ts`, `store/server-sync.test.ts`, `store/board-diff.test.ts`, `store/BoardContext.server.test.tsx` (fake-сервер на общем редьюсере), `components/auth/LoginPage.test.tsx`, TASK-29; мастер-панель — `admin/admin-client.test.ts`, `admin/admin-i18n.test.ts`, `admin/AdminApp.test.tsx` (fake admin-API), TASK-43; участники и read-only — `components/ui/user-avatar.test.tsx`, `components/board/BoardMembersDialog.test.tsx`, `components/board/read-only.test.tsx`, `components/BoardSection.roles.test.tsx` (fake-сервер с ролью VIEWER), TASK-35; realtime — `store/realtime.test.ts` (SSE-парсер, reconnect/backoff, `touchedEntityIds`) и кейсы в `store/BoardContext.server.test.tsx` (чужая команда, догон `?since=`, другой таб, foreign-пометка undo по `touches` без рефетча, own-echo не убивает undo, deferred-очередь при in-flight, успешный undo/redo через лог), TASK-30/30.1/30.2). Цифру сверять командой `npx vitest run`, а не переписывать по памяти.
 
 ### 1.3. Ключи и точки интеграции
 
@@ -411,7 +411,7 @@
 | 33 | TASK-29 `optimistic-adapter` | ✅ реализовано — серверный режим UI: адаптер команд (`POST /boards/:id/commands`, FIFO-очередь на доску, коалесинг quiet-правок), `ifMatchVersions` (undo текста не затирает чужую правку → `409 {conflict:"version"}`), старт-гидратация `GET /boards` + агрегаты, login/register-экран, миграция localStorage через `POST /boards/import` (архивные карточки включительно), refetch на focus с пометкой чужих сущностей dead, откаты с тостами; + board-level команды `RENAME_BOARD`/`ARCHIVE_BOARD`/`UNARCHIVE_BOARD` (archive/unarchive — ADMIN в сервисе) и `role` в `GET /boards` | гейты: ui 451 (397+54, покрытие 95.3/87.8/93.4/97.7), shared 322, backend 21 unit + 72 e2e, build/lint/format, size 204.07/210 KB; live-смоук: Orca-браузер (register → миграция → команда «Done» → reload), API 12/12 |
 | 34 | TASK-43 `master-admin-panel` | ✅ реализовано вне очереди по запросу — мастер-контур (§7.0/§7.4): `AdminUser` (OWNER/OPERATOR, отдельные cookie/JWT-аудиенция/refresh-таблица), `/admin/auth/*` + `/admin/*` (метрики с runtime, юзеры, доски, **карточки, комментарии, сессии, API-токены**, журнал команд, аудит), **редактор контента доски через командный лог от имени владельца**, модерация (блок юзера + ревок сессий/токенов по одной, архив/soft-delete доски и карточки, удаление комментария), управление мастерами только у OWNER, CLI `admin:create/passwd/list`, аудит каждого действия, lockout и anti-timing логина, ID всех сущностей с копированием, поиск по ID, удаление `User.isSuperAdmin`; **таблицы schema-first** (`Board.id`/`BoardMember.userId`/`Card.columnId`/`Comment.authorId`/…, FK-айди как значения, поиск по айди, без счётчиков, скролл-вьюпорт со sticky-шапкой) | гейты: ui 483, shared 325, backend 22 unit + 100 e2e, build/lint/format, size 204.66/210 KB + ленивый admin-чанк 20.7/30 KB; live-смоук: CLI → браузер (вход мастера, создание мастера из панели, блок юзера, Playwright-смоук) |
 | 35 | TASK-35 `board-members-ui` | ✅ реализовано, PR #74 — участники доски из UI (§7.6.1): модалка «Участники (N)» из шапки (`BoardMembersDialog` + `UserAvatar`), инвайт по email, смена роли, `expiresAt` для VIEWER с бейджем «доступ истёк», исключение с инлайн-подтверждением, последний ADMIN защищён (disabled + тултип-причина), ошибки API → тосты; **VIEWER получает read-only UI** (нет drag/композеров/меню/инлайн-редакторов, диалог карточки только для чтения, `roleOf` → `readOnly` через BoardSection); `GET /boards/:id/members` уже отдавал `userId`/`displayName`/`email` — бэкенд не менялся | гейты: ui 512 (485+27, покрытие выше порогов), shared 325, backend 22 unit + 100 e2e не тронуты, build/lint/format; live-смоук |
-| 30 | TASK-30 `realtime-sse` | ✅ реализовано, ветка `feature/TASK-30-realtime-sse`; добор — TASK-30.1 (`touches` в событии + бюджет чанка, §7.5) — SSE `GET /boards/:id/events` (`{type:"command", seq, action, actorId}`) + догон `?since=`; `X-Board-Seq` на агрегате; UI-мост в ленивом чанке (`fetch`-ридер с Authorization вместо EventSource+ticket), чужие экшены через тот же `boardReducer`, дедуп по seq, defer при in-flight командах, focus refetch остался fallback | два браузера видят правки без перезагрузки; обрыв догоняется дельтой (live-смоук 8/8, включая `setOffline`) |
+| 30 | TASK-30 `realtime-sse` | ✅ реализовано, ветка `feature/TASK-30-realtime-sse`; доборы — TASK-30.1 ✅ (`touches` в событии + бюджет ленивого чанка) и TASK-30.2 ✅ (audit hardening) — §7.5 — SSE `GET /boards/:id/events` (`{type:"command", seq, action, actorId}`) + догон `?since=`; `X-Board-Seq` на агрегате; UI-мост в ленивом чанке (`fetch`-ридер с Authorization вместо EventSource+ticket), чужие экшены через тот же `boardReducer`, дедуп по seq, defer при in-flight командах, focus refetch остался fallback | два браузера видят правки без перезагрузки; обрыв догоняется дельтой (live-смоук 8/8, включая `setOffline`) |
 | — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. Следующий — TASK-36 `presence-attribution` |
 
 ### 6.0.1. Укрепление фундамента перед бэкендом (TASK-21.1…21.11)
@@ -1347,6 +1347,63 @@ Member/comment-события и снапшот-детали (`details` — им
   `RealtimeService` (§7.0), вне текущей фазы.
 - **Буферизация SSE за nginx** — уже покрыта TASK-38a.
 
+**Выполнено (2026-09-17), ветка `feature/TASK-30.1-30.2-realtime-hardening`:**
+`touches` поехал в `CommandSseEvent`/`CommandDeltaEntry` (publish после коммита и
+`listSince`), мост зовёт `touchedEntityIds(event.touches)` вместо
+`changedEntityIds`, ленивый чанк получил запись в `size-limit` — 6 KB gzip при
+фактических 1.59 KB. Подробности и цифры — `ROADMAP-DONE.md` (TASK-30.1).
+
+#### TASK-30.2 — `hardening-followups` · Добор по итогам аудита покрытия
+
+> **Откуда взялась.** После 30.1 прогнали аудит покрытия (команды ↔ e2e,
+> покрытие UI, известные незакрытые места). Из находок выбраны четыре,
+> которые дороже всего чинить позже и дешевле всего — сейчас. Все — про
+> доверие к входным данным и про те места, где уже один раз выстрелило
+> (redo create-команд, гонка refresh).
+
+1. **Ownership entity id.** Все upsert'ы писателей матчат только глобальный
+   `id`; id, совпавший с сущностью другой доски (баг клиента, злой умысел),
+   молча переименовывает/перетаскивает/переподчиняет чужую строку. Перед
+   записью команды сервер собирает client-supplied id из экшена (включая
+   вложенные restore-снапшоты) и отвечает `409 {message, field}` «Entity id
+   already used on another board», если хоть один принадлежит другой доске.
+   Проверка — в той же транзакции, после replay-короткого пути; id, которых
+   нет нигде, по-прежнему создаются (и неизвестные — no-op, как у редьюсера).
+2. **Строгость payload.** Явный лимит на json-body (`MAX_IMPORT_BYTES` вместо
+   неявных 100 KB Express — большие `RESTORE_*` сейчас молча ловят 413 от
+   парсера) + `MAX_COMMAND_BYTES` на одну команду (413 с внятным телом).
+   `validateCard` получает вложенную проверку restore-снапшотов:
+   `description` по `LIMITS.description`, `dueDate`/`archivedAt`, `cover` через
+   существующий валидатор, `checklists` по `LIMITS.checklistsPerCard`/
+   `itemsPerChecklist`; у `validateChecklist` — кап на items, у
+   `validateColumn` — на `cardIds`. Через `RESTORE_*` больше нельзя протащить
+   текст/структуры в обход лимитов.
+3. **Тесты моста (закрыть дыры покрытия TASK-30).** Фейк-сервер публикует
+   собственные команды в поток (паритет с продом) — own-echo становится
+   достижимым: тест фиксирует, что своё эхо (в т.ч. пришедшее до ack) не
+   применяется как чужое и не убивает свой undo-шаг. Deferred-очередь: пока
+   команда в полёте, чужое событие копится и применяется после ack, в
+   порядке seq; успешный серверный undo/redo (`mergeVersions` + `settled`)
+   тоже проверяется.
+4. **e2e undo/redo через `invert`.** Ни один бэкенд-тест не импортирует
+   `invert`, поэтому «точный undo» не зафиксирован ни для одной пары. Новый
+   `commands-undo.e2e-spec.ts`: команда → инверсия → агрегат обязан
+   deep-equal совпасть с состоянием до команды (RENAME_*, SET_*, MOVE_CARD/
+   MOVE_COLUMN, SORT_COLUMN, ARCHIVE_*, TOUCH_CARD, SET_CARD_LABEL on/off).
+
+**DoD:** 409 на чужой id (e2e, `command-ids.e2e-spec.ts`); вложенная
+валидация и лимиты (+тесты shared); ui-тесты моста (own-echo, deferred,
+серверный undo); `commands-undo.e2e-spec.ts` зелёный; гейты, покрытие,
+size-limit и live-смоуки без регрессий.
+
+**Выполнено (2026-09-17), ветка `feature/TASK-30.1-30.2-realtime-hardening`:**
+`assertIdsBelongToBoard` + `referencedEntityIds` (409 на чужие id во всех
+create-shaped действиях), `MAX_COMMAND_BYTES` 2 MB и явный json-лимит 5 MB,
+вложенная валидация `RESTORE_*`; fake-сервер эхоит свои команды и умеет
+`holdNextCommand` — own-echo/deferred/успешный undo покрыты; 17 пар
+«команда → `invert`» возвращают агрегат deep-equal. Цифры и детали —
+`ROADMAP-DONE.md` (TASK-30.2).
+
 ### 7.6. Разблокированные фичи (после TASK-29, по запросу — не запланированы)
 
 > **Решение пользователя 2026-09 (пересмотр):** прежняя формулировка «UI в
@@ -1488,7 +1545,8 @@ TASK-36 и TASK-37.)*
 | 8 | TASK-29 `optimistic-adapter` ✅ | `feature/TASK-29-optimistic-adapter` | Sync-слой: экшен→`POST /commands {commandId, action, ifMatch}`→`{seq, versions}`/`409`, undo=инверсная команда из стора (TASK-21.7d) с политикой конфликтов §7.0 (текст → отказ с тостом, позиции → LWW), 401/refresh single-flight, откаты, старт-агрегат → REPLACE_STATE, login-экран, миграция localStorage (включая архивные карточки) | UI полностью живёт с сервера; undo/redo и офлайн-тосты работают; undo при чужой правке текста отказывается с тостом, правка другого участника не теряется; 362+ фронт-тестов зелёные. **Выполнено** (координатором напрямую в `main`, ветка не заводилась): `ui/src/api/client.ts` (fetch-клиент, токен в памяти, single-flight refresh, retry 401), `auth/AuthContext` + `LoginPage` (login/register, i18n en+ru), `store/server-sync.ts` (FIFO-очередь на доску, коалесинг quiet-UPDATE_CARD, классификация отказов), `store/board-diff.ts` (dead-пометка чужих сущностей при focus-refetch), `BoardContext` серверный режим (гидратация `GET /boards`+агрегаты, откаты с тостами, `ifMatchVersions` для undo текста, миграция localStorage→`POST /boards/import`, REST create/delete/import, роли, без localStorage-записи), backend: board-level команды + `role` в `GET /boards` + `ifMatchVersions` (e2e); dev-прокси Vite. Гейты: ui 451 (397+54, coverage 95.3/87.8/93.4/97.7), shared 322, backend 21 unit + 72 e2e, build/lint/format, size 204.07/210 KB; live: Orca-браузер (register→миграция «Legacy Smoke»→колонка «Done»→reload) + API-смоук 12/12 |
 | 9 | TASK-35 `board-members-ui` ✅ | `feature/TASK-35-board-members-ui` | §7.6.1: модалка «Участники», инвайт по email, смена роли, `expiresAt` для VIEWER, базовый `UserAvatar`. **Идёт до TASK-30:** без неё второго участника на доску не добавить, и DoD «два браузера» нечем выполнить | ADMIN приглашает, роль меняется, VIEWER read-only + 403 на мутацию, последний ADMIN защищён; en+ru; тесты. **Выполнено:** `BoardMembersDialog` (инвайт/роль/срок/исключение, last-ADMIN lock, тосты ошибок), `components/ui/user-avatar.tsx` (+`utils/avatar.ts`), кнопка в шапке рядом со свитчером, `readOnly`-цепочка BoardSection → DndBoard/ColumnView/CardDialog/TableView/CalendarView + `BoardTitle`, FakeServer научился роли; ui 508 (485+23), coverage выше порогов |
 | 10 | TASK-30 `realtime-sse` ✅ | `feature/TASK-30-realtime-sse` | SSE `{type, seq, action, actorId}` + применение чужих экшенов тем же `boardReducer`, refetch-on-focus остаётся fallback; в идеале — rebase pending-команд через инверсии | два браузера видят изменения друг друга без перезагрузки; обрыв SSE догоняет `?since=` дельтой. **Выполнено:** `RealtimeService` (in-memory fan-out) + `GET /boards/:id/events` (`@Sse`, publish после коммита, `?since=`-догон, ping 25 с), `X-Board-Seq` на агрегате (REPEATABLE READ), UI-мост в ленивом чанке (fetch-ридер с Authorization, backoff/online/fatal, own-echo по ack-seq, deferred вместо rebase); backend 22 unit + 113 e2e, ui 522, live-смоук `realtime.mjs` 8/8 |
-| 10.1 | TASK-30.1 `realtime-refinements` | `feature/TASK-30.1-realtime-refinements` | Добор к SSE, **сразу после TASK-30** (детали — §7.5): `touches` в событии и дельте вместо клиентского диффа доски; бюджет на ленивый realtime-чанк | события несут `touches`; мост не диффит доску; отдельная строка size-limit; гейты и live-смоук зелёные |
+| 10.1 | TASK-30.1 `realtime-refinements` ✅ | `feature/TASK-30.1-30.2-realtime-hardening` | Добор к SSE (детали — §7.5) | события и дельта несут `touches`; мост помечает undo-foreign без диффа доски; отдельная строка size-limit (1.59/6 KB gzip); ui 525, backend 22 unit + 113 e2e; live-смоук `realtime.mjs` 8/8 |
+| 10.2 | TASK-30.2 `hardening-followups` ✅ | `feature/TASK-30.1-30.2-realtime-hardening` | Добор по аудиту покрытия (детали — §7.5) | чужой id → 409 (`command-ids.e2e`); `MAX_COMMAND_BYTES` 2 MB + явный json-лимит 5 MB, вложенная валидация restore; own-echo не убивает undo, deferred после ack (ui 531); 17 пар undo-через-`invert` в `commands-undo.e2e`; shared 331, backend 22 + 121 e2e; live-смоуки зелёные |
 | 11 | TASK-36 `presence-attribution` | `feature/TASK-36-presence-attribution` | §7.6.1: `Card.lastActorId` + аватар на карточке, аватары в ленте активности, стопка «сейчас на доске» (SSE-событие `presence`), подсветка чужого изменения | оба браузера видят аватар друг друга; чужая правка подсвечена; лента показывает кто; вкладку закрыли — аватар ушёл за ≤60 с |
 | 12 | TASK-37 `comments-ui` | `feature/TASK-37-comments-ui` | §7.6.1: секция комментариев в диалоге карточки поверх API TASK-28, plain text, курсорная пагинация, живое прилетание по SSE, `LIMITS.comment` | пишется/удаляется/пагинируется; чужой комментарий приходит живым; лимит гвардит; en+ru; тесты |
 | 13 | TASK-38a `self-host-hardening` | `feature/TASK-38a-self-host-hardening` | §7.8: шесть грабель самохостинга, каждая ломается **молча** (Secure-кука по HTTP, буферизация SSE за nginx, миграции в entrypoint, JWT без дефолтов, `ALLOW_REGISTRATION`, healthcheck БД) + джоб чистки soft-delete на `@nestjs/schedule` | HTTP-инсталляция ругается, а не разлогинивает молча; SSE работает за дефолтным nginx; пустой `JWT_SECRET` не даёт стартовать; чистка идёт по расписанию |

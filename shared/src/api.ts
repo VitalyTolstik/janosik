@@ -63,6 +63,14 @@ export interface CommandDeltaEntry {
   action: BoardAction;
   /** Who issued the command. */
   actorId: string;
+  /**
+   * Entities the command actually wrote, as `Command.touches` labels
+   * (`card:<id>`, `column:<id>`, `label:<id>`, `checklist:<id>`,
+   * `checklistItem:<id>`, `board:<id>`; TASK-30.1). Empty for a command
+   * that changed nothing — the server computes it from its own writes, so
+   * a client can mark its undo history foreign without diffing the board.
+   */
+  touches: string[];
 }
 
 /** Server-sent event describing a committed command (TASK-30). */
@@ -71,6 +79,8 @@ export interface CommandSseEvent {
   seq: number;
   action: BoardAction;
   actorId: string;
+  /** Touched entity labels — same contract as `CommandDeltaEntry.touches`. */
+  touches: string[];
 }
 
 /** A user currently connected to the board (`presence`, TASK-36). */

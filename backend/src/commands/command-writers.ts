@@ -1,5 +1,11 @@
 import type { Prisma } from "@prisma/client";
-import type { Board, BoardAction, Card, Checklist } from "@janosik/shared";
+import type {
+  Board,
+  BoardAction,
+  Card,
+  Checklist,
+  ChecklistItem,
+} from "@janosik/shared";
 
 /**
  * Per-action writers (ROADMAP §7.4.1 variant В).
@@ -178,7 +184,13 @@ async function bumpCard(tx: Tx, card: Card): Promise<void> {
   });
 }
 
-/** Upsert a checklist and its items, reviving soft-deleted rows on restore. */
+/**
+ * Upsert a checklist and its items, reviving soft-deleted rows on restore.
+ *
+ * Used by both the RESTORE commands and the create commands: undoing an
+ * `ADD_CHECKLIST` is a soft `DELETE_CHECKLIST`, so redoing it must revive
+ * the row with the same id instead of inserting a duplicate.
+ */
 async function upsertChecklist(
   tx: Tx,
   cardId: string,
@@ -203,26 +215,97 @@ async function upsertChecklist(
     },
   });
   for (const [index, item] of checklist.items.entries()) {
-    await tx.checklistItem.upsert({
-      where: { id: item.id },
-      create: {
-        id: item.id,
-        checklistId: checklist.id,
-        text: item.text,
-        done: item.done,
-        position: index,
-        deletedAt: null,
-      },
-      update: {
-        checklistId: checklist.id,
-        text: item.text,
-        done: item.done,
-        position: index,
-        deletedAt: null,
-        version: { increment: 1 },
-      },
-    });
+    await upsertChecklistItem(tx, checklist.id, item, index);
   }
+}
+
+/** Upsert one checklist item, reviving a soft-deleted row on redo/restore. */
+async function upsertChecklistItem(
+  tx: Tx,
+  checklistId: string,
+  item: ChecklistItem,
+  position: number,
+): Promise<void> {
+  await tx.checklistItem.upsert({
+    where: { id: item.id },
+    create: {
+      id: item.id,
+      checklistId,
+      text: item.text,
+      done: item.done,
+      position,
+      deletedAt: null,
+    },
+    update: {
+      checklistId,
+      text: item.text,
+      done: item.done,
+      position,
+      deletedAt: null,
+      version: { increment: 1 },
+    },
+  });
+}
+
+/**
+ * Insert or revive a column row. Undoing `ADD_COLUMN`/`DUPLICATE_COLUMN` is
+ * a soft `DELETE_COLUMN`, so the redo of the original command must clear
+ * `deletedAt` on the existing row — a plain `create` would hit the unique
+ * id (the 500 the user saw, TASK-30.1 testing, 2026-09-17).
+ */
+async function upsertColumn(
+  tx: Tx,
+  boardId: string,
+  column: Board["columns"][number],
+  position: number,
+  at: number,
+): Promise<void> {
+  await tx.column.upsert({
+    where: { id: column.id },
+    create: {
+      id: column.id,
+      boardId,
+      title: column.title,
+      wipLimit: column.wipLimit ?? null,
+      position,
+      createdAt: new Date(column.createdAt),
+      updatedAt: new Date(at),
+    },
+    update: {
+      title: column.title,
+      wipLimit: column.wipLimit ?? null,
+      position,
+      deletedAt: null,
+      updatedAt: new Date(at),
+      version: { increment: 1 },
+    },
+  });
+}
+
+/** Insert or revive a label row — the redo of `ADD_LABEL` after an undo. */
+async function upsertLabel(
+  tx: Tx,
+  boardId: string,
+  label: Board["labels"][number],
+  position: number,
+): Promise<void> {
+  await tx.label.upsert({
+    where: { id: label.id },
+    create: {
+      id: label.id,
+      boardId,
+      name: label.name,
+      color: label.color,
+      position,
+    },
+    update: {
+      name: label.name,
+      color: label.color,
+      position,
+      deletedAt: null,
+      version: { increment: 1 },
+    },
+  });
 }
 
 async function writeChecklists(
@@ -280,17 +363,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       const column = columnOf(after, action.newColumnId);
       if (!column) return [boardTouch];
       const position = after.columns.findIndex((c) => c.id === column.id);
-      await tx.column.create({
-        data: {
-          id: column.id,
-          boardId,
-          title: column.title,
-          wipLimit: column.wipLimit ?? null,
-          position,
-          createdAt: new Date(column.createdAt),
-          updatedAt: new Date(ctx.at),
-        },
-      });
+      await upsertColumn(tx, boardId, column, position, ctx.at);
       return [boardTouch, touch.column(column.id)];
     }
 
@@ -358,17 +431,13 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     case "DUPLICATE_COLUMN": {
       const copy = columnOf(after, action.newColumnId);
       if (!copy) return [boardTouch];
-      await tx.column.create({
-        data: {
-          id: copy.id,
-          boardId,
-          title: copy.title,
-          wipLimit: copy.wipLimit ?? null,
-          position: after.columns.findIndex((c) => c.id === copy.id),
-          createdAt: new Date(copy.createdAt),
-          updatedAt: new Date(ctx.at),
-        },
-      });
+      await upsertColumn(
+        tx,
+        boardId,
+        copy,
+        after.columns.findIndex((c) => c.id === copy.id),
+        ctx.at,
+      );
       for (const [position, column] of after.columns.entries()) {
         if (column.id === copy.id) continue;
         await tx.column.update({
@@ -379,9 +448,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       for (const [position, cardId] of copy.cardIds.entries()) {
         const card = after.cards[cardId];
         if (!card) continue;
-        await tx.card.create({
-          data: cardCreateData(card, copy.id, position),
-        });
+        await upsertCard(tx, card, copy.id, position);
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
       }
       await writeColumnPositions(tx, after.columns);
@@ -426,9 +493,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       if (!card) return [boardTouch];
       const column = after.columns.find((c) => c.cardIds.includes(card.id));
       if (!column) return [boardTouch];
-      await tx.card.create({
-        data: cardCreateData(card, column.id, column.cardIds.indexOf(card.id)),
-      });
+      await upsertCard(tx, card, column.id, column.cardIds.indexOf(card.id));
       await writeCardLabels(tx, boardId, card.id, card.labelIds);
       await writeCardPositions(tx, column.id, column.cardIds);
       return [boardTouch, touch.column(column.id), touch.card(card.id)];
@@ -607,15 +672,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       const position = after.labels.findIndex((l) => l.id === action.label.id);
       const label = after.labels[position];
       if (!label) return [boardTouch];
-      await tx.label.create({
-        data: {
-          id: label.id,
-          boardId,
-          name: label.name,
-          color: label.color,
-          position,
-        },
-      });
+      await upsertLabel(tx, boardId, label, position);
       return [boardTouch, touch.label(label.id)];
     }
 
@@ -698,14 +755,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       );
       const checklist = checklists[position];
       if (!card || !checklist) return [boardTouch];
-      await tx.checklist.create({
-        data: {
-          id: checklist.id,
-          cardId: card.id,
-          title: checklist.title,
-          position,
-        },
-      });
+      await upsertChecklist(tx, card.id, checklist, position);
       await bumpCard(tx, card);
       return [boardTouch, touch.card(card.id), touch.checklist(checklist.id)];
     }
@@ -758,15 +808,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         checklist?.items.findIndex((i) => i.id === action.newItemId) ?? -1;
       const item = checklist?.items[position];
       if (!card || !checklist || !item) return [boardTouch];
-      await tx.checklistItem.create({
-        data: {
-          id: item.id,
-          checklistId: checklist.id,
-          text: item.text,
-          done: item.done,
-          position,
-        },
-      });
+      await upsertChecklistItem(tx, checklist.id, item, position);
       await bumpCard(tx, card);
       return [
         boardTouch,
@@ -880,9 +922,7 @@ async function writeCardAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     if (!copy) return [boardTouch];
     const column = after.columns.find((c) => c.cardIds.includes(copy.id));
     if (!column) return [boardTouch];
-    await tx.card.create({
-      data: cardCreateData(copy, column.id, column.cardIds.indexOf(copy.id)),
-    });
+    await upsertCard(tx, copy, column.id, column.cardIds.indexOf(copy.id));
     await writeCardLabels(tx, boardId, copy.id, copy.labelIds);
     await writeCardPositions(tx, column.id, column.cardIds);
     return [boardTouch, touch.column(column.id), touch.card(copy.id)];

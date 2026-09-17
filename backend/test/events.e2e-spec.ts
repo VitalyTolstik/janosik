@@ -19,6 +19,7 @@ interface CommandSseFrame {
   seq?: number;
   actorId?: string;
   action?: { type: string };
+  touches?: string[];
 }
 
 /**
@@ -289,6 +290,11 @@ describe("Board events SSE (e2e)", () => {
     expect(frames.map((frame) => frame.type)).toEqual(["command", "command"]);
     expect(frames[0].action?.type).toBe("ADD_CARD");
     expect(frames[0].actorId).toBe(ownerId);
+    // `touches` (TASK-30.1): the entities the command wrote, so subscribers
+    // mark their undo history foreign without diffing the board.
+    expect(frames[0].touches).toContain(`card:card-live`);
+    expect(frames[0].touches).toContain(`board:${boardId}`);
+    expect(frames[1].touches).toContain(`column:col-live`);
   }, 20_000);
 
   it("catches up the missed delta before going live", async () => {
@@ -323,6 +329,8 @@ describe("Board events SSE (e2e)", () => {
       baseline + 2,
     ]);
     expect(frames[0].action?.type).toBe("ADD_CARD");
+    // The catch-up delta carries the same `touches` contract as live frames.
+    expect(frames[0].touches).toContain(`card:card-gap`);
   }, 20_000);
 
   it("lets a VIEWER watch the stream but not post commands", async () => {

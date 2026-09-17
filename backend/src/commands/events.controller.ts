@@ -70,6 +70,7 @@ export class EventsController {
               seq: entry.seq,
               action: entry.action,
               actorId: entry.actorId,
+              touches: entry.touches,
             });
           }
           ready = true;

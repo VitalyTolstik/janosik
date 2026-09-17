@@ -30,6 +30,19 @@ function same(a: unknown, b: unknown): boolean {
   return stable(a) === stable(b);
 }
 
+/**
+ * The card stripped of client-only state. Server aggregates never carry the
+ * activity feed — the backend derives card events from the command log
+ * (§7.4) — while the local card gains `activity` on every dispatched action.
+ * Diffing it would mark every touched card "foreign" on each focus refetch
+ * and kill the user's own undo steps (found live, 2026-09-17: undo/redo
+ * vanished after switching windows even though nobody else had edited).
+ */
+function comparableCard(card: Card): Omit<Card, "activity"> {
+  const { activity: _activity, ...rest } = card;
+  return rest;
+}
+
 function changedColumns(local: Board, server: Board): string[] {
   const ids: string[] = [];
   const byId = new Map(server.columns.map((column) => [column.id, column]));
@@ -49,7 +62,12 @@ function changedCards(local: Board, server: Board): string[] {
   for (const [id, card] of Object.entries(local.cards)) {
     seen.add(id);
     const fresh: Card | undefined = server.cards[id];
-    if (fresh === undefined || !same(card, fresh)) ids.push(id);
+    if (
+      fresh === undefined ||
+      !same(comparableCard(card), comparableCard(fresh))
+    ) {
+      ids.push(id);
+    }
   }
   for (const id of Object.keys(server.cards)) {
     if (!seen.has(id)) ids.push(id);

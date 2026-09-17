@@ -13,6 +13,7 @@ import type { Board, Card } from "@janosik/shared";
 import { BOARD_STORAGE_KEY } from "@janosik/shared";
 import { api } from "@/api/client";
 import { I18nProvider } from "@/i18n";
+import { AuthProvider } from "@/auth/AuthContext";
 import { ToastProvider } from "@/components/Toast";
 import { BoardProvider, useBoard } from "@/store/BoardContext";
 import { useBoardActions } from "@/store/BoardContext";
@@ -83,6 +84,7 @@ function Probe() {
         onClick={() => actions.updateCard("c-1", { title: "Mine" })}
       />
       <button type="button" data-testid="undo" onClick={() => actions.undo()} />
+      <button type="button" data-testid="redo" onClick={() => actions.redo()} />
       <button
         type="button"
         data-testid="archive-second"
@@ -115,11 +117,13 @@ function renderApp(path = "/board/b-1") {
   return render(
     <I18nProvider>
       <ToastProvider>
-        <MemoryRouter initialEntries={[path]}>
-          <BoardProvider>
-            <Probe />
-          </BoardProvider>
-        </MemoryRouter>
+        <AuthProvider>
+          <MemoryRouter initialEntries={[path]}>
+            <BoardProvider>
+              <Probe />
+            </BoardProvider>
+          </MemoryRouter>
+        </AuthProvider>
       </ToastProvider>
     </I18nProvider>,
   );
@@ -252,6 +256,36 @@ describe("BoardProvider in server mode", () => {
       expect(screen.getByTestId("card-title").textContent).toBe("Theirs"),
     );
     expect(server.boards.get("b-1")?.cards["c-1"].title).toBe("Theirs");
+  });
+
+  it("sends undo and redo through the command log and keeps their echoes quiet", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+
+    fireEvent.click(screen.getByTestId("edit"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["c-1"].title).toBe("Mine"),
+    );
+
+    // Undo travels the same queue: the inverse reaches the server and the
+    // own echo must not flip the restored step again.
+    fireEvent.click(screen.getByTestId("undo"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["c-1"].title).toBe("Hello"),
+    );
+    expect(screen.getByTestId("card-title").textContent).toBe("Hello");
+    expect(screen.getByTestId("can-undo").textContent).toBe("false");
+
+    // Redo re-sends the original command with a fresh idempotency key.
+    fireEvent.click(screen.getByTestId("redo"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["c-1"].title).toBe("Mine"),
+    );
+    expect(screen.getByTestId("card-title").textContent).toBe("Mine");
+    expect(screen.getByTestId("can-undo").textContent).toBe("true");
   });
 
   it("reverts an undo the server refuses via version preconditions", async () => {
@@ -421,6 +455,108 @@ describe("BoardProvider realtime (SSE, TASK-30)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("title").textContent).toBe("Tab B"),
     );
+  });
+
+  it("skips its own echo: the undo step stays alive and nothing is doubled", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitStreamOpen(server);
+
+    fireEvent.click(screen.getByTestId("add-column"));
+    // The fake echoes our command like the production server; the bridge
+    // sees it (possibly before the HTTP ack) and must not treat it as a
+    // foreign edit — that would kill the undo step and re-apply the action.
+    await waitFor(() => expect(server.seqOf("b-1")).toBeGreaterThan(0));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(screen.getByTestId("columns").textContent).toBe("Todo,New");
+    expect(screen.getByTestId("can-undo").textContent).toBe("true");
+  });
+
+  it("defers a foreign command until our in-flight command settles", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitStreamOpen(server);
+
+    const release = server.holdNextCommand();
+    fireEvent.click(screen.getByTestId("add-column"));
+    expect(screen.getByTestId("columns").textContent).toBe("Todo,New");
+
+    // The foreign event arrives while our command is still in flight: it
+    // must wait, or it would land on top of optimistic state.
+    act(() => {
+      server.publishCommand("b-1", {
+        type: "RENAME_BOARD",
+        title: "Remote",
+        at: Date.now(),
+      });
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(screen.getByTestId("title").textContent).toBe("Board");
+
+    act(() => {
+      release();
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("title").textContent).toBe("Remote"),
+    );
+    // Both changes survive, in server order; our step is still undoable.
+    expect(screen.getByTestId("columns").textContent).toBe("Todo,New");
+    expect(screen.getByTestId("can-undo").textContent).toBe("true");
+  });
+
+  it("marks an undo step foreign from the event's touches, without a refetch", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitStreamOpen(server);
+
+    fireEvent.click(screen.getByTestId("edit"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["c-1"].title).toBe("Mine"),
+    );
+    expect(screen.getByTestId("can-undo").textContent).toBe("true");
+    const snapshots = () =>
+      server.requests.filter(
+        (entry) =>
+          entry.method === "GET" && entry.path === "/api/v1/boards/b-1",
+      ).length;
+    const refetches = snapshots();
+
+    // Someone else edits the same card. The event carries `touches`
+    // (`card:c-1`, TASK-30.1), so the step is marked dead from that list —
+    // no whole-board diff, and no snapshot refetch either.
+    act(() => {
+      server.publishCommand("b-1", {
+        type: "UPDATE_CARD",
+        cardId: "c-1",
+        title: "Theirs",
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("card-title").textContent).toBe("Theirs"),
+    );
+    expect(screen.getByTestId("can-undo").textContent).toBe("false");
+    expect(snapshots()).toBe(refetches);
+
+    // Undo skips the dead step instead of clobbering the other edit.
+    fireEvent.click(screen.getByTestId("undo"));
+    await waitFor(() =>
+      expect(screen.getByTestId("card-title").textContent).toBe("Theirs"),
+    );
+    expect(server.boards.get("b-1")?.cards["c-1"].title).toBe("Theirs");
+    expect(
+      await screen.findByText("Another member changed this — undo was skipped"),
+    ).toBeTruthy();
   });
 });
 

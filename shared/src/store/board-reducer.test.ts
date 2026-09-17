@@ -740,6 +740,57 @@ describe("boardReducer — RESTORE_BOARD and IMPORT_BOARDS", () => {
     expect(next).toHaveLength(1);
     expect(next[0].id).toBe("board-imported");
   });
+
+  it("keeps the client-only activity feed when the snapshot has none", () => {
+    // The server aggregate never carries `activity`; a focus refetch that
+    // replaces the board must not erase the feed the client recorded
+    // (foreign "archived" event vanishing live, 2026-09-17).
+    const withFeed = reduceBoard(freshBoard(), {
+      type: "ADD_CARD",
+      newCardId: "card-feed",
+      columnId: "col-backlog",
+      title: "Feed me",
+    });
+    const cardId = "card-feed";
+    expect(withFeed.cards[cardId]?.activity).toHaveLength(1);
+
+    const snapshot: Board = {
+      ...withFeed,
+      cards: {
+        ...withFeed.cards,
+        // Server copy: same data, no activity field.
+        [cardId]: (() => {
+          const { activity: _activity, ...rest } = withFeed.cards[cardId]!;
+          return rest as Card;
+        })(),
+      },
+    };
+    const next = reduceState([withFeed], {
+      type: "RESTORE_BOARD",
+      board: snapshot,
+    });
+    expect(next[0].cards[cardId]?.activity).toEqual(
+      withFeed.cards[cardId]?.activity,
+    );
+  });
+
+  it("keeps the snapshot's own activity feed (rollback path)", () => {
+    const local = reduceBoard(freshBoard(), {
+      type: "ADD_CARD",
+      newCardId: "card-1",
+      columnId: "col-backlog",
+      title: "Optimistic",
+    });
+    const before: Board = {
+      ...local,
+      cards: {
+        ...local.cards,
+        "card-1": { ...local.cards["card-1"]!, activity: [] },
+      },
+    };
+    const next = reduceState([local], { type: "RESTORE_BOARD", board: before });
+    expect(next[0].cards["card-1"]?.activity).toEqual([]);
+  });
 });
 
 describe("boardReducer — checklists", () => {

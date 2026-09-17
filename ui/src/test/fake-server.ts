@@ -50,6 +50,16 @@ const TOUCH_FIELDS: ReadonlyArray<[field: string, prefix: string]> = [
   ["newItemId", "checklistItem"],
 ];
 
+/** `Command.touches`-shaped labels for an action plus the board itself. */
+export function touchesOf(boardId: string, action: unknown): string[] {
+  const labels = new Set<string>([`board:${boardId}`]);
+  for (const [field, prefix] of TOUCH_FIELDS) {
+    const value = (action as unknown as Record<string, unknown>)[field];
+    if (typeof value === "string") labels.add(`${prefix}:${value}`);
+  }
+  return [...labels];
+}
+
 export class FakeServer {
   readonly requests: RecordedRequest[] = [];
   readonly boards = new Map<string, Board>();
@@ -78,6 +88,8 @@ export class FakeServer {
   private readonly seq = new Map<string, number>();
   private nextFailure: { status: number; body: unknown } | null = null;
   private nextRequestFailure: { status: number; body: unknown } | null = null;
+  /** Held command response (`holdNextCommand`) — the in-flight window. */
+  private commandGate: Promise<void> | null = null;
   private boardCounter = 0;
 
   constructor(seed: Board[] = []) {
@@ -140,12 +152,14 @@ export class FakeServer {
    * Commit a command from someone else: apply it to the fake board, bump the
    * seq, record it for catch-up and push it to every open stream. The
    * default actor is *not* the signed-in account — an own echo is published
-   * by passing `account.id`.
+   * by passing `account.id`, and `command()` below does the same for the
+   * commands this client sends, exactly like the production server.
    */
   publishCommand(
     boardId: string,
     action: Record<string, unknown>,
     actorId: string = "user-2",
+    touches: string[] = touchesOf(boardId, action),
   ): number {
     const board = this.boards.get(boardId);
     if (board === undefined) throw new Error(`Unknown board ${boardId}`);
@@ -155,13 +169,24 @@ export class FakeServer {
         withActivity: false,
       })[0] ?? board;
     this.boards.set(boardId, after);
+    return this.recordEvent(boardId, scoped, actorId, touches);
+  }
+
+  /** Append one committed event to the log and push it to open streams. */
+  private recordEvent(
+    boardId: string,
+    action: BoardAction,
+    actorId: string,
+    touches: string[],
+  ): number {
     const seq = (this.seq.get(boardId) ?? 0) + 1;
     this.seq.set(boardId, seq);
     const event: CommandSseEvent = {
       type: "command",
       seq,
-      action: scoped,
+      action,
       actorId,
+      touches,
     };
     const log = this.eventLog.get(boardId) ?? [];
     log.push(event);
@@ -189,12 +214,28 @@ export class FakeServer {
     this.eventStreams.delete(boardId);
   }
 
+  /**
+   * Hold the next command response open and return its release. While held
+   * the client stays busy — the window in which the bridge must defer
+   * streamed events instead of applying them out of order.
+   */
+  holdNextCommand(): () => void {
+    let release: (() => void) | null = null;
+    this.commandGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      this.commandGate = null;
+      release?.();
+    };
+  }
+
   private route(
     method: string,
     path: string,
     body: unknown,
     searchParams: URLSearchParams,
-  ): Response {
+  ): Response | Promise<Response> {
     if (this.nextRequestFailure !== null) {
       const failure = this.nextRequestFailure;
       this.nextRequestFailure = null;
@@ -309,7 +350,10 @@ export class FakeServer {
   }
 
   /** Apply one command like the backend: reducer + versions + idempotency. */
-  private command(boardId: string, request: CommandRequest): Response {
+  private async command(
+    boardId: string,
+    request: CommandRequest,
+  ): Promise<Response> {
     if (this.nextFailure !== null) {
       const failure = this.nextFailure;
       this.nextFailure = null;
@@ -341,10 +385,17 @@ export class FakeServer {
       )[0] ?? board;
     this.boards.set(boardId, after);
     const versions = this.bumpTouched(boardId, action);
-    const seq = currentVersion + 1;
-    this.seq.set(boardId, seq);
+    // Committed commands are echoed to every open stream before the HTTP
+    // response — own echoes included, exactly like the production server.
+    const seq = this.recordEvent(
+      boardId,
+      { ...action, boardId } as BoardAction,
+      this.account.id,
+      touchesOf(boardId, action),
+    );
     const response: CommandResponse = { seq, versions };
     this.commands.set(request.commandId, response);
+    if (this.commandGate !== null) await this.commandGate;
     return json(200, response);
   }
 

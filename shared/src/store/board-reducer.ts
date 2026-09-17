@@ -1806,7 +1806,23 @@ export function boardReducer(
     // A whole-board snapshot (backup restore) — keep its timestamps
     // untouched. Undo no longer goes through here (TASK-21.7d), which is
     // also why this is the one board-scoped action without a command clock.
-    return state.map((b, i) => (i === index ? action.board : b));
+    //
+    // The snapshot usually comes from the server aggregate, which carries no
+    // card activity feed (client-only, §7.4.1; the backend derives it from
+    // the command log) — replacing the board blindly would erase the feed
+    // the client itself recorded, e.g. a foreign "archived" event arriving
+    // right before a focus refetch. Cards that bring their own feed (the
+    // failed-command rollback path snapshots local state) keep it byte for
+    // byte; cards without one inherit the local feed.
+    const cards: Board["cards"] = {};
+    for (const [id, card] of Object.entries(action.board.cards)) {
+      const local = board.cards[id];
+      cards[id] =
+        card.activity === undefined && local?.activity !== undefined
+          ? { ...card, activity: local.activity }
+          : card;
+    }
+    return state.map((b, i) => (i === index ? { ...action.board, cards } : b));
   }
 
   /** Commit a handler's result, or nothing when it changed nothing. */

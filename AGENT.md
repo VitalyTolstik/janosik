@@ -214,6 +214,13 @@ npm run size -w ui     # бюджеты бандла (4 шт.)
 Внутри `shared/` алиасов `@/` нет — только относительные импорты; фронт
 импортит пакет как `@janosik/shared` (alias в vite/tsconfig/vitest).
 
+**Tailwind и `shared/`:** утилиты, записанные только в классах `shared/`
+(карты `LABEL_COLOR_CHIP`/`LABEL_COLOR_DOT` и т.п.), не попадут в CSS
+автоматически — Vite-root это `ui/`. В `ui/src/index.css` стоит
+`@source "../../shared/src"`; при добавлении новых токенов туда проверяй
+собранный CSS (в тестах это не ловится — «метки без цвета» так и вылезли,
+TASK-30.2 fix).
+
 ### UI: серверный режим (с TASK-29)
 
 - Режим включается окружением: `VITE_API_URL` (default `/api/v1`).
@@ -226,7 +233,9 @@ npm run size -w ui     # бюджеты бандла (4 шт.)
   `ui/src/auth/AuthContext.tsx` + `components/auth/LoginPage.tsx`,
   `ui/src/store/server-sync.ts` (FIFO-очередь на доску, коалесинг
   quiet-правок), `ui/src/store/board-diff.ts` (dead-пометка чужих правок
-  при focus-refetch), серверный режим внутри `store/BoardContext.tsx`
+  при focus-refetch; `activity` — клиентское поле, агрегат его не несёт:
+  при сравнении срезается, и `RESTORE_BOARD` переносит локальный фид на
+  восстановленные карточки), серверный режим внутри `store/BoardContext.tsx`
   (гидратация, откаты, `ifMatchVersions` для undo текста, миграция
   `janosik-boards` → `POST /boards/import`, REST create/delete/import).
 - **В серверном режиме localStorage для досок не пишется** (изоляция
@@ -284,6 +293,12 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
 - **Auth живой (TASK-24):** register/login/refresh/logout/me под
   `/api/v1/auth`; access JWT в теле ответа, refresh — httpOnly-кука
   (sha256-hash в БД, ротация, реюз revoked отзывает все сессии юзера).
+  Клиент сериализует ротацию **между табами** через Web Locks
+  (`REFRESH_LOCK`, `ui/src/api/client.ts`): два таба с одной кукой иначе
+  предъявляют один и тот же токен, и сервер справедливо отзывает все
+  сессии («all sessions revoked» в логе). Устаревший boot-refresh не
+  затирает более поздний login/register — `sessionEpoch` в `ApiClient`
+  (иначе медленный refresh 401 выкидывал только что вошедшего юзера).
 - **Boards живые (TASK-25):** полная схема §7.3 в Prisma (soft-delete
   `deletedAt` + `version`), boards CRUD + membership
   (ADMIN/MEMBER/VIEWER + `expiresAt`, last-ADMIN защищён) под
@@ -301,8 +316,17 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   e2e). Метки доски упорядочены `Label.position` (отклонение от §7.3,
   миграция TASK-27); `RESTORE_LABEL` восстанавливает m2m по `assignments`.
   `GET /boards` отдаёт `role` вызывающего (ADMIN-only действия UI).
+  **Жёсткость входа (TASK-30.2):** `referencedEntityIds` + проверка
+  владения в транзакции — client-supplied id, живущий на другой доске, →
+  `409` (иначе upsert по глобальному id переписал бы чужую строку);
+  `MAX_COMMAND_BYTES` 2 MB на команду (`413`), json-body явно 5 MB
+  (`useBodyParser`, иначе большие `RESTORE_*` падают в парсере); вложенная
+  валидация restore-снапшотов по `LIMITS` (описание, cover, чек-листы).
+  Контракт undo зафиксирован e2e через `invert` (`commands-undo.e2e`):
+  агрегат после инверсии deep-equal состоянию до команды.
 - **Realtime живой (TASK-30):** `GET /boards/:id/events` — SSE
-  (`@Sse`), событие всегда `{type:"command", seq, action, actorId}`; keep-alive
+  (`@Sse`), событие всегда `{type:"command", seq, action, actorId, touches}`
+  (`touches` — метки записанных сущностей, TASK-30.1); keep-alive
   `data: ping` раз в 25 с; роли — включая VIEWER. Рассылку делает
   `RealtimeService` (`backend/src/realtime/`, in-memory Subject на доску),
   публикация — **после коммита** транзакции и только для новых `commandId`
@@ -313,11 +337,13 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   транзакции `REPEATABLE READ`); клиент берёт базу через
   `api.getBoardSnapshot()`.
 - **UI-мост — в ленивом чанке** (`ui/src/store/realtime.ts`, динамический
-  импорт): `fetch`-ридер `text/event-stream` с `Authorization` (EventSource
+  импорт; в `size-limit` у чанка своя строка — 6 KB gzip, TASK-30.1):
+  `fetch`-ридер `text/event-stream` с `Authorization` (EventSource
   и ticket не нужны, токен не в URL), парсер + backoff 1→30 с + `wakeNow`
   по `online` + стоп на 401/403/404. `createRealtimeBridge` держит `seq` /
   `ownSeq` / `deferred`-очередь: чужие команды применяются тем же
-  `boardReducer` и помечают сущности foreign для undo; своё эхо
+  `boardReducer`, а undo-шаги помечаются foreign по `touchedEntityIds()`
+  из серверного `touches` (дифф доски на этом пути не считается); своё эхо
   пропускается только при `seq ≤ ownSeq`, поэтому команда **другого таба
   того же аккаунта** применяется; события при in-flight командах
   откладываются и дренажатся после ack (`settled()` из dispatch/undo) —

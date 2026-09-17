@@ -59,6 +59,15 @@
       ],
       "limit": "30 KB",
       "gzip": true
+    },
+    {
+      "name": "lazy realtime chunk (SSE bridge and reader, gzip)",
+      "path": [
+        "dist/assets/realtime-*.js"
+      ],
+      "limit": "6 KB",
+      "gzip": true,
+      "running": false
     }
   ],
   "scripts": {

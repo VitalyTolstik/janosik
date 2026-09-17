@@ -410,6 +410,80 @@ describe("Commands API — labels & checklists (e2e)", () => {
       ]);
     });
 
+    it("redoes a create command after its soft-delete undo", async () => {
+      const boardId = await createBoard("Redo labels board");
+      const initial = await getAggregate(boardId);
+
+      const addColumn = scoped(boardId, {
+        type: "ADD_COLUMN",
+        newColumnId: "col-r",
+        title: "R",
+      });
+      const addCard = scoped(boardId, {
+        type: "ADD_CARD",
+        newCardId: "card-r",
+        columnId: "col-r",
+        title: "R",
+      });
+      const addLabel = scoped(boardId, {
+        type: "ADD_LABEL",
+        label: { id: "l-r", name: "R", color: "red" },
+      });
+      const deleteLabel = scoped(boardId, {
+        type: "DELETE_LABEL",
+        labelId: "l-r",
+      });
+      const addChecklist = scoped(boardId, {
+        type: "ADD_CHECKLIST",
+        cardId: "card-r",
+        newChecklistId: "cl-r",
+        title: "Steps",
+      });
+      const deleteChecklist = scoped(boardId, {
+        type: "DELETE_CHECKLIST",
+        cardId: "card-r",
+        checklistId: "cl-r",
+      });
+      const addItem = scoped(boardId, {
+        type: "ADD_CHECKLIST_ITEM",
+        cardId: "card-r",
+        checklistId: "cl-r",
+        newItemId: "it-r",
+        text: "One",
+      });
+      const deleteItem = scoped(boardId, {
+        type: "DELETE_CHECKLIST_ITEM",
+        cardId: "card-r",
+        checklistId: "cl-r",
+        itemId: "it-r",
+      });
+
+      // Redo re-sends the original action verbatim: the soft-deleted row
+      // must be revived, not inserted again (unique id → 500).
+      const timeline = [
+        addColumn,
+        addCard,
+        addLabel,
+        deleteLabel,
+        addLabel,
+        addChecklist,
+        deleteChecklist,
+        addChecklist,
+        addItem,
+        deleteItem,
+        addItem,
+      ];
+      for (const action of timeline) await apply(boardId, action);
+
+      let expected = initial;
+      for (const action of timeline) {
+        expected = boardReducer([expected], action, {
+          withActivity: false,
+        })[0]!;
+      }
+      expect(await getAggregate(boardId)).toEqual(expected);
+    });
+
     it("ignores unknown labels and checklists exactly like the reducer", async () => {
       const boardId = await createBoard("No-op board");
       await applyAndAssert(

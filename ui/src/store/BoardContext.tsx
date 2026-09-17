@@ -908,7 +908,6 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         getBaseline: (id) => seqsRef.current.get(id) ?? 0,
         setBaseline: (id, seq) =>
           seqsRef.current.set(id, Math.max(seqsRef.current.get(id) ?? 0, seq)),
-        getBoard: (id) => stateRef.current.find((b) => b.id === id),
         apply,
         markForeign,
         isBusy: (id) => sync.isBusy(id),

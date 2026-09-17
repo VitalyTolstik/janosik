@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* `shared/` lives outside this Vite root, so Tailwind's automatic content
+   detection never sees it — and the label color maps (LABEL_COLOR_CHIP /
+   LABEL_COLOR_DOT) are the only place several utilities are written down.
+   Without this the chips silently lost their colors wherever the class was
+   not repeated in ui/ (23 utilities: text-pink, bg-success/15, …). */
+@source "../../shared/src";
+
 /* ---------------------------------------------------------------------------
  * Design tokens — dark theme is the :root default, light theme is activated
  * via the `.light` class on <html> (or `.dark` override block below).
