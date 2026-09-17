@@ -13,7 +13,13 @@ import type { Board, Card, Label } from "@janosik/shared";
 
 /** Key-order-insensitive JSON, so "same data, different literal order" is equal. */
 function stable(value: unknown): string {
-  return JSON.stringify(value, (_key, entry) => {
+  return JSON.stringify(value, (key, entry) => {
+    // The server aggregate never carries the client-only activity feed (the
+    // backend derives it from the command log, §7.4), while a local card
+    // gains one on every action. Diffing it would mark every touched card
+    // foreign on each focus refetch and kill the user's undo steps (live
+    // bug, 2026-09-17). No other entity keeps a field under this name.
+    if (key === "activity") return undefined;
     if (entry && typeof entry === "object" && !Array.isArray(entry)) {
       const sorted: Record<string, unknown> = {};
       for (const key of Object.keys(entry).sort()) {
@@ -28,19 +34,6 @@ function stable(value: unknown): string {
 /** Snapshot equality for entities that may be missing on either side. */
 function same(a: unknown, b: unknown): boolean {
   return stable(a) === stable(b);
-}
-
-/**
- * The card stripped of client-only state. Server aggregates never carry the
- * activity feed — the backend derives card events from the command log
- * (§7.4) — while the local card gains `activity` on every dispatched action.
- * Diffing it would mark every touched card "foreign" on each focus refetch
- * and kill the user's own undo steps (found live, 2026-09-17: undo/redo
- * vanished after switching windows even though nobody else had edited).
- */
-function comparableCard(card: Card): Omit<Card, "activity"> {
-  const { activity: _activity, ...rest } = card;
-  return rest;
 }
 
 function changedColumns(local: Board, server: Board): string[] {
@@ -62,10 +55,7 @@ function changedCards(local: Board, server: Board): string[] {
   for (const [id, card] of Object.entries(local.cards)) {
     seen.add(id);
     const fresh: Card | undefined = server.cards[id];
-    if (
-      fresh === undefined ||
-      !same(comparableCard(card), comparableCard(fresh))
-    ) {
+    if (fresh === undefined || !same(card, fresh)) {
       ids.push(id);
     }
   }

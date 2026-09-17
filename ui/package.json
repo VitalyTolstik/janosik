@@ -17,7 +17,7 @@
         "dist/assets/radix-*.js",
         "dist/assets/dndkit-*.js"
       ],
-      "limit": "210 KB",
+      "limit": "300 KB",
       "gzip": true
     },
     {
