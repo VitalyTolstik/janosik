@@ -62,6 +62,8 @@ interface ColumnViewProps {
    * board state would undo TASK-21.4.1.
    */
   canDuplicateColumn?: boolean;
+  /** VIEWER mode (TASK-35): static header, no menu, no composers, no drag. */
+  readOnly?: boolean;
 }
 
 /**
@@ -86,6 +88,7 @@ function ColumnViewBody({
   highlight,
   cursorCardId,
   canDuplicateColumn = true,
+  readOnly = false,
 }: ColumnViewProps) {
   const {
     addCard,
@@ -168,7 +171,11 @@ function ColumnViewBody({
     transform,
     transition,
     isDragging: isColumnDragging,
-  } = useSortable({ id: column.id, data: { type: "column" } });
+  } = useSortable({
+    id: column.id,
+    data: { type: "column" },
+    disabled: readOnly,
+  });
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({
     id: column.id,
   });
@@ -190,7 +197,10 @@ function ColumnViewBody({
   // when the rendered ids ARE the column order (no filter override, no
   // active card-drag draft) and the column can still take cards.
   const inlineAddAllowed =
-    !overridden && column.cardIds.length < LIMITS.cardsPerColumn && !atWipLimit;
+    !readOnly &&
+    !overridden &&
+    column.cardIds.length < LIMITS.cardsPerColumn &&
+    !atWipLimit;
 
   const setNodeRef = (node: HTMLElement | null) => {
     setSortableRef(node);
@@ -231,15 +241,19 @@ function ColumnViewBody({
         )}
       >
         <header
-          className="flex cursor-grab touch-manipulation items-center justify-between gap-1 px-2 py-2.5 pl-3 active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-          title={t("column.dragHint")}
+          className={cn(
+            "flex items-center justify-between gap-1 px-2 py-2.5 pl-3",
+            !readOnly &&
+              "cursor-grab touch-manipulation active:cursor-grabbing",
+          )}
+          {...(readOnly ? {} : attributes)}
+          {...(readOnly ? {} : listeners)}
+          title={readOnly ? undefined : t("column.dragHint")}
         >
           <h3
             className="truncate text-sm font-semibold text-foreground"
-            onDoubleClick={openRename}
-            {...doubleTapHandlers}
+            onDoubleClick={readOnly ? undefined : openRename}
+            {...(readOnly ? {} : doubleTapHandlers)}
           >
             {column.title}
           </h3>
@@ -261,28 +275,32 @@ function ColumnViewBody({
             >
               {wipLimit !== undefined ? `${count}/${wipLimit}` : count}
             </span>
-            <ColumnMenu
-              onRename={openRename}
-              onDuplicate={() =>
-                duplicateColumn(
-                  column.id,
-                  t("column.duplicateTitle", { title: column.title }),
-                )
-              }
-              onDelete={() => setConfirmDelete(true)}
-              onSort={(sortBy) => sortColumn(column.id, sortBy)}
-              onSetWipLimit={() => setWipLimitOpen(true)}
-              onArchiveCards={() => setConfirmArchiveCards(true)}
-              wipLimit={wipLimit}
-              duplicateDisabled={!canDuplicateColumn}
-              duplicateDisabledReason={t("limits.maxColumns", {
-                limit: LIMITS.columnsPerBoard,
-              })}
-            />
-            <GripVertical
-              aria-hidden
-              className="h-4 w-4 shrink-0 text-muted-foreground/60"
-            />
+            {readOnly ? null : (
+              <>
+                <ColumnMenu
+                  onRename={openRename}
+                  onDuplicate={() =>
+                    duplicateColumn(
+                      column.id,
+                      t("column.duplicateTitle", { title: column.title }),
+                    )
+                  }
+                  onDelete={() => setConfirmDelete(true)}
+                  onSort={(sortBy) => sortColumn(column.id, sortBy)}
+                  onSetWipLimit={() => setWipLimitOpen(true)}
+                  onArchiveCards={() => setConfirmArchiveCards(true)}
+                  wipLimit={wipLimit}
+                  duplicateDisabled={!canDuplicateColumn}
+                  duplicateDisabledReason={t("limits.maxColumns", {
+                    limit: LIMITS.columnsPerBoard,
+                  })}
+                />
+                <GripVertical
+                  aria-hidden
+                  className="h-4 w-4 shrink-0 text-muted-foreground/60"
+                />
+              </>
+            )}
           </span>
         </header>
 
@@ -365,8 +383,10 @@ function ColumnViewBody({
                           onCardClick={
                             onCardClick ? handleCardClick : undefined
                           }
-                          onCardDuplicate={handleCardDuplicate}
-                          onCardArchive={archiveCard}
+                          onCardDuplicate={
+                            readOnly ? undefined : handleCardDuplicate
+                          }
+                          onCardArchive={readOnly ? undefined : archiveCard}
                           duplicateDisabled={duplicateDisabled}
                           duplicateDisabledReason={duplicateDisabledReason}
                         />
@@ -404,25 +424,29 @@ function ColumnViewBody({
           )}
         </div>
 
-        <footer className="px-2 pb-2 pt-1.5">
-          <CardComposer
-            columnId={column.id}
-            labels={labels}
-            disabled={
-              column.cardIds.length >= LIMITS.cardsPerColumn || atWipLimit
-            }
-            disabledReason={
-              column.cardIds.length >= LIMITS.cardsPerColumn
-                ? t("limits.maxItems", {
-                    limit: LIMITS.cardsPerColumn,
-                  })
-                : atWipLimit
-                  ? t("column.wipLimitReached", { limit: wipLimit })
-                  : undefined
-            }
-            onSubmit={(title, labelIds) => addCard(column.id, title, labelIds)}
-          />
-        </footer>
+        {readOnly ? null : (
+          <footer className="px-2 pb-2 pt-1.5">
+            <CardComposer
+              columnId={column.id}
+              labels={labels}
+              disabled={
+                column.cardIds.length >= LIMITS.cardsPerColumn || atWipLimit
+              }
+              disabledReason={
+                column.cardIds.length >= LIMITS.cardsPerColumn
+                  ? t("limits.maxItems", {
+                      limit: LIMITS.cardsPerColumn,
+                    })
+                  : atWipLimit
+                    ? t("column.wipLimitReached", { limit: wipLimit })
+                    : undefined
+              }
+              onSubmit={(title, labelIds) =>
+                addCard(column.id, title, labelIds)
+              }
+            />
+          </footer>
+        )}
       </section>
 
       <RenameColumnDialog

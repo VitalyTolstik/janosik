@@ -101,4 +101,7 @@ export const descriptionEditorPlugins: RealmPlugin[] = [
   ...uiPlugins,
 ];
 
+/** Read-only description (VIEWER, TASK-35): content only, no toolbar. */
+export const descriptionViewerPlugins: RealmPlugin[] = [...contentPlugins];
+
 export { editorTranslation, janosikIconFor };

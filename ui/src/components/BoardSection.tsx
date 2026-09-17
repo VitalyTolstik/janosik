@@ -44,7 +44,7 @@ function readStoredView(): BoardView {
  * duplicated here.
  */
 export function BoardSection() {
-  const { board } = useBoard();
+  const { board, roleOf } = useBoard();
   const { t } = useI18n();
   const { background } = useBoardBackground();
   const [filter, setFilter] = useState<CardFilter>(EMPTY_FILTER);
@@ -113,6 +113,10 @@ export function BoardSection() {
     );
   }
 
+  // VIEWER is read-only: the server answers 403 to every command, so the UI
+  // hides the mutating affordances instead of offering actions that bounce.
+  const readOnly = roleOf(board.id) === "VIEWER";
+
   return (
     <main
       className={cn(
@@ -139,6 +143,7 @@ export function BoardSection() {
           isFiltering={active}
           highlight={filter.query}
           onCardClick={handleCardClick}
+          readOnly={readOnly}
         />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -146,6 +151,7 @@ export function BoardSection() {
             <CalendarView
               filteredCardIds={filteredIds ?? undefined}
               onCardClick={handleCardClick}
+              readOnly={readOnly}
             />
           ) : (
             <TableView
@@ -153,6 +159,7 @@ export function BoardSection() {
               isFiltering={active}
               highlight={filter.query}
               onCardClick={handleCardClick}
+              readOnly={readOnly}
             />
           )}
         </div>
@@ -161,6 +168,7 @@ export function BoardSection() {
       <CardDialog
         cardId={openCardId}
         open={openCardId !== null}
+        readOnly={readOnly}
         onOpenChange={(open) => {
           if (!open) {
             setOpenCardId(null);

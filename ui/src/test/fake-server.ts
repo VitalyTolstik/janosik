@@ -5,6 +5,7 @@ import {
   type Board,
   type BoardAction,
   type BoardExportFile,
+  type BoardRole,
   type BoardSummary,
   type CommandRequest,
   type CommandResponse,
@@ -57,6 +58,8 @@ export class FakeServer {
     displayName: "Admin",
   };
   refreshValid = true;
+  /** Caller's role per board summary (`GET /boards`) — drives VIEWER tests. */
+  role: BoardRole = "ADMIN";
 
   private readonly commands = new Map<string, CommandResponse>();
   private readonly versions = new Map<string, Map<string, number>>();
@@ -143,7 +146,10 @@ export class FakeServer {
       return json(200, this.publicUser());
     }
     if (path === "/api/v1/boards" && method === "GET") {
-      return json(200, [...this.boards.values()].map(toSummary));
+      return json(
+        200,
+        [...this.boards.values()].map((board) => this.toSummary(board)),
+      );
     }
     if (path === "/api/v1/boards" && method === "POST") {
       const { title } = (body ?? {}) as { title?: string };
@@ -250,6 +256,21 @@ export class FakeServer {
     };
   }
 
+  private toSummary(board: Board): BoardSummary {
+    return {
+      id: board.id,
+      title: board.title,
+      ...(board.archivedAt !== undefined
+        ? { archivedAt: board.archivedAt }
+        : {}),
+      counters: {
+        cards: Object.keys(board.cards).length,
+        columns: board.columns.length,
+      },
+      role: this.role,
+    };
+  }
+
   private session(): AuthResponseDto {
     return { accessToken: "access-token-1", user: this.publicUser() };
   }
@@ -260,19 +281,6 @@ function json(status: number, body: unknown): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
-}
-
-function toSummary(board: Board): BoardSummary {
-  return {
-    id: board.id,
-    title: board.title,
-    ...(board.archivedAt !== undefined ? { archivedAt: board.archivedAt } : {}),
-    counters: {
-      cards: Object.keys(board.cards).length,
-      columns: board.columns.length,
-    },
-    role: "ADMIN",
-  };
 }
 
 export function emptyBoard(id: string, title: string): Board {

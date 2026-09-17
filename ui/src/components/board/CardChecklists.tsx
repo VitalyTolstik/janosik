@@ -43,9 +43,15 @@ import { LimitCounter } from "@/components/ui/limit-counter";
 interface CardChecklistsProps {
   cardId: string;
   checklists: Checklist[];
+  /** VIEWER mode (TASK-35): progress and items only, nothing interactive. */
+  readOnly?: boolean;
 }
 
-export function CardChecklists({ cardId, checklists }: CardChecklistsProps) {
+export function CardChecklists({
+  cardId,
+  checklists,
+  readOnly = false,
+}: CardChecklistsProps) {
   const { t } = useI18n();
   const {
     addChecklist,
@@ -79,36 +85,39 @@ export function CardChecklists({ cardId, checklists }: CardChecklistsProps) {
           {t("checklist.sectionLabel")}
         </span>
         {/* Capped at LIMITS.checklistsPerCard — the disabled button
-            explains itself through the tooltip. */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
-                disabled={checklists.length >= LIMITS.checklistsPerCard}
-                onClick={() =>
-                  addChecklist(cardId, t("checklist.defaultTitle"))
-                }
-              >
-                <Plus className="h-3.5 w-3.5" />
-                {t("checklist.add")}
-              </Button>
-            </span>
-          </TooltipTrigger>
-          {checklists.length >= LIMITS.checklistsPerCard && (
-            <TooltipContent>
-              {t("limits.maxItems", { limit: LIMITS.checklistsPerCard })}
-            </TooltipContent>
-          )}
-        </Tooltip>
+            explains itself through the tooltip. Hidden for VIEWER. */}
+        {readOnly ? null : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                  disabled={checklists.length >= LIMITS.checklistsPerCard}
+                  onClick={() =>
+                    addChecklist(cardId, t("checklist.defaultTitle"))
+                  }
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {t("checklist.add")}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            {checklists.length >= LIMITS.checklistsPerCard && (
+              <TooltipContent>
+                {t("limits.maxItems", { limit: LIMITS.checklistsPerCard })}
+              </TooltipContent>
+            )}
+          </Tooltip>
+        )}
       </div>
 
       {checklists.map((checklist) => (
         <ChecklistCard
           key={checklist.id}
           checklist={checklist}
+          readOnly={readOnly}
           editingTitle={editingTitleId === checklist.id}
           editingItemId={editingItemId}
           onEditTitle={(draft) => {
@@ -140,6 +149,8 @@ export function CardChecklists({ cardId, checklists }: CardChecklistsProps) {
 
 interface ChecklistCardProps {
   checklist: Checklist;
+  /** VIEWER mode (TASK-35): no title menu, no item editors. */
+  readOnly?: boolean;
   editingTitle: boolean;
   editingItemId: string | null;
   onEditTitle: (draft: string) => void;
@@ -157,6 +168,7 @@ interface ChecklistCardProps {
 
 function ChecklistCard({
   checklist,
+  readOnly = false,
   editingTitle,
   editingItemId,
   onEditTitle,
@@ -198,32 +210,34 @@ function ChecklistCard({
             {t("checklist.progress", { count: total, done, total })}
           </span>
         ) : null}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 shrink-0"
-              aria-label={t("checklist.menuLabel")}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuLabel>{t("checklist.menuLabel")}</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => onEditTitle(checklist.title)}>
-              <Pencil className="h-3.5 w-3.5" />
-              {t("checklist.rename")}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {t("checklist.delete")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {readOnly ? null : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                aria-label={t("checklist.menuLabel")}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel>{t("checklist.menuLabel")}</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => onEditTitle(checklist.title)}>
+                <Pencil className="h-3.5 w-3.5" />
+                {t("checklist.rename")}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {t("checklist.delete")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       {total > 0 ? (
@@ -244,19 +258,33 @@ function ChecklistCard({
       <ul className="mt-2 space-y-0.5">
         {checklist.items.map((item) => (
           <li key={item.id} className="group/item flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onToggleItem(item.id)}
-              aria-pressed={item.done}
-              className={cn(
-                "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
-                item.done
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border/80 bg-background hover:border-primary/60",
-              )}
-            >
-              {item.done ? <Check className="h-3 w-3" /> : null}
-            </button>
+            {readOnly ? (
+              <span
+                aria-hidden
+                className={cn(
+                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                  item.done
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border/80 bg-background",
+                )}
+              >
+                {item.done ? <Check className="h-3 w-3" /> : null}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onToggleItem(item.id)}
+                aria-pressed={item.done}
+                className={cn(
+                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
+                  item.done
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border/80 bg-background hover:border-primary/60",
+                )}
+              >
+                {item.done ? <Check className="h-3 w-3" /> : null}
+              </button>
+            )}
             {editingItemId === item.id ? (
               <TitleInput
                 defaultValue={item.text}
@@ -267,56 +295,63 @@ function ChecklistCard({
               />
             ) : (
               <span
-                onDoubleClick={() => onEditItem(item.id, item.text)}
+                onDoubleClick={
+                  readOnly ? undefined : () => onEditItem(item.id, item.text)
+                }
                 className={cn(
-                  "min-w-0 flex-1 cursor-text break-words text-sm",
+                  "min-w-0 flex-1 break-words text-sm",
+                  !readOnly && "cursor-text",
                   item.done && "text-muted-foreground line-through",
                 )}
               >
                 {item.text}
               </span>
             )}
-            <button
-              type="button"
-              onClick={() => onDeleteItem(item.id)}
-              aria-label={t("checklist.itemDelete")}
-              className="no-hover:opacity-100 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/item:opacity-100"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            {readOnly ? null : (
+              <button
+                type="button"
+                onClick={() => onDeleteItem(item.id)}
+                aria-label={t("checklist.itemDelete")}
+                className="no-hover:opacity-100 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/item:opacity-100"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </li>
         ))}
       </ul>
 
-      <form
-        className="mt-2 flex items-center gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const text = newItem.trim();
-          if (!text) return;
-          onAddItem(text);
-          setNewItem("");
-        }}
-      >
-        <ListTodo className="h-4 w-4 shrink-0 text-muted-foreground/60" />
-        <Input
-          name="checklist-new-item"
-          value={newItem}
-          maxLength={LIMITS.checklistItem}
-          disabled={checklist.items.length >= LIMITS.itemsPerChecklist}
-          onChange={(e) => setNewItem(e.target.value)}
-          placeholder={t("checklist.itemPlaceholder")}
-          aria-label={t("checklist.itemPlaceholder")}
-          className="h-8 border-none bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
-        />
-        <LimitCounter
-          length={newItem.length}
-          limit={LIMITS.checklistItem}
-          position="below"
-          className="left-6"
-          testId="checklist-item-add-limit"
-        />
-      </form>
+      {readOnly ? null : (
+        <form
+          className="mt-2 flex items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const text = newItem.trim();
+            if (!text) return;
+            onAddItem(text);
+            setNewItem("");
+          }}
+        >
+          <ListTodo className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+          <Input
+            name="checklist-new-item"
+            value={newItem}
+            maxLength={LIMITS.checklistItem}
+            disabled={checklist.items.length >= LIMITS.itemsPerChecklist}
+            onChange={(e) => setNewItem(e.target.value)}
+            placeholder={t("checklist.itemPlaceholder")}
+            aria-label={t("checklist.itemPlaceholder")}
+            className="h-8 border-none bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
+          />
+          <LimitCounter
+            length={newItem.length}
+            limit={LIMITS.checklistItem}
+            position="below"
+            className="left-6"
+            testId="checklist-item-add-limit"
+          />
+        </form>
+      )}
 
       {/* Deleting a checklist wipes its items — ask first (same pattern as
           card/column/label deletion). */}

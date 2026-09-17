@@ -117,6 +117,24 @@ export interface BoardMemberDto {
   expiresAt: number | null;
 }
 
+/** Body of `POST /boards/:id/members` — ADMIN-only invite (TASK-35). */
+export interface InviteMemberRequest {
+  email: string;
+  role: BoardRole;
+  /**
+   * ISO-8601 expiry; only meaningful for `VIEWER` (other roles store
+   * `null`). Omitted = unbounded.
+   */
+  expiresAt?: string | null;
+}
+
+/** Body of `PATCH /boards/:id/members/:userId` — ADMIN-only update. */
+export interface UpdateMemberRequest {
+  role?: BoardRole;
+  /** `null` clears the VIEWER expiry; omitted keeps the current value. */
+  expiresAt?: string | null;
+}
+
 /** Board counters shown in the switcher (`GET /boards`). */
 export interface BoardCounters {
   cards: number;

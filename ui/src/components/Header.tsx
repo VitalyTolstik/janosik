@@ -1,5 +1,6 @@
 import { BackgroundSwitcher } from "@/components/BackgroundSwitcher";
 import { SignOutButton } from "@/components/auth/SignOutButton";
+import { BoardMembersDialog } from "@/components/board/BoardMembersDialog";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
 import { DataMenu } from "@/components/DataMenu";
@@ -94,6 +95,7 @@ export function Header() {
               one name on screen, switch and rename are separate triggers. */}
           <BoardTitle />
           <BoardSwitcher />
+          <BoardMembersDialog />
         </div>
       </div>
 

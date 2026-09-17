@@ -130,41 +130,58 @@ interface CardDueDateProps {
   cardId: string;
   /** Current due date as a Unix timestamp (ms), or absent when unset. */
   dueDate?: number;
+  /** VIEWER mode (TASK-35): static text instead of the date popover. */
+  readOnly?: boolean;
 }
 
 /**
  * Due-date row in the card dialog: a trigger button with the current
  * deadline (or a "set" placeholder) opening a popover with the shared
- * DueDatePickerContent.
+ * DueDatePickerContent. Read-only renders the deadline as plain text (and
+ * nothing at all when the card has no deadline).
  */
-export function CardDueDate({ cardId, dueDate }: CardDueDateProps) {
+export function CardDueDate({
+  cardId,
+  dueDate,
+  readOnly = false,
+}: CardDueDateProps) {
   const { t, lang } = useI18n();
   const hour12 = useHour12();
   const [open, setOpen] = useState(false);
   const due = typeof dueDate === "number" ? dueParts(dueDate) : undefined;
+
+  if (readOnly && !due) return null;
 
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-xs font-medium text-muted-foreground">
         {t("dueDate.label")}
       </span>
-      <Popover open={open} onOpenChange={(next) => setOpen(next)}>
-        <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" data-testid="due-date-trigger">
-            <CalendarClock className="h-3.5 w-3.5" />
-            {due
-              ? `${formatDateOnly(dueDate as number, lang)}, ${formatTime(due.time, lang, hour12)}`
-              : t("dueDate.set")}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="relative w-auto p-3">
-          <DueDatePickerContent
-            cardId={cardId}
-            dueDate={dueDate}
-            onRemoved={() => setOpen(false)}
-          />
-        </PopoverContent>
-      </Popover>
+      {readOnly ? (
+        <span className="text-sm text-foreground">
+          {due
+            ? `${formatDateOnly(dueDate as number, lang)}, ${formatTime(due.time, lang, hour12)}`
+            : t("dueDate.set")}
+        </span>
+      ) : (
+        <Popover open={open} onOpenChange={(next) => setOpen(next)}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" data-testid="due-date-trigger">
+              <CalendarClock className="h-3.5 w-3.5" />
+              {due
+                ? `${formatDateOnly(dueDate as number, lang)}, ${formatTime(due.time, lang, hour12)}`
+                : t("dueDate.set")}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="relative w-auto p-3">
+            <DueDatePickerContent
+              cardId={cardId}
+              dueDate={dueDate}
+              onRemoved={() => setOpen(false)}
+            />
+          </PopoverContent>
+        </Popover>
+      )}
     </div>
   );
 }

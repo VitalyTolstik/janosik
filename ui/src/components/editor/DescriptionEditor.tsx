@@ -7,6 +7,7 @@ import { useI18n } from "@/i18n";
 import { sanitizeMarkdownForImport } from "@/utils/sanitizeMarkdown";
 import {
   descriptionEditorPlugins,
+  descriptionViewerPlugins,
   editorTranslation,
   janosikIconFor,
 } from "@/components/editor/plugins";
@@ -18,6 +19,8 @@ interface DescriptionEditorProps {
   onChange: (markdown: string) => void;
   /** Shown when the description is empty. */
   placeholder?: string;
+  /** VIEWER mode (TASK-35): rendered content, no toolbar, no edits. */
+  readOnly?: boolean;
   className?: string;
 }
 
@@ -40,6 +43,7 @@ export function DescriptionEditor({
   value,
   onChange,
   placeholder,
+  readOnly = false,
   className,
 }: DescriptionEditorProps) {
   const { lang } = useI18n();
@@ -48,11 +52,16 @@ export function DescriptionEditor({
     <MDXEditor
       // Re-key on language change so toolbar tooltips/labels re-resolve.
       key={lang}
-      className={cn("janosik-mdx janosik-mdx-edit", className)}
+      className={cn(
+        "janosik-mdx",
+        readOnly ? "janosik-mdx-readonly" : "janosik-mdx-edit",
+        className,
+      )}
       contentEditableClassName="janosik-md-content"
+      readOnly={readOnly}
       markdown={sanitizeMarkdownForImport(value)}
       onChange={(markdown, initialNormalize) => {
-        if (!initialNormalize) {
+        if (!readOnly && !initialNormalize) {
           onChange(markdown);
         }
       }}
@@ -60,7 +69,7 @@ export function DescriptionEditor({
       suppressHtmlProcessing
       translation={editorTranslation}
       iconComponentFor={janosikIconFor}
-      plugins={descriptionEditorPlugins}
+      plugins={readOnly ? descriptionViewerPlugins : descriptionEditorPlugins}
     />
   );
 }

@@ -107,6 +107,8 @@ interface DndBoardProps {
   /** Fired on a card click (and the e/Enter hotkey) — the dialog itself
    *  lives in BoardSection so it works from every view. */
   onCardClick: (cardId: string) => void;
+  /** VIEWER mode (TASK-35): no drag, no composers, no add-column control. */
+  readOnly?: boolean;
 }
 
 export function DndBoard({
@@ -114,6 +116,7 @@ export function DndBoard({
   isFiltering = false,
   highlight,
   onCardClick,
+  readOnly = false,
 }: DndBoardProps) {
   const { board, addColumn, moveCard, moveColumn } = useBoard();
   const { tp, t } = useI18n();
@@ -236,7 +239,7 @@ export function DndBoard({
 
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
-      if (!board || isFiltering) return;
+      if (!board || isFiltering || readOnly) return;
       const id = event.active.id as string;
       const type = event.active.data.current?.type;
       lastOverIdRef.current = null;
@@ -259,7 +262,7 @@ export function DndBoard({
         activeCardId: id,
       });
     },
-    [board, isFiltering, updateDraft],
+    [board, isFiltering, readOnly, updateDraft],
   );
 
   const handleDragOver = useCallback(
@@ -598,7 +601,7 @@ export function DndBoard({
 
   return (
     <DndContext
-      sensors={isFiltering ? NO_SENSORS : sensors}
+      sensors={isFiltering || readOnly ? NO_SENSORS : sensors}
       collisionDetection={collisionDetectionStrategy}
       measuring={MEASURING}
       onDragStart={handleDragStart}
@@ -631,6 +634,7 @@ export function DndBoard({
                 highlight={highlight}
                 cursorCardId={cursorCardId}
                 onCardClick={handleCardClick}
+                readOnly={readOnly}
                 canDuplicateColumn={
                   board.columns.length < LIMITS.columnsPerBoard
                 }
@@ -638,13 +642,15 @@ export function DndBoard({
             );
           })}
         </SortableContext>
-        <AddColumnControl
-          disabled={board.columns.length >= LIMITS.columnsPerBoard}
-          disabledReason={t("limits.maxItems", {
-            limit: LIMITS.columnsPerBoard,
-          })}
-          onSubmit={addColumn}
-        />
+        {readOnly ? null : (
+          <AddColumnControl
+            disabled={board.columns.length >= LIMITS.columnsPerBoard}
+            disabledReason={t("limits.maxItems", {
+              limit: LIMITS.columnsPerBoard,
+            })}
+            onSubmit={addColumn}
+          />
+        )}
       </div>
 
       <DragOverlay>
