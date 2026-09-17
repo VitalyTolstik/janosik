@@ -159,6 +159,8 @@ function toCard(card: CardWithRelations, boardLabelIds: Set<string>): Card {
     labelIds,
     createdAt: card.createdAt.getTime(),
     updatedAt: card.updatedAt.getTime(),
+    // Attribution (TASK-36): omitted when unset, like every optional field.
+    ...(card.lastActorId ? { lastActorId: card.lastActorId } : {}),
     ...(card.archivedAt ? { archivedAt: card.archivedAt.getTime() } : {}),
   };
 }

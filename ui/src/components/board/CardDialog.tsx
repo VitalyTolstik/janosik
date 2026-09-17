@@ -370,6 +370,7 @@ export function CardDialog({
 
             <CardActivityFeed
               activity={card.activity}
+              boardId={board.id}
               createdAt={card.createdAt}
             />
 

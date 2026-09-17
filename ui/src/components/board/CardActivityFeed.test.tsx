@@ -1,8 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { CardActivityFeed } from "@/components/board/CardActivityFeed";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
+import { BoardLiveProvider, createBoardLive } from "@/store/board-live";
 import type { CardActivityEvent } from "@janosik/shared";
 
 /**
@@ -114,5 +116,61 @@ describe("CardActivityFeed", () => {
     expandFeed();
     const time = screen.getByText(/hours? ago|2 hours/i);
     expect(time).toHaveAttribute("dateTime", new Date(recent).toISOString());
+  });
+});
+
+describe("attribution (TASK-36)", () => {
+  it("names the actor and leads with their avatar", () => {
+    const live = createBoardLive();
+    live.members.set("b-1", [
+      {
+        userId: "u-boris",
+        displayName: "Boris",
+        email: "boris@example.com",
+        role: "MEMBER",
+        expiresAt: null,
+      },
+    ]);
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <BoardLiveProvider live={live}>
+            <CardActivityFeed
+              boardId="b-1"
+              activity={[
+                event({
+                  id: "e1",
+                  type: "renamed",
+                  at: HOUR,
+                  actorId: "u-boris",
+                }),
+              ]}
+              createdAt={0}
+            />
+          </BoardLiveProvider>
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+    expandFeed();
+
+    const row = screen.getAllByTestId("activity-event")[0];
+    expect(within(row).getByTestId("activity-actor")).toBeInTheDocument();
+    expect(row).toHaveTextContent("Boris");
+    expect(row).toHaveTextContent("Title changed");
+  });
+
+  it("falls back to the type icon when the actor is unknown", () => {
+    renderFeed({
+      boardId: "b-1",
+      activity: [
+        event({ id: "e1", type: "renamed", at: HOUR, actorId: "u-ghost" }),
+      ],
+      createdAt: 0,
+    });
+    expandFeed();
+
+    const row = screen.getAllByTestId("activity-event")[0];
+    expect(within(row).queryByTestId("activity-actor")).toBeNull();
+    expect(row).toHaveTextContent("Title changed");
   });
 });

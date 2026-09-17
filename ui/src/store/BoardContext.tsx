@@ -25,6 +25,12 @@ import {
   type UpdateCardAction,
 } from "@janosik/shared";
 import { api, isApiEnabled } from "@/api/client";
+import {
+  BoardLiveProvider,
+  cardIdsTouchedBy,
+  createBoardLive,
+  type BoardLive,
+} from "@/store/board-live";
 import type { RealtimeBridge } from "@/store/realtime";
 import { useAuth } from "@/auth/AuthContext";
 import { useUndoHistory } from "@/store/use-undo-history";
@@ -413,6 +419,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     userIdRef.current = user?.id;
   }, [user?.id]);
 
+  // TASK-36 live collaboration state (presence roster, attribution, member
+  // directory). Separate external stores so an avatar or a highlight ring
+  // re-renders exactly the components that show it, never the board. A
+  // `useState` initializer (not a ref): the stores are pure containers with
+  // no timers until something is stamped, so a StrictMode double-init costs
+  // one discarded object and keeps the value out of ref-during-render rules.
+  const [live] = useState<BoardLive>(() => createBoardLive());
+
   // Created from the lazily imported chunk — the module stays off the
   // critical path, only its (erased) type is visible here.
   const realtimeRef = useRef<RealtimeBridge | null>(null);
@@ -443,8 +457,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       aliveRef.current = false;
       sync.dispose();
       realtimeRef.current?.dispose();
+      live.dispose();
     };
-  }, [sync]);
+  }, [sync, live]);
 
   const mergeVersions = useCallback(
     (boardId: string, versions: Record<string, number>) => {
@@ -597,8 +612,15 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // phantom no-op undo step. The reducer is pure, so the ref value always
   // matches what React commits. (TASK-33)
   const apply = useCallback((action: BoardAction) => {
-    stateRef.current = boardReducer(stateRef.current, action);
-    dispatchRaw(action);
+    // Stamp the author (TASK-36): local dispatches carry the current user,
+    // foreign realtime commands arrive with the server's actor already
+    // attached. The feed shows it; the attribution overlay reads it.
+    const stamped =
+      (action as { actorId?: string | null }).actorId === undefined
+        ? ({ ...action, actorId: userIdRef.current ?? null } as BoardAction)
+        : action;
+    stateRef.current = boardReducer(stateRef.current, stamped);
+    dispatchRaw(stamped);
   }, []);
 
   // Latest active board id, readable from stable callbacks.
@@ -806,6 +828,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     }
 
     if (!aliveRef.current) return;
+    for (const board of boards) live.attribution.seed(board);
     setRoles(nextRoles);
     // The hydrated state is exactly what the aggregates showed: replacing
     // the seq map keeps the realtime resume point in sync with it.
@@ -814,7 +837,24 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     // set would describe entities that no longer exist.
     clearHistory();
     apply({ type: "IMPORT_BOARDS", boards });
-  }, [apply, clearHistory]);
+  }, [apply, clearHistory, live]);
+
+  // The member directory powers names and avatars for attribution (TASK-36):
+  // who last changed a card may not be online right now, so the roster alone
+  // is not enough. Loaded per active board, best-effort.
+  useEffect(() => {
+    if (!serverMode || board?.id === undefined) return;
+    let cancelled = false;
+    void api
+      .listMembers(board.id)
+      .then((members) => {
+        if (!cancelled && aliveRef.current) live.members.set(board.id, members);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [serverMode, board?.id, live]);
 
   // StrictMode mounts the provider twice (setup → cleanup → setup); sharing
   // the in-flight hydration keeps the one-shot legacy import from running —
@@ -869,11 +909,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         boardId,
         Math.max(seqsRef.current.get(boardId) ?? 0, seq),
       );
+      live.attribution.seed(fresh);
       apply({ type: "RESTORE_BOARD", boardId, board: fresh });
     } catch {
       /* offline / server down — the next focus tries again */
     }
-  }, [serverMode, sync, markForeign, apply]);
+  }, [serverMode, sync, markForeign, apply, live]);
 
   useEffect(() => {
     if (!serverMode) return;
@@ -910,6 +951,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           seqsRef.current.set(id, Math.max(seqsRef.current.get(id) ?? 0, seq)),
         apply,
         markForeign,
+        setPresence: (id, users) => live.presence.set(id, users),
+        flagForeign: (id, actorId, ids) => {
+          // Only someone else's change earns the ring; another tab of mine
+          // is the same author and the card face stays anonymous.
+          if (actorId !== userIdRef.current) {
+            live.attribution.stamp(id, actorId, ids, { highlight: true });
+          }
+        },
         isBusy: (id) => sync.isBusy(id),
         getUserId: () => userIdRef.current,
       });
@@ -918,7 +967,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [serverMode, board?.id, apply, markForeign, sync]);
+  }, [serverMode, board?.id, apply, markForeign, sync, live]);
 
   // Wrapper dispatch: apply the command, then record the undo step for the
   // board it targeted. Board-scoped actions get the active board id
@@ -940,6 +989,15 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       } as BoardAction;
       const before = stateRef.current.find((b) => b.id === boardId);
       apply(scoped);
+      const author = userIdRef.current;
+      if (author !== undefined) {
+        const ids = cardIdsTouchedBy(scoped);
+        if (ids.length > 0) {
+          live.attribution.stamp(boardId, author, ids, {
+            at: (scoped as { at?: number }).at,
+          });
+        }
+      }
       // A command the reducer turned into a no-op (a guard, a limit, an
       // edit that changed nothing) is not a step: it would cost the user an
       // undo press that does nothing visible.
@@ -977,6 +1035,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       mergeVersions,
       showFailure,
       rollbackStep,
+      live,
     ],
   );
 
@@ -1150,15 +1209,17 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <BoardActionsContext.Provider value={actions}>
-      <BoardHistoryContext.Provider value={history}>
-        <BoardIdentityContext.Provider value={identity}>
-          <BoardStateContext.Provider value={stateValue}>
-            {children}
-          </BoardStateContext.Provider>
-        </BoardIdentityContext.Provider>
-      </BoardHistoryContext.Provider>
-    </BoardActionsContext.Provider>
+    <BoardLiveProvider live={live}>
+      <BoardActionsContext.Provider value={actions}>
+        <BoardHistoryContext.Provider value={history}>
+          <BoardIdentityContext.Provider value={identity}>
+            <BoardStateContext.Provider value={stateValue}>
+              {children}
+            </BoardStateContext.Provider>
+          </BoardIdentityContext.Provider>
+        </BoardHistoryContext.Provider>
+      </BoardActionsContext.Provider>
+    </BoardLiveProvider>
   );
 }
 

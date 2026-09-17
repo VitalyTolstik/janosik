@@ -14,12 +14,13 @@ const OUTSIDER_EMAIL = "events-outsider@example.com";
 const PENDING_EMAIL = "events-pending@example.com";
 const PASSWORD = "correct horse battery";
 
-interface CommandSseFrame {
+interface SseFrame {
   type: string;
   seq?: number;
   actorId?: string;
   action?: { type: string };
   touches?: string[];
+  users?: { id: string; displayName: string }[];
 }
 
 /**
@@ -28,6 +29,8 @@ interface CommandSseFrame {
  * The stream carries committed commands as `{type:"command", seq, action,
  * actorId}`; a client resumes from its last applied seq via `?since=` and
  * receives the missed delta before live events — exactly once, in order.
+ * Since TASK-36 it also carries `presence` rosters (no seq, not buffered):
+ * every connection receives one on join, changes and a 30 s heartbeat.
  */
 describe("Board events SSE (e2e)", () => {
   let app: INestApplication;
@@ -39,6 +42,7 @@ describe("Board events SSE (e2e)", () => {
   let outsiderToken: string;
   let pendingToken: string;
   let ownerId: string;
+  let memberId: string;
   let boardId: string;
 
   beforeAll(async () => {
@@ -56,7 +60,9 @@ describe("Board events SSE (e2e)", () => {
     const owner = await register(OWNER_EMAIL, "Owner");
     ownerToken = owner.accessToken;
     ownerId = owner.id;
-    memberToken = (await register(MEMBER_EMAIL, "Member")).accessToken;
+    const member = await register(MEMBER_EMAIL, "Member");
+    memberToken = member.accessToken;
+    memberId = member.id;
     viewerToken = (await register(VIEWER_EMAIL, "Viewer")).accessToken;
     outsiderToken = (await register(OUTSIDER_EMAIL, "Outsider")).accessToken;
     pendingToken = (await register(PENDING_EMAIL, "Pending")).accessToken;
@@ -159,33 +165,40 @@ describe("Board events SSE (e2e)", () => {
   async function openStream(
     token: string | null,
     since: number,
+    clientId?: string,
   ): Promise<Response> {
-    return fetch(`${baseUrl}/boards/${boardId}/events?since=${since}`, {
-      headers: {
-        Accept: "text/event-stream",
-        ...(token === null ? {} : { Authorization: `Bearer ${token}` }),
+    const client = clientId === undefined ? "" : `&client=${clientId}`;
+    return fetch(
+      `${baseUrl}/boards/${boardId}/events?since=${since}${client}`,
+      {
+        headers: {
+          Accept: "text/event-stream",
+          ...(token === null ? {} : { Authorization: `Bearer ${token}` }),
+        },
       },
-    });
+    );
   }
 
-  /** Read `count` `data:` frames from an open SSE response. */
-  async function readFrames(
-    response: Response,
-    count: number,
-    timeoutMs = 12_000,
-  ): Promise<CommandSseFrame[]> {
+  /** An SSE reader that survives several `next()` calls (presence tests). */
+  function openReader(response: Response) {
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");
-    const frames: CommandSseFrame[] = [];
     const decoder = new TextDecoder();
     let buffer = "";
-    const deadline = Date.now() + timeoutMs;
-    try {
+    let closed = false;
+
+    const next = async (
+      count: number,
+      type = "command",
+      timeoutMs = 12_000,
+    ): Promise<SseFrame[]> => {
+      const frames: SseFrame[] = [];
+      const deadline = Date.now() + timeoutMs;
       while (frames.length < count) {
         const remaining = deadline - Date.now();
         if (remaining <= 0) {
           throw new Error(
-            `Timed out: got ${frames.length}/${count} frames (${JSON.stringify(frames)})`,
+            `Timed out: got ${frames.length}/${count} ${type} frames (${JSON.stringify(frames)})`,
           );
         }
         const chunk = await readWithTimeout(reader, remaining);
@@ -204,15 +217,37 @@ describe("Board events SSE (e2e)", () => {
             if (!line.startsWith("data:")) continue;
             const payload = line.slice(5).trim();
             if (payload === "ping") continue;
-            frames.push(JSON.parse(payload) as CommandSseFrame);
+            const frame = JSON.parse(payload) as SseFrame;
+            if (frame.type === type) frames.push(frame);
           }
         }
       }
-    } finally {
+      return frames;
+    };
+
+    const close = async (): Promise<void> => {
+      if (closed) return;
+      closed = true;
       await reader.cancel().catch(() => undefined);
       await response.body?.cancel().catch(() => undefined);
+    };
+
+    return { next, close };
+  }
+
+  /** Read `count` frames of one type from an SSE response, then close it. */
+  async function readFrames(
+    response: Response,
+    count: number,
+    type = "command",
+    timeoutMs = 12_000,
+  ): Promise<SseFrame[]> {
+    const stream = openReader(response);
+    try {
+      return await stream.next(count, type, timeoutMs);
+    } finally {
+      await stream.close();
     }
-    return frames;
   }
 
   function readWithTimeout(
@@ -331,6 +366,88 @@ describe("Board events SSE (e2e)", () => {
     expect(frames[0].action?.type).toBe("ADD_CARD");
     // The catch-up delta carries the same `touches` contract as live frames.
     expect(frames[0].touches).toContain(`card:card-gap`);
+  }, 20_000);
+
+  it("broadcasts presence: join, dedup across tabs, leave", async () => {
+    const baseline = await boardSeq(ownerToken);
+    const owner1 = openReader(
+      await openStream(ownerToken, baseline, "tab-owner-1"),
+    );
+    const first = await owner1.next(1, "presence");
+    expect(first[0].users).toEqual([{ id: ownerId, displayName: "Owner" }]);
+
+    const memberStream = openReader(
+      await openStream(memberToken, baseline, "tab-member-1"),
+    );
+    const memberSees = await memberStream.next(1, "presence");
+    expect(memberSees[0].users?.map((user) => user.id)).toEqual([
+      ownerId,
+      memberId,
+    ]);
+    const ownerSees = await owner1.next(1, "presence");
+    expect(ownerSees[0].users?.map((user) => user.id)).toEqual([
+      ownerId,
+      memberId,
+    ]);
+
+    // A second tab of the same user broadcasts again but lists them once.
+    const owner2 = openReader(
+      await openStream(ownerToken, baseline, "tab-owner-2"),
+    );
+    const owner2Sees = await owner2.next(1, "presence");
+    expect(owner2Sees[0].users?.map((user) => user.id)).toEqual([
+      ownerId,
+      memberId,
+    ]);
+    const memberAgain = await memberStream.next(1, "presence");
+    expect(memberAgain[0].users?.map((user) => user.id)).toEqual([
+      ownerId,
+      memberId,
+    ]);
+
+    // Closing one tab keeps the user on the roster; the last one removes them.
+    await owner1.close();
+    await owner2.close();
+    const afterLeave = await memberStream.next(1, "presence");
+    expect(afterLeave[0].users?.map((user) => user.id)).toEqual([memberId]);
+    await memberStream.close();
+  }, 30_000);
+
+  it("accepts a presence heartbeat for open sessions only", async () => {
+    const baseline = await boardSeq(ownerToken);
+    const stream = openReader(
+      await openStream(ownerToken, baseline, "ping-client-1"),
+    );
+    await stream.next(1, "presence");
+
+    await server()
+      .post(`/api/v1/boards/${boardId}/presence`)
+      .set(auth(ownerToken))
+      .send({ clientId: "ping-client-1" })
+      .expect(204);
+
+    // Unknown sessions are no-ops: a ping never conjures a presence entry.
+    await server()
+      .post(`/api/v1/boards/${boardId}/presence`)
+      .set(auth(ownerToken))
+      .send({ clientId: "unknown-session-1" })
+      .expect(204);
+
+    // The id shape is validated strictly.
+    await server()
+      .post(`/api/v1/boards/${boardId}/presence`)
+      .set(auth(ownerToken))
+      .send({ clientId: "no" })
+      .expect(400);
+
+    // Non-members cannot heartbeat into someone else's board.
+    await server()
+      .post(`/api/v1/boards/${boardId}/presence`)
+      .set(auth(outsiderToken))
+      .send({ clientId: "ping-outsider-1" })
+      .expect(403);
+
+    await stream.close();
   }, 20_000);
 
   it("lets a VIEWER watch the stream but not post commands", async () => {

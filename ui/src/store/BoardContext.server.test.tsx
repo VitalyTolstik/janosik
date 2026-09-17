@@ -13,10 +13,11 @@ import type { Board, Card } from "@janosik/shared";
 import { BOARD_STORAGE_KEY } from "@janosik/shared";
 import { api } from "@/api/client";
 import { I18nProvider } from "@/i18n";
-import { AuthProvider } from "@/auth/AuthContext";
+import { AuthProvider, useAuth } from "@/auth/AuthContext";
 import { ToastProvider } from "@/components/Toast";
 import { BoardProvider, useBoard } from "@/store/BoardContext";
 import { useBoardActions } from "@/store/BoardContext";
+import { useBoardPresence, useEntityAttribution } from "@/store/board-live";
 import { FakeServer, emptyBoard } from "@/test/fake-server";
 
 /**
@@ -52,10 +53,22 @@ function seedBoard(): Board {
 function Probe() {
   const { board, boards, syncStatus, canUndo } = useBoard();
   const actions = useBoardActions();
+  const { user } = useAuth();
+  const presence = useBoardPresence(board?.id);
+  const attribution = useEntityAttribution("c-1");
   const second = boards.find((entry) => entry.id === "b-2");
   return (
     <div>
       <div data-testid="status">{syncStatus}</div>
+      <div data-testid="me">{user?.id ?? ""}</div>
+      <div data-testid="presence">
+        {presence.map((person) => person.displayName).join(",")}
+      </div>
+      <div data-testid="attr">
+        {attribution
+          ? `${attribution.userId}:${String(attribution.highlight)}`
+          : ""}
+      </div>
       <div data-testid="title">{board?.title ?? ""}</div>
       <div data-testid="card-title">{board?.cards["c-1"]?.title ?? ""}</div>
       <div data-testid="columns">
@@ -403,6 +416,73 @@ describe("BoardProvider realtime (SSE, TASK-30)", () => {
     );
     // The foreign edit is nobody's undo step in this client.
     expect(screen.getByTestId("can-undo").textContent).toBe("false");
+  });
+
+  it("fills the presence roster from the stream, live", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.initialPresence = [{ id: "user-2", displayName: "Boris" }];
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("presence").textContent).toBe("Boris"),
+    );
+
+    act(() => {
+      server.publishPresence("b-1", [
+        { id: "user-1", displayName: "Admin" },
+        { id: "user-2", displayName: "Boris" },
+      ]);
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("presence").textContent).toBe("Admin,Boris"),
+    );
+  });
+
+  it("attributes a foreign edit and drops the highlight after 2 s", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitStreamOpen(server);
+
+    act(() => {
+      server.publishCommand("b-1", {
+        type: "UPDATE_CARD",
+        cardId: "c-1",
+        title: "Boris edit",
+        at: Date.now(),
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("attr").textContent).toBe("user-2:true"),
+    );
+    // The store clears the ring on its own 2 s clock; the author stays.
+    await waitFor(
+      () => expect(screen.getByTestId("attr").textContent).toBe("user-2:false"),
+      { timeout: 4_000 },
+    );
+  });
+
+  it("attributes my own edit without a highlight", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("me").textContent).toBe("user-1"),
+    );
+    await waitStreamOpen(server);
+
+    fireEvent.click(screen.getByTestId("edit"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("attr").textContent).toBe("user-1:false"),
+    );
   });
 
   it("catches up the commands missed while the stream was down", async () => {

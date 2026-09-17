@@ -14,6 +14,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { stripAttribution } from "./support/attribution";
 
 const ADMIN_EMAIL = "labels-admin@example.com";
 const MEMBER_EMAIL = "labels-member@example.com";
@@ -152,7 +153,7 @@ describe("Commands API — labels & checklists (e2e)", () => {
     })[0];
     await apply(boardId, action, token);
     const after = await getAggregate(boardId);
-    expect(after).toEqual(expected);
+    expect(stripAttribution(after)).toEqual(stripAttribution(expected));
     return after;
   }
 
@@ -481,7 +482,9 @@ describe("Commands API — labels & checklists (e2e)", () => {
           withActivity: false,
         })[0]!;
       }
-      expect(await getAggregate(boardId)).toEqual(expected);
+      expect(stripAttribution(await getAggregate(boardId))).toEqual(
+        stripAttribution(expected),
+      );
     });
 
     it("ignores unknown labels and checklists exactly like the reducer", async () => {

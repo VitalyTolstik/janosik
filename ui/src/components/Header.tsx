@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
+import { PresenceStack } from "@/components/board/PresenceStack";
 import { useBoardActions, useBoardHistory } from "@/store/BoardContext";
 
 /** Header: brand, background/language switchers, undo/redo, data and theme. */
@@ -97,6 +98,7 @@ export function Header() {
           <BoardTitle />
           <BoardSwitcher />
           <BoardMembersDialog />
+          <PresenceStack />
         </div>
       </div>
 

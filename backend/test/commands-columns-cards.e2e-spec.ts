@@ -14,6 +14,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { stripAttribution } from "./support/attribution";
 
 const ADMIN_EMAIL = "commands-admin@example.com";
 const MEMBER_EMAIL = "commands-member@example.com";
@@ -161,7 +162,7 @@ describe("Commands API (e2e)", () => {
       expect(res.seq).toEqual(expect.any(Number)),
     );
     const after = await getAggregate(boardId, token);
-    expect(after).toEqual(expected);
+    expect(stripAttribution(after)).toEqual(stripAttribution(expected));
     return after;
   }
 
@@ -528,7 +529,112 @@ describe("Commands API (e2e)", () => {
           withActivity: false,
         })[0]!;
       }
-      expect(await getAggregate(boardId)).toEqual(expected);
+      expect(stripAttribution(await getAggregate(boardId))).toEqual(
+        stripAttribution(expected),
+      );
+    });
+  });
+
+  describe("attribution: lastActorId follows the writer", () => {
+    it("stamps card writes, follows a member edit, skips reorders", async () => {
+      const boardId = await createBoard("Attribution board");
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "attr-col",
+          title: "A",
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "attr-card-a",
+          columnId: "attr-col",
+          title: "First",
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "attr-card-b",
+          columnId: "attr-col",
+          title: "Second",
+        }),
+      );
+
+      const admin = await prisma.user.findUniqueOrThrow({
+        where: { email: ADMIN_EMAIL },
+      });
+      const member = await prisma.user.findUniqueOrThrow({
+        where: { email: MEMBER_EMAIL },
+      });
+      await invite(boardId, MEMBER_EMAIL, "MEMBER", memberToken);
+
+      let board = await getAggregate(boardId);
+      expect(board.cards["attr-card-a"].lastActorId).toBe(admin.id);
+
+      // A checklist command bumps the card: the stamp follows the writer
+      // even though the action itself names no title.
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CHECKLIST",
+          cardId: "attr-card-a",
+          newChecklistId: "attr-cl",
+          title: "Steps",
+        }),
+      );
+      board = await getAggregate(boardId);
+      expect(board.cards["attr-card-a"].lastActorId).toBe(admin.id);
+
+      // A member's edit takes the stamp over.
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "UPDATE_CARD",
+          cardId: "attr-card-a",
+          title: "Member edit",
+        }),
+        memberToken,
+      );
+      board = await getAggregate(boardId);
+      expect(board.cards["attr-card-a"].lastActorId).toBe(member.id);
+
+      // A pure reorder writes positions only: no stamp, no updatedAt bump.
+      const stamped = { ...board.cards["attr-card-a"] };
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "SET_COLUMN_CARD_ORDER",
+          columnId: "attr-col",
+          cardIds: ["attr-card-b", "attr-card-a"],
+        }),
+      );
+      board = await getAggregate(boardId);
+      expect(board.columns[0].cardIds).toEqual(["attr-card-b", "attr-card-a"]);
+      expect(board.cards["attr-card-a"].lastActorId).toBe(stamped.lastActorId);
+      expect(board.cards["attr-card-a"].updatedAt).toBe(stamped.updatedAt);
+
+      // Undo of a delete restores the card and stamps the undoer.
+      await apply(
+        boardId,
+        scoped(boardId, { type: "DELETE_CARD", cardId: "attr-card-b" }),
+        memberToken,
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_CARD",
+          card: { ...board.cards["attr-card-b"] },
+          columnId: "attr-col",
+        }),
+        memberToken,
+      );
+      board = await getAggregate(boardId);
+      expect(board.cards["attr-card-b"].lastActorId).toBe(member.id);
     });
   });
 

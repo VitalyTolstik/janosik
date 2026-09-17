@@ -1515,6 +1515,27 @@ describe("boardReducer — card activity (TASK-12)", () => {
     expect(card.activity![0].actorId).toBeNull();
   });
 
+  it("stamps the action's actor on created and appended events (TASK-36)", () => {
+    const added = reduceBoard(freshBoard(), {
+      type: "ADD_CARD",
+      columnId: "col-backlog",
+      title: "Attributed",
+      actorId: "u-boris",
+    });
+    const created = Object.values(added.cards).find(
+      (card) => card.title === "Attributed",
+    )!;
+    expect(created.activity![0].actorId).toBe("u-boris");
+
+    const renamed = reduceBoard(freshBoard(), {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      title: "Renamed",
+      actorId: "u-boris",
+    });
+    expect(renamed.cards["card-1"].activity!.at(-1)!.actorId).toBe("u-boris");
+  });
+
   it("appends 'renamed' / 'description-changed' events on update", () => {
     const board = reduceBoard(freshBoard(), {
       type: "UPDATE_CARD",

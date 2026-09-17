@@ -8,7 +8,14 @@ import {
   Settings2,
   X,
 } from "lucide-react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 
 import { DueBadge } from "@/components/board/DueBadge";
 import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
@@ -16,6 +23,8 @@ import { LabelPicker } from "@/components/board/LabelPicker";
 import { DueDatePickerContent } from "@/components/board/CardDueDate";
 import { HighlightedText } from "@/components/ui/highlight";
 import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/ui/user-avatar";
+import { useAuth } from "@/auth/AuthContext";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -34,6 +43,8 @@ import {
 import { useToast } from "@/components/Toast";
 import { formatDateOnly, useI18n } from "@/i18n";
 import { useCardLabels } from "@/hooks/use-card-labels";
+import { useBoardMember, useEntityAttribution } from "@/store/board-live";
+import { userAvatarVar, userLabel } from "@/utils/avatar";
 import { isColumnFull } from "@janosik/shared";
 import { cn } from "@/lib/utils";
 import { createId } from "@/utils/id";
@@ -529,11 +540,36 @@ function TableRowBody({
   onDeleteLabel,
 }: TableRowProps) {
   const { t, lang } = useI18n();
+  const { user } = useAuth();
+  // Attribution (TASK-36): who last changed the row, plus the transient
+  // foreign highlight — the same ring semantics as the card face.
+  const attribution = useEntityAttribution(card.id);
+  const authorMember = useBoardMember(
+    attribution?.boardId,
+    attribution?.userId,
+  );
+  const foreignAuthor =
+    attribution !== undefined && attribution.userId !== user?.id
+      ? attribution
+      : undefined;
+  const foreignColor = userAvatarVar(attribution?.userId ?? "");
+  const authorName = userLabel(
+    authorMember?.displayName ?? null,
+    authorMember?.email ?? "",
+  );
   return (
     <tr
       onClick={() => onOpen(card.id)}
       data-testid="table-row"
-      className="cursor-pointer border-b border-border/40 transition-colors last:border-b-0 hover:bg-muted/40"
+      className={cn(
+        "cursor-pointer border-b border-border/40 transition-colors last:border-b-0 hover:bg-muted/40",
+        attribution?.highlight === true && "janosik-foreign-row",
+      )}
+      style={
+        attribution?.highlight === true
+          ? ({ "--janosik-foreign-color": foreignColor } as CSSProperties)
+          : undefined
+      }
     >
       <td className="relative max-w-0 px-3 py-2">
         {isEditingTitle ? (
@@ -802,7 +838,24 @@ function TableRowBody({
       ) : null}
       {visibleColumns.includes("updatedAt") ? (
         <td className="px-3 py-2 text-xs text-muted-foreground">
-          {formatDateOnly(card.updatedAt, lang)}
+          <span className="inline-flex items-center gap-1.5">
+            {foreignAuthor ? (
+              <span
+                data-testid="table-last-actor"
+                title={t("card.changedBy", { name: authorName })}
+                className="inline-flex"
+              >
+                <UserAvatar
+                  userId={foreignAuthor.userId}
+                  displayName={authorMember?.displayName ?? null}
+                  email={authorMember?.email ?? ""}
+                  size="xs"
+                  className="h-4 w-4 text-[8px] ring-1 ring-border/60"
+                />
+              </span>
+            ) : null}
+            {formatDateOnly(card.updatedAt, lang)}
+          </span>
         </td>
       ) : null}
       {visibleColumns.includes("activity") ? (

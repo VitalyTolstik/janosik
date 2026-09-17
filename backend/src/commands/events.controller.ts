@@ -6,15 +6,22 @@ import {
   Sse,
   UseGuards,
 } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { interval, Observable } from "rxjs";
 import type { CommandSseEvent } from "@janosik/shared";
+import type { AuthUser } from "@/auth/auth.types";
+import { CurrentUser } from "@/auth/current-user.decorator";
 import { MembershipGuard } from "@/common/membership.guard";
+import { PresenceService } from "@/realtime/presence.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { CommandsService } from "./commands.service";
 import { parseSince } from "./parse-since";
 
 /** Keep-alive comment cadence for proxies and idle connections. */
 const KEEP_ALIVE_MS = 25_000;
+
+/** Tab-scoped id the client sends to be recognized across reconnects. */
+const CLIENT_ID = /^[A-Za-z0-9_-]{8,64}$/;
 
 /**
  * `GET /boards/:id/events` — the SSE stream of §7.4 (TASK-30).
@@ -25,12 +32,18 @@ const KEEP_ALIVE_MS = 25_000;
  * `seq`), then drains the buffer deduplicating by `seq` — a command
  * committed between the delta query and the subscription can appear in both,
  * never twice and never out of order.
+ *
+ * Since TASK-36 the stream also carries `presence` (who is connected, see
+ * `PresenceService`) and `activity` (TASK-37) events. Presence has no `seq`
+ * and no log to catch up from, so it passes straight through in both
+ * directions; only commands are buffered and deduplicated.
  */
 @Controller("boards/:id/events")
 export class EventsController {
   constructor(
     private readonly commands: CommandsService,
     private readonly realtime: RealtimeService,
+    private readonly presence: PresenceService,
   ) {}
 
   @UseGuards(MembershipGuard)
@@ -38,11 +51,20 @@ export class EventsController {
   events(
     @Param("id") id: string,
     @Query("since") since?: string,
+    @Query("client") client?: string,
+    @CurrentUser() user?: AuthUser,
   ): Observable<MessageEvent> {
-    return this.stream(id, parseSince(since));
+    const clientId =
+      client !== undefined && CLIENT_ID.test(client) ? client : randomUUID();
+    return this.stream(id, parseSince(since), clientId, user);
   }
 
-  private stream(boardId: string, since: number): Observable<MessageEvent> {
+  private stream(
+    boardId: string,
+    since: number,
+    clientId: string,
+    user?: AuthUser,
+  ): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
       let ready = false;
       let lastSeq = since;
@@ -55,10 +77,24 @@ export class EventsController {
       };
 
       const live = this.realtime.watch(boardId).subscribe((event) => {
+        if (event.type === "presence") {
+          subscriber.next({ data: event as unknown as object } as MessageEvent);
+          return;
+        }
         if (event.type !== "command") return;
         if (ready) push(event);
         else buffered.push(event);
       });
+
+      // Join after subscribing so this connection sees its own roster: the
+      // first presence frame of a stream is "you are here, with N others".
+      if (user) {
+        this.presence.join(boardId, clientId, {
+          id: user.id,
+          displayName: user.displayName,
+          email: user.email,
+        });
+      }
 
       void this.commands
         .listSince(boardId, since)
@@ -86,6 +122,7 @@ export class EventsController {
       return () => {
         live.unsubscribe();
         keepAlive.unsubscribe();
+        if (user) this.presence.leave(boardId, clientId);
       };
     });
   }

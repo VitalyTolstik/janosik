@@ -120,7 +120,12 @@ function appendActivity(
       activity: [...previous.slice(0, -1), { ...last, at }],
     };
   }
-  const event: CardActivityEvent = { id: stamp.id, type, at, actorId: null };
+  const event: CardActivityEvent = {
+    id: stamp.id,
+    type,
+    at,
+    actorId: action.actorId ?? null,
+  };
   if (detail !== undefined) event.detail = detail;
   return {
     ...card,
@@ -136,9 +141,10 @@ function appendActivity(
 function createdActivity(
   stamp: ActivityStamp,
   options: ReduceOptions,
+  actorId: string | null = null,
 ): CardActivityEvent[] | undefined {
   if (options.withActivity === false) return undefined;
-  return [{ id: stamp.id, type: "created", at: stamp.at, actorId: null }];
+  return [{ id: stamp.id, type: "created", at: stamp.at, actorId }];
 }
 
 /**
@@ -167,6 +173,14 @@ export interface BoardScopedAction {
   boardId?: string;
   /** Command clock (ms): every timestamp the reducer writes comes from here. */
   at: number;
+  /**
+   * Who performed the command (TASK-36). The transport fills it in — the UI
+   * stamps its own user id on dispatch, the realtime bridge stamps the
+   * server's `actorId` on foreign commands; the server overwrites it with
+   * the authenticated user before touching the tables. The reducer only
+   * forwards it into the card activity feed; it never trusts it beyond that.
+   */
+  actorId?: string | null;
   /**
    * Client-generated idempotency key (§7.0). The reducer ignores it; redo
    * re-sends the original command with a fresh one (TASK-21.7d).
@@ -732,7 +746,11 @@ function addCard(
     createdAt: at,
     updatedAt: at,
   };
-  const activity = createdActivity(activityStamp(action, 0), options);
+  const activity = createdActivity(
+    activityStamp(action, 0),
+    options,
+    action.actorId ?? null,
+  );
   if (activity) newCard.activity = activity;
   return {
     ...board,
@@ -953,7 +971,11 @@ function duplicateCard(
       : undefined,
     labelIds: [...source.labelIds],
     // The copy is a new card — it starts its own history, not the source's.
-    activity: createdActivity(activityStamp(action, 0), options),
+    activity: createdActivity(
+      activityStamp(action, 0),
+      options,
+      action.actorId ?? null,
+    ),
     createdAt: at,
     updatedAt: at,
   };
@@ -1012,7 +1034,11 @@ function duplicateColumn(
         ? (structuredClone(sourceCard.cover) as CardCover)
         : undefined,
       labelIds: [...sourceCard.labelIds],
-      activity: createdActivity(activityStamp(action, index), options),
+      activity: createdActivity(
+        activityStamp(action, index),
+        options,
+        action.actorId ?? null,
+      ),
       createdAt: at,
       updatedAt: at,
     };

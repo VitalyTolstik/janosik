@@ -21,6 +21,9 @@ import {
   useI18n,
   type MessageKey,
 } from "@/i18n";
+import { UserAvatar } from "@/components/ui/user-avatar";
+import { useBoardMember } from "@/store/board-live";
+import { userLabel } from "@/utils/avatar";
 import type { CardActivityEvent, CardActivityType } from "@janosik/shared";
 
 /** Muted icon per event kind — the timeline's visual anchor. */
@@ -61,6 +64,8 @@ interface CardActivityFeedProps {
    * the feed shows a single "created" row from this timestamp.
    */
   createdAt: number;
+  /** Board whose member directory names the actors (TASK-36). */
+  boardId?: string;
 }
 
 /**
@@ -75,9 +80,9 @@ interface CardActivityFeedProps {
 export function CardActivityFeed({
   activity,
   createdAt,
+  boardId,
 }: CardActivityFeedProps) {
-  const { t, lang } = useI18n();
-  const hour12 = useHour12();
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
 
   const stored = activity ?? [];
@@ -118,36 +123,75 @@ export function CardActivityFeed({
 
       {expanded && (
         <ol className="mt-2 space-y-1.5 border-l border-border/60 pl-3">
-          {timeline.map((event) => {
-            const Icon = ACTIVITY_ICONS[event.type] ?? Plus;
-            return (
-              <li
-                className="flex items-center gap-2 text-sm"
-                data-testid="activity-event"
-                key={event.id}
-              >
-                <Icon
-                  aria-hidden="true"
-                  className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
-                />
-                <span className="min-w-0 flex-1 truncate text-foreground/90">
-                  {t(ACTIVITY_KEYS[event.type], {
-                    detail: event.detail ?? "",
-                  })}
-                </span>
-                {/* Relative time up close; the exact timestamp on hover. */}
-                <time
-                  className="shrink-0 text-[11px] text-muted-foreground/70"
-                  dateTime={new Date(event.at).toISOString()}
-                  title={formatDate(event.at, lang, hour12)}
-                >
-                  {formatRelative(event.at, lang, Date.now(), hour12)}
-                </time>
-              </li>
-            );
-          })}
+          {timeline.map((event) => (
+            <ActivityRow boardId={boardId} event={event} key={event.id} />
+          ))}
         </ol>
       )}
     </section>
+  );
+}
+
+/**
+ * One feed line (TASK-36): the actor's avatar and name lead when the event
+ * has one — the timeline answers "who" at a glance — and the type icon
+ * stands in for the times nobody could be attributed (legacy or local).
+ */
+function ActivityRow({
+  boardId,
+  event,
+}: {
+  boardId?: string;
+  event: CardActivityEvent;
+}) {
+  const { t, lang } = useI18n();
+  const hour12 = useHour12();
+  const member = useBoardMember(boardId, event.actorId);
+  const name = event.actorId
+    ? userLabel(member?.displayName ?? null, member?.email ?? "")
+    : "";
+  const Icon = ACTIVITY_ICONS[event.type] ?? Plus;
+
+  return (
+    <li
+      className="flex items-center gap-2 text-sm"
+      data-testid="activity-event"
+    >
+      {name ? (
+        <span data-testid="activity-actor" className="inline-flex">
+          <UserAvatar
+            userId={event.actorId ?? ""}
+            displayName={member?.displayName ?? null}
+            email={member?.email ?? ""}
+            size="xs"
+            className="ring-1 ring-border/60"
+          />
+        </span>
+      ) : (
+        <Icon
+          aria-hidden="true"
+          className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
+        />
+      )}
+      <span className="min-w-0 flex-1 truncate text-foreground/90">
+        {name ? (
+          <>
+            <span className="font-medium">{name}</span>
+            <span className="text-muted-foreground/60"> · </span>
+          </>
+        ) : null}
+        {t(ACTIVITY_KEYS[event.type], {
+          detail: event.detail ?? "",
+        })}
+      </span>
+      {/* Relative time up close; the exact timestamp on hover. */}
+      <time
+        className="shrink-0 text-[11px] text-muted-foreground/70"
+        dateTime={new Date(event.at).toISOString()}
+        title={formatDate(event.at, lang, hour12)}
+      >
+        {formatRelative(event.at, lang, Date.now(), hour12)}
+      </time>
+    </li>
   );
 }

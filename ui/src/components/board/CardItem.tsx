@@ -8,9 +8,13 @@ import {
 } from "@/components/ui/tooltip";
 import { DueBadge } from "@/components/board/DueBadge";
 import { HighlightedText } from "@/components/ui/highlight";
+import { UserAvatar } from "@/components/ui/user-avatar";
+import { useAuth } from "@/auth/AuthContext";
 import { cn } from "@/lib/utils";
-import { useI18n } from "@/i18n";
+import { formatRelative, useHour12, useI18n } from "@/i18n";
+import { useBoardMember, useEntityAttribution } from "@/store/board-live";
 import { descriptionSnippet } from "@/utils/filter";
+import { userAvatarVar, userLabel } from "@/utils/avatar";
 import {
   LABEL_COLOR_CHIP,
   coverBackground,
@@ -100,7 +104,25 @@ function CardItemView({
   duplicateDisabledReason,
 }: CardItemProps) {
   const [titleRef, titleClamped] = useClamped();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const hour12 = useHour12();
+  const { user } = useAuth();
+  // Attribution (TASK-36): who last changed the card, unless that is me.
+  const attribution = useEntityAttribution(card.id);
+  const authorMember = useBoardMember(
+    attribution?.boardId,
+    attribution?.userId,
+  );
+  const foreignAuthor =
+    attribution !== undefined && attribution.userId !== user?.id
+      ? attribution
+      : undefined;
+  const foreignColor = foreignAuthor
+    ? userAvatarVar(foreignAuthor.userId)
+    : undefined;
+  const authorName = foreignAuthor
+    ? userLabel(authorMember?.displayName ?? null, authorMember?.email ?? "")
+    : "";
   // Archive uses the board-archive two-step: first click arms the
   // confirmation (✓ / ✗), so a brushed click never archives silently.
   const [confirmArchive, setConfirmArchive] = useState(false);
@@ -274,7 +296,7 @@ function CardItemView({
       >
         <HighlightedText text={card.title} query={highlight ?? ""} />
       </p>
-      {hasDescription || total > 0 || hasDueDate ? (
+      {hasDescription || total > 0 || hasDueDate || foreignAuthor ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {hasDueDate ? <DueBadge dueDate={card.dueDate as number} /> : null}
           {total > 0 ? (
@@ -322,7 +344,52 @@ function CardItemView({
               </TooltipContent>
             </Tooltip>
           ) : null}
+          {/* Who changed it, unless it was me (TASK-36): the author's
+              avatar next to the relative time of that change. */}
+          {foreignAuthor ? (
+            <span
+              data-testid="card-last-actor"
+              title={t("card.changedBy", { name: authorName })}
+              className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground/80"
+            >
+              <UserAvatar
+                userId={foreignAuthor.userId}
+                displayName={authorMember?.displayName ?? null}
+                email={authorMember?.email ?? ""}
+                size="xs"
+                className="ring-1 ring-border/60"
+              />
+              <time dateTime={new Date(foreignAuthor.at).toISOString()}>
+                {formatRelative(foreignAuthor.at, lang, Date.now(), hour12)}
+              </time>
+            </span>
+          ) : null}
         </div>
+      ) : null}
+      {/* Foreign-change highlight (TASK-36): a soft ring in the author's own
+          color for two seconds, or — under reduced motion — a static dot
+          badge instead of the animated ring. */}
+      {foreignAuthor?.highlight ? (
+        <span
+          aria-hidden="true"
+          data-foreign={foreignAuthor.userId}
+          style={
+            {
+              "--janosik-foreign-color": foreignColor,
+            } as React.CSSProperties
+          }
+        >
+          <span
+            className="janosik-foreign-ring pointer-events-none absolute inset-0 rounded-lg"
+            style={{
+              boxShadow: `inset 0 0 0 2px color-mix(in srgb, ${foreignColor} 65%, transparent)`,
+            }}
+          />
+          <span
+            className="janosik-foreign-dot pointer-events-none absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full"
+            style={{ backgroundColor: foreignColor }}
+          />
+        </span>
       ) : null}
     </article>
   );

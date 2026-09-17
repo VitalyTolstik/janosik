@@ -8,9 +8,12 @@ import {
   type BoardInvitationDto,
   type BoardRole,
   type BoardSummary,
+  type BoardSseEvent,
   type CommandRequest,
   type CommandResponse,
   type CommandSseEvent,
+  type PresenceSseEvent,
+  type PresenceUser,
 } from "@janosik/shared";
 
 /**
@@ -74,6 +77,10 @@ export class FakeServer {
   role: BoardRole = "ADMIN";
   /** Pending invitations of the signed-in user (`GET /invitations`). */
   readonly invitations: BoardInvitationDto[] = [];
+  /** Roster every newly opened events stream reports (TASK-36). */
+  initialPresence: PresenceUser[] = [];
+  /** Presence heartbeats the client sent (`POST /boards/:id/presence`). */
+  readonly presencePings: string[] = [];
 
   /** Committed events per board — the SSE catch-up log (TASK-30). */
   private readonly eventLog = new Map<string, CommandSseEvent[]>();
@@ -202,6 +209,19 @@ export class FakeServer {
     return seq;
   }
 
+  /** Push a presence roster to every open stream of the board (TASK-36). */
+  publishPresence(boardId: string, users: PresenceUser[]): void {
+    const event: PresenceSseEvent = { type: "presence", users };
+    const frame = encodeEvent(event);
+    for (const controller of this.eventStreams.get(boardId) ?? []) {
+      try {
+        controller.enqueue(frame);
+      } catch {
+        /* the stream was cancelled */
+      }
+    }
+  }
+
   /** Close every open stream of the board (simulates a dropped SSE). */
   closeEvents(boardId: string): void {
     for (const controller of this.eventStreams.get(boardId) ?? []) {
@@ -286,6 +306,12 @@ export class FakeServer {
       return json(201, imported);
     }
 
+    const presenceMatch = /^\/api\/v1\/boards\/([^/]+)\/presence$/.exec(path);
+    if (presenceMatch && method === "POST") {
+      const { clientId } = (body ?? {}) as { clientId?: string };
+      if (typeof clientId === "string") this.presencePings.push(clientId);
+      return new Response(null, { status: 204 });
+    }
     const eventsMatch = /^\/api\/v1\/boards\/([^/]+)\/events$/.exec(path);
     if (eventsMatch && method === "GET") {
       return this.events(
@@ -337,7 +363,14 @@ export class FakeServer {
     );
     const stream = new ReadableStream<Uint8Array>({
       start: (controller) => {
+        // The real server's connection handshake: the command backlog first,
+        // then the current presence roster (TASK-36).
         for (const event of backlog) controller.enqueue(encodeEvent(event));
+        if (this.initialPresence.length > 0) {
+          controller.enqueue(
+            encodeEvent({ type: "presence", users: this.initialPresence }),
+          );
+        }
         const streams = this.eventStreams.get(boardId) ?? new Set();
         streams.add(controller);
         this.eventStreams.set(boardId, streams);
@@ -456,7 +489,7 @@ function json(
 }
 
 /** One `data:` frame, exactly like Nest's `@Sse` serializer writes it. */
-function encodeEvent(event: CommandSseEvent): Uint8Array {
+function encodeEvent(event: BoardSseEvent): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
 }
 

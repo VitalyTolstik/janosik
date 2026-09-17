@@ -18,13 +18,45 @@ const AVATAR_COLORS = [
   "bg-slate",
 ] as const;
 
-/** Stable color class for a user — derived from the id, no storage needed. */
-export function userAvatarColor(userId: string): string {
+/**
+ * The same palette as CSS variables, index-aligned with `AVATAR_COLORS` —
+ * for the surfaces a class cannot reach (the foreign-change ring is painted
+ * with `box-shadow`/`color-mix` from an inline style, because its color must
+ * animate and class-based colors cannot be interpolated per user).
+ */
+const AVATAR_COLOR_VARS = [
+  "var(--primary)",
+  "var(--secondary)",
+  "var(--blue)",
+  "var(--indigo)",
+  "var(--teal)",
+  "var(--success)",
+  "var(--orange)",
+  "var(--danger)",
+  "var(--fuchsia)",
+  "var(--pink)",
+  "var(--slate)",
+] as const;
+
+function avatarIndex(userId: string): number {
   let hash = 0;
   for (let i = 0; i < userId.length; i++) {
     hash = (hash * 31 + userId.charCodeAt(i)) | 0;
   }
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+  return Math.abs(hash) % AVATAR_COLORS.length;
+}
+
+/** Stable color class for a user — derived from the id, no storage needed. */
+export function userAvatarColor(userId: string): string {
+  return AVATAR_COLORS[avatarIndex(userId)];
+}
+
+/**
+ * The same stable color as a CSS color value (`var(--token)`) for inline
+ * styles — attribution rings and row tints that have to match the avatar.
+ */
+export function userAvatarVar(userId: string): string {
+  return AVATAR_COLOR_VARS[avatarIndex(userId)];
 }
 
 /**

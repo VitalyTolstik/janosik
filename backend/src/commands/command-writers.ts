@@ -40,6 +40,12 @@ export interface WriteContext {
   before: Board;
   after: Board;
   at: number;
+  /**
+   * Authenticated author of the command (TASK-36). Stamped into every card
+   * row the command writes — including the pure bookkeeping `updatedAt`s —
+   * so the client can attribute the last change without a join per card.
+   */
+  actorId: string;
 }
 
 /** `Command.touches` label for an entity type + id (§7.3). */
@@ -101,6 +107,7 @@ function cardCreateData(
   card: Card,
   columnId: string,
   position: number,
+  actorId: string,
 ): Prisma.CardUncheckedCreateInput {
   return {
     id: card.id,
@@ -108,6 +115,7 @@ function cardCreateData(
     position,
     version: 0,
     deletedAt: null,
+    lastActorId: actorId,
     title: card.title,
     description: card.description ?? null,
     coverType: card.cover?.type ?? null,
@@ -120,8 +128,12 @@ function cardCreateData(
   };
 }
 
-function cardUpdateData(card: Card): Prisma.CardUncheckedUpdateInput {
+function cardUpdateData(
+  card: Card,
+  actorId: string,
+): Prisma.CardUncheckedUpdateInput {
   return {
+    lastActorId: actorId,
     title: card.title,
     description: card.description ?? null,
     coverType: card.cover?.type ?? null,
@@ -139,12 +151,13 @@ async function upsertCard(
   card: Card,
   columnId: string,
   position: number,
+  actorId: string,
 ): Promise<void> {
   await tx.card.upsert({
     where: { id: card.id },
-    create: cardCreateData(card, columnId, position),
+    create: cardCreateData(card, columnId, position, actorId),
     update: {
-      ...cardUpdateData(card),
+      ...cardUpdateData(card, actorId),
       columnId,
       position,
       deletedAt: null,
@@ -177,10 +190,14 @@ async function writeCardLabels(
  * label/checklist command does on the card it edits (the reducer's
  * `cardStamp`, including inverse `cardUpdatedAt`).
  */
-async function bumpCard(tx: Tx, card: Card): Promise<void> {
+async function bumpCard(tx: Tx, card: Card, actorId: string): Promise<void> {
   await tx.card.update({
     where: { id: card.id },
-    data: { updatedAt: new Date(card.updatedAt), version: { increment: 1 } },
+    data: {
+      lastActorId: actorId,
+      updatedAt: new Date(card.updatedAt),
+      version: { increment: 1 },
+    },
   });
 }
 
@@ -448,7 +465,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       for (const [position, cardId] of copy.cardIds.entries()) {
         const card = after.cards[cardId];
         if (!card) continue;
-        await upsertCard(tx, card, copy.id, position);
+        await upsertCard(tx, card, copy.id, position, ctx.actorId);
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
       }
       await writeColumnPositions(tx, after.columns);
@@ -493,7 +510,13 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       if (!card) return [boardTouch];
       const column = after.columns.find((c) => c.cardIds.includes(card.id));
       if (!column) return [boardTouch];
-      await upsertCard(tx, card, column.id, column.cardIds.indexOf(card.id));
+      await upsertCard(
+        tx,
+        card,
+        column.id,
+        column.cardIds.indexOf(card.id),
+        ctx.actorId,
+      );
       await writeCardLabels(tx, boardId, card.id, card.labelIds);
       await writeCardPositions(tx, column.id, column.cardIds);
       return [boardTouch, touch.column(column.id), touch.card(card.id)];
@@ -534,7 +557,12 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       await tx.cardLabel.deleteMany({ where: { cardId: card.id } });
       await tx.card.update({
         where: { id: card.id },
-        data: { deletedAt: now, updatedAt: now, version: { increment: 1 } },
+        data: {
+          deletedAt: now,
+          lastActorId: ctx.actorId,
+          updatedAt: now,
+          version: { increment: 1 },
+        },
       });
       return [
         boardTouch,
@@ -549,7 +577,10 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       if (!card) return [boardTouch];
       await tx.card.update({
         where: { id: card.id },
-        data: { updatedAt: new Date(card.updatedAt) },
+        data: {
+          lastActorId: ctx.actorId,
+          updatedAt: new Date(card.updatedAt),
+        },
       });
       return [boardTouch, touch.card(card.id)];
     }
@@ -565,6 +596,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           where: { id },
           data: {
             archivedAt: new Date(card.archivedAt),
+            lastActorId: ctx.actorId,
             updatedAt: new Date(card.updatedAt),
             version: { increment: 1 },
           },
@@ -584,7 +616,13 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       // that exists; then the aggregate must list the card in that column.
       const column = after.columns.find((c) => c.cardIds.includes(card.id));
       if (column) {
-        await upsertCard(tx, card, column.id, column.cardIds.indexOf(card.id));
+        await upsertCard(
+          tx,
+          card,
+          column.id,
+          column.cardIds.indexOf(card.id),
+          ctx.actorId,
+        );
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
         await writeChecklists(tx, card.id, card.checklists);
         await writeCardPositions(tx, column.id, column.cardIds);
@@ -595,7 +633,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       // deterministic, soft-deleted orphan column so the aggregate returns
       // it in `cards` and in no column — byte-for-byte the reducer's result.
       const orphanId = await ensureOrphanColumn(tx, boardId, ctx.at);
-      await upsertCard(tx, card, orphanId, 0);
+      await upsertCard(tx, card, orphanId, 0, ctx.actorId);
       await writeCardLabels(tx, boardId, card.id, card.labelIds);
       await writeChecklists(tx, card.id, card.checklists);
       return [boardTouch, touch.card(card.id)];
@@ -632,7 +670,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         const cardPosition = column
           ? Math.max(0, column.cardIds.indexOf(card.id))
           : 0;
-        await upsertCard(tx, card, action.column.id, cardPosition);
+        await upsertCard(tx, card, action.column.id, cardPosition, ctx.actorId);
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
         await writeChecklists(tx, card.id, card.checklists);
         touchList.push(touch.card(card.id));
@@ -651,6 +689,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           card,
           column.id,
           cardPosition < 0 ? 0 : cardPosition,
+          ctx.actorId,
         );
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
         await writeChecklists(tx, card.id, card.checklists);
@@ -664,7 +703,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       const card = after.cards[action.cardId];
       if (!card) return [boardTouch];
       await writeCardLabels(tx, boardId, card.id, card.labelIds);
-      await bumpCard(tx, card);
+      await bumpCard(tx, card, ctx.actorId);
       return [boardTouch, touch.card(card.id)];
     }
 
@@ -756,7 +795,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       const checklist = checklists[position];
       if (!card || !checklist) return [boardTouch];
       await upsertChecklist(tx, card.id, checklist, position);
-      await bumpCard(tx, card);
+      await bumpCard(tx, card, ctx.actorId);
       return [boardTouch, touch.card(card.id), touch.checklist(checklist.id)];
     }
 
@@ -770,7 +809,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         where: { id: checklist.id },
         data: { title: checklist.title, version: { increment: 1 } },
       });
-      await bumpCard(tx, card);
+      await bumpCard(tx, card, ctx.actorId);
       return [boardTouch, touch.card(card.id), touch.checklist(checklist.id)];
     }
 
@@ -790,7 +829,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         where: { id: action.checklistId },
         data: { deletedAt: now, version: { increment: 1 } },
       });
-      await bumpCard(tx, card);
+      await bumpCard(tx, card, ctx.actorId);
       return [
         boardTouch,
         touch.card(card.id),
@@ -809,7 +848,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       const item = checklist?.items[position];
       if (!card || !checklist || !item) return [boardTouch];
       await upsertChecklistItem(tx, checklist.id, item, position);
-      await bumpCard(tx, card);
+      await bumpCard(tx, card, ctx.actorId);
       return [
         boardTouch,
         touch.card(card.id),
@@ -832,7 +871,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         where: { id: item.id },
         data: { text: item.text, done: item.done, version: { increment: 1 } },
       });
-      await bumpCard(tx, card);
+      await bumpCard(tx, card, ctx.actorId);
       return [
         boardTouch,
         touch.card(card.id),
@@ -848,7 +887,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         where: { id: action.itemId },
         data: { deletedAt: new Date(ctx.at), version: { increment: 1 } },
       });
-      await bumpCard(tx, card);
+      await bumpCard(tx, card, ctx.actorId);
       return [
         boardTouch,
         touch.card(card.id),
@@ -862,7 +901,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       const position =
         card?.checklists?.findIndex((c) => c.id === action.checklist.id) ?? -1;
       if (!card || position === -1) return [boardTouch];
-      await bumpCard(tx, card);
+      await bumpCard(tx, card, ctx.actorId);
       await upsertChecklist(tx, card.id, action.checklist, position);
       // Renumber the card's other live checklists so the restored one is
       // back at its old index (Checklist has no `updatedAt` to disturb).
@@ -889,6 +928,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       await tx.card.update({
         where: { id: card.id },
         data: {
+          lastActorId: ctx.actorId,
           updatedAt: new Date(card.updatedAt),
           version: { increment: 1 },
         },
@@ -913,7 +953,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
 
 /** Card-shaped actions: create/update/archive/move/duplicate. */
 async function writeCardAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
-  const { action, after, boardId, before } = ctx;
+  const { action, after, boardId, before, actorId } = ctx;
   const boardTouch = touch.board(boardId);
   const cardId = "cardId" in action ? action.cardId : undefined;
 
@@ -922,7 +962,13 @@ async function writeCardAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     if (!copy) return [boardTouch];
     const column = after.columns.find((c) => c.cardIds.includes(copy.id));
     if (!column) return [boardTouch];
-    await upsertCard(tx, copy, column.id, column.cardIds.indexOf(copy.id));
+    await upsertCard(
+      tx,
+      copy,
+      column.id,
+      column.cardIds.indexOf(copy.id),
+      ctx.actorId,
+    );
     await writeCardLabels(tx, boardId, copy.id, copy.labelIds);
     await writeCardPositions(tx, column.id, column.cardIds);
     return [boardTouch, touch.column(column.id), touch.card(copy.id)];
@@ -938,6 +984,7 @@ async function writeCardAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       await tx.card.update({
         where: { id: card.id },
         data: {
+          lastActorId: actorId,
           title: card.title,
           description: card.description ?? null,
           coverType: card.cover?.type ?? null,
@@ -960,6 +1007,7 @@ async function writeCardAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           archivedAt: card.archivedAt
             ? new Date(card.archivedAt)
             : new Date(ctx.at),
+          lastActorId: actorId,
           updatedAt: new Date(card.updatedAt),
           version: { increment: 1 },
         },
@@ -982,6 +1030,7 @@ async function writeCardAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         data: {
           archivedAt: null,
           columnId: column.id,
+          lastActorId: actorId,
           updatedAt: new Date(card.updatedAt),
           version: { increment: 1 },
         },
@@ -997,6 +1046,7 @@ async function writeCardAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         where: { id: card.id },
         data: {
           columnId: toColumnId,
+          lastActorId: actorId,
           updatedAt: new Date(card.updatedAt),
           version: { increment: 1 },
         },
