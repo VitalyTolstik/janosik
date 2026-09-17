@@ -301,6 +301,33 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   e2e). Метки доски упорядочены `Label.position` (отклонение от §7.3,
   миграция TASK-27); `RESTORE_LABEL` восстанавливает m2m по `assignments`.
   `GET /boards` отдаёт `role` вызывающего (ADMIN-only действия UI).
+- **Realtime живой (TASK-30):** `GET /boards/:id/events` — SSE
+  (`@Sse`), событие всегда `{type:"command", seq, action, actorId}`; keep-alive
+  `data: ping` раз в 25 с; роли — включая VIEWER. Рассылку делает
+  `RealtimeService` (`backend/src/realtime/`, in-memory Subject на доску),
+  публикация — **после коммита** транзакции и только для новых `commandId`
+  (в `CommandsService.apply`; повтор ничего не рассылает). Подключение
+  race-free: буфер живых → дельта `listSince(since)` → дренаж буфера с
+  дедупом по `seq`. `GET /boards/:id` несёт заголовок `X-Board-Seq` —
+  `seq`, который отражает агрегат (агрегат + max(seq) читаются в одной
+  транзакции `REPEATABLE READ`); клиент берёт базу через
+  `api.getBoardSnapshot()`.
+- **UI-мост — в ленивом чанке** (`ui/src/store/realtime.ts`, динамический
+  импорт): `fetch`-ридер `text/event-stream` с `Authorization` (EventSource
+  и ticket не нужны, токен не в URL), парсер + backoff 1→30 с + `wakeNow`
+  по `online` + стоп на 401/403/404. `createRealtimeBridge` держит `seq` /
+  `ownSeq` / `deferred`-очередь: чужие команды применяются тем же
+  `boardReducer` и помечают сущности foreign для undo; своё эхо
+  пропускается только при `seq ≤ ownSeq`, поэтому команда **другого таба
+  того же аккаунта** применяется; события при in-flight командах
+  откладываются и дренажатся после ack (`settled()` из dispatch/undo) —
+  LWW без rebase, §7.5 это допускает. Focus refetch остаётся fallback и
+  обновляет resume point. `presence`/`activity` события в shared уже
+  типизированы, UI их игнорирует до TASK-36/37.
+- **Playwright-смоуки:** после TASK-30 нельзя ждать `networkidle` — SSE
+  держит соединение открытым, и idle не наступает; используй
+  `waitUntil: "domcontentloaded"`. Живой смоук realtime — `realtime.mjs`
+  (два браузера + второй таб + догон после `setOffline`).
 - **Activity/Comments живые (TASK-28):** `GET /boards/:id/activity` и
   `GET /cards/:id/activity` — слияние Command-лога и `Activity`-строк
   составным курсором (newest-first, `?limit=` ≤ 100); member-события

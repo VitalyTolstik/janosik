@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Role } from "@prisma/client";
+import { Role, Prisma } from "@prisma/client";
 import type {
   BoardAggregate,
   BoardEnvelope,
@@ -95,11 +95,44 @@ export class BoardsService {
 
   /** The whole board aggregate in the frontend `Board` shape (§7.4). */
   async getAggregate(boardId: string): Promise<BoardAggregate> {
-    const aggregate = await loadBoardAggregate(this.prisma, boardId);
-    if (!aggregate) {
+    const snapshot = await this.getAggregateWithSeq(boardId);
+    return snapshot.board;
+  }
+
+  /**
+   * The aggregate together with the command `seq` it reflects (TASK-30) —
+   * the baseline the SSE client resumes from (`?since=`), served as the
+   * `X-Board-Seq` header of `GET /boards/:id`.
+   *
+   * Both reads share one REPEATABLE READ snapshot, so a command committing
+   * while the aggregate loads is never half-in half-out: the snapshot's seq
+   * either predates the command (it arrives as a delta) or includes it (the
+   * aggregate already has it). Under READ COMMITTED the aggregate could be
+   * newer than the reported seq and the delta would replay committed
+   * commands on top of their own effects.
+   */
+  async getAggregateWithSeq(
+    boardId: string,
+  ): Promise<{ board: BoardAggregate; seq: number }> {
+    const snapshot = await this.prisma.$transaction(
+      async (tx) => {
+        const board = await loadBoardAggregate(tx, boardId);
+        if (!board) return null;
+        const max = await tx.command.aggregate({
+          where: { boardId },
+          _max: { seq: true },
+        });
+        return {
+          board,
+          seq: max._max.seq === null ? 0 : Number(max._max.seq),
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+    if (!snapshot) {
       throw new NotFoundException("Board not found");
     }
-    return aggregate;
+    return snapshot;
   }
 
   /**

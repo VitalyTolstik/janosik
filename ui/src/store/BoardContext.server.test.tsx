@@ -337,6 +337,93 @@ describe("BoardProvider in server mode", () => {
   });
 });
 
+describe("BoardProvider realtime (SSE, TASK-30)", () => {
+  async function waitStreamOpen(server: FakeServer): Promise<void> {
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (entry) => entry.path === "/api/v1/boards/b-1/events",
+        ),
+      ).toBe(true),
+    );
+  }
+
+  it("applies a foreign command live, without a refetch", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitStreamOpen(server);
+
+    act(() => {
+      server.publishCommand("b-1", {
+        type: "RENAME_BOARD",
+        title: "Remote",
+        at: Date.now(),
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("title").textContent).toBe("Remote"),
+    );
+    // The foreign edit is nobody's undo step in this client.
+    expect(screen.getByTestId("can-undo").textContent).toBe("false");
+  });
+
+  it("catches up the commands missed while the stream was down", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitStreamOpen(server);
+
+    act(() => {
+      server.closeEvents("b-1");
+      server.publishCommand("b-1", {
+        type: "RENAME_BOARD",
+        title: "First",
+        at: 1,
+      });
+      server.publishCommand("b-1", {
+        type: "RENAME_BOARD",
+        title: "Second",
+        at: 2,
+      });
+    });
+
+    // Reconnect resumes from the last applied seq and replays the delta.
+    await waitFor(
+      () => expect(screen.getByTestId("title").textContent).toBe("Second"),
+      { timeout: 5_000 },
+    );
+  });
+
+  it("applies a same-account command from another tab", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitStreamOpen(server);
+
+    // The actor id matches the session, but no command of this client ever
+    // got acked at this seq: it is the same account in another tab.
+    act(() => {
+      server.publishCommand(
+        "b-1",
+        { type: "RENAME_BOARD", title: "Tab B", at: 1 },
+        server.account.id,
+      );
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("title").textContent).toBe("Tab B"),
+    );
+  });
+});
+
 describe("BoardProvider server-mode failures and board management", () => {
   it("archives and unarchives a board through commands", async () => {
     const server = new FakeServer([

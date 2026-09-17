@@ -1,13 +1,15 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "@/auth/auth.module";
 import { MembershipGuard } from "@/common/membership.guard";
+import { RealtimeModule } from "@/realtime/realtime.module";
 import { CommandsController } from "./commands.controller";
 import { CommandsService } from "./commands.service";
+import { EventsController } from "./events.controller";
 
-/** Command log: apply column/card actions, delta catch-up (§7.2, TASK-26). */
+/** Command log: apply column/card actions, delta catch-up, SSE (TASK-26/30). */
 @Module({
-  imports: [AuthModule],
-  controllers: [CommandsController],
+  imports: [AuthModule, RealtimeModule],
+  controllers: [CommandsController, EventsController],
   providers: [CommandsService, MembershipGuard],
   // Reused by the master panel to edit board content as the owner (TASK-43).
   exports: [CommandsService],

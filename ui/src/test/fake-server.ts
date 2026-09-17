@@ -10,6 +10,7 @@ import {
   type BoardSummary,
   type CommandRequest,
   type CommandResponse,
+  type CommandSseEvent,
 } from "@janosik/shared";
 
 /**
@@ -63,6 +64,14 @@ export class FakeServer {
   role: BoardRole = "ADMIN";
   /** Pending invitations of the signed-in user (`GET /invitations`). */
   readonly invitations: BoardInvitationDto[] = [];
+
+  /** Committed events per board — the SSE catch-up log (TASK-30). */
+  private readonly eventLog = new Map<string, CommandSseEvent[]>();
+  /** Open `GET /boards/:id/events` streams to push live frames into. */
+  private readonly eventStreams = new Map<
+    string,
+    Set<ReadableStreamDefaultController<Uint8Array>>
+  >();
 
   private readonly commands = new Map<string, CommandResponse>();
   private readonly versions = new Map<string, Map<string, number>>();
@@ -119,10 +128,73 @@ export class FakeServer {
       typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
     this.requests.push({ method, path: url.pathname, body });
 
-    return this.route(method, url.pathname, body);
+    return this.route(method, url.pathname, body, url.searchParams);
   };
 
-  private route(method: string, path: string, body: unknown): Response {
+  /** The board's current seq — the stream baseline (`X-Board-Seq`). */
+  seqOf(boardId: string): number {
+    return this.seq.get(boardId) ?? 0;
+  }
+
+  /**
+   * Commit a command from someone else: apply it to the fake board, bump the
+   * seq, record it for catch-up and push it to every open stream. The
+   * default actor is *not* the signed-in account — an own echo is published
+   * by passing `account.id`.
+   */
+  publishCommand(
+    boardId: string,
+    action: Record<string, unknown>,
+    actorId: string = "user-2",
+  ): number {
+    const board = this.boards.get(boardId);
+    if (board === undefined) throw new Error(`Unknown board ${boardId}`);
+    const scoped = { ...action, boardId } as BoardAction;
+    const after =
+      boardReducer([structuredClone(board)], scoped, {
+        withActivity: false,
+      })[0] ?? board;
+    this.boards.set(boardId, after);
+    const seq = (this.seq.get(boardId) ?? 0) + 1;
+    this.seq.set(boardId, seq);
+    const event: CommandSseEvent = {
+      type: "command",
+      seq,
+      action: scoped,
+      actorId,
+    };
+    const log = this.eventLog.get(boardId) ?? [];
+    log.push(event);
+    this.eventLog.set(boardId, log);
+    const frame = encodeEvent(event);
+    for (const controller of this.eventStreams.get(boardId) ?? []) {
+      try {
+        controller.enqueue(frame);
+      } catch {
+        /* the stream was cancelled — the next connect catches up */
+      }
+    }
+    return seq;
+  }
+
+  /** Close every open stream of the board (simulates a dropped SSE). */
+  closeEvents(boardId: string): void {
+    for (const controller of this.eventStreams.get(boardId) ?? []) {
+      try {
+        controller.close();
+      } catch {
+        /* already closed */
+      }
+    }
+    this.eventStreams.delete(boardId);
+  }
+
+  private route(
+    method: string,
+    path: string,
+    body: unknown,
+    searchParams: URLSearchParams,
+  ): Response {
     if (this.nextRequestFailure !== null) {
       const failure = this.nextRequestFailure;
       this.nextRequestFailure = null;
@@ -173,13 +245,22 @@ export class FakeServer {
       return json(201, imported);
     }
 
+    const eventsMatch = /^\/api\/v1\/boards\/([^/]+)\/events$/.exec(path);
+    if (eventsMatch && method === "GET") {
+      return this.events(
+        eventsMatch[1],
+        Number(searchParams.get("since") ?? 0),
+      );
+    }
     const boardMatch = /^\/api\/v1\/boards\/([^/]+)$/.exec(path);
     if (boardMatch) {
       const boardId = boardMatch[1];
       if (method === "GET") {
         const board = this.boards.get(boardId);
         return board
-          ? json(200, structuredClone(board))
+          ? json(200, structuredClone(board), {
+              "X-Board-Seq": String(this.seqOf(boardId)),
+            })
           : json(404, { message: "Board not found" });
       }
       if (method === "DELETE") {
@@ -206,6 +287,25 @@ export class FakeServer {
       return this.command(commandMatch[1], body as CommandRequest);
     }
     return json(404, { message: `No route for ${method} ${path}` });
+  }
+
+  /** `GET /boards/:id/events` — backlog from `since`, then live frames. */
+  private events(boardId: string, since: number): Response {
+    const backlog = (this.eventLog.get(boardId) ?? []).filter(
+      (event) => event.seq > since,
+    );
+    const stream = new ReadableStream<Uint8Array>({
+      start: (controller) => {
+        for (const event of backlog) controller.enqueue(encodeEvent(event));
+        const streams = this.eventStreams.get(boardId) ?? new Set();
+        streams.add(controller);
+        this.eventStreams.set(boardId, streams);
+      },
+    });
+    return new Response(stream, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
   }
 
   /** Apply one command like the backend: reducer + versions + idempotency. */
@@ -293,11 +393,20 @@ export class FakeServer {
   }
 }
 
-function json(status: number, body: unknown): Response {
+function json(
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
   });
+}
+
+/** One `data:` frame, exactly like Nest's `@Sse` serializer writes it. */
+function encodeEvent(event: CommandSseEvent): Uint8Array {
+  return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
 }
 
 export function emptyBoard(id: string, title: string): Board {

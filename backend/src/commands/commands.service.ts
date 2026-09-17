@@ -23,6 +23,7 @@ import {
 } from "@janosik/shared";
 import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { RealtimeService } from "@/realtime/realtime.service";
 import { applyCommandWrites, collectVersions } from "./command-writers";
 import type { CreateCommandDto } from "./dto/create-command.dto";
 
@@ -90,7 +91,10 @@ const SUPPORTED_ACTIONS = new Set<string>([
 
 @Injectable()
 export class CommandsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeService,
+  ) {}
 
   /** Apply one command idempotently, or return its stored result on replay. */
   async apply(
@@ -113,103 +117,121 @@ export class CommandsService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      // Serialize commands per board on the board row itself: concurrent
-      // requests queue here, so the `ifMatch` check below sees every
-      // committed predecessor. Without this lock two parallel commands with
-      // the same `ifMatch` would both pass under Read Committed (reproduced
-      // in review, 2026-09-16). Other boards never block each other.
-      const locked = await tx.$queryRaw<{ id: string }[]>`
+    const applied = await this.prisma.$transaction(
+      async (tx): Promise<{ response: CommandResponse; fresh: boolean }> => {
+        // Serialize commands per board on the board row itself: concurrent
+        // requests queue here, so the `ifMatch` check below sees every
+        // committed predecessor. Without this lock two parallel commands with
+        // the same `ifMatch` would both pass under Read Committed (reproduced
+        // in review, 2026-09-16). Other boards never block each other.
+        const locked = await tx.$queryRaw<{ id: string }[]>`
         SELECT "id" FROM "Board"
         WHERE "id" = ${boardId} AND "deletedAt" IS NULL
         FOR UPDATE
       `;
-      if (locked.length === 0) {
-        throw new NotFoundException("Board not found");
-      }
+        if (locked.length === 0) {
+          throw new NotFoundException("Board not found");
+        }
 
-      const existing = await tx.command.findUnique({
-        where: { id: dto.commandId },
-      });
-      if (existing) {
-        if (existing.boardId !== boardId) {
+        const existing = await tx.command.findUnique({
+          where: { id: dto.commandId },
+        });
+        if (existing) {
+          if (existing.boardId !== boardId) {
+            throw new ConflictException({
+              message: "commandId already used on another board",
+              field: "commandId",
+            });
+          }
+          return {
+            response: existing.result as unknown as CommandResponse,
+            fresh: false,
+          };
+        }
+
+        const before = await loadBoardAggregate(tx, boardId);
+        if (!before) {
+          throw new NotFoundException("Board not found");
+        }
+
+        await this.assertBoardManagement(tx, boardId, actorId, action.type);
+
+        const currentVersion = await this.currentSeq(tx, boardId);
+        await this.assertVersionPreconditions(
+          tx,
+          boardId,
+          dto.ifMatchVersions,
+          currentVersion,
+        );
+        if (dto.ifMatch !== undefined && dto.ifMatch !== currentVersion) {
           throw new ConflictException({
-            message: "commandId already used on another board",
-            field: "commandId",
+            conflict: "version",
+            currentVersion,
+          } satisfies ConflictError);
+        }
+        this.assertNoWipConflict(before, action, currentVersion);
+
+        const at = (action as BoardScopedAction).at;
+        const state = boardReducer(
+          [before],
+          Object.assign({}, action, { boardId }) as BoardAction,
+          { withActivity: false },
+        );
+        const after = state[0] ?? before;
+        const changed = stableStringify(before) !== stableStringify(after);
+
+        const created = await tx.command.create({
+          data: {
+            id: dto.commandId,
+            boardId,
+            actorId,
+            type: action.type,
+            payload: jsonSafe(action),
+            result: {},
+            touches: [],
+          },
+        });
+        const seq = Number(created.seq);
+
+        let touches: string[] = [];
+        if (changed) {
+          touches = await applyCommandWrites(tx, {
+            boardId,
+            action,
+            before,
+            after,
+            at,
           });
         }
-        return existing.result as unknown as CommandResponse;
-      }
+        const versions = changed
+          ? await collectVersions(tx, boardId, touches)
+          : {};
+        const response: CommandResponse = { seq, versions };
 
-      const before = await loadBoardAggregate(tx, boardId);
-      if (!before) {
-        throw new NotFoundException("Board not found");
-      }
-
-      await this.assertBoardManagement(tx, boardId, actorId, action.type);
-
-      const currentVersion = await this.currentSeq(tx, boardId);
-      await this.assertVersionPreconditions(
-        tx,
-        boardId,
-        dto.ifMatchVersions,
-        currentVersion,
-      );
-      if (dto.ifMatch !== undefined && dto.ifMatch !== currentVersion) {
-        throw new ConflictException({
-          conflict: "version",
-          currentVersion,
-        } satisfies ConflictError);
-      }
-      this.assertNoWipConflict(before, action, currentVersion);
-
-      const at = (action as BoardScopedAction).at;
-      const state = boardReducer(
-        [before],
-        Object.assign({}, action, { boardId }) as BoardAction,
-        { withActivity: false },
-      );
-      const after = state[0] ?? before;
-      const changed = stableStringify(before) !== stableStringify(after);
-
-      const created = await tx.command.create({
-        data: {
-          id: dto.commandId,
-          boardId,
-          actorId,
-          type: action.type,
-          payload: jsonSafe(action),
-          result: {},
-          touches: [],
-        },
-      });
-      const seq = Number(created.seq);
-
-      let touches: string[] = [];
-      if (changed) {
-        touches = await applyCommandWrites(tx, {
-          boardId,
-          action,
-          before,
-          after,
-          at,
+        await tx.command.update({
+          where: { id: created.id },
+          data: {
+            payload: jsonSafe(action),
+            result: jsonSafe(response),
+            touches,
+          },
         });
-      }
-      const versions = changed
-        ? await collectVersions(tx, boardId, touches)
-        : {};
-      const response: CommandResponse = { seq, versions };
+        return { response, fresh: true };
+      },
+    );
 
-      await tx.command.update({
-        where: { id: created.id },
-        data: {
-          payload: jsonSafe(action),
-          result: jsonSafe(response),
-          touches,
-        },
+    // Publish only after the transaction committed: a subscriber must never
+    // replay a command the database could still roll back. A replay of an
+    // existing `commandId` publishes nothing — that `seq` already went out.
+    if (applied.fresh) {
+      this.realtime.publish(boardId, {
+        type: "command",
+        seq: applied.response.seq,
+        action,
+        actorId,
       });
-      return response;
-    });
+    }
+    return applied.response;
   }
 
   /** Commands with `seq > since`, oldest first — the SSE delta catch-up. */
