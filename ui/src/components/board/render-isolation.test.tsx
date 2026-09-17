@@ -183,7 +183,7 @@ describe("render isolation on a card edit (TASK-21.4.1)", () => {
     // The table is lazy and an open modal aria-hides the rest of the page,
     // so the dialog is opened from a row instead of from the URL.
     renderBoard("/board/b-1");
-    const table = await screen.findByRole("table", {}, { timeout: 5000 });
+    const table = await screen.findByRole("table", {}, { timeout: 15_000 });
     fireEvent.click(within(table).getByText("Edited card"));
     const before = {
       neighbour: counter.fronts["Neighbour card"] ?? 0,

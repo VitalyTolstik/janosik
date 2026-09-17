@@ -31,7 +31,6 @@ import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminList } from "./use-admin-list";
 import {
-  Badge,
   ConfirmDialog,
   EmptyState,
   ErrorState,
@@ -41,6 +40,7 @@ import {
   PageHeader,
   Pagination,
   Panel,
+  RefId,
   SearchInput,
   Table,
   Td,
@@ -201,18 +201,6 @@ export function BoardsPage() {
     }
   };
 
-  const statusBadge = (board: AdminBoardRowDto) => {
-    if (board.deletedAt !== null) {
-      return <Badge variant="danger">{t("admin.boards.status.deleted")}</Badge>;
-    }
-    if (board.archivedAt !== null) {
-      return (
-        <Badge variant="warning">{t("admin.boards.status.archived")}</Badge>
-      );
-    }
-    return <Badge variant="success">{t("admin.boards.status.active")}</Badge>;
-  };
-
   const confirmText = (action: PendingAction) => {
     if (action === null) return { title: "", body: "", label: "" };
     const title = action.board.title;
@@ -279,14 +267,13 @@ export function BoardsPage() {
           <Table>
             <thead>
               <tr>
-                <Th>{t("admin.common.id")}</Th>
-                <Th>{t("admin.boards.col.title")}</Th>
-                <Th>{t("admin.boards.col.owner")}</Th>
-                <Th className="text-right">{t("admin.boards.col.members")}</Th>
-                <Th className="text-right">{t("admin.boards.col.columns")}</Th>
-                <Th className="text-right">{t("admin.boards.col.cards")}</Th>
-                <Th>{t("admin.boards.col.updated")}</Th>
-                <Th>{t("admin.boards.col.status")}</Th>
+                <Th>Board.id</Th>
+                <Th>Board.title</Th>
+                <Th>BoardMember.userId</Th>
+                <Th>Board.createdAt</Th>
+                <Th>Board.updatedAt</Th>
+                <Th>Board.archivedAt</Th>
+                <Th>Board.deletedAt</Th>
                 <Th className="w-10" />
               </tr>
             </thead>
@@ -300,16 +287,29 @@ export function BoardsPage() {
                     <IdChip id={board.id} />
                   </Td>
                   <Td className="font-medium">{board.title}</Td>
-                  <Td className="text-muted-foreground">
-                    {board.ownerEmail ?? "—"}
+                  <Td>
+                    <RefId
+                      id={board.userId}
+                      label={board.ownerEmail}
+                      testId={`admin-board-owner-${board.id}`}
+                    />
                   </Td>
-                  <Td className="text-right tabular-nums">{board.members}</Td>
-                  <Td className="text-right tabular-nums">{board.columns}</Td>
-                  <Td className="text-right tabular-nums">{board.cards}</Td>
+                  <Td className="text-muted-foreground">
+                    {formatDate(board.createdAt, lang, hour12)}
+                  </Td>
                   <Td className="text-muted-foreground">
                     {formatDate(board.updatedAt, lang, hour12)}
                   </Td>
-                  <Td>{statusBadge(board)}</Td>
+                  <Td className="text-muted-foreground">
+                    {board.archivedAt === null
+                      ? "—"
+                      : formatDate(board.archivedAt, lang, hour12)}
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {board.deletedAt === null
+                      ? "—"
+                      : formatDate(board.deletedAt, lang, hour12)}
+                  </Td>
                   <Td>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>

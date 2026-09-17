@@ -225,9 +225,16 @@ describe("AdminApp", () => {
     fireEvent.click(await screen.findByText(t("admin.boards.action.archive")));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByText(t("admin.boards.action.archive")));
+    await waitFor(() => {
+      expect(
+        server.state.boards.find((board) => board.id === "b-1")?.archivedAt,
+      ).not.toBeNull();
+    });
     expect(
-      await screen.findByText(t("admin.boards.status.archived")),
-    ).toBeTruthy();
+      server.requests.some(
+        (request) => request.path === "/admin/boards/b-1/archive",
+      ),
+    ).toBe(true);
   });
 
   it("renders the command log and the audit trail", async () => {
@@ -237,6 +244,7 @@ describe("AdminApp", () => {
         id: "c-1",
         boardId: "b-1",
         boardTitle: "Roadmap",
+        actorId: "u-1",
         actorEmail: "member@example.com",
         type: "ADD_CARD",
         seq: 12,
@@ -246,6 +254,7 @@ describe("AdminApp", () => {
     state.audit = [
       {
         id: "a-1",
+        adminId: "master-1",
         adminEmail: "master@example.com",
         action: "admin.login",
         targetType: null,
@@ -365,14 +374,42 @@ describe("admin content and security pages", () => {
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByText(t("admin.cards.action.archive")));
 
-    expect(
-      await screen.findByText(t("admin.cards.status.archived")),
-    ).toBeTruthy();
+    await waitFor(() => {
+      expect(server.state.cards[0]?.archivedAt).not.toBeNull();
+    });
     expect(
       server.requests.some(
         (request) => request.path === "/admin/cards/card-1/archive",
       ),
     ).toBe(true);
+  });
+
+  it("renders the foreign keys so a row can be traced to its parents", async () => {
+    const state = serverWith().state;
+    state.boards = [
+      adminBoard({ id: "b-7", userId: "u-42", ownerEmail: "owner@ex.com" }),
+    ];
+    state.cards = [
+      adminCard({ id: "card-1", boardId: "b-7", columnId: "col-9" }),
+    ];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+
+    renderAdmin("/admin/boards");
+    expect(
+      await screen.findByTestId("admin-board-owner-b-7"),
+    ).toHaveTextContent("u-42");
+    expect(screen.getByTestId("admin-board-owner-b-7")).toHaveTextContent(
+      "owner@ex.com",
+    );
+
+    renderAdmin("/admin/cards");
+    expect(
+      await screen.findByTestId("admin-card-board-card-1"),
+    ).toHaveTextContent("b-7");
+    expect(screen.getByTestId("admin-card-column-card-1")).toHaveTextContent(
+      "col-9",
+    );
   });
 
   it("revokes a single session", async () => {
@@ -409,9 +446,15 @@ describe("admin content and security pages", () => {
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByText(t("admin.tokens.action.revoke")));
 
+    // A revoked token keeps its revokedAt timestamp and loses the action.
+    await waitFor(() => {
+      expect(screen.queryByTestId("admin-token-revoke-token-1")).toBeNull();
+    });
     expect(
-      await screen.findByText(t("admin.tokens.status.revoked")),
-    ).toBeTruthy();
+      server.requests.some(
+        (request) => request.path === "/admin/tokens/token-1/revoke",
+      ),
+    ).toBe(true);
   });
 
   it("deletes a comment", async () => {

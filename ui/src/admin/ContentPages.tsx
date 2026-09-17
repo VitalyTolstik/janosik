@@ -27,10 +27,12 @@ import {
   ErrorState,
   FilterTabs,
   IdChip,
+  IdList,
   LoadingState,
   PageHeader,
   Pagination,
   Panel,
+  RefId,
   SearchInput,
   Table,
   Td,
@@ -79,18 +81,6 @@ export function CardsPage() {
     } finally {
       setPending(null);
     }
-  };
-
-  const statusBadge = (card: AdminCardRowDto) => {
-    if (card.deletedAt !== null) {
-      return <Badge variant="danger">{t("admin.cards.status.deleted")}</Badge>;
-    }
-    if (card.archivedAt !== null) {
-      return (
-        <Badge variant="warning">{t("admin.cards.status.archived")}</Badge>
-      );
-    }
-    return <Badge variant="success">{t("admin.cards.status.active")}</Badge>;
   };
 
   const confirmText = (action: CardAction) => {
@@ -152,13 +142,15 @@ export function CardsPage() {
           <Table>
             <thead>
               <tr>
-                <Th>{t("admin.common.id")}</Th>
-                <Th>{t("admin.cards.col.title")}</Th>
-                <Th>{t("admin.cards.col.board")}</Th>
-                <Th>{t("admin.cards.col.column")}</Th>
-                <Th className="text-right">{t("admin.cards.col.comments")}</Th>
-                <Th>{t("admin.cards.col.updated")}</Th>
-                <Th>{t("admin.cards.col.status")}</Th>
+                <Th>Card.id</Th>
+                <Th>Card.title</Th>
+                <Th>Card.column.boardId</Th>
+                <Th>Card.columnId</Th>
+                <Th>Card.createdAt</Th>
+                <Th>Card.updatedAt</Th>
+                <Th>Card.archivedAt</Th>
+                <Th>Card.deletedAt</Th>
+                <Th>Comment.id</Th>
                 <Th className="w-10" />
               </tr>
             </thead>
@@ -174,13 +166,39 @@ export function CardsPage() {
                   <Td className="max-w-[18rem] truncate font-medium">
                     {card.title}
                   </Td>
-                  <Td className="text-muted-foreground">{card.boardTitle}</Td>
-                  <Td className="text-muted-foreground">{card.columnTitle}</Td>
-                  <Td className="text-right tabular-nums">{card.comments}</Td>
+                  <Td>
+                    <RefId
+                      id={card.boardId}
+                      label={card.boardTitle}
+                      testId={`admin-card-board-${card.id}`}
+                    />
+                  </Td>
+                  <Td>
+                    <RefId
+                      id={card.columnId}
+                      label={card.columnTitle}
+                      testId={`admin-card-column-${card.id}`}
+                    />
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {formatDate(card.createdAt, lang, hour12)}
+                  </Td>
                   <Td className="text-muted-foreground">
                     {formatDate(card.updatedAt, lang, hour12)}
                   </Td>
-                  <Td>{statusBadge(card)}</Td>
+                  <Td className="text-muted-foreground">
+                    {card.archivedAt === null
+                      ? "—"
+                      : formatDate(card.archivedAt, lang, hour12)}
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {card.deletedAt === null
+                      ? "—"
+                      : formatDate(card.deletedAt, lang, hour12)}
+                  </Td>
+                  <Td>
+                    <IdList ids={card.commentIds} />
+                  </Td>
                   <Td>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -307,12 +325,13 @@ export function CommentsPage() {
           <Table>
             <thead>
               <tr>
-                <Th>{t("admin.common.id")}</Th>
-                <Th>{t("admin.comments.col.text")}</Th>
-                <Th>{t("admin.comments.col.author")}</Th>
-                <Th>{t("admin.comments.col.card")}</Th>
-                <Th>{t("admin.comments.col.board")}</Th>
-                <Th>{t("admin.comments.col.created")}</Th>
+                <Th>Comment.id</Th>
+                <Th>Comment.text</Th>
+                <Th>Comment.authorId</Th>
+                <Th>Comment.cardId</Th>
+                <Th>Comment.createdAt</Th>
+                <Th>Comment.updatedAt</Th>
+                <Th>Comment.deletedAt</Th>
                 <Th className="w-16" />
               </tr>
             </thead>
@@ -326,17 +345,30 @@ export function CommentsPage() {
                     <IdChip id={comment.id} />
                   </Td>
                   <Td className="max-w-[26rem] truncate">{comment.text}</Td>
-                  <Td className="text-muted-foreground">
-                    {comment.authorEmail}
+                  <Td>
+                    <RefId
+                      id={comment.authorId}
+                      label={comment.authorEmail}
+                      testId={`admin-comment-author-${comment.id}`}
+                    />
                   </Td>
-                  <Td className="max-w-[12rem] truncate text-muted-foreground">
-                    {comment.cardTitle}
-                  </Td>
-                  <Td className="text-muted-foreground">
-                    {comment.boardTitle}
+                  <Td>
+                    <RefId
+                      id={comment.cardId}
+                      label={comment.cardTitle}
+                      testId={`admin-comment-card-${comment.id}`}
+                    />
                   </Td>
                   <Td className="text-muted-foreground">
                     {formatDate(comment.createdAt, lang, hour12)}
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {formatDate(comment.updatedAt, lang, hour12)}
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {comment.deletedAt === null
+                      ? "—"
+                      : formatDate(comment.deletedAt, lang, hour12)}
                   </Td>
                   <Td>
                     {comment.deletedAt === null ? (

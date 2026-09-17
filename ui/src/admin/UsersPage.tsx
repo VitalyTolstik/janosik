@@ -377,14 +377,11 @@ export function UsersPage() {
           <Table>
             <thead>
               <tr>
-                <Th>{t("admin.common.id")}</Th>
-                <Th>{t("admin.users.col.email")}</Th>
-                <Th>{t("admin.users.col.name")}</Th>
-                <Th className="text-right">{t("admin.users.col.boards")}</Th>
-                <Th className="text-right">{t("admin.users.col.sessions")}</Th>
-                <Th className="text-right">{t("admin.users.col.tokens")}</Th>
-                <Th>{t("admin.users.col.created")}</Th>
-                <Th>{t("admin.users.col.status")}</Th>
+                <Th>User.id</Th>
+                <Th>User.email</Th>
+                <Th>User.displayName</Th>
+                <Th>User.createdAt</Th>
+                <Th>User.disabledAt</Th>
                 <Th className="w-10" />
               </tr>
             </thead>
@@ -401,9 +398,6 @@ export function UsersPage() {
                   <Td className="text-muted-foreground">
                     {user.displayName ?? "—"}
                   </Td>
-                  <Td className="text-right tabular-nums">{user.boards}</Td>
-                  <Td className="text-right tabular-nums">{user.sessions}</Td>
-                  <Td className="text-right tabular-nums">{user.apiTokens}</Td>
                   <Td className="text-muted-foreground">
                     {formatDate(user.createdAt, lang, hour12)}
                   </Td>

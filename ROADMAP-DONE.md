@@ -1350,6 +1350,13 @@ payload, которых нет в `cardIds`, из колонки убирают�
   никто не вызывает — `BackupDialog` восстанавливает через
   `IMPORT_BOARDS`. Политика конфликтов undo при чужих правках — TASK-29/30.
 
+## feat/admin-tables-ids — schema-first таблицы админки (17.09.2026)
+
+- **Зачем:** из панели нельзя было понять связи — карточка показывала название борды (не уникальное), FK-айди отсутствовали, половину ширины занимали агрегатные счётчики, а горизонтальный скролл оказывался внизу длинной страницы.
+- **Что сделано:** DTO (§7.4) переведены на FK-айди (`AdminBoardRowDto.userId` = первый ADMIN в `BoardMember`, `AdminCardRowDto.boardId/columnId/commentIds`, `AdminCommentRowDto.authorId`, `AdminSessionRowDto.userId`, `AdminTokenRowDto.userId`, `AdminCommandRowDto.actorId`, `AdminAuditRowDto.adminId`, `AdminMasterRowDto.failedLogins`); все счётчики (`boards/sessions/apiTokens`, `members/columns/cards`, `comments`, `sessions`) удалены из ответов и запросов (минус groupBy по карточкам); заголовки таблиц — имена полей Prisma (`Card.columnId` и т.п.), имя/email — подпись рядом с чипом-id (`RefId`), комментарии карточки — список `Comment.id` (`IdList`); поиск расширен на FK-айди (борда по owner/member userId, карточка по boardId/columnId, комментарий по cardId/authorId/boardId, сессия/токен по userId, аудит по adminId) — e2e `finds rows by their foreign keys, not by titles`; `Table` получил скролл-вьюпорт (`maxHeight: calc(100vh - 14rem)`, sticky-шапка) — горизонтальный скроллбар в панели.
+- **Ветка:** `feat/admin-tables-ids` (правило зафиксировано в AGENT.md: новая работа — только в ветке, мерж по команде).
+- **Гейты:** ui 483/483 (coverage 95.29/87.82/93.4/97.74), shared 325, backend 22 unit + 100 e2e, lint/format/build, size 204.66/210 KB, admin-чанк 20.68/30 KB.
+
 ## TASK-21.10 — `touch-dnd` · Тач-DnD доски ✅
 
 - **Статус:** ✅ реализовано, ветка `VitalyTolstik/dev-touch-dnd`, PR #62 —

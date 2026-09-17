@@ -84,12 +84,13 @@ export function adminCard(
     title: "Moderate me",
     boardId: "b-1",
     boardTitle: "Roadmap",
+    columnId: "col-1",
     columnTitle: "Backlog",
+    commentIds: ["comment-1"],
     createdAt: now,
     updatedAt: now,
     archivedAt: null,
     deletedAt: null,
-    comments: 1,
     ...overrides,
   };
 }
@@ -99,6 +100,7 @@ export function adminSession(
 ): AdminSessionRowDto {
   return {
     id: "session-1",
+    userId: "u-1",
     userEmail: "member@example.com",
     createdAt: now,
     expiresAt: now + 86_400_000,
@@ -111,6 +113,7 @@ export function adminToken(
 ): AdminTokenRowDto {
   return {
     id: "token-1",
+    userId: "u-1",
     userEmail: "member@example.com",
     name: "CI",
     createdAt: now,
@@ -128,10 +131,11 @@ export function adminComment(
     id: "comment-1",
     cardId: "card-1",
     cardTitle: "Moderate me",
-    boardTitle: "Roadmap",
+    authorId: "u-1",
     authorEmail: "member@example.com",
     text: "Looks good",
     createdAt: now,
+    updatedAt: now,
     deletedAt: null,
     ...overrides,
   };
@@ -146,9 +150,6 @@ export function adminUser(
     displayName: "Member",
     createdAt: now,
     disabledAt: null,
-    boards: 1,
-    sessions: 2,
-    apiTokens: 0,
     ...overrides,
   };
 }
@@ -165,7 +166,7 @@ export function adminMaster(
     lockedUntil: null,
     lastLoginAt: null,
     createdAt: now,
-    sessions: 1,
+    failedLogins: 0,
     ...overrides,
   };
 }
@@ -176,10 +177,8 @@ export function adminBoard(
   return {
     id: "b-1",
     title: "Roadmap",
+    userId: "u-1",
     ownerEmail: "member@example.com",
-    members: 2,
-    columns: 3,
-    cards: 5,
     createdAt: now,
     updatedAt: now,
     archivedAt: null,
@@ -288,7 +287,7 @@ export class FakeAdminServer {
           lockedUntil: null,
           lastLoginAt: admin.lastLoginAt,
           createdAt: admin.createdAt,
-          sessions: 1,
+          failedLogins: 0,
         },
         ...this.masters,
       ];
@@ -315,7 +314,6 @@ export class FakeAdminServer {
         email,
         displayName: (jsonBody?.displayName as string | null) ?? null,
         role: (jsonBody?.role as AdminRole | undefined) ?? "OPERATOR",
-        sessions: 0,
       });
       this.masters = [created, ...this.masters];
       return this.json(
@@ -333,7 +331,6 @@ export class FakeAdminServer {
         return this.json({ message: "Master account not found" }, 404);
       if (jsonBody?.disabled !== undefined) {
         master.disabledAt = jsonBody.disabled ? now : null;
-        if (jsonBody.disabled) master.sessions = 0;
       }
       return this.json(master);
     }
@@ -347,7 +344,6 @@ export class FakeAdminServer {
       const master = this.masters.find((item) => item.id === masterReset[1]);
       if (!master)
         return this.json({ message: "Master account not found" }, 404);
-      master.sessions = 0;
       return this.json(
         { admin: master, temporaryPassword: "reset-one-time-pass" },
         201,
@@ -361,9 +357,7 @@ export class FakeAdminServer {
         return this.json({ message: "Owner rights are required" }, 403);
       }
       const master = this.masters.find((item) => item.id === masterSessions[1]);
-      const revoked = master?.sessions ?? 0;
-      if (master) master.sessions = 0;
-      return this.json({ revoked }, 201);
+      return this.json({ revoked: master ? 1 : 0 }, 201);
     }
 
     if (path === "/admin/users" && method === "GET") {
@@ -378,8 +372,6 @@ export class FakeAdminServer {
         id: `u-${this.state.users.length + 1}`,
         email,
         displayName: (jsonBody?.displayName as string | null) ?? null,
-        boards: 0,
-        sessions: 0,
       });
       this.state.users = [created, ...this.state.users];
       return this.json(
@@ -396,23 +388,22 @@ export class FakeAdminServer {
       if (!user) return this.json({ message: "User not found" }, 404);
       if (jsonBody?.disabled !== undefined) {
         user.disabledAt = jsonBody.disabled ? now : null;
-        if (jsonBody.disabled) user.sessions = 0;
       }
+      this.revokeSessionsOf(userPatch[1]);
       return this.json(user);
     }
     const sessions = path.match(/^\/admin\/users\/([^/]+)\/sessions\/revoke$/);
     if (sessions && method === "POST") {
-      const user = this.state.users.find((item) => item.id === sessions[1]);
-      const revoked = user?.sessions ?? 0;
-      if (user) user.sessions = 0;
+      const revoked = this.revokeSessionsOf(sessions[1]);
       return this.json({ revoked }, 201);
     }
     const tokens = path.match(/^\/admin\/users\/([^/]+)\/tokens\/revoke$/);
     if (tokens && method === "POST") {
-      const user = this.state.users.find((item) => item.id === tokens[1]);
-      const revoked = user?.apiTokens ?? 0;
-      if (user) user.apiTokens = 0;
-      return this.json({ revoked }, 201);
+      const owned = this.state.tokens.filter(
+        (item) => item.userId === tokens[1] && item.revokedAt === null,
+      );
+      for (const token of owned) token.revokedAt = now;
+      return this.json({ revoked: owned.length }, 201);
     }
 
     if (path === "/admin/boards" && method === "GET") {
@@ -426,10 +417,9 @@ export class FakeAdminServer {
       const created = adminBoard({
         id: `b-${this.state.boards.length + 1}`,
         title: String(jsonBody?.title ?? ""),
+        userId:
+          this.state.users.find((user) => user.email === owner)?.id ?? null,
         ownerEmail: owner,
-        members: 1,
-        columns: 0,
-        cards: 0,
       });
       this.state.boards = [created, ...this.state.boards];
       return this.json(created, 201);
@@ -540,6 +530,15 @@ export class FakeAdminServer {
     }
 
     return this.json({ message: `no route for ${method} ${path}` }, 404);
+  }
+
+  /** Revoke every active session of a user; returns how many were live. */
+  private revokeSessionsOf(userId: string): number {
+    const owned = this.state.sessions.filter((item) => item.userId === userId);
+    this.state.sessions = this.state.sessions.filter(
+      (item) => item.userId !== userId,
+    );
+    return owned.length;
   }
 
   private metrics(): AdminMetricsDto {

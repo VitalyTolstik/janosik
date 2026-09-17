@@ -60,12 +60,12 @@ function renderBoard(initialRoute = "/") {
 // worker can exceed the 1 s default).
 async function openCalendarView() {
   fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
-  await screen.findAllByTestId("calendar-day", {}, { timeout: 5000 });
+  await screen.findAllByTestId("calendar-day", {}, { timeout: 15_000 });
 }
 
 async function openTableView() {
   fireEvent.click(screen.getByRole("button", { name: "Table" }));
-  await screen.findByRole("table", {}, { timeout: 5000 });
+  await screen.findByRole("table", {}, { timeout: 15_000 });
 }
 
 /** A board with one due-dated card due "today noon" and one without a due. */

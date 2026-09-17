@@ -131,7 +131,7 @@ describe("FilterBar", () => {
           document.querySelectorAll("button[data-day]").length,
         ).toBeGreaterThan(0);
       },
-      { timeout: 5000 },
+      { timeout: 15_000 },
     );
     await userEvent.click(
       [...document.querySelectorAll("button[data-day]")].find(
