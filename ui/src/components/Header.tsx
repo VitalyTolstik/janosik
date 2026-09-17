@@ -1,4 +1,5 @@
 import { BackgroundSwitcher } from "@/components/BackgroundSwitcher";
+import { AccountMenu } from "@/components/auth/AccountMenu";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
 import { DataMenu } from "@/components/DataMenu";
@@ -132,6 +133,8 @@ export function Header() {
           </TooltipTrigger>
           <TooltipContent>{t("redo.tooltip")}</TooltipContent>
         </Tooltip>
+
+        <AccountMenu />
 
         <DataMenu />
 

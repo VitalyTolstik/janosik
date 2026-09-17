@@ -398,6 +398,7 @@
   "auth.invalidInput": "Check the entered data (password must be at least 8 characters)",
   "auth.networkError": "No network connection to the server",
   "auth.genericError": "Could not sign in — please try again",
+  "auth.accountAria": "Account",
   "auth.logout": "Sign out",
   "auth.signedInAs": "Signed in as {{email}}",
   "auth.restoring": "Restoring session…",

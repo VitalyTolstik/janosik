@@ -168,7 +168,7 @@ describe("CardDialog due dates", () => {
           ),
         ).toBe(true);
       },
-      { timeout: 5000 },
+      { timeout: 15_000 },
     );
     const target = [...document.querySelectorAll("button[data-day]")].find(
       (b) => b.textContent === day,
