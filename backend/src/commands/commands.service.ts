@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  PayloadTooLargeException,
 } from "@nestjs/common";
 import { Role } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
@@ -19,12 +20,14 @@ import {
   atWipLimit,
   boardReducer,
   LIMITS,
+  MAX_COMMAND_BYTES,
   validateBoardAction,
 } from "@janosik/shared";
 import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { applyCommandWrites, collectVersions } from "./command-writers";
+import { referencedEntityIds } from "./referenced-entity-ids";
 import type { CreateCommandDto } from "./dto/create-command.dto";
 
 /**
@@ -102,6 +105,15 @@ export class CommandsService {
     actorId: string,
     dto: CreateCommandDto,
   ): Promise<CommandResponse> {
+    // An oversized action is refused before anything else runs (TASK-30.2):
+    // the writers would happily persist megabytes of snapshot/activity ids.
+    const bytes = Buffer.byteLength(JSON.stringify(dto.action), "utf8");
+    if (bytes > MAX_COMMAND_BYTES) {
+      throw new PayloadTooLargeException({
+        message: `Command is too large (${bytes} bytes, max ${MAX_COMMAND_BYTES})`,
+        field: "action",
+      });
+    }
     const validation = validateBoardAction(dto.action);
     if (!validation.ok) {
       throw new BadRequestException({
@@ -118,7 +130,13 @@ export class CommandsService {
     }
 
     const applied = await this.prisma.$transaction(
-      async (tx): Promise<{ response: CommandResponse; fresh: boolean }> => {
+      async (
+        tx,
+      ): Promise<{
+        response: CommandResponse;
+        fresh: boolean;
+        touches: string[];
+      }> => {
         // Serialize commands per board on the board row itself: concurrent
         // requests queue here, so the `ifMatch` check below sees every
         // committed predecessor. Without this lock two parallel commands with
@@ -146,8 +164,19 @@ export class CommandsService {
           return {
             response: existing.result as unknown as CommandResponse,
             fresh: false,
+            touches: [],
           };
         }
+
+        // Entity ids are global primary keys while commands are board-scoped:
+        // an id that already lives on another board would be silently
+        // rewritten by the upserts below (TASK-30.2). Replays skip this
+        // check — their stored result must stay reproducible.
+        await this.assertIdsBelongToBoard(
+          tx,
+          boardId,
+          referencedEntityIds(action),
+        );
 
         const before = await loadBoardAggregate(tx, boardId);
         if (!before) {
@@ -216,19 +245,23 @@ export class CommandsService {
             touches,
           },
         });
-        return { response, fresh: true };
+        return { response, fresh: true, touches };
       },
     );
 
     // Publish only after the transaction committed: a subscriber must never
     // replay a command the database could still roll back. A replay of an
     // existing `commandId` publishes nothing — that `seq` already went out.
+    // `touches` rides along (TASK-30.1): it is what the command actually
+    // wrote, so subscribers mark their undo history foreign without diffing
+    // the whole board.
     if (applied.fresh) {
       this.realtime.publish(boardId, {
         type: "command",
         seq: applied.response.seq,
         action,
         actorId,
+        touches: applied.touches,
       });
     }
     return applied.response;
@@ -245,12 +278,13 @@ export class CommandsService {
         ...(since > 0 ? { seq: { gt: BigInt(since) } } : {}),
       },
       orderBy: { seq: "asc" },
-      select: { seq: true, actorId: true, payload: true },
+      select: { seq: true, actorId: true, payload: true, touches: true },
     });
     return rows.map((row) => ({
       seq: Number(row.seq),
       action: row.payload as unknown as BoardAction,
       actorId: row.actorId,
+      touches: row.touches,
     }));
   }
 
@@ -264,6 +298,85 @@ export class CommandsService {
       _max: { seq: true },
     });
     return aggregate._max.seq === null ? 0 : Number(aggregate._max.seq);
+  }
+
+  /**
+   * Every client-supplied entity id must either be free or belong to this
+   * board (TASK-30.2). The writers upsert by global id, so a colliding id
+   * from another board would rewrite that board's row — rename a foreign
+   * column, steal a card into this board's column, re-parent a checklist.
+   * Soft-deleted rows keep their board and pass (that is exactly the redo
+   * path); ids that exist nowhere are creates and pass too.
+   */
+  private async assertIdsBelongToBoard(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    ids: string[],
+  ): Promise<void> {
+    if (ids.length === 0) return;
+    const foreignFilter = { id: { in: ids }, boardId: { not: boardId } };
+    const cardFilter = {
+      id: { in: ids },
+      column: { boardId: { not: boardId } },
+    };
+
+    const offenders = [
+      {
+        table: "column",
+        row: await tx.column.findFirst({
+          where: foreignFilter,
+          select: { id: true },
+        }),
+      },
+      {
+        table: "card",
+        row: await tx.card.findFirst({
+          where: cardFilter,
+          select: { id: true },
+        }),
+      },
+      {
+        table: "label",
+        row: await tx.label.findFirst({
+          where: foreignFilter,
+          select: { id: true },
+        }),
+      },
+      {
+        table: "checklist",
+        row: await tx.checklist.findFirst({
+          where: {
+            id: { in: ids },
+            card: { column: { boardId: { not: boardId } } },
+          },
+          select: { id: true },
+        }),
+      },
+      {
+        table: "checklistItem",
+        row: await tx.checklistItem.findFirst({
+          where: {
+            id: { in: ids },
+            checklist: { card: { column: { boardId: { not: boardId } } } },
+          },
+          select: { id: true },
+        }),
+      },
+      {
+        table: "activity",
+        row: await tx.activity.findFirst({
+          where: foreignFilter,
+          select: { id: true },
+        }),
+      },
+    ];
+    const offender = offenders.find((entry) => entry.row !== null);
+    if (offender?.row) {
+      throw new ConflictException({
+        message: `Entity id already used on another board: ${offender.table}:${offender.row.id}`,
+        field: "action",
+      });
+    }
   }
 
   /**

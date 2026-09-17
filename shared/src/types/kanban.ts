@@ -197,6 +197,13 @@ export const LIMITS = {
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
 /**
+ * One command payload larger than this (bytes) is rejected (TASK-30.2).
+ * Sized for the biggest legitimate command — a `RESTORE_COLUMN` snapshot
+ * with a full column of large cards — while still bounding abuse.
+ */
+export const MAX_COMMAND_BYTES = 2 * 1024 * 1024;
+
+/**
  * One entry of a card's history. `actorId` is reserved for the future
  * backend (real users) — the frontend-only app always writes `null`.
  * `detail` is a display snapshot captured at mutation time (label name,

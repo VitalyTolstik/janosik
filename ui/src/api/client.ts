@@ -18,7 +18,10 @@ import type {
  * - The access token lives in memory only; the refresh token rides the
  *   httpOnly cookie, so a page reload restores the session through
  *   `POST /auth/refresh` (single-flight: parallel 401s wait for one shared
- *   refresh and then retry their call exactly once).
+ *   refresh and then retry their call exactly once, and the rotation is
+ *   serialized across tabs through the Web Locks API — two tabs rotating
+ *   the same cookie concurrently present an already-revoked token to the
+ *   server, whose reuse detection then revokes every session of the user).
  * - A dead session (rotation/reuse, expired cookie) clears the token and
  *   fires `onAuthLost`, which the auth provider turns into the login screen.
  * - Network failures are `ApiError` with `status: 0` (`offline`), so the
@@ -114,9 +117,40 @@ export function apiBaseUrl(): string {
   return import.meta.env.VITE_API_URL ?? "/api/v1";
 }
 
+/** Web Locks name: one refresh at a time per browser profile. */
+export const REFRESH_LOCK = "janosik:auth-refresh";
+
+/**
+ * Run `task` under a cross-tab lock when the browser has the Web Locks API.
+ *
+ * `refreshPromise` only dedupes within one tab, but the refresh cookie is
+ * shared by every tab of the profile: two tabs refreshing at the same time
+ * both present the same token, one rotation wins, and the loser is treated
+ * as token theft — the server revokes **all** sessions of the user. In live
+ * testing (2026-09-17) that is exactly what happened: two refresh calls
+ * presenting the same token within the same instant, then "all sessions
+ * revoked". The tab that waited refreshes afterwards with the cookie the
+ * winner just rotated in, which is a normal rotation. Browsers without the
+ * API keep the old single-tab behaviour (the in-tab promise still
+ * serializes).
+ */
+async function withRefreshLock<T>(task: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  if (locks === undefined) return task();
+  return locks.request(REFRESH_LOCK, task);
+}
+
 export class ApiClient {
   private accessToken: string | null = null;
   private refreshPromise: Promise<AuthResponseDto | null> | null = null;
+  /**
+   * Bumped whenever a session is established or dropped (login/register/
+   * logout/clear). A refresh that started before the bump is stale and must
+   * not write its outcome into the client: a slow boot refresh answering
+   * 401 just after a successful login would otherwise wipe the fresh token
+   * and bounce the user back to the login screen.
+   */
+  private sessionEpoch = 0;
   /** Called once when a session cannot be restored — the app shows login. */
   onAuthLost: (() => void) | null = null;
 
@@ -128,6 +162,7 @@ export class ApiClient {
 
   clearAccessToken(): void {
     this.accessToken = null;
+    this.sessionEpoch += 1;
   }
 
   /** `POST /auth/register` — creates the account and starts the session. */
@@ -142,6 +177,7 @@ export class ApiClient {
       auth: false,
     });
     this.accessToken = response.accessToken;
+    this.sessionEpoch += 1;
     return response;
   }
 
@@ -153,6 +189,7 @@ export class ApiClient {
       auth: false,
     });
     this.accessToken = response.accessToken;
+    this.sessionEpoch += 1;
     return response;
   }
 
@@ -165,7 +202,7 @@ export class ApiClient {
         auth: false,
       });
     } finally {
-      this.accessToken = null;
+      this.clearAccessToken();
     }
   }
 
@@ -191,16 +228,22 @@ export class ApiClient {
   }
 
   private async runRefresh(): Promise<AuthResponseDto | null> {
+    const epoch = this.sessionEpoch;
     try {
-      const response = await this.request<AuthResponseDto>("/auth/refresh", {
-        method: "POST",
-        body: {},
-        auth: false,
-      });
+      const response = await withRefreshLock(() =>
+        this.request<AuthResponseDto>("/auth/refresh", {
+          method: "POST",
+          body: {},
+          auth: false,
+        }),
+      );
+      // A login/register that landed while this refresh was in flight owns
+      // the session now; the refreshed user may even differ (account switch).
+      if (epoch !== this.sessionEpoch) return null;
       this.accessToken = response.accessToken;
       return response;
     } catch {
-      this.accessToken = null;
+      if (epoch === this.sessionEpoch) this.accessToken = null;
       return null;
     }
   }
@@ -336,8 +379,11 @@ export class ApiClient {
         init.auth !== false
       ) {
         const restored = await this.refreshSession();
-        if (restored !== null) return this.attempt<T>(path, init);
-        this.accessToken = null;
+        // `null` with a token present means the refresh was superseded by a
+        // login/register (see `sessionEpoch`) — retry with that token.
+        if (restored !== null || this.accessToken !== null) {
+          return this.attempt<T>(path, init);
+        }
         this.onAuthLost?.();
       }
       throw error;

@@ -56,6 +56,35 @@ describe("changedEntityIds", () => {
     expect(changedEntityIds(board(), server)).toEqual(["c-1"]);
   });
 
+  it("ignores the client-only activity feed the aggregate never carries", () => {
+    // The local card gains `activity` on every edit; the server aggregate
+    // derives it from the command log and omits the field entirely. Diffing
+    // it used to mark the card foreign on each focus refetch and kill the
+    // user's own undo steps (live bug, 2026-09-17).
+    const local = board({
+      cards: {
+        "c-1": card({
+          activity: [{ id: "a-1", type: "renamed", at: 2, actorId: null }],
+        }),
+      },
+    });
+    const server = board();
+    expect(changedEntityIds(local, server)).toEqual([]);
+  });
+
+  it("still reports a real card change next to a differing activity feed", () => {
+    const local = board({
+      cards: {
+        "c-1": card({
+          title: "Changed",
+          updatedAt: 2,
+          activity: [{ id: "a-1", type: "renamed", at: 2, actorId: null }],
+        }),
+      },
+    });
+    expect(changedEntityIds(local, board())).toEqual(["c-1"]);
+  });
+
   it("reports a column whose order changed", () => {
     const server = board();
     server.columns = [

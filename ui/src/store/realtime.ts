@@ -1,11 +1,9 @@
 import type {
-  Board,
   BoardAction,
   BoardSseEvent,
   CommandSseEvent,
 } from "@janosik/shared";
 import { ApiError, api, apiBaseUrl } from "@/api/client";
-import { changedEntityIds } from "@/store/board-diff";
 
 /**
  * Board realtime over SSE, loaded lazily (TASK-30).
@@ -187,7 +185,11 @@ export async function openBoardEvents(
   let response = await requestEvents(boardId, since, signal);
   if (response.status === 401) {
     const restored = await api.refreshSession();
-    if (restored === null) throw new ApiError(401, null);
+    // `null` with a token present: the refresh lost to a login/register that
+    // started later (see `ApiClient.sessionEpoch`) — the token is fresh.
+    if (restored === null && api.getAccessToken() === null) {
+      throw new ApiError(401, null);
+    }
     response = await requestEvents(boardId, since, signal);
   }
   if (!response.ok || response.body === null) {
@@ -229,7 +231,6 @@ export interface RealtimeHost {
   getBaseline: (boardId: string) => number;
   /** Advance it; never moves backwards. */
   setBaseline: (boardId: string, seq: number) => void;
-  getBoard: (boardId: string) => Board | undefined;
   apply: (action: BoardAction) => void;
   markForeign: (boardId: string, ids: readonly string[]) => void;
   isBusy: (boardId: string) => boolean;
@@ -242,6 +243,34 @@ export interface RealtimeBridge {
   /** A command of ours settled: remember its seq and drain deferred events. */
   settled: (boardId: string, seq?: number) => void;
   dispose: () => void;
+}
+
+/** Entity-type prefixes of `Command.touches` labels (§7.3, TASK-30.1). */
+const TOUCH_PREFIXES = new Set([
+  "board",
+  "column",
+  "card",
+  "label",
+  "checklist",
+  "checklistItem",
+]);
+
+/**
+ * Plain entity ids out of server-computed `touches` labels: `card:<id>` →
+ * `<id>`, and the same for every other prefix. Unknown prefixes are skipped
+ * — the label space is server-owned and may grow. This replaces the local
+ * `changedEntityIds` diff of the whole board that TASK-30 used per foreign
+ * event: the server already knows exactly what it wrote.
+ */
+export function touchedEntityIds(touches: readonly string[]): string[] {
+  const ids: string[] = [];
+  for (const label of touches) {
+    const separator = label.indexOf(":");
+    if (separator === -1) continue;
+    if (!TOUCH_PREFIXES.has(label.slice(0, separator))) continue;
+    ids.push(label.slice(separator + 1));
+  }
+  return ids;
 }
 
 export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
@@ -257,13 +286,9 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
     const { commandId: _spent, ...action } = event.action as BoardAction & {
       commandId?: string;
     };
-    const before = host.getBoard(boardId);
-    if (before === undefined) return;
     host.apply({ ...action, boardId } as BoardAction);
-    const after = host.getBoard(boardId);
-    if (after !== undefined && after !== before) {
-      host.markForeign(boardId, changedEntityIds(before, after));
-    }
+    const ids = touchedEntityIds(event.touches);
+    if (ids.length > 0) host.markForeign(boardId, ids);
   };
 
   const process = (event: CommandSseEvent): void => {

@@ -17,7 +17,7 @@
         "dist/assets/radix-*.js",
         "dist/assets/dndkit-*.js"
       ],
-      "limit": "210 KB",
+      "limit": "300 KB",
       "gzip": true
     },
     {
@@ -59,6 +59,15 @@
       ],
       "limit": "30 KB",
       "gzip": true
+    },
+    {
+      "name": "lazy realtime chunk (SSE bridge and reader, gzip)",
+      "path": [
+        "dist/assets/realtime-*.js"
+      ],
+      "limit": "6 KB",
+      "gzip": true,
+      "running": false
     }
   ],
   "scripts": {

@@ -80,6 +80,108 @@ describe("ApiClient", () => {
     expect(refreshes).toBe(1);
   });
 
+  it("serializes the refresh across tabs through the Web Locks API", async () => {
+    const events: string[] = [];
+    let queue: Promise<unknown> = Promise.resolve();
+    const locks = {
+      request(name: string, task: () => Promise<unknown>) {
+        events.push(`lock:${name}`);
+        const run = queue.then(task);
+        queue = run.catch(() => undefined);
+        return run;
+      },
+    };
+    Object.defineProperty(navigator, "locks", {
+      value: locks,
+      configurable: true,
+    });
+
+    // Two clients = two tabs of the same profile: same refresh cookie, but
+    // neither can see the other's in-flight promise.
+    const tab = (tag: string) => {
+      const client = new ApiClient({
+        baseUrl: "/api/v1",
+        fetchImpl: async (input) => {
+          if (pathOf(input).endsWith("/auth/refresh")) {
+            events.push(`${tag}:start`);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            events.push(`${tag}:end`);
+            return json({ accessToken: `${tag}-token`, user });
+          }
+          return json(user);
+        },
+      });
+      return client;
+    };
+
+    try {
+      const [a, b] = await Promise.all([
+        tab("tab-a").refreshSession(),
+        tab("tab-b").refreshSession(),
+      ]);
+      expect(a?.accessToken).toBe("tab-a-token");
+      expect(b?.accessToken).toBe("tab-b-token");
+      // The second rotation waited for the first to finish — without the
+      // lock both would present the same cookie and the server would revoke
+      // every session as a reuse signal.
+      expect(events.indexOf("tab-b:start")).toBeGreaterThan(
+        events.indexOf("tab-a:end"),
+      );
+      expect(
+        events.filter((event) => event === "lock:janosik:auth-refresh"),
+      ).toHaveLength(2);
+    } finally {
+      delete (navigator as { locks?: unknown }).locks;
+    }
+  });
+
+  it("does not let a stale boot refresh clobber a login that landed later", async () => {
+    const pending: { resolve?: (response: Response) => void } = {};
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (input) => {
+        if (pathOf(input).endsWith("/auth/refresh")) {
+          return new Promise<Response>((resolve) => {
+            pending.resolve = resolve;
+          });
+        }
+        return json({ accessToken: "login-token", user });
+      },
+    });
+
+    // The boot refresh hangs; the user logs in meanwhile.
+    const boot = client.refreshSession();
+    await client.login("admin@example.com", "password123");
+    expect(client.getAccessToken()).toBe("login-token");
+
+    // The late 401 of the stale refresh must not wipe the fresh token.
+    pending.resolve?.(json({ message: "Unauthorized" }, 401));
+    await expect(boot).resolves.toBeNull();
+    expect(client.getAccessToken()).toBe("login-token");
+  });
+
+  it("does not let a stale refresh overwrite a newer login (account switch)", async () => {
+    const pending: { resolve?: (response: Response) => void } = {};
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (input) => {
+        if (pathOf(input).endsWith("/auth/refresh")) {
+          return new Promise<Response>((resolve) => {
+            pending.resolve = resolve;
+          });
+        }
+        return json({ accessToken: "b-token", user: { ...user, id: "u-2" } });
+      },
+    });
+
+    const boot = client.refreshSession();
+    await client.login("other@example.com", "password123");
+
+    pending.resolve?.(json({ accessToken: "a-token", user }));
+    await expect(boot).resolves.toBeNull();
+    expect(client.getAccessToken()).toBe("b-token");
+  });
+
   it("reports a dead session once and clears the token", async () => {
     const onAuthLost = vi.fn();
     const client = new ApiClient({

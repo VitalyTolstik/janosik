@@ -70,6 +70,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session !== null) {
         setUser(session.user);
         setStatus("authenticated");
+      } else if (api.getAccessToken() !== null) {
+        // The boot refresh was superseded by a login/register that landed
+        // while it was in flight — that path already set the session.
       } else {
         setStatus("anonymous");
       }

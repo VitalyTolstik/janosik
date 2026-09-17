@@ -459,6 +459,77 @@ describe("Commands API (e2e)", () => {
         }),
       );
     });
+
+    it("redoes a create command after its soft-delete undo", async () => {
+      const boardId = await createBoard("Redo board");
+      const initial = await getAggregate(boardId);
+
+      const addColumn = scoped(boardId, {
+        type: "ADD_COLUMN",
+        newColumnId: "col-redo",
+        title: "Redo",
+      });
+      const deleteColumn = scoped(boardId, {
+        type: "DELETE_COLUMN",
+        columnId: "col-redo",
+      });
+      const addCard = scoped(boardId, {
+        type: "ADD_CARD",
+        newCardId: "card-redo",
+        columnId: "col-redo",
+        title: "Card",
+      });
+      const deleteCard = scoped(boardId, {
+        type: "DELETE_CARD",
+        cardId: "card-redo",
+      });
+      const duplicateCard = scoped(boardId, {
+        type: "DUPLICATE_CARD",
+        cardId: "card-redo",
+        newCardId: "card-redo-dup",
+      });
+      const deleteCopy = scoped(boardId, {
+        type: "DELETE_CARD",
+        cardId: "card-redo-dup",
+      });
+      const duplicateColumn = scoped(boardId, {
+        type: "DUPLICATE_COLUMN",
+        columnId: "col-redo",
+        newColumnId: "col-redo-copy",
+        newCardIds: ["card-redo-copy", "card-redo-dup-copy"],
+      });
+      const deleteColumnCopy = scoped(boardId, {
+        type: "DELETE_COLUMN",
+        columnId: "col-redo-copy",
+      });
+
+      // The redo re-sends the original action verbatim with a fresh
+      // commandId: the soft-deleted row must be revived, not inserted again
+      // (undo of a create is a soft delete — the unique id used to 500).
+      const timeline = [
+        addColumn,
+        deleteColumn,
+        addColumn,
+        addCard,
+        deleteCard,
+        addCard,
+        duplicateCard,
+        deleteCopy,
+        duplicateCard,
+        duplicateColumn,
+        deleteColumnCopy,
+        duplicateColumn,
+      ];
+      for (const action of timeline) await apply(boardId, action);
+
+      let expected = initial;
+      for (const action of timeline) {
+        expected = boardReducer([expected], action, {
+          withActivity: false,
+        })[0]!;
+      }
+      expect(await getAggregate(boardId)).toEqual(expected);
+    });
   });
 
   describe("idempotency and validation", () => {
@@ -1029,6 +1100,7 @@ describe("Commands API (e2e)", () => {
         newColumnId: "col-dl1",
       });
       expect(all.body[0].actorId).toEqual(expect.any(String));
+      expect(all.body[0].touches).toContain("column:col-dl1");
 
       const delta = await server()
         .get(`/api/v1/boards/${boardId}/commands?since=${first.seq}`)

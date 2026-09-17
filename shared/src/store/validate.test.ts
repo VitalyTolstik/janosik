@@ -114,6 +114,18 @@ const validActions: BoardAction[] = [
   }),
   action({ type: "RESTORE_CARD", card: { ...card } }),
   action({
+    type: "RESTORE_CARD",
+    card: {
+      ...card,
+      description: "notes",
+      dueDate: 1_700_000_200_000,
+      cover: { type: "gradient", value: "ocean" },
+      checklists: [{ ...checklist }],
+    },
+    columnId: "col-1",
+    index: 0,
+  }),
+  action({
     type: "RESTORE_COLUMN",
     column: { ...column },
     index: 0,
@@ -398,6 +410,75 @@ describe("validateBoardAction — rejected shapes", () => {
       "a malformed restore card",
       action({ type: "RESTORE_CARD", card: { id: "c" } }),
       "action.card.title",
+    ],
+    [
+      "an oversized restore card description",
+      action({
+        type: "RESTORE_CARD",
+        card: { ...card, description: "x".repeat(LIMITS.description + 1) },
+        columnId: "col-1",
+        index: 0,
+      }),
+      "action.card.description",
+    ],
+    [
+      "an unknown cover on a restore card",
+      action({
+        type: "RESTORE_CARD",
+        card: { ...card, cover: { type: "photo", value: "x" } },
+        columnId: "col-1",
+        index: 0,
+      }),
+      "action.card.cover.type",
+    ],
+    [
+      "an over-max restore card checklist count",
+      action({
+        type: "RESTORE_CARD",
+        card: {
+          ...card,
+          checklists: Array.from(
+            { length: LIMITS.checklistsPerCard + 1 },
+            (_, index) => ({ id: `cl-${index}`, title: "t", items: [] }),
+          ),
+        },
+        columnId: "col-1",
+        index: 0,
+      }),
+      "action.card.checklists",
+    ],
+    [
+      "an over-max restore checklist item count",
+      action({
+        type: "RESTORE_CHECKLIST",
+        cardId: "card-1",
+        checklist: {
+          id: "cl-1",
+          title: "t",
+          items: Array.from(
+            { length: LIMITS.itemsPerChecklist + 1 },
+            (_, index) => ({ id: `it-${index}`, text: "x", done: false }),
+          ),
+        },
+        index: 0,
+      }),
+      "action.checklist.items",
+    ],
+    [
+      "an over-max restore column card count",
+      action({
+        type: "RESTORE_COLUMN",
+        column: {
+          ...column,
+          cardIds: Array.from(
+            { length: LIMITS.cardsPerColumn + 1 },
+            (_, index) => `c-${index}`,
+          ),
+        },
+        index: 0,
+        cards: [],
+      }),
+      "action.column.cardIds",
     ],
     [
       "a non-object restore column",

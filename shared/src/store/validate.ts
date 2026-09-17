@@ -172,21 +172,49 @@ function common(action: Record<string, unknown>): void {
   }
 }
 
-/** A card snapshot carried by a restore command. */
+/**
+ * A card snapshot carried by a restore command. Everything the writers
+ * persist is validated here (TASK-30.2): without the nested checks a
+ * `RESTORE_*` snapshot could smuggle oversized text or unlimited
+ * checklists past the collection limits the create commands enforce.
+ */
 function validateCard(value: unknown, field: string): void {
   const card = asRecord(value, field);
   readString(card, "id", `${field}.id`, { nonBlank: true });
   readString(card, "title", `${field}.title`, { max: LIMITS.cardTitle });
+  readOptionalString(card, "description", `${field}.description`, {
+    max: LIMITS.description,
+  });
   readStringArray(card, "labelIds", `${field}.labelIds`, LIMITS.labelsPerCard);
   readNumber(card, "createdAt", `${field}.createdAt`);
   readNumber(card, "updatedAt", `${field}.updatedAt`);
+  readOptionalNumber(card, "dueDate", `${field}.dueDate`);
+  readOptionalNumber(card, "archivedAt", `${field}.archivedAt`);
+  if (card.cover !== undefined && card.cover !== null) {
+    validateCover(card.cover, `${field}.cover`);
+  }
+  const checklists = card.checklists;
+  if (checklists !== undefined && checklists !== null) {
+    if (!Array.isArray(checklists)) {
+      fail(`${field}.checklists`, "must be an array");
+    }
+    if (checklists.length > LIMITS.checklistsPerCard) {
+      fail(
+        `${field}.checklists`,
+        `must be at most ${LIMITS.checklistsPerCard} items`,
+      );
+    }
+    checklists.forEach((checklist, index) =>
+      validateChecklist(checklist, `${field}.checklists[${index}]`),
+    );
+  }
 }
 
 function validateColumn(value: unknown, field: string): void {
   const column = asRecord(value, field);
   readString(column, "id", `${field}.id`, { nonBlank: true });
   readString(column, "title", `${field}.title`, { max: LIMITS.columnTitle });
-  readStringArray(column, "cardIds", `${field}.cardIds`);
+  readStringArray(column, "cardIds", `${field}.cardIds`, LIMITS.cardsPerColumn);
   readNumber(column, "createdAt", `${field}.createdAt`);
   const wipLimit = readOptionalInteger(
     column,
@@ -215,6 +243,9 @@ function validateChecklist(value: unknown, field: string): void {
   });
   const items = checklist.items;
   if (!Array.isArray(items)) fail(`${field}.items`, "must be an array");
+  if (items.length > LIMITS.itemsPerChecklist) {
+    fail(`${field}.items`, `must be at most ${LIMITS.itemsPerChecklist} items`);
+  }
   items.forEach((item, index) =>
     validateChecklistItem(item, `${field}.items[${index}]`),
   );
