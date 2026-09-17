@@ -408,7 +408,6 @@
   "auth.invalidInput": "Проверьте данные (пароль — не короче 8 символов)",
   "auth.networkError": "Нет связи с сервером",
   "auth.genericError": "Не удалось войти — попробуйте ещё раз",
-  "auth.accountAria": "Аккаунт",
   "auth.logout": "Выйти",
   "auth.signedInAs": "Вы вошли как {{email}}",
   "auth.restoring": "Восстанавливаем сессию…",

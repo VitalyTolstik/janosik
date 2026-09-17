@@ -1,5 +1,5 @@
 import { BackgroundSwitcher } from "@/components/BackgroundSwitcher";
-import { AccountMenu } from "@/components/auth/AccountMenu";
+import { SignOutButton } from "@/components/auth/SignOutButton";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
 import { DataMenu } from "@/components/DataMenu";
@@ -134,8 +134,6 @@ export function Header() {
           <TooltipContent>{t("redo.tooltip")}</TooltipContent>
         </Tooltip>
 
-        <AccountMenu />
-
         <DataMenu />
 
         <Tooltip>
@@ -157,6 +155,8 @@ export function Header() {
             {isDark ? t("theme.tooltipLight") : t("theme.tooltipDark")}
           </TooltipContent>
         </Tooltip>
+
+        <SignOutButton />
       </div>
     </header>
   );

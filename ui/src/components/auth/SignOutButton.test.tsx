@@ -5,14 +5,14 @@ import userEvent from "@testing-library/user-event";
 import type { AuthUserDto } from "@janosik/shared";
 import { api } from "@/api/client";
 import { AuthProvider } from "@/auth/AuthContext";
-import { AccountMenu } from "@/components/auth/AccountMenu";
+import { SignOutButton } from "@/components/auth/SignOutButton";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
 
 /**
- * The board header must offer sign-out without digging into the data menu
- * (the regression this component fixes): the trigger shows up only for a
- * live server session and the action revokes it.
+ * The board header must offer sign-out in plain sight (the regression this
+ * component fixes): the control shows up only for a live server session,
+ * carries a visible label, and ends the session in one click.
  */
 
 const user: AuthUserDto = {
@@ -35,12 +35,12 @@ function pathOf(input: RequestInfo | URL): string {
   ).pathname;
 }
 
-function renderMenu() {
+function renderButton() {
   return render(
     <I18nProvider>
       <TooltipProvider>
         <AuthProvider>
-          <AccountMenu />
+          <SignOutButton />
         </AuthProvider>
       </TooltipProvider>
     </I18nProvider>,
@@ -58,16 +58,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("AccountMenu", () => {
+describe("SignOutButton", () => {
   it("stays hidden without a session", async () => {
     vi.stubGlobal("fetch", async () => json({ message: "Unauthorized" }, 401));
 
-    renderMenu();
+    renderButton();
     await waitFor(() => expect(api.onAuthLost).not.toBeNull());
-    expect(screen.queryByTestId("account-menu")).toBeNull();
+    expect(screen.queryByTestId("account-logout")).toBeNull();
   });
 
-  it("shows the signed-in email and signs out in one click", async () => {
+  it("says what it does and ends the session in one click", async () => {
     const calls: string[] = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
       const path = pathOf(input);
@@ -78,18 +78,14 @@ describe("AccountMenu", () => {
       return json({ status: "ok" });
     });
 
-    renderMenu();
-    const trigger = await screen.findByTestId("account-menu");
-    await userEvent.click(trigger);
+    renderButton();
+    const button = await screen.findByTestId("account-logout");
+    expect(button.textContent).toContain("Sign out");
 
-    expect(
-      await screen.findByText("Signed in as admin@example.com"),
-    ).toBeInTheDocument();
-
-    await userEvent.click(screen.getByTestId("account-logout"));
+    await userEvent.click(button);
     await waitFor(() => expect(calls).toContain("/api/v1/auth/logout"));
     await waitFor(() =>
-      expect(screen.queryByTestId("account-menu")).toBeNull(),
+      expect(screen.queryByTestId("account-logout")).toBeNull(),
     );
     expect(api.getAccessToken()).toBeNull();
   });
