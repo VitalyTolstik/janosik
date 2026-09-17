@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/popover";
 import { formatDateOnly, formatTime, useHour12, useI18n } from "@/i18n";
 import { useBoardActions } from "@/store/BoardContext";
-import { formatTimeOfDay } from "@/utils/time";
+import { composeTimestamp, formatTimeOfDay } from "@/utils/time";
 
 /** Time-of-day applied when a date is picked without a time set yet. */
 const DEFAULT_TIME = "12:00";
@@ -25,17 +25,6 @@ function dueParts(due: number): { date: Date; time: string } {
     date: new Date(d.getFullYear(), d.getMonth(), d.getDate()),
     time: formatTimeOfDay(d),
   };
-}
-
-function composeTimestamp(date: Date, time: string): number {
-  const [hh, mm] = time.split(":").map((v) => Number.parseInt(v, 10));
-  return new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-    hh || 0,
-    mm || 0,
-  ).getTime();
 }
 
 interface DueDatePickerContentProps {

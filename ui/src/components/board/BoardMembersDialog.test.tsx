@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { BoardMemberDto } from "@janosik/shared";
@@ -145,6 +151,58 @@ describe("BoardMembersPanel (TASK-35)", () => {
       }),
     ).toHaveValue("VIEWER");
     expect(await screen.findByText("Role updated")).toBeInTheDocument();
+  });
+
+  it("sets a VIEWER expiry through the calendar popover", async () => {
+    vi.spyOn(api, "listMembers").mockResolvedValue([
+      ADMIN,
+      { ...MEMBER, role: "VIEWER", expiresAt: null },
+    ]);
+    const update = vi.spyOn(api, "updateMember").mockResolvedValue({
+      ...MEMBER,
+      role: "VIEWER",
+      expiresAt: 1,
+    });
+
+    renderPanel(true);
+    await screen.findByText("Boris");
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Access until — quiet@example.com",
+      }),
+    );
+    await screen.findByTestId("expiry-calendar");
+    // The calendar arrives in a lazy chunk (TASK-19); under full-suite load
+    // its import can exceed the 1 s default waitFor timeout.
+    await waitFor(
+      () => {
+        expect(
+          document.querySelectorAll("button[data-day]").length,
+        ).toBeGreaterThan(0);
+      },
+      { timeout: 15_000 },
+    );
+    const target = [
+      ...document.querySelectorAll<HTMLElement>("button[data-day]"),
+    ].find(
+      (button) =>
+        button.textContent === "15" &&
+        !button.closest("td")?.hasAttribute("data-outside"),
+    );
+    fireEvent.click(target as HTMLElement);
+
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    const now = new Date();
+    expect(update).toHaveBeenCalledWith("board-1", "user-2", {
+      expiresAt: new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        15,
+        12,
+        0,
+      ).toISOString(),
+    });
   });
 
   it("locks demote/remove for the last ADMIN with a reason", async () => {

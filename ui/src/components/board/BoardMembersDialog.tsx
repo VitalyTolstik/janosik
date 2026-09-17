@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Trash2, Users } from "lucide-react";
+import { CalendarClock, Trash2, Users, X } from "lucide-react";
 import type { BoardMemberDto, BoardRole } from "@janosik/shared";
 
 import { api, ApiError, isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
+import {
+  TimePickerPanel,
+  TimePickerTrigger,
+} from "@/components/board/TimePicker";
 import { useToast } from "@/components/Toast";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar-lazy";
 import {
   Dialog,
   DialogContent,
@@ -15,16 +20,27 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/ui/user-avatar";
-import { formatDateOnly, useI18n, type MessageKey } from "@/i18n";
+import {
+  formatDateOnly,
+  formatTime,
+  useHour12,
+  useI18n,
+  type MessageKey,
+} from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useBoard } from "@/store/BoardContext";
 import { userLabel } from "@/utils/avatar";
-import { pad2 } from "@/utils/time";
+import { composeTimestamp, formatTimeOfDay } from "@/utils/time";
 
 /**
  * «Участники» dialog (TASK-35): the only place a second person can be added
@@ -48,15 +64,6 @@ const ROLE_KEYS = {
 
 type Translate = ReturnType<typeof useI18n>["t"];
 
-/** `datetime-local` value (local time, minute precision) for a Unix-ms instant. */
-function toDateTimeInput(ms: number): string {
-  const date = new Date(ms);
-  return (
-    `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}` +
-    `T${pad2(date.getHours())}:${pad2(date.getMinutes())}`
-  );
-}
-
 /** Maps an API failure onto one of the member-specific toast messages. */
 function membershipError(error: unknown, t: Translate): string {
   if (error instanceof ApiError) {
@@ -66,6 +73,125 @@ function membershipError(error: unknown, t: Translate): string {
     if (error.status === 403) return t("board.members.errors.forbidden");
   }
   return t("board.members.errors.generic");
+}
+
+interface ExpiryPickerProps {
+  /** Unix ms, or `null` for "no expiry". */
+  value: number | null;
+  /** Accessible name (the row's user is baked in by the caller). */
+  label: string;
+  disabled?: boolean;
+  onChange: (value: number | null) => void;
+}
+
+/**
+ * Access-expiry picker: a trigger showing the current deadline (or "no
+ * expiry") that opens the same premium calendar + time-wheel used by card
+ * due dates — instead of a native `datetime-local` field whose dark-theme
+ * affordance is nearly invisible.
+ */
+function ExpiryPicker({
+  value,
+  label,
+  disabled = false,
+  onChange,
+}: ExpiryPickerProps) {
+  const { t, lang } = useI18n();
+  const hour12 = useHour12();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          data-testid="expiry-trigger"
+          aria-label={label}
+          className="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground"
+        >
+          <CalendarClock className="h-3.5 w-3.5" />
+          {value === null
+            ? t("board.members.expires.never")
+            : `${formatDateOnly(value, lang)}, ${formatTime(
+                formatTimeOfDay(new Date(value)),
+                lang,
+                hour12,
+              )}`}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="relative w-auto p-3">
+        {/* Draft state lives here: Radix unmounts the content on close, so
+            every open mounts a clean calendar (AGENT.md). */}
+        <ExpiryCalendarBody value={value} onChange={onChange} />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function ExpiryCalendarBody({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (value: number | null) => void;
+}) {
+  const { t, lang } = useI18n();
+  const [timeOpen, setTimeOpen] = useState(false);
+  const [time, setTime] = useState(() =>
+    value === null ? "12:00" : formatTimeOfDay(new Date(value)),
+  );
+  const due = value === null ? undefined : new Date(value);
+
+  const applyTime = (next: string) => {
+    setTime(next);
+    if (due) onChange(composeTimestamp(due, next));
+  };
+
+  return (
+    <div data-testid="expiry-calendar">
+      {timeOpen ? (
+        <div
+          data-testid="expiry-time-panel"
+          className="absolute -bottom-px right-full mr-2 rounded-md border border-border bg-popover p-2 shadow-md animate-in fade-in slide-in-from-right-1"
+        >
+          <TimePickerPanel
+            value={time}
+            onChange={applyTime}
+            onConfirm={() => setTimeOpen(false)}
+          />
+        </div>
+      ) : null}
+      <Calendar
+        mode="single"
+        localeTag={lang}
+        selected={due}
+        onSelect={(date) => {
+          if (date) onChange(composeTimestamp(date, time));
+        }}
+      />
+      <div className="mt-1 flex items-center gap-2 border-t border-border/60 pt-2">
+        <TimePickerTrigger
+          value={time}
+          active={timeOpen}
+          onToggle={() => setTimeOpen((current) => !current)}
+        />
+        {value === null ? null : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => onChange(null)}
+            data-testid="expiry-clear"
+          >
+            <X className="h-3.5 w-3.5" />
+            {t("board.members.expires.clear")}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function BoardMembersDialog() {
@@ -129,7 +255,7 @@ export function BoardMembersPanel({
   // Invite draft — remount-reset (see the file header), never `open`-reset.
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<BoardRole>("MEMBER");
-  const [expiry, setExpiry] = useState("");
+  const [expiry, setExpiry] = useState<number | null>(null);
   const [inviting, setInviting] = useState(false);
 
   const load = useCallback(async () => {
@@ -168,7 +294,7 @@ export function BoardMembersPanel({
         email: email.trim(),
         role,
         expiresAt:
-          role === "VIEWER" && expiry !== ""
+          role === "VIEWER" && expiry !== null
             ? new Date(expiry).toISOString()
             : undefined,
       });
@@ -177,7 +303,7 @@ export function BoardMembersPanel({
       );
       setEmail("");
       setRole("MEMBER");
-      setExpiry("");
+      setExpiry(null);
       setMembers((prev) => (prev === null ? null : [...prev, invited]));
     } catch (error) {
       toast.error(membershipError(error, t));
@@ -201,12 +327,15 @@ export function BoardMembersPanel({
     }
   }
 
-  async function handleExpiryChange(member: BoardMemberDto, value: string) {
+  async function handleExpiryChange(
+    member: BoardMemberDto,
+    value: number | null,
+  ) {
     setPendingUserId(member.userId);
     try {
       replaceMember(
         await api.updateMember(boardId, member.userId, {
-          expiresAt: value === "" ? null : new Date(value).toISOString(),
+          expiresAt: value === null ? null : new Date(value).toISOString(),
         }),
       );
       toast.success(t("board.members.expiryChanged"));
@@ -315,19 +444,13 @@ export function BoardMembersPanel({
                 {canManage ? (
                   <div className="flex shrink-0 items-center gap-1">
                     {member.role === "VIEWER" ? (
-                      <input
-                        type="datetime-local"
-                        value={
-                          member.expiresAt === null
-                            ? ""
-                            : toDateTimeInput(member.expiresAt)
-                        }
+                      <ExpiryPicker
+                        value={member.expiresAt}
+                        label={`${t("board.members.invite.expires")} — ${label}`}
                         disabled={pending}
-                        aria-label={`${t("board.members.invite.expires")} — ${label}`}
-                        onChange={(event) =>
-                          void handleExpiryChange(member, event.target.value)
+                        onChange={(value) =>
+                          void handleExpiryChange(member, value)
                         }
-                        className="h-8 w-[8.5rem] rounded-md border border-border bg-background px-1.5 text-[11px] text-muted-foreground"
                       />
                     ) : null}
                     <span
@@ -354,25 +477,6 @@ export function BoardMembersPanel({
                         ))}
                       </select>
                     </span>
-                    {member.role === "VIEWER" && member.expiresAt !== null ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={t("board.members.expires.clear")}
-                            disabled={pending}
-                            onClick={() => void handleExpiryChange(member, "")}
-                            className="h-7 w-7 text-muted-foreground"
-                          >
-                            ∞
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {t("board.members.expires.clear")}
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : null}
 
                     {confirmRemoveId === member.userId ? (
                       <span className="flex items-center gap-1">
@@ -459,11 +563,10 @@ export function BoardMembersPanel({
           {role === "VIEWER" ? (
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               {t("board.members.invite.expires")}
-              <input
-                type="datetime-local"
+              <ExpiryPicker
                 value={expiry}
-                onChange={(event) => setExpiry(event.target.value)}
-                className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                label={t("board.members.invite.expires")}
+                onChange={setExpiry}
               />
             </label>
           ) : null}
