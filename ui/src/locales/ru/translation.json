@@ -443,6 +443,8 @@
   "auth.networkError": "Нет связи с сервером",
   "auth.genericError": "Не удалось войти — попробуйте ещё раз",
   "auth.logout": "Выйти",
+  "auth.logoutConfirmTitle": "Выйти из аккаунта?",
+  "auth.logoutConfirmDescription": "Вы выйдете из аккаунта {{email}}. Доска вернётся на экран входа.",
   "auth.signedInAs": "Вы вошли как {{email}}",
   "auth.restoring": "Восстанавливаем сессию…",
   "sync.loading": "Загружаем доски…",

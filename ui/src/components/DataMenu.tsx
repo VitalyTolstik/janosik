@@ -5,11 +5,11 @@ import {
   Download,
   HardDrive,
   HardDriveDownload,
-  LogOut,
   Upload,
 } from "lucide-react";
 
 import { useToast } from "@/components/Toast";
+import { LogoutConfirmDialog } from "@/components/auth/LogoutConfirmDialog";
 import { ArchiveDialog } from "@/components/board/ArchiveDialog";
 import { BackupDialog } from "@/components/board/BackupDialog";
 import {
@@ -49,13 +49,14 @@ export function DataMenu() {
   const { t } = useI18n();
   const toast = useToast();
   const { boards, board, importBoards } = useBoard();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const serverMode = isApiEnabled();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [backupCount, setBackupCount] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [backupsOpen, setBackupsOpen] = useState(false);
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
   // Counted only while the menu is open (TASK-21.4.1): this component
   // re-renders on every keystroke anywhere on the board, and walking every
@@ -182,9 +183,9 @@ export function DataMenu() {
               ) : null}
               <DropdownMenuItem
                 data-testid="data-logout"
-                onClick={() => void logout()}
+                onClick={() => setLogoutOpen(true)}
               >
-                <LogOut className="h-4 w-4" />
+                <LazyAnimatedIcon name="logout" size={16} aria-hidden />
                 {t("auth.logout")}
               </DropdownMenuItem>
             </>
@@ -205,6 +206,13 @@ export function DataMenu() {
       />
       <ArchiveDialog open={archiveOpen} onOpenChange={setArchiveOpen} />
       <BackupDialog open={backupsOpen} onOpenChange={setBackupsOpen} />
+      {user !== null ? (
+        <LogoutConfirmDialog
+          open={logoutOpen}
+          email={user.email}
+          onOpenChange={setLogoutOpen}
+        />
+      ) : null}
     </>
   );
 }

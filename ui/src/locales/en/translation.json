@@ -433,6 +433,8 @@
   "auth.networkError": "No network connection to the server",
   "auth.genericError": "Could not sign in — please try again",
   "auth.logout": "Sign out",
+  "auth.logoutConfirmTitle": "Sign out?",
+  "auth.logoutConfirmDescription": "You will be signed out of {{email}}. The board returns to the sign-in screen.",
   "auth.signedInAs": "Signed in as {{email}}",
   "auth.restoring": "Restoring session…",
   "sync.loading": "Loading boards…",

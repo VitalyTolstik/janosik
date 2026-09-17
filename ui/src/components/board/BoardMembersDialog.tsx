@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { CalendarClock, Trash2, Users, X } from "lucide-react";
+import { CalendarClock, Trash2, X } from "lucide-react";
 import type { BoardMemberDto, BoardRole } from "@janosik/shared";
 
 import { api, ApiError, isApiEnabled } from "@/api/client";
@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import {
   Popover,
   PopoverContent,
@@ -215,7 +216,7 @@ export function BoardMembersDialog() {
             onClick={() => setOpen(true)}
             className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
           >
-            <Users size={18} />
+            <LazyAnimatedIcon name="user-plus" size={18} aria-hidden />
           </Button>
         </TooltipTrigger>
         <TooltipContent>{t("board.members.button")}</TooltipContent>

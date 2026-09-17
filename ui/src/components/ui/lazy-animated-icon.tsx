@@ -6,12 +6,14 @@ import {
   Clock,
   Keyboard,
   Languages,
+  LogOut,
   Moon,
   Palette,
   Search,
   Settings,
   SquarePen,
   SunDim,
+  UserPlus,
 } from "lucide-react";
 import type { ComponentType, LazyExoticComponent } from "react";
 import { Suspense, lazy, useEffect, useState } from "react";
@@ -27,12 +29,14 @@ export type AnimatedIconName =
   | "clock"
   | "keyboard"
   | "languages"
+  | "logout"
   | "moon"
   | "palette"
   | "search"
   | "settings"
   | "square-pen"
-  | "sun-dim";
+  | "sun-dim"
+  | "user-plus";
 
 export interface AnimatedIconProps {
   size?: number;
@@ -101,6 +105,14 @@ const ICONS: Record<AnimatedIconName, IconEntry> = {
       })),
     ),
   },
+  logout: {
+    Fallback: LogOut,
+    Lazy: lazy(() =>
+      import("@/components/ui/logout-icon").then((m) => ({
+        default: m.LogoutIcon,
+      })),
+    ),
+  },
   moon: {
     Fallback: Moon,
     Lazy: lazy(() =>
@@ -144,6 +156,14 @@ const ICONS: Record<AnimatedIconName, IconEntry> = {
     Lazy: lazy(() =>
       import("@/components/ui/sun-dim-icon").then((m) => ({
         default: m.SunDimIcon,
+      })),
+    ),
+  },
+  "user-plus": {
+    Fallback: UserPlus,
+    Lazy: lazy(() =>
+      import("@/components/ui/user-plus-icon").then((m) => ({
+        default: m.UserPlusIcon,
       })),
     ),
   },
