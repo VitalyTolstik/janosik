@@ -1,4 +1,5 @@
 import { BackgroundSwitcher } from "@/components/BackgroundSwitcher";
+import { SignOutButton } from "@/components/auth/SignOutButton";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
 import { DataMenu } from "@/components/DataMenu";
@@ -154,6 +155,8 @@ export function Header() {
             {isDark ? t("theme.tooltipLight") : t("theme.tooltipDark")}
           </TooltipContent>
         </Tooltip>
+
+        <SignOutButton />
       </div>
     </header>
   );

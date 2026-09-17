@@ -104,7 +104,9 @@ async function search(query: string) {
     () => {
       expect(screen.queryAllByRole("option").length).toBeGreaterThan(0);
     },
-    { timeout: 1500 },
+    // Lazy palette chunks plus the 200 ms debounce can exceed old, tight
+    // waits under a parallel coverage run — see the calendar specs.
+    { timeout: 15_000 },
   );
   return screen.getAllByRole("option");
 }
