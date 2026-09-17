@@ -49,6 +49,8 @@ interface RequestInitLike {
   method?: string;
   body?: unknown;
   auth?: boolean;
+  /** Keep the request alive through a page unload (board commands). */
+  keepalive?: boolean;
 }
 
 export class AdminApiClient {
@@ -225,6 +227,7 @@ export class AdminApiClient {
     return this.request<CommandResponse>(`/admin/boards/${boardId}/commands`, {
       method: "POST",
       body: request,
+      keepalive: true,
     });
   }
 
@@ -383,6 +386,7 @@ export class AdminApiClient {
         headers,
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
         credentials: "include",
+        keepalive: init.keepalive === true,
       });
     } catch {
       throw new ApiError(0, null);

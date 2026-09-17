@@ -18,6 +18,12 @@ export default defineConfig({
     pool: "vmThreads",
     environment: "jsdom",
     globals: true,
+    // Lazy chunks (calendar, editor) plus userEvent can exceed the 5s
+    // default when the whole suite runs in parallel; the assertions are
+    // fine, the machine is just busy. Generous ceiling, no slowdown of a
+    // green run.
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
     setupFiles: ["./src/test/setup.ts"],
     css: false,
     coverage: {

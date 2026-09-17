@@ -120,12 +120,14 @@ describe("ApiClient", () => {
     expect(rejected.messageText).toBe("bad");
   });
 
-  it("posts commands to the board endpoint", async () => {
+  it("posts commands to the board endpoint with keepalive", async () => {
     const paths: string[] = [];
+    let keepalive: boolean | undefined;
     const client = new ApiClient({
       baseUrl: "/api/v1",
       fetchImpl: async (input, init) => {
         paths.push(`${init?.method} ${pathOf(input)}`);
+        keepalive = init?.keepalive;
         return json({ seq: 7, versions: { "card:c-1": 2 } });
       },
     });
@@ -135,5 +137,8 @@ describe("ApiClient", () => {
     });
     expect(response.seq).toBe(7);
     expect(paths).toEqual(["POST /api/v1/boards/b-1/commands"]);
+    // A reload right after Enter must not kill the in-flight command: the
+    // browser finishes it even after the page is gone.
+    expect(keepalive).toBe(true);
   });
 });

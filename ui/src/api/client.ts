@@ -88,6 +88,13 @@ interface RequestInitLike {
   body?: unknown;
   /** Attach the access token (and retry once after a refresh on 401). */
   auth?: boolean;
+  /**
+   * Let the browser finish this request even if the page unloads right
+   * after it was sent (`fetch` keepalive). Used for board commands: a
+   * reload/close is expected behaviour, and a command already accepted by
+   * the queue must not die in flight.
+   */
+  keepalive?: boolean;
 }
 
 /** Is the app wired to a backend? (Off in unit tests unless stubbed.) */
@@ -233,6 +240,8 @@ export class ApiClient {
     return this.request<CommandResponse>(`/boards/${boardId}/commands`, {
       method: "POST",
       body: request,
+      // Survives a reload in the middle of the request (see RequestInitLike).
+      keepalive: true,
     });
   }
 
@@ -274,6 +283,7 @@ export class ApiClient {
         headers,
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
         credentials: "include",
+        keepalive: init.keepalive === true,
       });
     } catch {
       throw new ApiError(0, null);
