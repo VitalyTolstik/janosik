@@ -1,6 +1,26 @@
 import "@testing-library/jest-dom/vitest";
+import {
+  ReadableStream as NodeReadableStream,
+  TransformStream as NodeTransformStream,
+  WritableStream as NodeWritableStream,
+} from "node:stream/web";
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach } from "vitest";
+
+// jsdom has no web-stream classes; the SSE reader (TASK-30) and the fake
+// server's event streams need them in tests.
+if (!("ReadableStream" in globalThis)) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).ReadableStream = NodeReadableStream;
+}
+if (!("WritableStream" in globalThis)) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).WritableStream = NodeWritableStream;
+}
+if (!("TransformStream" in globalThis)) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).TransformStream = NodeTransformStream;
+}
 
 // Auto-cleanup after every test (React Testing Library).
 afterEach(() => {

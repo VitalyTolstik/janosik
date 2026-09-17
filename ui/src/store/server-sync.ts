@@ -29,7 +29,8 @@ export type SendFailure =
   | { kind: "rejected"; status: number; field?: string };
 
 export type SendOutcome =
-  { ok: true; versions: EntityVersions } | { ok: false; failure: SendFailure };
+  | { ok: true; versions: EntityVersions; seq: number }
+  | { ok: false; failure: SendFailure };
 
 export interface ServerSyncOptions {
   /** One `POST /boards/:id/commands` round-trip. */
@@ -129,7 +130,7 @@ export class ServerSync {
         // Supersede: the newest patch wins, the older waiters are done.
         clearTimeout(existing.timer);
         for (const waiter of existing.waiters)
-          waiter({ ok: true, versions: {} });
+          waiter({ ok: true, versions: {}, seq: 0 });
         existing.action = action;
         existing.waiters.push(resolve);
         existing.timer = this.scheduleFlush(key);
@@ -200,7 +201,7 @@ export class ServerSync {
     };
     try {
       const response = await this.options.send(boardId, request);
-      return { ok: true, versions: response.versions };
+      return { ok: true, versions: response.versions, seq: response.seq };
     } catch (error) {
       return { ok: false, failure: classify(error) };
     }

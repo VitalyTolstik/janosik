@@ -220,6 +220,21 @@ export class ApiClient {
     return this.request<BoardAggregate>(`/boards/${boardId}`);
   }
 
+  /**
+   * The aggregate plus the command `seq` it reflects (`X-Board-Seq`, TASK-30)
+   * — the baseline the realtime stream resumes from. The body stays the
+   * plain aggregate, so nothing about the board shape changes.
+   */
+  async getBoardSnapshot(
+    boardId: string,
+  ): Promise<{ board: BoardAggregate; seq: number }> {
+    const { data, headers } = await this.requestWithHeaders<BoardAggregate>(
+      `/boards/${boardId}`,
+    );
+    const seq = Number(headers.get("X-Board-Seq") ?? "0");
+    return { board: data, seq: Number.isFinite(seq) && seq > 0 ? seq : 0 };
+  }
+
   deleteBoard(boardId: string): Promise<{ status: "ok" }> {
     return this.request<{ status: "ok" }>(`/boards/${boardId}`, {
       method: "DELETE",
@@ -304,6 +319,14 @@ export class ApiClient {
     path: string,
     init: RequestInitLike = {},
   ): Promise<T> {
+    return (await this.requestWithHeaders<T>(path, init)).data;
+  }
+
+  /** `request`, keeping the response headers for callers that need them. */
+  private async requestWithHeaders<T>(
+    path: string,
+    init: RequestInitLike = {},
+  ): Promise<{ data: T; headers: Headers }> {
     try {
       return await this.attempt<T>(path, init);
     } catch (error) {
@@ -321,7 +344,10 @@ export class ApiClient {
     }
   }
 
-  private async attempt<T>(path: string, init: RequestInitLike): Promise<T> {
+  private async attempt<T>(
+    path: string,
+    init: RequestInitLike,
+  ): Promise<{ data: T; headers: Headers }> {
     const base = this.options.baseUrl ?? apiBaseUrl();
     const headers: Record<string, string> = {};
     if (init.body !== undefined) headers["Content-Type"] = "application/json";
@@ -353,7 +379,7 @@ export class ApiClient {
       }
     }
     if (!response.ok) throw new ApiError(response.status, parsed);
-    return parsed as T;
+    return { data: parsed as T, headers: response.headers };
   }
 }
 

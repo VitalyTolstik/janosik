@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -18,6 +17,7 @@ import { BoardRoles } from "@/common/board-roles.decorator";
 import { MembershipGuard } from "@/common/membership.guard";
 import { CommandsService } from "./commands.service";
 import { CreateCommandDto } from "./dto/create-command.dto";
+import { parseSince } from "./parse-since";
 
 /**
  * Command transport (§7.4): `POST /boards/:id/commands` applies a reducer
@@ -49,13 +49,6 @@ export class CommandsController {
     @Param("id") id: string,
     @Query("since") since?: string,
   ): Promise<CommandDeltaEntry[]> {
-    let parsed = 0;
-    if (since !== undefined && since !== "") {
-      parsed = Number(since);
-      if (!Number.isInteger(parsed) || parsed < 0) {
-        throw new BadRequestException("since must be a non-negative integer");
-      }
-    }
-    return this.commands.listSince(id, parsed);
+    return this.commands.listSince(id, parseSince(since));
   }
 }

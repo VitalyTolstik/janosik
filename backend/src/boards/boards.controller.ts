@@ -8,8 +8,10 @@ import {
   Param,
   Patch,
   Post,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { Role } from "@prisma/client";
 import type {
   BoardAggregate,
@@ -64,8 +66,15 @@ export class BoardsController {
 
   @UseGuards(MembershipGuard)
   @Get(":id")
-  get(@Param("id") id: string): Promise<BoardAggregate> {
-    return this.boards.getAggregate(id);
+  async get(
+    @Param("id") id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<BoardAggregate> {
+    const { board, seq } = await this.boards.getAggregateWithSeq(id);
+    // The client needs the seq this aggregate reflects to resume the SSE
+    // stream exactly after it (TASK-30); the body stays the plain aggregate.
+    res.setHeader("X-Board-Seq", String(seq));
+    return board;
   }
 
   @UseGuards(MembershipGuard)

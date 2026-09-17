@@ -25,6 +25,8 @@ import {
   type UpdateCardAction,
 } from "@janosik/shared";
 import { api, isApiEnabled } from "@/api/client";
+import type { RealtimeBridge } from "@/store/realtime";
+import { useAuth } from "@/auth/AuthContext";
 import { useUndoHistory } from "@/store/use-undo-history";
 import { SAVE_DEBOUNCE_MS } from "@/store/constants";
 import type {
@@ -352,6 +354,7 @@ const BoardActionsContext = createContext<BoardActionsValue | null>(null);
 export function BoardProvider({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const toast = useToast();
+  const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   // Server mode is a build property, not a prop: dev/production builds talk
@@ -400,6 +403,20 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // undo preconditions that stop a stale undo from clobbering foreign text.
   const versionsRef = useRef(new Map<string, Record<string, number>>());
 
+  // TASK-30 realtime bookkeeping. `seqsRef` is the command seq the local
+  // state reflects per board; the bridge in the lazy realtime chunk owns
+  // everything else (dedupe, deferred events, reconnects) and reads the
+  // current user id through `userIdRef` for the own-echo filter.
+  const seqsRef = useRef(new Map<string, number>());
+  const userIdRef = useRef(user?.id);
+  useEffect(() => {
+    userIdRef.current = user?.id;
+  }, [user?.id]);
+
+  // Created from the lazily imported chunk — the module stays off the
+  // critical path, only its (erased) type is visible here.
+  const realtimeRef = useRef<RealtimeBridge | null>(null);
+
   // One outgoing queue for the account; disposed with the provider (logout
   // unmounts it, so no command survives the session).
   /* eslint-disable react-hooks/refs -- deliberate once-per-provider lazy init
@@ -425,6 +442,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     return () => {
       aliveRef.current = false;
       sync.dispose();
+      realtimeRef.current?.dispose();
     };
   }, [sync]);
 
@@ -611,7 +629,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         action,
         preconditionsFor(boardId, action),
       );
-      if (outcome.ok) mergeVersions(boardId, outcome.versions);
+      if (outcome.ok) {
+        mergeVersions(boardId, outcome.versions);
+        realtimeRef.current?.settled(boardId, outcome.seq);
+      } else {
+        realtimeRef.current?.settled(boardId);
+      }
       return outcome;
     },
     [sync, preconditionsFor, mergeVersions],
@@ -758,22 +781,35 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     for (const summary of summaries) nextRoles[summary.id] = summary.role;
 
     let boards: Board[] = [];
+    const nextSeqs = new Map<string, number>();
     if (summaries.length === 0) {
       const legacy = readLegacyBoards();
       if (legacy !== null) {
         const imported = await api.importBoards(toEnvelope(legacy));
         clearLegacyBoards();
-        for (const board of imported) nextRoles[board.id] = "ADMIN";
+        for (const board of imported) {
+          nextRoles[board.id] = "ADMIN";
+          // Importing writes aggregate-level, not through the command log:
+          // there is no seq to resume from.
+          nextSeqs.set(board.id, 0);
+        }
         boards = imported;
       }
     } else {
-      boards = await Promise.all(
-        summaries.map((summary) => api.getBoard(summary.id)),
+      const snapshots = await Promise.all(
+        summaries.map((summary) => api.getBoardSnapshot(summary.id)),
       );
+      boards = snapshots.map((snapshot) => snapshot.board);
+      for (const snapshot of snapshots) {
+        nextSeqs.set(snapshot.board.id, snapshot.seq);
+      }
     }
 
     if (!aliveRef.current) return;
     setRoles(nextRoles);
+    // The hydrated state is exactly what the aggregates showed: replacing
+    // the seq map keeps the realtime resume point in sync with it.
+    seqsRef.current = nextSeqs;
     // A fresh hydration replaces everything: history from a previous data
     // set would describe entities that no longer exist.
     clearHistory();
@@ -811,23 +847,28 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }, [serverMode, hydrateBoards]);
 
   /**
-   * Focus refetch (TASK-29 MVP, replaced by SSE in TASK-30): coming back to
-   * the tab pulls the active aggregate — unless commands are in flight,
-   * whose optimistic state must not be overwritten. Entities the server has
-   * moved on from are marked foreign in the history first, so undo skips
-   * them with a toast instead of clobbering another member's edit (§7.0).
+   * Focus refetch (TASK-29 fallback; the SSE stream is the live path in
+   * TASK-30): coming back to the tab pulls the active aggregate — unless
+   * commands are in flight, whose optimistic state must not be overwritten.
+   * Entities the server has moved on from are marked foreign in the history
+   * first, so undo skips them with a toast instead of clobbering another
+   * member's edit (§7.0). The snapshot's seq refreshes the stream baseline.
    */
   const refetchActiveBoard = useCallback(async (): Promise<void> => {
     const boardId = activeIdRef.current;
     if (!serverMode || boardId === undefined) return;
     if (sync.isBusy(boardId)) return;
     try {
-      const fresh = await api.getBoard(boardId);
+      const { board: fresh, seq } = await api.getBoardSnapshot(boardId);
       if (!aliveRef.current || activeIdRef.current !== boardId) return;
       const local = stateRef.current.find((b) => b.id === boardId);
       if (local === undefined) return;
       const foreignIds = changedEntityIds(local, fresh);
       if (foreignIds.length > 0) markForeign(boardId, foreignIds);
+      seqsRef.current.set(
+        boardId,
+        Math.max(seqsRef.current.get(boardId) ?? 0, seq),
+      );
       apply({ type: "RESTORE_BOARD", boardId, board: fresh });
     } catch {
       /* offline / server down — the next focus tries again */
@@ -847,6 +888,38 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [serverMode, refetchActiveBoard]);
+
+  // The realtime connection (TASK-30) lives in a lazily imported chunk: it
+  // is needed only once a board is on screen, and its reconnect/dedupe logic
+  // must stay off the critical path. The bridge reads boards, history and
+  // the command queue through the callbacks below.
+  useEffect(() => {
+    if (!serverMode) return;
+    const boardId = board?.id;
+    if (boardId === undefined) {
+      realtimeRef.current?.stop();
+      return;
+    }
+    let cancelled = false;
+    void import("@/store/realtime").then(({ createRealtimeBridge }) => {
+      if (cancelled || !aliveRef.current) return;
+      realtimeRef.current ??= createRealtimeBridge({
+        getActiveBoardId: () => activeIdRef.current,
+        getBaseline: (id) => seqsRef.current.get(id) ?? 0,
+        setBaseline: (id, seq) =>
+          seqsRef.current.set(id, Math.max(seqsRef.current.get(id) ?? 0, seq)),
+        getBoard: (id) => stateRef.current.find((b) => b.id === id),
+        apply,
+        markForeign,
+        isBusy: (id) => sync.isBusy(id),
+        getUserId: () => userIdRef.current,
+      });
+      realtimeRef.current.watch(boardId);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [serverMode, board?.id, apply, markForeign, sync]);
 
   // Wrapper dispatch: apply the command, then record the undo step for the
   // board it targeted. Board-scoped actions get the active board id
@@ -879,8 +952,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       void sync.enqueue(boardId, scoped).then((outcome) => {
         if (outcome.ok) {
           mergeVersions(boardId, outcome.versions);
+          realtimeRef.current?.settled(boardId, outcome.seq);
           return;
         }
+        realtimeRef.current?.settled(boardId);
         showFailure(outcome.failure);
         if (before === undefined) return;
         const rollback = rollbackStep(boardId, scoped);
