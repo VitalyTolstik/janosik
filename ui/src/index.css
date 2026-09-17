@@ -686,6 +686,12 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary) 16%, transparent);
 }
 
+/* --- Read-only mode (VIEWER, TASK-35): content without the field chrome. --- */
+.mdxeditor.janosik-mdx.janosik-mdx-readonly {
+  font-size: 0.925rem;
+  padding: 0;
+}
+
 /* Toolbar: transparent strip over the surface with hairline separators. */
 .mdxeditor.janosik-mdx .janosik-mdx-toolbar {
   gap: 1px;

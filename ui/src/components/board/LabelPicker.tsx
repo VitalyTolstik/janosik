@@ -46,6 +46,8 @@ interface LabelPickerProps {
   onRename: (labelId: string, name: string) => void;
   onRecolor: (labelId: string, color: LabelColor) => void;
   onDelete: (labelId: string) => void;
+  /** VIEWER mode (TASK-35): shows the selected chips only, nothing to click. */
+  readOnly?: boolean;
 }
 
 /**
@@ -120,6 +122,7 @@ export function LabelPicker({
   onRename,
   onRecolor,
   onDelete,
+  readOnly = false,
 }: LabelPickerProps) {
   const { t } = useI18n();
   const toast = useToast();
@@ -142,6 +145,32 @@ export function LabelPicker({
 
   const deletingLabel = labels.find((l) => l.id === deletingId);
   const renamingLabel = labels.find((l) => l.id === renamingId);
+
+  // Read-only (VIEWER): only the card's own labels, static and inert.
+  if (readOnly) {
+    const selectedLabels = labels.filter((label) =>
+      selected.includes(label.id),
+    );
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {selectedLabels.map((label) => (
+          <span
+            key={label.id}
+            className="inline-flex h-6 items-center gap-1.5 rounded-full border border-border px-2 text-[11px] font-medium"
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "h-2 w-2 shrink-0 rounded-full",
+                LABEL_COLOR_DOT[label.color],
+              )}
+            />
+            {label.name}
+          </span>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">

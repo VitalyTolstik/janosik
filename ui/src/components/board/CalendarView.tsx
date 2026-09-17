@@ -59,6 +59,8 @@ interface CalendarViewProps {
   filteredCardIds?: Record<string, string[]>;
   /** Fired on a card chip click — opens the card detail dialog. */
   onCardClick: (cardId: string) => void;
+  /** VIEWER mode (TASK-35): no drag-to-reschedule, no composers. */
+  readOnly?: boolean;
 }
 
 /** One calendar entry: a card with a due date plus resolved context. */
@@ -231,6 +233,7 @@ function MonthYearMenu({ anchor, label, locale, onPick }: MonthYearMenuProps) {
 export function CalendarView({
   filteredCardIds,
   onCardClick,
+  readOnly = false,
 }: CalendarViewProps) {
   const { board, addCard, setCardDueDate } = useBoard();
   const resolveLabels = useCardLabels(board?.labels ?? NO_LABELS);
@@ -354,6 +357,7 @@ export function CalendarView({
 
   const handleDrop = (event: React.DragEvent, day: Date) => {
     event.preventDefault();
+    if (readOnly) return;
     setDragOverKey(null);
     const cardId = event.dataTransfer.getData("text/plain");
     if (!cardId || !board.cards[cardId]) return;
@@ -367,17 +371,22 @@ export function CalendarView({
     );
   };
 
-  const dragProps = (key: string) => ({
-    onDragOver: (event: React.DragEvent) => {
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-      setDragOverKey(key);
-    },
-    onDragLeave: () => {
-      setDragOverKey((current) => (current === key ? null : current));
-    },
-    onDrop: (event: React.DragEvent) => handleDrop(event, dayKeyToDate(key)),
-  });
+  // Read-only days accept nothing: no preventDefault, no highlight, no drop.
+  const dragProps = (key: string) =>
+    readOnly
+      ? {}
+      : {
+          onDragOver: (event: React.DragEvent) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            setDragOverKey(key);
+          },
+          onDragLeave: () => {
+            setDragOverKey((current) => (current === key ? null : current));
+          },
+          onDrop: (event: React.DragEvent) =>
+            handleDrop(event, dayKeyToDate(key)),
+        };
 
   // The grid's days array is the source of truth for drop targets; map a
   // key back to its Date for the drop handler.
@@ -454,9 +463,11 @@ export function CalendarView({
       <button
         key={card.id}
         type="button"
-        draggable
+        draggable={!readOnly}
         data-testid="calendar-chip"
-        onDragStart={(event) => chipDragStart(event, card.id)}
+        onDragStart={
+          readOnly ? undefined : (event) => chipDragStart(event, card.id)
+        }
         title={`${
           withTime
             ? `${formatTime(
@@ -642,15 +653,17 @@ export function CalendarView({
               className="flex-1 space-y-1 overflow-y-auto p-2"
               data-testid="unscheduled-list"
             >
-              <UnscheduledComposer
-                disabled={
-                  board.columns.length === 0 ||
-                  // Quick-add lands in the first column — dead when it
-                  // cannot take another card.
-                  isColumnFull(board.columns[0])
-                }
-                onCreate={createUnscheduledCard}
-              />
+              {readOnly ? null : (
+                <UnscheduledComposer
+                  disabled={
+                    board.columns.length === 0 ||
+                    // Quick-add lands in the first column — dead when it
+                    // cannot take another card.
+                    isColumnFull(board.columns[0])
+                  }
+                  onCreate={createUnscheduledCard}
+                />
+              )}
               {unscheduled.length === 0 ? (
                 <p className="px-1 text-[11px] text-muted-foreground/70">
                   {t("view.calendar.unscheduledEmpty")}
@@ -660,11 +673,18 @@ export function CalendarView({
                   <button
                     key={card.id}
                     type="button"
-                    draggable
-                    onDragStart={(event) => chipDragStart(event, card.id)}
+                    draggable={!readOnly}
+                    onDragStart={
+                      readOnly
+                        ? undefined
+                        : (event) => chipDragStart(event, card.id)
+                    }
                     title={`${columnTitle} · ${card.title}`}
                     onClick={() => onCardClick(card.id)}
-                    className="block w-full cursor-grab truncate rounded-md border border-border/60 bg-muted/40 px-1.5 py-1 text-left text-[11px] text-foreground/80 transition-colors hover:border-primary/50 active:cursor-grabbing"
+                    className={cn(
+                      "block w-full truncate rounded-md border border-border/60 bg-muted/40 px-1.5 py-1 text-left text-[11px] text-foreground/80 transition-colors hover:border-primary/50",
+                      !readOnly && "cursor-grab active:cursor-grabbing",
+                    )}
                   >
                     {card.title}
                   </button>
@@ -739,23 +759,25 @@ export function CalendarView({
                         >
                           {format(day, "d")}
                         </span>
-                        <PopoverAnchor asChild>
-                          <button
-                            type="button"
-                            aria-label={t("composer.add")}
-                            data-testid="day-add"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setOpenDayKey(isDayOpen ? null : key);
-                            }}
-                            className={cn(
-                              "no-hover:opacity-100 flex h-5 w-5 items-center justify-center rounded-md bg-primary/15 text-primary opacity-0 transition-opacity hover:bg-primary/25 group-hover/cell:opacity-100 focus-visible:opacity-100",
-                              isDayOpen && "opacity-100",
-                            )}
-                          >
-                            <Plus className="h-3 w-3" aria-hidden />
-                          </button>
-                        </PopoverAnchor>
+                        {readOnly ? null : (
+                          <PopoverAnchor asChild>
+                            <button
+                              type="button"
+                              aria-label={t("composer.add")}
+                              data-testid="day-add"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setOpenDayKey(isDayOpen ? null : key);
+                              }}
+                              className={cn(
+                                "no-hover:opacity-100 flex h-5 w-5 items-center justify-center rounded-md bg-primary/15 text-primary opacity-0 transition-opacity hover:bg-primary/25 group-hover/cell:opacity-100 focus-visible:opacity-100",
+                                isDayOpen && "opacity-100",
+                              )}
+                            >
+                              <Plus className="h-3 w-3" aria-hidden />
+                            </button>
+                          </PopoverAnchor>
+                        )}
                       </span>
                       {overflow > 0 ? (
                         <button
@@ -790,20 +812,22 @@ export function CalendarView({
                     <p className="mb-1.5 px-1 text-xs font-semibold text-foreground">
                       {formatDateOnly(day.getTime(), lang)}
                     </p>
-                    <DayComposer
-                      columns={board.columns.map((col) => ({
-                        id: col.id,
-                        title: col.title,
-                        full: isColumnFull(col),
-                        count: col.cardIds.length,
-                        wipLimit: col.wipLimit,
-                      }))}
-                      labels={board.labels}
-                      onSubmit={(title, labelIds, columnId) =>
-                        createCardOn(day, title, labelIds, columnId)
-                      }
-                      onCancel={() => setOpenDayKey(null)}
-                    />
+                    {readOnly ? null : (
+                      <DayComposer
+                        columns={board.columns.map((col) => ({
+                          id: col.id,
+                          title: col.title,
+                          full: isColumnFull(col),
+                          count: col.cardIds.length,
+                          wipLimit: col.wipLimit,
+                        }))}
+                        labels={board.labels}
+                        onSubmit={(title, labelIds, columnId) =>
+                          createCardOn(day, title, labelIds, columnId)
+                        }
+                        onCancel={() => setOpenDayKey(null)}
+                      />
+                    )}
                     <div className="mt-2 max-h-56 space-y-1 overflow-y-auto border-t border-border/60 pt-2">
                       {entries.length === 0 ? (
                         <p className="px-1 text-[11px] text-muted-foreground/70">
@@ -814,9 +838,11 @@ export function CalendarView({
                           <button
                             key={entry.card.id}
                             type="button"
-                            draggable
-                            onDragStart={(event) =>
-                              chipDragStart(event, entry.card.id)
+                            draggable={!readOnly}
+                            onDragStart={
+                              readOnly
+                                ? undefined
+                                : (event) => chipDragStart(event, entry.card.id)
                             }
                             onClick={(event) => {
                               event.stopPropagation();

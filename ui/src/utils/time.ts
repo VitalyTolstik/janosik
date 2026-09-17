@@ -20,3 +20,18 @@ export function composeTime(hour: number, minute: number): string {
 export function formatTimeOfDay(date: Date): string {
   return composeTime(date.getHours(), date.getMinutes());
 }
+
+/**
+ * Local timestamp (Unix ms) for a calendar day plus a "HH:mm" time —
+ * used by the due-date and access-expiry pickers.
+ */
+export function composeTimestamp(date: Date, time: string): number {
+  const [hh, mm] = time.split(":").map((value) => Number.parseInt(value, 10));
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    hh || 0,
+    mm || 0,
+  ).getTime();
+}

@@ -1,9 +1,11 @@
 import { BackgroundSwitcher } from "@/components/BackgroundSwitcher";
 import { SignOutButton } from "@/components/auth/SignOutButton";
+import { BoardMembersDialog } from "@/components/board/BoardMembersDialog";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
 import { DataMenu } from "@/components/DataMenu";
 import { GlobalSearch } from "@/components/GlobalSearch";
+import { NotificationsBell } from "@/components/NotificationsBell";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ShortcutsDialog } from "@/components/ShortcutsDialog";
 import { TimeFormatSwitcher } from "@/components/TimeFormatSwitcher";
@@ -94,10 +96,12 @@ export function Header() {
               one name on screen, switch and rename are separate triggers. */}
           <BoardTitle />
           <BoardSwitcher />
+          <BoardMembersDialog />
         </div>
       </div>
 
       <div className="flex items-center gap-0.5">
+        <NotificationsBell />
         <GlobalSearch />
         <ShortcutsDialog />
         <BackgroundSwitcher />

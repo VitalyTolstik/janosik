@@ -86,7 +86,9 @@ export class MembershipGuard extends AuthGuard("jwt") implements CanActivate {
     const membership = await this.prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId, userId: user.id } },
     });
-    if (!membership) {
+    if (!membership || membership.acceptedAt === null) {
+      // A pending invitation is not membership — it must be accepted first
+      // (TASK-35 addendum); both cases answer the same 403.
       throw new ForbiddenException("No access to this board");
     }
 

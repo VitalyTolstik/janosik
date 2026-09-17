@@ -3,15 +3,18 @@ import {
   Archive,
   ArrowLeft,
   ArrowRight,
+  Bell,
   Clock,
   Keyboard,
   Languages,
+  LogOut,
   Moon,
   Palette,
   Search,
   Settings,
   SquarePen,
   SunDim,
+  UserPlus,
 } from "lucide-react";
 import type { ComponentType, LazyExoticComponent } from "react";
 import { Suspense, lazy, useEffect, useState } from "react";
@@ -24,15 +27,18 @@ export type AnimatedIconName =
   | "archive"
   | "arrow-left"
   | "arrow-right"
+  | "bell"
   | "clock"
   | "keyboard"
   | "languages"
+  | "logout"
   | "moon"
   | "palette"
   | "search"
   | "settings"
   | "square-pen"
-  | "sun-dim";
+  | "sun-dim"
+  | "user-plus";
 
 export interface AnimatedIconProps {
   size?: number;
@@ -77,6 +83,14 @@ const ICONS: Record<AnimatedIconName, IconEntry> = {
       })),
     ),
   },
+  bell: {
+    Fallback: Bell,
+    Lazy: lazy(() =>
+      import("@/components/ui/bell-icon").then((m) => ({
+        default: m.BellIcon,
+      })),
+    ),
+  },
   clock: {
     Fallback: Clock,
     Lazy: lazy(() =>
@@ -98,6 +112,14 @@ const ICONS: Record<AnimatedIconName, IconEntry> = {
     Lazy: lazy(() =>
       import("@/components/ui/languages-icon").then((m) => ({
         default: m.LanguagesIcon,
+      })),
+    ),
+  },
+  logout: {
+    Fallback: LogOut,
+    Lazy: lazy(() =>
+      import("@/components/ui/logout-icon").then((m) => ({
+        default: m.LogoutIcon,
       })),
     ),
   },
@@ -144,6 +166,14 @@ const ICONS: Record<AnimatedIconName, IconEntry> = {
     Lazy: lazy(() =>
       import("@/components/ui/sun-dim-icon").then((m) => ({
         default: m.SunDimIcon,
+      })),
+    ),
+  },
+  "user-plus": {
+    Fallback: UserPlus,
+    Lazy: lazy(() =>
+      import("@/components/ui/user-plus-icon").then((m) => ({
+        default: m.UserPlusIcon,
       })),
     ),
   },

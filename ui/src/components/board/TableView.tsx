@@ -65,6 +65,8 @@ interface TableViewProps {
   highlight?: string;
   /** Fired on a row click — opens the card detail dialog. */
   onCardClick: (cardId: string) => void;
+  /** VIEWER mode (TASK-35): inline editors and destructive actions off. */
+  readOnly?: boolean;
 }
 
 /** Sortable headers (TASK-14.1 item 7). */
@@ -117,6 +119,7 @@ export function TableView({
   isFiltering = false,
   highlight,
   onCardClick,
+  readOnly = false,
 }: TableViewProps) {
   const {
     board,
@@ -275,37 +278,39 @@ export function TableView({
     <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/60 backdrop-blur-sm">
       {/* Toolbar: + card composer and the column settings (TASK-14.1 item 10/11). */}
       <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
-        <Popover open={addOpen} onOpenChange={setAddOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 gap-1 border-dashed border-primary/40 bg-primary/10 px-2 text-xs font-medium text-primary hover:bg-primary/20 hover:text-primary"
-              data-testid="table-add-card"
-              disabled={!anyColumnWithRoom}
-              title={anyColumnWithRoom ? undefined : t("limits.columnsFull")}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              {t("composer.add")}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-64 p-2">
-            <TableCardComposer
-              columns={board.columns.map((col) => ({
-                id: col.id,
-                title: col.title,
-                full: isColumnFull(col),
-                count: col.cardIds.length,
-                wipLimit: col.wipLimit,
-              }))}
-              labels={board.labels}
-              onSubmit={(columnId, title, labelIds) =>
-                addCard(columnId, title, labelIds)
-              }
-              onCancel={() => setAddOpen(false)}
-            />
-          </PopoverContent>
-        </Popover>
+        {readOnly ? null : (
+          <Popover open={addOpen} onOpenChange={setAddOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1 border-dashed border-primary/40 bg-primary/10 px-2 text-xs font-medium text-primary hover:bg-primary/20 hover:text-primary"
+                data-testid="table-add-card"
+                disabled={!anyColumnWithRoom}
+                title={anyColumnWithRoom ? undefined : t("limits.columnsFull")}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {t("composer.add")}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-64 p-2">
+              <TableCardComposer
+                columns={board.columns.map((col) => ({
+                  id: col.id,
+                  title: col.title,
+                  full: isColumnFull(col),
+                  count: col.cardIds.length,
+                  wipLimit: col.wipLimit,
+                }))}
+                labels={board.labels}
+                onSubmit={(columnId, title, labelIds) =>
+                  addCard(columnId, title, labelIds)
+                }
+                onCancel={() => setAddOpen(false)}
+              />
+            </PopoverContent>
+          </Popover>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -438,6 +443,7 @@ export function TableView({
                   labels={board.labels}
                   visibleColumns={visibleColumns}
                   highlight={highlight}
+                  readOnly={readOnly}
                   isEditingTitle={editingTitleId === card.id}
                   isArchiveConfirm={archiveConfirmId === card.id}
                   onOpen={onCardClick}
@@ -474,6 +480,8 @@ interface TableRowProps {
   labels: Label[];
   visibleColumns: OptionalColumn[];
   highlight?: string;
+  /** VIEWER mode (TASK-35): no inline editors, no archive, no move menu. */
+  readOnly?: boolean;
   isEditingTitle: boolean;
   isArchiveConfirm: boolean;
   onOpen: (cardId: string) => void;
@@ -504,6 +512,7 @@ function TableRowBody({
   labels,
   visibleColumns,
   highlight,
+  readOnly = false,
   isEditingTitle,
   isArchiveConfirm,
   onOpen,
@@ -547,15 +556,22 @@ function TableRowBody({
         ) : (
           <span className="group/title block">
             <span
-              onDoubleClick={(event) => {
-                event.stopPropagation();
-                onStartTitleEdit(card.id);
-              }}
-              className="block truncate text-foreground/90 group-hover/title:pr-9"
+              onDoubleClick={
+                readOnly
+                  ? undefined
+                  : (event) => {
+                      event.stopPropagation();
+                      onStartTitleEdit(card.id);
+                    }
+              }
+              className={cn(
+                "block truncate text-foreground/90",
+                !readOnly && "group-hover/title:pr-9",
+              )}
             >
               <HighlightedText text={card.title} query={highlight ?? ""} />
             </span>
-            {isArchiveConfirm ? (
+            {readOnly ? null : isArchiveConfirm ? (
               <span
                 data-testid="table-archive-confirm"
                 className="absolute right-2 top-1/2 z-10 flex h-6 -translate-y-1/2 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
@@ -603,112 +619,149 @@ function TableRowBody({
         )}
       </td>
       <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              data-testid="table-column-cell"
-              title={t("view.table.moveHint")}
-              className="inline-flex max-w-full items-center truncate rounded-md bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              {columnTitle}
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuLabel>{t("view.table.column")}</DropdownMenuLabel>
-            {columns.map((col) => {
-              const full = col.id !== columnId && isColumnFull(col);
-              return (
-                <DropdownMenuItem
-                  key={col.id}
-                  disabled={col.id === columnId || full}
-                  onSelect={() => onMoveToColumn(card.id, columnId, col.id)}
-                >
-                  <span className="truncate">{col.title}</span>
-                  {col.wipLimit !== undefined && (
-                    <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
-                      {col.cardIds.length}/{col.wipLimit}
-                    </span>
-                  )}
-                </DropdownMenuItem>
-              );
-            })}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              data-testid="table-archive-card"
-              onSelect={() => onArchive(card.id)}
-            >
-              <Archive className="h-4 w-4" />
-              {t("card.archive")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {readOnly ? (
+          <span className="inline-flex max-w-full items-center truncate rounded-md bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground">
+            {columnTitle}
+          </span>
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                data-testid="table-column-cell"
+                title={t("view.table.moveHint")}
+                className="inline-flex max-w-full items-center truncate rounded-md bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                {columnTitle}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuLabel>{t("view.table.column")}</DropdownMenuLabel>
+              {columns.map((col) => {
+                const full = col.id !== columnId && isColumnFull(col);
+                return (
+                  <DropdownMenuItem
+                    key={col.id}
+                    disabled={col.id === columnId || full}
+                    onSelect={() => onMoveToColumn(card.id, columnId, col.id)}
+                  >
+                    <span className="truncate">{col.title}</span>
+                    {col.wipLimit !== undefined && (
+                      <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                        {col.cardIds.length}/{col.wipLimit}
+                      </span>
+                    )}
+                  </DropdownMenuItem>
+                );
+              })}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                data-testid="table-archive-card"
+                onSelect={() => onArchive(card.id)}
+              >
+                <Archive className="h-4 w-4" />
+                {t("card.archive")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </td>
       <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              data-testid="table-due-cell"
-              className="rounded transition-opacity hover:opacity-80"
-              aria-label={t("dueDate.label")}
-            >
-              {typeof card.dueDate === "number" ? (
-                <DueBadge dueDate={card.dueDate} />
-              ) : (
-                <span className="text-xs text-muted-foreground/60">—</span>
-              )}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="relative w-auto p-3">
-            <DueDatePickerContent cardId={card.id} dueDate={card.dueDate} />
-          </PopoverContent>
-        </Popover>
+        {readOnly ? (
+          typeof card.dueDate === "number" ? (
+            <DueBadge dueDate={card.dueDate} />
+          ) : (
+            <span className="text-xs text-muted-foreground/60">—</span>
+          )
+        ) : (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                data-testid="table-due-cell"
+                className="rounded transition-opacity hover:opacity-80"
+                aria-label={t("dueDate.label")}
+              >
+                {typeof card.dueDate === "number" ? (
+                  <DueBadge dueDate={card.dueDate} />
+                ) : (
+                  <span className="text-xs text-muted-foreground/60">—</span>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="relative w-auto p-3">
+              <DueDatePickerContent cardId={card.id} dueDate={card.dueDate} />
+            </PopoverContent>
+          </Popover>
+        )}
       </td>
       <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              data-testid="table-labels-cell"
-              className="max-w-44"
-              aria-label={t("view.table.labels")}
-            >
-              {card.labelIds.length > 0 ? (
-                <span className="flex flex-wrap gap-1">
-                  {cardLabels.map((label) => (
-                    <span
-                      key={label.id}
-                      className={
-                        "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
-                        LABEL_COLOR_CHIP[label.color]
-                      }
-                    >
+        {readOnly ? (
+          <span className="flex max-w-44 flex-wrap gap-1">
+            {cardLabels.map((label) => (
+              <span
+                key={label.id}
+                className={
+                  "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
+                  LABEL_COLOR_CHIP[label.color]
+                }
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-current"
+                  aria-hidden
+                />
+                {label.name}
+              </span>
+            ))}
+            {cardLabels.length === 0 ? (
+              <span className="text-xs text-muted-foreground/60">—</span>
+            ) : null}
+          </span>
+        ) : (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                data-testid="table-labels-cell"
+                className="max-w-44"
+                aria-label={t("view.table.labels")}
+              >
+                {card.labelIds.length > 0 ? (
+                  <span className="flex flex-wrap gap-1">
+                    {cardLabels.map((label) => (
                       <span
-                        className="h-1.5 w-1.5 rounded-full bg-current"
-                        aria-hidden
-                      />
-                      {label.name}
-                    </span>
-                  ))}
-                </span>
-              ) : (
-                <span className="text-xs text-muted-foreground/60">—</span>
-              )}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-64 p-3">
-            <LabelPicker
-              labels={labels}
-              selected={card.labelIds}
-              onToggle={(labelId) => onToggleLabel(card.id, labelId)}
-              onCreate={(name, color) => onCreateLabel(card.id, name, color)}
-              onRename={onRenameLabel}
-              onRecolor={onRecolorLabel}
-              onDelete={onDeleteLabel}
-            />
-          </PopoverContent>
-        </Popover>
+                        key={label.id}
+                        className={
+                          "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
+                          LABEL_COLOR_CHIP[label.color]
+                        }
+                      >
+                        <span
+                          className="h-1.5 w-1.5 rounded-full bg-current"
+                          aria-hidden
+                        />
+                        {label.name}
+                      </span>
+                    ))}
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground/60">—</span>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-64 p-3">
+              <LabelPicker
+                labels={labels}
+                selected={card.labelIds}
+                onToggle={(labelId) => onToggleLabel(card.id, labelId)}
+                onCreate={(name, color) => onCreateLabel(card.id, name, color)}
+                onRename={onRenameLabel}
+                onRecolor={onRecolorLabel}
+                onDelete={onDeleteLabel}
+              />
+            </PopoverContent>
+          </Popover>
+        )}
       </td>
       {visibleColumns.includes("checklists") ? (
         <td className="px-3 py-2">

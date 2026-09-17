@@ -41,11 +41,16 @@ describe("LazyAnimatedIcon", () => {
       idleCallbacks.forEach((callback) => callback());
     });
 
-    await waitFor(() => {
-      expect(
-        document.querySelector('[data-lazy-state="animated"]'),
-      ).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(
+          document.querySelector('[data-lazy-state="animated"]'),
+        ).toBeInTheDocument();
+      },
+      // The animated chunk streams in through `React.lazy`; under a loaded
+      // coverage run the import can exceed the 1 s default.
+      { timeout: 15_000 },
+    );
     expect(
       document.querySelector('[data-lazy-state="static"]'),
     ).not.toBeInTheDocument();
@@ -56,10 +61,13 @@ describe("LazyAnimatedIcon", () => {
 
     render(<LazyAnimatedIcon name="archive" size={20} />);
 
-    await waitFor(() => {
-      expect(
-        document.querySelector('[data-lazy-state="animated"]'),
-      ).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(
+          document.querySelector('[data-lazy-state="animated"]'),
+        ).toBeInTheDocument();
+      },
+      { timeout: 15_000 },
+    );
   });
 });

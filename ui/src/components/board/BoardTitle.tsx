@@ -15,7 +15,7 @@ export function BoardTitle() {
   // Narrow subscriptions (TASK-21.4.1): the name is all this needs, so a
   // card edit somewhere on the board leaves the header title alone.
   const { id, title } = useBoardIdentity();
-  const { renameBoard } = useBoardActions();
+  const { renameBoard, roleOf } = useBoardActions();
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -36,6 +36,15 @@ export function BoardTitle() {
   };
 
   if (!id) return null;
+
+  // VIEWER renames nothing — the header shows a plain heading (TASK-35).
+  if (roleOf(id) === "VIEWER") {
+    return (
+      <h2 className="max-w-[40vw] truncate px-1.5 py-0.5 text-lg font-semibold tracking-tight text-foreground sm:max-w-[320px] sm:text-xl">
+        {title}
+      </h2>
+    );
+  }
 
   return editing ? (
     <span className="relative inline-block">

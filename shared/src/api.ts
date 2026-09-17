@@ -117,6 +117,44 @@ export interface BoardMemberDto {
   expiresAt: number | null;
 }
 
+/** Body of `POST /boards/:id/members` — ADMIN-only invite (TASK-35). */
+export interface InviteMemberRequest {
+  email: string;
+  role: BoardRole;
+  /**
+   * ISO-8601 expiry; only meaningful for `VIEWER` (other roles store
+   * `null`). Omitted = unbounded.
+   */
+  expiresAt?: string | null;
+}
+
+/** Body of `PATCH /boards/:id/members/:userId` — ADMIN-only update. */
+export interface UpdateMemberRequest {
+  role?: BoardRole;
+  /** `null` clears the VIEWER expiry; omitted keeps the current value. */
+  expiresAt?: string | null;
+}
+
+/**
+ * A pending invitation of `GET /invitations` (TASK-35 addendum): the row
+ * exists but grants no access until the invitee accepts it. Invitees accept
+ * or decline from the notifications bell; admins can cancel by removing the
+ * member row.
+ */
+export interface BoardInvitationDto {
+  /** `BoardMember.id` — the invitation is the pending membership row. */
+  id: string;
+  boardId: string;
+  boardTitle: string;
+  role: BoardRole;
+  /** Unix ms expiry proposed for a VIEWER, or `null`. */
+  expiresAt: number | null;
+  /** Unix ms when the invitation was created. */
+  createdAt: number;
+  invitedByName: string | null;
+  invitedByEmail: string | null;
+}
+
 /** Board counters shown in the switcher (`GET /boards`). */
 export interface BoardCounters {
   cards: number;
@@ -143,6 +181,8 @@ export type BoardAggregate = Board;
  */
 export const ACTIVITY_EVENT_TYPES = [
   "member_invited",
+  "member_invite_accepted",
+  "member_invite_declined",
   "member_role_changed",
   "member_expiry_changed",
   "member_removed",

@@ -57,6 +57,8 @@ import {
 interface CardDialogProps {
   cardId: string | null;
   open: boolean;
+  /** VIEWER mode (TASK-35): read-only fields, no mutating actions. */
+  readOnly?: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -67,7 +69,12 @@ const QUIET_TOUCH_DELAY_MS = 800;
  * Card detail popover: edit the title, pick a label, move the card to another
  * column and delete it (with confirmation). Title changes are saved live.
  */
-export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
+export function CardDialog({
+  cardId,
+  open,
+  readOnly = false,
+  onOpenChange,
+}: CardDialogProps) {
   const {
     board,
     updateCard,
@@ -242,9 +249,11 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                 id="card-title-input"
                 name="card-title"
                 autoFocus
+                readOnly={readOnly}
                 value={card.title}
                 maxLength={LIMITS.cardTitle}
                 onChange={(e) => {
+                  if (readOnly) return;
                   updateCard(
                     card.id,
                     { title: e.target.value },
@@ -293,6 +302,7 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
                 <DescriptionEditor
                   key={`${card.id}:${overflowTick}`}
                   value={card.description ?? ""}
+                  readOnly={readOnly}
                   onChange={(description) => {
                     if (description.length > LIMITS.description) {
                       if (!overLimitRef.current) {
@@ -333,6 +343,7 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
               <LabelPicker
                 labels={board.labels}
                 selected={card.labelIds}
+                readOnly={readOnly}
                 onToggle={(labelId) => toggleCardLabel(card.id, labelId)}
                 onCreate={handleCreateLabel}
                 onRename={renameLabel}
@@ -341,13 +352,20 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
               />
             </div>
 
-            <CardDueDate cardId={card.id} dueDate={card.dueDate} />
+            <CardDueDate
+              cardId={card.id}
+              dueDate={card.dueDate}
+              readOnly={readOnly}
+            />
 
-            <CardCoverPicker cardId={card.id} cover={card.cover} />
+            {readOnly ? null : (
+              <CardCoverPicker cardId={card.id} cover={card.cover} />
+            )}
 
             <CardChecklists
               cardId={card.id}
               checklists={card.checklists ?? []}
+              readOnly={readOnly}
             />
 
             <CardActivityFeed
@@ -355,7 +373,7 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
               createdAt={card.createdAt}
             />
 
-            {!card.archivedAt && (
+            {!readOnly && !card.archivedAt && (
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-medium text-muted-foreground">
                   {t("card.columnLabel")}
@@ -405,68 +423,74 @@ export function CardDialog({ cardId, open, onOpenChange }: CardDialogProps) {
           </div>
 
           <DialogFooter className="mt-2 shrink-0">
-            {card.archivedAt === undefined ? (
-              duplicateDisabled ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    {/* Disabled buttons drop pointer events — the tooltip
-                        needs a wrapper that still receives them. */}
-                    <span className="inline-flex">
-                      <Button variant="ghost" disabled>
-                        <CopyPlus className="h-4 w-4" />
-                        {t("card.duplicate")}
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>{duplicateDisabledReason}</TooltipContent>
-                </Tooltip>
-              ) : (
-                <Button variant="ghost" onClick={handleDuplicate}>
-                  <CopyPlus className="h-4 w-4" />
-                  {t("card.duplicate")}
-                </Button>
-              )
-            ) : null}
-            {card.archivedAt === undefined ? (
-              <Button variant="ghost" onClick={handleArchive}>
-                <Archive className="h-4 w-4" />
-                {t("card.archive")}
-              </Button>
-            ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost">
-                    <ArchiveRestore className="h-4 w-4" />
-                    {t("card.unarchive")}
+            {readOnly ? null : (
+              <>
+                {card.archivedAt === undefined ? (
+                  duplicateDisabled ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        {/* Disabled buttons drop pointer events — the tooltip
+                            needs a wrapper that still receives them. */}
+                        <span className="inline-flex">
+                          <Button variant="ghost" disabled>
+                            <CopyPlus className="h-4 w-4" />
+                            {t("card.duplicate")}
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>{duplicateDisabledReason}</TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <Button variant="ghost" onClick={handleDuplicate}>
+                      <CopyPlus className="h-4 w-4" />
+                      {t("card.duplicate")}
+                    </Button>
+                  )
+                ) : null}
+                {card.archivedAt === undefined ? (
+                  <Button variant="ghost" onClick={handleArchive}>
+                    <Archive className="h-4 w-4" />
+                    {t("card.archive")}
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-48">
-                  <DropdownMenuLabel>{t("card.restoreTo")}</DropdownMenuLabel>
-                  {board.columns.map((column) => {
-                    const full = isColumnFull(column);
-                    return (
-                      <DropdownMenuItem
-                        key={column.id}
-                        disabled={full}
-                        onClick={() => handleRestore(column.id)}
-                      >
-                        <span className="truncate">{column.title}</span>
-                        {column.wipLimit !== undefined && (
-                          <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
-                            {column.cardIds.length}/{column.wipLimit}
-                          </span>
-                        )}
-                      </DropdownMenuItem>
-                    );
-                  })}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                ) : (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost">
+                        <ArchiveRestore className="h-4 w-4" />
+                        {t("card.unarchive")}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-48">
+                      <DropdownMenuLabel>
+                        {t("card.restoreTo")}
+                      </DropdownMenuLabel>
+                      {board.columns.map((column) => {
+                        const full = isColumnFull(column);
+                        return (
+                          <DropdownMenuItem
+                            key={column.id}
+                            disabled={full}
+                            onClick={() => handleRestore(column.id)}
+                          >
+                            <span className="truncate">{column.title}</span>
+                            {column.wipLimit !== undefined && (
+                              <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                                {column.cardIds.length}/{column.wipLimit}
+                              </span>
+                            )}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                <CardDeleteAction
+                  archived={card.archivedAt !== undefined}
+                  title={card.title}
+                  onConfirm={handleDelete}
+                />
+              </>
             )}
-            <CardDeleteAction
-              archived={card.archivedAt !== undefined}
-              title={card.title}
-              onConfirm={handleDelete}
-            />
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               {t("card.close")}
             </Button>

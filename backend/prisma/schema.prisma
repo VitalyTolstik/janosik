@@ -20,18 +20,19 @@ datasource db {
 }
 
 model User {
-  id            String         @id @default(cuid())
-  email         String         @unique
-  passwordHash  String
-  displayName   String?
-  disabledAt    DateTime? // master block (TASK-36); login/refresh → 403
-  createdAt     DateTime       @default(now())
-  memberships   BoardMember[]
-  activity      Activity[]
-  comments      Comment[]
-  apiTokens     ApiToken[]
-  commands      Command[]
-  refreshTokens RefreshToken[]
+  id             String         @id @default(cuid())
+  email          String         @unique
+  passwordHash   String
+  displayName    String?
+  disabledAt     DateTime? // master block (TASK-36); login/refresh → 403
+  createdAt      DateTime       @default(now())
+  memberships    BoardMember[]
+  invitedMembers BoardMember[]  @relation("BoardMemberInviter")
+  activity       Activity[]
+  comments       Comment[]
+  apiTokens      ApiToken[]
+  commands       Command[]
+  refreshTokens  RefreshToken[]
 }
 
 model RefreshToken {
@@ -62,17 +63,24 @@ model Board {
 }
 
 model BoardMember {
-  id        String    @id @default(cuid())
-  board     Board     @relation(fields: [boardId], references: [id])
-  boardId   String
-  user      User      @relation(fields: [userId], references: [id])
-  userId    String
-  role      Role      @default(MEMBER) // ADMIN | MEMBER | VIEWER
-  expiresAt DateTime? // VIEWER on a time budget; expired → 403
-  createdAt DateTime  @default(now())
+  id          String    @id @default(cuid())
+  board       Board     @relation(fields: [boardId], references: [id])
+  boardId     String
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String
+  role        Role      @default(MEMBER) // ADMIN | MEMBER | VIEWER
+  expiresAt   DateTime? // VIEWER on a time budget; expired → 403
+  // Opt-in invitations (TASK-35 addendum): the row is created as a pending
+  // invitation and confers NO access until the invitee accepts. `null` =
+  // pending; a timestamp = accepted at that moment.
+  acceptedAt  DateTime?
+  invitedBy   User?     @relation("BoardMemberInviter", fields: [invitedById], references: [id])
+  invitedById String?
+  createdAt   DateTime  @default(now())
 
   @@unique([boardId, userId])
   @@index([userId]) // "my boards"
+  @@index([userId, acceptedAt]) // pending invitation feed
 }
 
 enum Role {

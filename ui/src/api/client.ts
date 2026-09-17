@@ -3,9 +3,13 @@ import type {
   AuthUserDto,
   BoardAggregate,
   BoardEnvelope,
+  BoardInvitationDto,
+  BoardMemberDto,
   BoardSummary,
   CommandRequest,
   CommandResponse,
+  InviteMemberRequest,
+  UpdateMemberRequest,
 } from "@janosik/shared";
 
 /**
@@ -243,6 +247,56 @@ export class ApiClient {
       // Survives a reload in the middle of the request (see RequestInitLike).
       keepalive: true,
     });
+  }
+
+  listMembers(boardId: string): Promise<BoardMemberDto[]> {
+    return this.request<BoardMemberDto[]>(`/boards/${boardId}/members`);
+  }
+
+  inviteMember(
+    boardId: string,
+    request: InviteMemberRequest,
+  ): Promise<BoardMemberDto> {
+    return this.request<BoardMemberDto>(`/boards/${boardId}/members`, {
+      method: "POST",
+      body: request,
+    });
+  }
+
+  updateMember(
+    boardId: string,
+    userId: string,
+    request: UpdateMemberRequest,
+  ): Promise<BoardMemberDto> {
+    return this.request<BoardMemberDto>(
+      `/boards/${boardId}/members/${userId}`,
+      { method: "PATCH", body: request },
+    );
+  }
+
+  removeMember(boardId: string, userId: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/boards/${boardId}/members/${userId}`,
+      { method: "DELETE" },
+    );
+  }
+
+  listInvitations(): Promise<BoardInvitationDto[]> {
+    return this.request<BoardInvitationDto[]>("/invitations");
+  }
+
+  acceptInvitation(invitationId: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/invitations/${invitationId}/accept`,
+      { method: "POST" },
+    );
+  }
+
+  declineInvitation(invitationId: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/invitations/${invitationId}/decline`,
+      { method: "POST" },
+    );
   }
 
   /** One HTTP round-trip with token, 401-refresh-retry and JSON handling. */
