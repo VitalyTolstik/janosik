@@ -3,6 +3,7 @@ import type {
   AuthUserDto,
   BoardAggregate,
   BoardEnvelope,
+  BoardInvitationDto,
   BoardMemberDto,
   BoardSummary,
   CommandRequest,
@@ -277,6 +278,24 @@ export class ApiClient {
     return this.request<{ status: "ok" }>(
       `/boards/${boardId}/members/${userId}`,
       { method: "DELETE" },
+    );
+  }
+
+  listInvitations(): Promise<BoardInvitationDto[]> {
+    return this.request<BoardInvitationDto[]>("/invitations");
+  }
+
+  acceptInvitation(invitationId: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/invitations/${invitationId}/accept`,
+      { method: "POST" },
+    );
+  }
+
+  declineInvitation(invitationId: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/invitations/${invitationId}/decline`,
+      { method: "POST" },
     );
   }
 

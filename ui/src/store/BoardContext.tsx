@@ -328,6 +328,12 @@ interface BoardActionsValue {
   redo: () => void;
   /* Import replaces the whole data set (and resets history). */
   importBoards: (boards: BoardState) => void | Promise<void>;
+  /**
+   * Re-runs server hydration (`GET /boards` + aggregates) — used after
+   * accepting an invitation so the fresh board shows up without a reload.
+   * No-op in local mode.
+   */
+  refreshBoards: () => Promise<void>;
   /* Data safety (TASK-21.2) */
   /** Acknowledges a `corrupt-load` notice (releases held-back writes). */
   dismissDataIssue: () => void;
@@ -1040,6 +1046,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       undo,
       redo,
       importBoards,
+      refreshBoards: hydrateBoards,
       dismissDataIssue,
     }),
     [
@@ -1053,6 +1060,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       undo,
       redo,
       importBoards,
+      hydrateBoards,
       dismissDataIssue,
     ],
   );

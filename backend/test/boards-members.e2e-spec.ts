@@ -67,6 +67,27 @@ describe("Boards API (e2e)", () => {
       .then((res) => res.body.accessToken as string);
   }
 
+  /**
+   * Invitations are opt-in (TASK-35 addendum): a fresh invite is a pending
+   * row, so the invitee must accept before the board routes open up.
+   */
+  async function acceptInvitation(
+    token: string,
+    boardId: string,
+  ): Promise<void> {
+    const list = await server()
+      .get("/api/v1/invitations")
+      .set(auth(token))
+      .expect(200);
+    const invitation = list.body.find(
+      (row: { boardId: string }) => row.boardId === boardId,
+    );
+    await server()
+      .post(`/api/v1/invitations/${invitation.id}/accept`)
+      .set(auth(token))
+      .expect(200);
+  }
+
   describe("CRUD + aggregate", () => {
     it("creates a board with the caller as ADMIN and returns the aggregate", async () => {
       const res = await server()
@@ -146,6 +167,7 @@ describe("Boards API (e2e)", () => {
         .set(auth(adminToken))
         .send({ email: MEMBER_EMAIL, role: "MEMBER" })
         .expect(201);
+      await acceptInvitation(memberToken, boardId);
       const member = await server()
         .get("/api/v1/boards")
         .set(auth(memberToken))
@@ -157,6 +179,7 @@ describe("Boards API (e2e)", () => {
         .set(auth(adminToken))
         .send({ email: VIEWER_EMAIL, role: "VIEWER" })
         .expect(201);
+      await acceptInvitation(viewerToken, boardId);
       expect(viewerRes.body).toMatchObject({
         email: VIEWER_EMAIL,
         role: "VIEWER",
@@ -338,6 +361,7 @@ describe("Boards API (e2e)", () => {
         .set(auth(adminToken))
         .send({ email: MEMBER_EMAIL, role: "MEMBER" })
         .expect(201);
+      await acceptInvitation(memberToken, board.body.id);
       await server()
         .delete(`/api/v1/boards/${board.body.id}`)
         .set(auth(memberToken))
@@ -395,6 +419,7 @@ describe("Boards API (e2e)", () => {
         .set(auth(adminToken))
         .send({ email: VIEWER_EMAIL, role: "VIEWER" })
         .expect(201);
+      await acceptInvitation(viewerToken, board.body.id);
       const res = await server()
         .get(`/api/v1/boards/${board.body.id}/export`)
         .set(auth(viewerToken))

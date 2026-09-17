@@ -36,10 +36,10 @@ import type { UpdateMemberDto } from "./dto/update-member.dto";
 export class BoardsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Boards where the caller is a member (§7.4). */
+  /** Boards where the caller is a member (§7.4). Pending invitations don't count. */
   async listBoards(userId: string): Promise<BoardSummary[]> {
     const memberships = await this.prisma.boardMember.findMany({
-      where: { userId, board: { deletedAt: null } },
+      where: { userId, acceptedAt: { not: null }, board: { deletedAt: null } },
       include: {
         board: {
           include: {
@@ -81,7 +81,12 @@ export class BoardsService {
     const board = await this.prisma.$transaction(async (tx) => {
       const created = await tx.board.create({ data: { title } });
       await tx.boardMember.create({
-        data: { boardId: created.id, userId, role: Role.ADMIN },
+        data: {
+          boardId: created.id,
+          userId,
+          role: Role.ADMIN,
+          acceptedAt: new Date(),
+        },
       });
       return created;
     });
@@ -148,10 +153,10 @@ export class BoardsService {
     });
   }
 
-  /** Members of the board (§7.4) — readable by any role, VIEWER included. */
+  /** Accepted members of the board (§7.4) — readable by any role, VIEWER included. */
   async listMembers(boardId: string): Promise<BoardMemberDto[]> {
     const members = await this.prisma.boardMember.findMany({
-      where: { boardId },
+      where: { boardId, acceptedAt: { not: null } },
       include: { user: true },
       orderBy: { createdAt: "asc" },
     });
@@ -161,10 +166,12 @@ export class BoardsService {
   /**
    * Invite a user by email (ADMIN only, enforced by the guard).
    *
-   * `expiresAt` is meaningful for VIEWER only — a time-limited read-only
-   * guest (§7.0). For ADMIN/MEMBER it is ignored and stored as null.
-   * Membership is an `Activity` event (not a reducer command), so the feed
-   * records who invited whom with an email/role snapshot.
+   * Opt-in since the TASK-35 addendum: the row is created as a **pending
+   * invitation** (`acceptedAt: null`) and confers no access — the invitee
+   * accepts or declines it from the notifications bell. `expiresAt` is
+   * meaningful for VIEWER only — a time-limited read-only guest (§7.0). For
+   * ADMIN/MEMBER it is ignored and stored as null. The invite is an
+   * `Activity` event (not a reducer command) recording who invited whom.
    */
   async inviteMember(
     boardId: string,
@@ -182,13 +189,24 @@ export class BoardsService {
       where: { boardId_userId: { boardId, userId: user.id } },
     });
     if (existing) {
-      throw new ConflictException("User is already a board member");
+      throw new ConflictException(
+        existing.acceptedAt === null
+          ? "User already has a pending invitation"
+          : "User is already a board member",
+      );
     }
 
     const expiresAt = this.resolveExpiresAt(dto.role, dto.expiresAt, null);
     const member = await this.prisma.$transaction(async (tx) => {
       const created = await tx.boardMember.create({
-        data: { boardId, userId: user.id, role: dto.role, expiresAt },
+        data: {
+          boardId,
+          userId: user.id,
+          role: dto.role,
+          expiresAt,
+          acceptedAt: null,
+          invitedById: actorId,
+        },
         include: { user: true },
       });
       await tx.activity.create({
@@ -232,7 +250,13 @@ export class BoardsService {
     }
 
     const role = dto.role ?? member.role;
-    if (member.role === Role.ADMIN && role !== Role.ADMIN) {
+    // A pending invitation is not a member yet — the last-ADMIN rule only
+    // guards accepted admins.
+    if (
+      member.acceptedAt !== null &&
+      member.role === Role.ADMIN &&
+      role !== Role.ADMIN
+    ) {
       await this.assertNotLastAdmin(boardId, targetUserId, "demote");
     }
 
@@ -289,7 +313,9 @@ export class BoardsService {
     if (!member) {
       throw new NotFoundException("Board member not found");
     }
-    if (member.role === Role.ADMIN) {
+    // Pending invitations are not members — deleting the row cancels the
+    // invitation and never trips the last-ADMIN guard.
+    if (member.acceptedAt !== null && member.role === Role.ADMIN) {
       await this.assertNotLastAdmin(boardId, targetUserId, "remove");
     }
     await this.prisma.$transaction(async (tx) => {
@@ -389,6 +415,7 @@ export class BoardsService {
       where: {
         boardId,
         role: Role.ADMIN,
+        acceptedAt: { not: null },
         userId: { not: targetUserId },
       },
     });

@@ -645,7 +645,7 @@ export class AdminService {
           archivedAt: true,
           deletedAt: true,
           members: {
-            where: { role: Role.ADMIN },
+            where: { role: Role.ADMIN, acceptedAt: { not: null } },
             orderBy: { createdAt: "asc" },
             take: 1,
             select: { userId: true, user: { select: { email: true } } },
@@ -765,7 +765,7 @@ export class AdminService {
       throw new NotFoundException("Board not found");
     }
     const owner = await this.prisma.boardMember.findFirst({
-      where: { boardId, role: "ADMIN" },
+      where: { boardId, role: "ADMIN", acceptedAt: { not: null } },
       orderBy: { createdAt: "asc" },
       select: { user: { select: { id: true, email: true } } },
     });
@@ -800,7 +800,7 @@ export class AdminService {
         archivedAt: true,
         deletedAt: true,
         members: {
-          where: { role: Role.ADMIN },
+          where: { role: Role.ADMIN, acceptedAt: { not: null } },
           orderBy: { createdAt: "asc" },
           take: 1,
           select: { userId: true, user: { select: { email: true } } },

@@ -9,6 +9,7 @@ import { BoardsModule } from "@/boards/boards.module";
 import { CommandsModule } from "@/commands/commands.module";
 import { ActivityModule } from "@/activity/activity.module";
 import { CommentsModule } from "@/comments/comments.module";
+import { InvitationsModule } from "@/invitations/invitations.module";
 import { AdminModule } from "@/admin/admin.module";
 
 /**
@@ -29,6 +30,7 @@ import { AdminModule } from "@/admin/admin.module";
     CommandsModule,
     ActivityModule,
     CommentsModule,
+    InvitationsModule,
     AdminModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

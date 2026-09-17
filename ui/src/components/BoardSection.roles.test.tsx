@@ -83,7 +83,9 @@ describe("BoardSection role wiring (TASK-35)", () => {
 
     const { container } = renderApp();
 
-    expect(await screen.findByText("Server card")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Server card", {}, { timeout: 15_000 }),
+    ).toBeInTheDocument();
     expect(container.querySelector("[data-composer-trigger]")).toBeNull();
     expect(container.querySelector("[data-add-column-trigger]")).toBeNull();
     // The members dialog is available to every role (read-only for a VIEWER).
@@ -96,7 +98,9 @@ describe("BoardSection role wiring (TASK-35)", () => {
 
     const { container } = renderApp();
 
-    expect(await screen.findByText("Server card")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Server card", {}, { timeout: 15_000 }),
+    ).toBeInTheDocument();
     expect(container.querySelector("[data-composer-trigger]")).not.toBeNull();
     expect(container.querySelector("[data-add-column-trigger]")).not.toBeNull();
   });

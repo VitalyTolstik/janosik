@@ -451,7 +451,12 @@ describe("Admin API (e2e)", () => {
       });
       boardId = board.id;
       await prisma.boardMember.create({
-        data: { boardId: board.id, userId, role: "ADMIN" },
+        data: {
+          boardId: board.id,
+          userId,
+          role: "ADMIN",
+          acceptedAt: new Date(),
+        },
       });
       const column = await prisma.column.create({
         data: {

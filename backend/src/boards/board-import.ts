@@ -34,7 +34,13 @@ export async function persistBoard(
     },
   });
   await tx.boardMember.create({
-    data: { boardId: created.id, userId, role: "ADMIN" },
+    data: {
+      boardId: created.id,
+      userId,
+      role: "ADMIN",
+      // Imported boards belong to the importer — accepted by definition.
+      acceptedAt: new Date(),
+    },
   });
 
   // Labels keep their order from the envelope (`Label.position`, TASK-27).

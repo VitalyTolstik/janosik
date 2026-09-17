@@ -305,7 +305,9 @@ export function BoardMembersPanel({
       setEmail("");
       setRole("MEMBER");
       setExpiry(null);
-      setMembers((prev) => (prev === null ? null : [...prev, invited]));
+      // The invitation is pending until the invitee accepts — it must not
+      // show up as a member yet, so the list is refetched.
+      await load();
     } catch (error) {
       toast.error(membershipError(error, t));
     } finally {

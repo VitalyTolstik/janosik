@@ -99,16 +99,32 @@ describe("Activity & comments API (e2e)", () => {
     return res.body.id as string;
   }
 
+  /**
+   * Invite then accept (TASK-35 addendum): invitations are opt-in, so a
+   * test that needs a real member must walk through the accept step.
+   */
   async function invite(
     boardId: string,
     email: string,
     role: "ADMIN" | "MEMBER" | "VIEWER",
+    inviteeToken: string,
   ): Promise<void> {
     await server()
       .post(`/api/v1/boards/${boardId}/members`)
       .set(auth(adminToken))
       .send({ email, role })
       .expect(201);
+    const list = await server()
+      .get("/api/v1/invitations")
+      .set(auth(inviteeToken))
+      .expect(200);
+    const invitation = list.body.find(
+      (row: { boardId: string }) => row.boardId === boardId,
+    );
+    await server()
+      .post(`/api/v1/invitations/${invitation.id}/accept`)
+      .set(auth(inviteeToken))
+      .expect(200);
   }
 
   async function apply(
@@ -151,8 +167,8 @@ describe("Activity & comments API (e2e)", () => {
   /** A board with one column and one card, created through commands. */
   async function boardWithCard(title: string, prefix: string) {
     const boardId = await createBoard(title);
-    await invite(boardId, MEMBER_EMAIL, "MEMBER");
-    await invite(boardId, VIEWER_EMAIL, "VIEWER");
+    await invite(boardId, MEMBER_EMAIL, "MEMBER", memberToken);
+    await invite(boardId, VIEWER_EMAIL, "VIEWER", viewerToken);
     await apply(
       boardId,
       scoped(boardId, {
@@ -176,7 +192,7 @@ describe("Activity & comments API (e2e)", () => {
   describe("board feed", () => {
     it("shows every mutating command with its actor and merges membership events", async () => {
       const boardId = await createBoard("Feed board");
-      await invite(boardId, MEMBER_EMAIL, "MEMBER");
+      await invite(boardId, MEMBER_EMAIL, "MEMBER", memberToken);
       const first = await apply(
         boardId,
         scoped(boardId, {
@@ -263,7 +279,7 @@ describe("Activity & comments API (e2e)", () => {
 
     it("paginates with the composite cursor without gaps or repeats", async () => {
       const boardId = await createBoard("Feed pagination board");
-      await invite(boardId, MEMBER_EMAIL, "MEMBER");
+      await invite(boardId, MEMBER_EMAIL, "MEMBER", memberToken);
       for (let index = 0; index < 3; index += 1) {
         await apply(
           boardId,

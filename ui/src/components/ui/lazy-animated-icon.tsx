@@ -3,6 +3,7 @@ import {
   Archive,
   ArrowLeft,
   ArrowRight,
+  Bell,
   Clock,
   Keyboard,
   Languages,
@@ -26,6 +27,7 @@ export type AnimatedIconName =
   | "archive"
   | "arrow-left"
   | "arrow-right"
+  | "bell"
   | "clock"
   | "keyboard"
   | "languages"
@@ -78,6 +80,14 @@ const ICONS: Record<AnimatedIconName, IconEntry> = {
     Lazy: lazy(() =>
       import("@/components/ui/arrow-right-icon").then((m) => ({
         default: m.ArrowRightIcon,
+      })),
+    ),
+  },
+  bell: {
+    Fallback: Bell,
+    Lazy: lazy(() =>
+      import("@/components/ui/bell-icon").then((m) => ({
+        default: m.BellIcon,
       })),
     ),
   },

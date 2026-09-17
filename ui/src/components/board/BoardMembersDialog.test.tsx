@@ -80,8 +80,8 @@ describe("BoardMembersPanel (TASK-35)", () => {
     );
   });
 
-  it("invites by email and appends the returned member", async () => {
-    vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN]);
+  it("invites by email and keeps the pending invitation out of the list", async () => {
+    const list = vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN]);
     const invite = vi.spyOn(api, "inviteMember").mockResolvedValue({
       userId: "user-9",
       displayName: "Newbie",
@@ -103,8 +103,14 @@ describe("BoardMembersPanel (TASK-35)", () => {
       role: "MEMBER",
       expiresAt: undefined,
     });
-    expect(await screen.findByText("Newbie")).toBeInTheDocument();
-    expect(screen.getByText("Members (2)")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Invitation sent to new@example.com"),
+    ).toBeInTheDocument();
+    // Opt-in invitations (TASK-35 addendum): the invitee is not a member
+    // until they accept, so the dialog refetches and shows the same one row.
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("Newbie")).not.toBeInTheDocument();
+    expect(screen.getByText("Members (1)")).toBeInTheDocument();
   });
 
   it("maps invite failures to specific toasts (404 unknown user)", async () => {

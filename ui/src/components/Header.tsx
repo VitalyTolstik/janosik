@@ -5,6 +5,7 @@ import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
 import { DataMenu } from "@/components/DataMenu";
 import { GlobalSearch } from "@/components/GlobalSearch";
+import { NotificationsBell } from "@/components/NotificationsBell";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ShortcutsDialog } from "@/components/ShortcutsDialog";
 import { TimeFormatSwitcher } from "@/components/TimeFormatSwitcher";
@@ -100,6 +101,7 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-0.5">
+        <NotificationsBell />
         <GlobalSearch />
         <ShortcutsDialog />
         <BackgroundSwitcher />

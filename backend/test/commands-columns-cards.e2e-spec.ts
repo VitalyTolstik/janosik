@@ -86,16 +86,32 @@ describe("Commands API (e2e)", () => {
     return res.body.id as string;
   }
 
+  /**
+   * Invite then accept (TASK-35 addendum): invitations are opt-in, so a
+   * test that needs a real member must walk through the accept step.
+   */
   async function invite(
     boardId: string,
     email: string,
     role: "ADMIN" | "MEMBER" | "VIEWER",
+    inviteeToken: string,
   ): Promise<void> {
     await server()
       .post(`/api/v1/boards/${boardId}/members`)
       .set(auth(adminToken))
       .send({ email, role })
       .expect(201);
+    const list = await server()
+      .get("/api/v1/invitations")
+      .set(auth(inviteeToken))
+      .expect(200);
+    const invitation = list.body.find(
+      (row: { boardId: string }) => row.boardId === boardId,
+    );
+    await server()
+      .post(`/api/v1/invitations/${invitation.id}/accept`)
+      .set(auth(inviteeToken))
+      .expect(200);
   }
 
   function post(
@@ -692,8 +708,8 @@ describe("Commands API (e2e)", () => {
   describe("roles", () => {
     it("lets MEMBER mutate, and 403s VIEWER mutations", async () => {
       const boardId = await createBoard("Roles board");
-      await invite(boardId, MEMBER_EMAIL, "MEMBER");
-      await invite(boardId, VIEWER_EMAIL, "VIEWER");
+      await invite(boardId, MEMBER_EMAIL, "MEMBER", memberToken);
+      await invite(boardId, VIEWER_EMAIL, "VIEWER", viewerToken);
 
       await post(
         boardId,
@@ -983,7 +999,7 @@ describe("Commands API (e2e)", () => {
   describe("delta catch-up", () => {
     it("returns only commands newer than since, ordered by seq", async () => {
       const boardId = await createBoard("Delta board");
-      await invite(boardId, VIEWER_EMAIL, "VIEWER");
+      await invite(boardId, VIEWER_EMAIL, "VIEWER", viewerToken);
       const first = await apply(
         boardId,
         scoped(boardId, {

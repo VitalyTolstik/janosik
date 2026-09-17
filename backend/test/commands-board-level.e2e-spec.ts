@@ -82,16 +82,32 @@ describe("Board-level commands (e2e)", () => {
     return res.body.id as string;
   }
 
+  /**
+   * Invite then accept (TASK-35 addendum): invitations are opt-in, so a
+   * test that needs a real member must walk through the accept step.
+   */
   async function invite(
     boardId: string,
     email: string,
     role: "ADMIN" | "MEMBER" | "VIEWER",
+    inviteeToken: string,
   ): Promise<void> {
     await server()
       .post(`/api/v1/boards/${boardId}/members`)
       .set(auth(adminToken))
       .send({ email, role })
       .expect(201);
+    const list = await server()
+      .get("/api/v1/invitations")
+      .set(auth(inviteeToken))
+      .expect(200);
+    const invitation = list.body.find(
+      (row: { boardId: string }) => row.boardId === boardId,
+    );
+    await server()
+      .post(`/api/v1/invitations/${invitation.id}/accept`)
+      .set(auth(inviteeToken))
+      .expect(200);
   }
 
   function postCommand(
@@ -169,7 +185,7 @@ describe("Board-level commands (e2e)", () => {
   describe("RENAME_BOARD", () => {
     it("lets a MEMBER rename and reports the caller's role in GET /boards", async () => {
       const boardId = await createBoard("Original title");
-      await invite(boardId, MEMBER_EMAIL, "MEMBER");
+      await invite(boardId, MEMBER_EMAIL, "MEMBER", memberToken);
 
       const after = await applyAndAssert(
         boardId,
@@ -214,7 +230,7 @@ describe("Board-level commands (e2e)", () => {
   describe("ARCHIVE_BOARD / UNARCHIVE_BOARD", () => {
     it("is ADMIN-only and toggles archivedAt in GET /boards", async () => {
       const boardId = await createBoard("Archive board");
-      await invite(boardId, MEMBER_EMAIL, "MEMBER");
+      await invite(boardId, MEMBER_EMAIL, "MEMBER", memberToken);
 
       await postCommand(
         boardId,

@@ -5,6 +5,7 @@ import {
   type Board,
   type BoardAction,
   type BoardExportFile,
+  type BoardInvitationDto,
   type BoardRole,
   type BoardSummary,
   type CommandRequest,
@@ -60,6 +61,8 @@ export class FakeServer {
   refreshValid = true;
   /** Caller's role per board summary (`GET /boards`) — drives VIEWER tests. */
   role: BoardRole = "ADMIN";
+  /** Pending invitations of the signed-in user (`GET /invitations`). */
+  readonly invitations: BoardInvitationDto[] = [];
 
   private readonly commands = new Map<string, CommandResponse>();
   private readonly versions = new Map<string, Map<string, number>>();
@@ -184,6 +187,20 @@ export class FakeServer {
         return json(200, { status: "ok" });
       }
     }
+    if (path === "/api/v1/invitations" && method === "GET") {
+      return json(200, structuredClone(this.invitations));
+    }
+    const invitationMatch =
+      /^\/api\/v1\/invitations\/([^/]+)\/(accept|decline)$/.exec(path);
+    if (invitationMatch && method === "POST") {
+      const index = this.invitations.findIndex(
+        (row) => row.id === invitationMatch[1],
+      );
+      if (index === -1) return json(404, { message: "Invitation not found" });
+      this.invitations.splice(index, 1);
+      return json(200, { status: "ok" });
+    }
+
     const commandMatch = /^\/api\/v1\/boards\/([^/]+)\/commands$/.exec(path);
     if (commandMatch && method === "POST") {
       return this.command(commandMatch[1], body as CommandRequest);

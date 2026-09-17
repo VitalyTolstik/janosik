@@ -247,6 +247,17 @@ npm run size -w ui     # бюджеты бандла (4 шт.)
   `CardDialog` — read-only описание/метки/чек-листы/срок), при этом сервер
   всё равно отвечает 403. Последний ADMIN защищён и в UI (disabled +
   `title`-причина). Ошибки API (404/409/403/offline) — тосты.
+- **Инвайты опциональны (TASK-35 addendum):** `POST /boards/:id/members`
+  создаёт pending-строку `BoardMember` (`acceptedAt: null`) — доступа она
+  не даёт (`MembershipGuard` → 403, `GET /boards` её не показывает).
+  Приглашённый отвечает из колокольчика в шапке (`NotificationsBell`:
+  бейдж-счётчик, акцентный цвет, панель с бордой/пригласившим/ролью/сроком,
+  Принять/Отклонить) через `GET /invitations`, `POST /invitations/:id/accept`
+  и `…/decline`; после accept нужен `refreshBoards()` из `useBoardActions()`,
+  чтобы борда появилась в свитчере без перезагрузки. Фильтры `acceptedAt`
+  обязаны быть в каждом запросе, где строка `BoardMember` означает доступ
+  (listBoards/listMembers/last-ADMIN/admin-owner), а создатели membership
+  (`createBoard`, import) пишут `acceptedAt`.
 - Локальные диалоги/черновики — по правилу «сброс только ремаунтом».
 
 ### Backend (с TASK-23)
