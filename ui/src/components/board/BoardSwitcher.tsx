@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Archive,
   ArchiveRestore,
   Check,
   ChevronDown,
+  Eye,
   Plus,
   Search,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 
@@ -17,6 +19,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/Toast";
@@ -30,11 +37,14 @@ import { LimitCounter } from "@/components/ui/limit-counter";
  * Board switcher — a premium popover anchored to the header: auto-focused
  * live search, colored board avatars (stable color derived from the board
  * id), card counts, an active-board check and keyboard navigation
- * (↑/↓ + Enter). Archiving (Trello's "close board") replaced deletion for
- * active boards — archived boards drop into a dedicated section at the
- * bottom where they can be restored or deleted for good. Creating is a
- * footer row that turns into an inline input (Trello's pattern) and
- * navigates to the new board.
+ * (↑/↓ + Enter). Boards I administer come first under «Мои доски», boards
+ * shared with me follow («Совместные») and wear a role icon in the action
+ * slot — member (can edit) or viewer (read-only) — so the missing archive
+ * action reads as an access level, not a glitch. Archiving (Trello's "close
+ * board") replaced deletion for active boards — archived boards drop into a
+ * dedicated section at the bottom where they can be restored or deleted for
+ * good. Creating is a footer row that turns into an inline input (Trello's
+ * pattern) and navigates to the new board.
  */
 
 const BOARD_ICON_COLORS = [
@@ -140,11 +150,27 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
     [boards],
   );
 
-  const filtered = useMemo(() => {
+  const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return activeBoards;
     return activeBoards.filter((b) => b.title.toLowerCase().includes(q));
   }, [activeBoards, query]);
+
+  // Boards split by the caller's role (TASK-36.2): boards I administer come
+  // first, then the ones shared with me; the section headers only appear
+  // when both groups exist, so an account that admins everything keeps the
+  // flat, unlabelled list. The flat array keeps keyboard order identical to
+  // what is on screen — grouping is presentation, not a second list.
+  const groups = useMemo(() => {
+    const mine: Board[] = [];
+    const shared: Board[] = [];
+    for (const b of matches) {
+      if (roleOf(b.id) === "ADMIN") mine.push(b);
+      else shared.push(b);
+    }
+    return { mine, shared, flat: [...mine, ...shared] };
+  }, [matches, roleOf]);
+  const showGroupHeaders = groups.mine.length > 0 && groups.shared.length > 0;
 
   const filteredArchived = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -214,13 +240,13 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
   const onSearchKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setHighlighted((i) => Math.min(i + 1, filtered.length - 1));
+      setHighlighted((i) => Math.min(i + 1, groups.flat.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setHighlighted((i) => Math.max(i - 1, 0));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      const target = filtered[highlighted];
+      const target = groups.flat[highlighted];
       if (target) openBoard(target);
     }
   };
@@ -274,113 +300,169 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
         aria-label={t("board.switcher.aria")}
         className="max-h-[300px] overflow-y-auto p-1.5"
       >
-        {filtered.length === 0 ? (
+        {groups.flat.length === 0 ? (
           <p className="px-2.5 py-6 text-center text-sm text-muted-foreground">
             {t("board.switcher.empty")}
           </p>
         ) : (
-          filtered.map((b, index) => {
+          groups.flat.map((b, index) => {
             const isActive = b.id === board?.id;
             const isHighlighted = index === highlighted;
             const isConfirming = confirmArchiveId === b.id;
             // Only ADMINs manage a board (the server enforces it too); in
             // local mode every board is ADMIN, so the action stays visible.
             const canManage = roleOf(b.id) === "ADMIN";
+            const header =
+              showGroupHeaders && index === 0
+                ? "mine"
+                : showGroupHeaders && index === groups.mine.length
+                  ? "shared"
+                  : null;
             return (
-              <div
-                key={b.id}
-                data-index={index}
-                role="option"
-                aria-selected={isActive}
-                tabIndex={-1}
-                onMouseEnter={() => setHighlighted(index)}
-                onClick={() => {
-                  if (isConfirming) return;
-                  openBoard(b);
-                }}
-                className={cn(
-                  "group/row flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 outline-none",
-                  isHighlighted && "bg-hover",
-                  isActive && !isHighlighted && "bg-primary/5",
-                )}
-              >
-                <span
-                  aria-hidden
+              <Fragment key={b.id}>
+                {header !== null ? (
+                  <p
+                    data-testid={`board-group-${header}`}
+                    className={cn(
+                      "px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
+                      header === "shared" && "mt-1 border-t border-border/60",
+                    )}
+                  >
+                    {t(
+                      header === "mine"
+                        ? "board.switcher.section.mine"
+                        : "board.switcher.section.shared",
+                    )}
+                  </p>
+                ) : null}
+                <div
+                  data-index={index}
+                  role="option"
+                  aria-selected={isActive}
+                  tabIndex={-1}
+                  onMouseEnter={() => setHighlighted(index)}
+                  onClick={() => {
+                    if (isConfirming) return;
+                    openBoard(b);
+                  }}
                   className={cn(
-                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-primary-foreground shadow-sm",
-                    boardColor(b.id),
+                    "group/row flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 outline-none",
+                    isHighlighted && "bg-hover",
+                    isActive && !isHighlighted && "bg-primary/5",
                   )}
                 >
-                  {boardInitial(b.title)}
-                </span>
-                <span
-                  className={cn(
-                    "min-w-0 flex-1 truncate text-left text-sm",
-                    isActive
-                      ? "font-medium text-foreground"
-                      : "text-foreground/90",
-                  )}
-                >
-                  {b.title}
-                </span>
-                {isConfirming ? (
-                  <span className="flex items-center gap-1">
-                    <span className="text-xs text-muted-foreground">
-                      {t("board.switcher.archiveConfirm")}
-                    </span>
-                    <button
-                      aria-label={t("board.switcher.archiveConfirmYes")}
-                      className="flex h-6 w-6 items-center justify-center rounded-md text-danger hover:bg-danger/10"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleArchive(b);
-                      }}
-                    >
-                      <Check size={14} />
-                    </button>
-                    <button
-                      aria-label={t("common.cancel")}
-                      className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfirmArchiveId(null);
-                      }}
-                    >
-                      <X size={14} />
-                    </button>
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-primary-foreground shadow-sm",
+                      boardColor(b.id),
+                    )}
+                  >
+                    {boardInitial(b.title)}
                   </span>
-                ) : (
-                  <>
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                      {Object.keys(b.cards).length}
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-left text-sm",
+                      isActive
+                        ? "font-medium text-foreground"
+                        : "text-foreground/90",
+                    )}
+                  >
+                    {b.title}
+                  </span>
+                  {isConfirming ? (
+                    <span className="flex items-center gap-1">
+                      <span className="text-xs text-muted-foreground">
+                        {t("board.switcher.archiveConfirm")}
+                      </span>
+                      <button
+                        aria-label={t("board.switcher.archiveConfirmYes")}
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-danger hover:bg-danger/10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleArchive(b);
+                        }}
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        aria-label={t("common.cancel")}
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmArchiveId(null);
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
                     </span>
-                    {/* Touch has no hover: the checkmark yields its slot to
-                        the archive action (always visible there) — the row
-                        is the only path to archive a board. */}
-                    <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
-                      {isActive && (
-                        <Check
-                          size={15}
-                          className="no-hover:hidden absolute text-primary transition-opacity group-hover/row:opacity-0"
-                          aria-hidden
-                        />
-                      )}
-                      {canManage ? (
-                        <button
-                          aria-label={t("board.switcher.archive")}
-                          className="no-hover:opacity-100 absolute inset-0 flex items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/row:opacity-100"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmArchiveId(b.id);
-                          }}
-                        >
-                          <Archive size={14} />
-                        </button>
-                      ) : null}
-                    </span>
-                  </>
-                )}
-              </div>
+                  ) : (
+                    <>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                        {Object.keys(b.cards).length}
+                      </span>
+                      {/* Touch has no hover: the checkmark yields its slot to
+                        the row's action (always visible there). A board I do
+                        not administer has no archive action — its slot shows
+                        the access level instead, so the missing button never
+                        reads as a glitch. */}
+                      <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+                        {isActive && (
+                          <Check
+                            size={15}
+                            className="no-hover:hidden absolute text-primary transition-opacity group-hover/row:opacity-0"
+                            aria-hidden
+                          />
+                        )}
+                        {canManage ? (
+                          <button
+                            aria-label={t("board.switcher.archive")}
+                            className="no-hover:opacity-100 absolute inset-0 flex items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/row:opacity-100"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmArchiveId(b.id);
+                            }}
+                          >
+                            <Archive size={14} />
+                          </button>
+                        ) : (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                role="img"
+                                data-testid="board-role"
+                                aria-label={t(
+                                  roleOf(b.id) === "VIEWER"
+                                    ? "board.switcher.role.viewer"
+                                    : "board.switcher.role.member",
+                                )}
+                                className={cn(
+                                  "flex h-6 w-6 items-center justify-center text-muted-foreground/70 transition-opacity",
+                                  isActive &&
+                                    "no-hover:opacity-100 opacity-0 group-hover/row:opacity-100",
+                                )}
+                              >
+                                {roleOf(b.id) === "VIEWER" ? (
+                                  <Eye size={13} aria-hidden />
+                                ) : (
+                                  <Users size={13} aria-hidden />
+                                )}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {t(
+                                roleOf(b.id) === "VIEWER"
+                                  ? "board.switcher.role.viewer"
+                                  : "board.switcher.role.member",
+                              )}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </Fragment>
             );
           })
         )}

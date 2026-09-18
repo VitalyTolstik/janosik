@@ -7,8 +7,10 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Board } from "@janosik/shared";
 
+import { api } from "@/api/client";
 import { BoardSection } from "@/components/BoardSection";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
@@ -20,6 +22,7 @@ import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
+import { FakeServer } from "@/test/fake-server";
 
 /**
  * Board switcher: lists boards (with card counts and the active check),
@@ -326,5 +329,135 @@ describe("BoardSwitcher", () => {
       within(archivedSection).getByRole("button", { name: "Delete board" })
         .className,
     ).toContain("no-hover:opacity-100");
+  });
+});
+
+/**
+ * Role sections (TASK-36.2): boards I administer come first under an
+ * explicit header, boards shared with me follow, and the action slot on a
+ * shared row shows the access level (`member` can edit, `viewer` is
+ * read-only) where an admin would get the archive button — so the missing
+ * action reads as an access level, not a glitch.
+ */
+describe("BoardSwitcher role sections (server mode)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    api.clearAccessToken();
+    api.onAuthLost = null;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  function serverBoard(id: string, title: string): Board {
+    return JSON.parse(boardJson(id, title)) as Board;
+  }
+
+  function renderServerSwitcher(server: FakeServer) {
+    vi.stubGlobal("fetch", server.handle);
+    return renderSwitcher();
+  }
+
+  it("splits my boards from shared ones and labels the access", async () => {
+    const server = new FakeServer([
+      serverBoard("b-1", "Alpha"),
+      serverBoard("b-2", "Beta"),
+      serverBoard("b-3", "Gamma"),
+    ]);
+    server.roles.set("b-2", "MEMBER");
+    server.roles.set("b-3", "VIEWER");
+    renderServerSwitcher(server);
+    await openSwitcher();
+
+    expect(await screen.findByTestId("board-group-mine")).toHaveTextContent(
+      "My boards",
+    );
+    expect(screen.getByTestId("board-group-shared")).toHaveTextContent(
+      "Shared with me",
+    );
+
+    const options = screen.getAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual([
+      expect.stringContaining("Alpha"),
+      expect.stringContaining("Beta"),
+      expect.stringContaining("Gamma"),
+    ]);
+    // ADMIN boards keep the archive action; shared rows trade it for the
+    // access icon (tooltip + accessible name).
+    expect(
+      within(options[0]).getByRole("button", { name: "Archive board" }),
+    ).toBeInTheDocument();
+    expect(
+      within(options[1]).queryByRole("button", { name: "Archive board" }),
+    ).toBeNull();
+    expect(within(options[1]).getByTestId("board-role")).toHaveAttribute(
+      "aria-label",
+      "Member — can edit",
+    );
+    expect(within(options[2]).getByTestId("board-role")).toHaveAttribute(
+      "aria-label",
+      "Viewer — view only",
+    );
+  });
+
+  it("keeps the flat list when everyone is admin", async () => {
+    const server = new FakeServer([
+      serverBoard("b-1", "Alpha"),
+      serverBoard("b-2", "Beta"),
+    ]);
+    renderServerSwitcher(server);
+    await openSwitcher();
+
+    expect(await screen.findByText("Beta")).toBeInTheDocument();
+    expect(screen.queryByTestId("board-group-mine")).toBeNull();
+    expect(screen.queryByTestId("board-group-shared")).toBeNull();
+    expect(screen.queryByTestId("board-role")).toBeNull();
+  });
+
+  it("keeps a single matching group unlabelled", async () => {
+    const server = new FakeServer([
+      serverBoard("b-1", "Alpha"),
+      serverBoard("b-2", "Shared beta"),
+    ]);
+    server.roles.set("b-2", "MEMBER");
+    renderServerSwitcher(server);
+    await openSwitcher();
+    await screen.findByTestId("board-group-mine");
+
+    // Only the shared board matches: the list is flat again — no header
+    // explaining a split that is not there anymore.
+    await userEvent.type(screen.getByLabelText("Search boards…"), "shared");
+    expect(screen.queryByTestId("board-group-mine")).toBeNull();
+    expect(screen.queryByTestId("board-group-shared")).toBeNull();
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+  });
+
+  it("arrows through both sections in screen order", async () => {
+    const server = new FakeServer([
+      serverBoard("b-1", "Alpha"),
+      serverBoard("b-2", "Beta"),
+      serverBoard("b-3", "Gamma"),
+    ]);
+    server.roles.set("b-2", "MEMBER");
+    server.roles.set("b-3", "VIEWER");
+    renderServerSwitcher(server);
+    await openSwitcher();
+    await screen.findByTestId("board-group-mine");
+
+    // The cursor walks the flat, on-screen order: Alpha → Beta → Gamma,
+    // across the section boundary.
+    const input = screen.getByLabelText("Search boards…");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getAllByRole("option")[2].className).toContain("bg-hover");
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "Gamma" }),
+      ).toBeInTheDocument();
+    });
   });
 });
