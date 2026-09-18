@@ -20,8 +20,9 @@ import { invert } from "@janosik/shared";
  * Coalescing: consecutive UPDATE_CARD / TOUCH_CARD commands for the *same*
  * card collapse into a single step, so typing a long title (plus the
  * debounced quiet-edit commit) produces one undo, not one per keystroke.
- * The step keeps the *oldest* "before" and the *newest* "after", which is
- * exactly the whole typing session.
+ * The step keeps the *oldest* "before" and the *newest* "after" (merged
+ * field-wise, since redo replays one command); a touch only moves the
+ * clock, and a touch with no run to join is not a step at all.
  */
 
 /** One undoable step: what happened, and the command that takes it back. */
@@ -130,7 +131,21 @@ export class BoardHistory {
 
     if (coalesce && previous) {
       // Keep the oldest "before" (`previous.undo`), take the newest "after".
-      previous.do = action;
+      // The merge is field-wise: a run can carry a title edit and a
+      // description edit, and redo replays a single command. A TOUCH_CARD
+      // must not replace the text command at all — replaying it would redo
+      // nothing visible (live bug, 2026-09-18) — so it only moves the clock.
+      previous.do =
+        action.type === "TOUCH_CARD"
+          ? ({ ...previous.do, at: action.at } as BoardAction)
+          : ({ ...previous.do, ...action } as BoardAction);
+    } else if (action.type === "TOUCH_CARD") {
+      // A touch with nothing to coalesce into is not a step: it would cost
+      // an undo press that only moves a timestamp, and the debounced stamp
+      // often lands right after an undo — recording it would wipe the redo
+      // stack the user is about to use.
+      this.lastAction = null;
+      return false;
     } else {
       this.past.push({ do: action, undo: undoAction });
       if (this.past.length > this.limit) this.past.shift();

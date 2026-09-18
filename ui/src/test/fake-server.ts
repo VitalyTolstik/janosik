@@ -6,12 +6,15 @@ import {
   type BoardAction,
   type BoardExportFile,
   type BoardInvitationDto,
+  type BoardMemberDto,
   type BoardRole,
   type BoardSummary,
   type BoardSseEvent,
   type CommandRequest,
   type CommandResponse,
   type CommandSseEvent,
+  type MembershipChange,
+  type MembershipSseEvent,
   type PresenceSseEvent,
   type PresenceUser,
 } from "@janosik/shared";
@@ -81,6 +84,10 @@ export class FakeServer {
   initialPresence: PresenceUser[] = [];
   /** Presence heartbeats the client sent (`POST /boards/:id/presence`). */
   readonly presencePings: string[] = [];
+  /** Boards whose membership was revoked: hidden and refused (TASK-36). */
+  readonly revoked = new Set<string>();
+  /** `GET /boards/:id/members` answers (TASK-36). */
+  readonly membersByBoard = new Map<string, BoardMemberDto[]>();
 
   /** Committed events per board — the SSE catch-up log (TASK-30). */
   private readonly eventLog = new Map<string, CommandSseEvent[]>();
@@ -222,6 +229,37 @@ export class FakeServer {
     }
   }
 
+  /**
+   * Revoke the caller's membership (TASK-36): the board leaves `GET /boards`
+   * and every board-scoped route answers 403, like `MembershipGuard` does.
+   * `publishMembership` delivers the live frame the server sends.
+   */
+  revokeMembership(boardId: string): void {
+    this.revoked.add(boardId);
+  }
+
+  /** Push one membership frame to every open stream of the board (TASK-36). */
+  publishMembership(
+    boardId: string,
+    userId: string,
+    change: MembershipChange,
+  ): void {
+    const event: MembershipSseEvent = {
+      type: "membership",
+      boardId,
+      userId,
+      change,
+    };
+    const frame = encodeEvent(event);
+    for (const controller of this.eventStreams.get(boardId) ?? []) {
+      try {
+        controller.enqueue(frame);
+      } catch {
+        /* the stream was cancelled */
+      }
+    }
+  }
+
   /** Close every open stream of the board (simulates a dropped SSE). */
   closeEvents(boardId: string): void {
     for (const controller of this.eventStreams.get(boardId) ?? []) {
@@ -261,6 +299,12 @@ export class FakeServer {
       this.nextRequestFailure = null;
       return json(failure.status, failure.body);
     }
+    // A revoked membership refuses every board-scoped route, like the real
+    // `MembershipGuard` (TASK-36). `GET /boards` filters the board out below.
+    const revoked = /^\/api\/v1\/boards\/([^/]+)\//.exec(path);
+    if (revoked !== null && this.revoked.has(revoked[1])) {
+      return json(403, { message: "No access to this board" });
+    }
     if (path === "/api/v1/auth/refresh" && method === "POST") {
       return this.refreshValid
         ? json(200, this.session())
@@ -284,7 +328,9 @@ export class FakeServer {
     if (path === "/api/v1/boards" && method === "GET") {
       return json(
         200,
-        [...this.boards.values()].map((board) => this.toSummary(board)),
+        [...this.boards.values()]
+          .filter((board) => !this.revoked.has(board.id))
+          .map((board) => this.toSummary(board)),
       );
     }
     if (path === "/api/v1/boards" && method === "POST") {
@@ -317,6 +363,13 @@ export class FakeServer {
       return this.events(
         eventsMatch[1],
         Number(searchParams.get("since") ?? 0),
+      );
+    }
+    const membersMatch = /^\/api\/v1\/boards\/([^/]+)\/members$/.exec(path);
+    if (membersMatch && method === "GET") {
+      return json(
+        200,
+        structuredClone(this.membersByBoard.get(membersMatch[1]) ?? []),
       );
     }
     const boardMatch = /^\/api\/v1\/boards\/([^/]+)$/.exec(path);

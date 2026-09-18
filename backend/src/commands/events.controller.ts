@@ -81,6 +81,21 @@ export class EventsController {
           subscriber.next({ data: event as unknown as object } as MessageEvent);
           return;
         }
+        // A membership change (TASK-36): every subscriber refreshes its
+        // member directory; the removed user gets the frame as the last one
+        // on their stream and the server then closes it. Other members'
+        // streams keep following the board.
+        if (event.type === "membership") {
+          subscriber.next({ data: event as unknown as object } as MessageEvent);
+          if (
+            event.change === "removed" &&
+            user !== undefined &&
+            event.userId === user.id
+          ) {
+            subscriber.complete();
+          }
+          return;
+        }
         if (event.type !== "command") return;
         if (ready) push(event);
         else buffered.push(event);

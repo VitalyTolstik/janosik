@@ -296,7 +296,7 @@ function CardItemView({
       >
         <HighlightedText text={card.title} query={highlight ?? ""} />
       </p>
-      {hasDescription || total > 0 || hasDueDate || foreignAuthor ? (
+      {hasDescription || total > 0 || hasDueDate ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {hasDueDate ? <DueBadge dueDate={card.dueDate as number} /> : null}
           {total > 0 ? (
@@ -344,26 +344,28 @@ function CardItemView({
               </TooltipContent>
             </Tooltip>
           ) : null}
-          {/* Who changed it, unless it was me (TASK-36): the author's
-              avatar next to the relative time of that change. */}
-          {foreignAuthor ? (
-            <span
-              data-testid="card-last-actor"
-              title={t("card.changedBy", { name: authorName })}
-              className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground/80"
-            >
-              <UserAvatar
-                userId={foreignAuthor.userId}
-                displayName={authorMember?.displayName ?? null}
-                email={authorMember?.email ?? ""}
-                size="xs"
-                className="ring-1 ring-border/60"
-              />
-              <time dateTime={new Date(foreignAuthor.at).toISOString()}>
-                {formatRelative(foreignAuthor.at, lang, Date.now(), hour12)}
-              </time>
-            </span>
-          ) : null}
+        </div>
+      ) : null}
+      {/* Who changed it, unless it was me (TASK-36): the author's avatar
+          next to the relative time of that change. It lives on its own
+          left-aligned footer line — inside the badge row `ml-auto` made
+          narrow cards wrap it into a ragged right edge. */}
+      {foreignAuthor ? (
+        <div
+          data-testid="card-last-actor"
+          title={t("card.changedBy", { name: authorName })}
+          className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground/80"
+        >
+          <UserAvatar
+            userId={foreignAuthor.userId}
+            displayName={authorMember?.displayName ?? null}
+            email={authorMember?.email ?? ""}
+            size="xs"
+            className="ring-1 ring-border/60"
+          />
+          <time dateTime={new Date(foreignAuthor.at).toISOString()}>
+            {formatRelative(foreignAuthor.at, lang, Date.now(), hour12)}
+          </time>
         </div>
       ) : null}
       {/* Foreign-change highlight (TASK-36): a soft ring in the author's own

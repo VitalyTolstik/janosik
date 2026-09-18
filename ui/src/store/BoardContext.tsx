@@ -41,6 +41,7 @@ import type {
   BoardRole,
   CardCover,
   Label,
+  MembershipChange,
 } from "@janosik/shared";
 import {
   migrateStorageKey,
@@ -839,22 +840,27 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     apply({ type: "IMPORT_BOARDS", boards });
   }, [apply, clearHistory, live]);
 
-  // The member directory powers names and avatars for attribution (TASK-36):
-  // who last changed a card may not be online right now, so the roster alone
-  // is not enough. Loaded per active board, best-effort.
+  /**
+   * The member directory powers names and avatars for attribution (TASK-36):
+   * who last changed a card may not be online right now, so the roster alone
+   * is not enough. Loaded per active board on mount and again whenever a
+   * membership event arrives, best-effort.
+   */
+  const loadMembers = useCallback(
+    (boardId: string): Promise<void> =>
+      api
+        .listMembers(boardId)
+        .then((members) => {
+          if (aliveRef.current) live.members.set(boardId, members);
+        })
+        .catch(() => undefined),
+    [live],
+  );
+
   useEffect(() => {
     if (!serverMode || board?.id === undefined) return;
-    let cancelled = false;
-    void api
-      .listMembers(board.id)
-      .then((members) => {
-        if (!cancelled && aliveRef.current) live.members.set(board.id, members);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [serverMode, board?.id, live]);
+    void loadMembers(board.id);
+  }, [serverMode, board?.id, loadMembers]);
 
   // StrictMode mounts the provider twice (setup → cleanup → setup); sharing
   // the in-flight hydration keeps the one-shot legacy import from running —
@@ -916,6 +922,57 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     }
   }, [serverMode, sync, markForeign, apply, live]);
 
+  /**
+   * The account's membership was revoked (TASK-36): the server sent the
+   * `membership` frame on our stream, or the stream itself answered 403 on
+   * reconnect. Forget the board right away — its roster, role and resume
+   * point go with it — and let the routing effect move the user to another
+   * board or the empty state. The reducer keeps the last board by design,
+   * so a revoked *only* board is replaced explicitly.
+   */
+  const revokeBoard = useCallback(
+    (boardId: string) => {
+      apply({ type: "REMOVE_BOARD", boardId });
+      if (stateRef.current.some((board) => board.id === boardId)) {
+        apply({
+          type: "IMPORT_BOARDS",
+          boards: stateRef.current.filter((board) => board.id !== boardId),
+        });
+      }
+      dropHistory(boardId);
+      seqsRef.current.delete(boardId);
+      setRoles((prev) => {
+        if (!(boardId in prev)) return prev;
+        const { [boardId]: _removed, ...rest } = prev;
+        return rest;
+      });
+      toast.error(t("board.accessRevoked"));
+    },
+    [apply, dropHistory, toast, t],
+  );
+
+  /**
+   * One membership change on the active board (TASK-36): a removed *caller*
+   * drops the board; every other change — someone accepted an invitation,
+   * a role or an expiry moved, someone else left — rewrites the member
+   * directory, so open member lists and attribution names update live.
+   */
+  const onMembershipChange = useCallback(
+    (boardId: string, userId: string, change: MembershipChange) => {
+      if (change === "removed" && userId === userIdRef.current) {
+        revokeBoard(boardId);
+        return;
+      }
+      void loadMembers(boardId);
+    },
+    [revokeBoard, loadMembers],
+  );
+
+  const onAccessRevoked = useCallback(
+    (boardId: string) => revokeBoard(boardId),
+    [revokeBoard],
+  );
+
   useEffect(() => {
     if (!serverMode) return;
     const onFocus = () => void refetchActiveBoard();
@@ -961,13 +1018,27 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         },
         isBusy: (id) => sync.isBusy(id),
         getUserId: () => userIdRef.current,
+        onMembershipChange,
+        onAccessRevoked,
       });
       realtimeRef.current.watch(boardId);
     });
     return () => {
       cancelled = true;
     };
-  }, [serverMode, board?.id, apply, markForeign, sync, live]);
+    // The handlers are stable and read refs on purpose (same as `apply`
+    // above): they run from the stream, never during render.
+    // eslint-disable-next-line react-hooks/refs
+  }, [
+    serverMode,
+    board?.id,
+    apply,
+    markForeign,
+    sync,
+    live,
+    onMembershipChange,
+    onAccessRevoked,
+  ]);
 
   // Wrapper dispatch: apply the command, then record the undo step for the
   // board it targeted. Board-scoped actions get the active board id
@@ -1374,6 +1445,7 @@ function createBoardActions(
         cardId,
         newChecklistId: createId(),
         title,
+        activityIds: ids(1),
         at: Date.now(),
       }),
     renameChecklist: (cardId: string, checklistId: string, title: string) =>
@@ -1382,6 +1454,7 @@ function createBoardActions(
         cardId,
         checklistId,
         title,
+        activityIds: ids(1),
         at: Date.now(),
       }),
     deleteChecklist: (cardId: string, checklistId: string) =>
@@ -1389,6 +1462,7 @@ function createBoardActions(
         type: "DELETE_CHECKLIST",
         cardId,
         checklistId,
+        activityIds: ids(1),
         at: Date.now(),
       }),
     addChecklistItem: (cardId: string, checklistId: string, text: string) =>
@@ -1398,6 +1472,7 @@ function createBoardActions(
         checklistId,
         newItemId: createId(),
         text,
+        activityIds: ids(1),
         at: Date.now(),
       }),
     toggleChecklistItem: (
@@ -1415,6 +1490,7 @@ function createBoardActions(
         checklistId,
         itemId,
         done: !item.done,
+        activityIds: ids(1),
         at: Date.now(),
       });
     },
@@ -1430,6 +1506,7 @@ function createBoardActions(
         checklistId,
         itemId,
         text,
+        activityIds: ids(1),
         at: Date.now(),
       }),
     deleteChecklistItem: (
@@ -1442,6 +1519,7 @@ function createBoardActions(
         cardId,
         checklistId,
         itemId,
+        activityIds: ids(1),
         at: Date.now(),
       }),
     setCardDueDate: (cardId: string, dueDate?: number) =>
@@ -1453,7 +1531,13 @@ function createBoardActions(
         at: Date.now(),
       }),
     setCardCover: (cardId: string, cover?: CardCover) =>
-      dispatch({ type: "SET_CARD_COVER", cardId, cover, at: Date.now() }),
+      dispatch({
+        type: "SET_CARD_COVER",
+        cardId,
+        cover,
+        activityIds: ids(1),
+        at: Date.now(),
+      }),
     duplicateCard: (cardId: string, title?: string) =>
       dispatch({
         type: "DUPLICATE_CARD",

@@ -21,6 +21,9 @@ interface SseFrame {
   action?: { type: string };
   touches?: string[];
   users?: { id: string; displayName: string }[];
+  boardId?: string;
+  userId?: string;
+  change?: string;
 }
 
 /**
@@ -232,7 +235,19 @@ describe("Board events SSE (e2e)", () => {
       await response.body?.cancel().catch(() => undefined);
     };
 
-    return { next, close };
+    /** Drain until the server ends the stream (or the timeout runs out). */
+    const ended = async (timeoutMs = 12_000): Promise<boolean> => {
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) return false;
+        const chunk = await readWithTimeout(reader, remaining);
+        if (chunk.done) return true;
+        buffer += decoder.decode(chunk.value, { stream: true });
+      }
+    };
+
+    return { next, close, ended };
   }
 
   /** Read `count` frames of one type from an SSE response, then close it. */
@@ -487,6 +502,54 @@ describe("Board events SSE (e2e)", () => {
     expect(res.status).toBe(400);
     await res.body?.cancel().catch(() => undefined);
   });
+
+  it("announces an accepted invitation on the board's streams", async () => {
+    const stream = openReader(
+      await openStream(ownerToken, await boardSeq(ownerToken), "accept-tab-1"),
+    );
+    await stream.next(1, "presence");
+
+    // The pending invitee accepts: a board-scoped member directory change,
+    // so every open member list refreshes without a reload.
+    await accept(await invitationId(pendingToken), pendingToken);
+
+    const frames = await stream.next(1, "membership");
+    expect(frames[0].boardId).toBe(boardId);
+    expect(frames[0].change).toBe("accepted");
+    expect(typeof frames[0].userId).toBe("string");
+    await stream.close();
+  }, 20_000);
+
+  it("tells a removed member's stream to stop, then refuses it", async () => {
+    const stream = openReader(
+      await openStream(
+        memberToken,
+        await boardSeq(ownerToken),
+        "revoked-tab-1",
+      ),
+    );
+    await stream.next(1, "presence");
+
+    await server()
+      .delete(`/api/v1/boards/${boardId}/members/${memberId}`)
+      .set(auth(ownerToken))
+      .expect(200);
+
+    // The removed user gets one last frame (who was removed) and the server
+    // ends the stream, so a connected tab drops the board instead of
+    // silently following a board it can no longer touch.
+    const frames = await stream.next(1, "membership");
+    expect(frames[0].boardId).toBe(boardId);
+    expect(frames[0].userId).toBe(memberId);
+    expect(frames[0].change).toBe("removed");
+    expect(await stream.ended()).toBe(true);
+    await stream.close();
+
+    // The membership is gone for good: the next connection is 403.
+    const retry = await openStream(memberToken, 0, "revoked-tab-2");
+    expect(retry.status).toBe(403);
+    await retry.body?.cancel().catch(() => undefined);
+  }, 20_000);
 
   async function wipe(db: PrismaService): Promise<void> {
     await db.cardLabel.deleteMany();

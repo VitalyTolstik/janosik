@@ -297,7 +297,15 @@ export function FilterBar({
             <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-72 p-0">
+        <PopoverContent
+          align="end"
+          collisionPadding={8}
+          data-testid="filters-popover"
+          // On short viewports the whole panel (labels + the date calendar)
+          // must stay reachable: cap it to the space Radix measured around
+          // the trigger and scroll the single surface instead of clipping.
+          className="max-h-[var(--radix-popover-content-available-height)] w-72 overflow-y-auto overscroll-contain p-0"
+        >
           <div role="radiogroup" aria-label={t("filter.dueAria")}>
             <FilterSection title={t("filter.due")}>
               {(["any", "overdue", "soon", "none"] as const).map((value) => (
@@ -341,7 +349,7 @@ export function FilterBar({
                 ))}
               </div>
             </div>
-            <div className="max-h-44 overflow-y-auto">
+            <div>
               {labels.map((label) => (
                 <CheckRow
                   key={label.id}

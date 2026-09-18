@@ -88,7 +88,7 @@ function activityStamp(
  */
 function appendActivity(
   card: Card,
-  type: CardActivityType,
+  type: CardActivityType | null,
   action: BoardScopedAction,
   index: number,
   options: ReduceOptions,
@@ -105,6 +105,8 @@ function appendActivity(
     }
     return { ...card, activity: [...action.cardActivity] };
   }
+  // `null` means "rewind only": the action logs nothing of its own.
+  if (type === null) return card;
   const stamp = activityStamp(action, index);
   const { at } = stamp;
   const previous = card.activity ?? [];
@@ -1194,6 +1196,8 @@ function patchChecklists(
   board: Board,
   action: BoardScoped<{ cardId: string }>,
   fn: (checklists: Checklist[]) => Checklist[] | null,
+  options: ReduceOptions,
+  event?: { type: CardActivityType; detail?: string },
 ): Board | null {
   const cardId = action.cardId;
   const target = board.cards[cardId];
@@ -1204,11 +1208,19 @@ function patchChecklists(
   }
   // An empty list means "no checklists" — drop the field entirely.
   const next = checklists.length > 0 ? checklists : undefined;
+  const nextCard = appendActivity(
+    { ...target, checklists: next, updatedAt: cardStamp(action) },
+    event?.type ?? null,
+    action,
+    0,
+    options,
+    event?.detail,
+  );
   return {
     ...board,
     cards: {
       ...board.cards,
-      [cardId]: { ...target, checklists: next, updatedAt: cardStamp(action) },
+      [cardId]: nextCard,
     },
   };
 }
@@ -1233,100 +1245,157 @@ function mapChecklistItems(
 function addChecklist(
   board: Board,
   action: BoardScoped<AddChecklistAction>,
+  options: ReduceOptions,
 ): Board | null {
   const title = clampText(action.title.trim(), LIMITS.checklistTitle);
   if (!title) return null;
-  return patchChecklists(board, action, (checklists) =>
-    checklists.length >= LIMITS.checklistsPerCard ||
-    checklists.some((c) => c.id === action.newChecklistId)
-      ? null
-      : [...checklists, { id: action.newChecklistId, title, items: [] }],
+  return patchChecklists(
+    board,
+    action,
+    (checklists) =>
+      checklists.length >= LIMITS.checklistsPerCard ||
+      checklists.some((c) => c.id === action.newChecklistId)
+        ? null
+        : [...checklists, { id: action.newChecklistId, title, items: [] }],
+    options,
+    { type: "checklist-added", detail: title },
   );
 }
 
 function renameChecklist(
   board: Board,
   action: BoardScoped<RenameChecklistAction>,
+  options: ReduceOptions,
 ): Board | null {
   const title = clampText(action.title.trim(), LIMITS.checklistTitle);
-  return patchChecklists(board, action, (checklists) => {
-    if (!title) return null;
-    const next = checklists.map((checklist) =>
-      checklist.id === action.checklistId ? { ...checklist, title } : checklist,
-    );
-    return next.some((c, i) => c !== checklists[i]) ? next : null;
-  });
+  return patchChecklists(
+    board,
+    action,
+    (checklists) => {
+      if (!title) return null;
+      const next = checklists.map((checklist) =>
+        checklist.id === action.checklistId
+          ? { ...checklist, title }
+          : checklist,
+      );
+      return next.some((c, i) => c !== checklists[i]) ? next : null;
+    },
+    options,
+    { type: "checklist-renamed", detail: title },
+  );
 }
 
 function deleteChecklist(
   board: Board,
   action: BoardScoped<DeleteChecklistAction>,
+  options: ReduceOptions,
 ): Board | null {
-  return patchChecklists(board, action, (checklists) =>
-    checklists.some((c) => c.id === action.checklistId)
-      ? checklists.filter((c) => c.id !== action.checklistId)
-      : null,
+  const title = board.cards[action.cardId]?.checklists?.find(
+    (c) => c.id === action.checklistId,
+  )?.title;
+  return patchChecklists(
+    board,
+    action,
+    (checklists) =>
+      checklists.some((c) => c.id === action.checklistId)
+        ? checklists.filter((c) => c.id !== action.checklistId)
+        : null,
+    options,
+    { type: "checklist-removed", detail: title },
   );
 }
 
 function addChecklistItem(
   board: Board,
   action: BoardScoped<AddChecklistItemAction>,
+  options: ReduceOptions,
 ): Board | null {
   const text = clampText(action.text.trim(), LIMITS.checklistItem);
   if (!text) return null;
-  return patchChecklists(board, action, (checklists) =>
-    mapChecklistItems(checklists, action.checklistId, (items) =>
-      items.length >= LIMITS.itemsPerChecklist ||
-      items.some((item) => item.id === action.newItemId)
-        ? null
-        : [...items, { id: action.newItemId, text, done: false }],
-    ),
+  return patchChecklists(
+    board,
+    action,
+    (checklists) =>
+      mapChecklistItems(checklists, action.checklistId, (items) =>
+        items.length >= LIMITS.itemsPerChecklist ||
+        items.some((item) => item.id === action.newItemId)
+          ? null
+          : [...items, { id: action.newItemId, text, done: false }],
+      ),
+    options,
+    { type: "checklist-item-added", detail: text },
   );
 }
 
 function setChecklistItemDone(
   board: Board,
   action: BoardScoped<SetChecklistItemDoneAction>,
+  options: ReduceOptions,
 ): Board | null {
-  return patchChecklists(board, action, (checklists) =>
-    mapChecklistItems(checklists, action.checklistId, (items) => {
-      const next = items.map((item) =>
-        item.id === action.itemId && item.done !== action.done
-          ? { ...item, done: action.done }
-          : item,
-      );
-      return next.some((item, i) => item !== items[i]) ? next : null;
-    }),
+  const item = board.cards[action.cardId]?.checklists
+    ?.find((c) => c.id === action.checklistId)
+    ?.items.find((i) => i.id === action.itemId);
+  return patchChecklists(
+    board,
+    action,
+    (checklists) =>
+      mapChecklistItems(checklists, action.checklistId, (items) => {
+        const next = items.map((entry) =>
+          entry.id === action.itemId && entry.done !== action.done
+            ? { ...entry, done: action.done }
+            : entry,
+        );
+        return next.some((entry, i) => entry !== items[i]) ? next : null;
+      }),
+    options,
+    {
+      type: action.done ? "checklist-item-checked" : "checklist-item-unchecked",
+      detail: item?.text,
+    },
   );
 }
 
 function renameChecklistItem(
   board: Board,
   action: BoardScoped<RenameChecklistItemAction>,
+  options: ReduceOptions,
 ): Board | null {
   const text = clampText(action.text.trim(), LIMITS.checklistItem);
   if (!text) return null;
-  return patchChecklists(board, action, (checklists) =>
-    mapChecklistItems(checklists, action.checklistId, (items) => {
-      const next = items.map((item) =>
-        item.id === action.itemId ? { ...item, text } : item,
-      );
-      return next.some((item, i) => item !== items[i]) ? next : null;
-    }),
+  return patchChecklists(
+    board,
+    action,
+    (checklists) =>
+      mapChecklistItems(checklists, action.checklistId, (items) => {
+        const next = items.map((item) =>
+          item.id === action.itemId ? { ...item, text } : item,
+        );
+        return next.some((item, i) => item !== items[i]) ? next : null;
+      }),
+    options,
+    { type: "checklist-item-renamed", detail: text },
   );
 }
 
 function deleteChecklistItem(
   board: Board,
   action: BoardScoped<DeleteChecklistItemAction>,
+  options: ReduceOptions,
 ): Board | null {
-  return patchChecklists(board, action, (checklists) =>
-    mapChecklistItems(checklists, action.checklistId, (items) =>
-      items.some((item) => item.id === action.itemId)
-        ? items.filter((item) => item.id !== action.itemId)
-        : null,
-    ),
+  const text = board.cards[action.cardId]?.checklists
+    ?.find((c) => c.id === action.checklistId)
+    ?.items.find((i) => i.id === action.itemId)?.text;
+  return patchChecklists(
+    board,
+    action,
+    (checklists) =>
+      mapChecklistItems(checklists, action.checklistId, (items) =>
+        items.some((item) => item.id === action.itemId)
+          ? items.filter((item) => item.id !== action.itemId)
+          : null,
+      ),
+    options,
+    { type: "checklist-item-removed", detail: text },
   );
 }
 
@@ -1392,18 +1461,26 @@ function isSameCover(
 function setCardCover(
   board: Board,
   action: BoardScoped<SetCardCoverAction>,
+  options: ReduceOptions,
 ): Board {
   const target = board.cards[action.cardId];
   if (!target) return board;
   const cover = isValidCover(action.cover) ? action.cover : undefined;
   if (isSameCover(cover, target.cover)) return board;
-  const nextCard: Card = { ...target, updatedAt: cardStamp(action) };
+  const stamped: Card = { ...target, updatedAt: cardStamp(action) };
   if (cover === undefined) {
     // Drop the field entirely (no `cover: undefined` key left behind).
-    delete nextCard.cover;
+    delete stamped.cover;
   } else {
-    nextCard.cover = cover;
+    stamped.cover = cover;
   }
+  const nextCard = appendActivity(
+    stamped,
+    cover === undefined ? "cover-removed" : "cover-set",
+    action,
+    0,
+    options,
+  );
   return {
     ...board,
     cards: {
@@ -1648,16 +1725,21 @@ function restoreLabel(
 function restoreChecklist(
   board: Board,
   action: BoardScoped<RestoreChecklistAction>,
+  options: ReduceOptions,
 ): Board | null {
-  return patchChecklists(board, action, (checklists) =>
-    checklists.some((c) => c.id === action.checklist.id) ||
-    (guarded(action) && checklists.length >= LIMITS.checklistsPerCard)
-      ? null
-      : insertAt(
-          checklists,
-          clamp(action.index, 0, checklists.length),
-          action.checklist,
-        ),
+  return patchChecklists(
+    board,
+    action,
+    (checklists) =>
+      checklists.some((c) => c.id === action.checklist.id) ||
+      (guarded(action) && checklists.length >= LIMITS.checklistsPerCard)
+        ? null
+        : insertAt(
+            checklists,
+            clamp(action.index, 0, checklists.length),
+            action.checklist,
+          ),
+    options,
   );
 }
 
@@ -1665,14 +1747,19 @@ function restoreChecklist(
 function restoreChecklistItem(
   board: Board,
   action: BoardScoped<RestoreChecklistItemAction>,
+  options: ReduceOptions,
 ): Board | null {
-  return patchChecklists(board, action, (checklists) =>
-    mapChecklistItems(checklists, action.checklistId, (items) =>
-      items.some((item) => item.id === action.item.id) ||
-      (guarded(action) && items.length >= LIMITS.itemsPerChecklist)
-        ? null
-        : insertAt(items, clamp(action.index, 0, items.length), action.item),
-    ),
+  return patchChecklists(
+    board,
+    action,
+    (checklists) =>
+      mapChecklistItems(checklists, action.checklistId, (items) =>
+        items.some((item) => item.id === action.item.id) ||
+        (guarded(action) && items.length >= LIMITS.itemsPerChecklist)
+          ? null
+          : insertAt(items, clamp(action.index, 0, items.length), action.item),
+      ),
+    options,
   );
 }
 
@@ -1891,23 +1978,23 @@ export function boardReducer(
     case "DELETE_LABEL":
       return committed(deleteLabel(board, action));
     case "ADD_CHECKLIST":
-      return committed(addChecklist(board, action));
+      return committed(addChecklist(board, action, options));
     case "RENAME_CHECKLIST":
-      return committed(renameChecklist(board, action));
+      return committed(renameChecklist(board, action, options));
     case "DELETE_CHECKLIST":
-      return committed(deleteChecklist(board, action));
+      return committed(deleteChecklist(board, action, options));
     case "ADD_CHECKLIST_ITEM":
-      return committed(addChecklistItem(board, action));
+      return committed(addChecklistItem(board, action, options));
     case "SET_CHECKLIST_ITEM_DONE":
-      return committed(setChecklistItemDone(board, action));
+      return committed(setChecklistItemDone(board, action, options));
     case "RENAME_CHECKLIST_ITEM":
-      return committed(renameChecklistItem(board, action));
+      return committed(renameChecklistItem(board, action, options));
     case "DELETE_CHECKLIST_ITEM":
-      return committed(deleteChecklistItem(board, action));
+      return committed(deleteChecklistItem(board, action, options));
     case "SET_CARD_DUE_DATE":
       return committed(setCardDueDate(board, action, options));
     case "SET_CARD_COVER":
-      return committed(setCardCover(board, action));
+      return committed(setCardCover(board, action, options));
     case "DUPLICATE_CARD":
       return committed(duplicateCard(board, action, options));
     case "DUPLICATE_COLUMN":
@@ -1929,9 +2016,9 @@ export function boardReducer(
     case "RESTORE_LABEL":
       return committed(restoreLabel(board, action));
     case "RESTORE_CHECKLIST":
-      return committed(restoreChecklist(board, action));
+      return committed(restoreChecklist(board, action, options));
     case "RESTORE_CHECKLIST_ITEM":
-      return committed(restoreChecklistItem(board, action));
+      return committed(restoreChecklistItem(board, action, options));
     case "RESTORE_COLUMN_CARDS":
       return committed(restoreColumnCards(board, action));
     default:

@@ -87,6 +87,44 @@ describe("CardActivityFeed", () => {
     );
   });
 
+  it("renders checklist events with the captured text snapshots", () => {
+    renderFeed({
+      activity: [
+        event({
+          id: "e1",
+          type: "checklist-added",
+          at: HOUR,
+          detail: "Release",
+        }),
+        event({
+          id: "e2",
+          type: "checklist-renamed",
+          at: HOUR + 1,
+          detail: "Ship it",
+        }),
+        event({
+          id: "e3",
+          type: "checklist-item-checked",
+          at: HOUR + 2,
+          detail: "Tag the build",
+        }),
+        event({
+          id: "e4",
+          type: "checklist-item-removed",
+          at: HOUR + 3,
+          detail: "Write notes",
+        }),
+      ],
+      createdAt: 0,
+    });
+    expandFeed();
+    const rows = screen.getAllByTestId("activity-event");
+    expect(rows[0]).toHaveTextContent("Checklist item Write notes removed");
+    expect(rows[1]).toHaveTextContent("Tag the build checked off");
+    expect(rows[2]).toHaveTextContent("Checklist renamed to Ship it");
+    expect(rows[3]).toHaveTextContent("Checklist Release added");
+  });
+
   it("falls back to a single 'created' row for legacy cards", () => {
     renderFeed({ activity: undefined, createdAt: 5 * HOUR });
     expandFeed();

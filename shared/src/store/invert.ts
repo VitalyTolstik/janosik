@@ -317,6 +317,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         cardId: card.id,
         cover: card.cover,
         cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
       };
     }
 
@@ -395,6 +396,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         cardId: card.id,
         checklistId: action.newChecklistId,
         cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
       };
     }
 
@@ -411,6 +413,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         checklistId: checklist.id,
         title: checklist.title,
         cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
       };
     }
 
@@ -426,6 +429,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         checklist: (card.checklists ?? [])[index],
         index,
         cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
       };
     }
 
@@ -436,7 +440,9 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         type: "DELETE_CHECKLIST",
         cardId: action.cardId,
         checklistId: action.checklist.id,
-        ...(card ? { cardUpdatedAt: card.updatedAt } : {}),
+        ...(card
+          ? { cardUpdatedAt: card.updatedAt, cardActivity: feedOf(card) }
+          : {}),
       };
     }
 
@@ -450,6 +456,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         checklistId: action.checklistId,
         itemId: action.newItemId,
         cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
       };
     }
 
@@ -464,6 +471,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         itemId: action.itemId,
         done: !action.done,
         cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
       };
     }
 
@@ -481,6 +489,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         itemId: item.id,
         text: item.text,
         cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
       };
     }
 
@@ -498,6 +507,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         item: items[index],
         index,
         cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
       };
     }
 
@@ -509,7 +519,9 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         cardId: action.cardId,
         checklistId: action.checklistId,
         itemId: action.item.id,
-        ...(card ? { cardUpdatedAt: card.updatedAt } : {}),
+        ...(card
+          ? { cardUpdatedAt: card.updatedAt, cardActivity: feedOf(card) }
+          : {}),
       };
     }
 

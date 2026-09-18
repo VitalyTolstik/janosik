@@ -2,6 +2,7 @@ import type {
   BoardAction,
   BoardSseEvent,
   CommandSseEvent,
+  MembershipChange,
   PresenceUser,
 } from "@janosik/shared";
 import { ApiError, api, apiBaseUrl } from "@/api/client";
@@ -79,6 +80,8 @@ export interface RealtimeOptions {
   onConnected?: (boardId: string) => void;
   /** The stream dropped (or stopped): the heartbeat pauses with it. */
   onDisconnected?: (boardId: string) => void;
+  /** The stream was refused for good (401/403/404): the caller reacts. */
+  onFatal?: (boardId: string, status: number) => void;
 }
 
 /** First retry delay; doubles per attempt up to `MAX_RETRY_MS`. */
@@ -140,6 +143,7 @@ export class BoardRealtime {
         if (this.stopped || this.boardId !== boardId) return;
         if (error instanceof ApiError && isFatal(error.status)) {
           this.boardId = null;
+          this.options.onFatal?.(boardId, error.status);
           return;
         }
       } finally {
@@ -284,6 +288,14 @@ export interface RealtimeHost {
   markForeign: (boardId: string, ids: readonly string[]) => void;
   /** The server's roster for the active board (TASK-36). */
   setPresence: (boardId: string, users: PresenceUser[]) => void;
+  /** The board's member directory changed (TASK-36). */
+  onMembershipChange: (
+    boardId: string,
+    userId: string,
+    change: MembershipChange,
+  ) => void;
+  /** The caller lost access to the board (TASK-36). */
+  onAccessRevoked: (boardId: string) => void;
   /** Someone else changed these entities: raise the attribution ring. */
   flagForeign: (
     boardId: string,
@@ -379,6 +391,17 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
       if (boardId !== undefined) host.setPresence(boardId, event.users);
       return;
     }
+    // A membership change (TASK-36): the caller's own removal also ends the
+    // stream (the server closes it right after the frame — stop first so the
+    // clean end does not trigger an immediate reconnect); every change is
+    // forwarded so open member lists can refresh.
+    if (event.type === "membership") {
+      if (event.change === "removed" && event.userId === host.getUserId()) {
+        connection.stop();
+      }
+      host.onMembershipChange(event.boardId, event.userId, event.change);
+      return;
+    }
     // Activity events are TASK-37 — the wire type carries them.
     if (event.type !== "command") return;
     const boardId = boardIdOf(event);
@@ -422,6 +445,12 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
     onEvent: handle,
     onConnected: startPing,
     onDisconnected: stopPing,
+    onFatal: (boardId, status) => {
+      // A 403 from the stream is the membership check: the account is no
+      // longer on the board (a reconnect after removal, or a direct URL).
+      // 401/404 are session/board-level and have their own paths.
+      if (status === 403) host.onAccessRevoked(boardId);
+    },
     getSince: () => {
       const active = host.getActiveBoardId();
       return active === undefined ? 0 : host.getBaseline(active);

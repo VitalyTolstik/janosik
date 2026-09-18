@@ -314,6 +314,16 @@ export function useBoardMember(
 }
 
 /**
+ * Bumps whenever the member directory is rewritten — the mount load or a
+ * realtime membership event. Views that keep their own roster (the members
+ * dialog) reload on it, so accepting an invitation shows up live.
+ */
+export function useMembersVersion(): number {
+  const { members } = useBoardLive();
+  return useSyncExternalStore(members.subscribe, members.getVersion);
+}
+
+/**
  * Card ids a command changes, for local attribution (TASK-36).
  *
  * Writers stamp `lastActorId` on exactly the cards a command rewrites;

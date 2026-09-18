@@ -142,17 +142,20 @@ describe("BoardRealtime", () => {
 
   it("does not reconnect after a fatal answer", async () => {
     const open = vi.fn().mockRejectedValue(new ApiError(403, null));
+    const onFatal = vi.fn();
     const realtime = new BoardRealtime({
       open,
       onEvent: () => undefined,
       getSince: () => 0,
       retryDelayMs: () => 0,
+      onFatal,
     });
 
     realtime.watch("b-1");
     await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(1));
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(open).toHaveBeenCalledTimes(1);
+    expect(onFatal).toHaveBeenCalledWith("b-1", 403);
     realtime.stop();
   });
 
@@ -244,6 +247,8 @@ describe("presence bridge", () => {
       flagForeign: vi.fn(),
       isBusy: () => false,
       getUserId: () => "me",
+      onMembershipChange: vi.fn(),
+      onAccessRevoked: vi.fn(),
     };
   }
 
@@ -292,6 +297,54 @@ describe("presence bridge", () => {
     await vi.waitFor(() => expect(pings.length).toBeGreaterThan(0));
     expect(pings[0].clientId).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
 
+    bridge.dispose();
+  });
+
+  it("forwards membership changes and drops only the removed user's board", async () => {
+    const revoked = (userId: string): string =>
+      `data: ${JSON.stringify({ type: "membership", boardId: "b-1", userId, change: "removed" })}\n\n`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/presence")) {
+          return new Response(null, { status: 204 });
+        }
+        // An open stream: the frames land once, the connection stays.
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode(revoked("u-2")));
+            controller.enqueue(encoder.encode(revoked("me")));
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }),
+    );
+
+    const bridgeHost = host();
+    const bridge = createRealtimeBridge(bridgeHost);
+    bridge.watch("b-1");
+
+    await vi.waitFor(() =>
+      expect(bridgeHost.onMembershipChange).toHaveBeenCalledWith(
+        "b-1",
+        "me",
+        "removed",
+      ),
+    );
+    // Someone else's removal is a directory change, not ours to act on —
+    // and the stream stops after our own frame instead of reconnecting.
+    expect(bridgeHost.onMembershipChange).toHaveBeenCalledWith(
+      "b-1",
+      "u-2",
+      "removed",
+    );
+    expect(bridgeHost.onMembershipChange).toHaveBeenCalledTimes(2);
+    expect(bridgeHost.onAccessRevoked).not.toHaveBeenCalled();
     bridge.dispose();
   });
 });

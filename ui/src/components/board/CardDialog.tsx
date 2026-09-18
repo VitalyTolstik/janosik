@@ -210,10 +210,11 @@ export function CardDialog({
     );
   };
 
-  // Archive closes the dialog — the card just left the board (TASK-18.1).
+  // Archive keeps the dialog open: the card is still here (archived cards
+  // stay in `board.cards`), so the footer flips to "Unarchive" and the user
+  // can put it right back without hunting through the archive (TASK-18.1).
   const handleArchive = () => {
     archiveCard(card.id);
-    onOpenChange(false);
   };
 
   // Restore keeps the dialog open so the user sees the card back on board.
