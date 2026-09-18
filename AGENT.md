@@ -394,9 +394,33 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   `POST/GET /cards/:id/comments`, `DELETE /comments/:id` (только автор,
   `LIMITS.comment` = 2000, soft-delete); запись дополнительно публикует
   SSE-кадр `type:"activity"`. Доступ — `CardAccessGuard` (card/comment →
-  board). UI: секция Activity последней в диалоге, чипы Comments/More →
-  History (`CardActivity`/`CardComments`/`CardHistory`), копирование
-  `?card=`-ссылки из шапки. Диалог карточки ставит `key={card.id}` на
+  board). UI: секция Activity последней в диалоге, сегментные табы
+  Comments/History в стиле переключателя видов доски (`CardActivity`); 
+  композер — компактный MDXEditor (`CommentEditor.tsx`, ленивый чанк,
+  тулбар B/I/S/code/списки/ссылка), сабмит Save или Ctrl/Cmd+Enter, Cancel
+  сбрасывает черновик; тела комментариев рендерит тот же markdown-вьюер
+  (flush-вариант), голые URL оборачивает `autolinkMarkdown` из
+  `utils/linkify.ts`. История: команды несут снапшот `Command.details`,
+  коммент-строки — текст в `Activity.details` (пишут `comments.service`,
+  читает `readCommentSnapshot` в `activity.service`) → дифф
+  `Comment: — → текст` / `текст → —`; дифф рендерится половинами
+  «было → стало» с word-diff-подсветкой (`utils/diff-words.ts`):
+  изменённый фрагмент выделен (удалённое — красным зачёркнутым,
+  добавленное — зелёным), неизменный контекст схлопывается в «…»;
+  бэкендский `clip` снапшотов поднят 280 → `LIMITS.description`, так что
+  в БД хранятся полные значения. Чужой комментарий перевешивает «морду»
+  карточки (TASK-36 attribution): SSE-фрейм `comment_added` ставит
+  attribution с кольцом в `BoardContext.onActivity`, сервер пишет
+  `Card.lastActorId` в `comments.service.create` — после перезагрузки
+  видно то же лицо. Описание карточки
+  коммитится один раз за сессию печати — на blur из редактора, смене
+  карточки или закрытии диалога (staging-draft в `CardDialog`), а не на
+  каждую паузу. Свежесть истории: `CommitStore` (`store/commit-store.ts`)
+  публикует затронутые карточки после ack своих команд (и undo/redo) —
+  `CardHistory` перечитывает фид по нему, иначе оптимистичный `updatedAt`
+  триггерит фетч до коммита и запись появляется «на шаг позже». Копирование
+  `?card=`-ссылки
+  из шапки. Диалог карточки ставит `key={card.id}` на
   секцию — смена карточки сбрасывает локальный стейт, а не «переезжает».
   Остальные модули: users — заглушка; `/health` живой (пингует БД).
 - **Мастер-контур живой (TASK-43):** `AdminUser` — отдельная от `User`
