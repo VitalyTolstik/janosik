@@ -108,6 +108,7 @@ export class EventsController {
           id: user.id,
           displayName: user.displayName,
           email: user.email,
+          avatarColor: user.avatarColor,
         });
       }
 

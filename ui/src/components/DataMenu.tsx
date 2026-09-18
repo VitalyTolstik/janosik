@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 
 import { useToast } from "@/components/Toast";
-import { LogoutConfirmDialog } from "@/components/auth/LogoutConfirmDialog";
 import { ArchiveDialog } from "@/components/board/ArchiveDialog";
 import { BackupDialog } from "@/components/board/BackupDialog";
 import {
@@ -17,7 +16,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
@@ -30,8 +28,6 @@ import { useI18n } from "@/i18n";
 import { MAX_IMPORT_BYTES } from "@janosik/shared";
 import { useBoard } from "@/store/BoardContext";
 import { parseExport, serializeExport } from "@janosik/shared";
-import { isApiEnabled } from "@/api/client";
-import { useAuth } from "@/auth/AuthContext";
 import { downloadTextFile } from "@/utils/download";
 import { createBackup, listBackups } from "@/utils/backup";
 
@@ -41,22 +37,19 @@ import { createBackup, listBackups } from "@/utils/backup";
  * the card archive and the automatic backups browser (keeps the dropdown
  * compact no matter how many entries pile up). Export failures and import
  * validation errors surface as toasts. With a server (TASK-29) import goes
- * to `POST /boards/import` and the menu also hosts the account row with
- * sign-out.
+ * to `POST /boards/import`; the account itself lives in the header panel
+ * (TASK-36.1), not here.
  */
 
 export function DataMenu() {
   const { t } = useI18n();
   const toast = useToast();
   const { boards, board, importBoards } = useBoard();
-  const { user } = useAuth();
-  const serverMode = isApiEnabled();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [backupCount, setBackupCount] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [backupsOpen, setBackupsOpen] = useState(false);
-  const [logoutOpen, setLogoutOpen] = useState(false);
 
   // Counted only while the menu is open (TASK-21.4.1): this component
   // re-renders on every keystroke anywhere on the board, and walking every
@@ -173,23 +166,6 @@ export function DataMenu() {
               ? `${t("data.backupTitle")} · ${backupCount}`
               : t("data.backupTitle")}
           </DropdownMenuItem>
-          {serverMode ? (
-            <>
-              <DropdownMenuSeparator />
-              {user !== null ? (
-                <DropdownMenuLabel className="truncate font-normal text-muted-foreground">
-                  {t("auth.signedInAs", { email: user.email })}
-                </DropdownMenuLabel>
-              ) : null}
-              <DropdownMenuItem
-                data-testid="data-logout"
-                onClick={() => setLogoutOpen(true)}
-              >
-                <LazyAnimatedIcon name="logout" size={16} aria-hidden />
-                {t("auth.logout")}
-              </DropdownMenuItem>
-            </>
-          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
       <input
@@ -206,13 +182,6 @@ export function DataMenu() {
       />
       <ArchiveDialog open={archiveOpen} onOpenChange={setArchiveOpen} />
       <BackupDialog open={backupsOpen} onOpenChange={setBackupsOpen} />
-      {user !== null ? (
-        <LogoutConfirmDialog
-          open={logoutOpen}
-          email={user.email}
-          onOpenChange={setLogoutOpen}
-        />
-      ) : null}
     </>
   );
 }

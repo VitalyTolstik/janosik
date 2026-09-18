@@ -1,14 +1,11 @@
-import { BackgroundSwitcher } from "@/components/BackgroundSwitcher";
-import { SignOutButton } from "@/components/auth/SignOutButton";
+import { AccountDialog } from "@/components/account/AccountDialog";
 import { BoardMembersDialog } from "@/components/board/BoardMembersDialog";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
 import { DataMenu } from "@/components/DataMenu";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { NotificationsBell } from "@/components/NotificationsBell";
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ShortcutsDialog } from "@/components/ShortcutsDialog";
-import { TimeFormatSwitcher } from "@/components/TimeFormatSwitcher";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,20 +13,17 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
 import { PresenceStack } from "@/components/board/PresenceStack";
 import { useBoardActions, useBoardHistory } from "@/store/BoardContext";
 
-/** Header: brand, background/language switchers, undo/redo, data and theme. */
+/** Header: brand, board switcher, search, undo/redo, data and the account. */
 export function Header() {
-  const { theme, toggleTheme } = useTheme();
   const { t } = useI18n();
   // Narrow subscriptions on purpose (TASK-21.4): the actions never change
   // and the flags flip rarely, so typing in a card leaves the header alone.
   const { undo, redo } = useBoardActions();
   const { canUndo, canRedo } = useBoardHistory();
-  const isDark = theme === "dark";
 
   return (
     <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-md sm:px-6">
@@ -106,9 +100,6 @@ export function Header() {
       <div className="flex items-center gap-0.5">
         <GlobalSearch />
         <ShortcutsDialog />
-        <BackgroundSwitcher />
-        <TimeFormatSwitcher />
-        <LanguageSwitcher />
 
         <Tooltip>
           <TooltipTrigger asChild>
@@ -142,27 +133,7 @@ export function Header() {
 
         <DataMenu />
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t("theme.aria")}
-              onClick={toggleTheme}
-            >
-              {isDark ? (
-                <LazyAnimatedIcon name="sun-dim" size={20} />
-              ) : (
-                <LazyAnimatedIcon name="moon" size={20} />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            {isDark ? t("theme.tooltipLight") : t("theme.tooltipDark")}
-          </TooltipContent>
-        </Tooltip>
-
-        <SignOutButton />
+        <AccountDialog />
       </div>
     </header>
   );

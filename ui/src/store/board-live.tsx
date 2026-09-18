@@ -34,7 +34,10 @@ function samePresence(a: PresenceUser[], b: readonly PresenceUser[]): boolean {
   return (
     a.length === b.length &&
     a.every(
-      (user, i) => user.id === b[i].id && user.displayName === b[i].displayName,
+      (user, i) =>
+        user.id === b[i].id &&
+        user.displayName === b[i].displayName &&
+        user.avatarColor === b[i].avatarColor,
     )
   );
 }

@@ -167,6 +167,7 @@ describe("attribution (TASK-36)", () => {
         email: "boris@example.com",
         role: "MEMBER",
         expiresAt: null,
+        avatarColor: null,
       },
     ]);
     render(

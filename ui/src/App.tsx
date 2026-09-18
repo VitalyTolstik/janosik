@@ -6,6 +6,7 @@ import { BoardSection } from "@/components/BoardSection";
 import { DataSafetyBanner } from "@/components/DataSafetyBanner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Header } from "@/components/Header";
+import { UserProfileProvider } from "@/components/board/UserProfileDialog";
 import { LoginPage } from "@/components/auth/LoginPage";
 import { ToastProvider } from "@/components/Toast";
 import { ThemeProvider } from "@/hooks/use-theme";
@@ -95,7 +96,7 @@ function BoardRoute() {
  * empty board list (TASK-29).
  */
 function BoardShell() {
-  const { syncStatus } = useBoard();
+  const { board, syncStatus } = useBoard();
   const { t } = useI18n();
 
   if (syncStatus !== "ready") {
@@ -130,12 +131,14 @@ function BoardShell() {
       {/* Above the header: a data-at-risk warning outranks everything else
           on the screen (TASK-21.2). */}
       <DataSafetyBanner />
-      <Header />
-      <Routes>
-        <Route path={routes.home} element={<NoBoardRoute />} />
-        <Route path={routes.boardPattern} element={<BoardRoute />} />
-        <Route path="*" element={<NoBoardRoute />} />
-      </Routes>
+      <UserProfileProvider boardId={board?.id}>
+        <Header />
+        <Routes>
+          <Route path={routes.home} element={<NoBoardRoute />} />
+          <Route path={routes.boardPattern} element={<BoardRoute />} />
+          <Route path="*" element={<NoBoardRoute />} />
+        </Routes>
+      </UserProfileProvider>
     </>
   );
 }

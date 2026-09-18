@@ -31,6 +31,7 @@ import {
   type MessageKey,
 } from "@/i18n";
 import { UserAvatar } from "@/components/ui/user-avatar";
+import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { useBoardMember } from "@/store/board-live";
 import { userLabel } from "@/utils/avatar";
 import type { CardActivityEvent, CardActivityType } from "@janosik/shared";
@@ -176,26 +177,35 @@ function ActivityRow({
   const { t, lang } = useI18n();
   const hour12 = useHour12();
   const member = useBoardMember(boardId, event.actorId);
+  const openProfile = useOpenProfile();
   const name = event.actorId
     ? userLabel(member?.displayName ?? null, member?.email ?? "")
     : "";
   const Icon = ACTIVITY_ICONS[event.type] ?? Plus;
+  const actorId = event.actorId;
 
   return (
     <li
       className="flex items-center gap-2 text-sm"
       data-testid="activity-event"
     >
-      {name ? (
-        <span data-testid="activity-actor" className="inline-flex">
+      {name && actorId ? (
+        <button
+          type="button"
+          data-testid="activity-actor"
+          aria-label={t("profile.open", { name })}
+          onClick={() => openProfile(actorId)}
+          className="inline-flex rounded-full"
+        >
           <UserAvatar
-            userId={event.actorId ?? ""}
+            userId={actorId}
             displayName={member?.displayName ?? null}
             email={member?.email ?? ""}
+            color={member?.avatarColor}
             size="xs"
             className="ring-1 ring-border/60"
           />
-        </span>
+        </button>
       ) : (
         <Icon
           aria-hidden="true"
@@ -203,9 +213,15 @@ function ActivityRow({
         />
       )}
       <span className="min-w-0 flex-1 truncate text-foreground/90">
-        {name ? (
+        {name && actorId ? (
           <>
-            <span className="font-medium">{name}</span>
+            <button
+              type="button"
+              onClick={() => openProfile(actorId)}
+              className="font-medium hover:underline"
+            >
+              {name}
+            </button>
             <span className="text-muted-foreground/60"> · </span>
           </>
         ) : null}

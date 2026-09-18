@@ -80,6 +80,8 @@ describe("Auth API (e2e)", () => {
       id: expect.any(String),
       email: FIRST_EMAIL,
       displayName: "Vera",
+      avatarColor: null,
+      createdAt: expect.any(Number),
     });
   });
 

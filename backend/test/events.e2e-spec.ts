@@ -2,6 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import type { AddressInfo } from "node:net";
+import type { ReadableStreamReadResult } from "node:stream/web";
 import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
@@ -20,7 +21,7 @@ interface SseFrame {
   actorId?: string;
   action?: { type: string };
   touches?: string[];
-  users?: { id: string; displayName: string }[];
+  users?: { id: string; displayName: string; avatarColor: string | null }[];
   boardId?: string;
   userId?: string;
   change?: string;
@@ -189,13 +190,28 @@ describe("Board events SSE (e2e)", () => {
     const decoder = new TextDecoder();
     let buffer = "";
     let closed = false;
+    /** Frames of other types already parsed — kept for a later `next`. */
+    const pending: SseFrame[] = [];
+
+    /** Move up to `count` parked frames of `type` back into the result. */
+    const takePending = (count: number, type: string): SseFrame[] => {
+      const taken: SseFrame[] = [];
+      for (let i = 0; i < pending.length && taken.length < count;) {
+        if (pending[i].type === type) {
+          taken.push(pending.splice(i, 1)[0]);
+        } else {
+          i += 1;
+        }
+      }
+      return taken;
+    };
 
     const next = async (
       count: number,
       type = "command",
       timeoutMs = 12_000,
     ): Promise<SseFrame[]> => {
-      const frames: SseFrame[] = [];
+      const frames: SseFrame[] = takePending(count, type);
       const deadline = Date.now() + timeoutMs;
       while (frames.length < count) {
         const remaining = deadline - Date.now();
@@ -222,6 +238,7 @@ describe("Board events SSE (e2e)", () => {
             if (payload === "ping") continue;
             const frame = JSON.parse(payload) as SseFrame;
             if (frame.type === type) frames.push(frame);
+            else pending.push(frame);
           }
         }
       }
@@ -389,7 +406,9 @@ describe("Board events SSE (e2e)", () => {
       await openStream(ownerToken, baseline, "tab-owner-1"),
     );
     const first = await owner1.next(1, "presence");
-    expect(first[0].users).toEqual([{ id: ownerId, displayName: "Owner" }]);
+    expect(first[0].users).toEqual([
+      { id: ownerId, displayName: "Owner", avatarColor: null },
+    ]);
 
     const memberStream = openReader(
       await openStream(memberToken, baseline, "tab-member-1"),
@@ -427,6 +446,75 @@ describe("Board events SSE (e2e)", () => {
     expect(afterLeave[0].users?.map((user) => user.id)).toEqual([memberId]);
     await memberStream.close();
   }, 30_000);
+
+  it("carries the chosen avatar color on the roster", async () => {
+    await server()
+      .patch("/api/v1/users/me")
+      .set(auth(ownerToken))
+      .send({ avatarColor: "orange" })
+      .expect(200);
+
+    const stream = openReader(
+      await openStream(ownerToken, await boardSeq(ownerToken), "color-tab-1"),
+    );
+    const frames = await stream.next(1, "presence");
+    expect(frames[0].users).toEqual([
+      { id: ownerId, displayName: "Owner", avatarColor: "orange" },
+    ]);
+    await stream.close();
+  }, 20_000);
+
+  it("propagates a profile change to every open tab and member list", async () => {
+    const baseline = await boardSeq(ownerToken);
+    const ownerStream = openReader(
+      await openStream(ownerToken, baseline, "rename-owner-1"),
+    );
+    const memberStream = openReader(
+      await openStream(memberToken, baseline, "rename-member-1"),
+    );
+    await ownerStream.next(1, "presence");
+    await memberStream.next(1, "presence");
+    // The owner also sees the member join — drain it, so the next roster
+    // frame on both streams is the one the profile change produces.
+    await ownerStream.next(1, "presence");
+
+    await server()
+      .patch("/api/v1/users/me")
+      .set(auth(ownerToken))
+      .send({ displayName: "Renamed Owner", avatarColor: "teal" })
+      .expect(200);
+
+    // The roster is rewritten in place — no reconnect — for both sides.
+    const ownerRoster = await ownerStream.next(1, "presence");
+    expect(ownerRoster[0].users).toContainEqual({
+      id: ownerId,
+      displayName: "Renamed Owner",
+      avatarColor: "teal",
+    });
+    const memberRoster = await memberStream.next(1, "presence");
+    expect(memberRoster[0].users).toContainEqual({
+      id: ownerId,
+      displayName: "Renamed Owner",
+      avatarColor: "teal",
+    });
+
+    // And every open member list re-reads the directory.
+    const ownerMembership = await ownerStream.next(1, "membership");
+    expect(ownerMembership[0]).toMatchObject({
+      boardId,
+      userId: ownerId,
+      change: "updated",
+    });
+    const memberMembership = await memberStream.next(1, "membership");
+    expect(memberMembership[0]).toMatchObject({
+      boardId,
+      userId: ownerId,
+      change: "updated",
+    });
+
+    await ownerStream.close();
+    await memberStream.close();
+  }, 20_000);
 
   it("accepts a presence heartbeat for open sessions only", async () => {
     const baseline = await boardSeq(ownerToken);

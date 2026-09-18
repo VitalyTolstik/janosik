@@ -10,9 +10,8 @@ interface LogoutConfirmDialogProps {
 }
 
 /**
- * Confirmation in front of sign-out: "Выйти" in the header (and in the data
- * menu) must not end the session on a stray click. Both triggers share this
- * dialog so the wording and behaviour stay identical.
+ * Confirmation in front of sign-out: the account panel's "Sign out" must not
+ * end the session on a stray click.
  */
 export function LogoutConfirmDialog({
   open,

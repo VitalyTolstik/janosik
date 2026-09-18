@@ -1,5 +1,5 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import type { PresenceUser } from "@janosik/shared";
+import type { PresenceUser, UserAvatarColor } from "@janosik/shared";
 import { RealtimeService } from "./realtime.service";
 
 /** How often the roster is re-broadcast, so clients can reconcile. */
@@ -21,6 +21,7 @@ export interface PresenceIdentity {
   id: string;
   displayName: string | null;
   email: string;
+  avatarColor: UserAvatarColor | null;
 }
 
 interface PresenceSession extends PresenceIdentity {
@@ -92,6 +93,42 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
     if (sessions.size === 0) this.boards.delete(boardId);
   }
 
+  /**
+   * Rewrite the public identity of every live session of one user and
+   * re-broadcast each board that actually changed (TASK-36.1). Sessions are
+   * captured at join, so without this a rename or a new avatar color would
+   * stay invisible to everyone — including the users' own other tabs — until
+   * they reconnect.
+   */
+  updateUser(
+    userId: string,
+    patch: Partial<
+      Pick<PresenceIdentity, "displayName" | "email" | "avatarColor">
+    >,
+  ): void {
+    for (const [boardId, sessions] of this.boards) {
+      let changed = false;
+      for (const session of sessions.values()) {
+        if (session.id !== userId) continue;
+        if (
+          (patch.displayName !== undefined &&
+            session.displayName !== patch.displayName) ||
+          (patch.email !== undefined && session.email !== patch.email) ||
+          (patch.avatarColor !== undefined &&
+            session.avatarColor !== patch.avatarColor)
+        ) {
+          changed = true;
+        }
+        if (patch.displayName !== undefined)
+          session.displayName = patch.displayName;
+        if (patch.email !== undefined) session.email = patch.email;
+        if (patch.avatarColor !== undefined)
+          session.avatarColor = patch.avatarColor;
+      }
+      if (changed) this.broadcast(boardId);
+    }
+  }
+
   /** Refresh a session's TTL. Returns whether it is still connected. */
   touch(boardId: string, clientId: string): boolean {
     const session = this.boards.get(boardId)?.get(clientId);
@@ -115,6 +152,7 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
       .map((session) => ({
         id: session.id,
         displayName: session.displayName?.trim() || session.email,
+        avatarColor: session.avatarColor,
       }));
   }
 

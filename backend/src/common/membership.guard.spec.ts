@@ -19,6 +19,8 @@ function membership(overrides: Partial<BoardMember> = {}): BoardMember {
     userId: "user-1",
     role: Role.MEMBER,
     expiresAt: null,
+    acceptedAt: new Date(0),
+    invitedById: null,
     createdAt: new Date(0),
     ...overrides,
   };
@@ -61,7 +63,7 @@ describe("MembershipGuard", () => {
     const reflector = {
       getAllAndOverride: jest.fn().mockReturnValue(required),
     } as unknown as Reflector;
-    return new MembershipGuard(reflector, prisma as never);
+    return new MembershipGuard(reflector, prisma as never, {} as never);
   }
 
   function prismaWith(board: unknown, member: unknown): PrismaMock {

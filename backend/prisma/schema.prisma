@@ -24,6 +24,7 @@ model User {
   email          String         @unique
   passwordHash   String
   displayName    String?
+  avatarColor    String? // USER_AVATAR_COLORS key (TASK-36.1); null → id-hash default
   disabledAt     DateTime? // master block (TASK-36); login/refresh → 403
   createdAt      DateTime       @default(now())
   memberships    BoardMember[]

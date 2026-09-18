@@ -11,10 +11,12 @@ import { argon2id, hash as argonHash, verify as argonVerify } from "argon2";
 import { createHash, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
+import { toAuthUser } from "./auth-user.mapper";
 import { USER_JWT_AUDIENCE } from "./auth.types";
-import type { AuthResult, AuthUser } from "./auth.types";
+import type { AuthResult } from "./auth.types";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
+import type { ChangePasswordDto } from "./dto/change-password.dto";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -134,6 +136,43 @@ export class AuthService {
     });
   }
 
+  /**
+   * Change the password after verifying the current one, then revoke every
+   * refresh session except the caller's (identified by the cookie hash —
+   * this route lives under `/auth`, so the cookie is actually sent; TASK-36.1).
+   * API tokens survive on purpose: integrations must not break on a password
+   * rotation.
+   */
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+    refreshToken: string | undefined,
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    const valid = await argonVerify(user.passwordHash, dto.currentPassword);
+    if (!valid) {
+      throw new UnauthorizedException("Current password is incorrect");
+    }
+    const passwordHash = await argonHash(dto.newPassword, { type: argon2id });
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+    if (refreshToken !== undefined) {
+      await this.prisma.refreshToken.updateMany({
+        where: {
+          userId,
+          revokedAt: null,
+          tokenHash: { not: this.hashToken(refreshToken) },
+        },
+        data: { revokedAt: new Date() },
+      });
+    }
+  }
+
   private async startSession(user: User): Promise<AuthResult> {
     // The audience separates the two auth contours (TASK-36): a user token
     // fails the admin strategy and an admin token fails this one, so a
@@ -146,7 +185,7 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
-      user: this.toAuthUser(user),
+      user: toAuthUser(user),
     };
   }
 
@@ -172,14 +211,6 @@ export class AuthService {
   /** Only the sha256 of the raw token is ever persisted. */
   private hashToken(rawToken: string): string {
     return createHash("sha256").update(rawToken).digest("hex");
-  }
-
-  private toAuthUser(user: User): AuthUser {
-    return {
-      id: user.id,
-      email: user.email,
-      displayName: user.displayName,
-    };
   }
 
   /**

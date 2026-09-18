@@ -11,6 +11,8 @@ const user: AuthUserDto = {
   id: "u-1",
   email: "admin@example.com",
   displayName: "Admin",
+  avatarColor: null,
+  createdAt: 0,
 };
 
 function json(body: unknown, status = 200): Response {

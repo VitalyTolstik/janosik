@@ -20,6 +20,7 @@ import {
 import { DueBadge } from "@/components/board/DueBadge";
 import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
 import { LabelPicker } from "@/components/board/LabelPicker";
+import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { DueDatePickerContent } from "@/components/board/CardDueDate";
 import { HighlightedText } from "@/components/ui/highlight";
 import { Button } from "@/components/ui/button";
@@ -541,6 +542,7 @@ function TableRowBody({
 }: TableRowProps) {
   const { t, lang } = useI18n();
   const { user } = useAuth();
+  const openProfile = useOpenProfile();
   // Attribution (TASK-36): who last changed the row, plus the transient
   // foreign highlight — the same ring semantics as the card face.
   const attribution = useEntityAttribution(card.id);
@@ -552,7 +554,10 @@ function TableRowBody({
     attribution !== undefined && attribution.userId !== user?.id
       ? attribution
       : undefined;
-  const foreignColor = userAvatarVar(attribution?.userId ?? "");
+  const foreignColor = userAvatarVar(
+    attribution?.userId ?? "",
+    authorMember?.avatarColor,
+  );
   const authorName = userLabel(
     authorMember?.displayName ?? null,
     authorMember?.email ?? "",
@@ -840,19 +845,26 @@ function TableRowBody({
         <td className="px-3 py-2 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
             {foreignAuthor ? (
-              <span
+              <button
+                type="button"
                 data-testid="table-last-actor"
                 title={t("card.changedBy", { name: authorName })}
-                className="inline-flex"
+                aria-label={t("profile.open", { name: authorName })}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openProfile(foreignAuthor.userId);
+                }}
+                className="inline-flex rounded"
               >
                 <UserAvatar
                   userId={foreignAuthor.userId}
                   displayName={authorMember?.displayName ?? null}
                   email={authorMember?.email ?? ""}
+                  color={authorMember?.avatarColor}
                   size="xs"
                   className="h-4 w-4 text-[8px] ring-1 ring-border/60"
                 />
-              </span>
+              </button>
             ) : null}
             {formatDateOnly(card.updatedAt, lang)}
           </span>

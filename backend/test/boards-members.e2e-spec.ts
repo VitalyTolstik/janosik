@@ -120,8 +120,21 @@ describe("Boards API (e2e)", () => {
           email: ADMIN_EMAIL,
           role: "ADMIN",
           expiresAt: null,
+          avatarColor: null,
         },
       ]);
+
+      // The chosen color (TASK-36.1) rides the member directory.
+      await server()
+        .patch("/api/v1/users/me")
+        .set(auth(adminToken))
+        .send({ avatarColor: "indigo" })
+        .expect(200);
+      const colored = await server()
+        .get(`/api/v1/boards/${board.id}/members`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(colored.body[0].avatarColor).toBe("indigo");
     });
 
     it("lists only the boards the caller is a member of", async () => {

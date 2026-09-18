@@ -7,6 +7,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { DueBadge } from "@/components/board/DueBadge";
+import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { HighlightedText } from "@/components/ui/highlight";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useAuth } from "@/auth/AuthContext";
@@ -107,6 +108,7 @@ function CardItemView({
   const { t, lang } = useI18n();
   const hour12 = useHour12();
   const { user } = useAuth();
+  const openProfile = useOpenProfile();
   // Attribution (TASK-36): who last changed the card, unless that is me.
   const attribution = useEntityAttribution(card.id);
   const authorMember = useBoardMember(
@@ -118,7 +120,7 @@ function CardItemView({
       ? attribution
       : undefined;
   const foreignColor = foreignAuthor
-    ? userAvatarVar(foreignAuthor.userId)
+    ? userAvatarVar(foreignAuthor.userId, authorMember?.avatarColor)
     : undefined;
   const authorName = foreignAuthor
     ? userLabel(authorMember?.displayName ?? null, authorMember?.email ?? "")
@@ -351,22 +353,29 @@ function CardItemView({
           left-aligned footer line — inside the badge row `ml-auto` made
           narrow cards wrap it into a ragged right edge. */}
       {foreignAuthor ? (
-        <div
+        <button
+          type="button"
           data-testid="card-last-actor"
           title={t("card.changedBy", { name: authorName })}
-          className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground/80"
+          aria-label={t("profile.open", { name: authorName })}
+          onClick={(event) => {
+            event.stopPropagation();
+            openProfile(foreignAuthor.userId);
+          }}
+          className="mt-1.5 flex items-center gap-1 rounded text-[10px] text-muted-foreground/80 transition-colors hover:text-foreground"
         >
           <UserAvatar
             userId={foreignAuthor.userId}
             displayName={authorMember?.displayName ?? null}
             email={authorMember?.email ?? ""}
+            color={authorMember?.avatarColor}
             size="xs"
             className="ring-1 ring-border/60"
           />
           <time dateTime={new Date(foreignAuthor.at).toISOString()}>
             {formatRelative(foreignAuthor.at, lang, Date.now(), hour12)}
           </time>
-        </div>
+        </button>
       ) : null}
       {/* Foreign-change highlight (TASK-36): a soft ring in the author's own
           color for two seconds, or — under reduced motion — a static dot

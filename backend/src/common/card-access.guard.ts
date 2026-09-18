@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
+import { ApiTokenService } from "@/auth/api-token.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { GuardedRequest, MembershipGuard } from "./membership.guard";
 
@@ -14,8 +15,12 @@ import { GuardedRequest, MembershipGuard } from "./membership.guard";
  */
 @Injectable()
 export class CardAccessGuard extends MembershipGuard {
-  constructor(reflector: Reflector, prisma: PrismaService) {
-    super(reflector, prisma);
+  constructor(
+    reflector: Reflector,
+    prisma: PrismaService,
+    apiTokens: ApiTokenService,
+  ) {
+    super(reflector, prisma, apiTokens);
   }
 
   protected override async resolveBoardId(

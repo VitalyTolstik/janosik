@@ -12,6 +12,7 @@ import type { Board, PresenceUser } from "@janosik/shared";
 import { api } from "@/api/client";
 import { AuthProvider } from "@/auth/AuthContext";
 import { PresenceStack } from "@/components/board/PresenceStack";
+import { UserProfileProvider } from "@/components/board/UserProfileDialog";
 import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
@@ -37,8 +38,16 @@ function seedBoard(): Board {
   };
 }
 
-const ADMIN: PresenceUser = { id: "user-1", displayName: "Admin" };
-const BORIS: PresenceUser = { id: "user-2", displayName: "Boris" };
+const ADMIN: PresenceUser = {
+  id: "user-1",
+  displayName: "Admin",
+  avatarColor: null,
+};
+const BORIS: PresenceUser = {
+  id: "user-2",
+  displayName: "Boris",
+  avatarColor: null,
+};
 
 function renderStack(server: FakeServer) {
   vi.stubGlobal("fetch", server.handle);
@@ -49,7 +58,9 @@ function renderStack(server: FakeServer) {
           <MemoryRouter initialEntries={["/board/b-1"]}>
             <TooltipProvider>
               <BoardProvider>
-                <PresenceStack />
+                <UserProfileProvider boardId="b-1">
+                  <PresenceStack />
+                </UserProfileProvider>
               </BoardProvider>
             </TooltipProvider>
           </MemoryRouter>
@@ -114,11 +125,11 @@ describe("PresenceStack", () => {
     server.initialPresence = [
       ADMIN,
       BORIS,
-      { id: "user-3", displayName: "Cara" },
-      { id: "user-4", displayName: "Dina" },
-      { id: "user-5", displayName: "Egor" },
-      { id: "user-6", displayName: "Feya" },
-      { id: "user-7", displayName: "Gleb" },
+      { id: "user-3", displayName: "Cara", avatarColor: null },
+      { id: "user-4", displayName: "Dina", avatarColor: null },
+      { id: "user-5", displayName: "Egor", avatarColor: null },
+      { id: "user-6", displayName: "Feya", avatarColor: null },
+      { id: "user-7", displayName: "Gleb", avatarColor: null },
     ];
     renderStack(server);
 
@@ -128,6 +139,21 @@ describe("PresenceStack", () => {
 
     fireEvent.click(stack);
     expect(await screen.findAllByTestId("presence-row")).toHaveLength(7);
+  });
+
+  it("opens a member profile from a roster row", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.initialPresence = [ADMIN, BORIS];
+    renderStack(server);
+
+    fireEvent.click(await screen.findByTestId("presence-stack"));
+    const rows = await screen.findAllByTestId("presence-row");
+    fireEvent.click(rows[1]);
+
+    expect(
+      await screen.findByTestId("user-profile-dialog"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("user-profile-name")).toHaveTextContent("Boris");
   });
 
   it("follows roster updates without a reload", async () => {

@@ -1,3 +1,4 @@
+import type { UserAvatarColor } from "@janosik/shared";
 import {
   Tooltip,
   TooltipContent,
@@ -7,10 +8,11 @@ import { cn } from "@/lib/utils";
 import { userAvatarColor, userInitials, userLabel } from "@/utils/avatar";
 
 /**
- * User avatar — initials on a stable color derived from the user id, with the
- * full name in a tooltip. The base brick for member lists (TASK-35) and later
- * presence/attribution (TASK-36); the palette mirrors the board avatars, so
- * both families of avatars read as one design language.
+ * User avatar — initials on the color the user picked (TASK-36.1) or the
+ * stable id-hash default, with the full name in a tooltip. The base brick
+ * for member lists (TASK-35) and presence/attribution (TASK-36); the palette
+ * mirrors the board avatars, so both families of avatars read as one design
+ * language.
  */
 
 const AVATAR_SIZES = {
@@ -26,6 +28,8 @@ interface UserAvatarProps {
   userId: string;
   displayName: string | null;
   email: string;
+  /** Picked palette color; `null`/omitted → the id-hash default. */
+  color?: UserAvatarColor | null;
   size?: AvatarSize;
   className?: string;
 }
@@ -34,6 +38,7 @@ export function UserAvatar({
   userId,
   displayName,
   email,
+  color = null,
   size = "md",
   className,
 }: UserAvatarProps) {
@@ -49,7 +54,7 @@ export function UserAvatar({
           className={cn(
             "inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold leading-none text-white",
             AVATAR_SIZES[size],
-            userAvatarColor(userId),
+            userAvatarColor(userId, color),
             className,
           )}
         >
