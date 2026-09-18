@@ -1,4 +1,11 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -11,6 +18,7 @@ import {
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { CardActivityFeed } from "@/components/board/CardActivityFeed";
 import { CardChecklists } from "@/components/board/CardChecklists";
+import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { CardDueDate } from "@/components/board/CardDueDate";
 import { CardCoverPicker } from "@/components/board/CardCoverPicker";
 import { LabelPicker } from "@/components/board/LabelPicker";
@@ -64,6 +72,9 @@ interface CardDialogProps {
 
 /** Idle gap after the last keystroke that stamps the final `updatedAt`. */
 const QUIET_TOUCH_DELAY_MS = 800;
+
+/** Four rows of text-sm plus the textarea padding: past this the title scrolls. */
+const TITLE_MAX_HEIGHT = 100;
 
 /**
  * Card detail popover: edit the title, pick a label, move the card to another
@@ -137,6 +148,18 @@ export function CardDialog({
     },
     [cardId, open],
   );
+
+  // Title grows with its content (Jira-style) instead of reserving three
+  // blank rows: one line at rest, a scrollbar past four rows.
+  const titleRef = useRef<HTMLTextAreaElement | null>(null);
+  const titleText = board?.cards[cardId ?? ""]?.title;
+  useLayoutEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, TITLE_MAX_HEIGHT)}px`;
+    el.style.overflowY = el.scrollHeight > TITLE_MAX_HEIGHT ? "auto" : "hidden";
+  }, [cardId, open, titleText]);
 
   if (!board || !cardId) {
     // Dialog stays closed when there's nothing to show.
@@ -225,8 +248,12 @@ export function CardDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-3xl">
-          <DialogHeader className="pr-8">
+        {/* Fixed, viewport-bound height (TASK-44): the card always opens as
+            the same near-full-height panel (1rem breathing room top and
+            bottom) — long descriptions and checklists scroll in the body
+            instead of growing the dialog from both ends. */}
+        <DialogContent className="h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] sm:max-w-3xl">
+          <DialogHeader className="shrink-0 pr-8">
             <DialogTitle className="text-base">
               {t("card.detailsTitle")}
             </DialogTitle>
@@ -248,6 +275,7 @@ export function CardDialog({
               </label>
               <Textarea
                 id="card-title-input"
+                ref={titleRef}
                 name="card-title"
                 autoFocus
                 readOnly={readOnly}
@@ -263,8 +291,8 @@ export function CardDialog({
                   scheduleTouch(card.id);
                 }}
                 onFocus={(e) => e.target.select()}
-                rows={3}
-                className="resize-none break-words"
+                rows={1}
+                className="min-h-9 resize-none break-words"
                 placeholder={t("card.titlePlaceholder")}
                 aria-describedby={
                   showRemaining(card.title.length, LIMITS.cardTitle)
@@ -282,13 +310,11 @@ export function CardDialog({
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label
-                htmlFor="card-description-input"
-                className="text-xs font-medium text-muted-foreground"
-              >
-                {t("card.descriptionLabel")}
-              </label>
+            <CollapsibleSection
+              title={t("card.descriptionLabel")}
+              testId="card-description-toggle"
+              contentClassName="mt-1.5 space-y-1.5"
+            >
               {/* WYSIWYG Markdown (MDXEditor) — formatting lives in the
                   editor toolbar; no separate preview toggle needed. The
                   editor surface can't take maxLength (contenteditable), so
@@ -335,7 +361,7 @@ export function CardDialog({
                 limit={LIMITS.description}
                 testId="card-description-counter"
               />
-            </div>
+            </CollapsibleSection>
 
             <div className="space-y-1.5">
               <span className="text-xs font-medium text-muted-foreground">
