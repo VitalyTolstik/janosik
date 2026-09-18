@@ -1,11 +1,5 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
-import { Loader2, Send, Trash2 } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { Loader2, Trash2 } from "lucide-react";
 import type {
   ActivitySseEvent,
   AuthUserDto,
@@ -19,20 +13,28 @@ import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { LimitCounter } from "@/components/ui/limit-counter";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useToast } from "@/components/Toast";
 import { formatDate, formatRelative, useHour12, useI18n } from "@/i18n";
 import { useBoardLive, useBoardMember } from "@/store/board-live";
 import { userLabel } from "@/utils/avatar";
 import { createId } from "@/utils/id";
-import { splitLinks } from "@/utils/linkify";
+
+// MDXEditor rides the description's lazy boundary (TASK-19): both comment
+// components live in one on-demand module, so the dialog chunk stays lean.
+const CommentComposerEditor = lazy(() =>
+  import("@/components/editor/CommentEditor").then((m) => ({
+    default: m.CommentComposerEditor,
+  })),
+);
+const CommentBody = lazy(() =>
+  import("@/components/editor/CommentEditor").then((m) => ({
+    default: m.CommentBody,
+  })),
+);
 
 /** Newest-first page size of the comment list. */
 const PAGE_SIZE = 50;
-
-/** Composer ceiling: past this the textarea scrolls instead of growing. */
-const COMPOSER_MAX_HEIGHT = 160;
 
 interface CardCommentsProps {
   cardId: string;
@@ -44,14 +46,13 @@ interface CardCommentsProps {
 }
 
 /**
- * The card's comment thread (TASK-37) over the TASK-28 REST API.
- *
- * Jira-style: the composer sits on top with your avatar, comments follow
- * newest-first, own comments can be soft-deleted after a confirmation, and
- * older pages load on demand with the opaque cursor. A comment written by
- * someone else arrives as a `type: "activity"` SSE frame and is pulled in
- * live; the frame carries only the comment id, the body comes from the
- * ordinary list endpoint.
+ * The card's comment subsection (TASK-37) over the TASK-28 REST API:
+ * the markdown composer on top (Jira's Save/Cancel pair, Ctrl/Cmd+Enter
+ * submits), comments follow newest-first, own comments are soft-deleted
+ * behind a confirmation, older pages load on demand with the opaque
+ * cursor. A comment written by someone else arrives as a `type: "activity"`
+ * SSE frame and is pulled in live; the frame carries only the comment id,
+ * the body comes from the ordinary list endpoint.
  */
 export function CardComments({
   cardId,
@@ -71,6 +72,9 @@ export function CardComments({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<CommentDto | null>(null);
+  // The editor owns its state between mounts (like the description), so a
+  // cleared draft is applied by remounting it with a fresh key.
+  const [editorNonce, setEditorNonce] = useState(0);
 
   const loadFirst = useCallback(async () => {
     if (!serverMode) return;
@@ -138,19 +142,21 @@ export function CardComments({
 
   const handleSend = async () => {
     if (!canSend || user === null) return;
+    const text = trimmed;
     const tempId = `pending-${createId()}`;
     const optimistic: CommentDto = {
       id: tempId,
       cardId,
       authorId: user.id,
-      text: trimmed,
+      text,
       createdAt: Date.now(),
     };
     setItems((prev) => [optimistic, ...prev]);
     setDraft("");
+    setEditorNonce((nonce) => nonce + 1);
     setSending(true);
     try {
-      const saved = await api.createComment(cardId, trimmed);
+      const saved = await api.createComment(cardId, text);
       setItems((prev) => [
         saved,
         ...prev.filter(
@@ -159,11 +165,17 @@ export function CardComments({
       ]);
     } catch {
       setItems((prev) => prev.filter((comment) => comment.id !== tempId));
-      setDraft(trimmed);
+      setDraft(text);
+      setEditorNonce((nonce) => nonce + 1);
       toast.error(t("comment.sendError"));
     } finally {
       setSending(false);
     }
+  };
+
+  const handleCancel = () => {
+    setDraft("");
+    setEditorNonce((nonce) => nonce + 1);
   };
 
   const handleDelete = async () => {
@@ -201,17 +213,20 @@ export function CardComments({
           draft={draft}
           sending={sending}
           canSend={canSend}
+          editorNonce={editorNonce}
           onDraftChange={setDraft}
-          onSend={() => void handleSend()}
+          onSubmit={() => void handleSend()}
+          onCancel={handleCancel}
         />
       ) : null}
 
+      {/* The empty state aligns with the comment column, not the avatar. */}
       {items.length === 0 ? (
-        <p className="py-2 text-sm text-muted-foreground/70">
+        <p className="py-1 pl-[36px] text-sm text-muted-foreground/70">
           {t("comment.empty")}
         </p>
       ) : (
-        <ol className="space-y-3" data-testid="comment-list">
+        <ol className="space-y-4" data-testid="comment-list">
           {items.map((comment) => (
             <CommentRow
               key={comment.id}
@@ -226,19 +241,21 @@ export function CardComments({
       )}
 
       {nextCursor !== null ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground"
-          disabled={loadingOlder}
-          data-testid="comments-show-older"
-          onClick={() => void handleShowOlder()}
-        >
-          {loadingOlder ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : null}
-          {t("comment.showOlder")}
-        </Button>
+        <div className="pl-[36px]">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            disabled={loadingOlder}
+            data-testid="comments-show-older"
+            onClick={() => void handleShowOlder()}
+          >
+            {loadingOlder ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : null}
+            {t("comment.showOlder")}
+          </Button>
+        </div>
       ) : null}
 
       <ConfirmDialog
@@ -261,79 +278,89 @@ interface CommentComposerProps {
   draft: string;
   sending: boolean;
   canSend: boolean;
+  /** Bumped by the parent to reset the editor (send/cancel/error paths). */
+  editorNonce: number;
   onDraftChange: (value: string) => void;
-  onSend: () => void;
+  onSubmit: () => void;
+  onCancel: () => void;
 }
 
+/**
+ * Jira's comment box: avatar on the left, the markdown field that grows
+ * with the text, and a quiet Cancel next to the primary Save underneath —
+ * no icon theatrics, the buttons are labels.
+ */
 function CommentComposer({
   user,
   draft,
   sending,
   canSend,
+  editorNonce,
   onDraftChange,
-  onSend,
+  onSubmit,
+  onCancel,
 }: CommentComposerProps) {
   const { t } = useI18n();
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-
-  // Grow with the text like Jira; past the ceiling the textarea scrolls.
-  useLayoutEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
-    el.style.overflowY =
-      el.scrollHeight > COMPOSER_MAX_HEIGHT ? "auto" : "hidden";
-  }, [draft]);
+  const dirty = draft.trim().length > 0;
 
   return (
     <div className="flex items-start gap-2.5">
+      {/* The nudge keeps the round avatar visually inside the column the
+          rectangular switcher border opens. */}
       <UserAvatar
         userId={user.id}
         displayName={user.displayName}
         email={user.email}
         color={user.avatarColor}
         size="sm"
-        className="mt-1 shrink-0"
+        className="ml-0.5 mt-0.5 shrink-0"
       />
-      <div className="min-w-0 flex-1 space-y-1">
-        <Textarea
-          ref={textareaRef}
-          name="card-comment"
-          rows={1}
-          value={draft}
-          maxLength={LIMITS.comment}
-          placeholder={t("comment.placeholder")}
-          data-testid="comment-input"
-          className="min-h-9 resize-none bg-card"
-          onChange={(event) => onDraftChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              onSend();
-            }
-            if (event.key === "Escape") onDraftChange("");
-          }}
-        />
+      <div className="min-w-0 flex-1 space-y-2">
+        <Suspense
+          fallback={
+            /* Same footprint as the single-line editor so the thread
+               doesn't jump while the chunk streams in. */
+            <div className="h-9 animate-pulse rounded-md bg-muted/40" />
+          }
+        >
+          <CommentComposerEditor
+            key={editorNonce}
+            value={draft}
+            onChange={onDraftChange}
+            onSubmit={onSubmit}
+            placeholder={t("comment.placeholder")}
+          />
+        </Suspense>
         <div className="flex items-center justify-between gap-2">
           <LimitCounter
             length={draft.length}
             limit={LIMITS.comment}
             testId="comment-counter"
           />
-          <Button
-            size="sm"
-            disabled={!canSend}
-            data-testid="comment-send"
-            onClick={onSend}
-          >
-            {sending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Send className="h-3.5 w-3.5" />
-            )}
-            {t("comment.send")}
-          </Button>
+          <div className="flex items-center gap-1.5">
+            {dirty ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={sending}
+                data-testid="comment-cancel"
+                onClick={onCancel}
+              >
+                {t("comment.cancel")}
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              disabled={!canSend}
+              data-testid="comment-send"
+              onClick={onSubmit}
+            >
+              {sending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : null}
+              {t("comment.send")}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
@@ -366,7 +393,7 @@ function CommentRow({
 
   return (
     <li
-      className={`flex items-start gap-2.5 text-sm ${pending ? "opacity-60" : ""}`}
+      className={`group flex items-start gap-2.5 text-sm ${pending ? "opacity-60" : ""}`}
       data-testid="comment"
       data-pending={pending ? "true" : undefined}
     >
@@ -374,7 +401,7 @@ function CommentRow({
         type="button"
         aria-label={t("profile.open", { name })}
         onClick={() => openProfile(comment.authorId)}
-        className="mt-0.5 inline-flex shrink-0 rounded-full"
+        className="ml-0.5 mt-0.5 inline-flex shrink-0 rounded-full"
       >
         <UserAvatar
           userId={comment.authorId}
@@ -407,30 +434,24 @@ function CommentRow({
               type="button"
               aria-label={t("comment.delete")}
               data-testid="comment-delete"
-              className="ml-auto shrink-0 rounded-sm p-1 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+              className="ml-auto shrink-0 rounded-sm p-1 text-muted-foreground/60 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
               onClick={onDelete}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           ) : null}
         </div>
-        <p className="mt-0.5 whitespace-pre-wrap break-words text-foreground/90">
-          {splitLinks(comment.text).map((segment, index) =>
-            segment.type === "link" ? (
-              <a
-                key={index}
-                href={segment.value}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="text-primary underline underline-offset-2"
-              >
-                {segment.value}
-              </a>
-            ) : (
-              <span key={index}>{segment.value}</span>
-            ),
-          )}
-        </p>
+        <div className="mt-0.5 text-foreground/90">
+          <Suspense
+            fallback={
+              /* Raw text for a frame — the real chunk is cached after the
+                 first open, so this is only the composer's own chunk ride. */
+              <p className="whitespace-pre-wrap break-words">{comment.text}</p>
+            }
+          >
+            <CommentBody text={comment.text} />
+          </Suspense>
+        </div>
       </div>
     </li>
   );

@@ -104,4 +104,27 @@ export const descriptionEditorPlugins: RealmPlugin[] = [
 /** Read-only description (VIEWER, TASK-35): content only, no toolbar. */
 export const descriptionViewerPlugins: RealmPlugin[] = [...contentPlugins];
 
+/**
+ * The comment composer's plugin set (TASK-37): the same content engine as
+ * the description, but a compact toolbar — character formatting, lists and
+ * links only. No block-type select and no undo buttons: a comment is short
+ * prose, headings via markdown shortcuts still work for those who type them.
+ */
+export const commentEditorPlugins: RealmPlugin[] = [
+  ...contentPlugins,
+  toolbarPlugin({
+    toolbarClassName: "janosik-mdx-toolbar",
+    toolbarContents: () => (
+      <>
+        <BoldItalicUnderlineToggles options={["Bold", "Italic"]} />
+        <StrikeThroughSupSubToggles options={["Strikethrough"]} />
+        <CodeToggle />
+        <Separator />
+        <ListsToggle options={["bullet", "number", "check"]} />
+        <CreateLink />
+      </>
+    ),
+  }),
+];
+
 export { editorTranslation, janosikIconFor };

@@ -95,19 +95,23 @@ describe("CardDialog copy link (TASK-37)", () => {
     expect(await screen.findByText("Card link copied")).toBeInTheDocument();
   });
 
-  it("keeps the Activity section last, opened on Comments", async () => {
+  it("switches between Comments and History with the segmented tabs", async () => {
     render(tree(<CardDialog cardId="card-1" open onOpenChange={() => {}} />));
-    const region = screen.getByTestId("activity-toggle");
-    expect(screen.getByTestId("activity-tab-comments")).toBeInTheDocument();
-    expect(region.closest("section")).toHaveAttribute("data-expanded", "true");
-
-    fireEvent.pointerDown(screen.getByTestId("activity-more"), {
-      button: 0,
-      ctrlKey: false,
-    });
-    fireEvent.click(await screen.findByTestId("activity-more-history"));
     expect(
-      await screen.findByTestId("activity-tab-history"),
-    ).toBeInTheDocument();
+      screen.getByTestId("activity-toggle").closest("section"),
+    ).toHaveAttribute("data-expanded", "true");
+
+    const comments = screen.getByTestId("activity-tab-comments");
+    expect(comments).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByTestId("activity-tab-history"));
+    expect(screen.getByTestId("activity-tab-history")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(comments).toHaveAttribute("aria-pressed", "false");
+    expect(await screen.findByTestId("history-list")).toBeInTheDocument();
+    // The inactive view unmounts — the thread is re-read on return.
+    expect(screen.queryByTestId("comment-input")).toBeNull();
   });
 });

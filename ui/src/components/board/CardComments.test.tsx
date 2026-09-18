@@ -19,10 +19,37 @@ import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 import { FakeServer } from "@/test/fake-server";
 
+// The real composer/body are MDXEditor (lazy chunk, jsdom-heavy); the
+// thread behaviour under test is the data flow, not the editor internals.
+vi.mock("@/components/editor/CommentEditor", () => ({
+  CommentComposerEditor: ({
+    onChange,
+    onSubmit,
+    placeholder,
+  }: {
+    onChange: (value: string) => void;
+    onSubmit: () => void;
+    placeholder?: string;
+  }) => (
+    <textarea
+      data-testid="comment-input"
+      placeholder={placeholder}
+      onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+          onSubmit();
+        }
+      }}
+    />
+  ),
+  CommentBody: ({ text }: { text: string }) => <p>{text}</p>,
+}));
+
 /**
- * The card comment thread (TASK-37) over the fake API: optimistic send with
- * Enter, own-comment deletion behind a confirmation, cursor pagination and
- * the live arrival of someone else's comment through the SSE bridge.
+ * The card comment thread (TASK-37) over the fake API: optimistic send via
+ * Save or Ctrl/Cmd+Enter, Cancel clearing the draft, own-comment deletion
+ * behind a confirmation, cursor pagination and the live arrival of someone
+ * else's comment through the SSE bridge.
  */
 
 function seedBoard(): Board {
@@ -95,16 +122,17 @@ afterEach(() => {
 });
 
 describe("CardComments", () => {
-  it("lists the thread and sends a comment with Enter, optimistically", async () => {
+  it("lists the thread and sends a comment via Save, optimistically", async () => {
     const server = new FakeServer([seedBoard()]);
     server.seedComments("card-1", [comment({ text: "Old note" })]);
     renderComments(server);
 
     expect(await screen.findByText("Old note")).toBeInTheDocument();
 
-    const input = screen.getByTestId("comment-input");
+    // The composer is lazy (MDXEditor chunk), so it resolves a tick later.
+    const input = await screen.findByTestId("comment-input");
     fireEvent.change(input, { target: { value: "  Fresh take  " } });
-    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.click(screen.getByTestId("comment-send"));
 
     // The optimistic row appears before the server answers.
     await waitFor(() =>
@@ -115,7 +143,8 @@ describe("CardComments", () => {
         "data-pending",
       ),
     );
-    expect(input).toHaveValue("");
+    // A sent draft resets the editor by remounting it.
+    expect(await screen.findByTestId("comment-input")).toHaveValue("");
     expect(
       server.requests.find(
         (request) =>
@@ -125,13 +154,13 @@ describe("CardComments", () => {
     ).toEqual({ text: "Fresh take" });
   });
 
-  it("keeps Shift+Enter for newlines and guards the limit", async () => {
+  it("submits with Ctrl/Cmd+Enter and keeps plain Enter harmless", async () => {
     const server = new FakeServer([seedBoard()]);
     renderComments(server);
     const input = await screen.findByTestId("comment-input");
 
-    fireEvent.change(input, { target: { value: "line one" } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    fireEvent.change(input, { target: { value: "Keyboard one" } });
+    fireEvent.keyDown(input, { key: "Enter" });
     expect(
       server.requests.some(
         (request) =>
@@ -140,8 +169,50 @@ describe("CardComments", () => {
       ),
     ).toBe(false);
 
+    fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.path === "/api/v1/cards/card-1/comments",
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("guards the limit and disables Save on an empty draft", async () => {
+    const server = new FakeServer([seedBoard()]);
+    renderComments(server);
+    const input = await screen.findByTestId("comment-input");
+    const send = screen.getByTestId("comment-send");
+
+    expect(send).toBeDisabled();
     fireEvent.change(input, { target: { value: "x".repeat(2001) } });
+    expect(send).toBeDisabled();
+    fireEvent.change(input, { target: { value: "ok" } });
+    expect(send).toBeEnabled();
+  });
+
+  it("clears the draft with Cancel and sends nothing", async () => {
+    const server = new FakeServer([seedBoard()]);
+    renderComments(server);
+    const input = await screen.findByTestId("comment-input");
+
+    fireEvent.change(input, { target: { value: "To be discarded" } });
+    fireEvent.click(screen.getByTestId("comment-cancel"));
+
+    // Cancel resets the editor by remounting it.
+    expect(await screen.findByTestId("comment-input")).toHaveValue("");
     expect(screen.getByTestId("comment-send")).toBeDisabled();
+    expect(screen.queryByTestId("comment-cancel")).toBeNull();
+    expect(
+      server.requests.some(
+        (request) =>
+          request.method === "POST" &&
+          request.path === "/api/v1/cards/card-1/comments",
+      ),
+    ).toBe(false);
   });
 
   it("deletes an own comment after the confirmation", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitLinks } from "./linkify";
+import { autolinkMarkdown, splitLinks } from "./linkify";
 
 describe("splitLinks", () => {
   it("splits a url out of plain text", () => {
@@ -25,5 +25,29 @@ describe("splitLinks", () => {
       { type: "link", value: "https://c.d" },
     ]);
     expect(splitLinks("hello")).toEqual([{ type: "text", value: "hello" }]);
+  });
+});
+
+describe("autolinkMarkdown", () => {
+  it("wraps bare urls into markdown links", () => {
+    expect(autolinkMarkdown("see https://a.b/c now")).toBe(
+      "see [https://a.b/c](https://a.b/c) now",
+    );
+  });
+
+  it("keeps sentence punctuation outside the link", () => {
+    expect(autolinkMarkdown("go https://a.b/c.")).toBe(
+      "go [https://a.b/c](https://a.b/c).",
+    );
+  });
+
+  it("leaves existing markdown links alone", () => {
+    expect(autolinkMarkdown("[label](https://a.b) and https://c.d")).toBe(
+      "[label](https://a.b) and [https://c.d](https://c.d)",
+    );
+  });
+
+  it("returns markdown without urls untouched", () => {
+    expect(autolinkMarkdown("plain **bold** text")).toBe("plain **bold** text");
   });
 });

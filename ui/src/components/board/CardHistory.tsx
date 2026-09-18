@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { useToast } from "@/components/Toast";
+import { cn } from "@/lib/utils";
 import {
   formatDate,
   formatRelative,
@@ -21,6 +22,7 @@ import {
 } from "@/i18n";
 import { useBoardLive, useBoardMember } from "@/store/board-live";
 import { userLabel } from "@/utils/avatar";
+import { diffSides, type DiffSegment } from "@/utils/diff-words";
 import { foldHistory } from "@/utils/history-fold";
 
 /** Newest-first page size of the history feed. */
@@ -79,6 +81,7 @@ const FIELD_KEYS: Record<string, MessageKey> = {
   label: "history.field.label",
   checklist: "history.field.checklist",
   checklistItem: "history.field.checklistItem",
+  comment: "history.field.comment",
   cover: "history.field.cover",
 };
 
@@ -91,8 +94,8 @@ interface CardHistoryProps {
 }
 
 /**
- * The History view of the Activity section (TASK-37): the server feed of
- * everything that happened to the card, newest-first, with Jira-style
+ * The History subsection of the Activity section (TASK-37): the server feed
+ * of everything that happened to the card, newest-first, with Jira-style
  * "from → to" diffs frozen at command time (`Command.details`).
  *
  * Without a server the feed falls back to the in-memory reducer timeline —
@@ -108,7 +111,7 @@ export function CardHistory({
   const { t } = useI18n();
   const toast = useToast();
   const serverMode = isApiEnabled();
-  const { activity } = useBoardLive();
+  const { activity, commits } = useBoardLive();
 
   const [entries, setEntries] = useState<ActivityFeedEntry[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -165,6 +168,18 @@ export function CardHistory({
     });
   }, [activity, boardId, cardId, serverMode, refreshNewest]);
 
+  // Own commands settle here only after the server has them. The
+  // optimistic `updatedAt` bump fires earlier and its fetch runs before
+  // the command commits — without this signal the newest entry would
+  // appear one action late.
+  useEffect(() => {
+    if (!serverMode) return;
+    return commits.subscribe((committedBoardId) => {
+      if (committedBoardId !== boardId) return;
+      void refreshNewest();
+    });
+  }, [commits, boardId, serverMode, refreshNewest]);
+
   const handleShowOlder = async () => {
     if (nextCursor === null || loadingOlder) return;
     setLoadingOlder(true);
@@ -183,36 +198,38 @@ export function CardHistory({
     ? foldHistory(entries)
     : localEntries(localActivity ?? [], updatedAt);
 
-  if (visible.length === 0) {
-    return (
-      <p className="py-2 text-sm text-muted-foreground/70">
-        {t("history.empty")}
-      </p>
-    );
-  }
-
   return (
-    <div className="space-y-3">
-      <ol className="space-y-2.5" data-testid="history-list">
-        {visible.map((entry) => (
-          <HistoryRow boardId={boardId} entry={entry} key={entry.id} />
-        ))}
-      </ol>
-      {nextCursor !== null ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground"
-          disabled={loadingOlder}
-          data-testid="history-show-older"
-          onClick={() => void handleShowOlder()}
-        >
-          {loadingOlder ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+    <div className="space-y-2">
+      {visible.length === 0 ? (
+        <p className="py-1 text-sm text-muted-foreground/70">
+          {t("history.empty")}
+        </p>
+      ) : (
+        <>
+          <ol className="space-y-3" data-testid="history-list">
+            {visible.map((entry) => (
+              <HistoryRow boardId={boardId} entry={entry} key={entry.id} />
+            ))}
+          </ol>
+          {nextCursor !== null ? (
+            <div className="pl-[36px]">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                disabled={loadingOlder}
+                data-testid="history-show-older"
+                onClick={() => void handleShowOlder()}
+              >
+                {loadingOlder ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                {t("history.showOlder")}
+              </Button>
+            </div>
           ) : null}
-          {t("history.showOlder")}
-        </Button>
-      ) : null}
+        </>
+      )}
     </div>
   );
 }
@@ -276,23 +293,23 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
           type="button"
           aria-label={t("profile.open", { name })}
           onClick={() => openProfile(entry.actorId)}
-          className="mt-0.5 inline-flex shrink-0 rounded-full"
+          className="ml-0.5 mt-0.5 inline-flex shrink-0 rounded-full"
         >
           <UserAvatar
             userId={entry.actorId}
             displayName={member?.displayName ?? null}
             email={member?.email ?? ""}
             color={member?.avatarColor}
-            size="xs"
+            size="sm"
             className="ring-1 ring-border/60"
           />
         </button>
       ) : (
-        <span className="mt-1 h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span className="ml-0.5 mt-0.5 h-6 w-6 shrink-0" aria-hidden />
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="min-w-0 flex-1 truncate text-foreground/90">
+          <p className="min-w-0 flex-1 text-foreground/90">
             {name ? (
               <>
                 <button
@@ -306,7 +323,7 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
               </>
             ) : null}
             {t(sentence.key, sentence.params)}
-          </span>
+          </p>
           <time
             className="shrink-0 text-[11px] text-muted-foreground/70"
             dateTime={new Date(entry.at).toISOString()}
@@ -318,20 +335,44 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
         </div>
         {changes && changes.length > 0 ? (
           <ul className="mt-1 space-y-0.5" data-testid="history-diff">
-            {changes.map((change, index) => (
-              <li
-                key={`${change.field}-${index}`}
-                className="text-xs text-muted-foreground"
-              >
-                <span className="font-medium text-muted-foreground/80">
-                  {t(FIELD_KEYS[change.field] ?? "history.field.title")}
-                </span>
-                {": "}
-                <HistoryValue field={change.field} value={change.from} />
-                <span className="px-1 text-muted-foreground/50">→</span>
-                <HistoryValue field={change.field} value={change.to} />
-              </li>
-            ))}
+            {changes.map((change, index) => {
+              const diffable =
+                change.from !== null &&
+                change.to !== null &&
+                change.field !== "dueDate";
+              const sides = diffable
+                ? diffSides(change.from ?? "", change.to ?? "")
+                : null;
+              return (
+                <li
+                  key={`${change.field}-${index}`}
+                  className="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-baseline gap-x-2 text-xs text-muted-foreground"
+                >
+                  <span className="font-medium text-foreground/70">
+                    {t(FIELD_KEYS[change.field] ?? "history.field.title")}
+                  </span>
+                  {/* Jira's halves: what was on the left of the arrow, what
+                      appeared on the right — equal space, wrapping freely.
+                      The unchanged context shrinks to an ellipsis stub so
+                      the highlighted fragment is what the eye lands on. */}
+                  <span className="min-w-0 text-right [overflow-wrap:anywhere]">
+                    {sides ? (
+                      <DiffSegments segments={sides.left} />
+                    ) : (
+                      <HistoryValue field={change.field} value={change.from} />
+                    )}
+                  </span>
+                  <span className="text-muted-foreground/50">→</span>
+                  <span className="min-w-0 [overflow-wrap:anywhere]">
+                    {sides ? (
+                      <DiffSegments segments={sides.right} />
+                    ) : (
+                      <HistoryValue field={change.field} value={change.to} />
+                    )}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         ) : null}
       </div>
@@ -354,12 +395,48 @@ function renderedChanges(
   return visible.length > 0 ? visible : undefined;
 }
 
+/**
+ * One half of a word-diff: unchanged context in the muted body color, the
+ * removed fragment struck through in red, the added one in green.
+ */
+function DiffSegments({ segments }: { segments: DiffSegment[] }) {
+  return (
+    <>
+      {segments.map((segment, index) => {
+        if (segment.kind === "same") {
+          return (
+            <span key={index} className="text-foreground/70">
+              {segment.text}
+            </span>
+          );
+        }
+        return (
+          <span
+            key={index}
+            data-diff={segment.kind}
+            className={cn(
+              "rounded-sm px-0.5 font-medium",
+              segment.kind === "removed"
+                ? "bg-danger/10 text-danger line-through decoration-danger/50"
+                : "bg-success/10 text-success",
+            )}
+          >
+            {segment.text}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 function HistoryValue({
   field,
   value,
+  className,
 }: {
   field: string;
   value: string | null;
+  className?: string;
 }) {
   const { lang } = useI18n();
   const hour12 = useHour12();
@@ -370,13 +447,13 @@ function HistoryValue({
     const at = Date.parse(value);
     if (Number.isFinite(at)) {
       return (
-        <span className="text-foreground/80">
+        <span className={cn("text-foreground/80", className)}>
           {formatDate(at, lang, hour12)}
         </span>
       );
     }
   }
-  return <span className="break-words text-foreground/80">{value}</span>;
+  return <span className={cn("text-foreground/80", className)}>{value}</span>;
 }
 
 /** The sentence for one entry: special cases first, maps as fallback. */
