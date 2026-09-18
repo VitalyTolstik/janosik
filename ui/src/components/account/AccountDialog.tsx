@@ -109,7 +109,10 @@ export function AccountDialog() {
 
       <DialogContent
         data-testid="account-dialog"
-        className="w-[calc(100vw-1.5rem)] gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        // Fixed, viewport-bound height: sections differ in content length,
+        // so the panel must not resize when switching tabs. Caps at 48rem on
+        // tall screens, otherwise leaves a 1rem margin above and below.
+        className="h-[min(48rem,calc(100dvh-2rem))] w-[calc(100vw-1.5rem)] gap-0 overflow-hidden p-0 sm:max-w-3xl"
       >
         {/* Identity band: who you are, at a glance. */}
         <div className="relative flex shrink-0 items-center gap-4 border-b bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-5 py-4 pr-12">
