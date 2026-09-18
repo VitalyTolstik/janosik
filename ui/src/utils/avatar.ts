@@ -1,62 +1,84 @@
 /**
- * Avatar helpers (TASK-35) — kept out of the component file so the palette,
- * the initials rule and the label rule are testable without React and the
- * component module exports nothing but components (react-refresh).
+ * Avatar helpers (TASK-35, palette TASK-36.1) — kept out of the component
+ * file so the palette, the initials rule and the label rule are testable
+ * without React and the component module exports nothing but components
+ * (react-refresh).
+ *
+ * A user either picks a palette color (persisted in `User.avatarColor`) or
+ * gets the stable id-hash default; every avatar surface takes the picked
+ * value as an optional second argument and falls back to the hash.
  */
 
-const AVATAR_COLORS = [
-  "bg-primary",
-  "bg-secondary",
-  "bg-blue",
-  "bg-indigo",
-  "bg-teal",
-  "bg-success",
-  "bg-orange",
-  "bg-danger",
-  "bg-fuchsia",
-  "bg-pink",
-  "bg-slate",
-] as const;
+import { USER_AVATAR_COLORS, type UserAvatarColor } from "@janosik/shared";
+
+const AVATAR_CLASS: Record<UserAvatarColor, string> = {
+  primary: "bg-primary",
+  secondary: "bg-secondary",
+  blue: "bg-blue",
+  indigo: "bg-indigo",
+  teal: "bg-teal",
+  success: "bg-success",
+  orange: "bg-orange",
+  danger: "bg-danger",
+  fuchsia: "bg-fuchsia",
+  pink: "bg-pink",
+  slate: "bg-slate",
+};
 
 /**
- * The same palette as CSS variables, index-aligned with `AVATAR_COLORS` —
- * for the surfaces a class cannot reach (the foreign-change ring is painted
- * with `box-shadow`/`color-mix` from an inline style, because its color must
- * animate and class-based colors cannot be interpolated per user).
+ * The same palette as CSS variables, for the surfaces a class cannot reach
+ * (the foreign-change ring is painted with `box-shadow`/`color-mix` from an
+ * inline style, because its color must animate and class-based colors cannot
+ * be interpolated per user).
  */
-const AVATAR_COLOR_VARS = [
-  "var(--primary)",
-  "var(--secondary)",
-  "var(--blue)",
-  "var(--indigo)",
-  "var(--teal)",
-  "var(--success)",
-  "var(--orange)",
-  "var(--danger)",
-  "var(--fuchsia)",
-  "var(--pink)",
-  "var(--slate)",
-] as const;
+const AVATAR_VAR: Record<UserAvatarColor, string> = {
+  primary: "var(--primary)",
+  secondary: "var(--secondary)",
+  blue: "var(--blue)",
+  indigo: "var(--indigo)",
+  teal: "var(--teal)",
+  success: "var(--success)",
+  orange: "var(--orange)",
+  danger: "var(--danger)",
+  fuchsia: "var(--fuchsia)",
+  pink: "var(--pink)",
+  slate: "var(--slate)",
+};
 
-function avatarIndex(userId: string): number {
+/** Palette order for pickers (the server validates against the same list). */
+export const AVATAR_COLOR_KEYS = USER_AVATAR_COLORS;
+
+/** Background class of a palette key — used by the profile color picker. */
+export function avatarColorClass(color: UserAvatarColor): string {
+  return AVATAR_CLASS[color];
+}
+
+/** Stable hash color of a user id — the default when no color was picked. */
+export function avatarColorKey(userId: string): UserAvatarColor {
   let hash = 0;
   for (let i = 0; i < userId.length; i++) {
     hash = (hash * 31 + userId.charCodeAt(i)) | 0;
   }
-  return Math.abs(hash) % AVATAR_COLORS.length;
+  return AVATAR_COLOR_KEYS[Math.abs(hash) % AVATAR_COLOR_KEYS.length];
 }
 
-/** Stable color class for a user — derived from the id, no storage needed. */
-export function userAvatarColor(userId: string): string {
-  return AVATAR_COLORS[avatarIndex(userId)];
+/** Color class for a user: the picked key when present, else the hash. */
+export function userAvatarColor(
+  userId: string,
+  color?: UserAvatarColor | null,
+): string {
+  return AVATAR_CLASS[color ?? avatarColorKey(userId)];
 }
 
 /**
- * The same stable color as a CSS color value (`var(--token)`) for inline
- * styles — attribution rings and row tints that have to match the avatar.
+ * The same color as a CSS color value (`var(--token)`) for inline styles —
+ * attribution rings and row tints that have to match the avatar.
  */
-export function userAvatarVar(userId: string): string {
-  return AVATAR_COLOR_VARS[avatarIndex(userId)];
+export function userAvatarVar(
+  userId: string,
+  color?: UserAvatarColor | null,
+): string {
+  return AVATAR_VAR[color ?? avatarColorKey(userId)];
 }
 
 /**

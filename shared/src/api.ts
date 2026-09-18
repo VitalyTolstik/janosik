@@ -9,6 +9,7 @@
 
 import type { BoardAction } from "./store/board-reducer";
 import type { Board } from "./types/kanban";
+import type { UserAvatarColor } from "./types/account";
 import type { BoardExportFile } from "./utils/board-serialization";
 
 /** Body of `POST /boards/:id/commands` (§7.0). */
@@ -87,6 +88,8 @@ export interface CommandSseEvent {
 export interface PresenceUser {
   id: string;
   displayName: string;
+  /** Chosen avatar color (TASK-36.1); `null` → the id-hash default. */
+  avatarColor: UserAvatarColor | null;
 }
 
 /** Server-sent event listing the users currently on the board (TASK-36). */
@@ -140,6 +143,8 @@ export interface BoardMemberDto {
   role: BoardRole;
   /** Unix ms expiry of a time-limited VIEWER; `null` when unbounded. */
   expiresAt: number | null;
+  /** Chosen avatar color (TASK-36.1); `null` → the id-hash default. */
+  avatarColor: UserAvatarColor | null;
 }
 
 /** Body of `POST /boards/:id/members` — ADMIN-only invite (TASK-35). */
@@ -276,6 +281,10 @@ export interface AuthUserDto {
   id: string;
   email: string;
   displayName: string | null;
+  /** Chosen avatar color (TASK-36.1); `null` → the id-hash default. */
+  avatarColor: UserAvatarColor | null;
+  /** Unix ms of account creation — "member since" in the account panel. */
+  createdAt: number;
 }
 
 /**
@@ -285,4 +294,48 @@ export interface AuthUserDto {
 export interface AuthResponseDto {
   accessToken: string;
   user: AuthUserDto;
+}
+
+/** Body of `PATCH /users/me` (TASK-36.1): only changed fields are sent. */
+export interface UpdateProfileRequest {
+  /** `null` clears the name (the UI then falls back to the email). */
+  displayName?: string | null;
+  /** `null` restores the id-hash default color. */
+  avatarColor?: UserAvatarColor | null;
+}
+
+/** Body of `POST /users/me/password` (TASK-36.1). */
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
+/**
+ * A personal API token as listed by `GET /users/me/tokens` (TASK-36.1).
+ * The plaintext is never returned again after creation.
+ */
+export interface UserTokenDto {
+  id: string;
+  name: string;
+  /** Unix ms. */
+  createdAt: number;
+  /** Unix ms of the last authenticated request; `null` until first use. */
+  lastUsedAt: number | null;
+  /** Unix ms expiry; `null` = never expires. */
+  expiresAt: number | null;
+  /** Unix ms revoke time; `null` while active/expired. */
+  revokedAt: number | null;
+}
+
+/** Body of `POST /users/me/tokens` (TASK-36.1). */
+export interface CreateUserTokenRequest {
+  name: string;
+  /** ISO-8601 expiry; omitted/`null` = never expires. Must be in the future. */
+  expiresAt?: string | null;
+}
+
+/** Response of `POST /users/me/tokens`: the plaintext appears exactly once. */
+export interface CreateUserTokenResponse {
+  token: string;
+  apiToken: UserTokenDto;
 }

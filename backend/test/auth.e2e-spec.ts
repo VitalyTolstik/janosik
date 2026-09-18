@@ -35,6 +35,7 @@ describe("Auth API (e2e)", () => {
     await app.init();
     prisma = app.get(PrismaService);
     // Refresh tokens first: the FK restricts deleting a user with sessions.
+    await prisma.apiToken.deleteMany();
     await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
@@ -80,6 +81,8 @@ describe("Auth API (e2e)", () => {
       id: expect.any(String),
       email: FIRST_EMAIL,
       displayName: "Vera",
+      avatarColor: null,
+      createdAt: expect.any(Number),
     });
   });
 

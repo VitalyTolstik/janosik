@@ -6,9 +6,10 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { AuthGuard } from "@nestjs/passport";
 import { Role } from "@prisma/client";
+import { ApiTokenService } from "@/auth/api-token.service";
 import type { AuthUser } from "@/auth/auth.types";
+import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BOARD_ROLES_KEY } from "./board-roles.decorator";
 
@@ -35,14 +36,18 @@ export interface GuardedRequest {
  * The resolved membership is attached to `req.boardMembership` and is
  * available through `@CurrentMembership()`. `CardAccessGuard` extends this
  * class with card/comment → board resolution.
+ *
+ * Authentication goes through `JwtAuthGuard`, so a personal API token
+ * (TASK-36.1) opens board-scoped routes exactly like a JWT.
  */
 @Injectable()
-export class MembershipGuard extends AuthGuard("jwt") implements CanActivate {
+export class MembershipGuard extends JwtAuthGuard implements CanActivate {
   constructor(
     protected readonly reflector: Reflector,
     protected readonly prisma: PrismaService,
+    apiTokens: ApiTokenService,
   ) {
-    super();
+    super(apiTokens);
   }
 
   override async canActivate(context: ExecutionContext): Promise<boolean> {

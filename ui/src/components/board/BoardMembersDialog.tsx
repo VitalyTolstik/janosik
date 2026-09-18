@@ -15,6 +15,7 @@ import {
   TimePickerPanel,
   TimePickerTrigger,
 } from "@/components/board/TimePicker";
+import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { useToast } from "@/components/Toast";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar-lazy";
@@ -329,6 +330,7 @@ export function BoardMembersPanel({
   const { t, lang } = useI18n();
   const toast = useToast();
   const { user } = useAuth();
+  const openProfile = useOpenProfile();
 
   const [members, setMembers] = useState<BoardMemberDto[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -543,41 +545,50 @@ export function BoardMembersPanel({
                   data-user-id={member.userId}
                   className="flex items-center gap-3 px-4 py-3"
                 >
-                  <UserAvatar
-                    userId={member.userId}
-                    displayName={member.displayName}
-                    email={member.email}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-                      {label}
-                      {member.userId === user?.id ? (
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
-                          {t("board.members.you")}
-                        </span>
-                      ) : null}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {member.email}
-                    </p>
-                    {member.role === "VIEWER" ? (
-                      <p
-                        className={cn(
-                          "truncate text-xs",
-                          expired ? "text-danger" : "text-muted-foreground",
-                        )}
-                      >
-                        {member.expiresAt === null
-                          ? t("board.members.expires.never")
-                          : t("board.members.expires.until", {
-                              date: formatDateOnly(member.expiresAt, lang),
-                            })}
-                        {expired
-                          ? ` · ${t("board.members.expires.expired")}`
-                          : ""}
+                  <button
+                    type="button"
+                    data-testid="board-member-open"
+                    aria-label={t("profile.open", { name: label })}
+                    onClick={() => openProfile(member.userId)}
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left transition-opacity hover:opacity-80"
+                  >
+                    <UserAvatar
+                      userId={member.userId}
+                      displayName={member.displayName}
+                      email={member.email}
+                      color={member.avatarColor}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                        {label}
+                        {member.userId === user?.id ? (
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                            {t("board.members.you")}
+                          </span>
+                        ) : null}
                       </p>
-                    ) : null}
-                  </div>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {member.email}
+                      </p>
+                      {member.role === "VIEWER" ? (
+                        <p
+                          className={cn(
+                            "truncate text-xs",
+                            expired ? "text-danger" : "text-muted-foreground",
+                          )}
+                        >
+                          {member.expiresAt === null
+                            ? t("board.members.expires.never")
+                            : t("board.members.expires.until", {
+                                date: formatDateOnly(member.expiresAt, lang),
+                              })}
+                          {expired
+                            ? ` · ${t("board.members.expires.expired")}`
+                            : ""}
+                        </p>
+                      ) : null}
+                    </div>
+                  </button>
 
                   {canManage ? (
                     <div className="flex shrink-0 items-center gap-1">

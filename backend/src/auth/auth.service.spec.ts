@@ -14,6 +14,7 @@ const prismaMock = {
   user: {
     create: jest.fn(),
     findUnique: jest.fn(),
+    update: jest.fn(),
   },
   refreshToken: {
     create: jest.fn(),
@@ -21,7 +22,7 @@ const prismaMock = {
     updateMany: jest.fn(),
   },
 } as unknown as PrismaService & {
-  user: Record<"create" | "findUnique", jest.Mock>;
+  user: Record<"create" | "findUnique" | "update", jest.Mock>;
   refreshToken: Record<"create" | "findUnique" | "updateMany", jest.Mock>;
 };
 
@@ -34,6 +35,7 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   email: "user@example.com",
   passwordHash: "",
   displayName: null,
+  avatarColor: null,
   disabledAt: null,
   createdAt: new Date("2026-09-01T00:00:00Z"),
   ...overrides,
@@ -72,6 +74,8 @@ describe("AuthService", () => {
         id: "user-1",
         email: "user@example.com",
         displayName: "Vera",
+        avatarColor: null,
+        createdAt: new Date("2026-09-01T00:00:00Z").getTime(),
       });
       expect(result.accessToken).toBe("access-token");
       // Audience isolation (TASK-36): user tokens are signed for this
@@ -297,6 +301,75 @@ describe("AuthService", () => {
 
     it("is a no-op without a cookie", async () => {
       await service.logout(undefined);
+      expect(prismaMock.refreshToken.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("changePassword", () => {
+    const current = "correct horse battery";
+    const next = "new correct horse battery";
+
+    it("hashes the new password and revokes every other session", async () => {
+      const passwordHash = await argon2.hash(current, {
+        type: argon2.argon2id,
+      });
+      prismaMock.user.findUnique.mockResolvedValue(makeUser({ passwordHash }));
+      prismaMock.user.update.mockResolvedValue(makeUser());
+      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.changePassword(
+        "user-1",
+        { currentPassword: current, newPassword: next },
+        "caller-cookie",
+      );
+
+      const stored = prismaMock.user.update.mock.calls[0][0].data.passwordHash;
+      expect(stored.startsWith("$argon2id$")).toBe(true);
+      expect(await argon2.verify(stored, next)).toBe(true);
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: {
+          userId: "user-1",
+          revokedAt: null,
+          tokenHash: { not: sha256("caller-cookie") },
+        },
+        data: { revokedAt: expect.any(Date) },
+      });
+    });
+
+    it("rejects a wrong current password without writing", async () => {
+      const passwordHash = await argon2.hash(current, {
+        type: argon2.argon2id,
+      });
+      prismaMock.user.findUnique.mockResolvedValue(makeUser({ passwordHash }));
+
+      const error = await service
+        .changePassword(
+          "user-1",
+          { currentPassword: "wrong horse battery", newPassword: next },
+          undefined,
+        )
+        .catch((e) => e);
+
+      expect(error).toBeInstanceOf(UnauthorizedException);
+      expect(error.message).toBe("Current password is incorrect");
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
+      expect(prismaMock.refreshToken.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("does not revoke anything when no caller cookie is present", async () => {
+      const passwordHash = await argon2.hash(current, {
+        type: argon2.argon2id,
+      });
+      prismaMock.user.findUnique.mockResolvedValue(makeUser({ passwordHash }));
+      prismaMock.user.update.mockResolvedValue(makeUser());
+
+      await service.changePassword(
+        "user-1",
+        { currentPassword: current, newPassword: next },
+        undefined,
+      );
+
+      expect(prismaMock.user.update).toHaveBeenCalled();
       expect(prismaMock.refreshToken.updateMany).not.toHaveBeenCalled();
     });
   });

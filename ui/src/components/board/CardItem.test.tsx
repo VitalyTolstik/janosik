@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
 import { AuthContext } from "@/auth/AuthContext";
 import { CardItem } from "@/components/board/CardItem";
+import { UserProfileProvider } from "@/components/board/UserProfileDialog";
 import {
   BoardLiveProvider,
   createBoardLive,
@@ -194,17 +195,26 @@ describe("attribution (TASK-36)", () => {
       <I18nProvider>
         <TooltipProvider>
           <BoardLiveProvider live={live}>
-            <AuthContext.Provider
-              value={{
-                status: "authenticated",
-                user: { id: ME, email: "me@example.com", displayName: "Me" },
-                login: async () => {},
-                register: async () => {},
-                logout: async () => {},
-              }}
-            >
-              <CardItem card={card} labels={[]} />
-            </AuthContext.Provider>
+            <UserProfileProvider boardId="b-1">
+              <AuthContext.Provider
+                value={{
+                  status: "authenticated",
+                  user: {
+                    id: ME,
+                    email: "me@example.com",
+                    displayName: "Me",
+                    avatarColor: null,
+                    createdAt: 0,
+                  },
+                  login: async () => {},
+                  register: async () => {},
+                  updateUser: () => {},
+                  logout: async () => {},
+                }}
+              >
+                <CardItem card={card} labels={[]} />
+              </AuthContext.Provider>
+            </UserProfileProvider>
           </BoardLiveProvider>
         </TooltipProvider>
       </I18nProvider>,
@@ -220,6 +230,7 @@ describe("attribution (TASK-36)", () => {
         email: "boris@example.com",
         role: "MEMBER",
         expiresAt: null,
+        avatarColor: null,
       },
     ]);
     live.attribution.stamp("b-1", "u-boris", ["c-1"], {
@@ -243,6 +254,30 @@ describe("attribution (TASK-36)", () => {
 
     expect(screen.queryByTestId("card-last-actor")).toBeNull();
     expect(screen.queryByTestId("user-avatar")).toBeNull();
+  });
+
+  it("opens the author's profile from the card footer", () => {
+    const live = createBoardLive();
+    live.members.set("b-1", [
+      {
+        userId: "u-boris",
+        displayName: "Boris",
+        email: "boris@example.com",
+        role: "MEMBER",
+        expiresAt: null,
+        avatarColor: null,
+      },
+    ]);
+    live.attribution.stamp("b-1", "u-boris", ["c-1"], {
+      at: Date.now() - 5 * 60_000,
+    });
+    renderWithLive(live);
+
+    fireEvent.click(screen.getByTestId("card-last-actor"));
+
+    expect(screen.getByTestId("user-profile-dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("user-profile-name")).toHaveTextContent("Boris");
+    expect(screen.getByTestId("user-profile-role")).toHaveTextContent("Member");
   });
 
   it("paints the foreign change ring while the highlight lasts", () => {

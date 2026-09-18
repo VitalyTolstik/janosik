@@ -34,6 +34,7 @@ const ADMIN: BoardMemberDto = {
   email: "boris@example.com",
   role: "ADMIN",
   expiresAt: null,
+  avatarColor: null,
 };
 
 const MEMBER: BoardMemberDto = {
@@ -42,6 +43,7 @@ const MEMBER: BoardMemberDto = {
   email: "quiet@example.com",
   role: "MEMBER",
   expiresAt: null,
+  avatarColor: null,
 };
 
 function renderPanel(canManage: boolean, children?: ReactNode) {
@@ -112,6 +114,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
       email: "new@example.com",
       role: "MEMBER",
       expiresAt: null,
+      avatarColor: null,
     });
 
     renderPanel(true);

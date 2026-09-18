@@ -15,6 +15,7 @@ import { REFRESH_COOKIE } from "./auth.types";
 import type { AuthResult, AuthResponse, AuthUser } from "./auth.types";
 import { AuthService } from "./auth.service";
 import { CurrentUser } from "./current-user.decorator";
+import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
 import { JwtAuthGuard } from "./jwt-auth.guard";
@@ -76,6 +77,21 @@ export class AuthController {
   @Get("me")
   me(@CurrentUser() user: AuthUser): AuthUser {
     return user;
+  }
+
+  // Lives under `/auth` on purpose: the refresh cookie is scoped to this
+  // path, so the endpoint can tell the caller's session from the others.
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post("password")
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ChangePasswordDto,
+    @RefreshToken() refreshToken: string | undefined,
+  ): Promise<{ status: "ok" }> {
+    await this.auth.changePassword(user.id, dto, refreshToken);
+    return { status: "ok" };
   }
 
   private withRefreshCookie(res: Response, result: AuthResult): AuthResponse {

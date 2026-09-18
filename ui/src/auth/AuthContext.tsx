@@ -37,6 +37,12 @@ export interface AuthValue {
     password: string,
     displayName?: string,
   ) => Promise<void>;
+  /**
+   * Replace the cached profile after a self-service update (TASK-36.1):
+   * the `PATCH /users/me` response is the fresh user, so the header avatar
+   * and every other consumer see the new name/color at once.
+   */
+  updateUser: (user: AuthUserDto) => void;
   logout: () => Promise<void>;
 }
 
@@ -45,6 +51,7 @@ const LOCAL_AUTH: AuthValue = {
   user: null,
   login: async () => {},
   register: async () => {},
+  updateUser: () => {},
   logout: async () => {},
 };
 
@@ -115,9 +122,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus("anonymous");
   }, []);
 
+  const updateUser = useCallback((next: AuthUserDto) => {
+    setUser(next);
+  }, []);
+
   const value = useMemo<AuthValue>(
-    () => ({ status, user, login, register, logout }),
-    [status, user, login, register, logout],
+    () => ({ status, user, login, register, updateUser, logout }),
+    [status, user, login, register, updateUser, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

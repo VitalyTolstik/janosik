@@ -13,10 +13,15 @@ import {
   type CommandRequest,
   type CommandResponse,
   type CommandSseEvent,
+  type CreateUserTokenRequest,
+  type CreateUserTokenResponse,
   type MembershipChange,
   type MembershipSseEvent,
   type PresenceSseEvent,
   type PresenceUser,
+  type UpdateProfileRequest,
+  type UserAvatarColor,
+  type UserTokenDto,
 } from "@janosik/shared";
 
 /**
@@ -34,7 +39,9 @@ interface FakeAccount {
   id: string;
   email: string;
   password: string;
-  displayName: string;
+  displayName: string | null;
+  avatarColor: UserAvatarColor | null;
+  createdAt: number;
 }
 
 /** A recorded request, for assertions about what the client actually sent. */
@@ -74,7 +81,11 @@ export class FakeServer {
     email: "admin@example.com",
     password: "password123",
     displayName: "Admin",
+    avatarColor: null,
+    createdAt: Date.UTC(2026, 0, 15, 12, 0, 0),
   };
+  /** Personal API tokens of the account (TASK-36.1). */
+  readonly apiTokens: UserTokenDto[] = [];
   refreshValid = true;
   /** Caller's role per board summary (`GET /boards`) — drives VIEWER tests. */
   role: BoardRole = "ADMIN";
@@ -325,6 +336,59 @@ export class FakeServer {
     if (path === "/api/v1/auth/me" && method === "GET") {
       return json(200, this.publicUser());
     }
+    if (path === "/api/v1/auth/password" && method === "POST") {
+      const { currentPassword, newPassword } = (body ?? {}) as {
+        currentPassword?: string;
+        newPassword?: string;
+      };
+      if (currentPassword !== this.account.password) {
+        return json(401, { message: "Current password is incorrect" });
+      }
+      this.account.password = newPassword ?? this.account.password;
+      return json(200, { status: "ok" });
+    }
+    if (path === "/api/v1/users/me" && method === "PATCH") {
+      const patch = (body ?? {}) as UpdateProfileRequest;
+      if (patch.displayName !== undefined) {
+        this.account.displayName = patch.displayName;
+      }
+      if (patch.avatarColor !== undefined) {
+        this.account.avatarColor = patch.avatarColor;
+      }
+      return json(200, this.publicUser());
+    }
+    if (path === "/api/v1/users/me/tokens" && method === "GET") {
+      return json(200, structuredClone(this.apiTokens));
+    }
+    if (path === "/api/v1/users/me/tokens" && method === "POST") {
+      const request = (body ?? {}) as CreateUserTokenRequest;
+      const apiToken: UserTokenDto = {
+        id: `token-${this.apiTokens.length + 1}`,
+        name: request.name,
+        createdAt: Date.now(),
+        lastUsedAt: null,
+        expiresAt:
+          request.expiresAt == null
+            ? null
+            : new Date(request.expiresAt).getTime(),
+        revokedAt: null,
+      };
+      this.apiTokens.unshift(apiToken);
+      const response: CreateUserTokenResponse = {
+        token: `jnk_fake-token-${this.apiTokens.length}`,
+        apiToken: structuredClone(apiToken),
+      };
+      return json(201, response);
+    }
+    const tokenMatch = /^\/api\/v1\/users\/me\/tokens\/([^/]+)$/.exec(path);
+    if (tokenMatch && method === "DELETE") {
+      const token = this.apiTokens.find((item) => item.id === tokenMatch[1]);
+      if (token === undefined) {
+        return json(404, { message: "API token not found" });
+      }
+      token.revokedAt = Date.now();
+      return json(200, { status: "ok" });
+    }
     if (path === "/api/v1/boards" && method === "GET") {
       return json(
         200,
@@ -507,6 +571,8 @@ export class FakeServer {
       id: this.account.id,
       email: this.account.email,
       displayName: this.account.displayName,
+      avatarColor: this.account.avatarColor,
+      createdAt: this.account.createdAt,
     };
   }
 

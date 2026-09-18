@@ -8,8 +8,12 @@ import type {
   BoardSummary,
   CommandRequest,
   CommandResponse,
+  CreateUserTokenRequest,
+  CreateUserTokenResponse,
   InviteMemberRequest,
   UpdateMemberRequest,
+  UpdateProfileRequest,
+  UserTokenDto,
 } from "@janosik/shared";
 
 /**
@@ -209,6 +213,50 @@ export class ApiClient {
   /** `GET /auth/me` — verifies the in-memory access token. */
   me(): Promise<AuthUserDto> {
     return this.request<AuthUserDto>("/auth/me");
+  }
+
+  /** `PATCH /users/me` — display name / avatar color (TASK-36.1). */
+  updateProfile(patch: UpdateProfileRequest): Promise<AuthUserDto> {
+    return this.request<AuthUserDto>("/users/me", {
+      method: "PATCH",
+      body: patch,
+    });
+  }
+
+  /**
+   * `POST /auth/password` — verifies the current password and revokes every
+   * other refresh session (TASK-36.1). Lives under `/auth` so the refresh
+   * cookie is actually sent and identifies the caller's session.
+   */
+  changePassword(
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>("/auth/password", {
+      method: "POST",
+      body: { currentPassword, newPassword },
+    });
+  }
+
+  /** `GET /users/me/tokens` — personal API tokens (TASK-36.1). */
+  listTokens(): Promise<UserTokenDto[]> {
+    return this.request<UserTokenDto[]>("/users/me/tokens");
+  }
+
+  /** `POST /users/me/tokens` — plaintext returned exactly once. */
+  createToken(body: CreateUserTokenRequest): Promise<CreateUserTokenResponse> {
+    return this.request<CreateUserTokenResponse>("/users/me/tokens", {
+      method: "POST",
+      body,
+    });
+  }
+
+  /** `DELETE /users/me/tokens/:id` — revoke (idempotent). */
+  revokeToken(id: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/users/me/tokens/${encodeURIComponent(id)}`,
+      { method: "DELETE", body: {} },
+    );
   }
 
   /**

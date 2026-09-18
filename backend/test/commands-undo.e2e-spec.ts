@@ -293,6 +293,7 @@ describe("Undo contract: command then inverse (e2e)", () => {
     await db.label.deleteMany();
     await db.boardMember.deleteMany();
     await db.board.deleteMany();
+    await db.apiToken.deleteMany();
     await db.refreshToken.deleteMany();
     await db.user.deleteMany();
   }

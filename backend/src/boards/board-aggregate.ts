@@ -16,6 +16,7 @@ import type {
   CardCover,
   Checklist,
   LabelColor,
+  UserAvatarColor,
 } from "@janosik/shared";
 
 /** A card row with the relations the aggregate needs (labels + checklists). */
@@ -209,5 +210,6 @@ export function toMemberDto(member: MemberWithUser): BoardMemberDto {
     email: member.user.email,
     role: member.role,
     expiresAt: member.expiresAt ? member.expiresAt.getTime() : null,
+    avatarColor: (member.user.avatarColor as UserAvatarColor | null) ?? null,
   };
 }

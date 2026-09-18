@@ -3,6 +3,7 @@ import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
+import { toAuthUser } from "./auth-user.mapper";
 import { USER_JWT_AUDIENCE } from "./auth.types";
 import type { AuthUser } from "./auth.types";
 
@@ -36,10 +37,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user || user.disabledAt !== null) {
       throw new UnauthorizedException();
     }
-    return {
-      id: user.id,
-      email: user.email,
-      displayName: user.displayName,
-    };
+    return toAuthUser(user);
   }
 }

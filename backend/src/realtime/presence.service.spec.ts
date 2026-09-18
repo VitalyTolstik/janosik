@@ -2,8 +2,18 @@ import type { BoardSseEvent, PresenceSseEvent } from "@janosik/shared";
 import { PresenceService, PRESENCE_TTL_MS } from "./presence.service";
 import { RealtimeService } from "./realtime.service";
 
-const alice = { id: "u-alice", displayName: "Alice", email: "alice@x.io" };
-const bob = { id: "u-bob", displayName: null, email: "bob@x.io" };
+const alice = {
+  id: "u-alice",
+  displayName: "Alice",
+  email: "alice@x.io",
+  avatarColor: "blue" as const,
+};
+const bob = {
+  id: "u-bob",
+  displayName: null,
+  email: "bob@x.io",
+  avatarColor: null,
+};
 
 /** Presence frames published to one board, in order. */
 function collector(realtime: RealtimeService, boardId = "b1") {
@@ -36,20 +46,22 @@ describe("PresenceService", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]).toEqual({
       type: "presence",
-      users: [{ id: "u-alice", displayName: "Alice" }],
+      users: [{ id: "u-alice", displayName: "Alice", avatarColor: "blue" }],
     });
 
     // A second tab broadcasts again — the fresh connection needs the
     // current roster — but the user still appears exactly once.
     presence.join("b1", "client-alice-2", alice);
     expect(seen).toHaveLength(2);
-    expect(seen[1].users).toEqual([{ id: "u-alice", displayName: "Alice" }]);
+    expect(seen[1].users).toEqual([
+      { id: "u-alice", displayName: "Alice", avatarColor: "blue" },
+    ]);
 
     presence.join("b1", "client-bob-1", bob);
     expect(seen).toHaveLength(3);
     expect(seen[2].users).toEqual([
-      { id: "u-alice", displayName: "Alice" },
-      { id: "u-bob", displayName: "bob@x.io" },
+      { id: "u-alice", displayName: "Alice", avatarColor: "blue" },
+      { id: "u-bob", displayName: "bob@x.io", avatarColor: null },
     ]);
   });
 
@@ -62,7 +74,7 @@ describe("PresenceService", () => {
     presence.leave("b1", "a1");
     expect(seen).toHaveLength(0);
     expect(presence.roster("b1")).toEqual([
-      { id: "u-alice", displayName: "Alice" },
+      { id: "u-alice", displayName: "Alice", avatarColor: "blue" },
     ]);
 
     presence.leave("b1", "a2");
@@ -78,9 +90,41 @@ describe("PresenceService", () => {
     presence.join("b1", "b1", { ...bob, displayName: "Bobby" });
 
     expect(presence.roster("b1")).toEqual([
-      { id: "u-bob", displayName: "Bobby" },
-      { id: "u-alice", displayName: "Alice" },
+      { id: "u-bob", displayName: "Bobby", avatarColor: null },
+      { id: "u-alice", displayName: "Alice", avatarColor: "blue" },
     ]);
+  });
+
+  it("rewrites a user's identity on every live board, silently on no-ops", () => {
+    const b1 = collector(realtime, "b1");
+    const b2 = collector(realtime, "b2");
+    presence.join("b1", "a1", alice);
+    presence.join("b2", "a2", alice);
+    presence.join("b1", "b1", bob);
+    b1.length = 0;
+    b2.length = 0;
+
+    presence.updateUser("u-alice", {
+      displayName: "Alicia",
+      avatarColor: "pink",
+    });
+    expect(b1).toHaveLength(1);
+    expect(b1[0].users).toEqual([
+      { id: "u-alice", displayName: "Alicia", avatarColor: "pink" },
+      { id: "u-bob", displayName: "bob@x.io", avatarColor: null },
+    ]);
+    expect(b2).toHaveLength(1);
+    expect(b2[0].users).toEqual([
+      { id: "u-alice", displayName: "Alicia", avatarColor: "pink" },
+    ]);
+
+    // A user with no sessions and an unchanged patch stay silent.
+    b1.length = 0;
+    b2.length = 0;
+    presence.updateUser("u-nobody", { displayName: "Ghost" });
+    presence.updateUser("u-alice", { displayName: "Alicia" });
+    expect(b1).toHaveLength(0);
+    expect(b2).toHaveLength(0);
   });
 
   it("touch refreshes the TTL, sweep drops stale sessions and broadcasts", () => {
@@ -102,7 +146,9 @@ describe("PresenceService", () => {
 
     presence.sweep(t0 + PRESENCE_TTL_MS + 1);
     expect(seen).toHaveLength(1);
-    expect(seen[0].users).toEqual([{ id: "u-alice", displayName: "Alice" }]);
+    expect(seen[0].users).toEqual([
+      { id: "u-alice", displayName: "Alice", avatarColor: "blue" },
+    ]);
 
     presence.sweep(t0 + PRESENCE_TTL_MS * 3);
     expect(seen).toHaveLength(2);
@@ -118,7 +164,9 @@ describe("PresenceService", () => {
 
     presence.heartbeat();
     expect(seen).toHaveLength(1);
-    expect(seen[0].users).toEqual([{ id: "u-alice", displayName: "Alice" }]);
+    expect(seen[0].users).toEqual([
+      { id: "u-alice", displayName: "Alice", avatarColor: "blue" },
+    ]);
     expect(other).toHaveLength(0);
 
     presence.sweep(Date.now() + PRESENCE_TTL_MS + 1);

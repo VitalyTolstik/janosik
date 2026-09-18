@@ -239,7 +239,8 @@ ui/
 │  ├─ auth/                 # AuthContext (session, login/register/logout)
 │  ├─ components/
 │  │  ├─ board/             # Columns, cards, card dialog, filters, views (board/calendar/table)
-│  │  ├─ auth/              # LoginPage, SignOutButton (board header)
+│  │  ├─ auth/              # LoginPage, logout confirmation
+│  │  ├─ account/           # personal panel: profile, password, API keys, preferences
 │  │  ├─ editor/            # MDXEditor description editor (plugins, code blocks, i18n)
 │  │  └─ ui/                # shadcn/ui + Radix primitives
 │  ├─ hooks/                # theme, board background, column glass, card labels

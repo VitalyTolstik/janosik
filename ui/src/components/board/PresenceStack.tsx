@@ -3,6 +3,7 @@ import type { BoardRole, PresenceUser } from "@janosik/shared";
 
 import { isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
+import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import {
   Popover,
   PopoverContent,
@@ -38,6 +39,7 @@ export function PresenceStack() {
   const { board } = useBoard();
   const { user } = useAuth();
   const users = useBoardPresence(board?.id);
+  const openProfile = useOpenProfile();
   const [open, setOpen] = useState(false);
 
   // Members are a server-only concept; solo boards stay quiet.
@@ -66,6 +68,7 @@ export function PresenceStack() {
                   userId={person.id}
                   displayName={person.displayName}
                   email=""
+                  color={person.avatarColor}
                   size="sm"
                   className="ring-2 ring-background"
                 />
@@ -101,6 +104,12 @@ export function PresenceStack() {
               boardId={board.id}
               person={person}
               isMe={person.id === user?.id}
+              onOpen={(userId) => {
+                // The profile takes over the screen: the row list closes
+                // first so the two overlays never fight for focus.
+                setOpen(false);
+                openProfile(userId);
+              }}
             />
           ))}
         </ul>
@@ -113,38 +122,46 @@ function PresenceRow({
   boardId,
   person,
   isMe,
+  onOpen,
 }: {
   boardId: string;
   person: PresenceUser;
   isMe: boolean;
+  onOpen: (userId: string) => void;
 }) {
   const { t } = useI18n();
   const member = useBoardMember(boardId, person.id);
   const name = userLabel(person.displayName, member?.email ?? "");
 
   return (
-    <li
-      data-testid="presence-row"
-      className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-hover"
-    >
-      <UserAvatar
-        userId={person.id}
-        displayName={person.displayName}
-        email={member?.email ?? ""}
-        size="sm"
-      />
-      <span className="min-w-0 flex-1 truncate text-sm text-foreground/90">
-        {name}
-      </span>
-      {isMe ? (
-        <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          {t("presence.you")}
+    <li>
+      <button
+        type="button"
+        data-testid="presence-row"
+        aria-label={t("profile.open", { name })}
+        onClick={() => onOpen(person.id)}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-hover"
+      >
+        <UserAvatar
+          userId={person.id}
+          displayName={person.displayName}
+          email={member?.email ?? ""}
+          color={person.avatarColor ?? member?.avatarColor}
+          size="sm"
+        />
+        <span className="min-w-0 flex-1 truncate text-sm text-foreground/90">
+          {name}
         </span>
-      ) : member ? (
-        <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/70">
-          {t(ROLE_KEYS[member.role])}
-        </span>
-      ) : null}
+        {isMe ? (
+          <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {t("presence.you")}
+          </span>
+        ) : member ? (
+          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+            {t(ROLE_KEYS[member.role])}
+          </span>
+        ) : null}
+      </button>
     </li>
   );
 }
