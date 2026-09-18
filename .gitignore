@@ -16,6 +16,9 @@ coverage/
 # Pi session artifacts (13MB+ HTML logs)
 pi-session-*.html
 
+# Live probe screenshots (pw-smoke run from backend/)
+backend/*.png
+
 # Env / secrets
 .env
 .env.*
