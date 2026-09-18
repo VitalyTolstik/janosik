@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import {
   Check,
+  ChevronRight,
   ListTodo,
   MoreHorizontal,
   Pencil,
@@ -11,6 +12,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import {
   DropdownMenu,
@@ -64,6 +66,8 @@ export function CardChecklists({
   } = useBoardActions();
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  // Adding from a collapsed header must reveal the new checklist.
+  const [expanded, setExpanded] = useState(true);
   const draftRef = useRef("");
 
   const commitTitle = (checklistId: string) => {
@@ -78,15 +82,29 @@ export function CardChecklists({
     setEditingItemId(null);
   };
 
+  // Overall progress for the collapsed header badge (Jira-style "3/7").
+  const totalItems = checklists.reduce(
+    (sum, checklist) => sum + checklist.items.length,
+    0,
+  );
+  const doneItems = checklists.reduce(
+    (sum, checklist) =>
+      sum + checklist.items.filter((item) => item.done).length,
+    0,
+  );
+
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground">
-          {t("checklist.sectionLabel")}
-        </span>
-        {/* Capped at LIMITS.checklistsPerCard — the disabled button
-            explains itself through the tooltip. Hidden for VIEWER. */}
-        {readOnly ? null : (
+    <CollapsibleSection
+      title={t("checklist.sectionLabel")}
+      badge={totalItems > 0 ? `${doneItems}/${totalItems}` : undefined}
+      testId="checklists-toggle"
+      expanded={expanded}
+      onExpandedChange={setExpanded}
+      contentClassName="mt-2 space-y-2"
+      action={
+        /* Capped at LIMITS.checklistsPerCard — the disabled button
+            explains itself through the tooltip. Hidden for VIEWER. */
+        readOnly ? undefined : (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="inline-flex">
@@ -95,9 +113,10 @@ export function CardChecklists({
                   size="sm"
                   className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
                   disabled={checklists.length >= LIMITS.checklistsPerCard}
-                  onClick={() =>
-                    addChecklist(cardId, t("checklist.defaultTitle"))
-                  }
+                  onClick={() => {
+                    setExpanded(true);
+                    addChecklist(cardId, t("checklist.defaultTitle"));
+                  }}
                 >
                   <Plus className="h-3.5 w-3.5" />
                   {t("checklist.add")}
@@ -110,9 +129,9 @@ export function CardChecklists({
               </TooltipContent>
             )}
           </Tooltip>
-        )}
-      </div>
-
+        )
+      }
+    >
       {checklists.map((checklist) => (
         <ChecklistCard
           key={checklist.id}
@@ -143,7 +162,7 @@ export function CardChecklists({
           }
         />
       ))}
-    </div>
+    </CollapsibleSection>
   );
 }
 
@@ -185,6 +204,9 @@ function ChecklistCard({
   const { t } = useI18n();
   const [newItem, setNewItem] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // One checklist folds on its own: with several lists (some already
+  // finished) the section stays scannable without touching the others.
+  const [expanded, setExpanded] = useState(true);
   const done = checklist.items.filter((item) => item.done).length;
   const total = checklist.items.length;
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -201,9 +223,24 @@ function ChecklistCard({
             onCancel={onCancelTitle}
           />
         ) : (
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">
-            {checklist.title}
-          </span>
+          <button
+            type="button"
+            aria-expanded={expanded}
+            data-testid={`checklist-toggle-${checklist.id}`}
+            onClick={() => setExpanded((value) => !value)}
+            className="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left hover:text-foreground"
+          >
+            <ChevronRight
+              aria-hidden="true"
+              className={cn(
+                "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                expanded && "rotate-90",
+              )}
+            />
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">
+              {checklist.title}
+            </span>
+          </button>
         )}
         {total > 0 ? (
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
@@ -240,7 +277,7 @@ function ChecklistCard({
         )}
       </div>
 
-      {total > 0 ? (
+      {expanded && total > 0 ? (
         <div
           className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
           role="progressbar"
@@ -255,73 +292,77 @@ function ChecklistCard({
         </div>
       ) : null}
 
-      <ul className="mt-2 space-y-0.5">
-        {checklist.items.map((item) => (
-          <li key={item.id} className="group/item flex items-center gap-2">
-            {readOnly ? (
-              <span
-                aria-hidden
-                className={cn(
-                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                  item.done
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border/80 bg-background",
-                )}
-              >
-                {item.done ? <Check className="h-3 w-3" /> : null}
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onToggleItem(item.id)}
-                aria-pressed={item.done}
-                className={cn(
-                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
-                  item.done
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border/80 bg-background hover:border-primary/60",
-                )}
-              >
-                {item.done ? <Check className="h-3 w-3" /> : null}
-              </button>
-            )}
-            {editingItemId === item.id ? (
-              <TitleInput
-                defaultValue={item.text}
-                maxLength={LIMITS.checklistItem}
-                onDraft={(draft) => onEditItem(item.id, draft)}
-                onCommit={() => onCommitItem(item.id)}
-                onCancel={onCancelItem}
-              />
-            ) : (
-              <span
-                onDoubleClick={
-                  readOnly ? undefined : () => onEditItem(item.id, item.text)
-                }
-                className={cn(
-                  "min-w-0 flex-1 break-words text-sm",
-                  !readOnly && "cursor-text",
-                  item.done && "text-muted-foreground line-through",
-                )}
-              >
-                {item.text}
-              </span>
-            )}
-            {readOnly ? null : (
-              <button
-                type="button"
-                onClick={() => onDeleteItem(item.id)}
-                aria-label={t("checklist.itemDelete")}
-                className="no-hover:opacity-100 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/item:opacity-100"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
+      {/* Eight rows fit the cap (TASK-44); a longer checklist scrolls
+          inside instead of stretching the whole card dialog. */}
+      {expanded ? (
+        <ul className="mt-2 max-h-48 space-y-0.5 overflow-y-auto pr-1">
+          {checklist.items.map((item) => (
+            <li key={item.id} className="group/item flex items-center gap-2">
+              {readOnly ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                    item.done
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border/80 bg-background",
+                  )}
+                >
+                  {item.done ? <Check className="h-3 w-3" /> : null}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onToggleItem(item.id)}
+                  aria-pressed={item.done}
+                  className={cn(
+                    "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
+                    item.done
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border/80 bg-background hover:border-primary/60",
+                  )}
+                >
+                  {item.done ? <Check className="h-3 w-3" /> : null}
+                </button>
+              )}
+              {editingItemId === item.id ? (
+                <TitleInput
+                  defaultValue={item.text}
+                  maxLength={LIMITS.checklistItem}
+                  onDraft={(draft) => onEditItem(item.id, draft)}
+                  onCommit={() => onCommitItem(item.id)}
+                  onCancel={onCancelItem}
+                />
+              ) : (
+                <span
+                  onDoubleClick={
+                    readOnly ? undefined : () => onEditItem(item.id, item.text)
+                  }
+                  className={cn(
+                    "min-w-0 flex-1 break-words text-sm",
+                    !readOnly && "cursor-text",
+                    item.done && "text-muted-foreground line-through",
+                  )}
+                >
+                  {item.text}
+                </span>
+              )}
+              {readOnly ? null : (
+                <button
+                  type="button"
+                  onClick={() => onDeleteItem(item.id)}
+                  aria-label={t("checklist.itemDelete")}
+                  className="no-hover:opacity-100 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/item:opacity-100"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
-      {readOnly ? null : (
+      {expanded && !readOnly ? (
         <form
           className="mt-2 flex items-center gap-2"
           onSubmit={(e) => {
@@ -351,7 +392,7 @@ function ChecklistCard({
             testId="checklist-item-add-limit"
           />
         </form>
-      )}
+      ) : null}
 
       {/* Deleting a checklist wipes its items — ask first (same pattern as
           card/column/label deletion). */}

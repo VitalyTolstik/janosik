@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -6,7 +5,6 @@ import {
   CalendarX,
   ArrowRightLeft,
   AlignLeft,
-  ChevronRight,
   CircleCheck,
   CircleDashed,
   CircleX,
@@ -31,6 +29,7 @@ import {
   type MessageKey,
 } from "@/i18n";
 import { UserAvatar } from "@/components/ui/user-avatar";
+import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { useBoardMember } from "@/store/board-live";
 import { userLabel } from "@/utils/avatar";
@@ -113,7 +112,6 @@ export function CardActivityFeed({
   boardId,
 }: CardActivityFeedProps) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(false);
 
   const stored = activity ?? [];
   // The "created" row is guaranteed: cards made before the feature (or
@@ -132,33 +130,19 @@ export function CardActivityFeed({
   const timeline = [...events].reverse();
 
   return (
-    <section aria-label={t("activity.title")}>
-      <button
-        aria-expanded={expanded}
-        className="flex w-full items-center gap-1.5 rounded text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-        data-testid="activity-toggle"
-        onClick={() => setExpanded((value) => !value)}
-        type="button"
-      >
-        <ChevronRight
-          aria-hidden="true"
-          className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-90" : ""}`}
-        />
-        {t("activity.title")}
-        {/* Jira-style count badge, visible even while collapsed. */}
-        <span className="rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground">
-          {timeline.length}
-        </span>
-      </button>
-
-      {expanded && (
-        <ol className="mt-2 space-y-1.5 border-l border-border/60 pl-3">
-          {timeline.map((event) => (
-            <ActivityRow boardId={boardId} event={event} key={event.id} />
-          ))}
-        </ol>
-      )}
-    </section>
+    <CollapsibleSection
+      title={t("activity.title")}
+      badge={timeline.length}
+      defaultExpanded={false}
+      testId="activity-toggle"
+      contentClassName="mt-2 border-l border-border/60 pl-3"
+    >
+      <ol className="space-y-1.5">
+        {timeline.map((event) => (
+          <ActivityRow boardId={boardId} event={event} key={event.id} />
+        ))}
+      </ol>
+    </CollapsibleSection>
   );
 }
 

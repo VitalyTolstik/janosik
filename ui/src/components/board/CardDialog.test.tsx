@@ -104,6 +104,42 @@ describe("CardDialog description editor", () => {
   });
 });
 
+describe("CardDialog collapsible sections (TASK-44)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("collapses and reopens the description without losing content", async () => {
+    const dialog = await openCardDialog("Design the new onboarding flow");
+    await within(dialog).findByLabelText("Description");
+
+    const toggle = within(dialog).getByTestId("card-description-toggle");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(within(dialog).queryByLabelText("Description")).toBeNull();
+
+    // Reopening remounts the lazy editor seeded from the board state.
+    fireEvent.click(toggle);
+    const editor = (await within(dialog).findByLabelText(
+      "Description",
+    )) as HTMLTextAreaElement;
+    expect(editor.value).toContain("**bold**");
+  });
+
+  it("expands when a checklist is added from the collapsed header", async () => {
+    const dialog = await openCardDialog("Design the new onboarding flow");
+
+    const toggle = within(dialog).getByTestId("checklists-toggle");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    // The action stays reachable and reveals what it just created.
+    fireEvent.click(within(dialog).getByText("Add checklist"));
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(within(dialog).getByText("Checklist")).toBeInTheDocument();
+  });
+});
+
 describe("CardDialog input limits (TASK-20)", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -320,6 +356,43 @@ describe("CardDialog checklists", () => {
     const badges = screen.getAllByTestId("card-checklist-badge");
     expect(badges.length).toBeGreaterThan(0);
     expect(badges[0].textContent).toBe("1/1");
+
+    // The items area is capped (TASK-44): a long checklist scrolls inside
+    // instead of stretching the card dialog beyond the viewport.
+    expect(
+      within(dialog).getByText("Draft the copy").closest("ul"),
+    ).toHaveClass("max-h-48", "overflow-y-auto");
+  });
+
+  it("collapses one checklist without hiding the others", async () => {
+    const dialog = await openCardDialog("Design the new onboarding flow");
+
+    // Two checklists, one item each.
+    fireEvent.click(within(dialog).getByText("Add checklist"));
+    let input = within(dialog).getAllByPlaceholderText("Add an item…")[0];
+    fireEvent.change(input, { target: { value: "First item" } });
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
+
+    fireEvent.click(within(dialog).getByText("Add checklist"));
+    input = within(dialog).getAllByPlaceholderText("Add an item…")[1];
+    fireEvent.change(input, { target: { value: "Second item" } });
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
+
+    // Both checklists share the default title; toggle the first one.
+    const toggles = within(dialog).getAllByRole("button", {
+      name: "Checklist",
+    });
+    expect(toggles).toHaveLength(2);
+    fireEvent.click(toggles[0]);
+
+    expect(toggles[0]).toHaveAttribute("aria-expanded", "false");
+    expect(within(dialog).queryByText("First item")).toBeNull();
+    expect(within(dialog).getByText("Second item")).toBeInTheDocument();
+    // The progress line stays readable while folded.
+    expect(within(dialog).getAllByText("0 of 1 task")).toHaveLength(2);
+
+    fireEvent.click(toggles[0]);
+    expect(within(dialog).getByText("First item")).toBeInTheDocument();
   });
 
   it("asks for confirmation before deleting a checklist", async () => {
