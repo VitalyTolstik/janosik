@@ -96,6 +96,12 @@ export class EventsController {
           }
           return;
         }
+        // An activity frame (TASK-37: a new or deleted comment) is not a
+        // command: no seq, no log — pass it straight through like presence.
+        if (event.type === "activity") {
+          subscriber.next({ data: event as unknown as object } as MessageEvent);
+          return;
+        }
         if (event.type !== "command") return;
         if (ready) push(event);
         else buffered.push(event);

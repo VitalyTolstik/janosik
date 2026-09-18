@@ -12,11 +12,12 @@ import {
   ArrowRightLeft,
   CalendarClock,
   CopyPlus,
+  Link2,
   Trash2,
 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
-import { CardActivityFeed } from "@/components/board/CardActivityFeed";
+import { CardActivity } from "@/components/board/CardActivity";
 import { CardChecklists } from "@/components/board/CardChecklists";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { CardDueDate } from "@/components/board/CardDueDate";
@@ -254,10 +255,17 @@ export function CardDialog({
             instead of growing the dialog from both ends. */}
         <DialogContent className="h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] sm:max-w-3xl">
           <DialogHeader className="shrink-0 pr-8">
-            <DialogTitle className="text-base">
-              {t("card.detailsTitle")}
-            </DialogTitle>
-            <DialogDescription>{t("card.detailsSubtitle")}</DialogDescription>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 space-y-1.5">
+                <DialogTitle className="text-base">
+                  {t("card.detailsTitle")}
+                </DialogTitle>
+                <DialogDescription>
+                  {t("card.detailsSubtitle")}
+                </DialogDescription>
+              </div>
+              <CopyCardLinkButton />
+            </div>
           </DialogHeader>
 
           {/* Scrollable body: the dialog caps itself to the viewport height
@@ -395,12 +403,6 @@ export function CardDialog({
               readOnly={readOnly}
             />
 
-            <CardActivityFeed
-              activity={card.activity}
-              boardId={board.id}
-              createdAt={card.createdAt}
-            />
-
             {!readOnly && !card.archivedAt && (
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-medium text-muted-foreground">
@@ -448,6 +450,17 @@ export function CardDialog({
                 ? ` · ${t("card.updated", { date: formatDate(card.updatedAt, lang, hour12) })}`
                 : ""}
             </div>
+
+            {/* Last on purpose: the thread is the part that grows and
+                scrolls, everything above stays put. */}
+            <CardActivity
+              key={card.id}
+              cardId={card.id}
+              boardId={board.id}
+              updatedAt={card.updatedAt}
+              localActivity={card.activity}
+              readOnly={readOnly}
+            />
           </div>
 
           <DialogFooter className="mt-2 shrink-0">
@@ -573,5 +586,43 @@ function CardDeleteAction({
         onConfirm={onConfirm}
       />
     </>
+  );
+}
+
+/**
+ * Copies the address-bar URL (TASK-37). Every open path — click included —
+ * keeps `?card=<id>` in sync (BoardSection), so the current URL is always
+ * a deep link that reopens this exact card.
+ */
+function CopyCardLinkButton() {
+  const { t } = useI18n();
+  const toast = useToast();
+
+  const handleCopy = async () => {
+    try {
+      if (!navigator.clipboard) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(window.location.href);
+      toast.success(t("card.linkCopied"));
+    } catch {
+      toast.error(t("card.linkCopyError"));
+    }
+  };
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0 text-muted-foreground"
+          aria-label={t("card.copyLink")}
+          data-testid="card-copy-link"
+          onClick={() => void handleCopy()}
+        >
+          <Link2 className="h-4 w-4" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{t("card.copyLink")}</TooltipContent>
+    </Tooltip>
   );
 }

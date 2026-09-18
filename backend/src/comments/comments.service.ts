@@ -7,6 +7,7 @@ import {
 import type { Comment } from "@prisma/client";
 import type { CommentDto, CommentPage } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { RealtimeService } from "@/realtime/realtime.service";
 import type { CreateCommentDto } from "./dto/create-comment.dto";
 
 /** Default page size of `GET /cards/:id/comments` (`?limit=`). */
@@ -21,10 +22,18 @@ const MAX_LIMIT = 100;
  * `Activity` row (`comment_added` / `comment_deleted`) that the activity
  * feeds pick up. Deletion is soft (a purge job reclaims rows later) and
  * only the author may delete their own comment.
+ *
+ * After the transaction commits each write is also published as a
+ * `type: "activity"` SSE frame (TASK-37): open cards append the foreign
+ * comment live instead of polling. The frame carries the comment id in
+ * `detail` — recipients fetch the body through the ordinary list endpoint.
  */
 @Injectable()
 export class CommentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeService,
+  ) {}
 
   async create(
     cardId: string,
@@ -38,7 +47,7 @@ export class CommentsService {
         field: "text",
       });
     }
-    return this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
       const card = await tx.card.findFirst({
         where: { id: cardId, deletedAt: null },
         select: { id: true, column: { select: { boardId: true } } },
@@ -49,7 +58,7 @@ export class CommentsService {
       const comment = await tx.comment.create({
         data: { cardId, authorId, text },
       });
-      await tx.activity.create({
+      const activity = await tx.activity.create({
         data: {
           boardId: card.column.boardId,
           cardId,
@@ -58,8 +67,22 @@ export class CommentsService {
           details: { commentId: comment.id, text },
         },
       });
-      return toCommentDto(comment);
+      return {
+        comment,
+        activityId: activity.id,
+        boardId: card.column.boardId,
+      };
     });
+    this.publishActivity(
+      created.boardId,
+      cardId,
+      created.activityId,
+      authorId,
+      created.comment.createdAt.getTime(),
+      "comment_added",
+      created.comment.id,
+    );
+    return toCommentDto(created.comment);
   }
 
   /** Newest-first page with an opaque `at:id` cursor. */
@@ -113,12 +136,12 @@ export class CommentsService {
     if (comment.authorId !== userId) {
       throw new ForbiddenException("Only the author can delete a comment");
     }
-    await this.prisma.$transaction(async (tx) => {
+    const removed = await this.prisma.$transaction(async (tx) => {
       await tx.comment.update({
         where: { id: comment.id },
         data: { deletedAt: new Date() },
       });
-      await tx.activity.create({
+      const activity = await tx.activity.create({
         data: {
           boardId: comment.card.column.boardId,
           cardId: comment.cardId,
@@ -127,6 +150,42 @@ export class CommentsService {
           details: { commentId: comment.id },
         },
       });
+      return {
+        activityId: activity.id,
+        boardId: comment.card.column.boardId,
+        at: activity.createdAt.getTime(),
+      };
+    });
+    this.publishActivity(
+      removed.boardId,
+      comment.cardId,
+      removed.activityId,
+      userId,
+      removed.at,
+      "comment_deleted",
+      comment.id,
+    );
+  }
+
+  /** Fan a comment write out to every open stream of the board (TASK-37). */
+  private publishActivity(
+    boardId: string,
+    cardId: string,
+    activityId: string,
+    actorId: string,
+    at: number,
+    kind: "comment_added" | "comment_deleted",
+    commentId: string,
+  ): void {
+    this.realtime.publish(boardId, {
+      type: "activity",
+      id: activityId,
+      boardId,
+      cardId,
+      actorId,
+      at,
+      kind,
+      detail: commentId,
     });
   }
 }

@@ -1,4 +1,5 @@
 import type {
+  ActivityFeedPage,
   AuthResponseDto,
   AuthUserDto,
   BoardAggregate,
@@ -8,6 +9,8 @@ import type {
   BoardSummary,
   CommandRequest,
   CommandResponse,
+  CommentDto,
+  CommentPage,
   CreateUserTokenRequest,
   CreateUserTokenResponse,
   InviteMemberRequest,
@@ -405,6 +408,43 @@ export class ApiClient {
     );
   }
 
+  /** Newest-first page of a card's comments (TASK-28 REST, TASK-37 UI). */
+  listComments(
+    cardId: string,
+    cursor?: string,
+    limit?: number,
+  ): Promise<CommentPage> {
+    return this.request<CommentPage>(
+      `/cards/${encodeURIComponent(cardId)}/comments${pageQuery(cursor, limit)}`,
+    );
+  }
+
+  createComment(cardId: string, text: string): Promise<CommentDto> {
+    return this.request<CommentDto>(
+      `/cards/${encodeURIComponent(cardId)}/comments`,
+      { method: "POST", body: { text } },
+    );
+  }
+
+  /** Soft-deletes the caller's own comment; the server answers 403 otherwise. */
+  deleteComment(commentId: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/comments/${encodeURIComponent(commentId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /** Newest-first history of one card (TASK-28 feed, diffs TASK-37). */
+  cardActivity(
+    cardId: string,
+    cursor?: string,
+    limit?: number,
+  ): Promise<ActivityFeedPage> {
+    return this.request<ActivityFeedPage>(
+      `/cards/${encodeURIComponent(cardId)}/activity${pageQuery(cursor, limit)}`,
+    );
+  }
+
   /** One HTTP round-trip with token, 401-refresh-retry and JSON handling. */
   private async request<T>(
     path: string,
@@ -482,3 +522,12 @@ export class ApiClient {
  * owns the access token and the shared refresh promise.
  */
 export const api = new ApiClient();
+
+/** Opaque cursor + bound query for the paginated endpoints. */
+function pageQuery(cursor?: string, limit?: number): string {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  if (limit !== undefined) params.set("limit", String(limit));
+  const query = params.toString();
+  return query === "" ? "" : `?${query}`;
+}

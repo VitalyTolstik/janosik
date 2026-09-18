@@ -245,4 +245,62 @@ describe("ApiClient", () => {
     // browser finishes it even after the page is gone.
     expect(keepalive).toBe(true);
   });
+
+  it("talks to the comment and activity endpoints (TASK-37)", async () => {
+    const calls: Array<{ method: string; url: string; body: unknown }> = [];
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (input, init) => {
+        calls.push({
+          method: init?.method ?? "GET",
+          url: `${pathOf(input)}${
+            new URL(
+              typeof input === "string" ? input : input.toString(),
+              "http://api.test",
+            ).search
+          }`,
+          body:
+            typeof init?.body === "string"
+              ? (JSON.parse(init.body) as unknown)
+              : undefined,
+        });
+        if ((init?.method ?? "GET") === "DELETE") {
+          return json({ status: "ok" });
+        }
+        if ((init?.method ?? "GET") === "POST") {
+          return json({
+            id: "comment-1",
+            cardId: "c-1",
+            authorId: "u-1",
+            text: "hi",
+            createdAt: 1,
+          });
+        }
+        return json({ items: [], nextCursor: null });
+      },
+    });
+
+    await client.listComments("c-1", "50:abc", 20);
+    await client.createComment("c-1", "hi");
+    await client.deleteComment("comment-1");
+    await client.cardActivity("c-1", "at:c:7");
+    expect(calls).toEqual([
+      {
+        method: "GET",
+        url: "/api/v1/cards/c-1/comments?cursor=50%3Aabc&limit=20",
+        body: undefined,
+      },
+      {
+        method: "POST",
+        url: "/api/v1/cards/c-1/comments",
+        body: { text: "hi" },
+      },
+      { method: "DELETE", url: "/api/v1/comments/comment-1", body: undefined },
+      {
+        method: "GET",
+        url: "/api/v1/cards/c-1/activity?cursor=at%3Ac%3A7",
+        body: undefined,
+      },
+    ]);
+  });
 });

@@ -226,6 +226,18 @@ export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[number];
 export type ActivityFeedSource = "command" | "activity";
 
 /**
+ * One "from → to" line of a command's history diff (TASK-37). `field` names
+ * the changed slot (`title`, `description`, `dueDate`, `column`, `label`,
+ * `checklist`, `checklistItem`); values are display snapshots captured when
+ * the command was applied, so a deleted label still renders its name.
+ */
+export interface ActivityChange {
+  field: string;
+  from: string | null;
+  to: string | null;
+}
+
+/**
  * One entry of `GET /boards/:id/activity` or `GET /cards/:id/activity`
  * (§7.4). The feed merges the Command log with `Activity` rows by time; the
  * cursor is opaque and pages are newest-first.
@@ -246,6 +258,10 @@ export interface ActivityFeedEntry {
   cardId?: string;
   /** `Activity.details` snapshot (member email/role, comment text, …). */
   details?: Record<string, unknown> | null;
+  /** Command entries: display snapshot for the sentence (label, item text). */
+  detail?: string;
+  /** Command entries: before → after lines captured at apply time (TASK-37). */
+  changes?: ActivityChange[];
 }
 
 /** A page of an activity feed, newest-first (`nextCursor: null` = end). */
