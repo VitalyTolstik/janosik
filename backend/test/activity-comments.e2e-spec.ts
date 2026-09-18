@@ -4,6 +4,7 @@ import { Test } from "@nestjs/testing";
 import type {
   ActivityFeedEntry,
   ActivityFeedPage,
+  Board,
   BoardAction,
   CommandResponse,
   CommentDto,
@@ -488,7 +489,8 @@ describe("Activity & comments API (e2e)", () => {
       } while (cursor !== null);
       expect(new Set(walked).size).toBe(3);
 
-      // Comment events land in the card activity feed.
+      // Comment events land in the card activity feed, the text riding as
+      // the Jira-style diff (added: null → text) with the id in `detail`.
       const feed = await cardFeed(cardId);
       const added = feed.items.filter(
         (entry) => entry.type === "comment_added",
@@ -496,6 +498,10 @@ describe("Activity & comments API (e2e)", () => {
       expect(added).toHaveLength(3);
       expect(added[0].actorId).toBe(memberId);
       expect(added[0].details).toMatchObject({ text: "Third comment" });
+      expect(added[0].detail).toBe(third.body.id);
+      expect(added[0].changes).toEqual([
+        { field: "comment", from: null, to: "Third comment" },
+      ]);
 
       // Deleting writes comment_deleted and empties the list for that id.
       await server()
@@ -514,12 +520,26 @@ describe("Activity & comments API (e2e)", () => {
         (entry) => entry.type === "comment_deleted",
       );
       expect(deleted?.details).toMatchObject({ commentId: second.body.id });
+      expect(deleted?.detail).toBe(second.body.id);
+      expect(deleted?.changes).toEqual([
+        { field: "comment", from: "Second comment", to: null },
+      ]);
 
       // The board feed sees them too, but scoped to the board.
       const boardPage = await boardFeed(boardId);
       expect(
         boardPage.items.filter((entry) => entry.type === "comment_added"),
       ).toHaveLength(3);
+
+      // A comment re-attributes the card face (TASK-36): the commenter
+      // becomes Card.lastActorId, matching the live SSE stamp on clients.
+      const aggregate = await server()
+        .get(`/api/v1/boards/${boardId}`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect((aggregate.body as Board).cards[cardId].lastActorId).toBe(
+        memberId,
+      );
     });
 
     it("lets only the author delete and only writers comment", async () => {

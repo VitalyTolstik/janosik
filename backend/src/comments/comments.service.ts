@@ -58,6 +58,14 @@ export class CommentsService {
       const comment = await tx.comment.create({
         data: { cardId, authorId, text },
       });
+      // The comment changes the card face as well (TASK-36 attribution):
+      // the commenter becomes `Card.lastActorId`, so a reload seeds the
+      // same face the live SSE stamp just showed. `updatedAt` follows
+      // automatically (`@updatedAt`).
+      await tx.card.update({
+        where: { id: cardId },
+        data: { lastActorId: authorId },
+      });
       const activity = await tx.activity.create({
         data: {
           boardId: card.column.boardId,
@@ -127,6 +135,9 @@ export class CommentsService {
         id: true,
         authorId: true,
         cardId: true,
+        // The text rides into the Activity snapshot, so the history feed
+        // can render the deletion as a `text → null` diff (TASK-37).
+        text: true,
         card: { select: { column: { select: { boardId: true } } } },
       },
     });
@@ -147,7 +158,7 @@ export class CommentsService {
           cardId: comment.cardId,
           type: "comment_deleted",
           actorId: userId,
-          details: { commentId: comment.id },
+          details: { commentId: comment.id, text: comment.text },
         },
       });
       return {

@@ -792,6 +792,24 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
   padding: 0;
 }
 
+/* --- Compact content: the comment composer (TASK-37). A comment starts as
+ * one line, not a 190px description field, and grows with its text. --- */
+.mdxeditor.janosik-mdx .janosik-md-content.janosik-md-compact {
+  min-height: 0;
+  padding: 8px 10px 10px;
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+/* --- Flush content: rendered comment bodies (TASK-37). The row already
+ * provides the rhythm; the markdown surface adds none of its own. --- */
+.mdxeditor.janosik-mdx .janosik-md-content.janosik-md-flush {
+  min-height: 0;
+  padding: 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
 /* Toolbar: transparent strip over the surface with hairline separators. */
 .mdxeditor.janosik-mdx .janosik-mdx-toolbar {
   gap: 1px;

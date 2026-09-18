@@ -654,13 +654,15 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       );
       if (outcome.ok) {
         mergeVersions(boardId, outcome.versions);
+        // Same post-commit signal as dispatch: undo/redo writes history rows.
+        live.commits.publish(boardId, cardIdsTouchedBy(action));
         realtimeRef.current?.settled(boardId, outcome.seq);
       } else {
         realtimeRef.current?.settled(boardId);
       }
       return outcome;
     },
-    [sync, preconditionsFor, mergeVersions],
+    [sync, preconditionsFor, mergeVersions, live],
   );
 
   // Undo/redo lives in its own hook (TASK-21.7d): one command stack per
@@ -1024,7 +1026,25 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         getUserId: () => userIdRef.current,
         onMembershipChange,
         onAccessRevoked,
-        onActivity: (event) => live.activity.publish(event),
+        onActivity: (event) => {
+          live.activity.publish(event);
+          // A comment is a change of the card face as well: the commenter
+          // becomes the card's last actor (the server records the same
+          // thing in `Card.lastActorId`, so a reload seeds the identical
+          // value). Someone else's comment earns the 2 s ring, exactly
+          // like a foreign command; my own stays anonymous to me.
+          if (event.kind === "comment_added" && event.cardId !== undefined) {
+            live.attribution.stamp(
+              event.boardId,
+              event.actorId,
+              [event.cardId],
+              {
+                at: event.at,
+                highlight: event.actorId !== userIdRef.current,
+              },
+            );
+          }
+        },
       });
       realtimeRef.current.watch(boardId);
     });
@@ -1065,14 +1085,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       } as BoardAction;
       const before = stateRef.current.find((b) => b.id === boardId);
       apply(scoped);
+      const touchedIds = cardIdsTouchedBy(scoped);
       const author = userIdRef.current;
-      if (author !== undefined) {
-        const ids = cardIdsTouchedBy(scoped);
-        if (ids.length > 0) {
-          live.attribution.stamp(boardId, author, ids, {
-            at: (scoped as { at?: number }).at,
-          });
-        }
+      if (author !== undefined && touchedIds.length > 0) {
+        live.attribution.stamp(boardId, author, touchedIds, {
+          at: (scoped as { at?: number }).at,
+        });
       }
       // A command the reducer turned into a no-op (a guard, a limit, an
       // edit that changed nothing) is not a step: it would cost the user an
@@ -1085,6 +1103,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       void sync.enqueue(boardId, scoped).then((outcome) => {
         if (outcome.ok) {
           mergeVersions(boardId, outcome.versions);
+          // The command is on the server now — the open card's history can
+          // refetch without the one-behind the optimistic bump has.
+          live.commits.publish(boardId, touchedIds);
           realtimeRef.current?.settled(boardId, outcome.seq);
           return;
         }

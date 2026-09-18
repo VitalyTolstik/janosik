@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityFeedEntry, CardActivityEvent } from "@janosik/shared";
 
@@ -6,6 +12,7 @@ import { api } from "@/api/client";
 import { CardHistory } from "@/components/board/CardHistory";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
+import { BoardLiveProvider, createBoardLive } from "@/store/board-live";
 import { FakeServer } from "@/test/fake-server";
 import { foldHistory } from "@/utils/history-fold";
 
@@ -128,6 +135,31 @@ describe("CardHistory", () => {
     expect(diffs[1]).toHaveTextContent("Done");
   });
 
+  it("highlights only the changed fragment of a long description", async () => {
+    const server = new FakeServer();
+    const wall = "0123456789".repeat(10); // 100 identical chars on both sides
+    server.seedActivity("card-1", [
+      commandEntry({
+        id: "desc",
+        changes: [
+          {
+            field: "description",
+            from: `${wall}A${wall}`,
+            to: `${wall}B${wall}`,
+          },
+        ],
+      }),
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+    renderHistory();
+
+    expect(await screen.findByText("Description changed")).toBeInTheDocument();
+    const diff = screen.getByTestId("history-diff");
+    expect(diff).toHaveTextContent("…");
+    expect(screen.getByText("A")).toHaveAttribute("data-diff", "removed");
+    expect(screen.getByText("B")).toHaveAttribute("data-diff", "added");
+  });
+
   it("loads older pages with the cursor", async () => {
     const server = new FakeServer();
     server.seedActivity(
@@ -177,5 +209,39 @@ describe("CardHistory", () => {
 
     expect(screen.getByText("Title changed")).toBeInTheDocument();
     expect(screen.getByText("Created")).toBeInTheDocument();
+  });
+
+  it("refetches the moment one of the card's commands commits", async () => {
+    const server = new FakeServer();
+    server.seedActivity("card-1", [commandEntry({ id: "first" })]);
+    const live = createBoardLive();
+    vi.stubGlobal("fetch", server.handle);
+    render(
+      <I18nProvider>
+        <BoardLiveProvider live={live}>
+          <TooltipProvider>
+            <CardHistory cardId="card-1" boardId="b-1" updatedAt={1} />
+          </TooltipProvider>
+        </BoardLiveProvider>
+      </I18nProvider>,
+    );
+    expect(await screen.findByTestId("history-entry")).toBeInTheDocument();
+
+    // The command settled on the server and the feed gained a row — the
+    // commit signal alone must surface it (no further edits, no blur).
+    server.seedActivity("card-1", [
+      commandEntry({
+        id: "second",
+        type: "SET_CHECKLIST_ITEM_DONE",
+        detail: "item",
+        at: AT + 1_000,
+      }),
+    ]);
+    act(() => {
+      live.commits.publish("b-1", ["card-1"]);
+    });
+    await waitFor(() =>
+      expect(screen.getAllByTestId("history-entry")).toHaveLength(2),
+    );
   });
 });

@@ -35,10 +35,12 @@ vi.mock("@/components/editor/DescriptionEditor", () => ({
     value: string;
     onChange: (markdown: string) => void;
   }) => (
+    // Uncontrolled on purpose: the real MDXEditor reads `value` once and
+    // owns its state, staging edits until the blur-commit lands.
     <textarea
       aria-label="Description"
       data-testid="description-editor"
-      value={value}
+      defaultValue={value}
       onChange={(e) => onChange(e.target.value)}
     />
   ),
@@ -101,6 +103,27 @@ describe("CardDialog description editor", () => {
       "Description",
     )) as HTMLTextAreaElement;
     expect(editorAgain.value).toBe("Updated via MDXEditor");
+  });
+
+  it("commits the description once — on blur, not per keystroke", async () => {
+    const dialog = await openCardDialog("Design the new onboarding flow");
+    const editor = (await within(dialog).findByLabelText(
+      "Description",
+    )) as HTMLTextAreaElement;
+
+    // Two edits with a pause between them stage locally…
+    fireEvent.change(editor, { target: { value: "First part." } });
+    fireEvent.change(editor, { target: { value: "First part. Second part." } });
+
+    // …and leaving the editor is what lands a single update.
+    fireEvent.blur(editor);
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    fireEvent.click(screen.getByText("Design the new onboarding flow"));
+    const reopened = await screen.findByRole("dialog");
+    const editorAgain = (await within(reopened).findByLabelText(
+      "Description",
+    )) as HTMLTextAreaElement;
+    expect(editorAgain.value).toBe("First part. Second part.");
   });
 });
 

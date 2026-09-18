@@ -258,9 +258,10 @@ export interface ActivityFeedEntry {
   cardId?: string;
   /** `Activity.details` snapshot (member email/role, comment text, …). */
   details?: Record<string, unknown> | null;
-  /** Command entries: display snapshot for the sentence (label, item text). */
+  /** Write-time snapshot for the sentence (label, item text, comment id). */
   detail?: string;
-  /** Command entries: before → after lines captured at apply time (TASK-37). */
+  /** Before → after lines captured at write time (TASK-37): commands freeze
+   *  the display snapshot at apply time, comment rows carry their text. */
   changes?: ActivityChange[];
 }
 

@@ -190,6 +190,7 @@ function toActivityEntry(row: {
   details: Prisma.JsonValue | null;
   createdAt: Date;
 }): RankedEntry {
+  const snapshot = readCommentSnapshot(row.type, row.details);
   const entry: ActivityFeedEntry = {
     source: "activity",
     id: row.id,
@@ -198,8 +199,44 @@ function toActivityEntry(row: {
     actorId: row.actorId,
     ...(row.cardId ? { cardId: row.cardId } : {}),
     details: (row.details as Record<string, unknown> | null) ?? null,
+    ...(snapshot.detail !== undefined ? { detail: snapshot.detail } : {}),
+    ...(snapshot.changes !== undefined ? { changes: snapshot.changes } : {}),
   };
   return { entry, at: entry.at, source: "a", key: row.id };
+}
+
+/**
+ * Comment rows carry their text in `Activity.details`, frozen at write
+ * time (TASK-37) — the feed turns it into the same Jira-style diff the
+ * command log renders: added is `null → text`, deleted is `text → null`,
+ * and `detail` keeps the comment id the SSE frames reference. The column
+ * is free JSON (legacy rows may lack the text), so the shape is validated
+ * here — a malformed row degrades to a sentence-only entry, never a 500.
+ */
+function readCommentSnapshot(
+  type: string,
+  value: Prisma.JsonValue | null,
+): { detail?: string; changes?: ActivityChange[] } {
+  if (type !== "comment_added" && type !== "comment_deleted") return {};
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const record = value as Record<string, unknown>;
+  const commentId =
+    typeof record.commentId === "string" ? record.commentId : undefined;
+  const text = typeof record.text === "string" ? record.text : undefined;
+  const changes =
+    text === undefined
+      ? undefined
+      : [
+          type === "comment_added"
+            ? { field: "comment", from: null, to: text }
+            : { field: "comment", from: text, to: null },
+        ];
+  return {
+    ...(commentId !== undefined ? { detail: commentId } : {}),
+    ...(changes !== undefined ? { changes } : {}),
+  };
 }
 
 /** Newest first: time desc, then commands before activities, then key desc. */

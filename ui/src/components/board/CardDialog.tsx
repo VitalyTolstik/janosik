@@ -1,6 +1,7 @@
 import {
   lazy,
   Suspense,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -149,6 +150,30 @@ export function CardDialog({
     },
     [cardId, open],
   );
+
+  // The description stages keystrokes in the editor and commits once —
+  // on blur, card switch or dialog close (owner request: the history must
+  // show one "Description changed" per editing session, not one per pause).
+  const descriptionDraftRef = useRef<{ cardId: string; value: string } | null>(
+    null,
+  );
+  const flushStagedDescription = useCallback(() => {
+    const staged = descriptionDraftRef.current;
+    if (!staged) return;
+    descriptionDraftRef.current = null;
+    updateCard(staged.cardId, { description: staged.value }, { quiet: true });
+    scheduleTouch(staged.cardId);
+  }, [updateCard]);
+  const flushDescriptionRef = useRef(flushStagedDescription);
+  useEffect(() => {
+    flushDescriptionRef.current = flushStagedDescription;
+  }, [flushStagedDescription]);
+  // Switching cards or closing the dialog unmounts the editor without a
+  // blur — the per-card cleanup is what saves the staged draft.
+  useEffect(() => {
+    const flush = () => flushDescriptionRef.current();
+    return flush;
+  }, [cardId]);
 
   // Title grows with its content (Jira-style) instead of reserving three
   // blank rows: one line at rest, a scrollbar past four rows.
@@ -334,35 +359,49 @@ export function CardDialog({
                   <div className="h-16 animate-pulse rounded-md bg-muted/40" />
                 }
               >
-                <DescriptionEditor
-                  key={`${card.id}:${overflowTick}`}
-                  value={card.description ?? ""}
-                  readOnly={readOnly}
-                  onChange={(description) => {
-                    if (description.length > LIMITS.description) {
-                      if (!overLimitRef.current) {
-                        overLimitRef.current = true;
-                        toast.error(
-                          t("limits.exceeded", { limit: LIMITS.description }),
+                {/* The blur wrapper closes the staging window: leaving the
+                    editor is what commits the description. */}
+                <div onBlur={() => flushStagedDescription()}>
+                  <DescriptionEditor
+                    key={`${card.id}:${overflowTick}`}
+                    value={card.description ?? ""}
+                    readOnly={readOnly}
+                    onChange={(description) => {
+                      if (description.length > LIMITS.description) {
+                        if (!overLimitRef.current) {
+                          overLimitRef.current = true;
+                          toast.error(
+                            t("limits.exceeded", { limit: LIMITS.description }),
+                          );
+                        }
+                        // Oversized pastes clamp immediately — this path
+                        // still commits right away, staging stays empty.
+                        descriptionDraftRef.current = null;
+                        updateCard(
+                          card.id,
+                          {
+                            description: description.slice(
+                              0,
+                              LIMITS.description,
+                            ),
+                          },
+                          { quiet: true },
                         );
+                        scheduleTouch(card.id);
+                        setOverflowTick((n) => n + 1);
+                        return;
                       }
-                      updateCard(
-                        card.id,
-                        {
-                          description: description.slice(0, LIMITS.description),
-                        },
-                        { quiet: true },
-                      );
-                      scheduleTouch(card.id);
-                      setOverflowTick((n) => n + 1);
-                      return;
-                    }
-                    overLimitRef.current = false;
-                    updateCard(card.id, { description }, { quiet: true });
-                    scheduleTouch(card.id);
-                  }}
-                  placeholder={t("card.descriptionPlaceholder")}
-                />
+                      overLimitRef.current = false;
+                      // Stage only: one UPDATE_CARD lands on blur / card
+                      // switch / dialog close, not one per pause in typing.
+                      descriptionDraftRef.current = {
+                        cardId: card.id,
+                        value: description,
+                      };
+                    }}
+                    placeholder={t("card.descriptionPlaceholder")}
+                  />
+                </div>
               </Suspense>
               <LimitCounter
                 length={(card.description ?? "").length}

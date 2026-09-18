@@ -13,6 +13,8 @@ import type {
   PresenceUser,
 } from "@janosik/shared";
 
+import { CommitStore } from "@/store/commit-store";
+
 /**
  * Live collaboration state (TASK-36): who is connected, who changed what,
  * and the board's member directory.
@@ -254,12 +256,13 @@ export class ActivityStore {
   }
 }
 
-/** The three stores, created together and disposed together. */
+/** The stores, created together and disposed together. */
 export interface BoardLive {
   presence: PresenceStore;
   attribution: AttributionStore;
   members: MembersStore;
   activity: ActivityStore;
+  commits: CommitStore;
   dispose: () => void;
 }
 
@@ -268,16 +271,19 @@ export function createBoardLive(): BoardLive {
   const attribution = new AttributionStore();
   const members = new MembersStore();
   const activity = new ActivityStore();
+  const commits = new CommitStore();
   return {
     presence,
     attribution,
     members,
     activity,
+    commits,
     dispose: () => {
       presence.clear();
       attribution.clear();
       members.clear();
       activity.clear();
+      commits.clear();
     },
   };
 }

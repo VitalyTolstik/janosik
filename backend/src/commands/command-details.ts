@@ -1,4 +1,5 @@
 import type { ActivityChange, Board, BoardAction, Card } from "@janosik/shared";
+import { LIMITS } from "@janosik/shared";
 
 /**
  * The display snapshot stored on a `Command` row (TASK-37) and rendered by
@@ -13,8 +14,14 @@ export interface CommandDetails {
   changes?: ActivityChange[];
 }
 
-/** Snapshots are for reading, not for storage — clip the long ones. */
-const SNAPSHOT_MAX = 280;
+/**
+ * Snapshots are for reading, not for storage — clip the ones that slipped
+ * past the UI clamp. The bar is the description limit, not a display size:
+ * a clipped pair hides the actual change (two identical truncated walls)
+ * and a change beyond the cut would freeze as no change at all. The feed
+ * collapses context and highlights the changed fragment on render.
+ */
+const SNAPSHOT_MAX = LIMITS.description;
 
 function clip(value: string | null): string | null {
   if (value === null) return null;
