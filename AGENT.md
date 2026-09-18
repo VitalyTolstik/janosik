@@ -363,7 +363,10 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   LWW без rebase, §7.5 это допускает. Focus refetch остаётся fallback и
   обновляет resume point. `presence` (TASK-36) проходит мимо seq-дедупа и
   буфера: ростер приходит первым кадром подключения, изменения и heartbeat
-  — сразу; `activity` типизирован, UI подключит его в TASK-37.
+  — сразу; `activity` (TASK-37) — так же мимо seq: `CommentsService`
+  публикует кадр после коммита, мост раздаёт его в `ActivityStore`
+  (`board-live.tsx`), компоненты открытой карточки перечитывают первую
+  страницу по REST. Кадр несёт только id комментария (`detail`).
 - **Присутствие и атрибуция (TASK-36):** `PresenceService`
   (`backend/src/realtime/presence.service.ts`) — сессии per
   `(boardId, clientId)` с дедупом по юзеру (две вкладки — один аватар),
@@ -380,13 +383,21 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   держит соединение открытым, и idle не наступает; используй
   `waitUntil: "domcontentloaded"`. Живой смоук realtime — `realtime.mjs`
   (два браузера + второй таб + догон после `setOffline`).
-- **Activity/Comments живые (TASK-28):** `GET /boards/:id/activity` и
+- **Activity/Comments живые (TASK-28, UI TASK-37):** `GET /boards/:id/activity` и
   `GET /cards/:id/activity` — слияние Command-лога и `Activity`-строк
   составным курсором (newest-first, `?limit=` ≤ 100); member-события
-  (invite/role/expiry/remove) со снапшот-`details`; комментарии REST:
+  (invite/role/expiry/remove) со снапшот-`details`; команды несут
+  display-снапшот `Command.details` (`{detail, changes:[{field,from,to}]}`,
+  пишется в `commands.service` через `command-details.ts`) — UI-история
+  рисует дифф «было → стало», посимвольные `UPDATE_CARD` сворачиваются в
+  `ui/src/utils/history-fold.ts`. Комментарии REST:
   `POST/GET /cards/:id/comments`, `DELETE /comments/:id` (только автор,
-  `LIMITS.comment` = 2000). Доступ — `CardAccessGuard` (card/comment →
-  board).
+  `LIMITS.comment` = 2000, soft-delete); запись дополнительно публикует
+  SSE-кадр `type:"activity"`. Доступ — `CardAccessGuard` (card/comment →
+  board). UI: секция Activity последней в диалоге, чипы Comments/More →
+  History (`CardActivity`/`CardComments`/`CardHistory`), копирование
+  `?card=`-ссылки из шапки. Диалог карточки ставит `key={card.id}` на
+  секцию — смена карточки сбрасывает локальный стейт, а не «переезжает».
   Остальные модули: users — заглушка; `/health` живой (пингует БД).
 - **Мастер-контур живой (TASK-43):** `AdminUser` — отдельная от `User`
   сущность с ролью `AdminRole` (`OWNER` управляет мастерами из панели,
