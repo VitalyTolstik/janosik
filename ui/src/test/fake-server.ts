@@ -89,6 +89,8 @@ export class FakeServer {
   refreshValid = true;
   /** Caller's role per board summary (`GET /boards`) — drives VIEWER tests. */
   role: BoardRole = "ADMIN";
+  /** Per-board role overrides (mixed-role switcher lists, TASK-36.2). */
+  readonly roles = new Map<string, BoardRole>();
   /** Pending invitations of the signed-in user (`GET /invitations`). */
   readonly invitations: BoardInvitationDto[] = [];
   /** Roster every newly opened events stream reports (TASK-36). */
@@ -587,7 +589,7 @@ export class FakeServer {
         cards: Object.keys(board.cards).length,
         columns: board.columns.length,
       },
-      role: this.role,
+      role: this.roles.get(board.id) ?? this.role,
     };
   }
 
