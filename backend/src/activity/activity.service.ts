@@ -1,6 +1,10 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
-import type { ActivityFeedEntry, ActivityFeedPage } from "@janosik/shared";
+import type {
+  ActivityChange,
+  ActivityFeedEntry,
+  ActivityFeedPage,
+} from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 
 /** Default page size of an activity feed (`?limit=`). */
@@ -80,6 +84,7 @@ export class ActivityService {
           touches: true,
           createdAt: true,
           actorId: true,
+          details: true,
         },
       }),
       this.prisma.activity.findMany({
@@ -119,8 +124,10 @@ function toCommandEntry(row: {
   touches: string[];
   createdAt: Date;
   actorId: string;
+  details: Prisma.JsonValue | null;
 }): RankedEntry {
   const cardTouches = row.touches.filter((label) => label.startsWith("card:"));
+  const snapshot = readCommandSnapshot(row.details);
   const entry: ActivityFeedEntry = {
     source: "command",
     id: row.id,
@@ -131,6 +138,8 @@ function toCommandEntry(row: {
     // Only a command that touched a single card is card-attributed: a
     // DELETE_COLUMN touches many cards and belongs to the board.
     ...(cardTouches.length === 1 ? { cardId: cardTouches[0].slice(5) } : {}),
+    ...(snapshot.detail !== undefined ? { detail: snapshot.detail } : {}),
+    ...(snapshot.changes !== undefined ? { changes: snapshot.changes } : {}),
   };
   return {
     entry,
@@ -138,6 +147,38 @@ function toCommandEntry(row: {
     source: "c",
     key: String(row.seq),
     seq: row.seq,
+  };
+}
+
+/**
+ * Read the TASK-37 display snapshot off a command row. The column is free
+ * JSON (older rows are null, hand-written rows may be anything), so the
+ * shape is validated here instead of trusted — a malformed row degrades to
+ * a plain type-only history entry, never to a 500.
+ */
+function readCommandSnapshot(value: Prisma.JsonValue | null): {
+  detail?: string;
+  changes?: ActivityChange[];
+} {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const record = value as Record<string, unknown>;
+  const detail = typeof record.detail === "string" ? record.detail : undefined;
+  const changes = Array.isArray(record.changes)
+    ? record.changes.flatMap((change): ActivityChange[] => {
+        if (change === null || typeof change !== "object") return [];
+        const c = change as Record<string, unknown>;
+        if (typeof c.field !== "string") return [];
+        const from =
+          c.from === null || typeof c.from === "string" ? c.from : null;
+        const to = c.to === null || typeof c.to === "string" ? c.to : null;
+        return [{ field: c.field, from, to }];
+      })
+    : undefined;
+  return {
+    ...(detail !== undefined ? { detail } : {}),
+    ...(changes !== undefined && changes.length > 0 ? { changes } : {}),
   };
 }
 

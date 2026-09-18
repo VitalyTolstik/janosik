@@ -25,6 +25,11 @@ interface SseFrame {
   boardId?: string;
   userId?: string;
   change?: string;
+  /** Activity frames (TASK-37). */
+  id?: string;
+  cardId?: string;
+  kind?: string;
+  detail?: string;
 }
 
 /**
@@ -362,6 +367,60 @@ describe("Board events SSE (e2e)", () => {
     expect(frames[0].touches).toContain(`card:card-live`);
     expect(frames[0].touches).toContain(`board:${boardId}`);
     expect(frames[1].touches).toContain(`column:col-live`);
+  }, 20_000);
+
+  it("broadcasts comment activity frames: added and deleted (TASK-37)", async () => {
+    await command(
+      ownerToken,
+      {
+        type: "ADD_COLUMN",
+        newColumnId: "col-comment",
+        title: "Comments",
+        at: Date.now(),
+      },
+      "evt-cmd-comment-1",
+    );
+    await command(
+      ownerToken,
+      {
+        type: "ADD_CARD",
+        newCardId: "card-comment",
+        columnId: "col-comment",
+        title: "Commented",
+        at: Date.now(),
+      },
+      "evt-cmd-comment-2",
+    );
+    const baseline = await boardSeq(ownerToken);
+    const reader = openReader(await openStream(memberToken, baseline));
+
+    const created = await server()
+      .post("/api/v1/cards/card-comment/comments")
+      .set(auth(memberToken))
+      .send({ text: "Live note" })
+      .expect(201);
+    const [added] = await reader.next(1, "activity");
+    expect(added).toMatchObject({
+      type: "activity",
+      boardId,
+      cardId: "card-comment",
+      actorId: memberId,
+      kind: "comment_added",
+      detail: created.body.id,
+    });
+
+    await server()
+      .delete(`/api/v1/comments/${created.body.id}`)
+      .set(auth(memberToken))
+      .expect(200);
+    const [removed] = await reader.next(1, "activity");
+    expect(removed).toMatchObject({
+      type: "activity",
+      kind: "comment_deleted",
+      detail: created.body.id,
+      actorId: memberId,
+    });
+    await reader.close();
   }, 20_000);
 
   it("catches up the missed delta before going live", async () => {

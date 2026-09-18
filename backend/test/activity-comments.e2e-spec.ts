@@ -409,6 +409,18 @@ describe("Activity & comments API (e2e)", () => {
       const edited = page.items.find((entry) => entry.type === "UPDATE_CARD");
       expect(edited?.actorId).toBe(memberId);
       expect(edited?.cardId).toBe(cardId);
+      // The display diff frozen at apply time (TASK-37): the history feed
+      // renders "Card → Edited" without replaying anything.
+      expect(edited?.changes).toEqual([
+        { field: "title", from: "Card", to: "Edited" },
+      ]);
+      const labelled = page.items.find(
+        (entry) => entry.type === "SET_CARD_LABEL",
+      );
+      expect(labelled?.detail).toBe("Bug");
+      expect(labelled?.changes).toEqual([
+        { field: "label", from: null, to: "Bug" },
+      ]);
     });
 
     it("403s a stranger, 404s an unknown card and lets a VIEWER read", async () => {

@@ -1,4 +1,5 @@
 import type {
+  ActivitySseEvent,
   BoardAction,
   BoardSseEvent,
   CommandSseEvent,
@@ -296,6 +297,8 @@ export interface RealtimeHost {
   ) => void;
   /** The caller lost access to the board (TASK-36). */
   onAccessRevoked: (boardId: string) => void;
+  /** A non-command activity frame — a comment (TASK-37). */
+  onActivity: (event: ActivitySseEvent) => void;
   /** Someone else changed these entities: raise the attribution ring. */
   flagForeign: (
     boardId: string,
@@ -402,7 +405,12 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
       host.onMembershipChange(event.boardId, event.userId, event.change);
       return;
     }
-    // Activity events are TASK-37 — the wire type carries them.
+    // An activity frame (TASK-37): a new or deleted comment. No seq, no
+    // log to catch up from — hand it to the listeners as it arrives.
+    if (event.type === "activity") {
+      host.onActivity(event);
+      return;
+    }
     if (event.type !== "command") return;
     const boardId = boardIdOf(event);
     if (boardId === undefined) return;

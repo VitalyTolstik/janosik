@@ -1,5 +1,7 @@
 import {
   boardReducer,
+  type ActivityFeedEntry,
+  type ActivitySseEvent,
   type AuthResponseDto,
   type AuthUserDto,
   type Board,
@@ -13,6 +15,7 @@ import {
   type CommandRequest,
   type CommandResponse,
   type CommandSseEvent,
+  type CommentDto,
   type CreateUserTokenRequest,
   type CreateUserTokenResponse,
   type MembershipChange,
@@ -101,6 +104,10 @@ export class FakeServer {
   readonly revoked = new Set<string>();
   /** `GET /boards/:id/members` answers (TASK-36). */
   readonly membersByBoard = new Map<string, BoardMemberDto[]>();
+  /** `GET /cards/:id/comments` storage, newest-first (TASK-37). */
+  readonly commentsByCard = new Map<string, CommentDto[]>();
+  /** `GET /cards/:id/activity` pages, newest-first (TASK-37). */
+  readonly activityByCard = new Map<string, ActivityFeedEntry[]>();
 
   /** Committed events per board — the SSE catch-up log (TASK-30). */
   private readonly eventLog = new Map<string, CommandSseEvent[]>();
@@ -118,6 +125,8 @@ export class FakeServer {
   /** Held command response (`holdNextCommand`) — the in-flight window. */
   private commandGate: Promise<void> | null = null;
   private boardCounter = 0;
+  /** Id counter of `POST /cards/:id/comments` (TASK-37). */
+  private commentCounter = 0;
 
   constructor(seed: Board[] = []) {
     for (const board of seed) this.seed(board);
@@ -271,6 +280,34 @@ export class FakeServer {
         /* the stream was cancelled */
       }
     }
+  }
+
+  /** Push one activity frame (a comment) to the board's streams (TASK-37). */
+  publishActivity(boardId: string, event: ActivitySseEvent): void {
+    const frame = encodeEvent(event);
+    for (const controller of this.eventStreams.get(boardId) ?? []) {
+      try {
+        controller.enqueue(frame);
+      } catch {
+        /* the stream was cancelled */
+      }
+    }
+  }
+
+  /** Seed a card's comment thread, newest-first (TASK-37). */
+  seedComments(cardId: string, comments: CommentDto[]): void {
+    this.commentsByCard.set(
+      cardId,
+      comments.map((comment) => structuredClone(comment)),
+    );
+  }
+
+  /** Seed a card's history page, newest-first (TASK-37). */
+  seedActivity(cardId: string, entries: ActivityFeedEntry[]): void {
+    this.activityByCard.set(
+      cardId,
+      entries.map((entry) => structuredClone(entry)),
+    );
   }
 
   /** Close every open stream of the board (simulates a dropped SSE). */
@@ -468,11 +505,82 @@ export class FakeServer {
       return json(200, { status: "ok" });
     }
 
+    const commentsMatch = /^\/api\/v1\/cards\/([^/]+)\/comments$/.exec(path);
+    if (commentsMatch !== null) {
+      const cardId = commentsMatch[1];
+      if (method === "GET") {
+        return json(
+          200,
+          this.pageOf(this.commentsByCard.get(cardId) ?? [], searchParams),
+        );
+      }
+      if (method === "POST") {
+        const { text } = (body ?? {}) as { text?: string };
+        const comment: CommentDto = {
+          id: `comment-${++this.commentCounter}`,
+          cardId,
+          authorId: this.account.id,
+          text: text ?? "",
+          createdAt: Date.now(),
+        };
+        const list = this.commentsByCard.get(cardId) ?? [];
+        list.unshift(comment);
+        this.commentsByCard.set(cardId, list);
+        return json(201, structuredClone(comment));
+      }
+    }
+    const deleteCommentMatch = /^\/api\/v1\/comments\/([^/]+)$/.exec(path);
+    if (deleteCommentMatch !== null && method === "DELETE") {
+      for (const list of this.commentsByCard.values()) {
+        const index = list.findIndex(
+          (comment) => comment.id === deleteCommentMatch[1],
+        );
+        if (index !== -1) {
+          list.splice(index, 1);
+          return json(200, { status: "ok" });
+        }
+      }
+      return json(404, { message: "Comment not found" });
+    }
+    const cardActivityMatch = /^\/api\/v1\/cards\/([^/]+)\/activity$/.exec(
+      path,
+    );
+    if (cardActivityMatch !== null && method === "GET") {
+      return json(
+        200,
+        this.pageOf(
+          this.activityByCard.get(cardActivityMatch[1]) ?? [],
+          searchParams,
+        ),
+      );
+    }
+
     const commandMatch = /^\/api\/v1\/boards\/([^/]+)\/commands$/.exec(path);
     if (commandMatch && method === "POST") {
       return this.command(commandMatch[1], body as CommandRequest);
     }
     return json(404, { message: `No route for ${method} ${path}` });
+  }
+
+  /**
+   * Cursor pagination for the TASK-37 feeds: `cursor` is the next index, the
+   * page size is `limit` (default 50, max 100) — newest-first like production.
+   */
+  private pageOf<T>(
+    items: readonly T[],
+    searchParams: URLSearchParams,
+  ): { items: T[]; nextCursor: string | null } {
+    const limitRaw = Number(searchParams.get("limit") ?? 50);
+    const limit =
+      Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 50;
+    const startRaw = Number(searchParams.get("cursor") ?? 0);
+    const start = Number.isInteger(startRaw) && startRaw > 0 ? startRaw : 0;
+    const page = items.slice(start, start + limit);
+    const end = start + page.length;
+    return {
+      items: structuredClone([...page]),
+      nextCursor: end < items.length ? String(end) : null,
+    };
   }
 
   /** `GET /boards/:id/events` — backlog from `since`, then live frames. */

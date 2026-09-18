@@ -27,6 +27,7 @@ import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { applyCommandWrites, collectVersions } from "./command-writers";
+import { commandDetails } from "./command-details";
 import { referencedEntityIds } from "./referenced-entity-ids";
 import type { CreateCommandDto } from "./dto/create-command.dto";
 
@@ -208,6 +209,9 @@ export class CommandsService {
         );
         const after = state[0] ?? before;
         const changed = stableStringify(before) !== stableStringify(after);
+        // Freeze the display diff while both aggregates are in hand (TASK-37)
+        // — the history feed reads it back; the payload stays a pure action.
+        const details = changed ? commandDetails(action, before, after) : null;
 
         const created = await tx.command.create({
           data: {
@@ -217,6 +221,9 @@ export class CommandsService {
             type: action.type,
             payload: jsonSafe(action),
             result: {},
+            ...(details !== null
+              ? { details: jsonSafe(details) as Prisma.InputJsonValue }
+              : {}),
             touches: [],
           },
         });

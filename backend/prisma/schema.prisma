@@ -122,6 +122,10 @@ model Command {
   type      String // BoardAction type
   payload   Json // whole action (deterministic — TASK-21.7a)
   result    Json // first apply result {seq, versions}
+  // Display snapshot captured when the command applied (TASK-37): the
+  // history feed renders "from → to" diffs from here — the action alone
+  // carries only the new values. Null for rows written before the column.
+  details   Json?
   touches   String[] // ["card:c1","column:col-2"] — touched entities
   createdAt DateTime @default(now())
 

@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import type {
+  ActivitySseEvent,
   Board,
   BoardAction,
   BoardMemberDto,
@@ -16,13 +17,15 @@ import type {
  * Live collaboration state (TASK-36): who is connected, who changed what,
  * and the board's member directory.
  *
- * Three tiny external stores instead of one more React state tree, for one
+ * Three tiny state stores instead of one more React state tree, for one
  * reason: render isolation. An avatar appearing in the header or a foreign
  * highlight ring fading on one card must not re-render the board — every
  * consumer subscribes narrowly (one board roster, one entity, one member row)
  * through `useSyncExternalStore`, and the stores notify only the keys that
  * actually changed. `BoardProvider` owns one instance per lifetime and hands
- * it out through this context, so nothing lives past a logout.
+ * it out through this context, so nothing lives past a logout. A fourth
+ * member, `ActivityStore` (TASK-37), carries no state at all — it fans
+ * comment frames out to the open card and forgets them.
  */
 
 /** How long a foreign change keeps its highlight ring on screen. */
@@ -228,11 +231,35 @@ export class MembersStore {
   }
 }
 
+/**
+ * Fan-out of `type: "activity"` SSE frames (TASK-37): comments arriving on
+ * an open board. Unlike the other stores this one keeps no state — every
+ * frame is handed to the mounted listeners (an open card dialog) and
+ * forgotten, their views refetch what they need through the REST API.
+ */
+export class ActivityStore {
+  private readonly listeners = new Set<(event: ActivitySseEvent) => void>();
+
+  publish(event: ActivitySseEvent): void {
+    for (const listener of [...this.listeners]) listener(event);
+  }
+
+  subscribe = (listener: (event: ActivitySseEvent) => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  clear(): void {
+    this.listeners.clear();
+  }
+}
+
 /** The three stores, created together and disposed together. */
 export interface BoardLive {
   presence: PresenceStore;
   attribution: AttributionStore;
   members: MembersStore;
+  activity: ActivityStore;
   dispose: () => void;
 }
 
@@ -240,14 +267,17 @@ export function createBoardLive(): BoardLive {
   const presence = new PresenceStore();
   const attribution = new AttributionStore();
   const members = new MembersStore();
+  const activity = new ActivityStore();
   return {
     presence,
     attribution,
     members,
+    activity,
     dispose: () => {
       presence.clear();
       attribution.clear();
       members.clear();
+      activity.clear();
     },
   };
 }

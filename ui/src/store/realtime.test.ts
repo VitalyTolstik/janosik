@@ -30,7 +30,7 @@ const COMMAND: CommandSseEvent = {
   touches: [],
 };
 
-function frame(event: CommandSseEvent | PresenceSseEvent): string {
+function frame(event: BoardSseEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
@@ -249,6 +249,7 @@ describe("presence bridge", () => {
       getUserId: () => "me",
       onMembershipChange: vi.fn(),
       onAccessRevoked: vi.fn(),
+      onActivity: vi.fn(),
     };
   }
 
@@ -345,6 +346,44 @@ describe("presence bridge", () => {
     );
     expect(bridgeHost.onMembershipChange).toHaveBeenCalledTimes(2);
     expect(bridgeHost.onAccessRevoked).not.toHaveBeenCalled();
+    bridge.dispose();
+  });
+
+  it("hands activity frames to the listeners, outside the seq machinery", async () => {
+    const activity: BoardSseEvent = {
+      type: "activity",
+      id: "act-1",
+      boardId: "b-1",
+      cardId: "c-1",
+      actorId: "u-2",
+      at: 5,
+      kind: "comment_added",
+      detail: "cm-1",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/presence")) {
+          return new Response(null, { status: 204 });
+        }
+        return new Response(streamOf([frame(activity)]), {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }),
+    );
+
+    const bridgeHost = host();
+    const bridge = createRealtimeBridge(bridgeHost);
+    bridge.watch("b-1");
+
+    await vi.waitFor(() =>
+      expect(bridgeHost.onActivity).toHaveBeenCalledWith(activity),
+    );
+    // Activity is not a command: no reducer apply, no baseline movement.
+    expect(bridgeHost.apply).not.toHaveBeenCalled();
+    expect(bridgeHost.setBaseline).not.toHaveBeenCalled();
     bridge.dispose();
   });
 });

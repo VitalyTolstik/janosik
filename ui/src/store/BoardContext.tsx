@@ -711,6 +711,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // home with "create new board"): the user is never left *on* an
   // archived board, and restoration stays one click away in the switcher.
   useEffect(() => {
+    // A cold boot still has an empty `state` while the boards are on their
+    // way: redirecting then would drop a `?card=` deep link (the URL is
+    // replaced before the board it points at has loaded).
+    if (syncStatus !== "ready") return;
     const routed = routeBoardId
       ? state.find((b) => b.id === routeBoardId)
       : undefined;
@@ -724,7 +728,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     if (location.pathname !== target) {
       navigate(target, { replace: true });
     }
-  }, [routeBoardId, state, location.pathname, navigate, cardParam]);
+  }, [routeBoardId, state, location.pathname, navigate, cardParam, syncStatus]);
 
   // Debounced persistence + throttled auto-backup after every change. Both
   // are local-mode only: with a server the boards live in the database, and
@@ -1020,6 +1024,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         getUserId: () => userIdRef.current,
         onMembershipChange,
         onAccessRevoked,
+        onActivity: (event) => live.activity.publish(event),
       });
       realtimeRef.current.watch(boardId);
     });
