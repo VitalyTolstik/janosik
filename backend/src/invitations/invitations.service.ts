@@ -5,6 +5,7 @@ import {
 } from "@nestjs/common";
 import type { BoardInvitationDto } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { RealtimeService } from "@/realtime/realtime.service";
 
 /**
  * Opt-in invitations (TASK-35 addendum).
@@ -18,7 +19,10 @@ import { PrismaService } from "@/common/prisma/prisma.service";
  */
 @Injectable()
 export class InvitationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeService,
+  ) {}
 
   /** Pending, non-expired-board invitations of the caller, newest first. */
   async listForUser(userId: string): Promise<BoardInvitationDto[]> {
@@ -67,6 +71,14 @@ export class InvitationsService {
           details: { userId, role: invitation.role },
         },
       });
+    });
+    // The board's open member lists refresh right away: the invitee is a
+    // member from this moment (TASK-36).
+    this.realtime.publish(invitation.boardId, {
+      type: "membership",
+      boardId: invitation.boardId,
+      userId,
+      change: "accepted",
     });
   }
 

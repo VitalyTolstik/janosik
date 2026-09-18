@@ -97,7 +97,9 @@ export function NotificationsBell() {
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        align="end"
+        align="start"
+        sideOffset={8}
+        collisionPadding={8}
         className="w-80 overflow-hidden rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
       >
         <NotificationsPanel
@@ -137,6 +139,8 @@ function NotificationsPanel({
         t("notifications.accepted", { title: invitation.boardTitle }),
       );
       onClose();
+      // The answered invitation must leave the badge and the list at once.
+      onReload();
       // The board must appear in the switcher without a reload.
       await refreshBoards();
     } catch (error) {
@@ -163,7 +167,7 @@ function NotificationsPanel({
 
   return (
     <>
-      <div className="border-b border-border/60 px-3 py-2">
+      <div className="border-b border-border/60 px-4 py-3">
         <p className="text-sm font-semibold">
           {invitations === null
             ? t("notifications.titlePlain")
@@ -172,11 +176,11 @@ function NotificationsPanel({
       </div>
 
       {invitations === null ? (
-        <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
           {t("notifications.loading")}
         </p>
       ) : invitations.length === 0 ? (
-        <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
           {t("notifications.empty")}
         </p>
       ) : (
@@ -197,44 +201,46 @@ function NotificationsPanel({
                 key={invitation.id}
                 data-testid="invitation-row"
                 data-role={invitation.role}
-                className="space-y-1.5 p-3"
+                className="space-y-3 px-4 py-3"
               >
-                <p className="truncate text-sm font-medium">
-                  {invitation.boardTitle}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {t("notifications.invitedBy", { name: inviter })}
-                  {" · "}
-                  {t(ROLE_KEYS[invitation.role])}
-                  {invitation.role === "VIEWER" &&
-                  invitation.expiresAt !== null ? (
-                    <span className={cn(expired && "text-danger")}>
-                      {" · "}
-                      {t("notifications.expires", {
-                        date: formatDateOnly(invitation.expiresAt, lang),
-                      })}
-                      {expired ? ` (${t("notifications.expired")})` : ""}
-                    </span>
-                  ) : null}
-                </p>
-                <div className="flex items-center gap-1.5">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {invitation.boardTitle}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {t("notifications.invitedBy", { name: inviter })}
+                    {" · "}
+                    {t(ROLE_KEYS[invitation.role])}
+                    {invitation.role === "VIEWER" &&
+                    invitation.expiresAt !== null ? (
+                      <span className={cn(expired && "text-danger")}>
+                        {" · "}
+                        {t("notifications.expires", {
+                          date: formatDateOnly(invitation.expiresAt, lang),
+                        })}
+                        {expired ? ` (${t("notifications.expired")})` : ""}
+                      </span>
+                    ) : null}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
                   <Button
                     size="sm"
                     data-testid="invitation-accept"
                     disabled={pending || expired}
                     onClick={() => void handleAccept(invitation)}
-                    className="h-7 gap-1 px-2 text-xs"
+                    className="h-8 flex-1 gap-1.5 text-xs"
                   >
                     <Check className="h-3.5 w-3.5" />
                     {t("notifications.accept")}
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
                     data-testid="invitation-decline"
                     disabled={pending}
                     onClick={() => void handleDecline(invitation)}
-                    className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    className="h-8 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
                   >
                     <X className="h-3.5 w-3.5" />
                     {t("notifications.decline")}

@@ -124,6 +124,87 @@ describe("BoardHistory", () => {
     expect(history.steps()).toHaveLength(1);
   });
 
+  it("redo replays the text, not the debounced touch", () => {
+    const history = new BoardHistory();
+    const before = freshBoard();
+    const original = before.cards["card-1"].title;
+
+    // A typing session: two quiet keystrokes and the debounced stamp.
+    let board = before;
+    for (const title of ["T", "Typ"]) {
+      const command = updateCard("card-1", title, { quiet: true });
+      history.push(board, command);
+      board = apply(board, command);
+    }
+    const touch: BoardAction = {
+      type: "TOUCH_CARD",
+      cardId: "card-1",
+      at: AT + 1,
+    };
+    history.push(board, touch);
+    board = apply(board, touch);
+    expect(history.steps()).toHaveLength(1);
+
+    const undone = apply(board, history.undo()!);
+    expect(undone.cards["card-1"].title).toBe(original);
+
+    // Redo must bring the typed title back — replaying the touch would only
+    // move `updatedAt` and leave the old text in place (live bug 2026-09-18).
+    const redone = apply(undone, history.redo()!);
+    expect(redone.cards["card-1"].title).toBe("Typ");
+  });
+
+  it("coalesces a title and a description edit into one redo", () => {
+    const history = new BoardHistory();
+    const before = freshBoard();
+    let board = before;
+    const withTitle = {
+      ...updateCard("card-1", "New title"),
+    } as BoardAction;
+    history.push(board, withTitle);
+    board = apply(board, withTitle);
+    const withDescription: BoardAction = {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      description: "New description",
+      at: AT + 1,
+    };
+    history.push(board, withDescription);
+    board = apply(board, withDescription);
+    expect(history.steps()).toHaveLength(1);
+
+    const undone = apply(board, history.undo()!);
+    expect(undone.cards["card-1"].title).toBe(before.cards["card-1"].title);
+    expect(undone.cards["card-1"].description).toBe(
+      before.cards["card-1"].description,
+    );
+
+    // Redo replays one command, so it must carry both fields of the run.
+    const redone = apply(undone, history.redo()!);
+    expect(redone.cards["card-1"].title).toBe("New title");
+    expect(redone.cards["card-1"].description).toBe("New description");
+  });
+
+  it("a standalone touch neither becomes a step nor clears redo", () => {
+    const history = new BoardHistory();
+    const board = freshBoard();
+    history.push(board, updateCard("card-1", "A"));
+    history.undo();
+
+    // The debounced stamp often lands right after an undo — recording it
+    // would wipe the redo the user is about to use and then offer an undo
+    // press that only moves a timestamp.
+    const recorded = history.push(board, {
+      type: "TOUCH_CARD",
+      cardId: "card-1",
+      at: AT + 1,
+    });
+    expect(recorded).toBe(false);
+    expect(history.canUndo()).toBe(false);
+    expect(history.canRedo()).toBe(true);
+    expect(history.redo()).toMatchObject({ type: "UPDATE_CARD" });
+  });
+
   it("does not coalesce edits for different cards", () => {
     const history = new BoardHistory();
     const board = freshBoard();

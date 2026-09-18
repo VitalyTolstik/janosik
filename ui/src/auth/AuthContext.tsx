@@ -50,6 +50,9 @@ const LOCAL_AUTH: AuthValue = {
 
 const AuthContext = createContext<AuthValue | null>(null);
 
+/** Exposed for tests that need a signed-in user without a network session. */
+export { AuthContext };
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const serverMode = isApiEnabled();
   const [status, setStatus] = useState<AuthStatus>(() =>

@@ -1,8 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { CardActivityFeed } from "@/components/board/CardActivityFeed";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
+import { BoardLiveProvider, createBoardLive } from "@/store/board-live";
 import type { CardActivityEvent } from "@janosik/shared";
 
 /**
@@ -85,6 +87,44 @@ describe("CardActivityFeed", () => {
     );
   });
 
+  it("renders checklist events with the captured text snapshots", () => {
+    renderFeed({
+      activity: [
+        event({
+          id: "e1",
+          type: "checklist-added",
+          at: HOUR,
+          detail: "Release",
+        }),
+        event({
+          id: "e2",
+          type: "checklist-renamed",
+          at: HOUR + 1,
+          detail: "Ship it",
+        }),
+        event({
+          id: "e3",
+          type: "checklist-item-checked",
+          at: HOUR + 2,
+          detail: "Tag the build",
+        }),
+        event({
+          id: "e4",
+          type: "checklist-item-removed",
+          at: HOUR + 3,
+          detail: "Write notes",
+        }),
+      ],
+      createdAt: 0,
+    });
+    expandFeed();
+    const rows = screen.getAllByTestId("activity-event");
+    expect(rows[0]).toHaveTextContent("Checklist item Write notes removed");
+    expect(rows[1]).toHaveTextContent("Tag the build checked off");
+    expect(rows[2]).toHaveTextContent("Checklist renamed to Ship it");
+    expect(rows[3]).toHaveTextContent("Checklist Release added");
+  });
+
   it("falls back to a single 'created' row for legacy cards", () => {
     renderFeed({ activity: undefined, createdAt: 5 * HOUR });
     expandFeed();
@@ -114,5 +154,61 @@ describe("CardActivityFeed", () => {
     expandFeed();
     const time = screen.getByText(/hours? ago|2 hours/i);
     expect(time).toHaveAttribute("dateTime", new Date(recent).toISOString());
+  });
+});
+
+describe("attribution (TASK-36)", () => {
+  it("names the actor and leads with their avatar", () => {
+    const live = createBoardLive();
+    live.members.set("b-1", [
+      {
+        userId: "u-boris",
+        displayName: "Boris",
+        email: "boris@example.com",
+        role: "MEMBER",
+        expiresAt: null,
+      },
+    ]);
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <BoardLiveProvider live={live}>
+            <CardActivityFeed
+              boardId="b-1"
+              activity={[
+                event({
+                  id: "e1",
+                  type: "renamed",
+                  at: HOUR,
+                  actorId: "u-boris",
+                }),
+              ]}
+              createdAt={0}
+            />
+          </BoardLiveProvider>
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+    expandFeed();
+
+    const row = screen.getAllByTestId("activity-event")[0];
+    expect(within(row).getByTestId("activity-actor")).toBeInTheDocument();
+    expect(row).toHaveTextContent("Boris");
+    expect(row).toHaveTextContent("Title changed");
+  });
+
+  it("falls back to the type icon when the actor is unknown", () => {
+    renderFeed({
+      boardId: "b-1",
+      activity: [
+        event({ id: "e1", type: "renamed", at: HOUR, actorId: "u-ghost" }),
+      ],
+      createdAt: 0,
+    });
+    expandFeed();
+
+    const row = screen.getAllByTestId("activity-event")[0];
+    expect(within(row).queryByTestId("activity-actor")).toBeNull();
+    expect(row).toHaveTextContent("Title changed");
   });
 });

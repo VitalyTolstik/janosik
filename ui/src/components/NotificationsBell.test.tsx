@@ -127,6 +127,12 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
         server.requests.filter((r) => r.path === "/api/v1/boards").length,
       ).toBeGreaterThan(1),
     );
+    // The answered invitation must leave the badge and the list at once.
+    await waitFor(() =>
+      expect(screen.queryByTestId("notifications-badge")).toBeNull(),
+    );
+    await userEvent.click(screen.getByTestId("notifications-bell"));
+    expect(await screen.findByText("No invitations")).toBeInTheDocument();
   });
 
   it("declines an invitation", async () => {

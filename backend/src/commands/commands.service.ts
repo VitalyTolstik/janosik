@@ -230,6 +230,7 @@ export class CommandsService {
             before,
             after,
             at,
+            actorId,
           });
         }
         const versions = changed

@@ -6,11 +6,17 @@ import {
   type BoardAction,
   type BoardExportFile,
   type BoardInvitationDto,
+  type BoardMemberDto,
   type BoardRole,
   type BoardSummary,
+  type BoardSseEvent,
   type CommandRequest,
   type CommandResponse,
   type CommandSseEvent,
+  type MembershipChange,
+  type MembershipSseEvent,
+  type PresenceSseEvent,
+  type PresenceUser,
 } from "@janosik/shared";
 
 /**
@@ -74,6 +80,14 @@ export class FakeServer {
   role: BoardRole = "ADMIN";
   /** Pending invitations of the signed-in user (`GET /invitations`). */
   readonly invitations: BoardInvitationDto[] = [];
+  /** Roster every newly opened events stream reports (TASK-36). */
+  initialPresence: PresenceUser[] = [];
+  /** Presence heartbeats the client sent (`POST /boards/:id/presence`). */
+  readonly presencePings: string[] = [];
+  /** Boards whose membership was revoked: hidden and refused (TASK-36). */
+  readonly revoked = new Set<string>();
+  /** `GET /boards/:id/members` answers (TASK-36). */
+  readonly membersByBoard = new Map<string, BoardMemberDto[]>();
 
   /** Committed events per board — the SSE catch-up log (TASK-30). */
   private readonly eventLog = new Map<string, CommandSseEvent[]>();
@@ -202,6 +216,50 @@ export class FakeServer {
     return seq;
   }
 
+  /** Push a presence roster to every open stream of the board (TASK-36). */
+  publishPresence(boardId: string, users: PresenceUser[]): void {
+    const event: PresenceSseEvent = { type: "presence", users };
+    const frame = encodeEvent(event);
+    for (const controller of this.eventStreams.get(boardId) ?? []) {
+      try {
+        controller.enqueue(frame);
+      } catch {
+        /* the stream was cancelled */
+      }
+    }
+  }
+
+  /**
+   * Revoke the caller's membership (TASK-36): the board leaves `GET /boards`
+   * and every board-scoped route answers 403, like `MembershipGuard` does.
+   * `publishMembership` delivers the live frame the server sends.
+   */
+  revokeMembership(boardId: string): void {
+    this.revoked.add(boardId);
+  }
+
+  /** Push one membership frame to every open stream of the board (TASK-36). */
+  publishMembership(
+    boardId: string,
+    userId: string,
+    change: MembershipChange,
+  ): void {
+    const event: MembershipSseEvent = {
+      type: "membership",
+      boardId,
+      userId,
+      change,
+    };
+    const frame = encodeEvent(event);
+    for (const controller of this.eventStreams.get(boardId) ?? []) {
+      try {
+        controller.enqueue(frame);
+      } catch {
+        /* the stream was cancelled */
+      }
+    }
+  }
+
   /** Close every open stream of the board (simulates a dropped SSE). */
   closeEvents(boardId: string): void {
     for (const controller of this.eventStreams.get(boardId) ?? []) {
@@ -241,6 +299,12 @@ export class FakeServer {
       this.nextRequestFailure = null;
       return json(failure.status, failure.body);
     }
+    // A revoked membership refuses every board-scoped route, like the real
+    // `MembershipGuard` (TASK-36). `GET /boards` filters the board out below.
+    const revoked = /^\/api\/v1\/boards\/([^/]+)\//.exec(path);
+    if (revoked !== null && this.revoked.has(revoked[1])) {
+      return json(403, { message: "No access to this board" });
+    }
     if (path === "/api/v1/auth/refresh" && method === "POST") {
       return this.refreshValid
         ? json(200, this.session())
@@ -264,7 +328,9 @@ export class FakeServer {
     if (path === "/api/v1/boards" && method === "GET") {
       return json(
         200,
-        [...this.boards.values()].map((board) => this.toSummary(board)),
+        [...this.boards.values()]
+          .filter((board) => !this.revoked.has(board.id))
+          .map((board) => this.toSummary(board)),
       );
     }
     if (path === "/api/v1/boards" && method === "POST") {
@@ -286,11 +352,24 @@ export class FakeServer {
       return json(201, imported);
     }
 
+    const presenceMatch = /^\/api\/v1\/boards\/([^/]+)\/presence$/.exec(path);
+    if (presenceMatch && method === "POST") {
+      const { clientId } = (body ?? {}) as { clientId?: string };
+      if (typeof clientId === "string") this.presencePings.push(clientId);
+      return new Response(null, { status: 204 });
+    }
     const eventsMatch = /^\/api\/v1\/boards\/([^/]+)\/events$/.exec(path);
     if (eventsMatch && method === "GET") {
       return this.events(
         eventsMatch[1],
         Number(searchParams.get("since") ?? 0),
+      );
+    }
+    const membersMatch = /^\/api\/v1\/boards\/([^/]+)\/members$/.exec(path);
+    if (membersMatch && method === "GET") {
+      return json(
+        200,
+        structuredClone(this.membersByBoard.get(membersMatch[1]) ?? []),
       );
     }
     const boardMatch = /^\/api\/v1\/boards\/([^/]+)$/.exec(path);
@@ -337,7 +416,14 @@ export class FakeServer {
     );
     const stream = new ReadableStream<Uint8Array>({
       start: (controller) => {
+        // The real server's connection handshake: the command backlog first,
+        // then the current presence roster (TASK-36).
         for (const event of backlog) controller.enqueue(encodeEvent(event));
+        if (this.initialPresence.length > 0) {
+          controller.enqueue(
+            encodeEvent({ type: "presence", users: this.initialPresence }),
+          );
+        }
         const streams = this.eventStreams.get(boardId) ?? new Set();
         streams.add(controller);
         this.eventStreams.set(boardId, streams);
@@ -456,7 +542,7 @@ function json(
 }
 
 /** One `data:` frame, exactly like Nest's `@Sse` serializer writes it. */
-function encodeEvent(event: CommandSseEvent): Uint8Array {
+function encodeEvent(event: BoardSseEvent): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
 }
 

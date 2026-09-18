@@ -1,11 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
-import type { BoardSseEvent, CommandSseEvent } from "@janosik/shared";
-import { ApiError } from "@/api/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type {
+  BoardSseEvent,
+  CommandSseEvent,
+  PresenceSseEvent,
+} from "@janosik/shared";
+import { ApiError, api } from "@/api/client";
 import {
   BoardRealtime,
+  createClientId,
+  createRealtimeBridge,
   parseBlock,
   parseEventStream,
+  pingPresence,
   touchedEntityIds,
+  type RealtimeHost,
 } from "@/store/realtime";
 
 /**
@@ -22,7 +30,7 @@ const COMMAND: CommandSseEvent = {
   touches: [],
 };
 
-function frame(event: CommandSseEvent): string {
+function frame(event: CommandSseEvent | PresenceSseEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
@@ -134,17 +142,20 @@ describe("BoardRealtime", () => {
 
   it("does not reconnect after a fatal answer", async () => {
     const open = vi.fn().mockRejectedValue(new ApiError(403, null));
+    const onFatal = vi.fn();
     const realtime = new BoardRealtime({
       open,
       onEvent: () => undefined,
       getSince: () => 0,
       retryDelayMs: () => 0,
+      onFatal,
     });
 
     realtime.watch("b-1");
     await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(1));
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(open).toHaveBeenCalledTimes(1);
+    expect(onFatal).toHaveBeenCalledWith("b-1", 403);
     realtime.stop();
   });
 
@@ -161,6 +172,22 @@ describe("BoardRealtime", () => {
     await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(1));
     realtime.wakeNow();
     await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(2));
+    realtime.stop();
+  });
+
+  it("reports connect/disconnect around each stream", async () => {
+    const events: string[] = [];
+    const realtime = new BoardRealtime({
+      open: () => Promise.resolve(streamOf([frame(COMMAND)])),
+      onEvent: () => undefined,
+      getSince: () => 0,
+      retryDelayMs: () => 60_000,
+      onConnected: (boardId) => events.push(`up:${boardId}`),
+      onDisconnected: (boardId) => events.push(`down:${boardId}`),
+    });
+
+    realtime.watch("b-1");
+    await vi.waitFor(() => expect(events).toEqual(["up:b-1", "down:b-1"]));
     realtime.stop();
   });
 
@@ -183,5 +210,194 @@ describe("BoardRealtime", () => {
     realtime.stop();
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(opened).toEqual(["b-1", "b-2"]);
+  });
+});
+
+describe("presence bridge", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const PRESENCE: PresenceSseEvent = {
+    type: "presence",
+    users: [{ id: "u-2", displayName: "Boris" }],
+  };
+  const FOREIGN: CommandSseEvent = {
+    type: "command",
+    seq: 1,
+    action: {
+      type: "UPDATE_CARD",
+      cardId: "c-1",
+      title: "Edited",
+      at: 1,
+      boardId: "b-1",
+    },
+    actorId: "u-2",
+    touches: ["board:b-1", "card:c-1"],
+  };
+
+  function host(): RealtimeHost {
+    return {
+      getActiveBoardId: () => "b-1",
+      getBaseline: () => 0,
+      setBaseline: vi.fn(),
+      apply: vi.fn(),
+      markForeign: vi.fn(),
+      setPresence: vi.fn(),
+      flagForeign: vi.fn(),
+      isBusy: () => false,
+      getUserId: () => "me",
+      onMembershipChange: vi.fn(),
+      onAccessRevoked: vi.fn(),
+    };
+  }
+
+  it("routes rosters, flags foreign changes and heartbeats the tab", async () => {
+    const pings: { clientId: string }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/presence")) {
+          pings.push(JSON.parse(String(init?.body)) as { clientId: string });
+          return new Response(null, { status: 204 });
+        }
+        return new Response(streamOf([frame(PRESENCE), frame(FOREIGN)]), {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }),
+    );
+
+    const bridgeHost = host();
+    const bridge = createRealtimeBridge(bridgeHost);
+    bridge.watch("b-1");
+
+    await vi.waitFor(() =>
+      expect(bridgeHost.setPresence).toHaveBeenCalledWith(
+        "b-1",
+        PRESENCE.users,
+      ),
+    );
+    expect(bridgeHost.apply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "UPDATE_CARD",
+        boardId: "b-1",
+        actorId: "u-2",
+      }),
+    );
+    expect(bridgeHost.markForeign).toHaveBeenCalledWith("b-1", ["b-1", "c-1"]);
+    expect(bridgeHost.flagForeign).toHaveBeenCalledWith("b-1", "u-2", [
+      "b-1",
+      "c-1",
+    ]);
+    expect(bridgeHost.setBaseline).toHaveBeenCalledWith("b-1", 1);
+
+    // The connect handshake starts the heartbeat with a stable client id.
+    await vi.waitFor(() => expect(pings.length).toBeGreaterThan(0));
+    expect(pings[0].clientId).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+
+    bridge.dispose();
+  });
+
+  it("forwards membership changes and drops only the removed user's board", async () => {
+    const revoked = (userId: string): string =>
+      `data: ${JSON.stringify({ type: "membership", boardId: "b-1", userId, change: "removed" })}\n\n`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/presence")) {
+          return new Response(null, { status: 204 });
+        }
+        // An open stream: the frames land once, the connection stays.
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode(revoked("u-2")));
+            controller.enqueue(encoder.encode(revoked("me")));
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }),
+    );
+
+    const bridgeHost = host();
+    const bridge = createRealtimeBridge(bridgeHost);
+    bridge.watch("b-1");
+
+    await vi.waitFor(() =>
+      expect(bridgeHost.onMembershipChange).toHaveBeenCalledWith(
+        "b-1",
+        "me",
+        "removed",
+      ),
+    );
+    // Someone else's removal is a directory change, not ours to act on —
+    // and the stream stops after our own frame instead of reconnecting.
+    expect(bridgeHost.onMembershipChange).toHaveBeenCalledWith(
+      "b-1",
+      "u-2",
+      "removed",
+    );
+    expect(bridgeHost.onMembershipChange).toHaveBeenCalledTimes(2);
+    expect(bridgeHost.onAccessRevoked).not.toHaveBeenCalled();
+    bridge.dispose();
+  });
+});
+
+describe("pingPresence", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    api.clearAccessToken();
+  });
+
+  it("posts the client id and retries once through a refresh on 401", async () => {
+    const calls: { method: string; url: string; auth: string | undefined }[] =
+      [];
+    let presenceCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push({
+          method: init?.method ?? "GET",
+          url,
+          auth: (init?.headers as Record<string, string> | undefined)
+            ?.Authorization,
+        });
+        if (url.endsWith("/auth/refresh")) {
+          return new Response(
+            JSON.stringify({
+              user: { id: "u-1", email: "a@b.c", displayName: "A" },
+              accessToken: "token-1",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        presenceCalls += 1;
+        return new Response(null, { status: presenceCalls === 1 ? 401 : 204 });
+      }),
+    );
+    api.clearAccessToken();
+
+    await pingPresence("b-1", "client-12345678");
+    expect(calls.map((call) => call.method)).toEqual(["POST", "POST", "POST"]);
+    expect(calls[0].url).toBe("/api/v1/boards/b-1/presence");
+    expect(calls[1].url).toBe("/api/v1/auth/refresh");
+    // The retry carries the refreshed token.
+    expect(calls[2].auth).toBe("Bearer token-1");
+  });
+});
+
+describe("createClientId", () => {
+  it("mints url-safe ids", () => {
+    const id = createClientId();
+    expect(id).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    expect(createClientId()).not.toBe(id);
   });
 });

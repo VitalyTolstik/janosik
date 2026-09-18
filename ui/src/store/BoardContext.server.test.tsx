@@ -9,14 +9,19 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
-import type { Board, Card } from "@janosik/shared";
+import type { Board, Card, CommandRequest } from "@janosik/shared";
 import { BOARD_STORAGE_KEY } from "@janosik/shared";
 import { api } from "@/api/client";
 import { I18nProvider } from "@/i18n";
-import { AuthProvider } from "@/auth/AuthContext";
+import { AuthProvider, useAuth } from "@/auth/AuthContext";
 import { ToastProvider } from "@/components/Toast";
 import { BoardProvider, useBoard } from "@/store/BoardContext";
 import { useBoardActions } from "@/store/BoardContext";
+import {
+  useBoardMember,
+  useBoardPresence,
+  useEntityAttribution,
+} from "@/store/board-live";
 import { FakeServer, emptyBoard } from "@/test/fake-server";
 
 /**
@@ -50,12 +55,26 @@ function seedBoard(): Board {
 }
 
 function Probe() {
-  const { board, boards, syncStatus, canUndo } = useBoard();
+  const { board, boards, syncStatus, canUndo, canRedo } = useBoard();
   const actions = useBoardActions();
+  const { user } = useAuth();
+  const presence = useBoardPresence(board?.id);
+  const attribution = useEntityAttribution("c-1");
+  const newcomer = useBoardMember(board?.id, "user-3");
   const second = boards.find((entry) => entry.id === "b-2");
   return (
     <div>
       <div data-testid="status">{syncStatus}</div>
+      <div data-testid="me">{user?.id ?? ""}</div>
+      <div data-testid="presence">
+        {presence.map((person) => person.displayName).join(",")}
+      </div>
+      <div data-testid="attr">
+        {attribution
+          ? `${attribution.userId}:${String(attribution.highlight)}`
+          : ""}
+      </div>
+      <div data-testid="newcomer">{newcomer?.displayName ?? ""}</div>
       <div data-testid="title">{board?.title ?? ""}</div>
       <div data-testid="card-title">{board?.cards["c-1"]?.title ?? ""}</div>
       <div data-testid="columns">
@@ -63,6 +82,7 @@ function Probe() {
       </div>
       <div data-testid="board-count">{String(boards.length)}</div>
       <div data-testid="can-undo">{String(canUndo)}</div>
+      <div data-testid="can-redo">{String(canRedo)}</div>
       <div data-testid="second-archived">
         {String(second?.archivedAt !== undefined)}
       </div>
@@ -82,6 +102,18 @@ function Probe() {
         type="button"
         data-testid="edit"
         onClick={() => actions.updateCard("c-1", { title: "Mine" })}
+      />
+      <button
+        type="button"
+        data-testid="quiet-edit"
+        onClick={() =>
+          actions.updateCard("c-1", { title: "Mine" }, { quiet: true })
+        }
+      />
+      <button
+        type="button"
+        data-testid="touch"
+        onClick={() => actions.touchCard("c-1")}
       />
       <button type="button" data-testid="undo" onClick={() => actions.undo()} />
       <button type="button" data-testid="redo" onClick={() => actions.redo()} />
@@ -288,6 +320,72 @@ describe("BoardProvider in server mode", () => {
     expect(screen.getByTestId("can-undo").textContent).toBe("true");
   });
 
+  it("redoes a coalesced quiet edit, not its debounced touch stamp", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+
+    // The live-edit pattern: a quiet keystroke commit plus the stamp that
+    // ends the session — both collapse into one undo step.
+    fireEvent.click(screen.getByTestId("quiet-edit"));
+    fireEvent.click(screen.getByTestId("touch"));
+    expect(screen.getByTestId("card-title").textContent).toBe("Mine");
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["c-1"].title).toBe("Mine"),
+    );
+
+    fireEvent.click(screen.getByTestId("undo"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["c-1"].title).toBe("Hello"),
+    );
+
+    // Redo must replay the text edit; replaying the touch alone would only
+    // move `updatedAt` and leave the old title (live bug 2026-09-18).
+    fireEvent.click(screen.getByTestId("redo"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["c-1"].title).toBe("Mine"),
+    );
+    expect(screen.getByTestId("card-title").textContent).toBe("Mine");
+    const redo = server.requests
+      .map((request) => request.body as CommandRequest | undefined)
+      .filter((body) => body?.action?.type === "UPDATE_CARD")
+      .at(-1);
+    expect(redo?.action).toMatchObject({ type: "UPDATE_CARD", title: "Mine" });
+  });
+
+  it("reverts a redo the server refuses via version preconditions", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+
+    fireEvent.click(screen.getByTestId("quiet-edit"));
+    fireEvent.click(screen.getByTestId("touch"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["c-1"].title).toBe("Mine"),
+    );
+
+    fireEvent.click(screen.getByTestId("undo"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["c-1"].title).toBe("Hello"),
+    );
+
+    // A foreign writer moves the card on before the redo: the redo carries
+    // the version it last saw and is refused — it must not clobber foreign
+    // text just because the original edit was a quiet keystroke.
+    server.bumpVersion("b-1", "card:c-1");
+    fireEvent.click(screen.getByTestId("redo"));
+    await waitFor(() =>
+      expect(screen.getByTestId("card-title").textContent).toBe("Hello"),
+    );
+    expect(server.boards.get("b-1")?.cards["c-1"].title).toBe("Hello");
+    expect(screen.getByTestId("can-undo").textContent).toBe("false");
+    expect(screen.getByTestId("can-redo").textContent).toBe("true");
+  });
+
   it("reverts an undo the server refuses via version preconditions", async () => {
     const server = new FakeServer([seedBoard()]);
     vi.stubGlobal("fetch", server.handle);
@@ -403,6 +501,73 @@ describe("BoardProvider realtime (SSE, TASK-30)", () => {
     );
     // The foreign edit is nobody's undo step in this client.
     expect(screen.getByTestId("can-undo").textContent).toBe("false");
+  });
+
+  it("fills the presence roster from the stream, live", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.initialPresence = [{ id: "user-2", displayName: "Boris" }];
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("presence").textContent).toBe("Boris"),
+    );
+
+    act(() => {
+      server.publishPresence("b-1", [
+        { id: "user-1", displayName: "Admin" },
+        { id: "user-2", displayName: "Boris" },
+      ]);
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("presence").textContent).toBe("Admin,Boris"),
+    );
+  });
+
+  it("attributes a foreign edit and drops the highlight after 2 s", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitStreamOpen(server);
+
+    act(() => {
+      server.publishCommand("b-1", {
+        type: "UPDATE_CARD",
+        cardId: "c-1",
+        title: "Boris edit",
+        at: Date.now(),
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("attr").textContent).toBe("user-2:true"),
+    );
+    // The store clears the ring on its own 2 s clock; the author stays.
+    await waitFor(
+      () => expect(screen.getByTestId("attr").textContent).toBe("user-2:false"),
+      { timeout: 4_000 },
+    );
+  });
+
+  it("attributes my own edit without a highlight", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("me").textContent).toBe("user-1"),
+    );
+    await waitStreamOpen(server);
+
+    fireEvent.click(screen.getByTestId("edit"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("attr").textContent).toBe("user-1:false"),
+    );
   });
 
   it("catches up the commands missed while the stream was down", async () => {
@@ -557,6 +722,125 @@ describe("BoardProvider realtime (SSE, TASK-30)", () => {
     expect(
       await screen.findByText("Another member changed this — undo was skipped"),
     ).toBeTruthy();
+  });
+});
+
+describe("BoardProvider membership revocation (TASK-36)", () => {
+  it("drops a revoked board and moves the member to another one", async () => {
+    localStorage.removeItem(BOARD_STORAGE_KEY);
+    const server = new FakeServer([
+      seedBoard(),
+      { ...seedBoard(), id: "b-2", title: "Second" },
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp("/board/b-1");
+    await waitReady();
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (entry) => entry.path === "/api/v1/boards/b-1/events",
+        ),
+      ).toBe(true),
+    );
+
+    act(() => {
+      server.revokeMembership("b-1");
+      server.publishMembership("b-1", server.account.id, "removed");
+    });
+
+    // The board leaves the list at once, and the routing effect walks off
+    // its now-dead URL onto the surviving board.
+    await waitFor(() =>
+      expect(screen.getByTestId("board-count").textContent).toBe("1"),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("title").textContent).toBe("Second"),
+    );
+    expect(
+      await screen.findByText("You no longer have access to this board"),
+    ).toBeTruthy();
+  });
+
+  it("treats a 403 stream as revocation and lands on the empty state", async () => {
+    localStorage.removeItem(BOARD_STORAGE_KEY);
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (entry) => entry.path === "/api/v1/boards/b-1/events",
+        ),
+      ).toBe(true),
+    );
+
+    // No frame — the stream simply reconnects after the membership is gone;
+    // the guard answers 403 and the bridge reports it as a revocation.
+    // The reconnect rides the realtime backoff, hence the longer wait.
+    act(() => {
+      server.revokeMembership("b-1");
+      server.closeEvents("b-1");
+    });
+
+    await waitFor(
+      () => expect(screen.getByTestId("board-count").textContent).toBe("0"),
+      { timeout: 5_000 },
+    );
+    expect(screen.getByTestId("title").textContent).toBe("");
+  });
+
+  it("refreshes the member directory when an invitation is accepted", async () => {
+    localStorage.removeItem(BOARD_STORAGE_KEY);
+    const server = new FakeServer([seedBoard()]);
+    server.membersByBoard.set("b-1", [
+      {
+        userId: "user-1",
+        displayName: "Admin",
+        email: "admin@example.com",
+        role: "ADMIN",
+        expiresAt: null,
+      },
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (entry) => entry.path === "/api/v1/boards/b-1/events",
+        ),
+      ).toBe(true),
+    );
+    expect(screen.getByTestId("newcomer").textContent).toBe("");
+
+    // The invitee accepts on their side: the server announces it and every
+    // open list re-reads the directory without a reload.
+    act(() => {
+      server.membersByBoard.set("b-1", [
+        ...(server.membersByBoard.get("b-1") ?? []),
+        {
+          userId: "user-3",
+          displayName: "Vera",
+          email: "vera@example.com",
+          role: "MEMBER",
+          expiresAt: null,
+        },
+      ]);
+      server.publishMembership("b-1", "user-3", "accepted");
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("newcomer").textContent).toBe("Vera"),
+    );
+    expect(
+      server.requests.filter(
+        (entry) => entry.path === "/api/v1/boards/b-1/members",
+      ).length,
+    ).toBeGreaterThanOrEqual(2);
   });
 });
 

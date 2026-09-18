@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
+import { PresenceStack } from "@/components/board/PresenceStack";
 import { useBoardActions, useBoardHistory } from "@/store/BoardContext";
 
 /** Header: brand, background/language switchers, undo/redo, data and theme. */
@@ -96,12 +97,13 @@ export function Header() {
               one name on screen, switch and rename are separate triggers. */}
           <BoardTitle />
           <BoardSwitcher />
+          <NotificationsBell />
           <BoardMembersDialog />
+          <PresenceStack />
         </div>
       </div>
 
       <div className="flex items-center gap-0.5">
-        <NotificationsBell />
         <GlobalSearch />
         <ShortcutsDialog />
         <BackgroundSwitcher />

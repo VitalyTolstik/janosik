@@ -82,10 +82,11 @@ describe("CardDialog description editor", () => {
   it("opens with the stored markdown and streams edits into the board", async () => {
     const dialog = await openCardDialog("Design the new onboarding flow");
 
-    // The editor is seeded with the card's markdown.
-    const editor = within(dialog).getByLabelText(
+    // The editor is seeded with the card's markdown. `DescriptionEditor` is
+    // lazily imported, so wait for the Suspense boundary to resolve.
+    const editor = (await within(dialog).findByLabelText(
       "Description",
-    ) as HTMLTextAreaElement;
+    )) as HTMLTextAreaElement;
     expect(editor.value).toContain("**bold**");
 
     // An edit reaches the board state…
@@ -96,9 +97,9 @@ describe("CardDialog description editor", () => {
     fireEvent.keyDown(dialog, { key: "Escape" });
     fireEvent.click(screen.getByText("Design the new onboarding flow"));
     const reopened = await screen.findByRole("dialog");
-    const editorAgain = within(reopened).getByLabelText(
+    const editorAgain = (await within(reopened).findByLabelText(
       "Description",
-    ) as HTMLTextAreaElement;
+    )) as HTMLTextAreaElement;
     expect(editorAgain.value).toBe("Updated via MDXEditor");
   });
 });
@@ -529,5 +530,26 @@ describe("CardDialog delete confirmation (TASK-21.11)", () => {
     expect(
       screen.queryByRole("dialog", { name: "Delete this card?" }),
     ).toBeNull();
+  });
+});
+
+describe("CardDialog archive", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("keeps the dialog open so the card can go back to the board at once", async () => {
+    const dialog = await openCardDialog("Design the new onboarding flow");
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Archive" }),
+    );
+
+    // The card leaves the board but the dialog stays, offering the restore.
+    const openDialog = await screen.findByRole("dialog");
+    await within(openDialog).findByRole("button", {
+      name: "Send back to board",
+    });
+    expect(within(openDialog).getByLabelText("Title")).toBeInTheDocument();
   });
 });

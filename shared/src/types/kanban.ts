@@ -122,6 +122,15 @@ export interface Card {
   createdAt: number;
   updatedAt: number;
   /**
+   * The user who last changed the card (TASK-36) — a denormalized
+   * attribution column written by the server's per-action writers (§7.4.1)
+   * next to every `updatedAt` stamp. Omitted for cards that predate the
+   * field or were only ever touched by reorders (positions are bookkeeping,
+   * they do not stamp the card). The UI renders the author's avatar from
+   * this id — unless it is the current user.
+   */
+  lastActorId?: string;
+  /**
    * Set when the card is archived (TASK-18.1) — timestamp in ms. Archived
    * cards stay in `board.cards` (history and search keep working) but are
    * removed from every `column.cardIds`, so no view on the board shows
@@ -140,6 +149,16 @@ export const CARD_ACTIVITY_TYPES = [
   "label-removed",
   "due-date-set",
   "due-date-removed",
+  "cover-set",
+  "cover-removed",
+  "checklist-added",
+  "checklist-removed",
+  "checklist-renamed",
+  "checklist-item-added",
+  "checklist-item-checked",
+  "checklist-item-unchecked",
+  "checklist-item-removed",
+  "checklist-item-renamed",
   "archived",
   "unarchived",
 ] as const;
@@ -204,8 +223,10 @@ export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 export const MAX_COMMAND_BYTES = 2 * 1024 * 1024;
 
 /**
- * One entry of a card's history. `actorId` is reserved for the future
- * backend (real users) — the frontend-only app always writes `null`.
+ * One entry of a card's history. `actorId` is filled by the transport since
+ * TASK-36: the UI stamps its own id on local dispatches and the realtime
+ * bridge stamps the server's `actorId` on foreign commands, so the feed can
+ * show *who* — without an actor the event still renders with its icon alone.
  * `detail` is a display snapshot captured at mutation time (label name,
  * target column title) so the feed survives the referenced entity being
  * renamed or deleted afterwards.

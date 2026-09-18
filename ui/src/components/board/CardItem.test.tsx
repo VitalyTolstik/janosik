@@ -3,7 +3,13 @@ import { act, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
+import { AuthContext } from "@/auth/AuthContext";
 import { CardItem } from "@/components/board/CardItem";
+import {
+  BoardLiveProvider,
+  createBoardLive,
+  type BoardLive,
+} from "@/store/board-live";
 import type { Card, Label } from "@janosik/shared";
 
 const baseCard: Card = {
@@ -177,5 +183,76 @@ describe("CardItem touch (no-hover) quick actions", () => {
     expect(screen.getByRole("button", { name: "Archive" }).className).toContain(
       "group-hover:opacity-100",
     );
+  });
+});
+
+describe("attribution (TASK-36)", () => {
+  const ME = "u-me";
+
+  function renderWithLive(live: BoardLive, card: Card = baseCard) {
+    return render(
+      <I18nProvider>
+        <TooltipProvider>
+          <BoardLiveProvider live={live}>
+            <AuthContext.Provider
+              value={{
+                status: "authenticated",
+                user: { id: ME, email: "me@example.com", displayName: "Me" },
+                login: async () => {},
+                register: async () => {},
+                logout: async () => {},
+              }}
+            >
+              <CardItem card={card} labels={[]} />
+            </AuthContext.Provider>
+          </BoardLiveProvider>
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+  }
+
+  it("shows the last foreign author with the relative time", () => {
+    const live = createBoardLive();
+    live.members.set("b-1", [
+      {
+        userId: "u-boris",
+        displayName: "Boris",
+        email: "boris@example.com",
+        role: "MEMBER",
+        expiresAt: null,
+      },
+    ]);
+    live.attribution.stamp("b-1", "u-boris", ["c-1"], {
+      at: Date.now() - 5 * 60_000,
+    });
+    renderWithLive(live);
+
+    const actor = screen.getByTestId("card-last-actor");
+    expect(actor).toHaveAttribute("title", "Changed by Boris");
+    expect(actor).toHaveTextContent(/min/);
+    expect(screen.getByTestId("user-avatar")).toHaveAttribute(
+      "aria-label",
+      "Boris",
+    );
+  });
+
+  it("stays anonymous on my own edits", () => {
+    const live = createBoardLive();
+    live.attribution.stamp("b-1", ME, ["c-1"]);
+    renderWithLive(live);
+
+    expect(screen.queryByTestId("card-last-actor")).toBeNull();
+    expect(screen.queryByTestId("user-avatar")).toBeNull();
+  });
+
+  it("paints the foreign change ring while the highlight lasts", () => {
+    const live = createBoardLive();
+    live.attribution.stamp("b-1", "u-boris", ["c-1"], { highlight: true });
+    renderWithLive(live);
+
+    const mark = document.querySelector("[data-foreign='u-boris']");
+    expect(mark).not.toBeNull();
+    expect(mark?.querySelector(".janosik-foreign-ring")).not.toBeNull();
+    expect(mark?.querySelector(".janosik-foreign-dot")).not.toBeNull();
   });
 });

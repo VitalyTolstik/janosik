@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { CalendarClock, Trash2, X } from "lucide-react";
-import type { BoardMemberDto, BoardRole } from "@janosik/shared";
+import {
+  CalendarClock,
+  Check,
+  ChevronDown,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
+import { LIMITS, type BoardMemberDto, type BoardRole } from "@janosik/shared";
 
 import { api, ApiError, isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
@@ -20,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
+import { LimitCounter } from "@/components/ui/limit-counter";
 import {
   Popover,
   PopoverContent,
@@ -40,6 +48,7 @@ import {
 } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useBoard } from "@/store/BoardContext";
+import { useMembersVersion } from "@/store/board-live";
 import { userLabel } from "@/utils/avatar";
 import { composeTimestamp, formatTimeOfDay } from "@/utils/time";
 
@@ -74,6 +83,82 @@ function membershipError(error: unknown, t: Translate): string {
     if (error.status === 403) return t("board.members.errors.forbidden");
   }
   return t("board.members.errors.generic");
+}
+
+interface RolePickerProps {
+  value: BoardRole;
+  /** Accessible name (the row's user is baked in by the caller). */
+  label: string;
+  disabled?: boolean;
+  /** Row-sized trigger (h-8/text-xs) instead of the form-sized one. */
+  compact?: boolean;
+  onChange: (role: BoardRole) => void;
+}
+
+/**
+ * Role picker: an outline trigger showing the current role, opening a popover
+ * of radio rows with the project's check-mark idiom (FilterBar/CoverPicker) —
+ * a native `<select>` looks like a browser control in the dark theme and
+ * cannot be styled to match the rest of the board chrome.
+ */
+function RolePicker({
+  value,
+  label,
+  disabled = false,
+  compact = false,
+  onChange,
+}: RolePickerProps) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          aria-label={label}
+          data-testid="role-trigger"
+          className={cn(
+            "justify-between gap-1.5 font-normal",
+            compact
+              ? "h-8 min-w-[6.5rem] px-2 text-xs"
+              : "h-9 min-w-[7.5rem] px-2.5 text-sm",
+          )}
+        >
+          {t(ROLE_KEYS[value])}
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-44 p-1">
+        <div role="radiogroup" aria-label={label}>
+          {ROLES.map((role) => (
+            <button
+              key={role}
+              type="button"
+              role="radio"
+              aria-checked={role === value}
+              data-testid="role-option"
+              onClick={() => {
+                setOpen(false);
+                onChange(role);
+              }}
+              className={cn(
+                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover",
+                role === value
+                  ? "font-medium text-foreground"
+                  : "text-foreground/90",
+              )}
+            >
+              {t(ROLE_KEYS[role])}
+              {role === value && <Check className="h-3.5 w-3.5 text-primary" />}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 interface ExpiryPickerProps {
@@ -223,7 +308,7 @@ export function BoardMembersDialog() {
       </Tooltip>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-xl">
           <BoardMembersPanel boardId={board.id} canManage={canManage} />
         </DialogContent>
       </Dialog>
@@ -259,6 +344,20 @@ export function BoardMembersPanel({
   const [expiry, setExpiry] = useState<number | null>(null);
   const [inviting, setInviting] = useState(false);
 
+  // Client-side filter over the roster — boards can hold a lot of members,
+  // and the list scrolls inside the dialog.
+  const [memberQuery, setMemberQuery] = useState("");
+  const needle = memberQuery.trim().toLowerCase();
+  const visibleMembers =
+    members === null
+      ? null
+      : members.filter(
+          (member) =>
+            needle === "" ||
+            (member.displayName ?? "").toLowerCase().includes(needle) ||
+            member.email.toLowerCase().includes(needle),
+        );
+
   const load = useCallback(async () => {
     try {
       setMembers(await api.listMembers(boardId));
@@ -268,9 +367,13 @@ export function BoardMembersPanel({
     }
   }, [boardId]);
 
+  // The directory is rewritten on every membership event (someone accepted
+  // an invitation, a role moved, another admin removed someone) — reload so
+  // an open list is never stale (TASK-36).
+  const membersVersion = useMembersVersion();
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, membersVersion]);
 
   const adminCount =
     members?.filter((member) => member.role === "ADMIN").length ?? 0;
@@ -367,7 +470,7 @@ export function BoardMembersPanel({
 
   return (
     <>
-      <DialogHeader>
+      <DialogHeader className="shrink-0">
         <DialogTitle className="text-base font-semibold">
           {members === null
             ? t("board.members.titlePlain")
@@ -390,152 +493,184 @@ export function BoardMembersPanel({
           </Button>
         </div>
       ) : (
-        <ul
-          className="max-h-72 divide-y divide-border/60 overflow-y-auto rounded-lg border"
-          data-testid="board-members-list"
+        // One bordered surface: the search header stays put while the roster
+        // scrolls. `flex-1 min-h-0` lets the list take the dialog's spare
+        // height (the dialog is capped to the viewport) instead of a fixed
+        // max-height — 1000 members scroll inside, the form never leaves.
+        <div
+          className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border"
+          data-testid="board-members-box"
         >
-          {members.map((member) => {
-            const label = userLabel(member.displayName, member.email);
-            const locked = isLastAdmin(member);
-            const pending = pendingUserId === member.userId;
-            const expired =
-              member.expiresAt !== null && member.expiresAt <= now;
-            return (
-              <li
-                key={member.userId}
-                data-testid="board-member-row"
-                data-role={member.role}
-                data-user-id={member.userId}
-                className="flex items-center gap-3 p-3"
-              >
-                <UserAvatar
-                  userId={member.userId}
-                  displayName={member.displayName}
-                  email={member.email}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-                    {label}
-                    {member.userId === user?.id ? (
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
-                        {t("board.members.you")}
-                      </span>
-                    ) : null}
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {member.email}
-                  </p>
-                  {member.role === "VIEWER" ? (
-                    <p
-                      className={cn(
-                        "truncate text-xs",
-                        expired ? "text-danger" : "text-muted-foreground",
-                      )}
-                    >
-                      {member.expiresAt === null
-                        ? t("board.members.expires.never")
-                        : t("board.members.expires.until", {
-                            date: formatDateOnly(member.expiresAt, lang),
-                          })}
-                      {expired
-                        ? ` · ${t("board.members.expires.expired")}`
-                        : ""}
+          <div className="relative flex shrink-0 items-center gap-2 border-b px-3 py-2.5">
+            <Search size={15} className="shrink-0 text-muted-foreground" />
+            <input
+              name="member-search"
+              value={memberQuery}
+              maxLength={LIMITS.query}
+              onChange={(event) => setMemberQuery(event.target.value)}
+              placeholder={t("board.members.search")}
+              aria-label={t("board.members.search")}
+              className="h-6 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+            <LimitCounter
+              length={memberQuery.length}
+              limit={LIMITS.query}
+              position="below"
+              className="left-9"
+              testId="members-search-limit"
+            />
+          </div>
+          <ul
+            className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto"
+            data-testid="board-members-list"
+          >
+            {visibleMembers !== null && visibleMembers.length === 0 ? (
+              <li className="px-3 py-6 text-center text-sm text-muted-foreground">
+                {t("board.members.noMatches")}
+              </li>
+            ) : null}
+            {visibleMembers?.map((member) => {
+              const label = userLabel(member.displayName, member.email);
+              const locked = isLastAdmin(member);
+              const pending = pendingUserId === member.userId;
+              const expired =
+                member.expiresAt !== null && member.expiresAt <= now;
+              return (
+                <li
+                  key={member.userId}
+                  data-testid="board-member-row"
+                  data-role={member.role}
+                  data-user-id={member.userId}
+                  className="flex items-center gap-3 px-4 py-3"
+                >
+                  <UserAvatar
+                    userId={member.userId}
+                    displayName={member.displayName}
+                    email={member.email}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                      {label}
+                      {member.userId === user?.id ? (
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                          {t("board.members.you")}
+                        </span>
+                      ) : null}
                     </p>
-                  ) : null}
-                </div>
-
-                {canManage ? (
-                  <div className="flex shrink-0 items-center gap-1">
+                    <p className="truncate text-xs text-muted-foreground">
+                      {member.email}
+                    </p>
                     {member.role === "VIEWER" ? (
-                      <ExpiryPicker
-                        value={member.expiresAt}
-                        label={`${t("board.members.invite.expires")} — ${label}`}
-                        disabled={pending}
-                        onChange={(value) =>
-                          void handleExpiryChange(member, value)
-                        }
-                      />
-                    ) : null}
-                    <span
-                      title={locked ? t("board.members.lastAdmin") : undefined}
-                    >
-                      <select
-                        value={member.role}
-                        disabled={pending || locked}
-                        aria-label={t("board.members.roleAria", {
-                          name: label,
-                        })}
-                        onChange={(event) =>
-                          void handleRoleChange(
-                            member,
-                            event.target.value as BoardRole,
-                          )
-                        }
-                        className="h-8 rounded-md border border-border bg-background px-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                      <p
+                        className={cn(
+                          "truncate text-xs",
+                          expired ? "text-danger" : "text-muted-foreground",
+                        )}
                       >
-                        {ROLES.map((value) => (
-                          <option key={value} value={value}>
-                            {t(ROLE_KEYS[value])}
-                          </option>
-                        ))}
-                      </select>
-                    </span>
+                        {member.expiresAt === null
+                          ? t("board.members.expires.never")
+                          : t("board.members.expires.until", {
+                              date: formatDateOnly(member.expiresAt, lang),
+                            })}
+                        {expired
+                          ? ` · ${t("board.members.expires.expired")}`
+                          : ""}
+                      </p>
+                    ) : null}
+                  </div>
 
-                    {confirmRemoveId === member.userId ? (
-                      <span className="flex items-center gap-1">
-                        <Button
-                          variant="destructive"
-                          size="sm"
+                  {canManage ? (
+                    <div className="flex shrink-0 items-center gap-1">
+                      {member.role === "VIEWER" ? (
+                        <ExpiryPicker
+                          value={member.expiresAt}
+                          label={`${t("board.members.invite.expires")} — ${label}`}
                           disabled={pending}
-                          onClick={() => void handleRemove(member)}
-                          className="h-7 px-2 text-[11px]"
-                        >
-                          {t("board.members.removeConfirmYes")}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setConfirmRemoveId(null)}
-                          className="h-7 px-2 text-[11px]"
-                        >
-                          {t("common.cancel")}
-                        </Button>
-                      </span>
-                    ) : (
+                          onChange={(value) =>
+                            void handleExpiryChange(member, value)
+                          }
+                        />
+                      ) : null}
                       <span
                         title={
                           locked ? t("board.members.lastAdmin") : undefined
                         }
                       >
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`${t("board.members.remove")} — ${label}`}
+                        <RolePicker
+                          compact
+                          value={member.role}
+                          label={t("board.members.roleAria", { name: label })}
                           disabled={pending || locked}
-                          onClick={() => setConfirmRemoveId(member.userId)}
-                          className="h-7 w-7 text-muted-foreground hover:text-danger"
-                        >
-                          <Trash2 size={14} />
-                        </Button>
+                          onChange={(next) =>
+                            void handleRoleChange(member, next)
+                          }
+                        />
                       </span>
-                    )}
-                  </div>
-                ) : (
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {t(ROLE_KEYS[member.role])}
-                  </span>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+
+                      {confirmRemoveId === member.userId ? (
+                        // Icon-only confirmation, same shape as the board
+                        // card's archive confirm — no text buttons squeezing
+                        // the row (and no overlap with the role/expiry pair).
+                        <span
+                          data-testid="member-remove-confirm"
+                          className="flex shrink-0 items-center gap-0.5 rounded-md border border-danger/30 bg-danger/5 p-0.5"
+                        >
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t("board.members.removeConfirmYes")}
+                            disabled={pending}
+                            onClick={() => void handleRemove(member)}
+                            className="h-6 w-6 text-danger hover:bg-danger/10 hover:text-danger"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t("common.cancel")}
+                            onClick={() => setConfirmRemoveId(null)}
+                            className="h-6 w-6 text-muted-foreground hover:bg-hover hover:text-foreground"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </span>
+                      ) : (
+                        <span
+                          title={
+                            locked ? t("board.members.lastAdmin") : undefined
+                          }
+                        >
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`${t("board.members.remove")} — ${label}`}
+                            disabled={pending || locked}
+                            onClick={() => setConfirmRemoveId(member.userId)}
+                            className="h-7 w-7 text-muted-foreground hover:text-danger"
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {t(ROLE_KEYS[member.role])}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       {canManage ? (
         <form
           onSubmit={handleInvite}
           data-testid="board-members-invite"
-          className="space-y-2 rounded-lg border bg-muted/30 p-3"
+          className="shrink-0 space-y-3 rounded-lg border bg-muted/30 p-4"
         >
           <p className="text-xs font-medium text-muted-foreground">
             {t("board.members.invite.title")}
@@ -550,18 +685,11 @@ export function BoardMembersPanel({
               onChange={(event) => setEmail(event.target.value)}
               className="h-9 flex-1"
             />
-            <select
+            <RolePicker
               value={role}
-              aria-label={t("board.members.invite.role")}
-              onChange={(event) => setRole(event.target.value as BoardRole)}
-              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
-            >
-              {ROLES.map((value) => (
-                <option key={value} value={value}>
-                  {t(ROLE_KEYS[value])}
-                </option>
-              ))}
-            </select>
+              label={t("board.members.invite.role")}
+              onChange={setRole}
+            />
           </div>
           {role === "VIEWER" ? (
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -575,8 +703,8 @@ export function BoardMembersPanel({
           ) : null}
           <Button
             type="submit"
-            size="sm"
             disabled={inviting || email.trim() === ""}
+            className="w-full"
           >
             {t("board.members.invite.submit")}
           </Button>

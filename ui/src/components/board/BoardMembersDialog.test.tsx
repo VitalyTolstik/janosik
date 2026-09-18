@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -15,6 +16,7 @@ import { ToastProvider } from "@/components/Toast";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
+import { BoardLiveProvider, createBoardLive } from "@/store/board-live";
 
 /**
  * Members modal (TASK-35): the invite/role/remove flows an ADMIN gets, the
@@ -75,9 +77,31 @@ describe("BoardMembersPanel (TASK-35)", () => {
     expect(screen.getAllByTestId("user-avatar")).toHaveLength(2);
     expect(screen.getAllByTestId("board-member-row")).toHaveLength(2);
     expect(screen.getByTestId("board-members-invite")).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Role of Boris" })).toHaveValue(
-      "ADMIN",
-    );
+    expect(
+      screen.getByRole("button", { name: "Role of Boris" }),
+    ).toHaveTextContent("Admin");
+  });
+
+  it("filters the roster by name or email and shows an empty state", async () => {
+    vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN, MEMBER]);
+
+    renderPanel(true);
+    await screen.findByText("Boris");
+
+    const search = screen.getByLabelText("Search members…");
+    fireEvent.change(search, { target: { value: "quiet" } });
+    expect(screen.getAllByTestId("board-member-row")).toHaveLength(1);
+    expect(screen.queryByText("Boris")).not.toBeInTheDocument();
+    // The header keeps reporting the whole roster, not the filtered slice.
+    expect(screen.getByText("Members (2)")).toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: "nobody" } });
+    expect(screen.queryAllByTestId("board-member-row")).toHaveLength(0);
+    expect(screen.getByText("No members found")).toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: "boris@example.com" } });
+    expect(screen.getAllByTestId("board-member-row")).toHaveLength(1);
+    expect(screen.getByText("Boris")).toBeInTheDocument();
   });
 
   it("invites by email and keeps the pending invitation out of the list", async () => {
@@ -143,19 +167,19 @@ describe("BoardMembersPanel (TASK-35)", () => {
     renderPanel(true);
     await screen.findByText("Boris");
 
-    fireEvent.change(
-      screen.getByRole("combobox", { name: "Role of quiet@example.com" }),
-      { target: { value: "VIEWER" } },
+    fireEvent.click(
+      screen.getByRole("button", { name: "Role of quiet@example.com" }),
     );
+    fireEvent.click(screen.getByRole("radio", { name: "Viewer" }));
 
     expect(update).toHaveBeenCalledWith("board-1", "user-2", {
       role: "VIEWER",
     });
     expect(
-      await screen.findByRole("combobox", {
+      await screen.findByRole("button", {
         name: "Role of quiet@example.com",
       }),
-    ).toHaveValue("VIEWER");
+    ).toHaveTextContent("Viewer");
     expect(await screen.findByText("Role updated")).toBeInTheDocument();
   });
 
@@ -217,9 +241,9 @@ describe("BoardMembersPanel (TASK-35)", () => {
     renderPanel(true);
     await screen.findByText("Boris");
 
-    const select = screen.getByRole("combobox", { name: "Role of Boris" });
-    expect(select).toBeDisabled();
-    expect(select.closest("span")).toHaveAttribute(
+    const picker = screen.getByRole("button", { name: "Role of Boris" });
+    expect(picker).toBeDisabled();
+    expect(picker.closest("span")).toHaveAttribute(
       "title",
       "The last admin cannot be demoted or removed",
     );
@@ -256,7 +280,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
     expect(
       screen.queryByTestId("board-members-invite"),
     ).not.toBeInTheDocument();
-    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId("role-trigger")).toHaveLength(0);
     expect(
       screen.queryByRole("button", { name: "Remove — Boris" }),
     ).not.toBeInTheDocument();
@@ -279,5 +303,42 @@ describe("BoardMembersPanel (TASK-35)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(await screen.findByText("Boris")).toBeInTheDocument();
+  });
+
+  it("reloads an open list when the directory changes live", async () => {
+    const list = vi
+      .spyOn(api, "listMembers")
+      .mockResolvedValueOnce([ADMIN])
+      .mockResolvedValueOnce([ADMIN, MEMBER]);
+    const live = createBoardLive();
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <ToastProvider>
+            <BoardLiveProvider live={live}>
+              <Dialog open>
+                <DialogContent>
+                  <BoardMembersPanel boardId="board-1" canManage />
+                </DialogContent>
+              </Dialog>
+            </BoardLiveProvider>
+          </ToastProvider>
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+    await screen.findByText("Boris");
+    expect(screen.queryByText("quiet@example.com")).not.toBeInTheDocument();
+
+    // A realtime membership event rewrites the directory store…
+    act(() => {
+      live.members.set("board-1", [ADMIN, MEMBER]);
+    });
+
+    // …and the open dialog re-reads the directory on its own.
+    expect(
+      (await screen.findAllByText("quiet@example.com")).length,
+    ).toBeGreaterThan(0);
+    expect(list).toHaveBeenCalledTimes(2);
   });
 });

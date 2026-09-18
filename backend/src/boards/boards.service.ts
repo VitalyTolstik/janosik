@@ -14,6 +14,7 @@ import type {
 } from "@janosik/shared";
 import { parseExport, serializeExport } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { RealtimeService } from "@/realtime/realtime.service";
 import {
   loadBoardAggregate,
   toBoardSummary,
@@ -34,7 +35,10 @@ import type { UpdateMemberDto } from "./dto/update-member.dto";
  */
 @Injectable()
 export class BoardsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeService,
+  ) {}
 
   /** Boards where the caller is a member (§7.4). Pending invitations don't count. */
   async listBoards(userId: string): Promise<BoardSummary[]> {
@@ -330,6 +334,16 @@ export class BoardsService {
       }
       return row;
     });
+    // A real role/expiry change rewrites the directory every open member
+    // list shows; a no-op PATCH stays silent (mirrors the activity write).
+    if ((roleChanged || expiryChanged) && member.acceptedAt !== null) {
+      this.realtime.publish(boardId, {
+        type: "membership",
+        boardId,
+        userId: member.userId,
+        change: "updated",
+      });
+    }
     return toMemberDto(updated);
   }
 
@@ -366,6 +380,18 @@ export class BoardsService {
         },
       });
     });
+    // An accepted member has an open SSE stream: tell it the membership is
+    // gone so it stops following the board (the endpoint closes that
+    // stream), instead of leaving a ghost that only notices on reconnect.
+    // Pending invitations never had a stream — deleting the row is enough.
+    if (member.acceptedAt !== null) {
+      this.realtime.publish(boardId, {
+        type: "membership",
+        boardId,
+        userId: member.userId,
+        change: "removed",
+      });
+    }
   }
 
   /**

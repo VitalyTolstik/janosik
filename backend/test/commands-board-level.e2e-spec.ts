@@ -13,6 +13,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { stripAttribution } from "./support/attribution";
 
 const ADMIN_EMAIL = "board-level-admin@example.com";
 const MEMBER_EMAIL = "board-level-member@example.com";
@@ -178,7 +179,7 @@ describe("Board-level commands (e2e)", () => {
     })[0];
     await apply(boardId, action, token);
     const after = await getAggregate(boardId);
-    expect(after).toEqual(expected);
+    expect(stripAttribution(after)).toEqual(stripAttribution(expected));
     return after;
   }
 

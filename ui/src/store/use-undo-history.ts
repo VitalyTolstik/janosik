@@ -143,8 +143,15 @@ export function useUndoHistory({
           // original command verbatim (same `at`, so the step is replayed
           // rather than re-dated). Both get a fresh idempotency key — the
           // original one is spent.
+          // The per-keystroke `quiet` marker must not survive either: quiet
+          // commands skip the version preconditions (§7.0) and are coalesced
+          // by the sync queue, so a redo would silently clobber a foreign
+          // edit it never saw (live bug, 2026-09-18).
+          const { quiet: _quiet, ...plain } = action as BoardAction & {
+            quiet?: boolean;
+          };
           const applied = {
-            ...action,
+            ...plain,
             ...(direction === "undo" ? { at: Date.now() } : {}),
             commandId: createId(),
           } as BoardAction;

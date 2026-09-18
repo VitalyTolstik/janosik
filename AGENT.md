@@ -208,7 +208,7 @@ npm run test:coverage  # корень: покрытие ui + shared (порог�
 npm run build -w ui    # tsc -b (типчекает и shared) + vite build
 npm run lint           # корень: ESLint по ui, shared и backend
 npm run format:check   # Prettier по всему репо
-npm run size -w ui     # бюджеты бандла (4 шт.)
+npm run size -w ui     # бюджеты бандла (6 записей)
 ```
 
 Внутри `shared/` алиасов `@/` нет — только относительные импорты; фронт
@@ -267,6 +267,19 @@ TASK-30.2 fix).
   обязаны быть в каждом запросе, где строка `BoardMember` означает доступ
   (listBoards/listMembers/last-ADMIN/admin-owner), а создатели membership
   (`createBoard`, import) пишут `acceptedAt`.
+- **Presence и атрибуция (TASK-36):** `ui/src/store/board-live.tsx` — три
+  внешних стора на `useSyncExternalStore` (`presence`/`attribution`/
+  `members`), принадлежат `BoardProvider` (dispose на logout; вне
+  провайдера — пустой fallback, как у `useAuth`). Мост зовёт `setPresence`
+  и `flagForeign` (attribution с `highlight` на 2 с); локальный dispatch
+  штампует текущего юзера по `cardIdsTouchedBy(action)`; гидратация и
+  focus-refetch «сеют» авторов из `Card.lastActorId`; каталог участников —
+  `GET /boards/:id/members` (имена для офлайн-авторов). UI: `PresenceStack`
+  в шапке (≤5 аватаров + «+N» → popover с ролями; solo — скрыт), аватар +
+  время на карточке и в таблице (только чужое), кольцо 2 с в цвете автора
+  (`janosik-foreign-ring`/`-dot`/`-row` в `index.css`;
+  `prefers-reduced-motion` → статичные точки/заливка), имя + аватар в ленте
+  (`boardId` в `CardActivityFeed`). Ключи `presence.*`, `card.changedBy`.
 - Локальные диалоги/черновики — по правилу «сброс только ремаунтом».
 
 ### Backend (с TASK-23)
@@ -348,8 +361,21 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   того же аккаунта** применяется; события при in-flight командах
   откладываются и дренажатся после ack (`settled()` из dispatch/undo) —
   LWW без rebase, §7.5 это допускает. Focus refetch остаётся fallback и
-  обновляет resume point. `presence`/`activity` события в shared уже
-  типизированы, UI их игнорирует до TASK-36/37.
+  обновляет resume point. `presence` (TASK-36) проходит мимо seq-дедупа и
+  буфера: ростер приходит первым кадром подключения, изменения и heartbeat
+  — сразу; `activity` типизирован, UI подключит его в TASK-37.
+- **Присутствие и атрибуция (TASK-36):** `PresenceService`
+  (`backend/src/realtime/presence.service.ts`) — сессии per
+  `(boardId, clientId)` с дедупом по юзеру (две вкладки — один аватар),
+  бродкаст на join/leave, heartbeat 30 с, sweep каждые 15 с дропает сессии
+  без пинга старше `PRESENCE_TTL_MS` (60 с). `GET /boards/:id/events?client=<tab>`
+  принимает tab-идентификатор (стабилен на вкладку — переподключение не
+  мигает аватаром), `POST /boards/:id/presence {clientId}` — heartbeat из UI
+  (20 с и на `visibilitychange`; `MembershipGuard`, неизвестный id — no-op
+  204). Writers штампуют `Card.lastActorId` ровно там, где `updatedAt`
+  (чистые reorder'ы — нет); агрегат отдаёт поле; контрактные e2e снимают
+  его `stripAttribution()` (`backend/test/support/attribution.ts`) и
+  проверяют штамп отдельным describe'ом.
 - **Playwright-смоуки:** после TASK-30 нельзя ждать `networkidle` — SSE
   держит соединение открытым, и idle не наступает; используй
   `waitUntil: "domcontentloaded"`. Живой смоук realtime — `realtime.mjs`

@@ -47,6 +47,19 @@ describe("FilterBar", () => {
     expect(screen.getByText("Feature")).toBeInTheDocument();
   });
 
+  it("keeps the popover scrollable so every facet stays reachable", async () => {
+    renderBar();
+    await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
+
+    // On short viewports the panel is capped to the available height and
+    // scrolls as one surface (no nested label-list scroller).
+    const popover = screen.getByTestId("filters-popover");
+    expect(popover).toHaveClass("overflow-y-auto", "overscroll-contain");
+    expect(
+      screen.getByRole("checkbox", { name: "Bug" }).parentElement,
+    ).not.toHaveClass("overflow-y-auto");
+  });
+
   it("selects a due status from the popover", async () => {
     const onChange = renderBar();
     await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));

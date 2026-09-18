@@ -1118,6 +1118,24 @@ describe("boardReducer — covers", () => {
     expect(again.cards["card-1"]).toBe(withCover.cards["card-1"]);
   });
 
+  it("records cover events in the activity feed", () => {
+    const set = reduceBoard(freshBoard(), {
+      type: "SET_CARD_COVER",
+      cardId: "card-1",
+      cover: { type: "gradient", value: "sunset" },
+    });
+    expect(set.cards["card-1"].activity!.at(-1)!.type).toBe("cover-set");
+
+    const cleared = reduceBoard(set, {
+      type: "SET_CARD_COVER",
+      cardId: "card-1",
+      cover: undefined,
+    });
+    expect(cleared.cards["card-1"].activity!.at(-1)!.type).toBe(
+      "cover-removed",
+    );
+  });
+
   it("ignores unknown cards and malformed covers", () => {
     const board = freshBoard();
     const unknown = reduceBoard(board, {
@@ -1515,6 +1533,27 @@ describe("boardReducer — card activity (TASK-12)", () => {
     expect(card.activity![0].actorId).toBeNull();
   });
 
+  it("stamps the action's actor on created and appended events (TASK-36)", () => {
+    const added = reduceBoard(freshBoard(), {
+      type: "ADD_CARD",
+      columnId: "col-backlog",
+      title: "Attributed",
+      actorId: "u-boris",
+    });
+    const created = Object.values(added.cards).find(
+      (card) => card.title === "Attributed",
+    )!;
+    expect(created.activity![0].actorId).toBe("u-boris");
+
+    const renamed = reduceBoard(freshBoard(), {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      title: "Renamed",
+      actorId: "u-boris",
+    });
+    expect(renamed.cards["card-1"].activity!.at(-1)!.actorId).toBe("u-boris");
+  });
+
   it("appends 'renamed' / 'description-changed' events on update", () => {
     const board = reduceBoard(freshBoard(), {
       type: "UPDATE_CARD",
@@ -1589,6 +1628,91 @@ describe("boardReducer — card activity (TASK-12)", () => {
     expect(removed.cards["card-1"].activity!.at(-1)!.type).toBe(
       "due-date-removed",
     );
+  });
+
+  it("records checklist and checklist item events with text snapshots", () => {
+    const added = reduceBoard(freshBoard(), {
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      newChecklistId: "cl-1",
+      title: "Release",
+    });
+    const checklistEvent = added.cards["card-1"].activity!.at(-1)!;
+    expect(checklistEvent.type).toBe("checklist-added");
+    expect(checklistEvent.detail).toBe("Release");
+
+    const renamed = reduceBoard(added, {
+      type: "RENAME_CHECKLIST",
+      cardId: "card-1",
+      checklistId: "cl-1",
+      title: "Ship it",
+    });
+    const renameEvent = renamed.cards["card-1"].activity!.at(-1)!;
+    expect(renameEvent.type).toBe("checklist-renamed");
+    expect(renameEvent.detail).toBe("Ship it");
+
+    const withItem = reduceBoard(renamed, {
+      type: "ADD_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId: "cl-1",
+      newItemId: "it-1",
+      text: "Tag the build",
+    });
+    const itemEvent = withItem.cards["card-1"].activity!.at(-1)!;
+    expect(itemEvent.type).toBe("checklist-item-added");
+    expect(itemEvent.detail).toBe("Tag the build");
+
+    const renamedItem = reduceBoard(withItem, {
+      type: "RENAME_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId: "cl-1",
+      itemId: "it-1",
+      text: "Cut the release",
+    });
+    const itemRenameEvent = renamedItem.cards["card-1"].activity!.at(-1)!;
+    expect(itemRenameEvent.type).toBe("checklist-item-renamed");
+    expect(itemRenameEvent.detail).toBe("Cut the release");
+
+    const checked = reduceBoard(renamedItem, {
+      type: "SET_CHECKLIST_ITEM_DONE",
+      cardId: "card-1",
+      checklistId: "cl-1",
+      itemId: "it-1",
+      done: true,
+    });
+    const checkedEvent = checked.cards["card-1"].activity!.at(-1)!;
+    expect(checkedEvent.type).toBe("checklist-item-checked");
+    expect(checkedEvent.detail).toBe("Cut the release");
+
+    const unchecked = reduceBoard(checked, {
+      type: "SET_CHECKLIST_ITEM_DONE",
+      cardId: "card-1",
+      checklistId: "cl-1",
+      itemId: "it-1",
+      done: false,
+    });
+    expect(unchecked.cards["card-1"].activity!.at(-1)!.type).toBe(
+      "checklist-item-unchecked",
+    );
+
+    const withoutItem = reduceBoard(unchecked, {
+      type: "DELETE_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId: "cl-1",
+      itemId: "it-1",
+    });
+    const removedItem = withoutItem.cards["card-1"].activity!.at(-1)!;
+    expect(removedItem.type).toBe("checklist-item-removed");
+    expect(removedItem.detail).toBe("Cut the release");
+
+    const withoutChecklist = reduceBoard(withoutItem, {
+      type: "DELETE_CHECKLIST",
+      cardId: "card-1",
+      checklistId: "cl-1",
+    });
+    const removedChecklist = withoutChecklist.cards["card-1"].activity!.at(-1)!;
+    expect(removedChecklist.type).toBe("checklist-removed");
+    expect(removedChecklist.detail).toBe("Ship it");
   });
 
   it("records cross-column moves with the target column title, not reorders", () => {

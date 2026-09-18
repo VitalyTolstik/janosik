@@ -95,6 +95,21 @@ export interface PresenceSseEvent {
   users: PresenceUser[];
 }
 
+/** What happened to a user's membership of a board (TASK-36). */
+export type MembershipChange = "accepted" | "updated" | "removed";
+
+/**
+ * Server-sent event: a board's member directory changed (TASK-36). Open
+ * member lists re-read the directory; `removed` for the removed user
+ * themselves closes their stream and drops the board.
+ */
+export interface MembershipSseEvent {
+  type: "membership";
+  boardId: string;
+  userId: string;
+  change: MembershipChange;
+}
+
 /** Server-sent event for non-reducer activity, e.g. a new comment (TASK-37). */
 export interface ActivitySseEvent {
   type: "activity";
@@ -109,7 +124,7 @@ export interface ActivitySseEvent {
 
 /** Discriminated union of every `GET /boards/:id/events` event (§7.4). */
 export type BoardSseEvent =
-  CommandSseEvent | PresenceSseEvent | ActivitySseEvent;
+  CommandSseEvent | PresenceSseEvent | ActivitySseEvent | MembershipSseEvent;
 
 /**
  * Board membership roles (§7.0) — mirrors the backend Prisma `Role` enum.
