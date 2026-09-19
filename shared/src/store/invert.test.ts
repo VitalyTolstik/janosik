@@ -284,6 +284,12 @@ const PLANS: Record<BoardAction["type"], Plan> = {
       at: AT,
     },
   ],
+  SET_CARD_PRIORITY: [
+    // Unset = "medium", so both of these actually change the card; the
+    // inverses reset to "medium" (dropping the field) and restore.
+    { type: "SET_CARD_PRIORITY", cardId: "c-1", priority: "blocker", at: AT },
+    { type: "SET_CARD_PRIORITY", cardId: "c-2", priority: "lowest", at: AT },
+  ],
   SET_CARD_COVER: [
     { type: "SET_CARD_COVER", cardId: "c-1", at: AT },
     {

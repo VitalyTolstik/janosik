@@ -147,6 +147,30 @@ describe("commandDetails", () => {
     ]);
   });
 
+  it("captures the priority change with the default for unset fields", () => {
+    const before = makeBoard();
+    const withPriority = makeBoard(makeCard({ priority: "blocker" }));
+    const set = {
+      ...base,
+      type: "SET_CARD_PRIORITY",
+      cardId: "card-1",
+      priority: "blocker",
+    } as BoardAction;
+    const reset = {
+      ...base,
+      type: "SET_CARD_PRIORITY",
+      cardId: "card-1",
+      priority: "medium",
+    } as BoardAction;
+
+    expect(commandDetails(set, before, withPriority)?.changes).toEqual([
+      { field: "priority", from: "medium", to: "blocker" },
+    ]);
+    expect(commandDetails(reset, withPriority, before)?.changes).toEqual([
+      { field: "priority", from: "blocker", to: "medium" },
+    ]);
+  });
+
   it("captures checklist items: add, rename, check and delete", () => {
     const checklist = {
       id: "cl-1",
@@ -214,6 +238,8 @@ describe("commandDetails", () => {
         type: "ADD_CARD",
         columnId: "col-1",
         card: makeCard({ id: "card-2" }),
+        newCardId: "card-2",
+        title: "Copy",
       } as BoardAction,
     ];
     for (const action of actions) {

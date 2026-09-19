@@ -107,6 +107,11 @@ describe("Undo contract: command then inverse (e2e)", () => {
       dueDate: 1_700_000_500_000,
     });
     await command({
+      type: "SET_CARD_PRIORITY",
+      cardId: "card-1",
+      priority: "highest",
+    });
+    await command({
       type: "SET_CARD_COVER",
       cardId: "card-1",
       cover: { type: "gradient", value: "ocean" },
@@ -198,6 +203,10 @@ describe("Undo contract: command then inverse (e2e)", () => {
       ],
       ["TOUCH_CARD", { type: "TOUCH_CARD", cardId: "card-1" }],
       ["SET_CARD_DUE_DATE", { type: "SET_CARD_DUE_DATE", cardId: "card-1" }],
+      [
+        "SET_CARD_PRIORITY",
+        { type: "SET_CARD_PRIORITY", cardId: "card-1", priority: "highest" },
+      ],
       [
         "SET_CARD_COVER",
         { type: "SET_CARD_COVER", cardId: "card-1", cover: null },

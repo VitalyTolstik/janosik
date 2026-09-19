@@ -121,6 +121,7 @@ function cardCreateData(
     coverType: card.cover?.type ?? null,
     coverValue: card.cover?.value ?? null,
     dueDate: card.dueDate !== undefined ? new Date(card.dueDate) : null,
+    priority: card.priority ?? null,
     archivedAt:
       card.archivedAt !== undefined ? new Date(card.archivedAt) : null,
     createdAt: new Date(card.createdAt),
@@ -139,6 +140,7 @@ function cardUpdateData(
     coverType: card.cover?.type ?? null,
     coverValue: card.cover?.value ?? null,
     dueDate: card.dueDate !== undefined ? new Date(card.dueDate) : null,
+    priority: card.priority ?? null,
     archivedAt:
       card.archivedAt !== undefined ? new Date(card.archivedAt) : null,
     updatedAt: new Date(card.updatedAt),
@@ -524,6 +526,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
 
     case "UPDATE_CARD":
     case "SET_CARD_DUE_DATE":
+    case "SET_CARD_PRIORITY":
     case "SET_CARD_COVER":
     case "ARCHIVE_CARD":
     case "UNARCHIVE_CARD":
@@ -980,6 +983,7 @@ async function writeCardAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
   switch (action.type) {
     case "UPDATE_CARD":
     case "SET_CARD_DUE_DATE":
+    case "SET_CARD_PRIORITY":
     case "SET_CARD_COVER": {
       await tx.card.update({
         where: { id: card.id },
@@ -990,6 +994,7 @@ async function writeCardAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           coverType: card.cover?.type ?? null,
           coverValue: card.cover?.value ?? null,
           dueDate: card.dueDate !== undefined ? new Date(card.dueDate) : null,
+          priority: card.priority ?? null,
           updatedAt: new Date(card.updatedAt),
           version: { increment: 1 },
         },

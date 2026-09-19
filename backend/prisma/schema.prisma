@@ -158,6 +158,7 @@ model Card {
   coverType   String? // color | gradient
   coverValue  String?
   dueDate     DateTime?
+  priority    String? // TASK-45: blocker|highest|high|medium|low|lowest (null = medium)
   archivedAt  DateTime? // TASK-18.1: card archive
   deletedAt   DateTime? // soft-delete (§7.0)
   version     Int         @default(0) // ifMatch → 409 (§7.0)
@@ -257,7 +258,7 @@ model Comment {
   cardId    String
   author    User      @relation(fields: [authorId], references: [id])
   authorId  String
-  text      String    @db.VarChar(2000) // LIMITS.comment — plain text
+  text      String    @db.Text // LIMITS.comment (10000) — plain text
   deletedAt DateTime? // soft-delete (§7.0)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

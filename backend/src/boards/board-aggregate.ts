@@ -149,6 +149,7 @@ function toCard(card: CardWithRelations, boardLabelIds: Set<string>): Card {
     ...(card.description !== null ? { description: card.description } : {}),
     ...(checklists ? { checklists } : {}),
     ...(card.dueDate ? { dueDate: card.dueDate.getTime() } : {}),
+    ...(card.priority ? { priority: card.priority as Card["priority"] } : {}),
     ...(card.coverType && card.coverValue
       ? {
           cover: {
