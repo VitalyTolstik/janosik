@@ -589,6 +589,7 @@ describe("Boards API (e2e)", () => {
   }
 
   async function wipe(db: PrismaService): Promise<void> {
+    await db.cardLink.deleteMany();
     await db.cardLabel.deleteMany();
     await db.checklistItem.deleteMany();
     await db.checklist.deleteMany();

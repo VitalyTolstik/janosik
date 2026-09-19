@@ -710,6 +710,53 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       return [boardTouch, touch.card(card.id)];
     }
 
+    case "ADD_CARD_LINK": {
+      const card = after.cards[action.cardId];
+      if (!card) return [boardTouch];
+      await bumpCard(tx, card, ctx.actorId);
+      const position = (card.links ?? []).findIndex(
+        (link) => link.id === action.linkId,
+      );
+      if (position === -1) return [boardTouch, touch.card(card.id)];
+      // Upsert on purpose: undoing a remove re-adds the same row (its id
+      // travels in the command), and a redo of a remove-undo must revive
+      // the soft-deleted row instead of colliding on the id.
+      await tx.cardLink.upsert({
+        where: { id: action.linkId },
+        create: {
+          id: action.linkId,
+          boardId,
+          fromCardId: card.id,
+          toCardId: action.targetCardId,
+          type: action.linkType,
+          position,
+          deletedAt: null,
+        },
+        update: {
+          fromCardId: card.id,
+          toCardId: action.targetCardId,
+          type: action.linkType,
+          position,
+          deletedAt: null,
+        },
+      });
+      return [boardTouch, touch.card(card.id)];
+    }
+
+    case "REMOVE_CARD_LINK": {
+      const card = after.cards[action.cardId];
+      if (!card) return [boardTouch];
+      await bumpCard(tx, card, ctx.actorId);
+      // Soft delete: the row survives so redo (the re-add) revives it, and
+      // `RESTORE_CARD` of the target keeps the aggregate byte-equal to the
+      // reducer, which never scrubs a dangling row either.
+      await tx.cardLink.updateMany({
+        where: { id: action.linkId, deletedAt: null },
+        data: { deletedAt: new Date(ctx.at) },
+      });
+      return [boardTouch, touch.card(card.id)];
+    }
+
     case "ADD_LABEL": {
       const position = after.labels.findIndex((l) => l.id === action.label.id);
       const label = after.labels[position];

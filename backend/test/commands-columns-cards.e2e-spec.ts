@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { INestApplication } from "@nestjs/common";
+import { ThrottlerGuard } from "@nestjs/throttler";
 import { Test } from "@nestjs/testing";
 import type {
   Board,
@@ -37,6 +38,15 @@ describe("Commands API (e2e)", () => {
   let viewerToken: string;
 
   beforeAll(async () => {
+    // This suite POSTs far more than the global 100 req/min quota by design
+    // (the contract walk alone is a hundred commands); throttling is another
+    // suite's subject (auth-rate-limit). Neither `overrideGuard` nor
+    // `overrideProvider(APP_GUARD)` reaches a guard Nest registered as an
+    // enhancer, so the quota is lifted on the class itself — jest gives each
+    // spec file its own module registry, so the patch dies with this file.
+    ThrottlerGuard.prototype.canActivate = function canActivate() {
+      return Promise.resolve(true);
+    };
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -269,6 +279,39 @@ describe("Commands API (e2e)", () => {
           type: "SET_CARD_COVER",
           cardId: "card-1",
           cover: { type: "color", value: "blue" },
+        }),
+      );
+
+      // Card links (TASK-46): add on card-1 towards card-2, then a second
+      // row on a fresh pair; removal goes by link id.
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD_LINK",
+          cardId: "card-1",
+          linkId: "link-1",
+          targetCardId: "card-2",
+          linkType: "blocks",
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD_LINK",
+          cardId: "card-2",
+          linkId: "link-2",
+          targetCardId: "card-3",
+          linkType: "relates_to",
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "REMOVE_CARD_LINK",
+          cardId: "card-1",
+          linkId: "link-1",
+          targetCardId: "card-2",
+          linkType: "blocks",
         }),
       );
 
@@ -1281,6 +1324,7 @@ describe("Commands API (e2e)", () => {
   }
 
   async function wipe(db: PrismaService): Promise<void> {
+    await db.cardLink.deleteMany();
     await db.cardLabel.deleteMany();
     await db.checklistItem.deleteMany();
     await db.checklist.deleteMany();

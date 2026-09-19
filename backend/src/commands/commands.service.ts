@@ -71,6 +71,8 @@ const SUPPORTED_ACTIONS = new Set<string>([
   "ARCHIVE_COLUMN_CARDS",
   "SET_CARD_DUE_DATE",
   "SET_CARD_PRIORITY",
+  "ADD_CARD_LINK",
+  "REMOVE_CARD_LINK",
   "SET_CARD_COVER",
   "MOVE_CARD",
   "DUPLICATE_CARD",
@@ -542,6 +544,46 @@ export class CommandsService {
         // An unknown label never attaches (the reducer ignores it).
         if (!board.labels.some((label) => label.id === action.labelId)) return;
         if (card.labelIds.length >= LIMITS.labelsPerCard) reject();
+        return;
+      }
+      case "ADD_CARD_LINK": {
+        // Guards that would make the command a silent no-op in the reducer
+        // are answered honestly: self-link, an already-linked pair or a
+        // `blocks` cycle are the client's bug; the row cap is a real limit.
+        const card = board.cards[action.cardId];
+        const target = board.cards[action.targetCardId];
+        if (!card || !target || card.id === target.id) return;
+        if (card.links?.some((link) => link.id === action.linkId)) return;
+        const linkedPair = Object.values(board.cards).some((other) =>
+          (other.links ?? []).some(
+            (link) =>
+              (other.id === card.id && link.targetCardId === target.id) ||
+              (other.id === target.id && link.targetCardId === card.id),
+          ),
+        );
+        if (linkedPair) return;
+        if ((card.links?.length ?? 0) >= LIMITS.linksPerCard) reject();
+        if (action.linkType !== "blocks") return;
+        // Cycle check mirrors the reducer's DFS: the new edge closes a
+        // circle exactly when the target already reaches the source over
+        // existing `blocks` edges.
+        const stack = [target.id];
+        const seen = new Set<string>([target.id]);
+        while (stack.length > 0) {
+          const current = stack.pop() as string;
+          for (const link of board.cards[current]?.links ?? []) {
+            if (link.type !== "blocks") continue;
+            if (link.targetCardId === card.id) reject();
+            if (
+              !(link.targetCardId in board.cards) ||
+              seen.has(link.targetCardId)
+            ) {
+              continue;
+            }
+            seen.add(link.targetCardId);
+            stack.push(link.targetCardId);
+          }
+        }
         return;
       }
       case "ADD_CHECKLIST":

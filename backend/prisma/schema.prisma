@@ -59,6 +59,7 @@ model Board {
   members    BoardMember[]
   columns    Column[]
   labels     Label[]
+  cardLinks  CardLink[]
   activity   Activity[]
   commands   Command[]
 }
@@ -168,10 +169,36 @@ model Card {
   lastActorId String? // TASK-36 "who changed it" denormalization
   labels      CardLabel[]
   checklists  Checklist[]
+  linksFrom   CardLink[] @relation("CardLinkFrom")
+  linksTo     CardLink[] @relation("CardLinkTo")
   activity    Activity[]
   comments    Comment[]
 
   @@index([columnId, position])
+}
+
+// Card links (TASK-46). Directional: `fromCard` holds the row and "blocks"
+// (or "relates to" / "duplicates") `toCard`. Rows are immutable (no text to
+// edit, hence no version) — undo/redo flip `deletedAt`, exactly like the
+// client reducer adds/removes the row on the source card. Rows pointing at
+// a soft-deleted card are kept: the aggregate skips them with the card, and
+// restoring the card revives the link the way the client's undo does.
+model CardLink {
+  id         String   @id // client-provided link id
+  board      Board    @relation(fields: [boardId], references: [id])
+  boardId    String
+  fromCard   Card     @relation("CardLinkFrom", fields: [fromCardId], references: [id])
+  fromCardId String
+  toCard     Card     @relation("CardLinkTo", fields: [toCardId], references: [id])
+  toCardId   String
+  type       String // blocks | relates_to | duplicates
+  position   Int      @default(0) // order within the source card's `links`
+  deletedAt  DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([boardId])
+  @@index([fromCardId, position])
+  @@index([toCardId])
 }
 
 model Label {
