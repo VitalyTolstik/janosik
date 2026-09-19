@@ -27,6 +27,7 @@ import {
 } from "@janosik/shared";
 import { LimitCounter } from "@/components/ui/limit-counter";
 import { showRemaining } from "@/utils/limit-format";
+import { PRIORITY_META, PRIORITY_ORDER } from "@/utils/priority";
 import { pad2 } from "@/utils/time";
 import {
   activeFacetCount,
@@ -375,6 +376,33 @@ export function FilterBar({
                 {t("filter.noLabel")}
               </CheckRow>
             </div>
+          </FilterSection>
+          <FilterSection title={t("filter.priority")}>
+            {PRIORITY_ORDER.map((value) => {
+              const meta = PRIORITY_META[value];
+              const Icon = meta.icon;
+              return (
+                <CheckRow
+                  key={value}
+                  checked={filter.priorities.includes(value)}
+                  onCheckedChange={(checked) => {
+                    const next = new Set(filter.priorities);
+                    if (checked) {
+                      next.add(value);
+                    } else {
+                      next.delete(value);
+                    }
+                    onChange({ ...filter, priorities: [...next] });
+                  }}
+                >
+                  <Icon
+                    className={`h-3.5 w-3.5 shrink-0 ${meta.iconClass}`}
+                    aria-hidden
+                  />
+                  {t(`priority.${value}`)}
+                </CheckRow>
+              );
+            })}
           </FilterSection>
           <FilterSection title={t("filter.created")}>
             <div role="radiogroup" aria-label={t("filter.createdAria")}>

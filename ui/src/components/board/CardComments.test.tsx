@@ -8,6 +8,7 @@ import {
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Board, CommentDto } from "@janosik/shared";
+import { LIMITS } from "@janosik/shared";
 
 import { api } from "@/api/client";
 import { AuthProvider } from "@/auth/AuthContext";
@@ -181,14 +182,20 @@ describe("CardComments", () => {
     );
   });
 
-  it("guards the limit and disables Save on an empty draft", async () => {
+  it("disables Save on an empty draft (Cancel always rendered)", async () => {
     const server = new FakeServer([seedBoard()]);
     renderComments(server);
     const input = await screen.findByTestId("comment-input");
     const send = screen.getByTestId("comment-send");
 
+    // Empty: Save is disabled, Cancel too (nothing to cancel).
     expect(send).toBeDisabled();
-    fireEvent.change(input, { target: { value: "x".repeat(2001) } });
+    expect(screen.getByTestId("comment-cancel")).toBeDisabled();
+
+    // Over the hard limit: still disabled.
+    fireEvent.change(input, {
+      target: { value: "x".repeat(LIMITS.comment + 1) },
+    });
     expect(send).toBeDisabled();
     fireEvent.change(input, { target: { value: "ok" } });
     expect(send).toBeEnabled();
@@ -204,8 +211,9 @@ describe("CardComments", () => {
 
     // Cancel resets the editor by remounting it.
     expect(await screen.findByTestId("comment-input")).toHaveValue("");
+    // Save is disabled on the empty draft again…
     expect(screen.getByTestId("comment-send")).toBeDisabled();
-    expect(screen.queryByTestId("comment-cancel")).toBeNull();
+    // …and no request went out.
     expect(
       server.requests.some(
         (request) =>

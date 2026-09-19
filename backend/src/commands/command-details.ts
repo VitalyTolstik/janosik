@@ -1,5 +1,5 @@
 import type { ActivityChange, Board, BoardAction, Card } from "@janosik/shared";
-import { LIMITS } from "@janosik/shared";
+import { DEFAULT_CARD_PRIORITY, LIMITS } from "@janosik/shared";
 
 /**
  * The display snapshot stored on a `Command` row (TASK-37) and rendered by
@@ -134,6 +134,20 @@ export function commandDetails(
             field: "dueDate",
             from: isoOrNull(from.dueDate),
             to: isoOrNull(action.dueDate),
+          },
+        ],
+      };
+    }
+
+    case "SET_CARD_PRIORITY": {
+      const from = before.cards[action.cardId];
+      if (!from) return null;
+      return {
+        changes: [
+          {
+            field: "priority",
+            from: from.priority ?? DEFAULT_CARD_PRIORITY,
+            to: action.priority,
           },
         ],
       };

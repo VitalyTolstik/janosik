@@ -431,6 +431,19 @@ export interface SetCardDueDateAction {
   dueDate?: number;
 }
 
+/** Jira-style priority ladder (TASK-45) — defined in `types/kanban.ts`. */
+import { CARD_PRIORITIES, DEFAULT_CARD_PRIORITY } from "../types/kanban";
+import type { CardPriority } from "../types/kanban";
+
+export { CARD_PRIORITIES, DEFAULT_CARD_PRIORITY };
+
+export interface SetCardPriorityAction {
+  type: "SET_CARD_PRIORITY";
+  cardId: string;
+  /** The new priority; `undefined` resets to the default ("medium"). */
+  priority: CardPriority;
+}
+
 export interface SetCardCoverAction {
   type: "SET_CARD_COVER";
   cardId: string;
@@ -636,6 +649,7 @@ export type BoardAction =
   | BoardScoped<RenameChecklistItemAction>
   | BoardScoped<DeleteChecklistItemAction>
   | BoardScoped<SetCardDueDateAction>
+  | BoardScoped<SetCardPriorityAction>
   | BoardScoped<SetCardCoverAction>
   | BoardScoped<DuplicateCardAction>
   | BoardScoped<DuplicateColumnAction>
@@ -1430,6 +1444,50 @@ function setCardDueDate(
   };
 }
 
+/**
+ * Set a card's priority (TASK-45). The default "medium" is not stored —
+ * the field is dropped entirely so cards only carry a priority when it
+ * differs (mirrors the optional-field convention).
+ */
+function setCardPriority(
+  board: Board,
+  action: BoardScoped<SetCardPriorityAction>,
+  options: ReduceOptions,
+): Board {
+  const target = board.cards[action.cardId];
+  if (!target) return board;
+  // Defensive: unknown values fall back to the default (validate.ts already
+  // rejects them; imports and stale replays stay safe either way).
+  const priority = (CARD_PRIORITIES as readonly string[]).includes(
+    action.priority,
+  )
+    ? action.priority
+    : DEFAULT_CARD_PRIORITY;
+  if (priority === (target.priority ?? DEFAULT_CARD_PRIORITY)) return board;
+  let nextCard: Card = { ...target, updatedAt: cardStamp(action) };
+  if (priority === DEFAULT_CARD_PRIORITY) {
+    // Drop the field entirely (no `priority: "medium"` key left behind).
+    delete nextCard.priority;
+  } else {
+    nextCard.priority = priority;
+  }
+  nextCard = appendActivity(
+    nextCard,
+    "priority-set",
+    action,
+    0,
+    options,
+    priority,
+  );
+  return {
+    ...board,
+    cards: {
+      ...board.cards,
+      [action.cardId]: nextCard,
+    },
+  };
+}
+
 /** A cover is valid when its type/value pair is one the app can render. */
 function isValidCover(cover: unknown): cover is CardCover {
   if (typeof cover !== "object" || cover === null) return false;
@@ -1993,6 +2051,8 @@ export function boardReducer(
       return committed(deleteChecklistItem(board, action, options));
     case "SET_CARD_DUE_DATE":
       return committed(setCardDueDate(board, action, options));
+    case "SET_CARD_PRIORITY":
+      return committed(setCardPriority(board, action, options));
     case "SET_CARD_COVER":
       return committed(setCardCover(board, action, options));
     case "DUPLICATE_CARD":

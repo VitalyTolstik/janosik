@@ -55,6 +55,11 @@ describe("isFilterActive", () => {
     expect(isFilterActive({ ...EMPTY_FILTER, due: "none" })).toBe(true);
     expect(isFilterActive({ ...EMPTY_FILTER, due: "any" })).toBe(false);
   });
+
+  it("is true when the priorities facet is set", () => {
+    expect(isFilterActive({ ...EMPTY_FILTER, priorities: [] })).toBe(false);
+    expect(isFilterActive({ ...EMPTY_FILTER, priorities: ["low"] })).toBe(true);
+  });
 });
 
 describe("activeFacetCount", () => {
@@ -77,8 +82,9 @@ describe("activeFacetCount", () => {
         created: "7d",
         createdOn: "2025-06-15",
         due: "soon",
+        priorities: ["high", "highest"],
       }),
-    ).toBe(5);
+    ).toBe(6);
   });
 });
 
@@ -118,6 +124,34 @@ describe("matchesCardFilter", () => {
 
   it("matches an empty filter", () => {
     expect(matchesCardFilter(c, EMPTY_FILTER, NOW)).toBe(true);
+  });
+
+  it("matches the priorities facet against the effective priority", () => {
+    // Unset = "medium" — selecting only "blocker" hides it, "medium" keeps it.
+    expect(
+      matchesCardFilter(
+        c,
+        { ...EMPTY_FILTER, priorities: ["blocker", "highest"] },
+        NOW,
+      ),
+    ).toBe(false);
+    expect(
+      matchesCardFilter(c, { ...EMPTY_FILTER, priorities: ["medium"] }, NOW),
+    ).toBe(true);
+    const urgent = {
+      ...card("c2", "Fix outage", []),
+      priority: "blocker" as const,
+    };
+    expect(
+      matchesCardFilter(
+        urgent,
+        { ...EMPTY_FILTER, priorities: ["blocker", "low"] },
+        NOW,
+      ),
+    ).toBe(true);
+    expect(
+      matchesCardFilter(urgent, { ...EMPTY_FILTER, priorities: ["low"] }, NOW),
+    ).toBe(false);
   });
 
   it("matches a case-insensitive query substring", () => {

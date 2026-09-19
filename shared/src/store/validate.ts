@@ -1,5 +1,6 @@
 import type { BoardAction } from "./board-reducer";
 import {
+  CARD_PRIORITIES,
   COVER_COLORS,
   COVER_GRADIENTS,
   LABEL_COLORS,
@@ -434,6 +435,18 @@ function parseAction(action: Record<string, unknown>): BoardAction {
       readString(action, "cardId", "action.cardId", { nonBlank: true });
       readOptionalNumber(action, "dueDate", "action.dueDate");
       break;
+    case "SET_CARD_PRIORITY": {
+      common(action);
+      readString(action, "cardId", "action.cardId", { nonBlank: true });
+      const { priority } = action;
+      if (
+        typeof priority !== "string" ||
+        !(CARD_PRIORITIES as readonly string[]).includes(priority)
+      ) {
+        fail("action.priority", "must be a known priority");
+      }
+      break;
+    }
     case "SET_CARD_COVER":
       common(action);
       readString(action, "cardId", "action.cardId", { nonBlank: true });

@@ -422,6 +422,25 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   `?card=`-ссылки
   из шапки. Диалог карточки ставит `key={card.id}` на
   секцию — смена карточки сбрасывает локальный стейт, а не «переезжает».
+- **Приоритет карточки (TASK-45):** `Card.priority` (`shared`: `CARD_PRIORITIES`
+  blocker…lowest, дефолт `medium`, поле хранится только когда отличается).
+  Команда `SET_CARD_PRIORITY` идёт всем общим контуром (редьюсер → invert →
+  validate → writers: **важно — тип надо добавить в оба свитча**
+  `command-writers.ts`: роутер `writeAction` и `writeCardAction`, иначе
+  сервер молча запишет no-op); Prisma-колонка + миграция. UI: селект в
+  диалоге (`CardPriority`), бейдж `PriorityBadge` на морде только для
+  не-medium, опциональная колонка TableView с сортировкой по рангу
+  (`utils/priority.ts` — иконки/цвета/лейблы), фасет `priorities` в
+  `utils/filter.ts` + FilterBar; история — предложение
+  `activity.priority-set` с локализованным именем уровня (`HistoryValue`
+  локализует половины, дифф для priority выключен).
+- **Markdown-поверхности:** лимит комментария 10k (`LIMITS.comment`,
+  колонка `Comment.text` — `@db.Text`); композер — premium-Save слева +
+  тихий Cancel рядом, оба дисейблятся на пустом черновике (Cancel — чтобы
+  не мигал remount-reset); в вьюерах (`CommentBody`, `DescriptionEditor`
+  readOnly) `emojify` (`utils/emoji.ts`) превращает `:shortcode:` и
+  ASCII-эмотиконы в эмодзи, не трогая код и URL; в редакторе текст
+  остаётся сырым.
   Остальные модули: users — заглушка; `/health` живой (пингует БД).
 - **Мастер-контур живой (TASK-43):** `AdminUser` — отдельная от `User`
   сущность с ролью `AdminRole` (`OWNER` управляет мастерами из панели,

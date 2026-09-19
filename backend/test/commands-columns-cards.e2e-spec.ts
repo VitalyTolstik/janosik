@@ -258,6 +258,14 @@ describe("Commands API (e2e)", () => {
       await applyAndAssert(
         boardId,
         scoped(boardId, {
+          type: "SET_CARD_PRIORITY",
+          cardId: "card-1",
+          priority: "blocker",
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
           type: "SET_CARD_COVER",
           cardId: "card-1",
           cover: { type: "color", value: "blue" },

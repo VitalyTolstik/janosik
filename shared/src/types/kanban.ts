@@ -100,6 +100,21 @@ export interface Checklist {
   items: ChecklistItem[];
 }
 
+/** Jira-style priority ladder, from most to least urgent (TASK-45). */
+export const CARD_PRIORITIES = [
+  "blocker",
+  "highest",
+  "high",
+  "medium",
+  "low",
+  "lowest",
+] as const;
+
+export type CardPriority = (typeof CARD_PRIORITIES)[number];
+
+/** The default priority every card has when the field is not set. */
+export const DEFAULT_CARD_PRIORITY: CardPriority = "medium";
+
 export interface Card {
   id: string;
   title: string;
@@ -109,6 +124,11 @@ export interface Card {
   checklists?: Checklist[];
   /** Optional deadline as a Unix timestamp (ms). Omitted when unset. */
   dueDate?: number;
+  /**
+   * Jira-style priority (TASK-45). Omitted = the default "medium" — the
+   * field is stored only when it differs, like every other optional.
+   */
+  priority?: CardPriority;
   /** Optional decorative cover. Omitted when unset. */
   cover?: CardCover;
   /** References to labels defined on the board; empty when unlabeled. */
@@ -149,6 +169,7 @@ export const CARD_ACTIVITY_TYPES = [
   "label-removed",
   "due-date-set",
   "due-date-removed",
+  "priority-set",
   "cover-set",
   "cover-removed",
   "checklist-added",
@@ -189,8 +210,12 @@ export const LIMITS = {
   checklistTitle: 100,
   /** Checklist item text (add + rename). */
   checklistItem: 200,
-  /** Card comment (plain text, TASK-28 REST / TASK-37 UI). */
-  comment: 2000,
+  /**
+   * Card comment (plain text, TASK-28 REST / TASK-37 UI). Owner call:
+   * Jira keeps far more, but 10k mirrors the description and keeps
+   * payloads/feeds sane.
+   */
+  comment: 10000,
   /** Ephemeral search/filter queries (board filter, ⌘K, switcher). */
   query: 200,
 

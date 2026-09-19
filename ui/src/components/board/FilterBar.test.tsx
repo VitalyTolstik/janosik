@@ -80,6 +80,16 @@ describe("FilterBar", () => {
     });
   });
 
+  it("toggles a priority checkbox from the popover", async () => {
+    const onChange = renderBar();
+    await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Blocker" }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...EMPTY_FILTER,
+      priorities: ["blocker"],
+    });
+  });
+
   it("switches the label match mode between any and all", async () => {
     const onChange = renderBar();
     await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));

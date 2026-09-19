@@ -5,7 +5,10 @@ import type {
   ActivityFeedEntry,
   ActivitySseEvent,
   CardActivityEvent,
+  CardPriority,
 } from "@janosik/shared";
+import { CARD_PRIORITIES } from "@janosik/shared";
+import { priorityLabel } from "@/utils/priority";
 
 import { api, isApiEnabled } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -58,6 +61,7 @@ const COMMAND_KEYS: Record<string, MessageKey> = {
   UPDATE_CARD: "history.updated",
   MOVE_CARD: "activity.moved",
   SET_CARD_DUE_DATE: "activity.due-date-set",
+  SET_CARD_PRIORITY: "activity.priority-set",
   SET_CARD_COVER: "activity.cover-set",
   SET_CARD_LABEL: "activity.label-added",
   ADD_CHECKLIST: "activity.checklist-added",
@@ -77,6 +81,7 @@ const FIELD_KEYS: Record<string, MessageKey> = {
   title: "history.field.title",
   description: "history.field.description",
   dueDate: "history.field.dueDate",
+  priority: "history.field.priority",
   column: "history.field.column",
   label: "history.field.label",
   checklist: "history.field.checklist",
@@ -339,7 +344,8 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
               const diffable =
                 change.from !== null &&
                 change.to !== null &&
-                change.field !== "dueDate";
+                change.field !== "dueDate" &&
+                change.field !== "priority";
               const sides = diffable
                 ? diffSides(change.from ?? "", change.to ?? "")
                 : null;
@@ -453,6 +459,14 @@ function HistoryValue({
       );
     }
   }
+  // A priority half shows the localized level name, not the raw enum.
+  if (field === "priority" && CARD_PRIORITIES.includes(value as CardPriority)) {
+    return (
+      <span className={cn("text-foreground/80", className)}>
+        {priorityLabel(value as CardPriority, lang)}
+      </span>
+    );
+  }
   return <span className={cn("text-foreground/80", className)}>{value}</span>;
 }
 
@@ -495,6 +509,18 @@ function sentenceFor(
         detail: set !== null ? formatDate(Date.parse(set), lang, hour12) : "",
       },
     };
+  }
+
+  if (entry.type === "SET_CARD_PRIORITY") {
+    const to = entry.changes?.[0]?.to ?? null;
+    // Every SET_CARD_PRIORITY carries a known priority as `to`; fall back
+    // to the default for degenerate feeds. `activity.priority-set`
+    // interpolates the localized name, not the raw value.
+    const detail =
+      to !== null && CARD_PRIORITIES.includes(to as CardPriority)
+        ? priorityLabel(to as CardPriority, lang)
+        : priorityLabel("medium", lang);
+    return { key: "activity.priority-set", params: { detail } };
   }
 
   if (entry.type === "SET_CARD_COVER") {

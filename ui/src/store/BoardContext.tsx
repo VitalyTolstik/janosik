@@ -40,6 +40,7 @@ import type {
   BoardEnvelope,
   BoardRole,
   CardCover,
+  CardPriority,
   Label,
   MembershipChange,
 } from "@janosik/shared";
@@ -302,6 +303,7 @@ interface BoardActionsValue {
     itemId: string,
   ) => void;
   setCardDueDate: (cardId: string, dueDate?: number) => void;
+  setCardPriority: (cardId: string, priority: CardPriority) => void;
   setCardCover: (cardId: string, cover?: CardCover) => void;
   duplicateCard: (cardId: string, title?: string) => void;
   duplicateColumn: (columnId: string, title?: string) => void;
@@ -1359,6 +1361,7 @@ function createBoardActions(
   | "renameChecklistItem"
   | "deleteChecklistItem"
   | "setCardDueDate"
+  | "setCardPriority"
   | "setCardCover"
   | "duplicateCard"
   | "duplicateColumn"
@@ -1553,6 +1556,14 @@ function createBoardActions(
         type: "SET_CARD_DUE_DATE",
         cardId,
         dueDate,
+        activityIds: ids(1),
+        at: Date.now(),
+      }),
+    setCardPriority: (cardId: string, priority: CardPriority) =>
+      dispatch({
+        type: "SET_CARD_PRIORITY",
+        cardId,
+        priority,
         activityIds: ids(1),
         at: Date.now(),
       }),

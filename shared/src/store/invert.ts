@@ -1,4 +1,5 @@
 import type { BoardAction } from "./board-reducer";
+import { DEFAULT_CARD_PRIORITY } from "./board-reducer";
 import type { Board, Card, CardActivityEvent } from "../types/kanban";
 import { clamp } from "../utils/text";
 
@@ -303,6 +304,19 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         type: "SET_CARD_DUE_DATE",
         cardId: card.id,
         dueDate: card.dueDate,
+        cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
+      };
+    }
+
+    case "SET_CARD_PRIORITY": {
+      const card = before.cards[action.cardId];
+      if (!card) return null;
+      return {
+        ...head,
+        type: "SET_CARD_PRIORITY",
+        cardId: card.id,
+        priority: card.priority ?? DEFAULT_CARD_PRIORITY,
         cardUpdatedAt: card.updatedAt,
         cardActivity: feedOf(card),
       };

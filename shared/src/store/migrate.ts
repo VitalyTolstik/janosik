@@ -2,11 +2,17 @@ import type {
   Board,
   Card,
   CardCover,
+  CardPriority,
   Checklist,
   ChecklistItem,
   LabelColor,
 } from "../types/kanban";
-import { COVER_COLORS, COVER_GRADIENTS, LABEL_COLORS } from "../types/kanban";
+import {
+  CARD_PRIORITIES,
+  COVER_COLORS,
+  COVER_GRADIENTS,
+  LABEL_COLORS,
+} from "../types/kanban";
 import type { BoardState } from "./board-reducer";
 import { clamp, clampText } from "../utils/text";
 
@@ -95,6 +101,16 @@ function toChecklists(value: unknown): Checklist[] | undefined {
 function toDueDate(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? value
+    : undefined;
+}
+
+/**
+ * A priority is either absent (the default "medium") or one of the known
+ * ladder values; anything else (hand-edited imports) is dropped.
+ */
+function toPriority(value: unknown): CardPriority | undefined {
+  return (CARD_PRIORITIES as readonly string[]).includes(value as string)
+    ? (value as CardPriority)
     : undefined;
 }
 
@@ -195,8 +211,16 @@ function isWipLimitCurrent(value: unknown): boolean {
 }
 
 function normalizeCard(card: LegacyCard): Card {
-  const { labelId, labelIds, checklists, dueDate, cover, activity, ...rest } =
-    card;
+  const {
+    labelId,
+    labelIds,
+    checklists,
+    dueDate,
+    priority,
+    cover,
+    activity,
+    ...rest
+  } = card;
   const title = clampText(rest.title, LIMITS.cardTitle);
   const description =
     typeof rest.description === "string"
@@ -220,6 +244,7 @@ function normalizeCard(card: LegacyCard): Card {
           })),
       })),
     dueDate: toDueDate(dueDate),
+    priority: toPriority(priority),
     cover: toCover(cover),
     activity: toActivity(activity),
   };

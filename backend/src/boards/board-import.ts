@@ -117,6 +117,7 @@ export async function persistBoard(
         coverType: card.cover?.type ?? null,
         coverValue: card.cover?.value ?? null,
         dueDate: card.dueDate ? new Date(card.dueDate) : null,
+        priority: card.priority ?? null,
         archivedAt: card.archivedAt ? new Date(card.archivedAt) : null,
         position: positionForCard.get(oldId) ?? 0,
         createdAt,

@@ -7,6 +7,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { DueBadge } from "@/components/board/DueBadge";
+import { PriorityBadge } from "@/components/board/PriorityBadge";
+import type { CardPriority } from "@janosik/shared";
+import { DEFAULT_CARD_PRIORITY } from "@janosik/shared";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { HighlightedText } from "@/components/ui/highlight";
 import { UserAvatar } from "@/components/ui/user-avatar";
@@ -157,6 +160,9 @@ function CardItemView({
 
   // Due-date badge: overdue (red) / due within 24h (yellow) / later.
   const hasDueDate = typeof card.dueDate === "number";
+  // The face stays quiet about the default "medium" (TASK-45).
+  const hasPriority =
+    card.priority !== undefined && card.priority !== DEFAULT_CARD_PRIORITY;
 
   return (
     <article
@@ -298,9 +304,12 @@ function CardItemView({
       >
         <HighlightedText text={card.title} query={highlight ?? ""} />
       </p>
-      {hasDescription || total > 0 || hasDueDate ? (
+      {hasDescription || total > 0 || hasDueDate || hasPriority ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {hasDueDate ? <DueBadge dueDate={card.dueDate as number} /> : null}
+          {hasPriority ? (
+            <PriorityBadge priority={card.priority as CardPriority} />
+          ) : null}
           {total > 0 ? (
             <Tooltip>
               <TooltipTrigger asChild>

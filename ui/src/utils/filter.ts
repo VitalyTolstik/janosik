@@ -1,4 +1,5 @@
-import type { Board, Card, Label } from "@janosik/shared";
+import type { Board, Card, CardPriority, Label } from "@janosik/shared";
+import { DEFAULT_CARD_PRIORITY } from "@janosik/shared";
 import { dueStatus } from "@/utils/due-date";
 import { DAY_MS } from "@/utils/duration";
 
@@ -47,6 +48,11 @@ export interface CardFilter {
   createdOn: string | null;
   /** Deadline facet; "any" disables the facet. */
   due: DueFilter;
+  /**
+   * Selected priorities (TASK-45) — a card matches when its effective
+   * priority (unset = "medium") is one of them. Empty = any priority.
+   */
+  priorities: CardPriority[];
 }
 
 export const EMPTY_FILTER: CardFilter = {
@@ -57,6 +63,7 @@ export const EMPTY_FILTER: CardFilter = {
   created: "any",
   createdOn: null,
   due: "any",
+  priorities: [],
 };
 
 /** True when at least one facet restricts the board. */
@@ -67,7 +74,8 @@ export function isFilterActive(filter: CardFilter): boolean {
     filter.noLabel ||
     filter.created !== "any" ||
     filter.createdOn !== null ||
-    filter.due !== "any"
+    filter.due !== "any" ||
+    filter.priorities.length > 0
   );
 }
 
@@ -83,6 +91,7 @@ export function activeFacetCount(filter: CardFilter): number {
   if (filter.created !== "any") count += 1;
   if (filter.createdOn !== null) count += 1;
   if (filter.due !== "any") count += 1;
+  if (filter.priorities.length > 0) count += 1;
   return count;
 }
 
@@ -180,6 +189,13 @@ export function matchesCardFilter(
   }
 
   if (!matchesDueFilter(card, filter.due, now)) return false;
+
+  if (
+    filter.priorities.length > 0 &&
+    !filter.priorities.includes(card.priority ?? DEFAULT_CARD_PRIORITY)
+  ) {
+    return false;
+  }
 
   const hasSelected =
     filter.labelMatch === "all"

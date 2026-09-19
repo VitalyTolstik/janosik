@@ -22,6 +22,7 @@ import { CardActivity } from "@/components/board/CardActivity";
 import { CardChecklists } from "@/components/board/CardChecklists";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { CardDueDate } from "@/components/board/CardDueDate";
+import { CardPriority } from "@/components/board/CardPriority";
 import { CardCoverPicker } from "@/components/board/CardCoverPicker";
 import { LabelPicker } from "@/components/board/LabelPicker";
 // MDXEditor + Lexical are ~half of the app bundle but only needed once the
@@ -429,6 +430,12 @@ export function CardDialog({
             <CardDueDate
               cardId={card.id}
               dueDate={card.dueDate}
+              readOnly={readOnly}
+            />
+
+            <CardPriority
+              cardId={card.id}
+              priority={card.priority}
               readOnly={readOnly}
             />
 
