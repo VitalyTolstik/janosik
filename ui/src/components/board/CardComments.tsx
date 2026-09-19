@@ -287,8 +287,9 @@ interface CommentComposerProps {
 
 /**
  * Jira's comment box: avatar on the left, the markdown field that grows
- * with the text, and a quiet Cancel next to the primary Save underneath —
- * no icon theatrics, the buttons are labels.
+ * with the text, and the primary Save on the left with a quiet Cancel
+ * next to it — both rendered at once, both disabled until the draft has
+ * something to send (or cancel).
  */
 function CommentComposer({
   user,
@@ -301,6 +302,8 @@ function CommentComposer({
   onCancel,
 }: CommentComposerProps) {
   const { t } = useI18n();
+  // With nothing typed there is nothing to cancel — keeping Cancel enabled
+  // would only trigger the remount-reset flash for no reason.
   const dirty = draft.trim().length > 0;
 
   return (
@@ -332,24 +335,9 @@ function CommentComposer({
           />
         </Suspense>
         <div className="flex items-center justify-between gap-2">
-          <LimitCounter
-            length={draft.length}
-            limit={LIMITS.comment}
-            testId="comment-counter"
-          />
           <div className="flex items-center gap-1.5">
-            {dirty ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={sending}
-                data-testid="comment-cancel"
-                onClick={onCancel}
-              >
-                {t("comment.cancel")}
-              </Button>
-            ) : null}
             <Button
+              variant="premium"
               size="sm"
               disabled={!canSend}
               data-testid="comment-send"
@@ -360,7 +348,22 @@ function CommentComposer({
               ) : null}
               {t("comment.send")}
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
+              disabled={sending || !dirty}
+              data-testid="comment-cancel"
+              onClick={onCancel}
+            >
+              {t("comment.cancel")}
+            </Button>
           </div>
+          <LimitCounter
+            length={draft.length}
+            limit={LIMITS.comment}
+            testId="comment-counter"
+          />
         </div>
       </div>
     </div>

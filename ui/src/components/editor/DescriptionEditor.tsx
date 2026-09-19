@@ -5,6 +5,7 @@ import { MDXEditor } from "@mdxeditor/editor";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { sanitizeMarkdownForImport } from "@/utils/sanitizeMarkdown";
+import { emojify } from "@/utils/emoji";
 import {
   descriptionEditorPlugins,
   descriptionViewerPlugins,
@@ -59,7 +60,11 @@ export function DescriptionEditor({
       )}
       contentEditableClassName="janosik-md-content"
       readOnly={readOnly}
-      markdown={sanitizeMarkdownForImport(value)}
+      markdown={
+        readOnly
+          ? emojify(sanitizeMarkdownForImport(value))
+          : sanitizeMarkdownForImport(value)
+      }
       onChange={(markdown, initialNormalize) => {
         if (!readOnly && !initialNormalize) {
           onChange(markdown);

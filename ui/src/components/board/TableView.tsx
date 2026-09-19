@@ -18,6 +18,7 @@ import {
 } from "react";
 
 import { DueBadge } from "@/components/board/DueBadge";
+import { PriorityBadge } from "@/components/board/PriorityBadge";
 import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
 import { LabelPicker } from "@/components/board/LabelPicker";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
@@ -46,6 +47,7 @@ import { formatDateOnly, useI18n } from "@/i18n";
 import { useCardLabels } from "@/hooks/use-card-labels";
 import { useBoardMember, useEntityAttribution } from "@/store/board-live";
 import { userAvatarVar, userLabel } from "@/utils/avatar";
+import { priorityRank } from "@/utils/priority";
 import { isColumnFull } from "@janosik/shared";
 import { cn } from "@/lib/utils";
 import { createId } from "@/utils/id";
@@ -82,7 +84,7 @@ interface TableViewProps {
 }
 
 /** Sortable headers (TASK-14.1 item 7). */
-type SortKey = "title" | "column" | "due" | "createdAt";
+type SortKey = "title" | "column" | "due" | "priority" | "createdAt";
 
 interface SortState {
   key: SortKey;
@@ -91,6 +93,7 @@ interface SortState {
 
 /** Optional columns beyond the four base ones (TASK-14.1 item 11). */
 const OPTIONAL_COLUMNS = [
+  "priority",
   "checklists",
   "description",
   "createdAt",
@@ -265,6 +268,11 @@ export function TableView({
           if (bDue === null) return -1;
           return (aDue - bDue) * sort.dir;
         }
+        case "priority":
+          return (
+            (priorityRank(a.card.priority) - priorityRank(b.card.priority)) *
+            sort.dir
+          );
         case "createdAt":
           return (a.card.createdAt - b.card.createdAt) * sort.dir;
       }
@@ -390,6 +398,15 @@ export function TableView({
               >
                 {t("view.table.labels")}
               </th>
+              {visibleColumns.includes("priority") ? (
+                <SortHeader
+                  label={t("view.table.priority")}
+                  sortKey="priority"
+                  sort={sort}
+                  onCycle={cycleSort}
+                  className="w-28"
+                />
+              ) : null}
               {visibleColumns.includes("checklists") ? (
                 <th
                   scope="col"
@@ -804,6 +821,11 @@ function TableRowBody({
           </Popover>
         )}
       </td>
+      {visibleColumns.includes("priority") ? (
+        <td className="px-3 py-2" data-testid="table-priority">
+          <PriorityBadge priority={card.priority ?? "medium"} showLabel />
+        </td>
+      ) : null}
       {visibleColumns.includes("checklists") ? (
         <td className="px-3 py-2">
           {(() => {

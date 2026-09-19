@@ -135,6 +135,28 @@ describe("CardHistory", () => {
     expect(diffs[1]).toHaveTextContent("Done");
   });
 
+  it("renders the priority sentence with the localized level name", async () => {
+    const server = new FakeServer();
+    server.seedActivity("card-1", [
+      commandEntry({
+        id: "priority",
+        type: "SET_CARD_PRIORITY",
+        changes: [{ field: "priority", from: "medium", to: "blocker" }],
+      }),
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+    renderHistory();
+
+    expect(
+      await screen.findByText("Priority changed to Blocker"),
+    ).toBeInTheDocument();
+
+    const diffs = screen.getAllByTestId("history-diff");
+    expect(diffs[0]).toHaveTextContent("Priority");
+    expect(diffs[0]).toHaveTextContent("Medium");
+    expect(diffs[0]).toHaveTextContent("Blocker");
+  });
+
   it("highlights only the changed fragment of a long description", async () => {
     const server = new FakeServer();
     const wall = "0123456789".repeat(10); // 100 identical chars on both sides

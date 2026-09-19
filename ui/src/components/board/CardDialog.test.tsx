@@ -279,6 +279,36 @@ describe("CardDialog due dates", () => {
   });
 });
 
+describe("CardDialog priority", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("sets a priority from the dropdown and shows the badge on the card", async () => {
+    const user = userEvent.setup();
+    const dialog = await openCardDialog("Design the new onboarding flow");
+
+    // The trigger starts at the default…
+    expect(within(dialog).getByTestId("priority-trigger")).toHaveTextContent(
+      "Medium",
+    );
+
+    // …picking a level applies it at once…
+    await user.click(within(dialog).getByTestId("priority-trigger"));
+    await user.click(screen.getByTestId("priority-option-blocker"));
+
+    // …and the card face shows the colored badge.
+    await waitFor(() => {
+      expect(
+        screen.getAllByTestId("card-priority-badge").length,
+      ).toBeGreaterThan(0);
+    });
+    expect(within(dialog).getByTestId("priority-trigger")).toHaveTextContent(
+      "Blocker",
+    );
+  });
+});
+
 describe("CardDialog cover", () => {
   beforeEach(() => {
     localStorage.clear();

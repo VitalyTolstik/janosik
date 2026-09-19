@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { sanitizeMarkdownForImport } from "@/utils/sanitizeMarkdown";
 import { autolinkMarkdown } from "@/utils/linkify";
+import { emojify } from "@/utils/emoji";
 import {
   commentEditorPlugins,
   descriptionViewerPlugins,
@@ -72,7 +73,7 @@ export function CommentComposerEditor({
  * A rendered comment body: the description's read-only markdown surface in
  * a flush variant (no min-height, no padding — the row provides rhythm).
  * Bare URLs are wrapped into links first so legacy plain-text comments
- * keep their clickability.
+ * keep their clickability; shortcodes and ASCII emoticons render as emoji.
  */
 export function CommentBody({
   text,
@@ -88,7 +89,7 @@ export function CommentBody({
       key={lang}
       className={cn("janosik-mdx janosik-mdx-readonly", className)}
       contentEditableClassName="janosik-md-content janosik-md-flush"
-      markdown={autolinkMarkdown(sanitizeMarkdownForImport(text))}
+      markdown={emojify(autolinkMarkdown(sanitizeMarkdownForImport(text)))}
       readOnly
       suppressHtmlProcessing
       translation={editorTranslation}

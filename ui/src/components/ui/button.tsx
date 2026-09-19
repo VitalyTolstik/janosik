@@ -19,6 +19,10 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/90",
         ghost: "hover:bg-hover hover:text-foreground",
         link: "text-primary underline-offset-4 hover:underline",
+        /** Premium primary (owner call): a soft vertical gradient, a
+         *  colored ring and a gentle lift — for the composer's Save. */
+        premium:
+          "bg-gradient-to-b from-primary to-primary/85 text-primary-foreground shadow-sm ring-1 ring-inset ring-white/20 hover:from-primary hover:to-primary/80 hover:shadow-md active:scale-[0.98] transition-[box-shadow,filter,transform]",
       },
       size: {
         default: "h-9 px-4 py-2",
