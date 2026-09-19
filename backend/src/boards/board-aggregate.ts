@@ -1,6 +1,7 @@
 import type {
   Board as BoardRow,
   BoardMember as BoardMemberRow,
+  CardLink as CardLinkRow,
   Column as ColumnRow,
   Label as LabelRow,
   Prisma,
@@ -14,10 +15,12 @@ import type {
   BoardSummary,
   Card,
   CardCover,
+  CardLink,
   Checklist,
   LabelColor,
   UserAvatarColor,
 } from "@janosik/shared";
+import { CARD_LINK_TYPES } from "@janosik/shared";
 
 /** A card row with the relations the aggregate needs (labels + checklists). */
 export type CardWithRelations = Prisma.CardGetPayload<{
@@ -49,7 +52,7 @@ export async function loadBoardAggregate(
   });
   if (!board) return null;
 
-  const [columns, labels, cards] = await Promise.all([
+  const [columns, labels, cards, links] = await Promise.all([
     db.column.findMany({
       where: { boardId, deletedAt: null },
       orderBy: { position: "asc" },
@@ -75,9 +78,16 @@ export async function loadBoardAggregate(
         },
       },
     }),
+    // The rows a card holds towards other cards (TASK-46). A link whose
+    // target card is soft-deleted stays: the reducer never scrubs a
+    // dangling row either, and restoring the target revives the link.
+    db.cardLink.findMany({
+      where: { boardId, deletedAt: null },
+      orderBy: { position: "asc" },
+    }),
   ]);
 
-  return toBoardAggregate(board, columns, cards, labels);
+  return toBoardAggregate(board, columns, cards, labels, links);
 }
 
 /**
@@ -94,12 +104,28 @@ export function toBoardAggregate(
   columns: ColumnRow[],
   cards: CardWithRelations[],
   labels: LabelRow[],
+  links: CardLinkRow[] = [],
 ): BoardAggregate {
   const boardLabelIds = new Set(labels.map((label) => label.id));
 
+  // Group the board's link rows by their source card (TASK-46); a row whose
+  // type the app no longer knows (a hand-edited DB) is skipped rather than
+  // poisoning the render.
+  const linksBySource = new Map<string, CardLink[]>();
+  for (const link of links) {
+    if (!(CARD_LINK_TYPES as readonly string[]).includes(link.type)) continue;
+    const rows = linksBySource.get(link.fromCardId) ?? [];
+    rows.push({
+      id: link.id,
+      type: link.type as CardLink["type"],
+      targetCardId: link.toCardId,
+    });
+    linksBySource.set(link.fromCardId, rows);
+  }
+
   const cardsMap: Record<string, Card> = {};
   for (const card of cards) {
-    cardsMap[card.id] = toCard(card, boardLabelIds);
+    cardsMap[card.id] = toCard(card, boardLabelIds, linksBySource.get(card.id));
   }
 
   return {
@@ -135,7 +161,11 @@ export function toBoardAggregate(
   };
 }
 
-function toCard(card: CardWithRelations, boardLabelIds: Set<string>): Card {
+function toCard(
+  card: CardWithRelations,
+  boardLabelIds: Set<string>,
+  links?: CardLink[],
+): Card {
   const labelIds = [...card.labels]
     .filter((link) => boardLabelIds.has(link.labelId))
     .sort((a, b) => a.position - b.position)
@@ -150,6 +180,7 @@ function toCard(card: CardWithRelations, boardLabelIds: Set<string>): Card {
     ...(checklists ? { checklists } : {}),
     ...(card.dueDate ? { dueDate: card.dueDate.getTime() } : {}),
     ...(card.priority ? { priority: card.priority as Card["priority"] } : {}),
+    ...(links && links.length > 0 ? { links } : {}),
     ...(card.coverType && card.coverValue
       ? {
           cover: {

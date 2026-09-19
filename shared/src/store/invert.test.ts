@@ -81,6 +81,7 @@ function fixture(): Board {
         labelIds: ["l-1", "l-2"],
         dueDate: 1_700_000_500_000,
         cover: { type: "color", value: "blue" },
+        links: [{ id: "lk-1", type: "blocks", targetCardId: "c-4" }],
         checklists: [
           {
             id: "cl-1",
@@ -289,6 +290,37 @@ const PLANS: Record<BoardAction["type"], Plan> = {
     // inverses reset to "medium" (dropping the field) and restore.
     { type: "SET_CARD_PRIORITY", cardId: "c-1", priority: "blocker", at: AT },
     { type: "SET_CARD_PRIORITY", cardId: "c-2", priority: "lowest", at: AT },
+  ],
+  ADD_CARD_LINK: [
+    // A fresh pair (c-2 ⇄ c-3 is unlinked in the fixture).
+    {
+      type: "ADD_CARD_LINK",
+      cardId: "c-2",
+      linkId: "lk-new",
+      targetCardId: "c-3",
+      linkType: "blocks",
+      at: AT,
+    },
+    {
+      type: "ADD_CARD_LINK",
+      cardId: "c-2",
+      linkId: "lk-new",
+      targetCardId: "c-3",
+      linkType: "relates_to",
+      at: AT,
+    },
+  ],
+  REMOVE_CARD_LINK: [
+    // The fixture's c-1 carries the lk-1 row; removing it is undoable from
+    // the command alone (it carries the link's payload for the re-add).
+    {
+      type: "REMOVE_CARD_LINK",
+      cardId: "c-1",
+      linkId: "lk-1",
+      targetCardId: "c-4",
+      linkType: "blocks",
+      at: AT,
+    },
   ],
   SET_CARD_COVER: [
     { type: "SET_CARD_COVER", cardId: "c-1", at: AT },

@@ -2,12 +2,14 @@ import type {
   Board,
   Card,
   CardCover,
+  CardLink,
   CardPriority,
   Checklist,
   ChecklistItem,
   LabelColor,
 } from "../types/kanban";
 import {
+  CARD_LINK_TYPES,
   CARD_PRIORITIES,
   COVER_COLORS,
   COVER_GRADIENTS,
@@ -115,6 +117,43 @@ function toPriority(value: unknown): CardPriority | undefined {
 }
 
 /**
+ * Card links (TASK-46): only well-formed rows survive — string id, known
+ * type, non-blank target — capped to `linksPerCard`. A target that does
+ * not exist on this board is *kept*: the link is dangling, not garbage
+ * (the target may come back with an undo, and every consumer skips missing
+ * cards). Self-links and a pair linked twice need the row's owner, so
+ * `dedupeBoardLinks` drops those in the board-level pass.
+ */
+function toLinks(value: unknown): CardLink[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return undefined;
+  const links: CardLink[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const link = entry as Partial<CardLink>;
+    if (typeof link.id !== "string" || link.id === "") continue;
+    if (typeof link.targetCardId !== "string" || link.targetCardId === "") {
+      continue;
+    }
+    if (!(CARD_LINK_TYPES as readonly string[]).includes(link.type as string)) {
+      continue;
+    }
+    links.push({
+      id: link.id,
+      type: link.type as CardLink["type"],
+      targetCardId: link.targetCardId,
+    });
+    if (links.length >= LIMITS.linksPerCard) break;
+  }
+  return links.length > 0 ? links : undefined;
+}
+
+/** Canonical key of an unordered card pair (mirrors the reducer's rule). */
+function linkPairKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+/**
  * A cover is either absent or a well-formed `{ type, value }` pair the app
  * can render; malformed shapes (hand-edited imports) are dropped.
  */
@@ -217,6 +256,7 @@ function normalizeCard(card: LegacyCard): Card {
     checklists,
     dueDate,
     priority,
+    links,
     cover,
     activity,
     ...rest
@@ -245,9 +285,43 @@ function normalizeCard(card: LegacyCard): Card {
       })),
     dueDate: toDueDate(dueDate),
     priority: toPriority(priority),
+    links: toLinks(links),
     cover: toCover(cover),
     activity: toActivity(activity),
   };
+}
+
+/**
+ * Board-level link pass (TASK-46): drop self-links (only the board knows a
+ * row's owner) and collapse a pair that two opposite rows would link twice
+ * — first card in iteration order wins, mirroring the reducer's guard.
+ */
+function dedupeBoardLinks(cards: Record<string, Card>): Record<string, Card> {
+  const seenPairs = new Set<string>();
+  let changed = false;
+  const next: Record<string, Card> = {};
+  for (const [id, card] of Object.entries(cards)) {
+    const links = card.links;
+    if (links === undefined) {
+      next[id] = card;
+      continue;
+    }
+    const kept = links.filter((link) => {
+      if (link.targetCardId === id) return false;
+      const key = linkPairKey(id, link.targetCardId);
+      if (seenPairs.has(key)) return false;
+      seenPairs.add(key);
+      return true;
+    });
+    if (kept.length !== links.length) changed = true;
+    if (kept.length === 0) {
+      const { links: _dropped, ...rest } = card;
+      next[id] = rest as Card;
+    } else {
+      next[id] = kept.length === links.length ? card : { ...card, links: kept };
+    }
+  }
+  return changed ? next : cards;
 }
 
 function normalizeBoard(board: Board): Board {
@@ -270,12 +344,14 @@ function normalizeBoard(board: Board): Board {
       name: clampText(label.name, LIMITS.labelName),
       color: toLabelColor(label.color),
     })),
-    cards: Object.fromEntries(
-      Object.entries(board.cards)
-        // A primitive (or null) value where a card should be is garbage:
-        // drop it rather than crash on `card.title` (B-10).
-        .filter(([, card]) => isCardRecord(card))
-        .map(([id, card]) => [id, normalizeCard(card)]),
+    cards: dedupeBoardLinks(
+      Object.fromEntries(
+        Object.entries(board.cards)
+          // A primitive (or null) value where a card should be is garbage:
+          // drop it rather than crash on `card.title` (B-10).
+          .filter(([, card]) => isCardRecord(card))
+          .map(([id, card]) => [id, normalizeCard(card)]),
+      ),
     ),
   };
 }
@@ -296,6 +372,7 @@ export function normalizeBoards(state: BoardState): BoardState {
           label.name.length > LIMITS.labelName ||
           !isLabelColorCurrent(label.color),
       ) ||
+      !areLinksCurrent(board.cards) ||
       Object.values(board.cards).some((card) => {
         // A non-object value has no fields to inspect — let normalizeBoard
         // drop it instead of reading `.title` off a primitive (B-10).
@@ -345,6 +422,42 @@ function isDueDateCurrent(value: unknown): boolean {
   return (
     value === undefined || (typeof value === "number" && Number.isFinite(value))
   );
+}
+
+/**
+ * True when the board's links are already in the current shape: every row
+ * well-formed (`toLinks` would keep it verbatim), no self-link and one row
+ * per unordered pair board-wide (`dedupeBoardLinks` would keep it too).
+ * Checked across the whole board because both the self-link and the pair
+ * rule need the row's owner, which a single card's field does not carry.
+ */
+function areLinksCurrent(cards: Record<string, unknown>): boolean {
+  const seenPairs = new Set<string>();
+  for (const [cardId, card] of Object.entries(cards)) {
+    if (!isCardRecord(card)) continue;
+    const value: unknown = card.links;
+    if (value === undefined) continue;
+    if (!Array.isArray(value)) return false;
+    if (value.length > LIMITS.linksPerCard) return false;
+    for (const entry of value) {
+      if (typeof entry !== "object" || entry === null) return false;
+      const link = entry as Partial<CardLink>;
+      if (typeof link.id !== "string" || link.id === "") return false;
+      if (typeof link.targetCardId !== "string" || link.targetCardId === "") {
+        return false;
+      }
+      if (
+        !(CARD_LINK_TYPES as readonly string[]).includes(link.type as string)
+      ) {
+        return false;
+      }
+      if (link.targetCardId === cardId) return false;
+      const key = linkPairKey(cardId, link.targetCardId);
+      if (seenPairs.has(key)) return false;
+      seenPairs.add(key);
+    }
+  }
+  return true;
 }
 
 /** True when the stored cover is `undefined` or a well-formed pair. */

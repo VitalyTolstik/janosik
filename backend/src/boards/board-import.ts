@@ -96,6 +96,10 @@ export async function persistBoard(
       ? (columnIdMap.get(board.columns[0].id) ?? null)
       : null;
 
+  // Fresh card ids — card links (TASK-46) are rewritten through this map
+  // after every card exists (a link row needs both endpoints in the table).
+  const cardIdMap = new Map<string, string>();
+
   for (const [oldId, card] of Object.entries(board.cards)) {
     let columnId = columnForCard.get(oldId);
     if (!columnId) {
@@ -106,6 +110,7 @@ export async function persistBoard(
     }
 
     const id = randomUUID();
+    cardIdMap.set(oldId, id);
     const createdAt = new Date(card.createdAt);
     const updatedAt = new Date(card.updatedAt);
     await tx.card.create({
@@ -157,6 +162,30 @@ export async function persistBoard(
           },
         });
       }
+    }
+  }
+
+  // Card links (TASK-46) in a second pass: both endpoints are rewritten to
+  // the fresh ids. A row whose target is not in the envelope's cards map is
+  // dangling (its target was deleted before the export) — the FK needs a
+  // real card, so such rows are dropped instead of imported.
+  let linkPosition = 0;
+  for (const [oldFromId, card] of Object.entries(board.cards)) {
+    const fromCardId = cardIdMap.get(oldFromId);
+    if (fromCardId === undefined) continue;
+    for (const link of card.links ?? []) {
+      const toCardId = cardIdMap.get(link.targetCardId);
+      if (toCardId === undefined || toCardId === fromCardId) continue;
+      await tx.cardLink.create({
+        data: {
+          id: randomUUID(),
+          boardId: created.id,
+          fromCardId,
+          toCardId,
+          type: link.type,
+          position: linkPosition++,
+        },
+      });
     }
   }
 

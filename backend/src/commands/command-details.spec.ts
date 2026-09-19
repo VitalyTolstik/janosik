@@ -171,6 +171,52 @@ describe("commandDetails", () => {
     ]);
   });
 
+  it("freezes the linked card's title on add and remove", () => {
+    const target = makeCard({ id: "card-2", title: "Target card" });
+    const source = makeCard({
+      links: [{ id: "lk-1", type: "blocks", targetCardId: "card-2" }],
+    });
+    const linked = makeBoard(source);
+    // makeBoard puts one card in the column; the target must be on the
+    // board too for its title to resolve.
+    linked.columns[0].cardIds.push("card-2");
+    linked.cards["card-2"] = target;
+    const unlinked = makeBoard(makeCard());
+    unlinked.columns[0].cardIds.push("card-2");
+    unlinked.cards["card-2"] = target;
+    const add = {
+      ...base,
+      type: "ADD_CARD_LINK",
+      cardId: "card-1",
+      linkId: "lk-1",
+      targetCardId: "card-2",
+      linkType: "blocks",
+    } as BoardAction;
+    const remove = {
+      ...base,
+      type: "REMOVE_CARD_LINK",
+      cardId: "card-1",
+      linkId: "lk-1",
+      targetCardId: "card-2",
+      linkType: "blocks",
+    } as BoardAction;
+
+    expect(commandDetails(add, unlinked, linked)).toEqual({
+      detail: "Target card",
+      changes: [{ field: "link", from: null, to: "Target card" }],
+    });
+    expect(commandDetails(remove, linked, unlinked)).toEqual({
+      detail: "Target card",
+      changes: [{ field: "link", from: "Target card", to: null }],
+    });
+    // A dangling-target remove still reads well: the title is frozen from
+    // whichever aggregate still has it, so the sentence keeps its name.
+    expect(commandDetails(remove, linked, linked)).toEqual({
+      detail: "Target card",
+      changes: [{ field: "link", from: "Target card", to: null }],
+    });
+  });
+
   it("captures checklist items: add, rename, check and delete", () => {
     const checklist = {
       id: "cl-1",

@@ -121,6 +121,22 @@ describe("Undo contract: command then inverse (e2e)", () => {
       cardId: "card-1",
       description: "notes",
     });
+    // Links with real state to remove: card-1 blocks card-2, card-2 relates
+    // to card-3 (TASK-46).
+    await command({
+      type: "ADD_CARD_LINK",
+      cardId: "card-1",
+      linkId: "lk-1",
+      targetCardId: "card-2",
+      linkType: "blocks",
+    });
+    await command({
+      type: "ADD_CARD_LINK",
+      cardId: "card-2",
+      linkId: "lk-2",
+      targetCardId: "card-3",
+      linkType: "relates_to",
+    });
   });
 
   afterAll(async () => {
@@ -208,6 +224,26 @@ describe("Undo contract: command then inverse (e2e)", () => {
         { type: "SET_CARD_PRIORITY", cardId: "card-1", priority: "highest" },
       ],
       [
+        "ADD_CARD_LINK",
+        {
+          type: "ADD_CARD_LINK",
+          cardId: "card-3",
+          linkId: "lk-new",
+          targetCardId: "card-1",
+          linkType: "duplicates",
+        },
+      ],
+      [
+        "REMOVE_CARD_LINK",
+        {
+          type: "REMOVE_CARD_LINK",
+          cardId: "card-2",
+          linkId: "lk-2",
+          targetCardId: "card-3",
+          linkType: "relates_to",
+        },
+      ],
+      [
         "SET_CARD_COVER",
         { type: "SET_CARD_COVER", cardId: "card-1", cover: null },
       ],
@@ -291,6 +327,7 @@ describe("Undo contract: command then inverse (e2e)", () => {
   }, 60_000);
 
   async function wipe(db: PrismaService): Promise<void> {
+    await db.cardLink.deleteMany();
     await db.cardLabel.deleteMany();
     await db.checklistItem.deleteMany();
     await db.checklist.deleteMany();

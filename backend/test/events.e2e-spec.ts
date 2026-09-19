@@ -699,6 +699,7 @@ describe("Board events SSE (e2e)", () => {
   }, 20_000);
 
   async function wipe(db: PrismaService): Promise<void> {
+    await db.cardLink.deleteMany();
     await db.cardLabel.deleteMany();
     await db.checklistItem.deleteMany();
     await db.checklist.deleteMany();

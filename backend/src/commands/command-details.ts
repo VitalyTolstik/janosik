@@ -153,6 +153,25 @@ export function commandDetails(
       };
     }
 
+    case "ADD_CARD_LINK":
+    case "REMOVE_CARD_LINK": {
+      // The readable half is the target card's title, frozen while the
+      // aggregate is in hand — like a label name, it must survive the
+      // target being renamed or deleted afterwards. A remove prefers the
+      // `before` title and falls back to `after` (the link is gone either
+      // way; only the name matters); an add reads the `after` aggregate.
+      const titleOf = (board: Board): string | null =>
+        board.cards[action.targetCardId]?.title ?? null;
+      const adding = action.type === "ADD_CARD_LINK";
+      const from = adding ? null : (titleOf(before) ?? titleOf(after));
+      const to = adding ? titleOf(after) : null;
+      const name = adding ? to : from;
+      return {
+        ...(name !== null ? { detail: name } : {}),
+        changes: [{ field: "link", from, to }],
+      };
+    }
+
     case "SET_CARD_COVER": {
       const from = before.cards[action.cardId];
       const to = after.cards[action.cardId];

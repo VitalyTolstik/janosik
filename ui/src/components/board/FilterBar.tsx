@@ -1,8 +1,10 @@
 import {
+  Ban,
   CalendarClock,
   CalendarDays,
   Check,
   ChevronDown,
+  Link2,
   Search,
   SlidersHorizontal,
   X,
@@ -403,6 +405,29 @@ export function FilterBar({
                 </CheckRow>
               );
             })}
+          </FilterSection>
+          <FilterSection title={t("filter.links")}>
+            <CheckRow
+              checked={filter.blocked}
+              onCheckedChange={(checked) =>
+                onChange({ ...filter, blocked: checked })
+              }
+            >
+              <Ban className="h-3.5 w-3.5 shrink-0 text-danger" aria-hidden />
+              {t("filter.blocked")}
+            </CheckRow>
+            <CheckRow
+              checked={filter.hasLinks}
+              onCheckedChange={(checked) =>
+                onChange({ ...filter, hasLinks: checked })
+              }
+            >
+              <Link2
+                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              {t("filter.hasLinks")}
+            </CheckRow>
           </FilterSection>
           <FilterSection title={t("filter.created")}>
             <div role="radiogroup" aria-label={t("filter.createdAria")}>

@@ -595,3 +595,57 @@ describe("descriptionSnippet", () => {
     expect(match.text).toBe("marketing");
   });
 });
+
+describe("card link facets (TASK-46)", () => {
+  const NOW = Date.now();
+  const linked = { blocked: true, linked: true };
+  const plain = { blocked: false, linked: false };
+
+  it("blocked and hasLinks gate on the precomputed link facts", () => {
+    const c = card("c-1", "T", []);
+    expect(
+      matchesCardFilter(c, { ...EMPTY_FILTER, blocked: true }, NOW, [], linked),
+    ).toBe(true);
+    expect(
+      matchesCardFilter(c, { ...EMPTY_FILTER, blocked: true }, NOW, [], plain),
+    ).toBe(false);
+    expect(
+      matchesCardFilter(
+        c,
+        { ...EMPTY_FILTER, hasLinks: true },
+        NOW,
+        [],
+        linked,
+      ),
+    ).toBe(true);
+    // Without facts (facet caller forgot to build them) nothing matches.
+    expect(matchesCardFilter(c, { ...EMPTY_FILTER, hasLinks: true }, NOW)).toBe(
+      false,
+    );
+  });
+
+  it("filterCardIds builds the facts from the board itself", () => {
+    const cards: Record<string, Card> = {
+      "c-1": {
+        ...card("c-1", "Blocked card", []),
+        links: [{ id: "lk", type: "blocks", targetCardId: "c-2" }],
+      },
+      "c-2": card("c-2", "Target", []),
+      "c-3": card("c-3", "Lonely", []),
+    };
+    const columns = { col: ["c-1", "c-2", "c-3"] };
+    expect(
+      filterCardIds(columns, cards, { ...EMPTY_FILTER, blocked: true }, NOW),
+    ).toEqual({ col: ["c-2"] });
+    expect(
+      filterCardIds(columns, cards, { ...EMPTY_FILTER, hasLinks: true }, NOW),
+    ).toEqual({ col: ["c-1", "c-2"] });
+  });
+
+  it("counts each link facet in isFilterActive/activeFacetCount", () => {
+    const f = { ...EMPTY_FILTER, blocked: true };
+    expect(isFilterActive(f)).toBe(true);
+    expect(activeFacetCount(f)).toBe(1);
+    expect(activeFacetCount({ ...f, hasLinks: true })).toBe(2);
+  });
+});
