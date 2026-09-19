@@ -40,6 +40,7 @@ import type {
   BoardEnvelope,
   BoardRole,
   CardCover,
+  CardLinkType,
   CardPriority,
   Label,
   MembershipChange,
@@ -304,6 +305,19 @@ interface BoardActionsValue {
   ) => void;
   setCardDueDate: (cardId: string, dueDate?: number) => void;
   setCardPriority: (cardId: string, priority: CardPriority) => void;
+  /** Links `cardId` to `targetCardId` (TASK-46); the row lands on `cardId`. */
+  addCardLink: (
+    cardId: string,
+    targetCardId: string,
+    linkType: CardLinkType,
+  ) => void;
+  /** Removes one link row; the payload rides along for the inverse. */
+  removeCardLink: (
+    cardId: string,
+    linkId: string,
+    targetCardId: string,
+    linkType: CardLinkType,
+  ) => void;
   setCardCover: (cardId: string, cover?: CardCover) => void;
   duplicateCard: (cardId: string, title?: string) => void;
   duplicateColumn: (columnId: string, title?: string) => void;
@@ -1362,6 +1376,8 @@ function createBoardActions(
   | "deleteChecklistItem"
   | "setCardDueDate"
   | "setCardPriority"
+  | "addCardLink"
+  | "removeCardLink"
   | "setCardCover"
   | "duplicateCard"
   | "duplicateColumn"
@@ -1564,6 +1580,35 @@ function createBoardActions(
         type: "SET_CARD_PRIORITY",
         cardId,
         priority,
+        activityIds: ids(1),
+        at: Date.now(),
+      }),
+    addCardLink: (
+      cardId: string,
+      targetCardId: string,
+      linkType: CardLinkType,
+    ) =>
+      dispatch({
+        type: "ADD_CARD_LINK",
+        cardId,
+        targetCardId,
+        linkId: createId(),
+        linkType,
+        activityIds: ids(1),
+        at: Date.now(),
+      }),
+    removeCardLink: (
+      cardId: string,
+      linkId: string,
+      targetCardId: string,
+      linkType: CardLinkType,
+    ) =>
+      dispatch({
+        type: "REMOVE_CARD_LINK",
+        cardId,
+        linkId,
+        targetCardId,
+        linkType,
         activityIds: ids(1),
         at: Date.now(),
       }),

@@ -13,6 +13,8 @@ interface SortableCardProps {
   highlight?: string;
   /** True when this card holds the j/k keyboard cursor (focus ring). */
   isCursor?: boolean;
+  /** Link facts for the card-front badges (TASK-46) — see CardItem. */
+  linkFacts?: { degree: number; blocked: boolean };
   /** Fired when the rendered card is clicked — opens the card dialog. */
   onCardClick?: (cardId: string) => void;
   /** Fired by the hover duplicate button on the card. */
@@ -35,6 +37,7 @@ function SortableCardView({
   labels,
   highlight,
   isCursor,
+  linkFacts,
   onCardClick,
   onCardDuplicate,
   onCardArchive,
@@ -74,6 +77,7 @@ function SortableCardView({
         isDragging={isDragging}
         highlight={highlight}
         isCursor={isCursor}
+        linkFacts={linkFacts}
         onClick={onCardClick}
         onDuplicate={onCardDuplicate}
         onArchive={onCardArchive}

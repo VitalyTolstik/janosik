@@ -25,6 +25,7 @@ import { SortableCard } from "@/components/board/SortableCard";
 import { WipLimitDialog } from "@/components/board/WipLimitDialog";
 import { useCardLabels } from "@/hooks/use-card-labels";
 import { useDoubleTap } from "@/hooks/use-double-tap";
+import type { CardLinkIndex } from "@/utils/links";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { useBoardActions } from "@/store/BoardContext";
@@ -45,6 +46,12 @@ interface ColumnViewProps {
   cards: Card[];
   /** The board's labels — card chips and the composer's picker. */
   labels: Label[];
+  /**
+   * The board's link index (TASK-46): one WeakMap-cached object per
+   * `board.cards` snapshot, owned by the caller so the memo below only
+   * breaks when the data actually changed.
+   */
+  linkIndex: CardLinkIndex;
   /** True when `cards` is a filter/drag override of the column's own order. */
   overridden?: boolean;
   className?: string;
@@ -81,6 +88,7 @@ function ColumnViewBody({
   column,
   cards,
   labels,
+  linkIndex,
   overridden = false,
   className,
   onCardClick,
@@ -380,6 +388,7 @@ function ColumnViewBody({
                           labels={cardLabels}
                           highlight={highlight}
                           isCursor={card.id === cursorCardId}
+                          linkFacts={linkIndex.factsOf(card.id)}
                           onCardClick={
                             onCardClick ? handleCardClick : undefined
                           }

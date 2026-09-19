@@ -34,6 +34,7 @@ import { useBoard } from "@/store/BoardContext";
 import { useToast } from "@/components/Toast";
 import { isColumnFull } from "@janosik/shared";
 import { applyCardOver } from "@/utils/dnd";
+import { cardLinkIndex, linkSignature } from "@/utils/links";
 import { LIMITS, type Card, type Column, type Label } from "@janosik/shared";
 
 /** Stable empties, so the resolvers survive a board-less render. */
@@ -123,6 +124,20 @@ export function DndBoard({
   const toast = useToast();
   const resolveLabels = useCardLabels(board?.labels ?? NO_LABELS);
   const resolveCards = useCardList(board?.cards ?? NO_CARDS);
+  // One link index per *link signature* (TASK-46): a title edit must not
+  // swap the index object out from under the memoized columns, while a
+  // link add/remove (or an archive of a blocker) must. The memo is keyed
+  // by the signature — a cheap string over each card's link rows, archived
+  // flag and the card id set — so its identity is stable across ordinary
+  // edits; `cardsForLinks` is deliberately read through the closure since
+  // any change it cares about moves the signature too.
+  const cardsForLinks = board?.cards ?? NO_CARDS;
+  const linkSig = linkSignature(cardsForLinks);
+  const linkIndex = useMemo(
+    () => cardLinkIndex(cardsForLinks),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [linkSig],
+  );
 
   const [draft, setDraftState] = useState<Draft | null>(null);
   // Ref mirror so event handlers always read the latest draft (state updates
@@ -629,6 +644,7 @@ export function DndBoard({
                 column={column}
                 cards={resolveCards(column, override ?? column.cardIds)}
                 labels={board.labels}
+                linkIndex={linkIndex}
                 overridden={override !== undefined}
                 isFiltered={isFiltering}
                 highlight={highlight}

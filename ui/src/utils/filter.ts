@@ -2,6 +2,7 @@ import type { Board, Card, CardPriority, Label } from "@janosik/shared";
 import { DEFAULT_CARD_PRIORITY } from "@janosik/shared";
 import { dueStatus } from "@/utils/due-date";
 import { DAY_MS } from "@/utils/duration";
+import { cardLinkIndex } from "@/utils/links";
 
 /**
  * Board filtering model, following the Trello/Linear conventions:
@@ -53,6 +54,13 @@ export interface CardFilter {
    * priority (unset = "medium") is one of them. Empty = any priority.
    */
   priorities: CardPriority[];
+  /**
+   * Jira-style link facets (TASK-46): a card the index flags as blocked
+   * (an incoming `blocks` from a live, non-archived card), and a card
+   * with at least one link in either direction.
+   */
+  blocked: boolean;
+  hasLinks: boolean;
 }
 
 export const EMPTY_FILTER: CardFilter = {
@@ -64,6 +72,8 @@ export const EMPTY_FILTER: CardFilter = {
   createdOn: null,
   due: "any",
   priorities: [],
+  blocked: false,
+  hasLinks: false,
 };
 
 /** True when at least one facet restricts the board. */
@@ -75,7 +85,9 @@ export function isFilterActive(filter: CardFilter): boolean {
     filter.created !== "any" ||
     filter.createdOn !== null ||
     filter.due !== "any" ||
-    filter.priorities.length > 0
+    filter.priorities.length > 0 ||
+    filter.blocked ||
+    filter.hasLinks
   );
 }
 
@@ -92,6 +104,8 @@ export function activeFacetCount(filter: CardFilter): number {
   if (filter.createdOn !== null) count += 1;
   if (filter.due !== "any") count += 1;
   if (filter.priorities.length > 0) count += 1;
+  if (filter.blocked) count += 1;
+  if (filter.hasLinks) count += 1;
   return count;
 }
 
@@ -173,6 +187,8 @@ export function matchesCardFilter(
   filter: CardFilter,
   now = Date.now(),
   labels: Label[] = [],
+  /** Link facts (TASK-46), precomputed by the caller when needed. */
+  linkFacts?: { blocked: boolean; linked: boolean },
 ): boolean {
   const query = filter.query.trim().toLowerCase();
   if (query !== "" && !cardTextMatches(card, labels, query)) return false;
@@ -189,6 +205,9 @@ export function matchesCardFilter(
   }
 
   if (!matchesDueFilter(card, filter.due, now)) return false;
+
+  if (filter.blocked && !(linkFacts?.blocked ?? false)) return false;
+  if (filter.hasLinks && !(linkFacts?.linked ?? false)) return false;
 
   if (
     filter.priorities.length > 0 &&
@@ -218,11 +237,29 @@ export function filterCardIds(
   now = Date.now(),
   labels: Label[] = [],
 ): Record<string, string[]> {
+  // The link facets need board-wide facts — build them once per run, and
+  // only when one of the facets is actually in play.
+  const needsLinks = filter.blocked || filter.hasLinks;
+  const index = needsLinks ? cardLinkIndex(cards) : null;
+  const factsFor = (id: string) => {
+    const facts = index?.factsOf(id);
+    return {
+      blocked: facts?.blocked ?? false,
+      linked: (facts?.degree ?? 0) > 0,
+    };
+  };
   const result: Record<string, string[]> = {};
   for (const [colId, ids] of Object.entries(columns)) {
     result[colId] = ids.filter((id) => {
       const card = cards[id];
-      return card !== undefined && matchesCardFilter(card, filter, now, labels);
+      if (card === undefined) return false;
+      return matchesCardFilter(
+        card,
+        filter,
+        now,
+        labels,
+        needsLinks ? factsFor(id) : undefined,
+      );
     });
   }
   return result;
