@@ -115,6 +115,25 @@ export type CardPriority = (typeof CARD_PRIORITIES)[number];
 /** The default priority every card has when the field is not set. */
 export const DEFAULT_CARD_PRIORITY: CardPriority = "medium";
 
+/**
+ * Jira-style link types (TASK-46). A `CardLink` is directional and stored
+ * on the *source* card — "blocks" reads "this card blocks `targetCardId`".
+ * The reverse phrasing ("is blocked by", "is duplicated by") is how the
+ * other side renders the same row; `relates_to` is symmetric and reads the
+ * same from both ends.
+ */
+export const CARD_LINK_TYPES = ["blocks", "relates_to", "duplicates"] as const;
+
+export type CardLinkType = (typeof CARD_LINK_TYPES)[number];
+
+/** One link row on a card — the card links *out* to `targetCardId`. */
+export interface CardLink {
+  /** Id of the link row (needed to remove it and as a React key). */
+  id: string;
+  type: CardLinkType;
+  targetCardId: string;
+}
+
 export interface Card {
   id: string;
   title: string;
@@ -129,6 +148,13 @@ export interface Card {
    * field is stored only when it differs, like every other optional.
    */
   priority?: CardPriority;
+  /**
+   * Links this card holds towards other cards (TASK-46). Omitted when the
+   * card has none. A link whose target no longer exists (the target was
+   * deleted) is kept — undoing the deletion revives the link, and every
+   * consumer skips dangling rows instead.
+   */
+  links?: CardLink[];
   /** Optional decorative cover. Omitted when unset. */
   cover?: CardCover;
   /** References to labels defined on the board; empty when unlabeled. */
@@ -170,6 +196,8 @@ export const CARD_ACTIVITY_TYPES = [
   "due-date-set",
   "due-date-removed",
   "priority-set",
+  "link-added",
+  "link-removed",
   "cover-set",
   "cover-removed",
   "checklist-added",
@@ -225,6 +253,8 @@ export const LIMITS = {
   itemsPerChecklist: 100,
   /** Labels attached to one card. */
   labelsPerCard: 20,
+  /** Outgoing card links held by one card (TASK-46). */
+  linksPerCard: 50,
   /** Labels defined on one board. */
   labelsPerBoard: 50,
   /** Columns on one board. */

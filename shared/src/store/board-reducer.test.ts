@@ -2429,3 +2429,193 @@ describe("boardReducer — the activity feed is optional (TASK-21.7a)", () => {
     expect(loud[0].cards["card-quiet"].activity?.at(-1)?.type).toBe("renamed");
   });
 });
+
+describe("boardReducer — card links (TASK-46)", () => {
+  type AddLinkAction = Extract<BoardAction, { type: "ADD_CARD_LINK" }>;
+  const addLink = (overrides: Partial<AddLinkAction> = {}): TestAction => ({
+    type: "ADD_CARD_LINK",
+    cardId: "card-1",
+    linkId: "link-1",
+    targetCardId: "card-2",
+    linkType: "blocks",
+    ...overrides,
+  });
+
+  it("adds a link on the source card and logs the target's title", () => {
+    const board = reduceBoard(freshBoard(), addLink());
+    const links = board.cards["card-1"].links;
+    expect(links).toEqual([
+      { id: "link-1", type: "blocks", targetCardId: "card-2" },
+    ]);
+    // The target card itself stays untouched — the row lives on the source.
+    expect(board.cards["card-2"].links).toBeUndefined();
+    expect(board.cards["card-1"].activity?.at(-1)?.type).toBe("link-added");
+    expect(board.cards["card-1"].activity?.at(-1)?.detail).toBe(
+      "Set up CI/CD pipeline",
+    );
+  });
+
+  it("removes a link by id and drops the field with the last one", () => {
+    let board = reduceBoard(freshBoard(), addLink());
+    board = reduceBoard(board, {
+      type: "REMOVE_CARD_LINK",
+      cardId: "card-1",
+      linkId: "link-1",
+      targetCardId: "card-2",
+      linkType: "blocks",
+    });
+    expect(board.cards["card-1"].links).toBeUndefined();
+    expect(board.cards["card-1"].activity?.at(-1)?.type).toBe("link-removed");
+  });
+
+  it("refuses self-links, unknown cards and unknown types", () => {
+    const base = freshBoard();
+    expect(reduceBoard(base, addLink({ targetCardId: "card-1" }))).toBe(base);
+    expect(reduceBoard(base, addLink({ targetCardId: "nope" }))).toBe(base);
+    expect(reduceBoard(base, addLink({ cardId: "nope" }))).toBe(base);
+    expect(reduceBoard(base, addLink({ linkType: "hates" as never }))).toBe(
+      base,
+    );
+  });
+
+  it("allows one link per unordered pair, in either direction", () => {
+    let board = reduceBoard(freshBoard(), addLink());
+    // Same pair, same direction.
+    expect(
+      reduceBoard(board, addLink({ linkId: "link-2", linkType: "relates_to" })),
+    ).toBe(board);
+    // Same pair, stored on the other end.
+    expect(
+      reduceBoard(
+        board,
+        addLink({
+          cardId: "card-2",
+          linkId: "link-2",
+          targetCardId: "card-1",
+          linkType: "relates_to",
+        }),
+      ),
+    ).toBe(board);
+    // A different pair is fine.
+    board = reduceBoard(
+      board,
+      addLink({ cardId: "card-2", linkId: "link-2", targetCardId: "card-3" }),
+    );
+    expect(board.cards["card-2"].links).toHaveLength(1);
+  });
+
+  it("refuses a blocks cycle — two cards and a three-card chain", () => {
+    let board = reduceBoard(freshBoard(), addLink());
+    // card-1 blocks card-2; card-2 blocking card-1 closes a 2-cycle.
+    expect(
+      reduceBoard(
+        board,
+        addLink({
+          cardId: "card-2",
+          linkId: "link-2",
+          targetCardId: "card-1",
+          linkType: "blocks",
+        }),
+      ),
+    ).toBe(board);
+    // card-2 blocks card-3, then card-3 blocks card-1: 1→2→3→1.
+    board = reduceBoard(
+      board,
+      addLink({ cardId: "card-2", linkId: "link-2", targetCardId: "card-3" }),
+    );
+    expect(
+      reduceBoard(
+        board,
+        addLink({ cardId: "card-3", linkId: "link-3", targetCardId: "card-1" }),
+      ),
+    ).toBe(board);
+    // A non-blocks type may close the same shape freely.
+    const related = reduceBoard(
+      board,
+      addLink({
+        cardId: "card-3",
+        linkId: "link-3",
+        targetCardId: "card-1",
+        linkType: "relates_to",
+      }),
+    );
+    expect(related.cards["card-3"].links).toHaveLength(1);
+  });
+
+  it("caps the rows a card can hold", () => {
+    let board = freshBoard();
+    for (let i = 0; i < LIMITS.linksPerCard; i += 1) {
+      const targetId = `extra-${i}`;
+      board = reduceBoard(
+        board,
+        stamp({
+          type: "ADD_CARD",
+          newCardId: targetId,
+          columnId: "col-backlog",
+          title: `Extra ${i}`,
+        }) as TestAction,
+      );
+      board = reduceBoard(
+        board,
+        addLink({ linkId: `link-${i}`, targetCardId: targetId }),
+      );
+    }
+    expect(board.cards["card-1"].links).toHaveLength(LIMITS.linksPerCard);
+    // Over the cap the command is a no-op (a guard applies to new content).
+    expect(
+      reduceBoard(
+        board,
+        addLink({ linkId: "link-over", targetCardId: "card-6" }),
+      ),
+    ).toBe(board);
+    // Removing one row makes room again.
+    const slimmed = reduceBoard(board, {
+      type: "REMOVE_CARD_LINK",
+      cardId: "card-1",
+      linkId: "link-0",
+      targetCardId: "extra-0",
+      linkType: "blocks",
+    } as TestAction);
+    expect(slimmed.cards["card-1"].links).toHaveLength(LIMITS.linksPerCard - 1);
+  });
+
+  it("keeps dangling rows when the target is deleted and revives them", () => {
+    let board = reduceBoard(freshBoard(), addLink());
+    board = reduceBoard(board, { type: "DELETE_CARD", cardId: "card-2" });
+    // The source keeps its row (dangling); every consumer skips it.
+    expect(board.cards["card-1"].links).toEqual([
+      { id: "link-1", type: "blocks", targetCardId: "card-2" },
+    ]);
+    // Undoing the delete brings the target back — the link just works.
+    const restored = boardReducer(
+      [board],
+      stamp({
+        type: "RESTORE_CARD",
+        card: {
+          id: "card-2",
+          title: "Set up CI/CD pipeline",
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 2,
+        },
+        columnId: "col-backlog",
+        index: 0,
+      }),
+    )[0];
+    expect(restored.cards["card-2"]).toBeDefined();
+    expect(restored.cards["card-1"].links).toEqual([
+      { id: "link-1", type: "blocks", targetCardId: "card-2" },
+    ]);
+  });
+
+  it("does not copy links onto a duplicate", () => {
+    const board = reduceBoard(freshBoard(), addLink());
+    const dup = reduceBoard(board, {
+      type: "DUPLICATE_CARD",
+      cardId: "card-1",
+      newCardId: "card-copy",
+    });
+    expect(dup.cards["card-copy"].links).toBeUndefined();
+    expect(dup.cards["card-1"].links).toHaveLength(1);
+  });
+});

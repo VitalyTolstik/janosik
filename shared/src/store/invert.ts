@@ -322,6 +322,38 @@ function build(before: Board, action: BoardAction): BoardAction | null {
       };
     }
 
+    case "ADD_CARD_LINK": {
+      const card = before.cards[action.cardId];
+      if (!card) return null;
+      return {
+        ...head,
+        type: "REMOVE_CARD_LINK",
+        cardId: card.id,
+        linkId: action.linkId,
+        targetCardId: action.targetCardId,
+        linkType: action.linkType,
+        cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
+      };
+    }
+
+    case "REMOVE_CARD_LINK": {
+      const card = before.cards[action.cardId];
+      if (!card) return null;
+      // The link's payload travels in the remove command itself — re-adding
+      // it needs nothing but the command (TASK-21.7b).
+      return {
+        ...head,
+        type: "ADD_CARD_LINK",
+        cardId: card.id,
+        linkId: action.linkId,
+        targetCardId: action.targetCardId,
+        linkType: action.linkType,
+        cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
+      };
+    }
+
     case "SET_CARD_COVER": {
       const card = before.cards[action.cardId];
       if (!card) return null;

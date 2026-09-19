@@ -1,5 +1,6 @@
 import type { BoardAction } from "./board-reducer";
 import {
+  CARD_LINK_TYPES,
   CARD_PRIORITIES,
   COVER_COLORS,
   COVER_GRADIENTS,
@@ -209,6 +210,16 @@ function validateCard(value: unknown, field: string): void {
       validateChecklist(checklist, `${field}.checklists[${index}]`),
     );
   }
+  const links = card.links;
+  if (links !== undefined && links !== null) {
+    if (!Array.isArray(links)) fail(`${field}.links`, "must be an array");
+    if (links.length > LIMITS.linksPerCard) {
+      fail(`${field}.links`, `must be at most ${LIMITS.linksPerCard} items`);
+    }
+    links.forEach((link, index) =>
+      validateCardLink(link, `${field}.links[${index}]`),
+    );
+  }
 }
 
 function validateColumn(value: unknown, field: string): void {
@@ -234,6 +245,21 @@ function validateChecklistItem(value: unknown, field: string): void {
   readString(item, "text", `${field}.text`, { max: LIMITS.checklistItem });
   if (typeof item.done !== "boolean")
     fail(`${field}.done`, "must be a boolean");
+}
+
+/** One link row of a restore snapshot: id, known type, non-blank target. */
+function validateCardLink(value: unknown, field: string): void {
+  const link = asRecord(value, field);
+  readString(link, "id", `${field}.id`, { nonBlank: true });
+  readString(link, "targetCardId", `${field}.targetCardId`, {
+    nonBlank: true,
+  });
+  if (
+    typeof link.type !== "string" ||
+    !(CARD_LINK_TYPES as readonly string[]).includes(link.type)
+  ) {
+    fail(`${field}.type`, "must be a known link type");
+  }
 }
 
 function validateChecklist(value: unknown, field: string): void {
@@ -444,6 +470,22 @@ function parseAction(action: Record<string, unknown>): BoardAction {
         !(CARD_PRIORITIES as readonly string[]).includes(priority)
       ) {
         fail("action.priority", "must be a known priority");
+      }
+      break;
+    }
+    case "ADD_CARD_LINK":
+    case "REMOVE_CARD_LINK": {
+      common(action);
+      readString(action, "cardId", "action.cardId", { nonBlank: true });
+      readString(action, "linkId", "action.linkId", { nonBlank: true });
+      readString(action, "targetCardId", "action.targetCardId", {
+        nonBlank: true,
+      });
+      if (
+        typeof action.linkType !== "string" ||
+        !(CARD_LINK_TYPES as readonly string[]).includes(action.linkType)
+      ) {
+        fail("action.linkType", "must be a known link type");
       }
       break;
     }

@@ -448,3 +448,66 @@ describe("normalizeBoards — wipLimit (TASK-13)", () => {
     expect(normalizeBoards([board])[0]).toBe(board);
   });
 });
+
+/**
+ * Card links (TASK-46). Both invariants that need the row's owner — no
+ * self-link, one row per unordered pair — are enforced board-wide on load,
+ * so a hand-edited export cannot smuggle either past the reducer's guards.
+ */
+describe("normalizeBoards — card links", () => {
+  // `labelIds` present and current everywhere: the only thing that can make
+  // these boards look stale is their links, which is what each case probes.
+  const linked = (id: string, links?: unknown) =>
+    card({ id, labelIds: [], ...(links === undefined ? {} : { links }) });
+  const boardWith = (cards: Record<string, unknown>) =>
+    ({
+      id: "b",
+      title: "B",
+      columns: [{ id: "col", title: "C", cardIds: Object.keys(cards) }],
+      cards,
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    }) as unknown as Board;
+
+  it("drops a self-link", () => {
+    const board = boardWith({
+      c1: linked("c1", [{ id: "lk", type: "blocks", targetCardId: "c1" }]),
+    });
+    expect(normalizeBoards([board])[0].cards["c1"].links).toBeUndefined();
+  });
+
+  it("collapses a pair linked from both ends, first card wins", () => {
+    const board = boardWith({
+      c1: linked("c1", [{ id: "a", type: "blocks", targetCardId: "c2" }]),
+      c2: linked("c2", [{ id: "b", type: "relates_to", targetCardId: "c1" }]),
+    });
+    const [next] = normalizeBoards([board]);
+    expect(next.cards["c1"].links).toEqual([
+      { id: "a", type: "blocks", targetCardId: "c2" },
+    ]);
+    expect(next.cards["c2"].links).toBeUndefined();
+  });
+
+  it("drops malformed rows but keeps a dangling target", () => {
+    const board = boardWith({
+      c1: linked("c1", [
+        { id: "", type: "blocks", targetCardId: "c2" },
+        { id: "bad-type", type: "supersedes", targetCardId: "c2" },
+        { id: "gone", type: "relates_to", targetCardId: "deleted-card" },
+      ]),
+      c2: linked("c2"),
+    });
+    expect(normalizeBoards([board])[0].cards["c1"].links).toEqual([
+      { id: "gone", type: "relates_to", targetCardId: "deleted-card" },
+    ]);
+  });
+
+  it("lets a board with well-formed links pass through untouched", () => {
+    const board = boardWith({
+      c1: linked("c1", [{ id: "lk", type: "blocks", targetCardId: "c2" }]),
+      c2: linked("c2"),
+    });
+    expect(normalizeBoards([board])[0]).toBe(board);
+  });
+});
