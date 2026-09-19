@@ -434,6 +434,26 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   `utils/filter.ts` + FilterBar; история — предложение
   `activity.priority-set` с локализованным именем уровня (`HistoryValue`
   локализует половины, дифф для priority выключен).
+- **Связи карточек (TASK-46):** `CardLink { id, type: blocks|relates_to|duplicates, targetCardId }`
+  живёт на карточке-источнике (directional), вторая сторона вычисляется
+  сканом (`utils/links.ts` → `cardLinkIndex`, WeakMap-кэш по
+  `linkSignature` — строка из link-строк + archivedAt + множества id;
+  пересоздавать индекс на каждый `board.cards` ломает изоляцию рендеров).
+  Гварды редьюсера: self-link, дубль неупорядоченной пары,
+  `LIMITS.linksPerCard = 50`, циклы `blocks` (DFS). **Dangling-tolerant:**
+  удаление цели оставляет строку, undo удаления оживляет её — потребители
+  скипают missing cards. `DUPLICATE_CARD`/`DUPLICATE_COLUMN` копируют
+  `links: undefined`. Prisma `CardLink` (soft-delete, FK RESTRICT, без
+  version): ADD — upsert, REMOVE — `updateMany`; e2e-`wipe()` обязан
+  чистить `cardLink` ПЕРЕД `cardLabel` (FK), а контрактный сьют
+  глушит троттлер патчем `ThrottlerGuard.prototype.canActivate`
+  (`overrideProvider(APP_GUARD)` не работает). UI: секция `CardLinks` в
+  диалоге (автокомплит-саджесты, 5 Jira-фразировок → 3 wire-типа, клавиши,
+  тост на цикл, переход по `?card=`); секция НЕ `key=`-ится (remount в
+  Radix-портале осиротает старый DOM) — сброс пикера при смене карточки
+  через render-phase паттерн «adjust state when a prop changes»; бейджи на
+  морде (`card-links-badge`, красный `card-blocked-badge`), фасеты
+  `blocked`/`hasLinks` в фильтрах, история/команды в `CardHistory`.
 - **Markdown-поверхности:** лимит комментария 10k (`LIMITS.comment`,
   колонка `Comment.text` — `@db.Text`); композер — premium-Save слева +
   тихий Cancel рядом, оба дисейблятся на пустом черновике (Cancel — чтобы
