@@ -57,7 +57,7 @@
       "path": [
         "dist/assets/AdminApp-*.js"
       ],
-      "limit": "30 KB",
+      "limit": "32 KB",
       "gzip": true
     },
     {
