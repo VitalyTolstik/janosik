@@ -56,6 +56,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { api, ApiError } from "@/api/client";
 import { useBoard } from "@/store/BoardContext";
 import { createId } from "@/utils/id";
 import type { LabelColor } from "@janosik/shared";
@@ -171,6 +172,44 @@ export function CardDialog({
   useEffect(() => {
     flushDescriptionRef.current = flushStagedDescription;
   }, [flushStagedDescription]);
+  // Paste-to-attach (Jira-style): an image pasted into the description is
+  // uploaded straight to the card's attachments — the description keeps the
+  // text the user copied, nothing is inlined as base64. Capture phase: the
+  // editor's own paste handlers must not see the image first.
+  const onDescriptionPaste = (event: React.ClipboardEvent) => {
+    if (readOnly) return;
+    const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
+      file.type.startsWith("image/"),
+    );
+    if (files.length === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void (async () => {
+      let ok = 0;
+      for (const file of files) {
+        try {
+          await api.uploadAttachment(card.id, file);
+          ok += 1;
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 413) {
+            toast.error(t("card.attachments.tooLarge", { max: 25 }));
+          } else if (error instanceof ApiError && error.status === 0) {
+            return;
+          } else {
+            toast.error(t("card.attachments.uploadError"));
+          }
+        }
+      }
+      if (ok > 0) {
+        toast.success(
+          t("card.attachments.pasted", {
+            count: ok,
+            name: files[0]?.name ?? "",
+          }),
+        );
+      }
+    })();
+  };
   // Switching cards or closing the dialog unmounts the editor without a
   // blur — the per-card cleanup is what saves the staged draft.
   useEffect(() => {
@@ -364,7 +403,10 @@ export function CardDialog({
               >
                 {/* The blur wrapper closes the staging window: leaving the
                     editor is what commits the description. */}
-                <div onBlur={() => flushStagedDescription()}>
+                <div
+                  onBlur={() => flushStagedDescription()}
+                  onPasteCapture={onDescriptionPaste}
+                >
                   <DescriptionEditor
                     key={`${card.id}:${overflowTick}`}
                     value={card.description ?? ""}

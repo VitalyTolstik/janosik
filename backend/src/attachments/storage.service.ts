@@ -43,8 +43,13 @@ export class StorageService {
    * neutral fallback (the attachment keeps a usable label).
    */
   sanitizeFileName(original: string): string {
+    // Busboy (multer) decodes multipart filenames as latin1, so every
+    // non-ASCII name arrives mojibake ("Screenshot â€¯AM.png"). The bytes
+    // are the original UTF-8 — re-decode them; pure-ASCII names are
+    // unaffected by the round-trip.
+    const decoded = Buffer.from(original ?? "", "latin1").toString("utf8");
     const base = path
-      .basename(original ?? "")
+      .basename(decoded)
       // eslint-disable-next-line no-control-regex -- stripping C0/C1 controls is the point
       .replace(/[\u0000-\u001f\u007f]/g, "");
     const trimmed = base.trim().slice(0, 200);

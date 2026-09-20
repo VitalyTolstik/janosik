@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import type { StringValue } from "ms";
+import { AttachmentsModule } from "@/attachments/attachments.module";
 import { BoardsModule } from "@/boards/boards.module";
 import { CommandsModule } from "@/commands/commands.module";
 import { env } from "@/config/env";
@@ -26,6 +27,7 @@ import { AdminService } from "./admin.service";
     }),
     BoardsModule,
     CommandsModule,
+    AttachmentsModule,
   ],
   controllers: [AdminAuthController, AdminController],
   providers: [

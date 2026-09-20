@@ -1,11 +1,13 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { argon2id, hash as argonHash } from "argon2";
+import { writeFile } from "node:fs/promises";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { StorageService } from "@/attachments/storage.service";
 import {
   ADMIN_REFRESH_COOKIE,
   cookieValue,
@@ -526,6 +528,37 @@ describe("Admin API (e2e)", () => {
         data: { userId, name: "moderation", tokenHash: "mod-token-hash" },
       });
       tokenId = token.id;
+    });
+
+    it("streams an attachment to a master for analysis", async () => {
+      const storage = app.get(StorageService);
+      await storage.ensureDirs();
+      const storedName = "admin-download-probe.bin";
+      await writeFile(storage.attachmentPath(storedName), "attachment-bytes");
+      const attachment = await prisma.attachment.create({
+        data: {
+          cardId,
+          boardId,
+          uploadedById: userId,
+          fileName: "proof.txt",
+          mimeType: "text/plain",
+          sizeBytes: 16,
+          storedName,
+        },
+      });
+
+      const res = await server()
+        .get(`/api/v1/admin/attachments/${attachment.id}/download`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(res.headers["content-disposition"]).toContain("proof.txt");
+      expect(res.text).toBe("attachment-bytes");
+
+      // A regular user token has no business on the admin download route.
+      await server()
+        .get(`/api/v1/admin/attachments/${attachment.id}/download`)
+        .set("Authorization", `Bearer ${userToken}`)
+        .expect(401);
     });
 
     it("finds rows by their foreign keys, not by titles", async () => {

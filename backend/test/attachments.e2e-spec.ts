@@ -204,6 +204,24 @@ describe("Attachments (TASK-47)", () => {
       .expect(403);
   });
 
+  it("keeps UTF-8 filenames intact (multer latin1 mojibake)", async () => {
+    // macOS screenshot names carry a U+202F before AM/PM; busboy decodes
+    // multipart filenames as latin1, so the stored name must be re-decoded.
+    const name = "Screenshot 2026-09-19 at 2.50.55\u202FPM.png";
+    const res = await server()
+      .post(`/api/v1/cards/${cardId}/attachments`)
+      .set(auth(member.token))
+      .attach("file", png, { filename: name, contentType: "image/png" })
+      .expect(201);
+    expect(res.body.fileName).toBe(name);
+    expect(res.body.fileName).not.toContain("\u00E2\u20AC\u00AF");
+    // Later assertions count the card's attachments — remove the probe.
+    await server()
+      .delete(`/api/v1/attachments/${res.body.id as string}`)
+      .set(auth(member.token))
+      .expect(200);
+  });
+
   it("rejects bad types and oversized files", async () => {
     await server()
       .post(`/api/v1/cards/${cardId}/attachments`)

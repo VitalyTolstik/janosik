@@ -108,6 +108,22 @@ export class AdminApiClient {
     return this.request<AdminUserDto>("/admin/auth/me");
   }
 
+  /** Download an attachment blob for support analysis (admin guard). */
+  async downloadAttachment(attachmentId: string): Promise<Blob> {
+    const base = this.options.baseUrl ?? apiBaseUrl();
+    const headers: Record<string, string> = {};
+    if (this.accessToken !== null) {
+      headers.Authorization = `Bearer ${this.accessToken}`;
+    }
+    const fetchImpl = this.options.fetchImpl ?? fetch;
+    const response = await fetchImpl(
+      `${base}/admin/attachments/${encodeURIComponent(attachmentId)}/download`,
+      { headers, credentials: "include" },
+    );
+    if (!response.ok) throw new ApiError(response.status, null);
+    return response.blob();
+  }
+
   refreshSession(): Promise<AdminAuthResponseDto | null> {
     if (this.refreshPromise === null) {
       this.refreshPromise = this.runRefresh().finally(() => {

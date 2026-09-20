@@ -167,6 +167,9 @@ export interface AdminCardRowDto {
   createdAt: number;
   /** Unix ms. */
   updatedAt: number;
+  priority: string | null;
+  /** Unix ms deadline; `null` when unset. */
+  dueDate: number | null;
   archivedAt: number | null;
   deletedAt: number | null;
 }
@@ -235,6 +238,8 @@ export interface AdminCommandRowDto {
   seq: number;
   /** Unix ms. */
   createdAt: number;
+  /** Free JSON payload the command carried (new card title, move targets…). */
+  payload: Record<string, unknown> | null;
 }
 
 /** A row of `GET /admin/audit` — who did what in the admin panel. */

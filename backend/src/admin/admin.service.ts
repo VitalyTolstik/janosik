@@ -868,6 +868,8 @@ export class AdminService {
           archivedAt: true,
           deletedAt: true,
           columnId: true,
+          priority: true,
+          dueDate: true,
           column: {
             select: {
               title: true,
@@ -896,6 +898,8 @@ export class AdminService {
         commentIds: card.comments.map((comment) => comment.id),
         createdAt: card.createdAt.getTime(),
         updatedAt: card.updatedAt.getTime(),
+        priority: card.priority,
+        dueDate: card.dueDate?.getTime() ?? null,
         archivedAt: card.archivedAt?.getTime() ?? null,
         deletedAt: card.deletedAt?.getTime() ?? null,
       })),
@@ -1249,6 +1253,7 @@ export class AdminService {
           seq: true,
           createdAt: true,
           actorId: true,
+          payload: true,
           board: { select: { title: true } },
           actor: { select: { email: true } },
         },
@@ -1266,6 +1271,7 @@ export class AdminService {
         type: command.type,
         seq: Number(command.seq),
         createdAt: command.createdAt.getTime(),
+        payload: (command.payload as Record<string, unknown> | null) ?? null,
       })),
       total,
       limit,

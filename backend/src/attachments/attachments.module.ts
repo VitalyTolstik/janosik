@@ -12,6 +12,6 @@ import { StorageService } from "./storage.service";
   imports: [AuthModule, RealtimeModule],
   controllers: [AttachmentsController],
   providers: [AttachmentsService, StorageService, CardAccessGuard],
-  exports: [StorageService],
+  exports: [AttachmentsService, StorageService],
 })
 export class AttachmentsModule {}

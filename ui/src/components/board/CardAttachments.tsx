@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createElement, useCallback, useEffect, useRef, useState } from "react";
 import {
   FileArchive,
   FileAudio,
@@ -41,6 +41,60 @@ function mimeIcon(mimeType: string) {
     return FileText;
   }
   return FileIcon;
+}
+
+/**
+ * Real thumbnail for image attachments (authenticated blob fetch → object
+ * URL), the mime icon for everything else. Each row owns its URL and
+ * revokes it on unmount.
+ */
+function AttachmentPreview({ attachment }: { attachment: AttachmentDto }) {
+  const isImage = attachment.mimeType.startsWith("image/");
+  const [url, setUrl] = useState<string | null>(null);
+  const { t } = useI18n();
+
+  useEffect(() => {
+    if (!isImage) return;
+    let alive = true;
+    let created: string | null = null;
+    api
+      .fetchAttachment(attachment.id)
+      .then((blob) => {
+        if (!alive) return;
+        created = URL.createObjectURL(blob);
+        setUrl(created);
+      })
+      .catch(() => {
+        /* the icon fallback stays */
+      });
+    return () => {
+      alive = false;
+      if (created !== null) URL.revokeObjectURL(created);
+    };
+  }, [attachment.id, isImage]);
+
+  if (!isImage) {
+    const Icon = mimeIcon(attachment.mimeType);
+    return createElement(Icon, {
+      className: "h-4 w-4 shrink-0 text-muted-foreground",
+      "aria-hidden": true,
+    });
+  }
+  if (url === null) {
+    return (
+      <span
+        className="inline-block h-6 w-6 shrink-0 animate-pulse rounded bg-muted/50"
+        aria-label={t("card.attachments.title")}
+      />
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt={attachment.fileName}
+      className="h-6 w-6 shrink-0 rounded border border-border object-cover"
+    />
+  );
 }
 
 interface CardAttachmentsProps {
@@ -187,7 +241,6 @@ export function CardAttachments({
       ) : (
         <ul className="space-y-1" data-testid="card-attachments-list">
           {items.map((attachment) => {
-            const Icon = mimeIcon(attachment.mimeType);
             const canDelete =
               !readOnly &&
               (user?.id === attachment.uploadedById || me?.role === "ADMIN");
@@ -197,7 +250,7 @@ export function CardAttachments({
                 className="group flex items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-hover/60"
                 data-testid="card-attachment-row"
               >
-                <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <AttachmentPreview attachment={attachment} />
                 <span
                   className="min-w-0 flex-1 truncate"
                   title={attachment.fileName}

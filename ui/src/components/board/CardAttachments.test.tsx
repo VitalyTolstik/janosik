@@ -80,6 +80,24 @@ describe("CardAttachments", () => {
     expect(screen.getByTestId("card-attachments-upload")).toBeEnabled();
   });
 
+  it("shows a real thumbnail for image attachments", async () => {
+    vi.spyOn(api, "listAttachments").mockResolvedValue([
+      attachment({
+        id: "att-img",
+        fileName: "shot.png",
+        mimeType: "image/png",
+      }),
+    ]);
+    vi.spyOn(api, "fetchAttachment").mockResolvedValue(
+      new Blob(["img"], { type: "image/png" }),
+    );
+    renderSection();
+    await screen.findByText("shot.png");
+    const thumb = await screen.findByAltText("shot.png");
+    expect(thumb.tagName).toBe("IMG");
+    expect(api.fetchAttachment).toHaveBeenCalledWith("att-img");
+  });
+
   it("uploads a picked file and prepends it to the list", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAttachments").mockResolvedValue([]);

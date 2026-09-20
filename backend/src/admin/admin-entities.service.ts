@@ -65,6 +65,8 @@ interface CardRowJoin {
   archivedAt: Date | null;
   deletedAt: Date | null;
   columnId: string;
+  priority: string | null;
+  dueDate: Date | null;
   column: { title: string; boardId: string; board: { title: string } };
   comments: Array<{ id: string }>;
 }
@@ -80,6 +82,8 @@ function toCardRow(card: CardRowJoin): AdminCardRowDto {
     commentIds: card.comments.map((comment) => comment.id),
     createdAt: card.createdAt.getTime(),
     updatedAt: card.updatedAt.getTime(),
+    priority: card.priority,
+    dueDate: MS(card.dueDate),
     archivedAt: MS(card.archivedAt),
     deletedAt: MS(card.deletedAt),
   };
@@ -93,6 +97,8 @@ const CARD_ROW_SELECT = {
   archivedAt: true,
   deletedAt: true,
   columnId: true,
+  priority: true,
+  dueDate: true,
   column: {
     select: { title: true, boardId: true, board: { select: { title: true } } },
   },
@@ -1708,7 +1714,7 @@ type CommandJoin = {
   id: string;
   type: string;
   seq: bigint;
-  details: Prisma.JsonValue | null;
+  payload: Prisma.JsonValue | null;
   createdAt: Date;
   boardId: string;
   actorId: string;
@@ -1726,6 +1732,7 @@ function toCommandRow(command: CommandJoin): AdminCommandRowDto {
     type: command.type,
     seq: Number(command.seq),
     createdAt: command.createdAt.getTime(),
+    payload: (command.payload as Record<string, unknown> | null) ?? null,
   };
 }
 
@@ -1734,6 +1741,7 @@ const COMMAND_SELECT = {
   type: true,
   seq: true,
   details: true,
+  payload: true,
   createdAt: true,
   boardId: true,
   actorId: true,

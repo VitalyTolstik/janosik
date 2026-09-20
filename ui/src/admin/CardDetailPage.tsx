@@ -14,7 +14,16 @@ import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
-import { DateCell, EntityLink, IdCell, LabelChip } from "./cells";
+import {
+  AttachmentDownloadButton,
+  AttachmentThumb,
+  DateCell,
+  EntityLink,
+  IdCell,
+  JsonCell,
+  LabelChip,
+  SizeCell,
+} from "./cells";
 
 const userHref = (id: string) => `/admin/users/${id}`;
 import {
@@ -349,11 +358,31 @@ export function CardDetailPage() {
           <tbody>
             {detail.attachments.map((file) => (
               <tr key={file.id}>
-                <Td>{file.fileName}</Td>
                 <Td>
-                  <span className="tabular-nums">{file.sizeBytes}</span>
+                  <span className="inline-flex items-center gap-2">
+                    <AttachmentThumb
+                      attachmentId={file.id}
+                      mimeType={file.mimeType}
+                      fileName={file.fileName}
+                    />
+                    {file.fileName}
+                    <AttachmentDownloadButton
+                      attachmentId={file.id}
+                      fileName={file.fileName}
+                    />
+                  </span>
                 </Td>
-                <Td>{file.uploadedByEmail}</Td>
+                <Td>
+                  <SizeCell bytes={file.sizeBytes} />
+                </Td>
+                <Td>
+                  <EntityLink
+                    to={userHref(file.uploadedById)}
+                    copyValue={file.uploadedByEmail}
+                  >
+                    {file.uploadedByEmail}
+                  </EntityLink>
+                </Td>
                 <Td>
                   <DateCell value={file.createdAt} />
                 </Td>
@@ -407,7 +436,7 @@ export function CardDetailPage() {
             {detail.timeline.map((event) => (
               <li
                 key={`${event.kind}-${event.id}`}
-                className="flex items-center gap-2 text-xs"
+                className="flex items-start gap-2 text-xs"
               >
                 <span
                   className={
@@ -421,6 +450,7 @@ export function CardDetailPage() {
                 <span className="text-muted-foreground">
                   {event.actorEmail}
                 </span>
+                {event.details ? <JsonCell value={event.details} /> : null}
                 <span className="ml-auto tabular-nums text-[11px] text-muted-foreground">
                   {formatDate(event.createdAt, lang, hour12)}
                 </span>

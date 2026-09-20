@@ -92,6 +92,8 @@ export function adminCard(
     commentIds: ["comment-1"],
     createdAt: now,
     updatedAt: now,
+    priority: null,
+    dueDate: null,
     archivedAt: null,
     deletedAt: null,
     ...overrides,

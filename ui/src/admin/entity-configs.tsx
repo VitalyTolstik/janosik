@@ -20,13 +20,16 @@ import type {
 } from "@janosik/shared";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
+import { Badge } from "./ui";
 import {
+  AttachmentDownloadButton,
+  AttachmentThumb,
   BoolCell,
   CopyButton,
   DateCell,
-  DetailsCell,
   EntityLink,
   IdCell,
+  JsonCell,
   LabelChip,
   NumberCell,
   SizeCell,
@@ -351,6 +354,19 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.cards.column.comments"),
             render: (card) => <NumberCell value={card.commentIds.length} />,
+          },
+          {
+            label: t("admin.cards.column.priority"),
+            render: (card) =>
+              card.priority !== null ? (
+                <Badge variant="primary">{card.priority}</Badge>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              ),
+          },
+          {
+            label: t("admin.cards.column.due"),
+            render: (card) => <DateCell value={card.dueDate} />,
           },
           {
             label: t("admin.cards.column.updated"),
@@ -735,7 +751,18 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.attachments.column.file"),
             render: (file) => (
-              <TextCell value={file.fileName} maxWidth="18rem" />
+              <span className="inline-flex items-center gap-2">
+                <AttachmentThumb
+                  attachmentId={file.id}
+                  mimeType={file.mimeType}
+                  fileName={file.fileName}
+                />
+                <TextCell value={file.fileName} maxWidth="18rem" />
+                <AttachmentDownloadButton
+                  attachmentId={file.id}
+                  fileName={file.fileName}
+                />
+              </span>
             ),
           },
           {
@@ -837,7 +864,12 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           },
           {
             label: t("admin.activity.column.details"),
-            render: (entry) => <DetailsCell details={entry.details} />,
+            render: (entry) => (
+              <JsonCell
+                value={entry.details}
+                testId={`admin-activity-details-${entry.id}`}
+              />
+            ),
           },
           {
             label: t("admin.activity.column.created"),
@@ -885,6 +917,15 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.commands.column.seq"),
             render: (command) => <NumberCell value={command.seq} />,
+          },
+          {
+            label: t("admin.commands.column.payload"),
+            render: (command) => (
+              <JsonCell
+                value={command.payload}
+                testId={`admin-command-payload-${command.id}`}
+              />
+            ),
           },
           {
             label: t("admin.commands.column.created"),
@@ -1058,7 +1099,12 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           },
           {
             label: t("admin.audit.column.details"),
-            render: (entry) => <DetailsCell details={entry.details} />,
+            render: (entry) => (
+              <JsonCell
+                value={entry.details}
+                testId={`admin-audit-details-${entry.id}`}
+              />
+            ),
           },
           {
             label: t("admin.audit.column.created"),

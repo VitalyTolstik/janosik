@@ -660,5 +660,6 @@
   "activity.link-added": "Linked to {{detail}}",
   "activity.link-removed": "Link to {{detail}} removed",
   "history.field.link": "Link",
-  "filter.links": "Links"
+  "filter.links": "Links",
+  "card.attachments.pasted": "Image pasted into attachments: {{name}}"
 }

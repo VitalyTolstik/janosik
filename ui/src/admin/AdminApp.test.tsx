@@ -249,6 +249,7 @@ describe("AdminApp", () => {
         type: "ADD_CARD",
         seq: 12,
         createdAt: 1_760_000_000_000,
+        payload: { newCardId: "card-1", title: "Moderate me" },
       },
     ];
     state.audit = [
@@ -486,7 +487,7 @@ describe("admin content and security pages", () => {
     renderAdmin("/admin/activity");
 
     fireEvent.click(await screen.findByText(t("admin.filter.period.24h")));
-    await screen.findByText('"Looks good"');
+    await screen.findByText(/Looks good/);
     await waitFor(() => {
       const requests = server.requests.filter(
         (request) => request.path === "/admin/entities/activity",

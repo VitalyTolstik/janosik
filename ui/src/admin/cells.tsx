@@ -1,9 +1,23 @@
-import { useState } from "react";
+import { createElement, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Copy } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Download,
+  File as FileIcon,
+  FileArchive,
+  FileAudio,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  FileVideo,
+} from "lucide-react";
 import { LABEL_COLOR_CHIP, type LabelColor } from "@janosik/shared";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { Badge, IdChip } from "./ui";
 
@@ -207,58 +221,163 @@ export function LabelChip({ name, color }: { name: string; color: string }) {
 }
 
 /**
- * Human-readable rendering of a free-form `details` JSON (activity, audit):
- * comment text is quoted, id-only fields collapse to their short form and
- * everything else becomes `key: value` pairs — the raw JSON stays in the
- * tooltip.
+ * Free-form JSON cell (activity details, audit details, command payloads):
+ * collapsed as one truncated monospace line, expanded into the complete
+ * pretty-printed JSON with no trim — the same component everywhere JSON
+ * shows (TASK-48 support feedback).
  */
-export function DetailsCell({
-  details,
-  maxWidth = "24rem",
+export function JsonCell({
+  value,
+  testId,
 }: {
-  details: Record<string, unknown> | null;
-  maxWidth?: string;
+  value: Record<string, unknown> | null;
+  testId?: string;
 }) {
-  const t = useAdminT();
-  if (details === null || typeof details !== "object") {
+  const [expanded, setExpanded] = useState(false);
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Object.keys(value).length === 0
+  ) {
     return <span className="text-muted-foreground">—</span>;
   }
-  const entries = Object.entries(details).filter(
-    ([, value]) => value !== null && value !== undefined && value !== "",
-  );
-  if (entries.length === 0) {
-    return <span className="text-muted-foreground">—</span>;
-  }
-
-  const parts: string[] = [];
-  const ids: string[] = [];
-  if (typeof details.text === "string") {
-    parts.push(`"${details.text}"`);
-  }
-  for (const [key, value] of entries) {
-    if (key === "text") continue;
-    if (typeof value === "string" && key.endsWith("Id")) {
-      ids.push(value);
-      continue;
-    }
-    const rendered =
-      typeof value === "boolean"
-        ? t(value ? "admin.common.yes" : "admin.common.no")
-        : String(value);
-    parts.push(`${key}: ${rendered}`);
-  }
-  if (parts.length === 0) {
-    parts.push(...ids.map((id) => id.slice(0, 8)));
-  }
-
-  const raw = JSON.stringify(details);
+  const raw = JSON.stringify(value);
+  const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
-    <span
-      className="block text-muted-foreground"
-      style={{ maxWidth }}
-      title={raw}
-    >
-      {parts.join("  ·  ")}
+    <span className="block">
+      <button
+        type="button"
+        data-testid={testId ? `${testId}-expand` : undefined}
+        aria-expanded={expanded}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setExpanded((current) => !current);
+        }}
+        className="inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <Chevron className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        {!expanded ? (
+          <code
+            className="block truncate font-mono text-[11px]"
+            style={{ maxWidth: "20rem" }}
+            title={raw}
+          >
+            {raw}
+          </code>
+        ) : null}
+      </button>
+      {expanded ? (
+        <pre
+          data-testid={testId ? `${testId}-json` : undefined}
+          className="mt-1 max-h-64 max-w-[36rem] overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-muted/30 p-2 font-mono text-[11px] text-foreground"
+        >
+          {JSON.stringify(value, null, 2)}
+        </pre>
+      ) : null}
     </span>
+  );
+}
+
+const MIME_ICONS: Array<[RegExp, typeof FileImage]> = [
+  [/^video\//, FileVideo],
+  [/^audio\//, FileAudio],
+  [/zip|compressed|tar/, FileArchive],
+  [/sheet|excel|csv/, FileSpreadsheet],
+  [/^text\/|json/, FileText],
+];
+
+/**
+ * Attachment preview: a real thumbnail for images (blob-fetched through the
+ * admin download route), a mime icon for everything else.
+ */
+export function AttachmentThumb({
+  attachmentId,
+  mimeType,
+  fileName,
+}: {
+  attachmentId: string;
+  mimeType: string;
+  fileName: string;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const isImage = mimeType.startsWith("image/");
+  useEffect(() => {
+    if (!isImage) return;
+    let alive = true;
+    let created: string | null = null;
+    adminApi
+      .downloadAttachment(attachmentId)
+      .then((blob) => {
+        if (!alive) return;
+        created = URL.createObjectURL(blob);
+        setUrl(created);
+      })
+      .catch(() => {
+        /* icon fallback stays */
+      });
+    return () => {
+      alive = false;
+      if (created !== null) URL.revokeObjectURL(created);
+    };
+  }, [attachmentId, isImage]);
+
+  if (!isImage) {
+    const Icon = MIME_ICONS.find(([pattern]) => pattern.test(mimeType))?.[1];
+    return createElement(Icon ?? FileIcon, {
+      className: "h-4 w-4 shrink-0 text-muted-foreground",
+      "aria-label": fileName,
+    });
+  }
+  if (url === null) {
+    return (
+      <span
+        className="inline-block h-7 w-7 shrink-0 animate-pulse rounded bg-muted/50"
+        aria-label={fileName}
+      />
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt={fileName}
+      className="h-7 w-7 shrink-0 rounded border border-border object-cover"
+    />
+  );
+}
+
+/** One-click download of an attachment blob with its original name. */
+export function AttachmentDownloadButton({
+  attachmentId,
+  fileName,
+}: {
+  attachmentId: string;
+  fileName: string;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={`admin-attachment-download-${attachmentId}`}
+      title={fileName}
+      aria-label={fileName}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void adminApi
+          .downloadAttachment(attachmentId)
+          .then((blob) => {
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = fileName;
+            anchor.click();
+            URL.revokeObjectURL(url);
+          })
+          .catch(() => undefined);
+      }}
+      className="inline-flex items-center text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <Download className="h-3.5 w-3.5" aria-hidden />
+    </button>
   );
 }

@@ -676,5 +676,6 @@
   "activity.link-added": "Связь с «{{detail}}»",
   "activity.link-removed": "Связь с «{{detail}}» убрана",
   "history.field.link": "Связь",
-  "filter.links": "Связи"
+  "filter.links": "Связи",
+  "card.attachments.pasted": "Картинка добавлена во вложения: {{name}}"
 }

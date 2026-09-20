@@ -17,6 +17,7 @@ import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 import { ToastProvider } from "@/components/Toast";
+import { api } from "@/api/client";
 
 /**
  * Integration test for the card description editor (MDXEditor): opening a
@@ -124,6 +125,35 @@ describe("CardDialog description editor", () => {
       "Description",
     )) as HTMLTextAreaElement;
     expect(editorAgain.value).toBe("First part. Second part.");
+  });
+
+  it("uploads a pasted image as a card attachment (Jira-style)", async () => {
+    const upload = vi.spyOn(api, "uploadAttachment").mockResolvedValue({
+      id: "att-paste",
+      cardId: "card-1",
+      fileName: "pasted.png",
+      mimeType: "image/png",
+      sizeBytes: 4,
+      uploadedById: "user-1",
+      createdAt: 0,
+    });
+    const dialog = await openCardDialog("Design the new onboarding flow");
+    const editor = (await within(dialog).findByLabelText(
+      "Description",
+    )) as HTMLTextAreaElement;
+    const before = editor.value;
+
+    fireEvent.paste(editor, {
+      clipboardData: {
+        files: [new File(["bits"], "pasted.png", { type: "image/png" })],
+      },
+    });
+
+    await waitFor(() => {
+      expect(upload).toHaveBeenCalledWith(expect.any(String), expect.any(File));
+    });
+    // The description text itself is untouched by an image paste.
+    expect(editor.value).toBe(before);
   });
 });
 

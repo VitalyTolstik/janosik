@@ -7,8 +7,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import type {
   AdminBoardCommandRequest,
   AdminBoardDetailDto,
@@ -36,6 +38,8 @@ import type {
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
 import { AdminEntitiesService } from "./admin-entities.service";
 import { AdminService } from "./admin.service";
+import { AttachmentsService } from "@/attachments/attachments.service";
+import { StorageService } from "@/attachments/storage.service";
 import { CurrentAdmin } from "./current-admin.decorator";
 import type { AdminPrincipal } from "./admin.types";
 import { AdminBoardCommandDto } from "./dto/admin-board-command.dto";
@@ -58,7 +62,28 @@ export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly entities: AdminEntitiesService,
+    private readonly attachments: AttachmentsService,
+    private readonly storage: StorageService,
   ) {}
+
+  /**
+   * Stream an attachment blob to a master (support download, TASK-48).
+   * Mirrors the member route but behind the admin guard instead of board
+   * membership; the disposition is `attachment` with an encoded UTF-8 name.
+   */
+  @Get("attachments/:attachmentId/download")
+  async downloadAttachment(
+    @Param("attachmentId") attachmentId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { meta, storedName } = await this.attachments.content(attachmentId);
+    res.setHeader("Content-Type", meta.mimeType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename*=UTF-8''${encodeURIComponent(meta.fileName)}`,
+    );
+    this.storage.open(this.storage.attachmentPath(storedName)).pipe(res);
+  }
 
   @Get("metrics")
   metrics(): Promise<AdminMetricsDto> {
