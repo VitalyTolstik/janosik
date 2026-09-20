@@ -47,6 +47,10 @@ import { ApiError, apiBaseUrl } from "@/api/client";
 export interface AdminListParams {
   search?: string;
   status?: string;
+  /** Inclusive `createdAt` lower bound, unix ms (period tabs). */
+  from?: number;
+  /** Inclusive `createdAt` upper bound, unix ms. */
+  to?: number;
   limit?: number;
   offset?: number;
 }
@@ -389,6 +393,8 @@ export class AdminApiClient {
     if (params.limit !== undefined) search.set("limit", String(params.limit));
     if (params.offset !== undefined)
       search.set("offset", String(params.offset));
+    if (params.from !== undefined) search.set("from", String(params.from));
+    if (params.to !== undefined) search.set("to", String(params.to));
     const value = search.toString();
     return value === "" ? "" : `?${value}`;
   }

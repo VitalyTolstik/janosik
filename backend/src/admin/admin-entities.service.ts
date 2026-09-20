@@ -736,6 +736,9 @@ export class AdminEntitiesService {
         { card: { title: like(query.search) } },
       ];
     }
+    where.createdAt = {};
+    if (query.from !== undefined) where.createdAt.gte = new Date(query.from);
+    if (query.to !== undefined) where.createdAt.lte = new Date(query.to);
 
     const { limit, offset } = window(query);
     const [items, total] = await this.prisma.$transaction([

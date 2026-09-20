@@ -2,6 +2,7 @@ import { boardReducer } from "@janosik/shared";
 import type {
   BoardAction,
   BoardAggregate,
+  AdminActivityRowDto,
   AdminAuditRowDto,
   AdminBoardRowDto,
   AdminCardRowDto,
@@ -40,6 +41,7 @@ export interface FakeAdminState {
   sessions: AdminSessionRowDto[];
   tokens: AdminTokenRowDto[];
   comments: AdminCommentRowDto[];
+  activity: AdminActivityRowDto[];
   /** Aggregate served to the board content editor; grown by commands. */
   contentBoard: BoardAggregate | null;
 }
@@ -57,6 +59,7 @@ export function emptyAdminState(): FakeAdminState {
     sessions: [],
     tokens: [],
     comments: [],
+    activity: [],
     contentBoard: null,
   };
 }
@@ -141,6 +144,24 @@ export function adminComment(
   };
 }
 
+export function adminActivity(
+  overrides: Partial<AdminActivityRowDto> = {},
+): AdminActivityRowDto {
+  return {
+    id: "activity-1",
+    boardId: "board-1",
+    boardTitle: "Support board",
+    cardId: "card-1",
+    cardTitle: "Moderate me",
+    type: "comment_added",
+    actorId: "u-1",
+    actorEmail: "member@example.com",
+    details: { commentId: "comment-1", text: "Looks good" },
+    createdAt: now,
+    ...overrides,
+  };
+}
+
 export function adminUser(
   overrides: Partial<AdminUserRowDto> = {},
 ): AdminUserRowDto {
@@ -189,7 +210,12 @@ export function adminBoard(
 
 export class FakeAdminServer {
   state: FakeAdminState;
-  requests: Array<{ method: string; path: string; body: unknown }> = [];
+  requests: Array<{
+    method: string;
+    path: string;
+    body: unknown;
+    query: URLSearchParams;
+  }> = [];
   /** Paths whose next call answers 500 once (matched via `includes`). */
   failNext: string[] = [];
   /** When set, the refresh endpoint answers as if no cookie existed. */
@@ -226,7 +252,7 @@ export class FakeAdminServer {
       const method = init?.method ?? "GET";
       const body =
         typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
-      this.requests.push({ method, path, body });
+      this.requests.push({ method, path, body, query: url.searchParams });
 
       const failure = this.failNext.find((candidate) =>
         path.includes(candidate),
@@ -542,6 +568,7 @@ export class FakeAdminServer {
         tokens: this.state.tokens,
         commands: this.state.commands,
         audit: this.state.audit,
+        activity: this.state.activity,
       };
       return this.json(this.page(map[entity[1]] ?? [], url));
     }

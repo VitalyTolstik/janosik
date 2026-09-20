@@ -22,7 +22,9 @@ import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import {
   BoolCell,
+  CopyButton,
   DateCell,
+  DetailsCell,
   EntityLink,
   IdCell,
   LabelChip,
@@ -81,6 +83,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
               <EntityLink
                 to={userHref(user.id)}
                 testId={`admin-user-email-${user.id}`}
+                copyValue={user.email}
               >
                 {user.email}
               </EntityLink>
@@ -184,7 +187,10 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             label: t("admin.boards.column.owner"),
             render: (board) =>
               board.userId ? (
-                <EntityLink to={userHref(board.userId)}>
+                <EntityLink
+                  to={userHref(board.userId)}
+                  copyValue={board.ownerEmail ?? undefined}
+                >
                   {board.ownerEmail ?? board.userId.slice(0, 8)}
                 </EntityLink>
               ) : (
@@ -676,7 +682,10 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.comments.column.author"),
             render: (comment) => (
-              <EntityLink to={userHref(comment.authorId)}>
+              <EntityLink
+                to={userHref(comment.authorId)}
+                copyValue={comment.authorEmail}
+              >
                 {comment.authorEmail}
               </EntityLink>
             ),
@@ -752,7 +761,10 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.attachments.column.uploader"),
             render: (file) => (
-              <EntityLink to={userHref(file.uploadedById)}>
+              <EntityLink
+                to={userHref(file.uploadedById)}
+                copyValue={file.uploadedByEmail}
+              >
                 {file.uploadedByEmail}
               </EntityLink>
             ),
@@ -783,6 +795,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
         entity,
         title: t("admin.activity.title"),
         subtitle: t("admin.activity.subtitle"),
+        periods: true,
         columns: [
           {
             label: t("admin.activity.column.type"),
@@ -795,7 +808,10 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.activity.column.actor"),
             render: (entry) => (
-              <EntityLink to={userHref(entry.actorId)}>
+              <EntityLink
+                to={userHref(entry.actorId)}
+                copyValue={entry.actorEmail}
+              >
                 {entry.actorEmail}
               </EntityLink>
             ),
@@ -821,13 +837,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           },
           {
             label: t("admin.activity.column.details"),
-            render: (entry) => (
-              <TextCell
-                value={entry.details ? JSON.stringify(entry.details) : null}
-                maxWidth="18rem"
-                className="font-mono text-[11px]"
-              />
-            ),
+            render: (entry) => <DetailsCell details={entry.details} />,
           },
           {
             label: t("admin.activity.column.created"),
@@ -843,6 +853,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
         entity,
         title: t("admin.commands.title"),
         subtitle: t("admin.commands.subtitle"),
+        periods: true,
         columns: [
           {
             label: t("admin.commands.column.type"),
@@ -855,7 +866,10 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.commands.column.actor"),
             render: (command) => (
-              <EntityLink to={userHref(command.actorId)}>
+              <EntityLink
+                to={userHref(command.actorId)}
+                copyValue={command.actorEmail}
+              >
                 {command.actorEmail}
               </EntityLink>
             ),
@@ -886,12 +900,16 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
         entity,
         title: t("admin.sessions.title"),
         subtitle: t("admin.sessions.subtitle"),
+        periods: true,
         rowHref: (session) => userHref(session.userId),
         columns: [
           {
             label: t("admin.sessions.column.user"),
             render: (session) => (
-              <EntityLink to={userHref(session.userId)}>
+              <EntityLink
+                to={userHref(session.userId)}
+                copyValue={session.userEmail}
+              >
                 {session.userEmail}
               </EntityLink>
             ),
@@ -929,6 +947,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
         entity,
         title: t("admin.tokens.title"),
         subtitle: t("admin.tokens.subtitle"),
+        periods: true,
         columns: [
           {
             label: t("admin.tokens.column.name"),
@@ -937,7 +956,10 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.tokens.column.user"),
             render: (token) => (
-              <EntityLink to={userHref(token.userId)}>
+              <EntityLink
+                to={userHref(token.userId)}
+                copyValue={token.userEmail}
+              >
                 {token.userEmail}
               </EntityLink>
             ),
@@ -990,6 +1012,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
         entity,
         title: t("admin.audit.title"),
         subtitle: t("admin.audit.subtitle"),
+        periods: true,
         columns: [
           {
             label: t("admin.audit.column.action"),
@@ -1003,11 +1026,20 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             label: t("admin.audit.column.admin"),
             render: (entry) =>
               entry.adminId ? (
-                <EntityLink to={`/admin/masters`} className="font-normal">
+                <EntityLink
+                  to={`/admin/masters`}
+                  className="font-normal"
+                  copyValue={entry.adminEmail ?? undefined}
+                >
                   {entry.adminEmail}
                 </EntityLink>
+              ) : entry.adminEmail ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <TextCell value={entry.adminEmail} maxWidth="14rem" />
+                  <CopyButton value={entry.adminEmail} />
+                </span>
               ) : (
-                <TextCell value={entry.adminEmail} maxWidth="14rem" />
+                <span className="text-muted-foreground">—</span>
               ),
           },
           {
@@ -1026,13 +1058,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           },
           {
             label: t("admin.audit.column.details"),
-            render: (entry) => (
-              <TextCell
-                value={entry.details ? JSON.stringify(entry.details) : null}
-                maxWidth="20rem"
-                className="font-mono text-[11px]"
-              />
-            ),
+            render: (entry) => <DetailsCell details={entry.details} />,
           },
           {
             label: t("admin.audit.column.created"),

@@ -63,6 +63,8 @@ export interface EntityListConfig<T> {
   subtitle?: string;
   /** Optional server-side status filter tabs. */
   statuses?: Array<{ value: string; label: string }>;
+  /** Show the createdAt age-window tabs (24h / 7d / 30d / any). */
+  periods?: boolean;
   columns: Array<EntityColumn<T>>;
   /** Click target for a row — the entity's detail page when one exists. */
   rowHref?: (row: T) => string;
@@ -108,6 +110,10 @@ function RowActions({
       setPending(null);
     }
   };
+
+  if (actions.length === 0) {
+    return null;
+  }
 
   return (
     <>
@@ -179,11 +185,20 @@ export function EntityPage<E extends AdminEntity>({
           })),
         ];
 
+  const periodOptions = config.periods
+    ? [
+        { value: "any", label: t("admin.filter.period.any") },
+        { value: "24h", label: t("admin.filter.period.24h") },
+        { value: "7d", label: t("admin.filter.period.7d") },
+        { value: "30d", label: t("admin.filter.period.30d") },
+      ]
+    : undefined;
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-4">
       <PageHeader
         title={config.title}
-        subtitle={config.subtitle}
+        subtitle={config.subtitle?.replaceAll("{total}", String(list.total))}
         actions={
           <>
             <SearchInput value={list.search} onChange={list.setSearch} />
@@ -192,6 +207,13 @@ export function EntityPage<E extends AdminEntity>({
                 value={list.status}
                 options={statusOptions}
                 onChange={list.setStatus}
+              />
+            ) : null}
+            {periodOptions ? (
+              <FilterTabs
+                value={list.period}
+                options={periodOptions}
+                onChange={list.setPeriod}
               />
             ) : null}
             {config.toolbar?.(list.reload)}

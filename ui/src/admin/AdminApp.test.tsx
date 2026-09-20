@@ -16,6 +16,7 @@ import AdminApp from "./AdminApp";
 import { adminMessage } from "./admin-i18n";
 import {
   FakeAdminServer,
+  adminActivity,
   adminBoard,
   adminCard,
   adminComment,
@@ -456,6 +457,47 @@ describe("admin content and security pages", () => {
         (request) => request.path === "/admin/tokens/token-1/revoke",
       ),
     ).toBe(true);
+  });
+
+  it("renders no action menu at all for an already revoked token", async () => {
+    const state = serverWith().state;
+    state.tokens = [adminToken({ revokedAt: Date.now() - 1_000 })];
+    vi.stubGlobal("fetch", new FakeAdminServer(state).fetchImpl);
+    renderAdmin("/admin/tokens");
+
+    await screen.findByText(t("admin.status.revoked"));
+    expect(screen.queryByTestId("admin-row-actions-token-1")).toBeNull();
+  });
+
+  it("interpolates the row total into a page subtitle", async () => {
+    const state = serverWith().state;
+    state.sessions = [adminSession()];
+    vi.stubGlobal("fetch", new FakeAdminServer(state).fetchImpl);
+    renderAdmin("/admin/sessions");
+
+    await screen.findByText("1 active sessions");
+  });
+
+  it("applies the activity period window as a from query bound", async () => {
+    const state = serverWith().state;
+    state.activity = [adminActivity()];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/activity");
+
+    fireEvent.click(await screen.findByText(t("admin.filter.period.24h")));
+    await screen.findByText('"Looks good"');
+    await waitFor(() => {
+      const requests = server.requests.filter(
+        (request) => request.path === "/admin/entities/activity",
+      );
+      const latest = requests[requests.length - 1];
+      expect(latest).toBeDefined();
+      const from = latest?.query.get("from");
+      expect(from).not.toBeNull();
+      expect(Number(from)).toBeLessThanOrEqual(Date.now());
+      expect(Number(from)).toBeGreaterThan(Date.now() - 25 * 3_600_000);
+    });
   });
 
   it("deletes a comment", async () => {

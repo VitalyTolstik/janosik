@@ -973,6 +973,7 @@ export class AdminService {
     const where: Prisma.RefreshTokenWhereInput = {
       revokedAt: null,
       expiresAt: { gt: new Date() },
+      createdAt: this.dateRange(query),
     };
     if (query.search) {
       where.OR = [
@@ -1056,6 +1057,7 @@ export class AdminService {
     }
     if (query.status === "active") where.revokedAt = null;
     if (query.status === "disabled") where.revokedAt = { not: null };
+    where.createdAt = this.dateRange(query);
 
     const { limit, offset } = this.window(query);
     const [items, total] = await this.prisma.$transaction([
@@ -1150,6 +1152,7 @@ export class AdminService {
         },
       ];
     }
+    where.createdAt = this.dateRange(query);
     const { limit, offset } = this.window(query);
     const [items, total] = await this.prisma.$transaction([
       this.prisma.comment.findMany({
@@ -1231,6 +1234,7 @@ export class AdminService {
         },
       ];
     }
+    where.createdAt = this.dateRange(query);
     const { limit, offset } = this.window(query);
     const [items, total] = await this.prisma.$transaction([
       this.prisma.command.findMany({
@@ -1282,6 +1286,7 @@ export class AdminService {
         { targetId: { contains: query.search, mode: "insensitive" } },
       ];
     }
+    where.createdAt = this.dateRange(query);
     const { limit, offset } = this.window(query);
     const [items, total] = await this.prisma.$transaction([
       this.prisma.adminAuditLog.findMany({
@@ -1338,6 +1343,14 @@ export class AdminService {
       ADMIN_PAGE_LIMITS.max,
     );
     return { limit, offset: Math.max(query.offset ?? 0, 0) };
+  }
+
+  /** `createdAt` range for the log-like listings (period tabs in the UI). */
+  private dateRange(query: AdminListQueryDto): Prisma.DateTimeFilter {
+    const range: Prisma.DateTimeFilter = {};
+    if (query.from !== undefined) range.gte = new Date(query.from);
+    if (query.to !== undefined) range.lte = new Date(query.to);
+    return range;
   }
 
   /** Buckets timestamps into a dense per-day series (oldest first). */
