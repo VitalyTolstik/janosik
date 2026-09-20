@@ -792,10 +792,10 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
   padding: 0;
 }
 
-/* Fullscreen viewer affordance on embedded images (TASK-48): read-only
- * surfaces open on a single click, so the zoom cursor advertises it; in
- * edit mode a plain click keeps the editor's image selection. */
-.mdxeditor.janosik-mdx.janosik-mdx-readonly .janosik-md-content img {
+/* Fullscreen viewer affordance on embedded images (TASK-48): the zoom
+ * cursor in both modes — read-only opens on a single click, the editor on
+ * a double click (a plain click keeps the editor's image selection). */
+.mdxeditor.janosik-mdx .janosik-md-content img {
   cursor: zoom-in;
 }
 

@@ -81,7 +81,8 @@ export function attachmentImagePreviewHandler(src: string): Promise<string> {
 
 /**
  * Fullscreen viewer for embedded images (Jira's lightbox): an imperative
- * overlay above every dialog — a single click anywhere or Escape closes it.
+ * overlay above every dialog — a single click anywhere, the ✕ button or
+ * Escape closes it.
  */
 export function openImageLightbox(src: string): void {
   if (document.getElementById("attachment-lightbox")) return;
@@ -91,9 +92,13 @@ export function openImageLightbox(src: string): void {
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
   overlay.setAttribute("aria-label", "Image preview");
+  // Radix modal dialogs disable pointer events on <body> while open — the
+  // overlay must opt back in, otherwise clicks fall through it into the
+  // layers underneath (closing the card dialog instead of the viewer).
   overlay.style.cssText =
     "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.82);" +
-    "display:flex;align-items:center;justify-content:center;padding:2rem;cursor:zoom-out";
+    "display:flex;align-items:center;justify-content:center;padding:2rem;" +
+    "cursor:zoom-out;pointer-events:auto";
   const img = document.createElement("img");
   img.src = src;
   img.alt = "";
@@ -101,20 +106,46 @@ export function openImageLightbox(src: string): void {
     "max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;" +
     "box-shadow:0 12px 48px rgba(0,0,0,0.55)";
   overlay.appendChild(img);
-  document.body.appendChild(overlay);
 
   const close = () => {
     overlay.remove();
-    document.removeEventListener("keydown", onKey);
+    document.removeEventListener("keydown", onKey, true);
   };
+  // Capture phase + stopPropagation: Escape and pointerdown must never
+  // reach the Radix layers of the dialog underneath — they would dismiss
+  // the card dialog instead of (or in addition to) the viewer.
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
       event.stopPropagation();
       close();
     }
   };
-  overlay.addEventListener("click", close);
-  document.addEventListener("keydown", onKey);
+  overlay.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  });
+  overlay.addEventListener("click", (event) => {
+    event.stopPropagation();
+    close();
+  });
+  document.addEventListener("keydown", onKey, true);
+  document.body.appendChild(overlay);
+
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.setAttribute("data-testid", "attachment-lightbox-close");
+  closeButton.setAttribute("aria-label", "Close");
+  closeButton.textContent = "×";
+  closeButton.style.cssText =
+    "position:absolute;top:1rem;right:1.25rem;width:2.25rem;height:2.25rem;" +
+    "border-radius:9999px;border:1px solid rgba(255,255,255,0.25);" +
+    "background:rgba(255,255,255,0.12);color:#fff;font-size:1.4rem;line-height:1;" +
+    "cursor:pointer;display:flex;align-items:center;justify-content:center;" +
+    "padding:0";
+  closeButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    close();
+  });
+  overlay.appendChild(closeButton);
 }
 
 /** Resolve an embedded image's blob URL (cached when already previewed). */

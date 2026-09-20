@@ -168,12 +168,48 @@ describe("fullscreen viewer (lightbox)", () => {
     expect(
       (overlay?.querySelector("img") as HTMLImageElement).getAttribute("src"),
     ).toBe(src);
+    // Radix-proof: the overlay opts back into pointer events.
+    expect(overlay?.style.pointerEvents).toBe("auto");
 
     overlay!.click();
     expect(document.getElementById("attachment-lightbox")).toBeNull();
 
     handleAttachmentImageOpen(imageEvent(src));
+    await vi.waitFor(() => {
+      expect(document.getElementById("attachment-lightbox")).not.toBeNull();
+    });
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(document.getElementById("attachment-lightbox")).toBeNull();
+  });
+
+  it("closes through the ✕ button", async () => {
+    openImageLightbox("blob:close-btn");
+    await vi.waitFor(() => {
+      expect(document.getElementById("attachment-lightbox")).not.toBeNull();
+    });
+    const button = document.querySelector<HTMLButtonElement>(
+      '[data-testid="attachment-lightbox-close"]',
+    );
+    expect(button).not.toBeNull();
+    button!.click();
+    expect(document.getElementById("attachment-lightbox")).toBeNull();
+  });
+
+  it("keeps pointerdown and Escape away from the layers underneath", async () => {
+    openImageLightbox("blob:swallow");
+    await vi.waitFor(() => {
+      expect(document.getElementById("attachment-lightbox")).not.toBeNull();
+    });
+    const overlay = document.getElementById("attachment-lightbox")!;
+    const seen: Event[] = [];
+    const spy = (event: Event) => seen.push(event);
+    document.addEventListener("pointerdown", spy);
+    document.addEventListener("keydown", spy);
+    overlay.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(seen).toHaveLength(0);
+    document.removeEventListener("pointerdown", spy);
+    document.removeEventListener("keydown", spy);
     expect(document.getElementById("attachment-lightbox")).toBeNull();
   });
 
