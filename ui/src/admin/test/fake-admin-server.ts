@@ -2,6 +2,7 @@ import { boardReducer } from "@janosik/shared";
 import type {
   BoardAction,
   BoardAggregate,
+  AdminActivityRowDto,
   AdminAuditRowDto,
   AdminBoardRowDto,
   AdminCardRowDto,
@@ -40,6 +41,7 @@ export interface FakeAdminState {
   sessions: AdminSessionRowDto[];
   tokens: AdminTokenRowDto[];
   comments: AdminCommentRowDto[];
+  activity: AdminActivityRowDto[];
   /** Aggregate served to the board content editor; grown by commands. */
   contentBoard: BoardAggregate | null;
 }
@@ -57,6 +59,7 @@ export function emptyAdminState(): FakeAdminState {
     sessions: [],
     tokens: [],
     comments: [],
+    activity: [],
     contentBoard: null,
   };
 }
@@ -89,6 +92,8 @@ export function adminCard(
     commentIds: ["comment-1"],
     createdAt: now,
     updatedAt: now,
+    priority: null,
+    dueDate: null,
     archivedAt: null,
     deletedAt: null,
     ...overrides,
@@ -141,6 +146,24 @@ export function adminComment(
   };
 }
 
+export function adminActivity(
+  overrides: Partial<AdminActivityRowDto> = {},
+): AdminActivityRowDto {
+  return {
+    id: "activity-1",
+    boardId: "board-1",
+    boardTitle: "Support board",
+    cardId: "card-1",
+    cardTitle: "Moderate me",
+    type: "comment_added",
+    actorId: "u-1",
+    actorEmail: "member@example.com",
+    details: { commentId: "comment-1", text: "Looks good" },
+    createdAt: now,
+    ...overrides,
+  };
+}
+
 export function adminUser(
   overrides: Partial<AdminUserRowDto> = {},
 ): AdminUserRowDto {
@@ -189,7 +212,12 @@ export function adminBoard(
 
 export class FakeAdminServer {
   state: FakeAdminState;
-  requests: Array<{ method: string; path: string; body: unknown }> = [];
+  requests: Array<{
+    method: string;
+    path: string;
+    body: unknown;
+    query: URLSearchParams;
+  }> = [];
   /** Paths whose next call answers 500 once (matched via `includes`). */
   failNext: string[] = [];
   /** When set, the refresh endpoint answers as if no cookie existed. */
@@ -226,7 +254,7 @@ export class FakeAdminServer {
       const method = init?.method ?? "GET";
       const body =
         typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
-      this.requests.push({ method, path, body });
+      this.requests.push({ method, path, body, query: url.searchParams });
 
       const failure = this.failNext.find((candidate) =>
         path.includes(candidate),
@@ -527,6 +555,100 @@ export class FakeAdminServer {
     }
     if (path === "/admin/audit") {
       return this.json(this.page(this.state.audit, url));
+    }
+
+    // Admin v2 (TASK-48): generic entity listing mirrors the real backend's
+    // `GET /admin/entities/:entity` (same rows the typed endpoints return).
+    const entity = path.match(/^\/admin\/entities\/([a-zA-Z]+)$/);
+    if (entity && method === "GET") {
+      const map: Record<string, unknown[]> = {
+        users: this.state.users,
+        boards: this.state.boards,
+        cards: this.state.cards,
+        comments: this.state.comments,
+        sessions: this.state.sessions,
+        tokens: this.state.tokens,
+        commands: this.state.commands,
+        audit: this.state.audit,
+        activity: this.state.activity,
+      };
+      return this.json(this.page(map[entity[1]] ?? [], url));
+    }
+    const userDetail = path.match(/^\/admin\/users\/([^/]+)\/detail$/);
+    if (userDetail && method === "GET") {
+      const user = this.state.users.find((item) => item.id === userDetail[1]);
+      if (!user) return this.json({ message: "User not found" }, 404);
+      return this.json({
+        user,
+        counters: {
+          boards: 0,
+          cardsCreated: 0,
+          comments: 0,
+          attachments: 0,
+          sessions: 0,
+          tokens: 0,
+          commands: 0,
+        },
+        memberships: [],
+        createdCards: [],
+        comments: [],
+        attachments: [],
+        sessions: [],
+        tokens: [],
+        recentCommands: [],
+        recentActivity: [],
+      });
+    }
+    const cardDetail = path.match(/^\/admin\/cards\/([^/]+)\/detail$/);
+    if (cardDetail && method === "GET") {
+      const card = this.state.cards.find((item) => item.id === cardDetail[1]);
+      if (!card) return this.json({ message: "Card not found" }, 404);
+      return this.json({
+        card: {
+          ...card,
+          description: null,
+          dueDate: null,
+          priority: null,
+          coverType: null,
+          coverValue: null,
+          version: 0,
+          attachmentCount: 0,
+          lastActorEmail: null,
+        },
+        labels: [],
+        checklists: [],
+        linksOut: [],
+        linksIn: [],
+        comments: [],
+        attachments: [],
+        timeline: [],
+        createdBy: null,
+      });
+    }
+    const boardMeta = path.match(/^\/admin\/boards\/([^/]+)\/meta$/);
+    if (boardMeta && method === "GET") {
+      const board = this.state.boards.find((item) => item.id === boardMeta[1]);
+      if (!board) return this.json({ message: "Board not found" }, 404);
+      return this.json({
+        board: {
+          ...board,
+          version: 0,
+          counts: {
+            members: 0,
+            columns: 0,
+            cards: 0,
+            labels: 0,
+            links: 0,
+            comments: 0,
+            attachments: 0,
+            commands: 0,
+            activity: 0,
+          },
+        },
+        members: [],
+        columns: [],
+        labels: [],
+      });
     }
 
     return this.json({ message: `no route for ${method} ${path}` }, 404);

@@ -1,11 +1,13 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { argon2id, hash as argonHash } from "argon2";
+import { writeFile } from "node:fs/promises";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { StorageService } from "@/attachments/storage.service";
 import {
   ADMIN_REFRESH_COOKIE,
   cookieValue,
@@ -410,6 +412,39 @@ describe("Admin API (e2e)", () => {
     expect(created.body.items[0].adminEmail).toBe(adminEmail);
   });
 
+  it("filters the log pages by a createdAt window (from/to)", async () => {
+    // A window entirely in the future matches nothing; the one spanning
+    // "now" matches at least the rows this suite just produced.
+    const future = Date.now() + 3_600_000;
+    for (const url of [
+      "/api/v1/admin/commands",
+      "/api/v1/admin/audit",
+      "/api/v1/admin/sessions",
+      "/api/v1/admin/tokens",
+      "/api/v1/admin/entities/activity",
+      "/api/v1/admin/comments",
+    ]) {
+      const empty = await server()
+        .get(`${url}?from=${future}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(empty.body.total).toBe(0);
+    }
+
+    const yearAgo = Date.now() - 365 * 24 * 3_600_000;
+    const audit = await server()
+      .get(`/api/v1/admin/audit?from=${yearAgo}&to=${Date.now() + 1000}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    expect(audit.body.total).toBeGreaterThan(0);
+
+    // Out-of-range or non-numeric windows are rejected by the DTO.
+    await server()
+      .get("/api/v1/admin/audit?from=-5")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(400);
+  });
+
   it("rotates the admin refresh cookie and detects reuse", async () => {
     const login = await server()
       .post("/api/v1/admin/auth/login")
@@ -493,6 +528,37 @@ describe("Admin API (e2e)", () => {
         data: { userId, name: "moderation", tokenHash: "mod-token-hash" },
       });
       tokenId = token.id;
+    });
+
+    it("streams an attachment to a master for analysis", async () => {
+      const storage = app.get(StorageService);
+      await storage.ensureDirs();
+      const storedName = "admin-download-probe.bin";
+      await writeFile(storage.attachmentPath(storedName), "attachment-bytes");
+      const attachment = await prisma.attachment.create({
+        data: {
+          cardId,
+          boardId,
+          uploadedById: userId,
+          fileName: "proof.txt",
+          mimeType: "text/plain",
+          sizeBytes: 16,
+          storedName,
+        },
+      });
+
+      const res = await server()
+        .get(`/api/v1/admin/attachments/${attachment.id}/download`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(res.headers["content-disposition"]).toContain("proof.txt");
+      expect(res.text).toBe("attachment-bytes");
+
+      // A regular user token has no business on the admin download route.
+      await server()
+        .get(`/api/v1/admin/attachments/${attachment.id}/download`)
+        .set("Authorization", `Bearer ${userToken}`)
+        .expect(401);
     });
 
     it("finds rows by their foreign keys, not by titles", async () => {

@@ -2,7 +2,9 @@ import type {
   AdminAuditRowDto,
   AdminAuthResponseDto,
   AdminBoardCommandRequest,
+  AdminBoardDetailDto,
   AdminBoardRowDto,
+  AdminCardDetailDto,
   AdminCardRowDto,
   AdminCommandRowDto,
   AdminCommentRowDto,
@@ -11,6 +13,9 @@ import type {
   AdminCreateMasterResponse,
   AdminCreateUserRequest,
   AdminCreateUserResponse,
+  AdminEntity,
+  AdminEntityRowMap,
+  AdminGlobalSearchDto,
   AdminMasterRowDto,
   AdminSessionRowDto,
   AdminTokenRowDto,
@@ -18,6 +23,7 @@ import type {
   AdminPage,
   AdminUpdateMasterRequest,
   AdminUpdateUserRequest,
+  AdminUserDetailDto,
   AdminUserDto,
   AdminUserRowDto,
   BoardAggregate,
@@ -41,6 +47,10 @@ import { ApiError, apiBaseUrl } from "@/api/client";
 export interface AdminListParams {
   search?: string;
   status?: string;
+  /** Inclusive `createdAt` lower bound, unix ms (period tabs). */
+  from?: number;
+  /** Inclusive `createdAt` upper bound, unix ms. */
+  to?: number;
   limit?: number;
   offset?: number;
 }
@@ -98,6 +108,22 @@ export class AdminApiClient {
     return this.request<AdminUserDto>("/admin/auth/me");
   }
 
+  /** Download an attachment blob for support analysis (admin guard). */
+  async downloadAttachment(attachmentId: string): Promise<Blob> {
+    const base = this.options.baseUrl ?? apiBaseUrl();
+    const headers: Record<string, string> = {};
+    if (this.accessToken !== null) {
+      headers.Authorization = `Bearer ${this.accessToken}`;
+    }
+    const fetchImpl = this.options.fetchImpl ?? fetch;
+    const response = await fetchImpl(
+      `${base}/admin/attachments/${encodeURIComponent(attachmentId)}/download`,
+      { headers, credentials: "include" },
+    );
+    if (!response.ok) throw new ApiError(response.status, null);
+    return response.blob();
+  }
+
   refreshSession(): Promise<AdminAuthResponseDto | null> {
     if (this.refreshPromise === null) {
       this.refreshPromise = this.runRefresh().finally(() => {
@@ -123,6 +149,44 @@ export class AdminApiClient {
 
   metrics(): Promise<AdminMetricsDto> {
     return this.request<AdminMetricsDto>("/admin/metrics");
+  }
+
+  // ------------------------------------------------- admin v2 (TASK-48)
+
+  /** Generic listing over any of the `ADMIN_ENTITIES`. */
+  listEntity<E extends AdminEntity>(
+    entity: E,
+    params: AdminListParams = {},
+  ): Promise<AdminPage<AdminEntityRowMap[E]>> {
+    return this.request<AdminPage<AdminEntityRowMap[E]>>(
+      `/admin/entities/${entity}${this.query(params)}`,
+    );
+  }
+
+  /** Cross-entity top matches for the panel omnibox. */
+  globalSearch(query: string): Promise<AdminGlobalSearchDto> {
+    const params = new URLSearchParams({ q: query });
+    return this.request<AdminGlobalSearchDto>(
+      `/admin/search?${params.toString()}`,
+    );
+  }
+
+  userDetail(userId: string): Promise<AdminUserDetailDto> {
+    return this.request<AdminUserDetailDto>(
+      `/admin/users/${encodeURIComponent(userId)}/detail`,
+    );
+  }
+
+  cardDetail(cardId: string): Promise<AdminCardDetailDto> {
+    return this.request<AdminCardDetailDto>(
+      `/admin/cards/${encodeURIComponent(cardId)}/detail`,
+    );
+  }
+
+  boardDetail(boardId: string): Promise<AdminBoardDetailDto> {
+    return this.request<AdminBoardDetailDto>(
+      `/admin/boards/${encodeURIComponent(boardId)}/meta`,
+    );
   }
 
   listMasters(): Promise<AdminPage<AdminMasterRowDto>> {
@@ -345,6 +409,8 @@ export class AdminApiClient {
     if (params.limit !== undefined) search.set("limit", String(params.limit));
     if (params.offset !== undefined)
       search.set("offset", String(params.offset));
+    if (params.from !== undefined) search.set("from", String(params.from));
+    if (params.to !== undefined) search.set("to", String(params.to));
     const value = search.toString();
     return value === "" ? "" : `?${value}`;
   }

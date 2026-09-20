@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
   Res,
   UploadedFile,
   UseGuards,
@@ -37,7 +38,9 @@ export class AttachmentsController {
     private readonly storage: StorageService,
   ) {}
 
-  /** Upload one file (multipart field `file`); ≤ `LIMITS.attachmentSize`. */
+  /** Upload one file (multipart field `file`); ≤ `LIMITS.attachmentSize`.
+   *  `?inline=1` marks the blob as body-embedded media (pasted into the
+   *  description/comment): hidden from the list, no counter/activity. */
   @Post("cards/:cardId/attachments")
   @BoardRoles("ADMIN", "MEMBER")
   @UseInterceptors(
@@ -49,8 +52,14 @@ export class AttachmentsController {
     @Param("cardId") cardId: string,
     @CurrentUser() user: AuthUser,
     @UploadedFile() file: UploadedBlob,
+    @Query("inline") inline?: string,
   ): Promise<AttachmentDto> {
-    return this.attachments.create(cardId, user, file);
+    return this.attachments.create(
+      cardId,
+      user,
+      file,
+      inline === "1" || inline === "true",
+    );
   }
 
   /** Live attachments of one card, newest-first. */

@@ -56,6 +56,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { api, ApiError } from "@/api/client";
+import { embedMarkdown } from "@/utils/embedAttachments";
+import type { DescriptionEditorHandle } from "@/components/editor/DescriptionEditor";
 import { useBoard } from "@/store/BoardContext";
 import { createId } from "@/utils/id";
 import type { LabelColor } from "@janosik/shared";
@@ -171,6 +174,52 @@ export function CardDialog({
   useEffect(() => {
     flushDescriptionRef.current = flushStagedDescription;
   }, [flushStagedDescription]);
+  // Paste-embed (Jira-style): every pasted file uploads as a real card
+  // attachment AND embeds into the description at the cursor — an image
+  // renders inline, any other file stays as a clickable download link, so
+  // mixed text/media structure survives (text → image → text → file).
+  // Capture phase: the editor's own paste handlers must not see the files.
+  const descriptionEditorRef = useRef<DescriptionEditorHandle | null>(null);
+  const onDescriptionPaste = (event: React.ClipboardEvent) => {
+    if (readOnly) return;
+    const files = Array.from(event.clipboardData?.files ?? []);
+    if (files.length === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void (async () => {
+      let ok = 0;
+      for (const file of files) {
+        try {
+          const attachment = await api.uploadAttachment(card.id, file);
+          descriptionEditorRef.current?.insertMarkdown(
+            embedMarkdown(file, attachment.id),
+          );
+          ok += 1;
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 413) {
+            toast.error(
+              t("card.attachments.tooLarge", {
+                max: LIMITS.attachmentSize / 1024 / 1024,
+              }),
+            );
+          } else if (error instanceof ApiError && error.status === 0) {
+            // Offline board: nothing to upload the blob to.
+            toast.error(t("card.attachments.pasteOffline"));
+            return;
+          } else {
+            toast.error(t("card.attachments.uploadError"));
+          }
+        }
+      }
+      if (ok > 0) {
+        toast.success(
+          t("card.attachments.pasted", {
+            name: files[0]?.name ?? "",
+          }),
+        );
+      }
+    })();
+  };
   // Switching cards or closing the dialog unmounts the editor without a
   // blur — the per-card cleanup is what saves the staged draft.
   useEffect(() => {
@@ -364,8 +413,12 @@ export function CardDialog({
               >
                 {/* The blur wrapper closes the staging window: leaving the
                     editor is what commits the description. */}
-                <div onBlur={() => flushStagedDescription()}>
+                <div
+                  onBlur={() => flushStagedDescription()}
+                  onPasteCapture={onDescriptionPaste}
+                >
                   <DescriptionEditor
+                    ref={descriptionEditorRef}
                     key={`${card.id}:${overflowTick}`}
                     value={card.description ?? ""}
                     readOnly={readOnly}

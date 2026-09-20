@@ -210,6 +210,7 @@ export function CardComments({
       {!readOnly && serverMode && user !== null ? (
         <CommentComposer
           user={user}
+          cardId={cardId}
           draft={draft}
           sending={sending}
           canSend={canSend}
@@ -275,6 +276,7 @@ export function CardComments({
 
 interface CommentComposerProps {
   user: AuthUserDto;
+  cardId: string;
   draft: string;
   sending: boolean;
   canSend: boolean;
@@ -293,6 +295,7 @@ interface CommentComposerProps {
  */
 function CommentComposer({
   user,
+  cardId,
   draft,
   sending,
   canSend,
@@ -329,6 +332,7 @@ function CommentComposer({
         >
           <CommentComposerEditor
             key={editorNonce}
+            cardId={cardId}
             value={draft}
             onChange={onDraftChange}
             onSubmit={onSubmit}

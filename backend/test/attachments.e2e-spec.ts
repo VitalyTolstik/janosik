@@ -204,6 +204,24 @@ describe("Attachments (TASK-47)", () => {
       .expect(403);
   });
 
+  it("keeps UTF-8 filenames intact (multer latin1 mojibake)", async () => {
+    // macOS screenshot names carry a U+202F before AM/PM; busboy decodes
+    // multipart filenames as latin1, so the stored name must be re-decoded.
+    const name = "Screenshot 2026-09-19 at 2.50.55\u202FPM.png";
+    const res = await server()
+      .post(`/api/v1/cards/${cardId}/attachments`)
+      .set(auth(member.token))
+      .attach("file", png, { filename: name, contentType: "image/png" })
+      .expect(201);
+    expect(res.body.fileName).toBe(name);
+    expect(res.body.fileName).not.toContain("\u00E2\u20AC\u00AF");
+    // Later assertions count the card's attachments — remove the probe.
+    await server()
+      .delete(`/api/v1/attachments/${res.body.id as string}`)
+      .set(auth(member.token))
+      .expect(200);
+  });
+
   it("rejects bad types and oversized files", async () => {
     await server()
       .post(`/api/v1/cards/${cardId}/attachments`)
@@ -273,6 +291,90 @@ describe("Attachments (TASK-47)", () => {
       .set(auth(admin.token))
       .expect(200);
     expect(snapshot.body.cards[cardId].attachmentCount).toBe(1);
+  });
+
+  describe("inline media (pasted into bodies, TASK-48)", () => {
+    it("uploads hidden inline media without the card badge count", async () => {
+      const res = await server()
+        .post(`/api/v1/cards/${cardId}/attachments?inline=1`)
+        .set(auth(member.token))
+        .attach("file", png, {
+          filename: "pasted.png",
+          contentType: "image/png",
+        })
+        .expect(201);
+      const inlineId = res.body.id as string;
+
+      const list = await server()
+        .get(`/api/v1/cards/${cardId}/attachments`)
+        .set(auth(admin.token))
+        .expect(200);
+      expect(list.body.map((a: { id: string }) => a.id)).not.toContain(
+        inlineId,
+      );
+
+      // Still streamable — the body markdown references exactly this URL.
+      await server()
+        .get(`/api/v1/attachments/${inlineId}/content`)
+        .set(auth(viewer.token))
+        .expect(200);
+
+      const snapshot = await server()
+        .get(`/api/v1/boards/${boardId}`)
+        .set(auth(admin.token))
+        .expect(200);
+      expect(snapshot.body.cards[cardId].attachmentCount).toBe(1);
+    });
+
+    it("soft-deletes inline media referenced by a deleted comment", async () => {
+      const res = await server()
+        .post(`/api/v1/cards/${cardId}/attachments?inline=1`)
+        .set(auth(member.token))
+        .attach("file", png, {
+          filename: "in-comment.png",
+          contentType: "image/png",
+        })
+        .expect(201);
+      const inlineId = res.body.id as string;
+
+      // A regular attachment referenced from the same text must survive.
+      const regular = await server()
+        .post(`/api/v1/cards/${cardId}/attachments`)
+        .set(auth(member.token))
+        .attach("file", png, {
+          filename: "regular.png",
+          contentType: "image/png",
+        })
+        .expect(201);
+
+      const comment = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(member.token))
+        .send({
+          text: `shot /api/v1/attachments/${inlineId}/content and /api/v1/attachments/${regular.body.id as string}/content`,
+        })
+        .expect(201);
+      await server()
+        .delete(`/api/v1/comments/${comment.body.id as string}`)
+        .set(auth(member.token))
+        .expect(200);
+
+      await server()
+        .get(`/api/v1/attachments/${inlineId}/content`)
+        .set(auth(member.token))
+        .expect(404);
+      await server()
+        .get(`/api/v1/attachments/${regular.body.id as string}/content`)
+        .set(auth(member.token))
+        .expect(200);
+
+      // The badge counts only the regular attachment (1 + this one).
+      const snapshot = await server()
+        .get(`/api/v1/boards/${boardId}`)
+        .set(auth(admin.token))
+        .expect(200);
+      expect(snapshot.body.cards[cardId].attachmentCount).toBe(2);
+    });
   });
 
   describe("avatars", () => {

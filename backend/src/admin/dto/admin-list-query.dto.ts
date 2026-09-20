@@ -38,4 +38,18 @@ export class AdminListQueryDto {
   @IsOptional()
   @IsIn(["all", "active", "disabled", "archived", "deleted"])
   status?: "all" | "active" | "disabled" | "archived" | "deleted";
+
+  /** Inclusive lower bound of the row's `createdAt`, unix ms (TASK-48). */
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(0)
+  from?: number;
+
+  /** Inclusive upper bound of the row's `createdAt`, unix ms. */
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(0)
+  to?: number;
 }

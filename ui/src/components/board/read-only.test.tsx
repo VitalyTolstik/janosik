@@ -16,22 +16,30 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 
-vi.mock("@/components/editor/DescriptionEditor", () => ({
-  DescriptionEditor: ({
-    value,
-    readOnly,
-  }: {
-    value: string;
-    readOnly?: boolean;
-  }) => (
-    <textarea
-      aria-label="Description"
-      data-testid="description-editor"
-      readOnly={readOnly}
-      defaultValue={value}
-    />
-  ),
-}));
+vi.mock("@/components/editor/DescriptionEditor", () => {
+  return import("react").then(({ forwardRef }) => ({
+    // forwardRef: the card dialog passes a ref for paste-embedding.
+    DescriptionEditor: forwardRef(function MockedDescriptionEditor(
+      {
+        value,
+        readOnly,
+      }: {
+        value: string;
+        readOnly?: boolean;
+      },
+      _ref: unknown,
+    ) {
+      return (
+        <textarea
+          aria-label="Description"
+          data-testid="description-editor"
+          readOnly={readOnly}
+          defaultValue={value}
+        />
+      );
+    }),
+  }));
+});
 
 /**
  * VIEWER read-only UI (TASK-35). The server answers 403 to every command,

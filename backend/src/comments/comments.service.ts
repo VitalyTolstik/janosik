@@ -15,6 +15,10 @@ const DEFAULT_LIMIT = 50;
 /** Upper bound for `?limit=`. */
 const MAX_LIMIT = 100;
 
+/** Body-embedded attachment references (`…/attachments/<id>/content`). */
+const INLINE_ATTACHMENT_URL =
+  /\/api\/v1\/attachments\/([A-Za-z0-9-]+)\/content/g;
+
 /**
  * Card comments (§7.4, TASK-28) — plain text, ordinary REST.
  *
@@ -176,6 +180,20 @@ export class CommentsService {
       "comment_deleted",
       comment.id,
     );
+    // Inline media pasted into the comment die with it — soft-deleted like
+    // every attachment (the physical blob stays, matching the soft-delete
+    // restore story; the purge job reclaims rows later).
+    await this.unlinkInlineAttachments(comment.text);
+  }
+
+  /** Soft-delete the inline attachments embedded in a deleted comment. */
+  private async unlinkInlineAttachments(text: string): Promise<void> {
+    const ids = [...text.matchAll(INLINE_ATTACHMENT_URL)].map((m) => m[1]);
+    if (ids.length === 0) return;
+    await this.prisma.attachment.updateMany({
+      where: { id: { in: ids }, isInline: true, deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
   }
 
   /** Fan a comment write out to every open stream of the board (TASK-37). */

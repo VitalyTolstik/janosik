@@ -400,6 +400,7 @@ export function ConfirmDialog({
   body,
   confirmLabel,
   destructive = true,
+  busy = false,
   onConfirm,
   onClose,
 }: {
@@ -408,6 +409,7 @@ export function ConfirmDialog({
   body: string;
   confirmLabel: string;
   destructive?: boolean;
+  busy?: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -420,12 +422,14 @@ export function ConfirmDialog({
           <DialogDescription className="text-xs">{body}</DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-2">
-          <Button size="sm" variant="outline" onClick={onClose}>
+          <Button size="sm" variant="outline" disabled={busy} onClick={onClose}>
             {t("admin.common.cancel")}
           </Button>
           <Button
             size="sm"
             variant={destructive ? "destructive" : "default"}
+            disabled={busy}
+            data-testid="admin-confirm-accept"
             onClick={onConfirm}
           >
             {confirmLabel}

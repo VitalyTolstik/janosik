@@ -318,6 +318,10 @@ model Attachment {
   sizeBytes    Int // ≤ LIMITS.attachmentSize (25 MB)
   uploadedBy   User      @relation(fields: [uploadedById], references: [id])
   uploadedById String
+  // Inline media (TASK-48 paste): embedded into a description/comment body
+  // via its `content` URL instead of the attachment list — hidden from
+  // `list()` and excluded from the card-face `attachmentCount`.
+  isInline     Boolean   @default(false)
   deletedAt    DateTime? // soft-delete (§7.0)
   createdAt    DateTime  @default(now())
 

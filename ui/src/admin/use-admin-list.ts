@@ -14,6 +14,13 @@ import type { AdminListParams } from "./admin-client";
 
 const SEARCH_DEBOUNCE_MS = 250;
 
+/** Preset windows behind the period tabs (`from` = now − window). */
+export const PERIOD_WINDOWS_MS: Record<string, number> = {
+  "24h": 24 * 3_600_000,
+  "7d": 7 * 24 * 3_600_000,
+  "30d": 30 * 24 * 3_600_000,
+};
+
 export interface AdminListState<T> {
   items: T[];
   total: number;
@@ -23,6 +30,9 @@ export interface AdminListState<T> {
   setSearch: (value: string) => void;
   status: string;
   setStatus: (value: string) => void;
+  /** Age window over `createdAt` ("any" disables the bound). */
+  period: string;
+  setPeriod: (value: string) => void;
   offset: number;
   setOffset: (value: number) => void;
   limit: number;
@@ -49,6 +59,7 @@ export function useAdminList<T>(
   const [rawSearch, setRawSearch] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatusRaw] = useState("all");
+  const [period, setPeriodRaw] = useState("any");
   const [offset, setOffset] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
   const [result, setResult] = useState<ListResult<T> | null>(null);
@@ -61,12 +72,14 @@ export function useAdminList<T>(
     return () => clearTimeout(timer);
   }, [rawSearch]);
 
-  const requestKey = `${search}|${status}|${limit}|${offset}|${reloadKey}`;
+  const requestKey = `${search}|${status}|${period}|${limit}|${offset}|${reloadKey}`;
 
   useEffect(() => {
     let cancelled = false;
+    const from =
+      period === "any" ? undefined : Date.now() - PERIOD_WINDOWS_MS[period];
     void fetcherRef
-      .current({ search, status, limit, offset })
+      .current({ search, status, from, limit, offset })
       .then((page) => {
         if (cancelled) return;
         setResult({
@@ -83,7 +96,7 @@ export function useAdminList<T>(
     return () => {
       cancelled = true;
     };
-  }, [requestKey, search, status, limit, offset]);
+  }, [requestKey, search, status, period, limit, offset]);
 
   const loading = result === null || result.key !== requestKey;
 
@@ -93,6 +106,11 @@ export function useAdminList<T>(
 
   const setStatus = useCallback((value: string) => {
     setStatusRaw(value);
+    setOffset(0);
+  }, []);
+
+  const setPeriod = useCallback((value: string) => {
+    setPeriodRaw(value);
     setOffset(0);
   }, []);
 
@@ -109,6 +127,8 @@ export function useAdminList<T>(
     setSearch: setSearchInput,
     status,
     setStatus,
+    period,
+    setPeriod,
     offset,
     setOffset,
     limit,

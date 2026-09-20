@@ -447,12 +447,20 @@ export class ApiClient {
     );
   }
 
-  /** Upload one file (multipart); the server answers 400/413 on limits. */
-  uploadAttachment(cardId: string, file: File): Promise<AttachmentDto> {
+  /**
+   * Upload one file (multipart); the server answers 400/413 on limits.
+   * `inline` marks body-embedded media (pasted into a description/comment):
+   * hidden from the attachment list, no card badge count.
+   */
+  uploadAttachment(
+    cardId: string,
+    file: File,
+    opts: { inline?: boolean } = {},
+  ): Promise<AttachmentDto> {
     const form = new FormData();
     form.append("file", file, file.name);
     return this.request<AttachmentDto>(
-      `/cards/${encodeURIComponent(cardId)}/attachments`,
+      `/cards/${encodeURIComponent(cardId)}/attachments${opts.inline ? "?inline=1" : ""}`,
       { method: "POST", form },
     );
   }
