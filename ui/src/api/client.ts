@@ -486,10 +486,16 @@ export class ApiClient {
     });
   }
 
-  /** Fetch a user's avatar image as a blob (404 when the user has none). */
-  async fetchUserAvatar(userId: string): Promise<Blob> {
+  /**
+   * Fetch a user's avatar image as a blob (404 when the user has none).
+   * The endpoint is served with long-lived `immutable` caching, so callers
+   * pass the stored name as `version` — a new upload produces a new URL and
+   * the browser cache cannot return the previous image.
+   */
+  async fetchUserAvatar(userId: string, version?: string): Promise<Blob> {
+    const base = `/users/${encodeURIComponent(userId)}/avatar`;
     const response = await this.requestRaw(
-      `/users/${encodeURIComponent(userId)}/avatar`,
+      version ? `${base}?v=${encodeURIComponent(version)}` : base,
     );
     return response.blob();
   }

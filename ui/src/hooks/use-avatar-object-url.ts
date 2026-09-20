@@ -44,7 +44,9 @@ export function useAvatarObjectUrl(
     }
     let alive = true;
     api
-      .fetchUserAvatar(userId)
+      // `avatarPath` doubles as the cache-busting version: the endpoint is
+      // served `immutable`, so the same URL would keep the previous image.
+      .fetchUserAvatar(userId, avatarPath)
       .then((blob) => {
         const objectUrl = URL.createObjectURL(blob);
         cache.set(userId, { url: objectUrl, path: avatarPath });
