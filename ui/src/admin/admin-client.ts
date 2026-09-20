@@ -2,7 +2,9 @@ import type {
   AdminAuditRowDto,
   AdminAuthResponseDto,
   AdminBoardCommandRequest,
+  AdminBoardDetailDto,
   AdminBoardRowDto,
+  AdminCardDetailDto,
   AdminCardRowDto,
   AdminCommandRowDto,
   AdminCommentRowDto,
@@ -11,6 +13,9 @@ import type {
   AdminCreateMasterResponse,
   AdminCreateUserRequest,
   AdminCreateUserResponse,
+  AdminEntity,
+  AdminEntityRowMap,
+  AdminGlobalSearchDto,
   AdminMasterRowDto,
   AdminSessionRowDto,
   AdminTokenRowDto,
@@ -18,6 +23,7 @@ import type {
   AdminPage,
   AdminUpdateMasterRequest,
   AdminUpdateUserRequest,
+  AdminUserDetailDto,
   AdminUserDto,
   AdminUserRowDto,
   BoardAggregate,
@@ -123,6 +129,44 @@ export class AdminApiClient {
 
   metrics(): Promise<AdminMetricsDto> {
     return this.request<AdminMetricsDto>("/admin/metrics");
+  }
+
+  // ------------------------------------------------- admin v2 (TASK-48)
+
+  /** Generic listing over any of the `ADMIN_ENTITIES`. */
+  listEntity<E extends AdminEntity>(
+    entity: E,
+    params: AdminListParams = {},
+  ): Promise<AdminPage<AdminEntityRowMap[E]>> {
+    return this.request<AdminPage<AdminEntityRowMap[E]>>(
+      `/admin/entities/${entity}${this.query(params)}`,
+    );
+  }
+
+  /** Cross-entity top matches for the panel omnibox. */
+  globalSearch(query: string): Promise<AdminGlobalSearchDto> {
+    const params = new URLSearchParams({ q: query });
+    return this.request<AdminGlobalSearchDto>(
+      `/admin/search?${params.toString()}`,
+    );
+  }
+
+  userDetail(userId: string): Promise<AdminUserDetailDto> {
+    return this.request<AdminUserDetailDto>(
+      `/admin/users/${encodeURIComponent(userId)}/detail`,
+    );
+  }
+
+  cardDetail(cardId: string): Promise<AdminCardDetailDto> {
+    return this.request<AdminCardDetailDto>(
+      `/admin/cards/${encodeURIComponent(cardId)}/detail`,
+    );
+  }
+
+  boardDetail(boardId: string): Promise<AdminBoardDetailDto> {
+    return this.request<AdminBoardDetailDto>(
+      `/admin/boards/${encodeURIComponent(boardId)}/meta`,
+    );
   }
 
   listMasters(): Promise<AdminPage<AdminMasterRowDto>> {

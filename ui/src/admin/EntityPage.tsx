@@ -1,0 +1,294 @@
+import { useState, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
+import { MoreHorizontal } from "lucide-react";
+import type {
+  AdminEntity,
+  AdminEntityRowMap,
+  AdminPage,
+} from "@janosik/shared";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useToast } from "@/components/Toast";
+import { ApiError } from "@/api/client";
+import { adminApi } from "./admin-client";
+import { useAdminT } from "./admin-i18n";
+import { useAdminList } from "./use-admin-list";
+import {
+  ConfirmDialog,
+  EmptyState,
+  ErrorState,
+  FilterTabs,
+  LoadingState,
+  PageHeader,
+  Pagination,
+  Panel,
+  SearchInput,
+  Table,
+  Td,
+  Th,
+} from "./ui";
+
+/**
+ * Generic entity listing (TASK-48): one table implementation for every
+ * `GET /admin/entities/:entity` variant. A per-entity config supplies the
+ * columns, the optional status filter, the row link (into the detail pages)
+ * and the moderation actions; the page owns search, pagination, loading and
+ * error states so support gets identical behaviour everywhere.
+ */
+
+export interface EntityAction {
+  label: string;
+  destructive?: boolean;
+  /** Pure navigation actions do not toast. */
+  noToast?: boolean;
+  /** Optional confirmation dialog copy. */
+  confirmTitle?: string;
+  confirmBody?: string;
+  run: () => Promise<unknown>;
+}
+
+export interface EntityColumn<T> {
+  label: string;
+  render: (row: T) => ReactNode;
+  className?: string;
+}
+
+export interface EntityListConfig<T> {
+  entity: AdminEntity;
+  title: string;
+  subtitle?: string;
+  /** Optional server-side status filter tabs. */
+  statuses?: Array<{ value: string; label: string }>;
+  columns: Array<EntityColumn<T>>;
+  /** Click target for a row — the entity's detail page when one exists. */
+  rowHref?: (row: T) => string;
+  rowTestId?: (row: T) => string;
+  toolbar?: (reload: () => void) => ReactNode;
+  actions?: (row: T, reload: () => void) => Array<EntityAction>;
+  /** Rows without natural actions still align with the action column. */
+  skipActions?: boolean;
+}
+
+function RowActions({
+  testId,
+  actions,
+  reload,
+}: {
+  testId: string;
+  actions: Array<EntityAction>;
+  reload: () => void;
+}) {
+  const t = useAdminT();
+  const [pending, setPending] = useState<EntityAction | null>(null);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+
+  const execute = async (action: EntityAction) => {
+    setBusy(true);
+    try {
+      await action.run();
+      if (!action.noToast) {
+        toast.success(action.label);
+        reload();
+      }
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 403) {
+        toast.error(t("admin.common.forbidden"));
+      } else if (error instanceof ApiError && error.status === 0) {
+        toast.error(t("admin.common.offline"));
+      } else {
+        toast.error(t("admin.common.actionFailed"));
+      }
+    } finally {
+      setBusy(false);
+      setPending(null);
+    }
+  };
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={t("admin.common.actions")}
+            data-testid={testId}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+          >
+            <MoreHorizontal className="h-4 w-4" aria-hidden />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-44">
+          {actions.map((action) => (
+            <DropdownMenuItem
+              key={action.label}
+              className={
+                action.destructive ? "text-danger focus:text-danger" : undefined
+              }
+              onSelect={() =>
+                action.confirmTitle ? setPending(action) : void execute(action)
+              }
+            >
+              {action.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {pending ? (
+        <ConfirmDialog
+          open
+          title={pending.confirmTitle ?? pending.label}
+          body={pending.confirmBody ?? ""}
+          confirmLabel={pending.label}
+          destructive={pending.destructive ?? true}
+          busy={busy}
+          onConfirm={() => void execute(pending)}
+          onClose={() => (busy ? undefined : setPending(null))}
+        />
+      ) : null}
+    </>
+  );
+}
+
+export function EntityPage<E extends AdminEntity>({
+  config,
+}: {
+  config: EntityListConfig<AdminEntityRowMap[E]>;
+}) {
+  const t = useAdminT();
+  const navigate = useNavigate();
+  const list = useAdminList<AdminEntityRowMap[E]>(
+    (params) =>
+      adminApi.listEntity(config.entity, params) as Promise<
+        AdminPage<AdminEntityRowMap[E]>
+      >,
+  );
+
+  const statusOptions =
+    config.statuses === undefined
+      ? undefined
+      : [
+          { value: "all", label: t("admin.filter.all") },
+          ...config.statuses.map((status) => ({
+            value: status.value,
+            label: status.label,
+          })),
+        ];
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
+      <PageHeader
+        title={config.title}
+        subtitle={config.subtitle}
+        actions={
+          <>
+            <SearchInput value={list.search} onChange={list.setSearch} />
+            {statusOptions ? (
+              <FilterTabs
+                value={list.status}
+                options={statusOptions}
+                onChange={list.setStatus}
+              />
+            ) : null}
+            {config.toolbar?.(list.reload)}
+          </>
+        }
+      />
+      <Panel className="flex min-h-0 flex-1 flex-col">
+        {list.loading ? (
+          <LoadingState />
+        ) : list.error ? (
+          <ErrorState onRetry={list.reload} />
+        ) : list.items.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <>
+            <Table>
+              <thead>
+                <tr>
+                  {config.columns.map((column) => (
+                    <Th key={column.label} className={column.className}>
+                      {column.label}
+                    </Th>
+                  ))}
+                  {config.actions || !config.skipActions ? (
+                    <Th className="w-10 text-right">
+                      <span className="sr-only">
+                        {t("admin.common.actions")}
+                      </span>
+                    </Th>
+                  ) : null}
+                </tr>
+              </thead>
+              <tbody>
+                {list.items.map((row, index) => {
+                  const href = config.rowHref?.(row);
+                  const testId =
+                    config.rowTestId?.(row) ??
+                    `admin-row-${config.entity}-${index}`;
+                  return (
+                    <tr
+                      key={rowHrefKey(row, index)}
+                      data-testid={testId}
+                      className={
+                        href
+                          ? "cursor-pointer transition-colors hover:bg-hover/50"
+                          : undefined
+                      }
+                      onClick={href ? () => void navigate(href) : undefined}
+                    >
+                      {config.columns.map((column) => (
+                        <Td key={column.label} className={column.className}>
+                          {column.render(row)}
+                        </Td>
+                      ))}
+                      {config.actions || !config.skipActions ? (
+                        <Td className="text-right">
+                          {config.actions ? (
+                            <div
+                              onClick={(event) => event.stopPropagation()}
+                              onKeyDown={(event) => event.stopPropagation()}
+                            >
+                              <RowActions
+                                testId={`admin-row-actions-${rowHrefKey(row, index).replaceAll(":", "-")}`}
+                                actions={config.actions(row, list.reload)}
+                                reload={list.reload}
+                              />
+                            </div>
+                          ) : null}
+                        </Td>
+                      ) : null}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+            <Pagination
+              total={list.total}
+              limit={list.limit}
+              offset={list.offset}
+              onChange={list.setOffset}
+            />
+          </>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+function rowHrefKey(row: unknown, index: number): string {
+  const composite = row as {
+    id?: string;
+    cardId?: string;
+    labelId?: string;
+  };
+  if (composite.id) return composite.id;
+  if (composite.cardId && composite.labelId) {
+    return `${composite.cardId}:${composite.labelId}`;
+  }
+  return String(index);
+}

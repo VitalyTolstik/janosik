@@ -147,13 +147,12 @@ describe("AdminApp", () => {
     vi.stubGlobal("fetch", server.fetchImpl);
     renderAdmin("/admin/users");
 
-    fireEvent.pointerDown(
-      await screen.findByTestId("admin-user-menu-member@example.com"),
-      { button: 0 },
-    );
+    fireEvent.pointerDown(await screen.findByTestId("admin-row-actions-u-1"), {
+      button: 0,
+    });
     fireEvent.click(await screen.findByText(t("admin.users.action.disable")));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByText(t("admin.users.action.disable")));
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
 
     await waitFor(() => {
       expect(
@@ -190,7 +189,7 @@ describe("AdminApp", () => {
 
   it("surfaces a list failure and retries on demand", async () => {
     const server = serverWith();
-    server.failNext = ["/admin/users"];
+    server.failNext = ["/admin/entities/users"];
     vi.stubGlobal("fetch", server.fetchImpl);
     renderAdmin("/admin/users");
 
@@ -219,12 +218,12 @@ describe("AdminApp", () => {
     fireEvent.click(screen.getByTestId("admin-board-submit"));
     expect(await screen.findByText("Launch")).toBeTruthy();
 
-    fireEvent.pointerDown(await screen.findByTestId("admin-board-menu-b-1"), {
+    fireEvent.pointerDown(await screen.findByTestId("admin-row-actions-b-1"), {
       button: 0,
     });
     fireEvent.click(await screen.findByText(t("admin.boards.action.archive")));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByText(t("admin.boards.action.archive")));
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
     await waitFor(() => {
       expect(
         server.state.boards.find((board) => board.id === "b-1")?.archivedAt,
@@ -265,7 +264,7 @@ describe("AdminApp", () => {
     ];
     const server = new FakeAdminServer(state);
     vi.stubGlobal("fetch", server.fetchImpl);
-    const view = renderAdmin("/admin/log");
+    const view = renderAdmin("/admin/commands");
 
     expect(await screen.findByText("ADD_CARD")).toBeTruthy();
     expect(screen.getByText("Roadmap")).toBeTruthy();
@@ -323,9 +322,7 @@ describe("AdminApp", () => {
       await screen.findByText(t("admin.masters.action.resetPassword")),
     );
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(
-      within(dialog).getByText(t("admin.masters.action.resetPassword")),
-    );
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
 
     expect(
       await screen.findByTestId("admin-master-password"),
@@ -367,12 +364,13 @@ describe("admin content and security pages", () => {
     vi.stubGlobal("fetch", server.fetchImpl);
     renderAdmin("/admin/cards");
 
-    fireEvent.pointerDown(await screen.findByTestId("admin-card-menu-card-1"), {
-      button: 0,
-    });
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-row-actions-card-1"),
+      { button: 0 },
+    );
     fireEvent.click(await screen.findByText(t("admin.cards.action.archive")));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByText(t("admin.cards.action.archive")));
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
 
     await waitFor(() => {
       expect(server.state.cards[0]?.archivedAt).not.toBeNull();
@@ -384,7 +382,7 @@ describe("admin content and security pages", () => {
     ).toBe(true);
   });
 
-  it("renders the foreign keys so a row can be traced to its parents", async () => {
+  it("links rows into their detail pages", async () => {
     const state = serverWith().state;
     state.boards = [
       adminBoard({ id: "b-7", userId: "u-42", ownerEmail: "owner@ex.com" }),
@@ -396,20 +394,15 @@ describe("admin content and security pages", () => {
     vi.stubGlobal("fetch", server.fetchImpl);
 
     renderAdmin("/admin/boards");
-    expect(
-      await screen.findByTestId("admin-board-owner-b-7"),
-    ).toHaveTextContent("u-42");
-    expect(screen.getByTestId("admin-board-owner-b-7")).toHaveTextContent(
-      "owner@ex.com",
-    );
+    const ownerLink = await screen.findByTestId("admin-board-row-b-7");
+    expect(ownerLink).toHaveTextContent("owner@ex.com");
 
     renderAdmin("/admin/cards");
+    const cardLink = await screen.findByTestId("admin-card-row-card-1");
+    expect(cardLink).toHaveTextContent("Moderate me");
     expect(
-      await screen.findByTestId("admin-card-board-card-1"),
-    ).toHaveTextContent("b-7");
-    expect(screen.getByTestId("admin-card-column-card-1")).toHaveTextContent(
-      "col-9",
-    );
+      cardLink.querySelector('a[href="/admin/boards/b-7"]'),
+    ).not.toBeNull();
   });
 
   it("revokes a single session", async () => {
@@ -419,15 +412,17 @@ describe("admin content and security pages", () => {
     vi.stubGlobal("fetch", server.fetchImpl);
     renderAdmin("/admin/sessions");
 
-    fireEvent.click(
-      await screen.findByTestId("admin-session-revoke-session-1"),
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-row-actions-session-1"),
+      { button: 0 },
     );
+    fireEvent.click(await screen.findByText(t("admin.sessions.action.revoke")));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(
-      within(dialog).getByText(t("admin.sessions.action.revoke")),
-    );
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
 
-    expect(await screen.findByText(t("admin.sessions.empty"))).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.queryByTestId("admin-row-actions-session-1")).toBeNull();
+    });
     expect(
       server.requests.some(
         (request) => request.path === "/admin/sessions/session-1/revoke",
@@ -442,13 +437,19 @@ describe("admin content and security pages", () => {
     vi.stubGlobal("fetch", server.fetchImpl);
     renderAdmin("/admin/tokens");
 
-    fireEvent.click(await screen.findByTestId("admin-token-revoke-token-1"));
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-row-actions-token-1"),
+      {
+        button: 0,
+      },
+    );
+    fireEvent.click(await screen.findByText(t("admin.tokens.action.revoke")));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByText(t("admin.tokens.action.revoke")));
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
 
     // A revoked token keeps its revokedAt timestamp and loses the action.
     await waitFor(() => {
-      expect(screen.queryByTestId("admin-token-revoke-token-1")).toBeNull();
+      expect(screen.queryByTestId("admin-row-actions-token-1")).toBeNull();
     });
     expect(
       server.requests.some(
@@ -464,13 +465,13 @@ describe("admin content and security pages", () => {
     vi.stubGlobal("fetch", server.fetchImpl);
     renderAdmin("/admin/comments");
 
-    fireEvent.click(
-      await screen.findByTestId("admin-comment-delete-comment-1"),
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-row-actions-comment-1"),
+      { button: 0 },
     );
+    fireEvent.click(await screen.findByText(t("admin.comments.action.delete")));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(
-      within(dialog).getByText(t("admin.comments.action.delete")),
-    );
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
 
     expect(
       await screen.findByText(t("admin.comments.status.deleted")),
