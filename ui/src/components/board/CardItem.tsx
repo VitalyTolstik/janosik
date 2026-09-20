@@ -25,7 +25,7 @@ import { HighlightedText } from "@/components/ui/highlight";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useAuth } from "@/auth/AuthContext";
 import { cn } from "@/lib/utils";
-import { formatRelative, useHour12, useI18n } from "@/i18n";
+import { useI18n } from "@/i18n";
 import { useBoardMember, useEntityAttribution } from "@/store/board-live";
 import { descriptionSnippet } from "@/utils/filter";
 import { userAvatarVar, userLabel } from "@/utils/avatar";
@@ -38,6 +38,12 @@ import {
 
 interface CardItemProps {
   card: Card;
+  /**
+   * The board id — the assignee badge (TASK-49) resolves the member's
+   * avatar through the member directory. A primitive prop on purpose: the
+   * memoized face must not subscribe to board state (TASK-21.4).
+   */
+  boardId?: string;
   /** Labels resolved from the board — the card can carry several. */
   labels: Label[];
   /** True while the card is being dragged (hides the source copy). */
@@ -114,6 +120,7 @@ function useClamped(): [React.RefCallback<HTMLParagraphElement>, boolean] {
  */
 function CardItemView({
   card,
+  boardId,
   labels,
   isDragging,
   highlight,
@@ -126,11 +133,10 @@ function CardItemView({
   duplicateDisabledReason,
 }: CardItemProps) {
   const [titleRef, titleClamped] = useClamped();
-  const { t, lang } = useI18n();
-  const hour12 = useHour12();
+  const { t } = useI18n();
   const { user } = useAuth();
-  const openProfile = useOpenProfile();
-  // Attribution (TASK-36): who last changed the card, unless that is me.
+  // Attribution (TASK-36): foreign-change highlight only — the "who
+  // changed it" avatar footer was retired in TASK-49 (owner's call).
   const attribution = useEntityAttribution(card.id);
   const authorMember = useBoardMember(
     attribution?.boardId,
@@ -143,9 +149,6 @@ function CardItemView({
   const foreignColor = foreignAuthor
     ? userAvatarVar(foreignAuthor.userId, authorMember?.avatarColor)
     : undefined;
-  const authorName = foreignAuthor
-    ? userLabel(authorMember?.displayName ?? null, authorMember?.email ?? "")
-    : "";
   // Archive uses the board-archive two-step: first click arms the
   // confirmation (✓ / ✗), so a brushed click never archives silently.
   const [confirmArchive, setConfirmArchive] = useState(false);
@@ -430,35 +433,12 @@ function CardItemView({
           ) : null}
         </div>
       ) : null}
-      {/* Who changed it, unless it was me (TASK-36): the author's avatar
-          next to the relative time of that change. It lives on its own
-          left-aligned footer line — inside the badge row `ml-auto` made
-          narrow cards wrap it into a ragged right edge. */}
-      {foreignAuthor ? (
-        <button
-          type="button"
-          data-testid="card-last-actor"
-          title={t("card.changedBy", { name: authorName })}
-          aria-label={t("profile.open", { name: authorName })}
-          onClick={(event) => {
-            event.stopPropagation();
-            openProfile(foreignAuthor.userId);
-          }}
-          className="mt-1.5 flex items-center gap-1 rounded text-[10px] text-muted-foreground/80 transition-colors hover:text-foreground"
-        >
-          <UserAvatar
-            userId={foreignAuthor.userId}
-            displayName={authorMember?.displayName ?? null}
-            email={authorMember?.email ?? ""}
-            color={authorMember?.avatarColor}
-            avatarPath={authorMember?.avatarPath}
-            size="xs"
-            className="ring-1 ring-border/60"
-          />
-          <time dateTime={new Date(foreignAuthor.at).toISOString()}>
-            {formatRelative(foreignAuthor.at, lang, Date.now(), hour12)}
-          </time>
-        </button>
+      {/* Assignee (TASK-49): Jira puts the assignee's avatar in the card's
+          bottom-right corner — visible without opening the card, opening the
+          profile on click like the other identity chips. The member
+          directory (not the board JSON) owns the display data. */}
+      {card.assigneeId ? (
+        <AssigneeBadge assigneeId={card.assigneeId} boardId={boardId} />
       ) : null}
       {/* Foreign-change highlight (TASK-36): a soft ring in the author's own
           color for two seconds, or — under reduced motion — a static dot
@@ -497,3 +477,51 @@ function CardItemView({
  * handlers take the card id so they can be hoisted (TASK-21.4).
  */
 export const CardItem = memo(CardItemView);
+
+/**
+ * The assignee's avatar in the card face's bottom-right corner (TASK-49).
+ * Resolves display data from the member directory; falls back to initials
+ * when the assignee has left the board (the id survives in the aggregate).
+ * Rendered only when the card is assigned — the face stays quiet otherwise.
+ */
+function AssigneeBadge({
+  assigneeId,
+  boardId,
+}: {
+  assigneeId: string;
+  boardId?: string;
+}) {
+  const { t } = useI18n();
+  const openProfile = useOpenProfile();
+  const member = useBoardMember(boardId, assigneeId);
+  const name = userLabel(member?.displayName ?? null, member?.email ?? "");
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          data-testid="card-assignee"
+          aria-label={t("card.assignee.assignedTo", { name })}
+          onClick={(event) => {
+            // Don't let the click open the card dialog.
+            event.stopPropagation();
+            openProfile(assigneeId);
+          }}
+          className="absolute bottom-2 right-2 z-10 rounded-full shadow-sm transition-transform hover:scale-110"
+        >
+          <UserAvatar
+            userId={member?.userId ?? assigneeId}
+            displayName={member?.displayName ?? null}
+            email={member?.email ?? ""}
+            color={member?.avatarColor}
+            avatarPath={member?.avatarPath}
+            size="sm"
+            className="ring-2 ring-background"
+          />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{t("card.assignee.assignedTo", { name })}</TooltipContent>
+    </Tooltip>
+  );
+}

@@ -12,6 +12,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -21,12 +22,10 @@ import { DueBadge } from "@/components/board/DueBadge";
 import { PriorityBadge } from "@/components/board/PriorityBadge";
 import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
 import { LabelPicker } from "@/components/board/LabelPicker";
-import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { DueDatePickerContent } from "@/components/board/CardDueDate";
 import { HighlightedText } from "@/components/ui/highlight";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/ui/user-avatar";
-import { useAuth } from "@/auth/AuthContext";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -45,7 +44,11 @@ import {
 import { useToast } from "@/components/Toast";
 import { formatDateOnly, useI18n } from "@/i18n";
 import { useCardLabels } from "@/hooks/use-card-labels";
-import { useBoardMember, useEntityAttribution } from "@/store/board-live";
+import {
+  useBoardMember,
+  useBoardMembersList,
+  useEntityAttribution,
+} from "@/store/board-live";
 import { userAvatarVar, userLabel } from "@/utils/avatar";
 import { priorityRank } from "@/utils/priority";
 import { isColumnFull } from "@janosik/shared";
@@ -84,7 +87,8 @@ interface TableViewProps {
 }
 
 /** Sortable headers (TASK-14.1 item 7). */
-type SortKey = "title" | "column" | "due" | "priority" | "createdAt";
+type SortKey =
+  "title" | "column" | "due" | "priority" | "assignee" | "createdAt";
 
 interface SortState {
   key: SortKey;
@@ -94,6 +98,7 @@ interface SortState {
 /** Optional columns beyond the four base ones (TASK-14.1 item 11). */
 const OPTIONAL_COLUMNS = [
   "priority",
+  "assignee",
   "checklists",
   "description",
   "createdAt",
@@ -151,6 +156,19 @@ export function TableView({
   const { t, lang } = useI18n();
   const toast = useToast();
   const labelsOf = useCardLabels(board?.labels ?? NO_LABELS);
+  // The member directory powers the assignee column (name resolution for
+  // sorting) — one subscription for the whole table (TASK-49).
+  const members = useBoardMembersList(board?.id);
+  const assigneeNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of members) {
+      map.set(
+        member.userId,
+        userLabel(member.displayName, member.email).toLowerCase(),
+      );
+    }
+    return map;
+  }, [members]);
 
   const [sort, setSort] = useState<SortState | null>(null);
   const [visibleColumns, setVisibleColumns] =
@@ -273,6 +291,15 @@ export function TableView({
             (priorityRank(a.card.priority) - priorityRank(b.card.priority)) *
             sort.dir
           );
+        case "assignee": {
+          // Unassigned rows sort last regardless of direction (Jira).
+          if (!a.card.assigneeId && !b.card.assigneeId) return 0;
+          if (!a.card.assigneeId) return 1;
+          if (!b.card.assigneeId) return -1;
+          const aName = assigneeNameById.get(a.card.assigneeId) ?? "";
+          const bName = assigneeNameById.get(b.card.assigneeId) ?? "";
+          return aName.localeCompare(bName) * sort.dir;
+        }
         case "createdAt":
           return (a.card.createdAt - b.card.createdAt) * sort.dir;
       }
@@ -407,6 +434,15 @@ export function TableView({
                   className="w-28"
                 />
               ) : null}
+              {visibleColumns.includes("assignee") ? (
+                <SortHeader
+                  label={t("view.table.assignee")}
+                  sortKey="assignee"
+                  sort={sort}
+                  onCycle={cycleSort}
+                  className="w-36"
+                />
+              ) : null}
               {visibleColumns.includes("checklists") ? (
                 <th
                   scope="col"
@@ -465,6 +501,7 @@ export function TableView({
                 <TableRow
                   key={card.id}
                   card={card}
+                  boardId={board?.id}
                   cardLabels={labelsOf(card.labelIds)}
                   columnId={column.id}
                   columnTitle={column.title}
@@ -499,6 +536,8 @@ export function TableView({
 
 interface TableRowProps {
   card: Card;
+  /** The board id — resolves the assignee cell's member (TASK-49). */
+  boardId: string | undefined;
   /** Resolved labels of this card (stable — see `useCardLabels`). */
   cardLabels: Label[];
   columnId: string;
@@ -534,6 +573,7 @@ interface TableRowProps {
 
 function TableRowBody({
   card,
+  boardId,
   cardLabels,
   columnId,
   columnTitle,
@@ -558,26 +598,16 @@ function TableRowBody({
   onDeleteLabel,
 }: TableRowProps) {
   const { t, lang } = useI18n();
-  const { user } = useAuth();
-  const openProfile = useOpenProfile();
-  // Attribution (TASK-36): who last changed the row, plus the transient
-  // foreign highlight — the same ring semantics as the card face.
+  // Attribution (TASK-36): the transient foreign highlight only — the
+  // "who changed it" avatar chip was retired in TASK-49 (owner's call).
   const attribution = useEntityAttribution(card.id);
   const authorMember = useBoardMember(
     attribution?.boardId,
     attribution?.userId,
   );
-  const foreignAuthor =
-    attribution !== undefined && attribution.userId !== user?.id
-      ? attribution
-      : undefined;
   const foreignColor = userAvatarVar(
     attribution?.userId ?? "",
     authorMember?.avatarColor,
-  );
-  const authorName = userLabel(
-    authorMember?.displayName ?? null,
-    authorMember?.email ?? "",
   );
   return (
     <tr
@@ -826,6 +856,11 @@ function TableRowBody({
           <PriorityBadge priority={card.priority ?? "medium"} showLabel />
         </td>
       ) : null}
+      {visibleColumns.includes("assignee") ? (
+        <td className="px-3 py-2" data-testid="table-assignee">
+          <AssigneeCell boardId={boardId} assigneeId={card.assigneeId} />
+        </td>
+      ) : null}
       {visibleColumns.includes("checklists") ? (
         <td className="px-3 py-2">
           {(() => {
@@ -865,32 +900,7 @@ function TableRowBody({
       ) : null}
       {visibleColumns.includes("updatedAt") ? (
         <td className="px-3 py-2 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5">
-            {foreignAuthor ? (
-              <button
-                type="button"
-                data-testid="table-last-actor"
-                title={t("card.changedBy", { name: authorName })}
-                aria-label={t("profile.open", { name: authorName })}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  openProfile(foreignAuthor.userId);
-                }}
-                className="inline-flex rounded"
-              >
-                <UserAvatar
-                  userId={foreignAuthor.userId}
-                  displayName={authorMember?.displayName ?? null}
-                  email={authorMember?.email ?? ""}
-                  color={authorMember?.avatarColor}
-                  avatarPath={authorMember?.avatarPath}
-                  size="xs"
-                  className="h-4 w-4 text-[8px] ring-1 ring-border/60"
-                />
-              </button>
-            ) : null}
-            {formatDateOnly(card.updatedAt, lang)}
-          </span>
+          {formatDateOnly(card.updatedAt, lang)}
         </td>
       ) : null}
       {visibleColumns.includes("activity") ? (
@@ -915,6 +925,38 @@ function TableRowBody({
  * is uncontrolled, so typing in one row does not touch the others.
  */
 const TableRow = memo(TableRowBody);
+
+/**
+ * One assignee cell (TASK-49): avatar + name from the member directory,
+ * initials fallback when the assignee has left the board. `—` keeps the
+ * column honest while the card is unassigned.
+ */
+function AssigneeCell({
+  boardId,
+  assigneeId,
+}: {
+  boardId: string | undefined;
+  assigneeId?: string;
+}) {
+  const member = useBoardMember(boardId, assigneeId ?? null);
+  if (!assigneeId) {
+    return <span className="text-xs text-muted-foreground/60">—</span>;
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm">
+      <UserAvatar
+        userId={assigneeId}
+        displayName={member?.displayName ?? null}
+        email={member?.email ?? ""}
+        color={member?.avatarColor}
+        avatarPath={member?.avatarPath}
+        size="xs"
+        className="ring-1 ring-border/60"
+      />
+      {userLabel(member?.displayName ?? null, member?.email ?? "")}
+    </span>
+  );
+}
 
 /** Table header cell with the asc → desc → reset click cycle. */
 function SortHeader({

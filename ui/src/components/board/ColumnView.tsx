@@ -38,6 +38,8 @@ const NO_IDS: string[] = [];
 
 interface ColumnViewProps {
   column: Column;
+  /** The board id — resolves the assignee badge's member (TASK-49). */
+  boardId?: string;
   /**
    * The cards to render, in order. Resolved by the caller (`useCardList`)
    * so the array keeps its identity while nothing in this column changes —
@@ -86,6 +88,7 @@ interface ColumnViewProps {
  */
 function ColumnViewBody({
   column,
+  boardId,
   cards,
   labels,
   linkIndex,
@@ -385,6 +388,7 @@ function ColumnViewBody({
                       <li>
                         <SortableCard
                           card={card}
+                          boardId={boardId}
                           labels={cardLabels}
                           highlight={highlight}
                           isCursor={card.id === cursorCardId}

@@ -322,6 +322,19 @@ function build(before: Board, action: BoardAction): BoardAction | null {
       };
     }
 
+    case "SET_CARD_ASSIGN": {
+      const card = before.cards[action.cardId];
+      if (!card) return null;
+      return {
+        ...head,
+        type: "SET_CARD_ASSIGN",
+        cardId: card.id,
+        assigneeId: card.assigneeId ?? null,
+        cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
+      };
+    }
+
     case "ADD_CARD_LINK": {
       const card = before.cards[action.cardId];
       if (!card) return null;

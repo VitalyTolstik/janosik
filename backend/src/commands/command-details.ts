@@ -153,6 +153,20 @@ export function commandDetails(
       };
     }
 
+    case "SET_CARD_ASSIGN": {
+      const from = before.cards[action.cardId];
+      if (!from) return null;
+      return {
+        changes: [
+          {
+            field: "assignee",
+            from: from.assigneeId ?? null,
+            to: action.assigneeId ?? null,
+          },
+        ],
+      };
+    }
+
     case "ADD_CARD_LINK":
     case "REMOVE_CARD_LINK": {
       // The readable half is the target card's title, frozen while the

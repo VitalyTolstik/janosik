@@ -117,6 +117,14 @@ function toPriority(value: unknown): CardPriority | undefined {
 }
 
 /**
+ * Assignee sanitizer (TASK-49): keep a non-blank string id, drop anything
+ * else (hand-edited imports, garbage) to "unassigned".
+ */
+function toAssigneeId(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+/**
  * Card links (TASK-46): only well-formed rows survive — string id, known
  * type, non-blank target — capped to `linksPerCard`. A target that does
  * not exist on this board is *kept*: the link is dangling, not garbage
@@ -249,6 +257,7 @@ function normalizeCard(card: LegacyCard): Card {
     checklists,
     dueDate,
     priority,
+    assigneeId,
     links,
     cover,
     activity,
@@ -278,6 +287,7 @@ function normalizeCard(card: LegacyCard): Card {
       })),
     dueDate: toDueDate(dueDate),
     priority: toPriority(priority),
+    assigneeId: toAssigneeId(assigneeId),
     links: toLinks(links),
     cover: toCover(cover),
     activity: toActivity(activity),

@@ -305,6 +305,7 @@ interface BoardActionsValue {
   ) => void;
   setCardDueDate: (cardId: string, dueDate?: number) => void;
   setCardPriority: (cardId: string, priority: CardPriority) => void;
+  setCardAssign: (cardId: string, assigneeId: string | null) => void;
   /** Links `cardId` to `targetCardId` (TASK-46); the row lands on `cardId`. */
   addCardLink: (
     cardId: string,
@@ -1376,6 +1377,7 @@ function createBoardActions(
   | "deleteChecklistItem"
   | "setCardDueDate"
   | "setCardPriority"
+  | "setCardAssign"
   | "addCardLink"
   | "removeCardLink"
   | "setCardCover"
@@ -1580,6 +1582,14 @@ function createBoardActions(
         type: "SET_CARD_PRIORITY",
         cardId,
         priority,
+        activityIds: ids(1),
+        at: Date.now(),
+      }),
+    setCardAssign: (cardId: string, assigneeId: string | null) =>
+      dispatch({
+        type: "SET_CARD_ASSIGN",
+        cardId,
+        assigneeId,
         activityIds: ids(1),
         at: Date.now(),
       }),

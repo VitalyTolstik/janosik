@@ -67,6 +67,7 @@ interface CardRowJoin {
   columnId: string;
   priority: string | null;
   dueDate: Date | null;
+  assignee: { id: string; email: string; displayName: string | null } | null;
   column: { title: string; boardId: string; board: { title: string } };
   comments: Array<{ id: string }>;
 }
@@ -84,6 +85,8 @@ function toCardRow(card: CardRowJoin): AdminCardRowDto {
     updatedAt: card.updatedAt.getTime(),
     priority: card.priority,
     dueDate: MS(card.dueDate),
+    assigneeId: card.assignee?.id ?? null,
+    assigneeEmail: card.assignee?.email ?? null,
     archivedAt: MS(card.archivedAt),
     deletedAt: MS(card.deletedAt),
   };
@@ -99,6 +102,9 @@ const CARD_ROW_SELECT = {
   columnId: true,
   priority: true,
   dueDate: true,
+  assignee: {
+    select: { id: true, email: true, displayName: true },
+  },
   column: {
     select: { title: true, boardId: true, board: { select: { title: true } } },
   },
@@ -853,6 +859,11 @@ export class AdminEntitiesService {
               { description: like(q) },
               { comments: { some: { text: like(q) } } },
               { labels: { some: { label: { name: like(q) } } } },
+              {
+                assignee: {
+                  OR: [{ email: like(q) }, { displayName: like(q) }],
+                },
+              },
             ],
           },
           orderBy: { updatedAt: "desc" },
@@ -1024,6 +1035,7 @@ export class AdminEntitiesService {
     const [
       memberships,
       createdCards,
+      assignedCards,
       comments,
       attachments,
       sessions,
@@ -1031,6 +1043,7 @@ export class AdminEntitiesService {
       recentCommands,
       recentActivity,
       boardCount,
+      cardsAssigned,
       commentCount,
       attachmentCount,
       sessionCount,
@@ -1055,6 +1068,12 @@ export class AdminEntitiesService {
       }),
       this.prisma.card.findMany({
         where: { id: { in: cardIds } },
+        select: CARD_ROW_SELECT,
+        orderBy: { updatedAt: "desc" },
+        take: 100,
+      }),
+      this.prisma.card.findMany({
+        where: { assigneeId: userId, deletedAt: null },
         select: CARD_ROW_SELECT,
         orderBy: { updatedAt: "desc" },
         take: 100,
@@ -1098,6 +1117,9 @@ export class AdminEntitiesService {
       this.prisma.boardMember.count({
         where: { userId, acceptedAt: { not: null } },
       }),
+      this.prisma.card.count({
+        where: { assigneeId: userId, deletedAt: null },
+      }),
       this.prisma.comment.count({
         where: { authorId: userId, deletedAt: null },
       }),
@@ -1126,6 +1148,7 @@ export class AdminEntitiesService {
       counters: {
         boards: boardCount,
         cardsCreated: createdCards.length,
+        cardsAssigned,
         comments: commentCount,
         attachments: attachmentCount,
         sessions: sessionCount,
@@ -1144,6 +1167,7 @@ export class AdminEntitiesService {
         createdAt: membership.createdAt.getTime(),
       })),
       createdCards: createdCards.map(toCardRow),
+      assignedCards: assignedCards.map(toCardRow),
       comments: comments.map(toCommentRow),
       attachments: attachments.map(toAttachmentRow),
       sessions: sessions.map(toSessionRow),
@@ -1165,6 +1189,7 @@ export class AdminEntitiesService {
         coverValue: true,
         dueDate: true,
         priority: true,
+        assignee: { select: { id: true, email: true, displayName: true } },
         archivedAt: true,
         deletedAt: true,
         version: true,
@@ -1347,6 +1372,9 @@ export class AdminEntitiesService {
         description: card.description,
         dueDate: MS(card.dueDate),
         priority: card.priority,
+        assigneeId: card.assignee?.id ?? null,
+        assigneeEmail: card.assignee?.email ?? null,
+        assigneeDisplayName: card.assignee?.displayName ?? null,
         coverType: card.coverType,
         coverValue: card.coverValue,
         version: card.version,

@@ -222,33 +222,6 @@ describe("attribution (TASK-36)", () => {
     );
   }
 
-  it("shows the last foreign author with the relative time", () => {
-    const live = createBoardLive();
-    live.members.set("b-1", [
-      {
-        userId: "u-boris",
-        displayName: "Boris",
-        email: "boris@example.com",
-        role: "MEMBER",
-        expiresAt: null,
-        avatarColor: null,
-        avatarPath: null,
-      },
-    ]);
-    live.attribution.stamp("b-1", "u-boris", ["c-1"], {
-      at: Date.now() - 5 * 60_000,
-    });
-    renderWithLive(live);
-
-    const actor = screen.getByTestId("card-last-actor");
-    expect(actor).toHaveAttribute("title", "Changed by Boris");
-    expect(actor).toHaveTextContent(/min/);
-    expect(screen.getByTestId("user-avatar")).toHaveAttribute(
-      "aria-label",
-      "Boris",
-    );
-  });
-
   it("stays anonymous on my own edits", () => {
     const live = createBoardLive();
     live.attribution.stamp("b-1", ME, ["c-1"]);
@@ -256,31 +229,6 @@ describe("attribution (TASK-36)", () => {
 
     expect(screen.queryByTestId("card-last-actor")).toBeNull();
     expect(screen.queryByTestId("user-avatar")).toBeNull();
-  });
-
-  it("opens the author's profile from the card footer", () => {
-    const live = createBoardLive();
-    live.members.set("b-1", [
-      {
-        userId: "u-boris",
-        displayName: "Boris",
-        email: "boris@example.com",
-        role: "MEMBER",
-        expiresAt: null,
-        avatarColor: null,
-        avatarPath: null,
-      },
-    ]);
-    live.attribution.stamp("b-1", "u-boris", ["c-1"], {
-      at: Date.now() - 5 * 60_000,
-    });
-    renderWithLive(live);
-
-    fireEvent.click(screen.getByTestId("card-last-actor"));
-
-    expect(screen.getByTestId("user-profile-dialog")).toBeInTheDocument();
-    expect(screen.getByTestId("user-profile-name")).toHaveTextContent("Boris");
-    expect(screen.getByTestId("user-profile-role")).toHaveTextContent("Member");
   });
 
   it("paints the foreign change ring while the highlight lasts", () => {
@@ -292,5 +240,80 @@ describe("attribution (TASK-36)", () => {
     expect(mark).not.toBeNull();
     expect(mark?.querySelector(".janosik-foreign-ring")).not.toBeNull();
     expect(mark?.querySelector(".janosik-foreign-dot")).not.toBeNull();
+  });
+});
+
+describe("assignee badge (TASK-49)", () => {
+  const MEMBER = {
+    userId: "u-boris",
+    displayName: "Boris",
+    email: "boris@example.com",
+    role: "MEMBER" as const,
+    expiresAt: null,
+    avatarColor: null,
+    avatarPath: null,
+  };
+
+  function renderWithLive(live: BoardLive, card: Card = baseCard) {
+    return render(
+      <I18nProvider>
+        <TooltipProvider>
+          <BoardLiveProvider live={live}>
+            <UserProfileProvider boardId="b-1">
+              <AuthContext.Provider
+                value={{
+                  status: "authenticated",
+                  user: {
+                    id: "u-me",
+                    email: "me@example.com",
+                    displayName: "Me",
+                    avatarColor: null,
+                    avatarPath: null,
+                    createdAt: 0,
+                  },
+                  login: async () => {},
+                  register: async () => {},
+                  updateUser: () => {},
+                  logout: async () => {},
+                }}
+              >
+                <CardItem card={card} boardId="b-1" labels={[]} />
+              </AuthContext.Provider>
+            </UserProfileProvider>
+          </BoardLiveProvider>
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+  }
+
+  it("shows the assignee's avatar in the corner", () => {
+    const live = createBoardLive();
+    live.members.set("b-1", [MEMBER]);
+    renderWithLive(live, { ...baseCard, assigneeId: "u-boris" });
+
+    expect(screen.getByTestId("card-assignee")).toBeInTheDocument();
+    expect(screen.getByTestId("user-avatar")).toHaveAttribute(
+      "aria-label",
+      "Boris",
+    );
+  });
+
+  it("opens the assignee's profile from the badge", () => {
+    const live = createBoardLive();
+    live.members.set("b-1", [MEMBER]);
+    renderWithLive(live, { ...baseCard, assigneeId: "u-boris" });
+
+    fireEvent.click(screen.getByTestId("card-assignee"));
+
+    expect(screen.getByTestId("user-profile-dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("user-profile-name")).toHaveTextContent("Boris");
+  });
+
+  it("renders nothing while the card is unassigned", () => {
+    const live = createBoardLive();
+    live.members.set("b-1", [MEMBER]);
+    renderWithLive(live);
+
+    expect(screen.queryByTestId("card-assignee")).toBeNull();
   });
 });

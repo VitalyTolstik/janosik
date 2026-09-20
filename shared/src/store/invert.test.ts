@@ -291,6 +291,12 @@ const PLANS: Record<BoardAction["type"], Plan> = {
     { type: "SET_CARD_PRIORITY", cardId: "c-1", priority: "blocker", at: AT },
     { type: "SET_CARD_PRIORITY", cardId: "c-2", priority: "lowest", at: AT },
   ],
+  SET_CARD_ASSIGN: [
+    // Both cards start unassigned, so both actually change the card; the
+    // inverses reset to `null` (dropping the field) and restore.
+    { type: "SET_CARD_ASSIGN", cardId: "c-1", assigneeId: "user-1", at: AT },
+    { type: "SET_CARD_ASSIGN", cardId: "c-2", assigneeId: "user-2", at: AT },
+  ],
   ADD_CARD_LINK: [
     // A fresh pair (c-2 ⇄ c-3 is unlinked in the fixture).
     {

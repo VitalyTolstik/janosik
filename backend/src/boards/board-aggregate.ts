@@ -183,6 +183,9 @@ function toCard(
     ...(checklists ? { checklists } : {}),
     ...(card.dueDate ? { dueDate: card.dueDate.getTime() } : {}),
     ...(card.priority ? { priority: card.priority as Card["priority"] } : {}),
+    // Assignee (TASK-49): raw user id; display data resolves client-side
+    // from the member directory.
+    ...(card.assigneeId ? { assigneeId: card.assigneeId } : {}),
     ...(links && links.length > 0 ? { links } : {}),
     ...(card.coverType && card.coverValue
       ? {

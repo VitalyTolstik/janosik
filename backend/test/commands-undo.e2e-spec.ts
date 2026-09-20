@@ -181,6 +181,14 @@ describe("Undo contract: command then inverse (e2e)", () => {
 
   it("returns the exact aggregate for every invertible action", async () => {
     const before = await getAggregate();
+    // The undo actor is the board's creator — the one member an assignee
+    // command may name (TASK-49 membership precondition).
+    const actorId = (
+      await prisma.user.findUniqueOrThrow({
+        where: { email: EMAIL },
+        select: { id: true },
+      })
+    ).id;
 
     const cases: Array<[string, Record<string, unknown>]> = [
       ["RENAME_BOARD", { type: "RENAME_BOARD", title: "Renamed" }],
@@ -222,6 +230,14 @@ describe("Undo contract: command then inverse (e2e)", () => {
       [
         "SET_CARD_PRIORITY",
         { type: "SET_CARD_PRIORITY", cardId: "card-1", priority: "highest" },
+      ],
+      [
+        "SET_CARD_ASSIGN",
+        {
+          type: "SET_CARD_ASSIGN",
+          cardId: "card-1",
+          assigneeId: actorId,
+        },
       ],
       [
         "ADD_CARD_LINK",

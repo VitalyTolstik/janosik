@@ -157,6 +157,35 @@ describe("CardHistory", () => {
     expect(diffs[0]).toHaveTextContent("Blocker");
   });
 
+  it("renders the assignee sentence with the member fallback (TASK-49)", async () => {
+    const server = new FakeServer();
+    server.seedActivity("card-1", [
+      commandEntry({
+        id: "assign",
+        type: "SET_CARD_ASSIGN",
+        changes: [{ field: "assignee", from: null, to: "u-boris" }],
+      }),
+      commandEntry({
+        id: "unassign",
+        seq: 2,
+        type: "SET_CARD_ASSIGN",
+        changes: [{ field: "assignee", from: "u-boris", to: null }],
+      }),
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+    renderHistory();
+
+    // The member directory is empty here — the raw id surfaces as the
+    // name fallback; the unassign half reads as the localized sentence.
+    expect(
+      await screen.findByText("Assignee changed to u-boris"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Removed the assignee")).toBeInTheDocument();
+    const diffs = screen.getAllByTestId("history-diff");
+    expect(diffs[0]).toHaveTextContent("Assignee");
+    expect(diffs[0]).toHaveTextContent("u-boris");
+  });
+
   it("highlights only the changed fragment of a long description", async () => {
     const server = new FakeServer();
     const wall = "0123456789".repeat(10); // 100 identical chars on both sides
