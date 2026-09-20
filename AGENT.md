@@ -454,6 +454,26 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   через render-phase паттерн «adjust state when a prop changes»; бейджи на
   морде (`card-links-badge`, красный `card-blocked-badge`), фасеты
   `blocked`/`hasLinks` в фильтрах, история/команды в `CardHistory`.
+- **Вложения и аватары (TASK-47):** `Attachment` (soft-delete, FK
+  RESTRICT) + blob-файлы на диске в `UPLOAD_DIR` (дефолт `data/uploads`,
+  git-игнор; jest cwd=backend → `backend/data/`, тесты чистят его в
+  afterAll). storedName = UUID + sanitized ext (защита от traversal),
+  fileName = basename без control-символов ≤200; allowlist mime
+  (`ATTACHMENT_MIME_ALLOWLIST`, 25MB×20/карточка; аватар 2MB,
+  image/*). REST вне командного контура (как комменты — undo не
+  покрывает): гвард по `cardId` ИЛИ `attachmentId` в
+  `card-access.guard.ts`; удаление — uploader или board ADMIN. Скачивание
+  браузером только через auth-запрос (fetch → Blob → object URL,
+  `requestRaw` с 401-refresh-retry) — прямые `<a href>` не работают
+  (cookie + сторонний origin). Денормализация `Card.attachmentCount`
+  (инкремент/декремент в той же транзакции, omitted при 0) + activity
+  `attachment_added/deleted` (snake_case, НЕ в `CARD_ACTIVITY_TYPES`,
+  detail=attachmentId). `User.avatarPath` течёт сквозь
+  auth-user.mapper/presence join/roster/updateUser — при добавлении
+  полей юзера не забывать все три точки. Aватарный object URL
+  module-кэшируется по userId+avatarPath (`use-avatar-object-url.ts`) —
+  иначе каждый ререндер дёргает fetch. e2e-wipe: `attachment.deleteMany()`
+  перед `cardLink` (FK-порядок).
 - **Markdown-поверхности:** лимит комментария 10k (`LIMITS.comment`,
   колонка `Comment.text` — `@db.Text`); композер — premium-Save слева +
   тихий Cancel рядом, оба дисейблятся на пустом черновике (Cancel — чтобы
