@@ -9,13 +9,13 @@ import type {
   LabelColor,
 } from "../types/kanban";
 import {
-  CARD_LINK_TYPES,
   CARD_PRIORITIES,
   COVER_COLORS,
   COVER_GRADIENTS,
   LABEL_COLORS,
 } from "../types/kanban";
 import type { BoardState } from "./board-reducer";
+import { isCardLinkType, linkPairKey } from "./card-links";
 import { clamp, clampText } from "../utils/text";
 
 /**
@@ -135,9 +135,7 @@ function toLinks(value: unknown): CardLink[] | undefined {
     if (typeof link.targetCardId !== "string" || link.targetCardId === "") {
       continue;
     }
-    if (!(CARD_LINK_TYPES as readonly string[]).includes(link.type as string)) {
-      continue;
-    }
+    if (!isCardLinkType(link.type)) continue;
     links.push({
       id: link.id,
       type: link.type as CardLink["type"],
@@ -146,11 +144,6 @@ function toLinks(value: unknown): CardLink[] | undefined {
     if (links.length >= LIMITS.linksPerCard) break;
   }
   return links.length > 0 ? links : undefined;
-}
-
-/** Canonical key of an unordered card pair (mirrors the reducer's rule). */
-function linkPairKey(a: string, b: string): string {
-  return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
 /**
@@ -446,11 +439,7 @@ function areLinksCurrent(cards: Record<string, unknown>): boolean {
       if (typeof link.targetCardId !== "string" || link.targetCardId === "") {
         return false;
       }
-      if (
-        !(CARD_LINK_TYPES as readonly string[]).includes(link.type as string)
-      ) {
-        return false;
-      }
+      if (!isCardLinkType(link.type)) return false;
       if (link.targetCardId === cardId) return false;
       const key = linkPairKey(cardId, link.targetCardId);
       if (seenPairs.has(key)) return false;

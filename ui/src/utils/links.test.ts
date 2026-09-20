@@ -43,7 +43,7 @@ describe("cardLinkIndex", () => {
   it("counts both sides and skips dangling targets", () => {
     const { cards } = fixture();
     const index = cardLinkIndex(cards);
-    // c-1: one live outgoing row (lk-1); the dangling one is invisible.
+    // c-1: one live outgoing row (lk-1); the dangling one does not count.
     expect(index.factsOf("c-1")).toMatchObject({ degree: 1, blocked: false });
     // c-2: the incoming "blocks" from a live card lights the badge.
     expect(index.factsOf("c-2")).toMatchObject({ degree: 1, blocked: true });
@@ -54,6 +54,18 @@ describe("cardLinkIndex", () => {
       degree: 0,
       blocked: false,
     });
+  });
+
+  it("keeps a dangling row in outgoing so the dialog can remove it", () => {
+    const { cards } = fixture();
+    const facts = cardLinkIndex(cards).factsOf("c-1");
+    // Both rows are stored on the card — the dangling one included, because
+    // it occupies the card's row cap and must stay removable.
+    expect(facts.outgoing.map((link) => link.id)).toEqual(["lk-1", "lk-2"]);
+    // … but only the live one is a relation the board can show.
+    expect(facts.degree).toBe(1);
+    // The dangling row raises nobody's incoming side.
+    expect(cardLinkIndex(cards).factsOf("c-x").incoming).toEqual([]);
   });
 
   it("does not count an archived blocker as blocked", () => {
@@ -124,5 +136,43 @@ describe("suggestLinkTargets", () => {
 
   it("returns nothing for an empty query", () => {
     expect(suggestLinkTargets(fixture().cards, "c-1", "  ")).toEqual([]);
+  });
+
+  it("excludes a pair linked from the other end too", () => {
+    // c-2 holds no rows of its own; the link lives on c-1. Asking from c-2
+    // must still hide c-1 — the neighbour set is direction-agnostic.
+    const { cards } = fixture();
+    expect(suggestLinkTargets(cards, "c-2", "zeb")).toEqual([]);
+  });
+
+  it("stays linear in board size on a broad query", () => {
+    // Guards the rewrite: the old implementation re-scanned the whole board
+    // once per candidate, which is O(N²) on a query that matches many
+    // titles (measured at 65 ms for 1 000 cards, 621 ms for 3 000). Counting
+    // card reads makes the growth rate observable without timing anything.
+    const readsFor = (size: number): number => {
+      const cards: Board["cards"] = {};
+      for (let i = 0; i < size; i += 1) {
+        cards[`p-${i}`] = card(`p-${i}`, `Task ${i}`);
+      }
+      cards["p-0"].links = [{ id: "x", type: "blocks", targetCardId: "p-1" }];
+      let reads = 0;
+      const counted = new Proxy(cards, {
+        get(target, key: string) {
+          reads += 1;
+          return target[key];
+        },
+      }) as Board["cards"];
+      expect(suggestLinkTargets(counted, "p-0", "Task", 8)).toHaveLength(8);
+      return reads;
+    };
+
+    const small = readsFor(100);
+    const large = readsFor(200);
+    // Two fixed passes over the board (neighbour set + match loop), so
+    // doubling the cards doubles the reads. The quadratic version
+    // quadrupled them.
+    expect(large).toBeLessThanOrEqual(small * 2.5);
+    expect(large).toBeLessThanOrEqual(200 * 4);
   });
 });
