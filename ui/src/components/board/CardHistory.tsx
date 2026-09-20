@@ -103,6 +103,8 @@ interface CardHistoryProps {
   updatedAt: number;
   /** Local-mode timeline (`card.activity`) when no server is reachable. */
   localActivity?: CardActivityEvent[];
+  /** Rendered (folded) entry count for the section badge. */
+  onCountChange?: (count: number) => void;
 }
 
 /**
@@ -119,6 +121,7 @@ export function CardHistory({
   boardId,
   updatedAt,
   localActivity,
+  onCountChange,
 }: CardHistoryProps) {
   const { t } = useI18n();
   const toast = useToast();
@@ -209,6 +212,10 @@ export function CardHistory({
   const visible: ActivityFeedEntry[] = serverMode
     ? foldHistory(entries)
     : localEntries(localActivity ?? [], updatedAt);
+
+  useEffect(() => {
+    onCountChange?.(visible.length);
+  }, [visible.length, onCountChange]);
 
   return (
     <div className="space-y-2">
