@@ -29,6 +29,7 @@ describe("Refresh token reuse detection (e2e)", () => {
     // Refresh tokens first: the FK restricts deleting a user with sessions.
     await prisma.apiToken.deleteMany();
     await prisma.refreshToken.deleteMany();
+    await prisma.attachment.deleteMany();
     await prisma.user.deleteMany();
   });
 

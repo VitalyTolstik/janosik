@@ -327,6 +327,7 @@ describe("Undo contract: command then inverse (e2e)", () => {
   }, 60_000);
 
   async function wipe(db: PrismaService): Promise<void> {
+    await db.attachment.deleteMany();
     await db.cardLink.deleteMany();
     await db.cardLabel.deleteMany();
     await db.checklistItem.deleteMany();

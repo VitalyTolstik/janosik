@@ -42,11 +42,13 @@ const ADMIN: PresenceUser = {
   id: "user-1",
   displayName: "Admin",
   avatarColor: null,
+  avatarPath: null,
 };
 const BORIS: PresenceUser = {
   id: "user-2",
   displayName: "Boris",
   avatarColor: null,
+  avatarPath: null,
 };
 
 function renderStack(server: FakeServer) {
@@ -125,11 +127,36 @@ describe("PresenceStack", () => {
     server.initialPresence = [
       ADMIN,
       BORIS,
-      { id: "user-3", displayName: "Cara", avatarColor: null },
-      { id: "user-4", displayName: "Dina", avatarColor: null },
-      { id: "user-5", displayName: "Egor", avatarColor: null },
-      { id: "user-6", displayName: "Feya", avatarColor: null },
-      { id: "user-7", displayName: "Gleb", avatarColor: null },
+      {
+        id: "user-3",
+        displayName: "Cara",
+        avatarColor: null,
+        avatarPath: null,
+      },
+      {
+        id: "user-3",
+        displayName: "Cara",
+        avatarColor: null,
+        avatarPath: null,
+      },
+      {
+        id: "user-3",
+        displayName: "Cara",
+        avatarColor: null,
+        avatarPath: null,
+      },
+      {
+        id: "user-3",
+        displayName: "Cara",
+        avatarColor: null,
+        avatarPath: null,
+      },
+      {
+        id: "user-3",
+        displayName: "Cara",
+        avatarColor: null,
+        avatarPath: null,
+      },
     ];
     renderStack(server);
 

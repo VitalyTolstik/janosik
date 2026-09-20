@@ -8,13 +8,20 @@ import {
   Param,
   Patch,
   Post,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import type { Response } from "express";
 import type { CreateUserTokenResponse, UserTokenDto } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import { ApiTokenService } from "@/auth/api-token.service";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
+import { StorageService } from "@/attachments/storage.service";
+import type { UploadedBlob } from "@/attachments/attachments.service";
 import { CreateUserTokenDto } from "./dto/create-user-token.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 import { UsersService } from "./users.service";
@@ -31,6 +38,7 @@ export class UsersController {
   constructor(
     private readonly users: UsersService,
     private readonly apiTokens: ApiTokenService,
+    private readonly storage: StorageService,
   ) {}
 
   @Patch("me")
@@ -39,6 +47,38 @@ export class UsersController {
     @Body() dto: UpdateProfileDto,
   ): Promise<AuthUser> {
     return this.users.updateProfile(user.id, dto);
+  }
+
+  /** Upload the profile avatar (multipart field `file`) — TASK-47. */
+  @Patch("me/avatar")
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: { files: 1, fileSize: 2_097_152 },
+    }),
+  )
+  uploadAvatar(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedBlob,
+  ): Promise<AuthUser> {
+    return this.users.uploadAvatar(user.id, file);
+  }
+
+  /**
+   * Stream a user's avatar image to any authenticated user. Blob names are
+   * unique per upload, so the client can cache the image aggressively.
+   */
+  @Get(":userId/avatar")
+  async avatar(
+    @Param("userId") userId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const storedName = await this.users.avatarFile(userId);
+    const ext = storedName.slice(storedName.lastIndexOf(".") + 1);
+    const mime =
+      ext === "jpg" ? "image/jpeg" : `image/${ext === "jpeg" ? "jpeg" : ext}`;
+    res.setHeader("Content-Type", mime);
+    res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+    this.storage.open(this.storage.avatarPath(storedName)).pipe(res);
   }
 
   @Get("me/tokens")

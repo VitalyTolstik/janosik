@@ -682,6 +682,7 @@ export class FakeServer {
       email: this.account.email,
       displayName: this.account.displayName,
       avatarColor: this.account.avatarColor,
+      avatarPath: null,
       createdAt: this.account.createdAt,
     };
   }

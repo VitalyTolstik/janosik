@@ -49,6 +49,21 @@ export class CardAccessGuard extends MembershipGuard {
       return comment.card.column.boardId;
     }
 
+    // Attachments (TASK-47) resolve through their card the same way.
+    const attachmentId = request.params?.attachmentId;
+    if (attachmentId) {
+      const attachment = await this.prisma.attachment.findFirst({
+        where: { id: attachmentId, deletedAt: null },
+        select: {
+          card: {
+            select: { deletedAt: true, column: { select: { boardId: true } } },
+          },
+        },
+      });
+      if (!attachment || attachment.card.deletedAt !== null) return undefined;
+      return attachment.card.column.boardId;
+    }
+
     return undefined;
   }
 }

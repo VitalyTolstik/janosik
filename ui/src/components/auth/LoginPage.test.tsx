@@ -12,6 +12,7 @@ const user: AuthUserDto = {
   email: "admin@example.com",
   displayName: "Admin",
   avatarColor: null,
+  avatarPath: null,
   createdAt: 0,
 };
 

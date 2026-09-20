@@ -466,7 +466,12 @@ describe("Board events SSE (e2e)", () => {
     );
     const first = await owner1.next(1, "presence");
     expect(first[0].users).toEqual([
-      { id: ownerId, displayName: "Owner", avatarColor: null },
+      {
+        id: ownerId,
+        displayName: "Owner",
+        avatarColor: null,
+        avatarPath: null,
+      },
     ]);
 
     const memberStream = openReader(
@@ -518,7 +523,12 @@ describe("Board events SSE (e2e)", () => {
     );
     const frames = await stream.next(1, "presence");
     expect(frames[0].users).toEqual([
-      { id: ownerId, displayName: "Owner", avatarColor: "orange" },
+      {
+        id: ownerId,
+        displayName: "Owner",
+        avatarColor: "orange",
+        avatarPath: null,
+      },
     ]);
     await stream.close();
   }, 20_000);
@@ -549,12 +559,14 @@ describe("Board events SSE (e2e)", () => {
       id: ownerId,
       displayName: "Renamed Owner",
       avatarColor: "teal",
+      avatarPath: null,
     });
     const memberRoster = await memberStream.next(1, "presence");
     expect(memberRoster[0].users).toContainEqual({
       id: ownerId,
       displayName: "Renamed Owner",
       avatarColor: "teal",
+      avatarPath: null,
     });
 
     // And every open member list re-reads the directory.
@@ -699,6 +711,7 @@ describe("Board events SSE (e2e)", () => {
   }, 20_000);
 
   async function wipe(db: PrismaService): Promise<void> {
+    await db.attachment.deleteMany();
     await db.cardLink.deleteMany();
     await db.cardLabel.deleteMany();
     await db.checklistItem.deleteMany();

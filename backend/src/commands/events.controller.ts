@@ -115,6 +115,7 @@ export class EventsController {
           displayName: user.displayName,
           email: user.email,
           avatarColor: user.avatarColor,
+          avatarPath: user.avatarPath,
         });
       }
 

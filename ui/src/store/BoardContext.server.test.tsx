@@ -506,7 +506,12 @@ describe("BoardProvider realtime (SSE, TASK-30)", () => {
   it("fills the presence roster from the stream, live", async () => {
     const server = new FakeServer([seedBoard()]);
     server.initialPresence = [
-      { id: "user-2", displayName: "Boris", avatarColor: null },
+      {
+        id: "user-2",
+        displayName: "Boris",
+        avatarColor: null,
+        avatarPath: null,
+      },
     ];
     vi.stubGlobal("fetch", server.handle);
 
@@ -518,8 +523,18 @@ describe("BoardProvider realtime (SSE, TASK-30)", () => {
 
     act(() => {
       server.publishPresence("b-1", [
-        { id: "user-1", displayName: "Admin", avatarColor: null },
-        { id: "user-2", displayName: "Boris", avatarColor: null },
+        {
+          id: "user-1",
+          displayName: "Admin",
+          avatarColor: null,
+          avatarPath: null,
+        },
+        {
+          id: "user-2",
+          displayName: "Boris",
+          avatarColor: null,
+          avatarPath: null,
+        },
       ]);
     });
     await waitFor(() =>
@@ -805,6 +820,7 @@ describe("BoardProvider membership revocation (TASK-36)", () => {
         role: "ADMIN",
         expiresAt: null,
         avatarColor: null,
+        avatarPath: null,
       },
     ]);
     vi.stubGlobal("fetch", server.handle);
@@ -832,6 +848,7 @@ describe("BoardProvider membership revocation (TASK-36)", () => {
           role: "MEMBER",
           expiresAt: null,
           avatarColor: null,
+          avatarPath: null,
         },
       ]);
       server.publishMembership("b-1", "user-3", "accepted");

@@ -20,6 +20,7 @@ import {
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { CardActivity } from "@/components/board/CardActivity";
 import { CardChecklists } from "@/components/board/CardChecklists";
+import { CardAttachments } from "@/components/board/CardAttachments";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { CardDueDate } from "@/components/board/CardDueDate";
 import { CardPriority } from "@/components/board/CardPriority";
@@ -449,6 +450,12 @@ export function CardDialog({
             <CardChecklists
               cardId={card.id}
               checklists={card.checklists ?? []}
+              readOnly={readOnly}
+            />
+
+            <CardAttachments
+              cardId={card.id}
+              boardId={board.id}
               readOnly={readOnly}
             />
 

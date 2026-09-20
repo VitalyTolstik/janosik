@@ -436,6 +436,7 @@ describe("Board-level commands (e2e)", () => {
   });
 
   async function wipe(db: PrismaService): Promise<void> {
+    await db.attachment.deleteMany();
     await db.cardLink.deleteMany();
     await db.cardLabel.deleteMany();
     await db.checklistItem.deleteMany();

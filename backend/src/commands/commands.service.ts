@@ -19,9 +19,11 @@ import type {
 import {
   atWipLimit,
   boardReducer,
+  hasLinkedPair,
   LIMITS,
   MAX_COMMAND_BYTES,
   validateBoardAction,
+  wouldCloseBlocksCycle,
 } from "@janosik/shared";
 import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -374,6 +376,13 @@ export class CommandsService {
         }),
       },
       {
+        table: "cardLink",
+        row: await tx.cardLink.findFirst({
+          where: foreignFilter,
+          select: { id: true },
+        }),
+      },
+      {
         table: "activity",
         row: await tx.activity.findFirst({
           where: foreignFilter,
@@ -547,43 +556,28 @@ export class CommandsService {
         return;
       }
       case "ADD_CARD_LINK": {
-        // Guards that would make the command a silent no-op in the reducer
-        // are answered honestly: self-link, an already-linked pair or a
-        // `blocks` cycle are the client's bug; the row cap is a real limit.
+        // Only the row cap is refused here. A self-link, an already-linked
+        // pair and a `blocks` cycle are guards the *reducer* applies, and
+        // the client runs the same reducer before sending — so both sides
+        // no-op identically and the states stay equal. Answering 409 for
+        // them would turn a harmless race into an error toast; the cap is
+        // different, because the user must learn why the link never appeared.
         const card = board.cards[action.cardId];
         const target = board.cards[action.targetCardId];
         if (!card || !target || card.id === target.id) return;
         if (card.links?.some((link) => link.id === action.linkId)) return;
-        const linkedPair = Object.values(board.cards).some((other) =>
-          (other.links ?? []).some(
-            (link) =>
-              (other.id === card.id && link.targetCardId === target.id) ||
-              (other.id === target.id && link.targetCardId === card.id),
-          ),
-        );
-        if (linkedPair) return;
-        if ((card.links?.length ?? 0) >= LIMITS.linksPerCard) reject();
-        if (action.linkType !== "blocks") return;
-        // Cycle check mirrors the reducer's DFS: the new edge closes a
-        // circle exactly when the target already reaches the source over
-        // existing `blocks` edges.
-        const stack = [target.id];
-        const seen = new Set<string>([target.id]);
-        while (stack.length > 0) {
-          const current = stack.pop() as string;
-          for (const link of board.cards[current]?.links ?? []) {
-            if (link.type !== "blocks") continue;
-            if (link.targetCardId === card.id) reject();
-            if (
-              !(link.targetCardId in board.cards) ||
-              seen.has(link.targetCardId)
-            ) {
-              continue;
-            }
-            seen.add(link.targetCardId);
-            stack.push(link.targetCardId);
-          }
+        if (hasLinkedPair(board.cards, card.id, target.id)) return;
+        if (
+          wouldCloseBlocksCycle(
+            board.cards,
+            card.id,
+            target.id,
+            action.linkType,
+          )
+        ) {
+          return;
         }
+        if ((card.links?.length ?? 0) >= LIMITS.linksPerCard) reject();
         return;
       }
       case "ADD_CHECKLIST":

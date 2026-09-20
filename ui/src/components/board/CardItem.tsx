@@ -6,6 +6,7 @@ import {
   CopyPlus,
   Link2,
   ListTodo,
+  Paperclip,
   X,
 } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
@@ -181,6 +182,7 @@ function CardItemView({
   const hasPriority =
     card.priority !== undefined && card.priority !== DEFAULT_CARD_PRIORITY;
   const hasLinks = (linkFacts?.degree ?? 0) > 0;
+  const attachmentCount = card.attachmentCount ?? 0;
 
   return (
     <article
@@ -322,7 +324,12 @@ function CardItemView({
       >
         <HighlightedText text={card.title} query={highlight ?? ""} />
       </p>
-      {hasDescription || total > 0 || hasDueDate || hasPriority || hasLinks ? (
+      {hasDescription ||
+      total > 0 ||
+      hasDueDate ||
+      hasPriority ||
+      hasLinks ||
+      attachmentCount > 0 ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {linkFacts?.blocked ? (
             <Tooltip>
@@ -357,6 +364,22 @@ function CardItemView({
                 {t("card.links.badgeTooltip", {
                   count: linkFacts?.degree ?? 0,
                 })}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+          {attachmentCount > 0 ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className="inline-flex h-5 items-center gap-1 rounded-md border border-border/60 bg-muted/50 px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary"
+                  data-testid="card-attachments-badge"
+                >
+                  <Paperclip className="h-3.5 w-3.5" aria-hidden />
+                  {attachmentCount}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t("card.attachments.badgeTooltip", { count: attachmentCount })}
               </TooltipContent>
             </Tooltip>
           ) : null}
@@ -428,6 +451,7 @@ function CardItemView({
             displayName={authorMember?.displayName ?? null}
             email={authorMember?.email ?? ""}
             color={authorMember?.avatarColor}
+            avatarPath={authorMember?.avatarPath}
             size="xs"
             className="ring-1 ring-border/60"
           />

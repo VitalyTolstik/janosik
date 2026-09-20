@@ -1,4 +1,9 @@
 import type { Board, Card, CardLink, CardLinkType } from "@janosik/shared";
+import {
+  blocksReaches,
+  hasLinkedPair,
+  linkedNeighbourIds,
+} from "@janosik/shared";
 
 /**
  * Card-link lookups (TASK-46).
@@ -11,6 +16,10 @@ import type { Board, Card, CardLink, CardLinkType } from "@janosik/shared";
  * filter, the dialog — shares a single scan per board change, and the
  * cached object keeps a stable identity so memoized card components only
  * re-render when the data they show actually changed.
+ *
+ * The rules a link must satisfy (known type, one link per pair, acyclic
+ * `blocks`) are not here: they live in `@janosik/shared`'s `card-links`
+ * module, shared with the reducer and the server's command guards.
  */
 
 /** An incoming link plus the card that holds it. */
@@ -21,11 +30,21 @@ export interface IncomingLink {
 
 /** Everything a view needs about one card's relations. */
 export interface CardLinkFacts {
-  /** Outgoing rows stored on the card itself. */
+  /**
+   * Every row stored on the card itself, dangling ones included. The card
+   * dialog has to render those: they occupy the card's row cap, so leaving
+   * them out would strand a card at "50 links" with nothing on screen to
+   * remove (the row renders with a "deleted" tag instead).
+   */
   outgoing: CardLink[];
   /** Rows other cards hold towards this one (dangling sources skipped). */
   incoming: IncomingLink[];
-  /** Outgoing + incoming, the number a card-front badge shows. */
+  /**
+   * Live relations only — outgoing rows whose target still exists, plus
+   * incoming ones. This is the card-front badge's number and the `hasLinks`
+   * filter's predicate: a row pointing at a deleted card is not a relation
+   * the board can show.
+   */
   degree: number;
   /**
    * An incoming "blocks" from a live, non-archived card — the red
@@ -49,6 +68,8 @@ const EMPTY_FACTS: CardLinkFacts = {
 
 interface FactsDraft {
   outgoing: CardLink[];
+  /** How many of `outgoing` still point at a card that exists. */
+  liveOutgoing: number;
   incoming: IncomingLink[];
   blocked: boolean;
 }
@@ -57,8 +78,9 @@ const indexCache = new WeakMap<Board["cards"], CardLinkIndex>();
 
 /**
  * The link index of one `board.cards` snapshot — one scan per version,
- * shared by every consumer (WeakMap-cached). Dangling rows (the target no
- * longer exists) never surface: they are skipped once, here.
+ * shared by every consumer (WeakMap-cached). Dangling rows stay in
+ * `outgoing` (the dialog must be able to remove them) but are excluded from
+ * `degree`, `incoming` and `blocked`.
  */
 export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
   const cached = indexCache.get(cards);
@@ -68,7 +90,7 @@ export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
   const draftOf = (cardId: string): FactsDraft => {
     let draft = drafts.get(cardId);
     if (!draft) {
-      draft = { outgoing: [], incoming: [], blocked: false };
+      draft = { outgoing: [], liveOutgoing: 0, incoming: [], blocked: false };
       drafts.set(cardId, draft);
     }
     return draft;
@@ -76,11 +98,13 @@ export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
 
   for (const card of Object.values(cards)) {
     for (const link of card.links ?? []) {
-      // The outgoing side is stored on the card itself.
-      if (link.targetCardId in cards) draftOf(card.id).outgoing.push(link);
-      // The incoming side of the row, when the target still exists.
+      // The outgoing side is stored on the card itself — kept whether or
+      // not the target survives, so the dialog can offer to remove it.
+      const draft = draftOf(card.id);
+      draft.outgoing.push(link);
       const target = cards[link.targetCardId];
       if (!target || target.id === card.id) continue;
+      draft.liveOutgoing += 1;
       draftOf(target.id).incoming.push({ fromCardId: card.id, link });
       if (link.type === "blocks" && card.archivedAt === undefined) {
         draftOf(target.id).blocked = true;
@@ -93,7 +117,7 @@ export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
     facts.set(cardId, {
       outgoing: draft.outgoing,
       incoming: draft.incoming,
-      degree: draft.outgoing.length + draft.incoming.length,
+      degree: draft.liveOutgoing + draft.incoming.length,
       blocked: draft.blocked,
     });
   }
@@ -128,9 +152,8 @@ export function linkSignature(cards: Board["cards"]): string {
 
 /**
  * Would adding a `blocks` edge `fromCardId → targetCardId` close a
- * circular dependency? True exactly when the target can already reach the
- * source over existing blocks edges — the same DFS the reducer runs, so
- * the UI can refuse with a toast instead of dispatching a silent no-op.
+ * circular dependency? Runs the reducer's own DFS (`blocksReaches`, shared),
+ * so the UI can refuse with a toast instead of dispatching a silent no-op.
  */
 export function wouldCreateCycle(
   cards: Board["cards"],
@@ -138,21 +161,7 @@ export function wouldCreateCycle(
   targetCardId: string,
 ): boolean {
   if (fromCardId === targetCardId) return true;
-  const stack = [targetCardId];
-  const seen = new Set<string>([targetCardId]);
-  while (stack.length > 0) {
-    const current = stack.pop() as string;
-    for (const link of cards[current]?.links ?? []) {
-      if (link.type !== "blocks") continue;
-      if (link.targetCardId === fromCardId) return true;
-      if (!(link.targetCardId in cards) || seen.has(link.targetCardId)) {
-        continue;
-      }
-      seen.add(link.targetCardId);
-      stack.push(link.targetCardId);
-    }
-  }
-  return false;
+  return blocksReaches(cards, targetCardId, fromCardId);
 }
 
 /** Is the unordered pair {a, b} already linked in any direction/type? */
@@ -161,17 +170,7 @@ export function isPairLinked(
   a: string,
   b: string,
 ): boolean {
-  for (const card of Object.values(cards)) {
-    for (const link of card.links ?? []) {
-      if (
-        (card.id === a && link.targetCardId === b) ||
-        (card.id === b && link.targetCardId === a)
-      ) {
-        return true;
-      }
-    }
-  }
-  return false;
+  return hasLinkedPair(cards, a, b);
 }
 
 /**
@@ -179,6 +178,11 @@ export function isPairLinked(
  * matches the query (case-insensitive substring), self and already-linked
  * pairs excluded. Cheapest-first ordering: title match start > earlier
  * creation, so the list is stable while typing.
+ *
+ * The already-linked test reads a neighbour set built in **one** pass over
+ * the board. Asking `isPairLinked` per candidate instead made the function
+ * quadratic, and it runs in the render phase on every keystroke: measured
+ * at 65 ms on a 1 000-card board and 621 ms on 3 000 for a broad query.
  */
 export function suggestLinkTargets(
   cards: Board["cards"],
@@ -188,12 +192,13 @@ export function suggestLinkTargets(
 ): Card[] {
   const needle = query.trim().toLowerCase();
   if (needle === "") return [];
+  const linked = linkedNeighbourIds(cards, cardId);
   const matches: Card[] = [];
   for (const card of Object.values(cards)) {
     if (card.id === cardId) continue;
     if (card.archivedAt !== undefined) continue;
     if (!card.title.toLowerCase().includes(needle)) continue;
-    if (isPairLinked(cards, cardId, card.id)) continue;
+    if (linked.has(card.id)) continue;
     matches.push(card);
   }
   matches.sort((a, b) => {

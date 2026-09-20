@@ -170,6 +170,13 @@ export class BoardsService {
         where: { id: { in: checklistIds } },
         data: { deletedAt: now },
       });
+      // Card links (TASK-46) carry `deletedAt` like every other child and
+      // must be flagged with them, or the purge job would leave the rows
+      // behind after the board itself is gone.
+      await tx.cardLink.updateMany({
+        where: { boardId, deletedAt: null },
+        data: { deletedAt: now },
+      });
       await tx.card.updateMany({
         where: { id: { in: cardIds } },
         data: { deletedAt: now },

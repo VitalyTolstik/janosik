@@ -126,6 +126,7 @@ function UserProfileBody({
           displayName={displayName}
           email={email}
           color={color}
+          avatarPath={member?.avatarPath}
           size="lg"
           className="h-16 w-16 text-xl shadow-sm"
         />

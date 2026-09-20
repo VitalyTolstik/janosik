@@ -54,6 +54,19 @@ describe("Command ids and payload limits (e2e)", () => {
       title: "A card",
     });
     await apply(boardA, {
+      type: "ADD_CARD",
+      newCardId: "card-a2",
+      columnId: "col-a",
+      title: "A second card",
+    });
+    await apply(boardA, {
+      type: "ADD_CARD_LINK",
+      cardId: "card-a",
+      linkId: "link-a",
+      targetCardId: "card-a2",
+      linkType: "blocks",
+    });
+    await apply(boardA, {
       type: "ADD_LABEL",
       label: { id: "l-a", name: "A label", color: "red" },
     });
@@ -82,6 +95,12 @@ describe("Command ids and payload limits (e2e)", () => {
       newCardId: "card-b",
       columnId: "col-b",
       title: "B card",
+    });
+    await apply(boardB, {
+      type: "ADD_CARD",
+      newCardId: "card-b2",
+      columnId: "col-b",
+      title: "B second card",
     });
     await apply(boardB, {
       type: "ADD_CHECKLIST",
@@ -216,6 +235,19 @@ describe("Command ids and payload limits (e2e)", () => {
         },
         "label:l-a",
       ],
+      // TASK-46: the writer upserts the link row by this id, so a foreign
+      // one would repoint another board's row at this board's cards.
+      [
+        "ADD_CARD_LINK",
+        {
+          type: "ADD_CARD_LINK",
+          cardId: "card-b",
+          linkId: "link-a",
+          targetCardId: "card-b2",
+          linkType: "relates_to",
+        },
+        "cardLink:link-a",
+      ],
     ];
 
     for (const [, action, expected] of cases) {
@@ -250,6 +282,36 @@ describe("Command ids and payload limits (e2e)", () => {
 
     expect(await getAggregate(boardA)).toEqual(beforeA);
     expect(await getAggregate(boardB)).toEqual(beforeB);
+  });
+
+  it("leaves the other board's link row untouched (TASK-46)", async () => {
+    const before = await prisma.cardLink.findUnique({
+      where: { id: "link-a" },
+    });
+    expect(before).toMatchObject({ fromCardId: "card-a", type: "blocks" });
+
+    await post(boardB, {
+      type: "ADD_CARD_LINK",
+      cardId: "card-b",
+      linkId: "link-a",
+      targetCardId: "card-b2",
+      linkType: "relates_to",
+    }).expect(409);
+    await post(boardB, {
+      type: "REMOVE_CARD_LINK",
+      cardId: "card-b",
+      linkId: "link-a",
+      targetCardId: "card-b2",
+      linkType: "relates_to",
+    }).expect(409);
+
+    expect(
+      await prisma.cardLink.findUnique({ where: { id: "link-a" } }),
+    ).toEqual(before);
+    const a = await getAggregate(boardA);
+    expect(a.cards["card-a"].links).toEqual([
+      { id: "link-a", type: "blocks", targetCardId: "card-a2" },
+    ]);
   });
 
   it("still revives its own soft-deleted entities (redo path)", async () => {
@@ -313,6 +375,7 @@ describe("Command ids and payload limits (e2e)", () => {
   });
 
   async function wipe(db: PrismaService): Promise<void> {
+    await db.attachment.deleteMany();
     await db.cardLink.deleteMany();
     await db.cardLabel.deleteMany();
     await db.checklistItem.deleteMany();

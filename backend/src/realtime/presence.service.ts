@@ -22,6 +22,7 @@ export interface PresenceIdentity {
   displayName: string | null;
   email: string;
   avatarColor: UserAvatarColor | null;
+  avatarPath: string | null;
 }
 
 interface PresenceSession extends PresenceIdentity {
@@ -103,7 +104,10 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
   updateUser(
     userId: string,
     patch: Partial<
-      Pick<PresenceIdentity, "displayName" | "email" | "avatarColor">
+      Pick<
+        PresenceIdentity,
+        "displayName" | "email" | "avatarColor" | "avatarPath"
+      >
     >,
   ): void {
     for (const [boardId, sessions] of this.boards) {
@@ -153,6 +157,7 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
         id: session.id,
         displayName: session.displayName?.trim() || session.email,
         avatarColor: session.avatarColor,
+        avatarPath: session.avatarPath,
       }));
   }
 

@@ -883,6 +883,7 @@ function TableRowBody({
                   displayName={authorMember?.displayName ?? null}
                   email={authorMember?.email ?? ""}
                   color={authorMember?.avatarColor}
+                  avatarPath={authorMember?.avatarPath}
                   size="xs"
                   className="h-4 w-4 text-[8px] ring-1 ring-border/60"
                 />

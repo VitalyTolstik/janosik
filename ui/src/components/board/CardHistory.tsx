@@ -310,6 +310,7 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
             displayName={member?.displayName ?? null}
             email={member?.email ?? ""}
             color={member?.avatarColor}
+            avatarPath={member?.avatarPath}
             size="sm"
             className="ring-1 ring-border/60"
           />

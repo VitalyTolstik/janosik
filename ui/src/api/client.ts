@@ -1,5 +1,6 @@
 import type {
   ActivityFeedPage,
+  AttachmentDto,
   AuthResponseDto,
   AuthUserDto,
   BoardAggregate,
@@ -100,6 +101,11 @@ export interface ApiClientOptions {
 interface RequestInitLike {
   method?: string;
   body?: unknown;
+  /**
+   * Multipart body (TASK-47 uploads) — sent as-is; the browser sets the
+   * `Content-Type` boundary, so no header is added here.
+   */
+  form?: FormData;
   /** Attach the access token (and retry once after a refresh on 401). */
   auth?: boolean;
   /**
@@ -434,6 +440,60 @@ export class ApiClient {
     );
   }
 
+  /** Live attachments of one card, newest-first (TASK-47). */
+  listAttachments(cardId: string): Promise<AttachmentDto[]> {
+    return this.request<AttachmentDto[]>(
+      `/cards/${encodeURIComponent(cardId)}/attachments`,
+    );
+  }
+
+  /** Upload one file (multipart); the server answers 400/413 on limits. */
+  uploadAttachment(cardId: string, file: File): Promise<AttachmentDto> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return this.request<AttachmentDto>(
+      `/cards/${encodeURIComponent(cardId)}/attachments`,
+      { method: "POST", form },
+    );
+  }
+
+  /** Remove an attachment (uploader or board ADMIN). */
+  deleteAttachment(attachmentId: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/attachments/${encodeURIComponent(attachmentId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /**
+   * Fetch an attachment blob (binary — skips the JSON parse) so the caller
+   * can save it; the endpoint sends `Content-Disposition: attachment`.
+   */
+  async fetchAttachment(attachmentId: string): Promise<Blob> {
+    const response = await this.requestRaw(
+      `/attachments/${encodeURIComponent(attachmentId)}/content`,
+    );
+    return response.blob();
+  }
+
+  /** Upload the profile avatar image (TASK-47). */
+  uploadAvatar(file: File): Promise<AuthUserDto> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return this.request<AuthUserDto>("/users/me/avatar", {
+      method: "PATCH",
+      form,
+    });
+  }
+
+  /** Fetch a user's avatar image as a blob (404 when the user has none). */
+  async fetchUserAvatar(userId: string): Promise<Blob> {
+    const response = await this.requestRaw(
+      `/users/${encodeURIComponent(userId)}/avatar`,
+    );
+    return response.blob();
+  }
+
   /** Newest-first history of one card (TASK-28 feed, diffs TASK-37). */
   cardActivity(
     cardId: string,
@@ -451,6 +511,37 @@ export class ApiClient {
     init: RequestInitLike = {},
   ): Promise<T> {
     return (await this.requestWithHeaders<T>(path, init)).data;
+  }
+
+  /**
+   * Binary variant of `request` (TASK-47 downloads): same token and
+   * 401-refresh-retry, but the response body is handed over untouched
+   * instead of being parsed as JSON.
+   */
+  private async requestRaw(path: string): Promise<Response> {
+    const send = (): Promise<Response> => {
+      const base = this.options.baseUrl ?? apiBaseUrl();
+      const headers: Record<string, string> = {};
+      if (this.accessToken !== null) {
+        headers.Authorization = `Bearer ${this.accessToken}`;
+      }
+      return fetch(`${base}${path}`, { headers, credentials: "include" });
+    };
+    try {
+      const response = await send();
+      if (response.status === 401 && this.accessToken !== null) {
+        const restored = await this.refreshSession();
+        if (restored !== null || this.accessToken !== null) {
+          return send();
+        }
+        this.onAuthLost?.();
+      }
+      if (!response.ok) throw new ApiError(response.status, null);
+      return response;
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(0, null);
+    }
   }
 
   /** `request`, keeping the response headers for callers that need them. */
@@ -484,7 +575,9 @@ export class ApiClient {
   ): Promise<{ data: T; headers: Headers }> {
     const base = this.options.baseUrl ?? apiBaseUrl();
     const headers: Record<string, string> = {};
-    if (init.body !== undefined) headers["Content-Type"] = "application/json";
+    if (init.form === undefined && init.body !== undefined) {
+      headers["Content-Type"] = "application/json";
+    }
     if (init.auth !== false && this.accessToken !== null) {
       headers.Authorization = `Bearer ${this.accessToken}`;
     }
@@ -495,7 +588,9 @@ export class ApiClient {
       response = await fetchImpl(`${base}${path}`, {
         method: init.method ?? "GET",
         headers,
-        body: init.body === undefined ? undefined : JSON.stringify(init.body),
+        body:
+          init.form ??
+          (init.body === undefined ? undefined : JSON.stringify(init.body)),
         credentials: "include",
         keepalive: init.keepalive === true,
       });

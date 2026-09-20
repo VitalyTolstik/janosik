@@ -35,6 +35,7 @@ const ADMIN: BoardMemberDto = {
   role: "ADMIN",
   expiresAt: null,
   avatarColor: null,
+  avatarPath: null,
 };
 
 const MEMBER: BoardMemberDto = {
@@ -44,6 +45,7 @@ const MEMBER: BoardMemberDto = {
   role: "MEMBER",
   expiresAt: null,
   avatarColor: null,
+  avatarPath: null,
 };
 
 function renderPanel(canManage: boolean, children?: ReactNode) {
@@ -115,6 +117,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
       role: "MEMBER",
       expiresAt: null,
       avatarColor: null,
+      avatarPath: null,
     });
 
     renderPanel(true);

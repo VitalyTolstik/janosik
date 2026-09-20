@@ -36,3 +36,6 @@ Thumbs.db
 *.swp
 # Keep the env example (backend/.env.example)
 !.env.example
+
+# Self-hosted uploads (TASK-47)
+backend/data/

@@ -11,7 +11,12 @@ import type {
   Column,
   Label,
 } from "../types/kanban";
-import { CARD_LINK_TYPES, LIMITS, MAX_CARD_ACTIVITY } from "../types/kanban";
+import { LIMITS, MAX_CARD_ACTIVITY } from "../types/kanban";
+import {
+  hasLinkedPair,
+  isCardLinkType,
+  wouldCloseBlocksCycle,
+} from "./card-links";
 import { COVER_COLORS, COVER_GRADIENTS } from "../types/kanban";
 import { createSeedBoard } from "./seed-data";
 import { clampText, clamp } from "../utils/text";
@@ -1524,39 +1529,6 @@ function setCardPriority(
 }
 
 /**
- * Canonical key of an unordered card pair — a pair can hold at most one
- * link, regardless of type or which end stores the row (TASK-46).
- */
-function linkPairKey(a: string, b: string): string {
-  return a < b ? `${a}|${b}` : `${b}|${a}`;
-}
-
-/**
- * Is `goal` reachable from `start` over the board's existing `blocks`
- * edges (each card's outgoing links of that type)? Depth-first search —
- * an `ADD_CARD_LINK` edge `start-blocks→goal` closes a cycle exactly when
- * this answers yes. Deleted targets are skipped (dangling rows are legal).
- */
-function blocksReaches(board: Board, start: string, goal: string): boolean {
-  if (start === goal) return true;
-  const stack = [start];
-  const seen = new Set<string>([start]);
-  while (stack.length > 0) {
-    const current = stack.pop() as string;
-    for (const link of board.cards[current]?.links ?? []) {
-      if (link.type !== "blocks") continue;
-      if (link.targetCardId === goal) return true;
-      if (!(link.targetCardId in board.cards) || seen.has(link.targetCardId)) {
-        continue;
-      }
-      seen.add(link.targetCardId);
-      stack.push(link.targetCardId);
-    }
-  }
-  return false;
-}
-
-/**
  * Add a link row on the source card (TASK-46). Guards: known cards, no
  * self-link, one link per unordered pair, the source card's row cap, and —
  * for `blocks` — no cycle. Inverses step past the guards (they put back
@@ -1573,24 +1545,16 @@ function addCardLink(
   if (!source) return board;
   const target = board.cards[action.targetCardId];
   if (!target || target.id === source.id) return board;
-  if (!(CARD_LINK_TYPES as readonly string[]).includes(action.linkType)) {
-    return board;
-  }
+  if (!isCardLinkType(action.linkType)) return board;
   const links = source.links ?? [];
   if (guarded(action) && links.length >= LIMITS.linksPerCard) return board;
   if (guarded(action)) {
-    // One link per unordered pair — either direction, any type.
-    const seenPairs = new Set<string>();
-    for (const card of Object.values(board.cards)) {
-      for (const link of card.links ?? []) {
-        seenPairs.add(linkPairKey(card.id, link.targetCardId));
-      }
-    }
-    if (seenPairs.has(linkPairKey(source.id, target.id))) return board;
-    // A fresh "blocks" edge must not close a circular dependency.
+    // One link per unordered pair — either direction, any type; and a
+    // fresh "blocks" edge must not close a circular dependency. Both rules
+    // live in `card-links.ts`, shared with the UI and the server guards.
+    if (hasLinkedPair(board.cards, source.id, target.id)) return board;
     if (
-      action.linkType === "blocks" &&
-      blocksReaches(board, target.id, source.id)
+      wouldCloseBlocksCycle(board.cards, source.id, target.id, action.linkType)
     ) {
       return board;
     }

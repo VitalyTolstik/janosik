@@ -25,6 +25,7 @@ model User {
   passwordHash   String
   displayName    String?
   avatarColor    String? // USER_AVATAR_COLORS key (TASK-36.1); null → id-hash default
+  avatarPath     String? // TASK-47 stored avatar image name; null → initials
   disabledAt     DateTime? // master block (TASK-36); login/refresh → 403
   createdAt      DateTime       @default(now())
   memberships    BoardMember[]
@@ -34,6 +35,7 @@ model User {
   apiTokens      ApiToken[]
   commands       Command[]
   refreshTokens  RefreshToken[]
+  attachments    Attachment[]
 }
 
 model RefreshToken {
@@ -151,28 +153,32 @@ model Column {
 }
 
 model Card {
-  id          String      @id
-  column      Column      @relation(fields: [columnId], references: [id])
-  columnId    String
-  title       String      @db.VarChar(300) // LIMITS.cardTitle
-  description String?     @db.Text // markdown, LIMITS.description
-  coverType   String? // color | gradient
-  coverValue  String?
-  dueDate     DateTime?
-  priority    String? // TASK-45: blocker|highest|high|medium|low|lowest (null = medium)
-  archivedAt  DateTime? // TASK-18.1: card archive
-  deletedAt   DateTime? // soft-delete (§7.0)
-  version     Int         @default(0) // ifMatch → 409 (§7.0)
-  position    Int
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  lastActorId String? // TASK-36 "who changed it" denormalization
-  labels      CardLabel[]
-  checklists  Checklist[]
-  linksFrom   CardLink[] @relation("CardLinkFrom")
-  linksTo     CardLink[] @relation("CardLinkTo")
-  activity    Activity[]
-  comments    Comment[]
+  id              String       @id
+  column          Column       @relation(fields: [columnId], references: [id])
+  columnId        String
+  title           String       @db.VarChar(300) // LIMITS.cardTitle
+  description     String?      @db.Text // markdown, LIMITS.description
+  coverType       String? // color | gradient
+  coverValue      String?
+  dueDate         DateTime?
+  priority        String? // TASK-45: blocker|highest|high|medium|low|lowest (null = medium)
+  archivedAt      DateTime? // TASK-18.1: card archive
+  deletedAt       DateTime? // soft-delete (§7.0)
+  version         Int          @default(0) // ifMatch → 409 (§7.0)
+  position        Int
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  lastActorId     String? // TASK-36 "who changed it" denormalization
+  // TASK-47 denormalized live-attachment count (card-face badge); kept in
+  // step by the attachments service, outside the command loop.
+  attachmentCount Int          @default(0)
+  labels          CardLabel[]
+  checklists      Checklist[]
+  linksFrom       CardLink[]   @relation("CardLinkFrom")
+  linksTo         CardLink[]   @relation("CardLinkTo")
+  activity        Activity[]
+  comments        Comment[]
+  attachments     Attachment[]
 
   @@index([columnId, position])
 }
@@ -184,17 +190,20 @@ model Card {
 // a soft-deleted card are kept: the aggregate skips them with the card, and
 // restoring the card revives the link the way the client's undo does.
 model CardLink {
-  id         String   @id // client-provided link id
-  board      Board    @relation(fields: [boardId], references: [id])
+  id         String    @id // client-provided link id
+  board      Board     @relation(fields: [boardId], references: [id])
   boardId    String
-  fromCard   Card     @relation("CardLinkFrom", fields: [fromCardId], references: [id])
+  fromCard   Card      @relation("CardLinkFrom", fields: [fromCardId], references: [id])
   fromCardId String
-  toCard     Card     @relation("CardLinkTo", fields: [toCardId], references: [id])
+  toCard     Card      @relation("CardLinkTo", fields: [toCardId], references: [id])
   toCardId   String
   type       String // blocks | relates_to | duplicates
-  position   Int      @default(0) // order within the source card's `links`
+  position   Int       @default(0) // order within the source card's `links`
   deletedAt  DateTime?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
+  // No `version` column on purpose: links are last-write-wins (§7.0) — the
+  // only commands carrying `ifMatch` preconditions are text edits, and a
+  // link row has no text. `Card.version` already covers the card it hangs on.
 
   @@index([boardId])
   @@index([fromCardId, position])
@@ -289,6 +298,28 @@ model Comment {
   deletedAt DateTime? // soft-delete (§7.0)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+
+  @@index([cardId, createdAt])
+}
+
+// File attachments (TASK-47) — self-hosted blobs on the local disk under
+// `UPLOAD_DIR`. Like comments, they live OUTSIDE the command loop (no undo,
+// no board JSON), so rows are version-free and soft-deleted like comments.
+// `storedName` is a server-generated name — the client's `fileName` is
+// metadata only and must never be used as a filesystem path.
+model Attachment {
+  id           String    @id @default(cuid())
+  card         Card      @relation(fields: [cardId], references: [id])
+  cardId       String
+  boardId      String
+  fileName     String
+  storedName   String    @unique
+  mimeType     String
+  sizeBytes    Int // ≤ LIMITS.attachmentSize (25 MB)
+  uploadedBy   User      @relation(fields: [uploadedById], references: [id])
+  uploadedById String
+  deletedAt    DateTime? // soft-delete (§7.0)
+  createdAt    DateTime  @default(now())
 
   @@index([cardId, createdAt])
 }

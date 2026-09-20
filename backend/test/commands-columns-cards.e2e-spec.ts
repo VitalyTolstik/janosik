@@ -1179,6 +1179,75 @@ describe("Commands API (e2e)", () => {
     });
   });
 
+  describe("card links: stored order survives a removal (TASK-46)", () => {
+    it("renumbers positions so the aggregate reproduces the reducer", async () => {
+      const boardId = await createBoard("Link order board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-links",
+          title: "Column",
+        }),
+      );
+      for (const n of [1, 2, 3, 4]) {
+        await apply(
+          boardId,
+          scoped(boardId, {
+            type: "ADD_CARD",
+            newCardId: `lc-${n}`,
+            columnId: "col-links",
+            title: `Link card ${n}`,
+          }),
+        );
+      }
+      const link = (linkId: string, target: string) =>
+        apply(
+          boardId,
+          scoped(boardId, {
+            type: "ADD_CARD_LINK",
+            cardId: "lc-1",
+            linkId,
+            targetCardId: target,
+            linkType: "relates_to",
+          }),
+        );
+
+      await link("ln-1", "lc-2");
+      await link("ln-2", "lc-3");
+      // Removing the first row used to leave a gap that the next add
+      // landed in, giving two live rows the same `position`.
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "REMOVE_CARD_LINK",
+          cardId: "lc-1",
+          linkId: "ln-1",
+          targetCardId: "lc-2",
+          linkType: "relates_to",
+        }),
+      );
+      await link("ln-3", "lc-4");
+
+      const rows = await prisma.cardLink.findMany({
+        where: { fromCardId: "lc-1", deletedAt: null },
+        select: { id: true, position: true },
+        orderBy: { position: "asc" },
+      });
+      expect(rows).toEqual([
+        { id: "ln-2", position: 0 },
+        { id: "ln-3", position: 1 },
+      ]);
+
+      // And the aggregate holds them in the reducer's order.
+      const board = await getAggregate(boardId);
+      expect(board.cards["lc-1"].links?.map((l) => l.id)).toEqual([
+        "ln-2",
+        "ln-3",
+      ]);
+    });
+  });
+
   describe("RESTORE_CARD without a column", () => {
     it("restores the card into the map without touching any column", async () => {
       const boardId = await createBoard("Orphan restore board");
@@ -1324,6 +1393,7 @@ describe("Commands API (e2e)", () => {
   }
 
   async function wipe(db: PrismaService): Promise<void> {
+    await db.attachment.deleteMany();
     await db.cardLink.deleteMany();
     await db.cardLabel.deleteMany();
     await db.checklistItem.deleteMany();

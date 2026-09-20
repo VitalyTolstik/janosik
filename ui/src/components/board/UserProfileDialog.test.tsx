@@ -28,6 +28,7 @@ const ANNA: BoardMemberDto = {
   role: "ADMIN",
   expiresAt: null,
   avatarColor: "pink",
+  avatarPath: null,
 };
 
 const VIKTOR: BoardMemberDto = {
@@ -37,12 +38,14 @@ const VIKTOR: BoardMemberDto = {
   role: "VIEWER",
   expiresAt: Date.UTC(2030, 0, 1),
   avatarColor: null,
+  avatarPath: null,
 };
 
 const ANNA_ONLINE: PresenceUser = {
   id: "u-anna",
   displayName: "Anna Owner",
   avatarColor: "pink",
+  avatarPath: null,
 };
 
 function Trigger({ userId }: { userId: string }) {

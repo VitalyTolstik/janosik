@@ -255,6 +255,7 @@ describe("Invitations API (e2e)", () => {
     await db.board.deleteMany();
     await db.apiToken.deleteMany();
     await db.refreshToken.deleteMany();
+    await db.attachment.deleteMany();
     await db.user.deleteMany();
   }
 });

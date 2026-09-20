@@ -204,6 +204,30 @@ async function bumpCard(tx: Tx, card: Card, actorId: string): Promise<void> {
 }
 
 /**
+ * Renumber a card's live link rows to the order the reducer holds them in
+ * (TASK-46).
+ *
+ * `position` used to be written as "index of this row in the after-state
+ * array", which collides as soon as a removal leaves a gap: remove the row
+ * at index 0 and the next add lands on a position an existing row already
+ * occupies, so the aggregate's `orderBy: position` no longer reproduces the
+ * client's order. Rewriting the whole (short — capped at
+ * `LIMITS.linksPerCard`) list keeps the two byte-equal.
+ */
+async function writeLinkPositions(
+  tx: Tx,
+  boardId: string,
+  card: Card,
+): Promise<void> {
+  for (const [position, link] of (card.links ?? []).entries()) {
+    await tx.cardLink.updateMany({
+      where: { id: link.id, boardId },
+      data: { position },
+    });
+  }
+}
+
+/**
  * Upsert a checklist and its items, reviving soft-deleted rows on restore.
  *
  * Used by both the RESTORE commands and the create commands: undoing an
@@ -714,32 +738,38 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       const card = after.cards[action.cardId];
       if (!card) return [boardTouch];
       await bumpCard(tx, card, ctx.actorId);
-      const position = (card.links ?? []).findIndex(
-        (link) => link.id === action.linkId,
-      );
-      if (position === -1) return [boardTouch, touch.card(card.id)];
-      // Upsert on purpose: undoing a remove re-adds the same row (its id
-      // travels in the command), and a redo of a remove-undo must revive
-      // the soft-deleted row instead of colliding on the id.
-      await tx.cardLink.upsert({
-        where: { id: action.linkId },
-        create: {
-          id: action.linkId,
-          boardId,
+      const links = card.links ?? [];
+      if (!links.some((link) => link.id === action.linkId)) {
+        return [boardTouch, touch.card(card.id)];
+      }
+      // Revive-or-create, scoped to this board. An `upsert` on the bare id
+      // would let a command name a row that belongs to another board and
+      // repoint it (the id guard in `commands.service` refuses that first,
+      // but the writer must not be the only thing standing between the two
+      // boards). Undo of a remove re-adds the same row id, so the update
+      // branch has to clear `deletedAt` rather than insert a duplicate.
+      const revived = await tx.cardLink.updateMany({
+        where: { id: action.linkId, boardId },
+        data: {
           fromCardId: card.id,
           toCardId: action.targetCardId,
           type: action.linkType,
-          position,
-          deletedAt: null,
-        },
-        update: {
-          fromCardId: card.id,
-          toCardId: action.targetCardId,
-          type: action.linkType,
-          position,
           deletedAt: null,
         },
       });
+      if (revived.count === 0) {
+        await tx.cardLink.create({
+          data: {
+            id: action.linkId,
+            boardId,
+            fromCardId: card.id,
+            toCardId: action.targetCardId,
+            type: action.linkType,
+            deletedAt: null,
+          },
+        });
+      }
+      await writeLinkPositions(tx, boardId, card);
       return [boardTouch, touch.card(card.id)];
     }
 
@@ -749,11 +779,13 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       await bumpCard(tx, card, ctx.actorId);
       // Soft delete: the row survives so redo (the re-add) revives it, and
       // `RESTORE_CARD` of the target keeps the aggregate byte-equal to the
-      // reducer, which never scrubs a dangling row either.
+      // reducer, which never scrubs a dangling row either. Scoped by board
+      // for the same reason the add is.
       await tx.cardLink.updateMany({
-        where: { id: action.linkId, deletedAt: null },
+        where: { id: action.linkId, boardId, deletedAt: null },
         data: { deletedAt: new Date(ctx.at) },
       });
+      await writeLinkPositions(tx, boardId, card);
       return [boardTouch, touch.card(card.id)];
     }
 

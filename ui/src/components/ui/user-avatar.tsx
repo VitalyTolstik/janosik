@@ -4,6 +4,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useAvatarObjectUrl } from "@/hooks/use-avatar-object-url";
 import { cn } from "@/lib/utils";
 import { userAvatarColor, userInitials, userLabel } from "@/utils/avatar";
 
@@ -30,6 +31,14 @@ interface UserAvatarProps {
   email: string;
   /** Picked palette color; `null`/omitted → the id-hash default. */
   color?: UserAvatarColor | null;
+  /**
+   * Stored avatar image name (TASK-47). When set, the image is fetched once
+   * (authenticated blob → object URL, module-cached) and rendered over the
+   * initials; `null`/omitted keeps the initials.
+   */
+  avatarPath?: string | null;
+  /** Overrides the resolved image source (tests, previews). */
+  src?: string | null;
   size?: AvatarSize;
   className?: string;
 }
@@ -39,10 +48,14 @@ export function UserAvatar({
   displayName,
   email,
   color = null,
+  avatarPath,
+  src: srcOverride,
   size = "md",
   className,
 }: UserAvatarProps) {
   const label = userLabel(displayName, email);
+  const fetched = useAvatarObjectUrl(userId, avatarPath);
+  const src = srcOverride ?? fetched;
 
   return (
     <Tooltip>
@@ -52,13 +65,22 @@ export function UserAvatar({
           aria-label={label}
           data-testid="user-avatar"
           className={cn(
-            "inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold leading-none text-white",
+            "inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full font-semibold leading-none text-white",
             AVATAR_SIZES[size],
-            userAvatarColor(userId, color),
+            src ? undefined : userAvatarColor(userId, color),
             className,
           )}
         >
-          {userInitials(displayName, email)}
+          {src ? (
+            <img
+              src={src}
+              alt=""
+              className="h-full w-full object-cover"
+              draggable={false}
+            />
+          ) : (
+            userInitials(displayName, email)
+          )}
         </span>
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>

@@ -101,6 +101,7 @@ describe("Users API (e2e)", () => {
         email: PROFILE_EMAIL,
         displayName: "Vera Prime",
         avatarColor: "teal",
+        avatarPath: null,
         createdAt: expect.any(Number),
       });
 
@@ -132,6 +133,7 @@ describe("Users API (e2e)", () => {
         email: PROFILE_EMAIL,
         displayName: null,
         avatarColor: null,
+        avatarPath: null,
         createdAt: expect.any(Number),
       });
     });
@@ -355,6 +357,7 @@ describe("Users API (e2e)", () => {
   });
 
   async function wipe(db: PrismaService): Promise<void> {
+    await db.attachment.deleteMany();
     await db.cardLink.deleteMany();
     await db.cardLabel.deleteMany();
     await db.checklistItem.deleteMany();

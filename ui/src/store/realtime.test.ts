@@ -220,7 +220,9 @@ describe("presence bridge", () => {
 
   const PRESENCE: PresenceSseEvent = {
     type: "presence",
-    users: [{ id: "u-2", displayName: "Boris", avatarColor: null }],
+    users: [
+      { id: "u-2", displayName: "Boris", avatarColor: null, avatarPath: null },
+    ],
   };
   const FOREIGN: CommandSseEvent = {
     type: "command",

@@ -13,6 +13,7 @@ export function toAuthUser(user: User): AuthUser {
     email: user.email,
     displayName: user.displayName,
     avatarColor: (user.avatarColor as UserAvatarColor | null) ?? null,
+    avatarPath: user.avatarPath,
     createdAt: user.createdAt.getTime(),
   };
 }
