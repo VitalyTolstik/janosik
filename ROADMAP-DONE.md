@@ -1737,3 +1737,36 @@ PR #70, merge `25d0448` (ветка `VitalyTolstik/dev-task26`; коммиты `
 ### Гейты и раскладка
 
 backend **57 unit + 166 e2e** (новые: api-tokens 7, mojibake, admin-download, период-окно, inline-жизненный цикл ×2); ui **692 (89 файлов)** — embed-утилиты, paste описания (вставка markdown у курсора через ref-мок), paste композера, lightbox (крестик/pointerdown-изоляция/Escape), MediaDirective (video/audio в реальном MDXEditor), период/{total}/revoked-меню; lint/tsc/prettier/build зелёные; admin-чанк бюджет 30→**32 KB** (законный рост ~1 kB gzip — период-фильтры, JsonCell, превью, скачивание). — **PR #88, CI ✅, merge `681fc96`**
+
+## TASK-49 `card-assignee` — выполнено (2026-09-20)
+
+Ветка `feature/TASK-49-card-assignee` от `main`. Вне очереди, по запросу владельца: Jira-исполнитель на карточке с «супертоп»-пикером и аватаром на морде; плюс решение владельца убрать с карточки «кто изменил» (TASK-36 attribution-чипы).
+
+### Контур команды (паттерн TASK-45)
+
+- **Shared.** `Card.assigneeId?: string` (optional-field конвенция: снятие — `delete`, не `null`-ключ), `SET_CARD_ASSIGN { cardId, assigneeId: string | null }`, редьюсер `setCardAssign` (blank-id → null), activity-тип `assignee-set` (detail = userId или `""` при снятии), `invert`/`validate`/`normalizeCard` (sanitize non-string → unassigned). DUPLICATE_CARD копирует исполнителя через spread — как Jira-clone.
+- **Backend.** Миграция `20260920210948_card_assignee`: `assigneeId TEXT` + FK на `User` **ON DELETE SET NULL** (не RESTRICT — жёсткое удаление юзера размагничивает карточки вместо падения) + индекс для админ-вкладки. Writers: `SET_CARD_ASSIGN` в диспетчере и в `writeCardAction` (полная перезапись строки), `cardCreateData`/`cardUpdateData`. Import: FK-гвард — рукописный файл с несуществующим юзером молча теряет назначение вместо падения всего импорта.
+- **Гейт членства.** `assertAssigneeIsBoardMember` в `apply()`: исполнитель — активный участник доски (row есть, `acceptedAt NOT NULL`, VIEWER не истёк). **inverse exempt**: undo восстанавливает историческое состояние даже если участник с тех пор покинул доску — та же доктрина, что у undo меток. e2e-сюит `card-assignee.e2e-spec`: outsider 400, pending-приглашённый 400, member 200, MEMBER-роль может назначать коллеге, unassign не требует членства.
+- **Undo.** Клиентский `invert` восстанавливает `assigneeId ?? null` + `cardUpdatedAt` + отмотку ленты; e2e-pair в commands-undo; контракт-волк гоняет assign/unassign через «aggregate == boardReducer».
+
+### UI
+
+- **Пикер `CardAssignee`** (рядом с Priority в диалоге): Radix Popover + combobox — живой поиск по ростеру доски (name/email, startsWith-ранжирование, аватары, ✓ на текущем), закреплённая строка «Unassigned», клавиатура (↑/↓ по кругу, Enter), `onOpenAutoFocus` → input, курсор на hover. Мгновенное применение — как label/priority-пикеры. Данные — **`useBoardMembersList`** (новый хук + `MembersStore.list()`) — ростер сам оживает при SSE-присоединении участника. VIEWER — plain-readout.
+- **Аватар на морде** (`AssigneeBadge`, правый нижний угол карточки — как в Jira): `size="sm"` с ring, тултип «Assigned to {{name}}», клик → профиль, stopPropagation не открывает диалог. Резолв через директорию с initials-фоллбэком, если исполнитель покинул доску. `boardId` протащен пропом DndBoard → ColumnView → SortableCard → CardItem (примитив — memo не ломается, доктрина TASK-21.4).
+- **TableView**: опциональная колонка «Assignee» (после Priority, скрыта по умолчанию), сортировка по имени через bulk-map имён (не назначенные — всегда в хвосте независимо от направления).
+- **Фильтры**: фасет «Assignee» — чек-строки участников с аватарами + псевдо-опция «Unassigned»; `filter.assignees`/`filter.unassigned` (OR), считаются одним фасетом в бейдже.
+- **История**: предложения и diff-половины резолвят userId через директорию (fallback — raw id, если юзер ушёл); sentence «Assignee changed to X» / «Removed the assignee»; assignee исключён из word-diff (ids сравнивать по буквам нельзя).
+
+### Ретро-атрибуция (решение владельца)
+
+Убраны «кто изменил»-чипы: `card-last-actor` (морда) и `table-last-actor` (таблица) + ключ `card.changedBy` + их тесты. **Живой 2-секундный foreign-хайлайт сохранён** — это коллаборативный сигнал «карточку только что трогали», а не вечная атрибуция; цвет автора берётся из директории как раньше.
+
+### Админка
+
+- Ряды карточек: `assigneeId`/`assigneeEmail` (+ `assigneeDisplayName` в detail), join в `CARD_ROW_SELECT`; колонка Assignee в таблице (EntityLink на юзера + копирование email) — по образцу owner-колонки досок; мета-строка Assignee в CardDetailPage.
+- Юзер-детейл: вкладка «Assigned cards» (`prisma.card.findMany({ assigneeId })` с `CARD_ROW_SELECT`, take 100, только живые) + счётчик `cardsAssigned`.
+- Глобальный поиск карточек дополнился OR по email/displayName исполнителя.
+
+### Гейты и раскладка
+
+shared 367; backend **58 unit + 170 e2e** (+4 assignee-гейт, контракт и undo-пары расширены); ui **700 (90 файлов)** — пикер (5), бейдж (3), фильтры, история; lint/tsc/prettier/build зелёные; size-limit: admin-чанк 31.15/32 KB (голова ~0.85 KB — запас на следующую итерацию невелик).
