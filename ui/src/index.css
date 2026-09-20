@@ -799,6 +799,27 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
   cursor: zoom-in;
 }
 
+/* Embedded pasted media players (TASK-48): the directive blocks render
+ * with native controls and never overflow the editor surface. */
+.mdxeditor.janosik-mdx .janosik-md-video,
+.mdxeditor.janosik-mdx .janosik-md-audio {
+  display: block;
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.mdxeditor.janosik-mdx .janosik-md-audio {
+  width: 100%;
+}
+
+.mdxeditor.janosik-mdx .janosik-md-media-placeholder {
+  height: 3.5rem;
+  border-radius: 8px;
+  background: var(--muted);
+  opacity: 0.5;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
 /* --- Compact content: the comment composer (TASK-37). A comment starts as
  * one line, not a 190px description field, and grows with its text. --- */
 .mdxeditor.janosik-mdx .janosik-md-content.janosik-md-compact {

@@ -8,6 +8,7 @@ import {
   UndoRedo,
   Separator,
   codeBlockPlugin,
+  directivesPlugin,
   headingsPlugin,
   imagePlugin,
   linkDialogPlugin,
@@ -24,6 +25,10 @@ import {
 import { editorTranslation } from "@/components/editor/editor-i18n";
 import { PlainTextCodeBlockEditor } from "@/components/editor/PlainTextCodeBlock";
 import { janosikIconFor } from "@/components/editor/janosik-icons";
+import {
+  audioDirectiveDescriptor,
+  videoDirectiveDescriptor,
+} from "@/components/editor/MediaDirective";
 import { attachmentImagePreviewHandler } from "@/utils/embedAttachments";
 
 /**
@@ -51,6 +56,11 @@ const contentPlugins: RealmPlugin[] = [
   quotePlugin(),
   linkPlugin(),
   markdownShortcutPlugin(),
+  // Embedded pasted media (TASK-48): `::video{src="…"}` / `::audio{src="…"}`
+  // leaf directives render as real players in every editor surface.
+  directivesPlugin({
+    directiveDescriptors: [videoDirectiveDescriptor, audioDirectiveDescriptor],
+  }),
   codeBlockPlugin({
     defaultCodeBlockLanguage: "txt",
     // TASK-21: without any descriptor `MdastCodeVisitor.testNode` never

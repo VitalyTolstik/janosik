@@ -38,16 +38,23 @@ function linkText(name: string): string {
 
 /**
  * Markdown for one pasted file, wrapped in paragraph breaks so the pasted
- * media sits on its own block — text, image, text, file keep their order
- * (the "structure" the paste must preserve). Images embed as images,
- * everything else as a plain download link.
+ * media sits on its own block — text, image, video, text keep their order
+ * (the "structure" the paste must preserve). Images embed as images, video
+ * and audio as player directives, everything else as a plain download link.
  */
 export function embedMarkdown(file: File, attachmentId: string): string {
   const name = linkText(file.name);
   const url = attachmentContentUrl(attachmentId);
-  const md = file.type.startsWith("image/")
-    ? `![${name}](${url})`
-    : `[${name}](${url})`;
+  let md: string;
+  if (file.type.startsWith("image/")) {
+    md = `![${name}](${url})`;
+  } else if (file.type.startsWith("video/")) {
+    md = `::video{src="${url}"}`;
+  } else if (file.type.startsWith("audio/")) {
+    md = `::audio{src="${url}"}`;
+  } else {
+    md = `[${name}](${url})`;
+  }
   return `\n\n${md}\n\n`;
 }
 

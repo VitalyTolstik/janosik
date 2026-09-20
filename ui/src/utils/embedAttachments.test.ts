@@ -62,6 +62,15 @@ describe("embedMarkdown", () => {
     expect(md).toBe("\n\n[spec.pdf](/api/v1/attachments/att-2/content)\n\n");
   });
 
+  it("embeds video and audio as player directives", () => {
+    expect(
+      embedMarkdown(new File(["x"], "clip.mp4", { type: "video/mp4" }), "v-1"),
+    ).toBe('\n\n::video{src="/api/v1/attachments/v-1/content"}\n\n');
+    expect(
+      embedMarkdown(new File(["x"], "take.mp3", { type: "audio/mpeg" }), "a-1"),
+    ).toBe('\n\n::audio{src="/api/v1/attachments/a-1/content"}\n\n');
+  });
+
   it("strips characters that would break the markdown link", () => {
     const md = embedMarkdown(
       new File(["x"], "we[ird] (name).png", { type: "image/png" }),
