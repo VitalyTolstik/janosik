@@ -472,8 +472,12 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   auth-user.mapper/presence join/roster/updateUser — при добавлении
   полей юзера не забывать все три точки. Aватарный object URL
   module-кэшируется по userId+avatarPath (`use-avatar-object-url.ts`) —
-  иначе каждый ререндер дёргает fetch. e2e-wipe: `attachment.deleteMany()`
-  перед `cardLink` (FK-порядок).
+  иначе каждый ререндер дёргает fetch. Эндпоинт аватара отдаёт
+  `immutable` на год, а URL не меняется между загрузками — клиент
+  обязан версионировать запрос (`fetchUserAvatar(userId, avatarPath)` →
+  `?v=storedName`), иначе вторая смена аватара показывает старую
+  картинку из HTTP-кэша браузера (фикс — PR #87). e2e-wipe:
+  `attachment.deleteMany()` перед `cardLink` (FK-порядок).
 - **Markdown-поверхности:** лимит комментария 10k (`LIMITS.comment`,
   колонка `Comment.text` — `@db.Text`); композер — premium-Save слева +
   тихий Cancel рядом, оба дисейблятся на пустом черновике (Cancel — чтобы
