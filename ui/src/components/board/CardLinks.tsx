@@ -86,8 +86,16 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
   );
 
   // Group the rows by how they read from this card, in a stable order.
+  // `dangling` is the tail group: rows whose target card was deleted. They
+  // still occupy the card's row cap, so the only way to free a capped card
+  // is to show them here with their remove button (TASK-46 follow-up).
   type GroupKey =
-    "blocks" | "blockedBy" | "relatesTo" | "duplicates" | "duplicatedBy";
+    | "blocks"
+    | "blockedBy"
+    | "relatesTo"
+    | "duplicates"
+    | "duplicatedBy"
+    | "dangling";
   const groups = useMemo(() => {
     const build = (
       key: GroupKey,
@@ -104,14 +112,27 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
             key,
             rows: rows.sort((a, b) => a.title.localeCompare(b.title)),
           };
+    // Typed groups read only live rows — a row with no target has no
+    // readable phrasing ("blocks <nothing>").
     const outgoing = (type: CardLinkType) =>
       facts.outgoing
-        .filter((link) => link.type === type)
+        .filter(
+          (link) => link.type === type && link.targetCardId in board.cards,
+        )
         .map((link) => ({
           linkId: link.id,
           targetCardId: link.targetCardId,
           type,
           title: board.cards[link.targetCardId]?.title ?? "",
+        }));
+    const dangling = () =>
+      facts.outgoing
+        .filter((link) => !(link.targetCardId in board.cards))
+        .map((link) => ({
+          linkId: link.id,
+          targetCardId: link.targetCardId,
+          type: link.type,
+          title: t("card.links.deletedCard"),
         }));
     const incoming = (type: CardLinkType) =>
       facts.incoming
@@ -131,8 +152,9 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
       ]),
       build("duplicates", outgoing("duplicates")),
       build("duplicatedBy", incoming("duplicates")),
+      build("dangling", dangling()),
     ].filter((group) => group !== null);
-  }, [board.cards, facts]);
+  }, [board.cards, facts, t]);
 
   // Keep the highlighted row inside the list as the query filters it —
   // derived at render instead of an effect (no cascading setState).
@@ -142,6 +164,9 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
   // against the cap too.
   const linkCount = (id: string) => board.cards[id]?.links?.length ?? 0;
 
+  // A viewer sees the section only when there is a real relation to read;
+  // an editor also needs it when the card holds nothing but dangling rows,
+  // because those are what is holding the cap.
   if (readOnly && facts.degree === 0) return null;
 
   const pick = (target: { id: string; title: string }) => {
@@ -237,18 +262,17 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
                     >
                       <button
                         type="button"
-                        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm text-foreground/90 transition-colors hover:bg-hover"
+                        disabled={!target}
+                        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm text-foreground/90 transition-colors hover:bg-hover disabled:cursor-default disabled:text-muted-foreground/70 disabled:hover:bg-transparent"
                         onClick={() => openCard(row.targetCardId)}
                         data-testid="card-link-open"
                         title={target?.title}
                       >
                         <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        {/* A row with no target reads its own label
+                            ("Deleted card") and sits in the dangling
+                            group, so it needs no extra tag here. */}
                         <span className="truncate">{row.title}</span>
-                        {!target ? (
-                          <span className="ml-1 text-[11px] text-muted-foreground/60">
-                            {t("card.links.deleted")}
-                          </span>
-                        ) : null}
                       </button>
                       {!readOnly ? (
                         <Tooltip>

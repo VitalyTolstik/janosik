@@ -315,6 +315,7 @@ function CommentComposer({
         displayName={user.displayName}
         email={user.email}
         color={user.avatarColor}
+        avatarPath={user.avatarPath}
         size="sm"
         className="ml-0.5 mt-0.5 shrink-0"
       />
@@ -411,6 +412,7 @@ function CommentRow({
           displayName={member?.displayName ?? null}
           email={email}
           color={member?.avatarColor}
+          avatarPath={member?.avatarPath}
           size="sm"
           className="ring-1 ring-border/60"
         />

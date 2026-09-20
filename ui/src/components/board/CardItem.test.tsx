@@ -204,6 +204,7 @@ describe("attribution (TASK-36)", () => {
                     email: "me@example.com",
                     displayName: "Me",
                     avatarColor: null,
+                    avatarPath: null,
                     createdAt: 0,
                   },
                   login: async () => {},
@@ -231,6 +232,7 @@ describe("attribution (TASK-36)", () => {
         role: "MEMBER",
         expiresAt: null,
         avatarColor: null,
+        avatarPath: null,
       },
     ]);
     live.attribution.stamp("b-1", "u-boris", ["c-1"], {
@@ -266,6 +268,7 @@ describe("attribution (TASK-36)", () => {
         role: "MEMBER",
         expiresAt: null,
         avatarColor: null,
+        avatarPath: null,
       },
     ]);
     live.attribution.stamp("b-1", "u-boris", ["c-1"], {

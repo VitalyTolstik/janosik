@@ -1,12 +1,13 @@
-import { useState, type FormEvent } from "react";
-import { Check, RotateCcw } from "lucide-react";
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { Check, RotateCcw, Upload } from "lucide-react";
 import { DISPLAY_NAME_MAX, type UserAvatarColor } from "@janosik/shared";
 
-import { api } from "@/api/client";
+import { api, ApiError } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/Toast";
+import { useAvatarObjectUrl } from "@/hooks/use-avatar-object-url";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import {
@@ -31,6 +32,8 @@ export function ProfileSection() {
     user?.avatarColor ?? null,
   );
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   if (user === null) return null;
 
@@ -57,6 +60,26 @@ export function ProfileSection() {
     }
   };
 
+  /** Photo upload (TASK-47): the server validates type and size. */
+  const handlePhoto = async (file: File | undefined) => {
+    if (!file || uploading) return;
+    setUploading(true);
+    try {
+      const next = await api.uploadAvatar(file);
+      updateUser(next);
+      toast.success(t("account.profile.saved"));
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 413) {
+        toast.error(t("card.attachments.tooLarge", { max: 2 }));
+      } else {
+        toast.error(t("account.profile.avatarError"));
+      }
+    } finally {
+      setUploading(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  };
+
   return (
     <section className="space-y-5" data-testid="account-profile">
       <header className="space-y-1">
@@ -67,15 +90,52 @@ export function ProfileSection() {
       </header>
 
       <div className="flex flex-col gap-5 rounded-lg border bg-muted/30 p-4 sm:flex-row sm:items-center">
-        <span
-          aria-hidden
-          className={cn(
-            "flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-xl font-semibold text-white shadow-sm",
-            avatarColorClass(color ?? avatarColorKey(user.id)),
+        <div className="flex flex-col items-center gap-2">
+          {user.avatarPath ? (
+            <AvatarImage
+              userId={user.id}
+              avatarPath={user.avatarPath}
+              name={name}
+              email={user.email}
+            />
+          ) : (
+            <span
+              aria-hidden
+              className={cn(
+                "flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-xl font-semibold text-white shadow-sm",
+                avatarColorClass(color ?? avatarColorKey(user.id)),
+              )}
+            >
+              {userInitials(name, user.email)}
+            </span>
           )}
-        >
-          {userInitials(name, user.email)}
-        </span>
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            className="hidden"
+            data-testid="avatar-photo-input"
+            onChange={(event: ChangeEvent<HTMLInputElement>) =>
+              void handlePhoto(event.target.files?.[0])
+            }
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid="avatar-photo-upload"
+            disabled={uploading}
+            onClick={() => photoInputRef.current?.click()}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            {uploading
+              ? t("account.profile.avatarUploading")
+              : t("account.profile.avatarUpload")}
+          </Button>
+          <p className="max-w-[12rem] text-center text-[10px] text-muted-foreground">
+            {t("account.profile.avatarHint")}
+          </p>
+        </div>
         <div className="min-w-0 flex-1 space-y-2">
           <p className="text-xs font-medium text-muted-foreground">
             {t("account.profile.colorLabel")}
@@ -170,5 +230,35 @@ export function ProfileSection() {
         </div>
       </form>
     </section>
+  );
+}
+
+/** The uploaded photo (TASK-47) — object URL via the authenticated fetch. */
+function AvatarImage({
+  userId,
+  avatarPath,
+}: {
+  userId: string;
+  avatarPath: string;
+  name: string;
+  email: string;
+}) {
+  const src = useAvatarObjectUrl(userId, avatarPath);
+  return (
+    <span
+      aria-hidden
+      className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full shadow-sm"
+    >
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          className="h-full w-full object-cover"
+          draggable={false}
+        />
+      ) : (
+        <span className="h-full w-full animate-pulse rounded-full bg-muted" />
+      )}
+    </span>
   );
 }

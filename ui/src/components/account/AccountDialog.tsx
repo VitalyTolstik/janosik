@@ -92,6 +92,7 @@ export function AccountDialog() {
                 displayName={user.displayName}
                 email={user.email}
                 color={user.avatarColor}
+                avatarPath={user.avatarPath}
                 size="sm"
               />
               <span className="hidden max-w-28 truncate text-sm sm:inline">

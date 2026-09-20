@@ -69,6 +69,7 @@ export function PresenceStack() {
                   displayName={person.displayName}
                   email=""
                   color={person.avatarColor}
+                  avatarPath={person.avatarPath}
                   size="sm"
                   className="ring-2 ring-background"
                 />
@@ -147,6 +148,7 @@ function PresenceRow({
           displayName={person.displayName}
           email={member?.email ?? ""}
           color={person.avatarColor ?? member?.avatarColor}
+          avatarPath={person.avatarPath ?? member?.avatarPath}
           size="sm"
         />
         <span className="min-w-0 flex-1 truncate text-sm text-foreground/90">

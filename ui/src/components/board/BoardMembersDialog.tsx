@@ -557,6 +557,7 @@ export function BoardMembersPanel({
                       displayName={member.displayName}
                       email={member.email}
                       color={member.avatarColor}
+                      avatarPath={member.avatarPath}
                     />
                     <div className="min-w-0 flex-1">
                       <p className="flex items-center gap-1.5 truncate text-sm font-medium">

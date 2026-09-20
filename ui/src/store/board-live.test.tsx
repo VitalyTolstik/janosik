@@ -21,8 +21,18 @@ import {
  * directory and the command → card-id mapping that feeds them.
  */
 
-const alice = { id: "u-alice", displayName: "Alice", avatarColor: null };
-const bob = { id: "u-bob", displayName: "Bob", avatarColor: null };
+const alice = {
+  id: "u-alice",
+  displayName: "Alice",
+  avatarColor: null,
+  avatarPath: null,
+};
+const bob = {
+  id: "u-bob",
+  displayName: "Bob",
+  avatarColor: null,
+  avatarPath: null,
+};
 
 function member(overrides: Partial<BoardMemberDto> = {}): BoardMemberDto {
   return {
@@ -32,6 +42,7 @@ function member(overrides: Partial<BoardMemberDto> = {}): BoardMemberDto {
     role: "MEMBER",
     expiresAt: null,
     avatarColor: null,
+    avatarPath: null,
     ...overrides,
   };
 }
