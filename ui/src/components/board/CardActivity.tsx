@@ -61,11 +61,11 @@ export function CardActivity({
   const { t } = useI18n();
   const [view, setView] = useState<ActivityView>("comments");
   const [commentCount, setCommentCount] = useState(0);
+  const [historyCount, setHistoryCount] = useState(0);
 
   return (
     <CollapsibleSection
       title={t("activity.title")}
-      badge={commentCount > 0 ? commentCount : undefined}
       defaultExpanded
       testId="activity-toggle"
       contentClassName="mt-3 space-y-3"
@@ -75,24 +75,35 @@ export function CardActivity({
         aria-label={t("activity.title")}
         className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/80 p-1 shadow-sm"
       >
-        {VIEWS.map(({ id, icon: Icon, labelKey, testId }) => (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={view === id}
-            data-testid={testId}
-            onClick={() => setView(id)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-              view === id
-                ? "bg-primary/15 text-primary"
-                : "text-muted-foreground hover:bg-hover hover:text-foreground",
-            )}
-          >
-            <Icon className="h-3.5 w-3.5" aria-hidden />
-            {t(labelKey)}
-          </button>
-        ))}
+        {VIEWS.map(({ id, icon: Icon, labelKey, testId }) => {
+          const count = id === "comments" ? commentCount : historyCount;
+          return (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={view === id}
+              data-testid={testId}
+              onClick={() => setView(id)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                view === id
+                  ? "bg-primary/15 text-primary"
+                  : "text-muted-foreground hover:bg-hover hover:text-foreground",
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" aria-hidden />
+              {t(labelKey)}
+              {count > 0 ? (
+                <span
+                  data-testid={`${testId}-count`}
+                  className="rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground"
+                >
+                  {count}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
       </div>
 
       {/* The inactive view unmounts: returning to it re-reads the newest
@@ -112,6 +123,7 @@ export function CardActivity({
           boardId={boardId}
           updatedAt={updatedAt}
           localActivity={localActivity}
+          onCountChange={setHistoryCount}
         />
       )}
     </CollapsibleSection>
