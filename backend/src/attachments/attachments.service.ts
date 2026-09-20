@@ -41,6 +41,7 @@ export class AttachmentsService {
     cardId: string,
     user: AuthUser,
     file: UploadedBlob,
+    isInline = false,
   ): Promise<AttachmentDto> {
     if (!file || file.size <= 0) {
       throw new BadRequestException({
@@ -83,6 +84,9 @@ export class AttachmentsService {
     await writeFile(this.storage.attachmentPath(storedName), file.buffer);
 
     const now = new Date();
+    // Inline media (pasted into the description/comment body) skip the
+    // card-face counter, the activity row and the SSE frame: nothing in
+    // the attachment UI changes, only the body markdown references them.
     const created = await this.prisma.$transaction(async (tx) => {
       const row = await tx.attachment.create({
         data: {
@@ -94,24 +98,30 @@ export class AttachmentsService {
           mimeType: file.mimetype,
           sizeBytes: file.size,
           uploadedById: user.id,
+          isInline,
           createdAt: now,
         },
       });
-      await tx.card.update({
-        where: { id: cardId },
-        data: { attachmentCount: { increment: 1 } },
-      });
-      const activity = await tx.activity.create({
-        data: {
-          boardId: card.column.boardId,
-          cardId,
-          type: "attachment_added",
-          actorId: user.id,
-          details: { attachmentId: row.id, fileName },
-        },
-      });
-      return { row, activityId: activity.id };
+      if (!isInline) {
+        await tx.card.update({
+          where: { id: cardId },
+          data: { attachmentCount: { increment: 1 } },
+        });
+        const activity = await tx.activity.create({
+          data: {
+            boardId: card.column.boardId,
+            cardId,
+            type: "attachment_added",
+            actorId: user.id,
+            details: { attachmentId: row.id, fileName },
+          },
+        });
+        return { row, activityId: activity.id };
+      }
+      return { row, activityId: null };
     });
+
+    if (created.activityId === null) return toAttachmentDto(created.row);
 
     this.publish(
       card.column.boardId,
@@ -126,7 +136,7 @@ export class AttachmentsService {
 
   async list(cardId: string): Promise<AttachmentDto[]> {
     const rows = await this.prisma.attachment.findMany({
-      where: { cardId, deletedAt: null },
+      where: { cardId, deletedAt: null, isInline: false },
       orderBy: { createdAt: "desc" },
     });
     return rows.map(toAttachmentDto);

@@ -12,9 +12,17 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 
-vi.mock("@/components/editor/DescriptionEditor", () => ({
-  DescriptionEditor: () => <div data-testid="description-editor" />,
-}));
+vi.mock("@/components/editor/DescriptionEditor", () => {
+  return import("react").then(({ forwardRef }) => ({
+    // forwardRef: the card dialog passes a ref for paste-embedding.
+    DescriptionEditor: forwardRef(function MockedDescriptionEditor(
+      _props: Record<string, never>,
+      _ref: unknown,
+    ) {
+      return <div data-testid="description-editor" />;
+    }),
+  }));
+});
 
 /**
  * The card dialog's copy-link affordance and the Activity section placement

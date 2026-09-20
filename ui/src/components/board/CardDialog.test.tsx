@@ -28,24 +28,42 @@ import { api } from "@/api/client";
  * engine; the editor itself is covered by the library's own test suite.
  */
 
-vi.mock("@/components/editor/DescriptionEditor", () => ({
-  DescriptionEditor: ({
-    value,
-    onChange,
-  }: {
-    value: string;
-    onChange: (markdown: string) => void;
-  }) => (
-    // Uncontrolled on purpose: the real MDXEditor reads `value` once and
-    // owns its state, staging edits until the blur-commit lands.
-    <textarea
-      aria-label="Description"
-      data-testid="description-editor"
-      defaultValue={value}
-      onChange={(e) => onChange(e.target.value)}
-    />
-  ),
+const { inserted } = vi.hoisted(() => ({
+  inserted: { markdown: [] as string[] },
 }));
+
+vi.mock("@/components/editor/DescriptionEditor", () => {
+  return import("react").then(({ forwardRef, useImperativeHandle }) => ({
+    // The real editor is stubbed — it needs a full browser layout engine.
+    // The imperative surface (paste embedding) is part of the contract.
+    DescriptionEditor: forwardRef(function MockedDescriptionEditor(
+      {
+        value,
+        onChange,
+      }: {
+        value: string;
+        onChange: (markdown: string) => void;
+      },
+      ref: React.Ref<{ insertMarkdown: (markdown: string) => void }>,
+    ) {
+      useImperativeHandle(ref, () => ({
+        insertMarkdown: (markdown: string) => {
+          inserted.markdown.push(markdown);
+        },
+      }));
+      // Uncontrolled on purpose: the real MDXEditor reads `value` once and
+      // owns its state, staging edits until the blur-commit lands.
+      return (
+        <textarea
+          aria-label="Description"
+          data-testid="description-editor"
+          defaultValue={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      );
+    }),
+  }));
+});
 
 function renderBoard() {
   return render(
@@ -128,6 +146,7 @@ describe("CardDialog description editor", () => {
   });
 
   it("uploads a pasted image as a card attachment (Jira-style)", async () => {
+    inserted.markdown.length = 0;
     const upload = vi.spyOn(api, "uploadAttachment").mockResolvedValue({
       id: "att-paste",
       cardId: "card-1",
@@ -152,8 +171,42 @@ describe("CardDialog description editor", () => {
     await waitFor(() => {
       expect(upload).toHaveBeenCalledWith(expect.any(String), expect.any(File));
     });
-    // The description text itself is untouched by an image paste.
+    // The image embeds into the description markdown at the cursor…
+    await waitFor(() => {
+      expect(inserted.markdown[0]).toBe(
+        "\n\n![pasted.png](/api/v1/attachments/att-paste/content)\n\n",
+      );
+    });
+    // …and the description text itself is untouched by an image paste.
     expect(editor.value).toBe(before);
+  });
+
+  it("embeds a pasted non-image file as a download link attachment", async () => {
+    inserted.markdown.length = 0;
+    const upload = vi.spyOn(api, "uploadAttachment").mockResolvedValue({
+      id: "att-file",
+      cardId: "card-1",
+      fileName: "spec.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 4,
+      uploadedById: "user-1",
+      createdAt: 0,
+    });
+    await openCardDialog("Design the new onboarding flow");
+    const editor = await screen.findByLabelText("Description");
+
+    fireEvent.paste(editor, {
+      clipboardData: {
+        files: [new File(["bits"], "spec.pdf", { type: "application/pdf" })],
+      },
+    });
+
+    await waitFor(() => {
+      expect(upload).toHaveBeenCalledWith(expect.any(String), expect.any(File));
+      expect(inserted.markdown[0]).toBe(
+        "\n\n[spec.pdf](/api/v1/attachments/att-file/content)\n\n",
+      );
+    });
   });
 });
 

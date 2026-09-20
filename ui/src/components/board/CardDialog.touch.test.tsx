@@ -17,22 +17,30 @@ import { BoardProvider, useBoard } from "@/store/BoardContext";
 
 // The real MDXEditor (Lexical) needs a browser layout engine — stub it, as
 // the other CardDialog test does.
-vi.mock("@/components/editor/DescriptionEditor", () => ({
-  DescriptionEditor: ({
-    value,
-    onChange,
-  }: {
-    value: string;
-    onChange: (markdown: string) => void;
-  }) => (
-    <textarea
-      aria-label="Description"
-      data-testid="description-editor"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-    />
-  ),
-}));
+vi.mock("@/components/editor/DescriptionEditor", () => {
+  return import("react").then(({ forwardRef }) => ({
+    // forwardRef: the card dialog passes a ref for paste-embedding.
+    DescriptionEditor: forwardRef(function MockedDescriptionEditor(
+      {
+        value,
+        onChange,
+      }: {
+        value: string;
+        onChange: (markdown: string) => void;
+      },
+      _ref: unknown,
+    ) {
+      return (
+        <textarea
+          aria-label="Description"
+          data-testid="description-editor"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      );
+    }),
+  }));
+});
 
 const QUIET_TOUCH_DELAY_MS = 800;
 

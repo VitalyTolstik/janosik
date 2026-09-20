@@ -677,5 +677,6 @@
   "activity.link-removed": "Связь с «{{detail}}» убрана",
   "history.field.link": "Связь",
   "filter.links": "Связи",
-  "card.attachments.pasted": "Картинка добавлена во вложения: {{name}}"
+  "card.attachments.pasted": "{{name}} — добавлено в описание и во вложения",
+  "card.attachments.pasteOffline": "Вставка файлов доступна только в режиме сервера"
 }
