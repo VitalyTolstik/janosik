@@ -3,7 +3,7 @@ import { createReadStream, existsSync } from "node:fs";
 import { mkdir, unlink } from "node:fs/promises";
 import path from "node:path";
 
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 
 /**
  * Accepted attachment MIME types (TASK-47). A deliberate allowlist of
@@ -21,16 +21,28 @@ export const AVATAR_MIME_ALLOWLIST = /^image\/(png|jpeg|gif|webp)$/;
 
 /**
  * Self-hosted blob storage (TASK-47): files live under `UPLOAD_DIR`
- * (default `<cwd>/data/uploads`), avatars under its `avatars/` subfolder.
+ * (default `backend/data/uploads`), avatars under its `avatars/` subfolder.
+ * The default is anchored to the backend package, never to the process
+ * working directory — a server launched from anywhere must resolve the
+ * same blobs (the cwd-relative default once "lost" every upload after a
+ * restart from another folder).
  * Every stored name is server-generated (`cuid`-like UUID + sanitized
  * extension) — client file names are metadata and never touch the disk.
  */
 @Injectable()
 export class StorageService {
+  private readonly logger = new Logger(StorageService.name);
+
+  /** Anchored to the backend package dir, not the process cwd (see above). */
   private readonly root = path.resolve(
-    process.env.UPLOAD_DIR ?? path.join("data", "uploads"),
+    process.env.UPLOAD_DIR ??
+      path.join(__dirname, "..", "..", "data", "uploads"),
   );
   private readonly avatarRoot = path.join(this.root, "avatars");
+
+  constructor() {
+    this.logger.log(`Blob storage root: ${this.root}`);
+  }
 
   /** Create the storage tree lazily (first upload after a fresh clone). */
   async ensureDirs(): Promise<void> {
