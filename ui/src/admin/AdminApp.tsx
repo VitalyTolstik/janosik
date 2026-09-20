@@ -31,7 +31,7 @@ function EntityRoute({
   entity: Parameters<typeof useEntityConfig>[0];
 }) {
   const config = useEntityConfig(entity);
-  return <EntityPage config={config} />;
+  return <EntityPage key={entity} config={config} />;
 }
 
 /** Detail pages remount per id so state never leaks between entities. */
