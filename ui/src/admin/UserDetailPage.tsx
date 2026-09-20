@@ -58,6 +58,7 @@ import {
 type TabKey =
   | "memberships"
   | "cards"
+  | "assignedCards"
   | "comments"
   | "attachments"
   | "sessions"
@@ -160,6 +161,11 @@ export function UserDetailPage() {
       key: "cards",
       label: t("admin.userDetail.tab.cards"),
       count: detail.createdCards.length,
+    },
+    {
+      key: "assignedCards",
+      label: t("admin.userDetail.tab.assignedCards"),
+      count: detail.assignedCards.length,
     },
     {
       key: "comments",
@@ -285,7 +291,7 @@ export function UserDetailPage() {
         ) : null}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
         <StatCard
           icon={KanbanSquare}
           label={t("admin.userDetail.stat.boards")}
@@ -295,6 +301,11 @@ export function UserDetailPage() {
           icon={KanbanSquare}
           label={t("admin.userDetail.stat.cardsCreated")}
           value={counters.cardsCreated}
+        />
+        <StatCard
+          icon={Users}
+          label={t("admin.userDetail.stat.cardsAssigned")}
+          value={counters.cardsAssigned}
         />
         <StatCard
           icon={MessageSquare}
@@ -417,6 +428,57 @@ export function UserDetailPage() {
               </thead>
               <tbody>
                 {detail.createdCards.map((card) => (
+                  <tr key={card.id}>
+                    <Td>
+                      <EntityLink to={cardHref(card.id)}>
+                        {card.title}
+                      </EntityLink>
+                    </Td>
+                    <Td>
+                      <EntityLink to={boardHref(card.boardId)}>
+                        {card.boardTitle}
+                      </EntityLink>
+                    </Td>
+                    <Td>
+                      <TextCell value={card.columnTitle} maxWidth="10rem" />
+                    </Td>
+                    <Td>
+                      <DateCell value={card.updatedAt} />
+                    </Td>
+                    <Td>
+                      <StatusBadge
+                        deletedAt={card.deletedAt}
+                        archivedAt={card.archivedAt}
+                        labels={{
+                          active: t("admin.status.active"),
+                          archived: t("admin.status.archived"),
+                          deleted: t("admin.status.deleted"),
+                        }}
+                      />
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )
+        ) : null}
+
+        {tab === "assignedCards" ? (
+          detail.assignedCards.length === 0 ? (
+            <EmptyState message={t("admin.userDetail.noAssignedCards")} />
+          ) : (
+            <Table maxHeight="40rem">
+              <thead>
+                <tr>
+                  <Th>{t("admin.cards.column.title")}</Th>
+                  <Th>{t("admin.cards.column.board")}</Th>
+                  <Th>{t("admin.cards.column.columnRef")}</Th>
+                  <Th>{t("admin.cards.column.updated")}</Th>
+                  <Th>{t("admin.cards.column.status")}</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.assignedCards.map((card) => (
                   <tr key={card.id}>
                     <Td>
                       <EntityLink to={cardHref(card.id)}>

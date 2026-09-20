@@ -7,6 +7,8 @@ import type { Card, Label } from "@janosik/shared";
 
 interface SortableCardProps {
   card: Card;
+  /** The board id — resolves the assignee badge's member (TASK-49). */
+  boardId?: string;
   /** Labels resolved from the board (multi-label support). */
   labels: Label[];
   /** Filter/search query highlighted on the card front. */
@@ -34,6 +36,7 @@ interface SortableCardProps {
  */
 function SortableCardView({
   card,
+  boardId,
   labels,
   highlight,
   isCursor,
@@ -73,6 +76,7 @@ function SortableCardView({
     >
       <CardItem
         card={card}
+        boardId={boardId}
         labels={labels}
         isDragging={isDragging}
         highlight={highlight}

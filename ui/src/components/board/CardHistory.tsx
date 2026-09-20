@@ -64,6 +64,7 @@ const COMMAND_KEYS: Record<string, MessageKey> = {
   MOVE_CARD: "activity.moved",
   SET_CARD_DUE_DATE: "activity.due-date-set",
   SET_CARD_PRIORITY: "activity.priority-set",
+  SET_CARD_ASSIGN: "activity.assignee-set",
   ADD_CARD_LINK: "activity.link-added",
   REMOVE_CARD_LINK: "activity.link-removed",
   SET_CARD_COVER: "activity.cover-set",
@@ -86,6 +87,7 @@ const FIELD_KEYS: Record<string, MessageKey> = {
   description: "history.field.description",
   dueDate: "history.field.dueDate",
   priority: "history.field.priority",
+  assignee: "history.field.assignee",
   link: "history.field.link",
   column: "history.field.column",
   label: "history.field.label",
@@ -290,7 +292,28 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
     ? userLabel(member?.displayName ?? null, member?.email ?? "")
     : "";
 
-  const sentence = sentenceFor(entry, lang, hour12);
+  // An assignee entry names its subject in the sentence (TASK-49) — the
+  // raw id from the change log resolves through the member directory. The
+  // command reads the diff (`to`), the activity event the `detail`.
+  const isAssigneeEntry =
+    entry.type === "SET_CARD_ASSIGN" || entry.type === "assignee-set";
+  const assigneeTo = !isAssigneeEntry
+    ? undefined
+    : entry.type === "SET_CARD_ASSIGN"
+      ? (entry.changes?.[0]?.to ?? null)
+      : entry.detail || null;
+  const assigneeMember = useBoardMember(boardId, assigneeTo ?? undefined);
+  const assigneeName =
+    assigneeTo === undefined
+      ? null
+      : assigneeTo === null
+        ? ""
+        : userLabel(
+            assigneeMember?.displayName ?? null,
+            assigneeMember?.email ?? assigneeTo,
+          );
+
+  const sentence = sentenceFor(entry, lang, hour12, assigneeName);
   const changes = renderedChanges(entry.changes);
 
   return (
@@ -351,7 +374,8 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
                 change.from !== null &&
                 change.to !== null &&
                 change.field !== "dueDate" &&
-                change.field !== "priority";
+                change.field !== "priority" &&
+                change.field !== "assignee";
               const sides = diffable
                 ? diffSides(change.from ?? "", change.to ?? "")
                 : null;
@@ -371,7 +395,11 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
                     {sides ? (
                       <DiffSegments segments={sides.left} />
                     ) : (
-                      <HistoryValue field={change.field} value={change.from} />
+                      <HistoryValue
+                        field={change.field}
+                        value={change.from}
+                        boardId={boardId}
+                      />
                     )}
                   </span>
                   <span className="text-muted-foreground/50">→</span>
@@ -379,7 +407,11 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
                     {sides ? (
                       <DiffSegments segments={sides.right} />
                     ) : (
-                      <HistoryValue field={change.field} value={change.to} />
+                      <HistoryValue
+                        field={change.field}
+                        value={change.to}
+                        boardId={boardId}
+                      />
                     )}
                   </span>
                 </li>
@@ -444,14 +476,22 @@ function DiffSegments({ segments }: { segments: DiffSegment[] }) {
 function HistoryValue({
   field,
   value,
+  boardId,
   className,
 }: {
   field: string;
   value: string | null;
+  boardId?: string;
   className?: string;
 }) {
   const { lang } = useI18n();
   const hour12 = useHour12();
+  // An assignee half shows the member's name, not the raw user id —
+  // resolved through the directory with an id fallback (left the board).
+  const member = useBoardMember(
+    boardId,
+    field === "assignee" ? value : undefined,
+  );
   if (value === null) {
     return <span className="text-muted-foreground/50">—</span>;
   }
@@ -473,6 +513,13 @@ function HistoryValue({
       </span>
     );
   }
+  if (field === "assignee") {
+    return (
+      <span className={cn("text-foreground/80", className)}>
+        {userLabel(member?.displayName ?? null, member?.email ?? value)}
+      </span>
+    );
+  }
   return <span className={cn("text-foreground/80", className)}>{value}</span>;
 }
 
@@ -481,6 +528,7 @@ function sentenceFor(
   entry: ActivityFeedEntry,
   lang: "en" | "ru",
   hour12: boolean,
+  assigneeName: string | null = null,
 ): { key: MessageKey; params?: Record<string, string> } {
   const local = LOCAL_KEYS[entry.type as keyof typeof LOCAL_KEYS];
   if (local !== undefined) {
@@ -527,6 +575,16 @@ function sentenceFor(
         ? priorityLabel(to as CardPriority, lang)
         : priorityLabel("medium", lang);
     return { key: "activity.priority-set", params: { detail } };
+  }
+
+  if (entry.type === "SET_CARD_ASSIGN" || entry.type === "assignee-set") {
+    // The subject's name is resolved by the caller (member directory);
+    // a null `to` (or an unresolvable id) reads as "unassigned". The
+    // activity event carries the id in `detail` (`""` = unassigned).
+    if (assigneeName === null || assigneeName === "") {
+      return { key: "activity.assignee-unassigned" };
+    }
+    return { key: "activity.assignee-set", params: { detail: assigneeName } };
   }
 
   if (entry.type === "SET_CARD_COVER") {

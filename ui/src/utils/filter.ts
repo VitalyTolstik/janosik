@@ -55,6 +55,16 @@ export interface CardFilter {
    */
   priorities: CardPriority[];
   /**
+   * Selected assignees (TASK-49) — user ids; a card matches when its
+   * assignee is one of them. Empty = any assignee.
+   */
+  assignees: string[];
+  /**
+   * Include unassigned cards (TASK-49) — OR-ed with `assignees`. Only
+   * meaningful when at least one of the two facets is set.
+   */
+  unassigned: boolean;
+  /**
    * Jira-style link facets (TASK-46): a card the index flags as blocked
    * (an incoming `blocks` from a live, non-archived card), and a card
    * with at least one link in either direction.
@@ -72,6 +82,8 @@ export const EMPTY_FILTER: CardFilter = {
   createdOn: null,
   due: "any",
   priorities: [],
+  assignees: [],
+  unassigned: false,
   blocked: false,
   hasLinks: false,
 };
@@ -86,6 +98,8 @@ export function isFilterActive(filter: CardFilter): boolean {
     filter.createdOn !== null ||
     filter.due !== "any" ||
     filter.priorities.length > 0 ||
+    filter.assignees.length > 0 ||
+    filter.unassigned ||
     filter.blocked ||
     filter.hasLinks
   );
@@ -104,6 +118,7 @@ export function activeFacetCount(filter: CardFilter): number {
   if (filter.createdOn !== null) count += 1;
   if (filter.due !== "any") count += 1;
   if (filter.priorities.length > 0) count += 1;
+  if (filter.assignees.length > 0 || filter.unassigned) count += 1;
   if (filter.blocked) count += 1;
   if (filter.hasLinks) count += 1;
   return count;
@@ -214,6 +229,16 @@ export function matchesCardFilter(
     !filter.priorities.includes(card.priority ?? DEFAULT_CARD_PRIORITY)
   ) {
     return false;
+  }
+
+  // Assignee facet (TASK-49): selected member ids (OR) plus the optional
+  // "unassigned" pseudo-option — set neither, restrict nobody.
+  if (filter.assignees.length > 0 || filter.unassigned) {
+    if (card.assigneeId === undefined) {
+      if (!filter.unassigned) return false;
+    } else if (!filter.assignees.includes(card.assigneeId)) {
+      return false;
+    }
   }
 
   const hasSelected =

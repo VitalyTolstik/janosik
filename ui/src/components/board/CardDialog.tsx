@@ -24,6 +24,7 @@ import { CardAttachments } from "@/components/board/CardAttachments";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { CardDueDate } from "@/components/board/CardDueDate";
 import { CardPriority } from "@/components/board/CardPriority";
+import { CardAssignee } from "@/components/board/CardAssignee";
 import { CardLinks } from "@/components/board/CardLinks";
 import { CardCoverPicker } from "@/components/board/CardCoverPicker";
 import { LabelPicker } from "@/components/board/LabelPicker";
@@ -491,6 +492,13 @@ export function CardDialog({
             <CardPriority
               cardId={card.id}
               priority={card.priority}
+              readOnly={readOnly}
+            />
+
+            <CardAssignee
+              boardId={board.id}
+              cardId={card.id}
+              assigneeId={card.assigneeId}
               readOnly={readOnly}
             />
 

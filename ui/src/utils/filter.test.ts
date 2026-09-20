@@ -154,6 +154,46 @@ describe("matchesCardFilter", () => {
     ).toBe(false);
   });
 
+  it("matches the assignee facet (TASK-49)", () => {
+    const assigned = { ...c, assigneeId: "u-alice" };
+    // Selecting the assignee keeps the card; someone else's id hides it.
+    expect(
+      matchesCardFilter(
+        assigned,
+        { ...EMPTY_FILTER, assignees: ["u-alice", "u-boris"] },
+        NOW,
+      ),
+    ).toBe(true);
+    expect(
+      matchesCardFilter(
+        assigned,
+        { ...EMPTY_FILTER, assignees: ["u-boris"] },
+        NOW,
+      ),
+    ).toBe(false);
+    // An unassigned card only survives through the "unassigned" option.
+    expect(
+      matchesCardFilter(c, { ...EMPTY_FILTER, assignees: ["u-alice"] }, NOW),
+    ).toBe(false);
+    expect(
+      matchesCardFilter(c, { ...EMPTY_FILTER, unassigned: true }, NOW),
+    ).toBe(true);
+    expect(
+      matchesCardFilter(
+        assigned,
+        { ...EMPTY_FILTER, assignees: ["u-alice"], unassigned: true },
+        NOW,
+      ),
+    ).toBe(true);
+    expect(
+      matchesCardFilter(
+        assigned,
+        { ...EMPTY_FILTER, assignees: ["u-boris"], unassigned: true },
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
   it("matches a case-insensitive query substring", () => {
     expect(matchesCardFilter(c, { ...EMPTY_FILTER, query: "MILK" }, NOW)).toBe(
       true,

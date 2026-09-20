@@ -128,6 +128,7 @@ export function BoardSection() {
         <FilterBar
           filter={filter}
           labels={board.labels}
+          boardId={board.id}
           matchCount={matchCount}
           onChange={setFilter}
         />

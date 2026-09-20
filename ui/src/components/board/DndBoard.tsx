@@ -642,6 +642,7 @@ export function DndBoard({
               <ColumnView
                 key={columnId}
                 column={column}
+                boardId={board.id}
                 cards={resolveCards(column, override ?? column.cardIds)}
                 labels={board.labels}
                 linkIndex={linkIndex}

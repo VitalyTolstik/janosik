@@ -213,6 +213,13 @@ export class MembersStore {
     return this.byBoard.get(boardId)?.get(userId);
   }
 
+  /** Every accepted member of the board (row order as loaded). */
+  list(boardId: string | undefined): BoardMemberDto[] {
+    if (boardId === undefined) return [];
+    const map = this.byBoard.get(boardId);
+    return map ? [...map.values()] : [];
+  }
+
   clear(): void {
     if (this.byBoard.size === 0) return;
     this.byBoard.clear();
@@ -350,6 +357,20 @@ export function useBoardMember(
   const { members } = useBoardLive();
   useSyncExternalStore(members.subscribe, members.getVersion);
   return members.get(boardId, userId);
+}
+
+/**
+ * The whole roster of a board (TASK-49): the assignee picker's suggestion
+ * pool, the table view's assignee column and the filter facet all enumerate
+ * the member directory instead of probing one id at a time. Re-renders on
+ * the same version bump as `useMembersVersion`.
+ */
+export function useBoardMembersList(
+  boardId: string | undefined,
+): BoardMemberDto[] {
+  const { members } = useBoardLive();
+  useSyncExternalStore(members.subscribe, members.getVersion);
+  return members.list(boardId);
 }
 
 /**

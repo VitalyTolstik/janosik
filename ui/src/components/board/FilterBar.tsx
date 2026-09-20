@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  CircleUserRound,
   Link2,
   Search,
   SlidersHorizontal,
@@ -19,7 +20,9 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { useI18n, type MessageKey } from "@/i18n";
+import { useBoardMembersList } from "@/store/board-live";
 import { cn } from "@/lib/utils";
 import {
   LABEL_COLOR_DOT,
@@ -30,6 +33,7 @@ import {
 import { LimitCounter } from "@/components/ui/limit-counter";
 import { showRemaining } from "@/utils/limit-format";
 import { PRIORITY_META, PRIORITY_ORDER } from "@/utils/priority";
+import { userLabel } from "@/utils/avatar";
 import { pad2 } from "@/utils/time";
 import {
   activeFacetCount,
@@ -91,6 +95,8 @@ interface FilterBarProps {
   filter: CardFilter;
   /** Board labels to offer in the label picker. */
   labels: Label[];
+  /** The board id — the assignee facet enumerates the member roster (TASK-49). */
+  boardId?: string;
   /** Total number of matching cards across all columns (for the count). */
   matchCount: number;
   onChange: (next: CardFilter) => void;
@@ -185,12 +191,14 @@ function CheckRow({ checked, onCheckedChange, children }: CheckRowProps) {
 export function FilterBar({
   filter,
   labels,
+  boardId,
   matchCount,
   onChange,
 }: FilterBarProps) {
   const { t, tp, lang } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dayCalendarOpen, setDayCalendarOpen] = useState(false);
+  const members = useBoardMembersList(boardId);
 
   const active = isFilterActive(filter);
   const facetCount = activeFacetCount(filter);
@@ -405,6 +413,46 @@ export function FilterBar({
                 </CheckRow>
               );
             })}
+          </FilterSection>
+          <FilterSection title={t("filter.assignee")}>
+            {members.map((member) => (
+              <CheckRow
+                key={member.userId}
+                checked={filter.assignees.includes(member.userId)}
+                onCheckedChange={(checked) => {
+                  const next = new Set(filter.assignees);
+                  if (checked) {
+                    next.add(member.userId);
+                  } else {
+                    next.delete(member.userId);
+                  }
+                  onChange({ ...filter, assignees: [...next] });
+                }}
+              >
+                <UserAvatar
+                  userId={member.userId}
+                  displayName={member.displayName}
+                  email={member.email}
+                  color={member.avatarColor}
+                  avatarPath={member.avatarPath}
+                  size="xs"
+                  className="shrink-0"
+                />
+                {userLabel(member.displayName, member.email)}
+              </CheckRow>
+            ))}
+            <CheckRow
+              checked={filter.unassigned}
+              onCheckedChange={(checked) =>
+                onChange({ ...filter, unassigned: checked })
+              }
+            >
+              <CircleUserRound
+                className="h-4 w-4 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              {t("filter.assignee.unassigned")}
+            </CheckRow>
           </FilterSection>
           <FilterSection title={t("filter.links")}>
             <CheckRow

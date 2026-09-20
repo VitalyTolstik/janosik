@@ -229,6 +229,18 @@ export function CardDetailPage() {
             <span className="text-muted-foreground">—</span>
           )}
         </MetaItem>
+        <MetaItem label={t("admin.cardDetail.assignee")}>
+          {card.assigneeId ? (
+            <EntityLink
+              to={userHref(card.assigneeId)}
+              copyValue={card.assigneeEmail ?? undefined}
+            >
+              {card.assigneeDisplayName ?? card.assigneeEmail}
+            </EntityLink>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </MetaItem>
         <MetaItem label={t("admin.cardDetail.lastActor")}>
           {card.lastActorEmail ?? "—"}
         </MetaItem>

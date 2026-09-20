@@ -365,6 +365,20 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
               ),
           },
           {
+            label: t("admin.cards.column.assignee"),
+            render: (card) =>
+              card.assigneeId ? (
+                <EntityLink
+                  to={userHref(card.assigneeId)}
+                  copyValue={card.assigneeEmail ?? undefined}
+                >
+                  {card.assigneeEmail ?? card.assigneeId.slice(0, 8)}
+                </EntityLink>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              ),
+          },
+          {
             label: t("admin.cards.column.due"),
             render: (card) => <DateCell value={card.dueDate} />,
           },
