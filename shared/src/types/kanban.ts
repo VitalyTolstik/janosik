@@ -177,6 +177,13 @@ export interface Card {
    */
   lastActorId?: string;
   /**
+   * How many live file attachments the card holds (TASK-47) — a
+   * denormalized server-side counter, like `lastActorId`. The blobs
+   * themselves live outside the board JSON (comments-style REST + SSE);
+   * this count only feeds the card-face badge. Omitted when zero.
+   */
+  attachmentCount?: number;
+  /**
    * Set when the card is archived (TASK-18.1) — timestamp in ms. Archived
    * cards stay in `board.cards` (history and search keep working) but are
    * removed from every `column.cardIds`, so no view on the board shows
@@ -255,6 +262,12 @@ export const LIMITS = {
   labelsPerCard: 20,
   /** Outgoing card links held by one card (TASK-46). */
   linksPerCard: 50,
+  /** Uploaded file attachments per card (TASK-47). */
+  attachmentsPerCard: 20,
+  /** Max size of one card attachment, bytes (TASK-47) — 25 MB. */
+  attachmentSize: 26_214_400,
+  /** Max size of one profile avatar image, bytes (TASK-47) — 2 MB. */
+  avatarSize: 2_097_152,
   /** Labels defined on one board. */
   labelsPerBoard: 50,
   /** Columns on one board. */

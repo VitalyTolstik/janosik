@@ -20,7 +20,7 @@ import type {
   LabelColor,
   UserAvatarColor,
 } from "@janosik/shared";
-import { CARD_LINK_TYPES } from "@janosik/shared";
+import { isCardLinkType } from "@janosik/shared";
 
 /** A card row with the relations the aggregate needs (labels + checklists). */
 export type CardWithRelations = Prisma.CardGetPayload<{
@@ -81,9 +81,12 @@ export async function loadBoardAggregate(
     // The rows a card holds towards other cards (TASK-46). A link whose
     // target card is soft-deleted stays: the reducer never scrubs a
     // dangling row either, and restoring the target revives the link.
+    // `id` breaks a `position` tie so the order is reproducible even if
+    // two rows ever share one (they should not — `writeLinkPositions`
+    // renumbers the card's whole list on every write).
     db.cardLink.findMany({
       where: { boardId, deletedAt: null },
-      orderBy: { position: "asc" },
+      orderBy: [{ position: "asc" }, { id: "asc" }],
     }),
   ]);
 
@@ -113,11 +116,11 @@ export function toBoardAggregate(
   // poisoning the render.
   const linksBySource = new Map<string, CardLink[]>();
   for (const link of links) {
-    if (!(CARD_LINK_TYPES as readonly string[]).includes(link.type)) continue;
+    if (!isCardLinkType(link.type)) continue;
     const rows = linksBySource.get(link.fromCardId) ?? [];
     rows.push({
       id: link.id,
-      type: link.type as CardLink["type"],
+      type: link.type,
       targetCardId: link.toCardId,
     });
     linksBySource.set(link.fromCardId, rows);
@@ -194,6 +197,10 @@ function toCard(
     updatedAt: card.updatedAt.getTime(),
     // Attribution (TASK-36): omitted when unset, like every optional field.
     ...(card.lastActorId ? { lastActorId: card.lastActorId } : {}),
+    // Attachments badge (TASK-47): server-side denormalized counter.
+    ...(card.attachmentCount > 0
+      ? { attachmentCount: card.attachmentCount }
+      : {}),
     ...(card.archivedAt ? { archivedAt: card.archivedAt.getTime() } : {}),
   };
 }
@@ -243,5 +250,6 @@ export function toMemberDto(member: MemberWithUser): BoardMemberDto {
     role: member.role,
     expiresAt: member.expiresAt ? member.expiresAt.getTime() : null,
     avatarColor: (member.user.avatarColor as UserAvatarColor | null) ?? null,
+    avatarPath: member.user.avatarPath,
   };
 }

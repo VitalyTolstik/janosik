@@ -12,7 +12,14 @@ import type { BoardAction } from "@janosik/shared";
  * reducer semantics (no-op), and ids that belong to the target board pass.
  */
 
-/** Direct id fields of the flat action shapes. */
+/**
+ * Direct id fields of the flat action shapes.
+ *
+ * Keep this list in step with every id a command can name. An id that is
+ * missing here is simply not checked, and the writer that upserts on it
+ * becomes a cross-board write primitive — which is exactly what happened
+ * to `linkId` between TASK-30.2 and TASK-46.
+ */
 const DIRECT_KEYS = [
   "cardId",
   "newCardId",
@@ -25,6 +32,8 @@ const DIRECT_KEYS = [
   "newChecklistId",
   "itemId",
   "newItemId",
+  // Card links (TASK-46): `ADD_CARD_LINK` upserts the row by this id.
+  "linkId",
 ] as const;
 
 /** Array id fields: bulk orders, duplicate ids and fresh activity ids. */

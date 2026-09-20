@@ -168,25 +168,29 @@ export async function persistBoard(
   // Card links (TASK-46) in a second pass: both endpoints are rewritten to
   // the fresh ids. A row whose target is not in the envelope's cards map is
   // dangling (its target was deleted before the export) — the FK needs a
-  // real card, so such rows are dropped instead of imported.
-  let linkPosition = 0;
+  // real card, so such rows are dropped instead of imported. `position` is
+  // the index *within the source card*, matching what `writeLinkPositions`
+  // maintains for live boards.
+  const linkRows: Prisma.CardLinkCreateManyInput[] = [];
   for (const [oldFromId, card] of Object.entries(board.cards)) {
     const fromCardId = cardIdMap.get(oldFromId);
     if (fromCardId === undefined) continue;
+    let position = 0;
     for (const link of card.links ?? []) {
       const toCardId = cardIdMap.get(link.targetCardId);
       if (toCardId === undefined || toCardId === fromCardId) continue;
-      await tx.cardLink.create({
-        data: {
-          id: randomUUID(),
-          boardId: created.id,
-          fromCardId,
-          toCardId,
-          type: link.type,
-          position: linkPosition++,
-        },
+      linkRows.push({
+        id: randomUUID(),
+        boardId: created.id,
+        fromCardId,
+        toCardId,
+        type: link.type,
+        position: position++,
       });
     }
+  }
+  if (linkRows.length > 0) {
+    await tx.cardLink.createMany({ data: linkRows });
   }
 
   return created.id;

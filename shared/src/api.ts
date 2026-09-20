@@ -90,6 +90,8 @@ export interface PresenceUser {
   displayName: string;
   /** Chosen avatar color (TASK-36.1); `null` → the id-hash default. */
   avatarColor: UserAvatarColor | null;
+  /** Stored avatar image name (TASK-47); `null` → render the initials. */
+  avatarPath: string | null;
 }
 
 /** Server-sent event listing the users currently on the board (TASK-36). */
@@ -145,6 +147,8 @@ export interface BoardMemberDto {
   expiresAt: number | null;
   /** Chosen avatar color (TASK-36.1); `null` → the id-hash default. */
   avatarColor: UserAvatarColor | null;
+  /** Stored avatar image name (TASK-47); `null` → render the initials. */
+  avatarPath: string | null;
 }
 
 /** Body of `POST /boards/:id/members` — ADMIN-only invite (TASK-35). */
@@ -287,6 +291,20 @@ export interface CommentPage {
   nextCursor: string | null;
 }
 
+/** One card file attachment (TASK-47) — metadata only; the blob streams
+ * from `GET /attachments/:id/content` to board members. */
+export interface AttachmentDto {
+  id: string;
+  cardId: string;
+  /** Original client-side file name (untrusted — never a path). */
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedById: string;
+  /** Unix ms. */
+  createdAt: number;
+}
+
 /**
  * JSON envelope shared with the UI file format (§7.4): body of
  * `POST /boards/import` and payload of `GET /boards/:id/export`.
@@ -300,6 +318,8 @@ export interface AuthUserDto {
   displayName: string | null;
   /** Chosen avatar color (TASK-36.1); `null` → the id-hash default. */
   avatarColor: UserAvatarColor | null;
+  /** Stored avatar image name (TASK-47); `null` → render the initials. */
+  avatarPath: string | null;
   /** Unix ms of account creation — "member since" in the account panel. */
   createdAt: number;
 }

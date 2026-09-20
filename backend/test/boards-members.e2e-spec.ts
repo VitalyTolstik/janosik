@@ -121,6 +121,7 @@ describe("Boards API (e2e)", () => {
           role: "ADMIN",
           expiresAt: null,
           avatarColor: null,
+          avatarPath: null,
         },
       ]);
 
@@ -589,6 +590,7 @@ describe("Boards API (e2e)", () => {
   }
 
   async function wipe(db: PrismaService): Promise<void> {
+    await db.attachment.deleteMany();
     await db.cardLink.deleteMany();
     await db.cardLabel.deleteMany();
     await db.checklistItem.deleteMany();

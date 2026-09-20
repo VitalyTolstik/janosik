@@ -9,13 +9,14 @@ import { BoardsModule } from "@/boards/boards.module";
 import { CommandsModule } from "@/commands/commands.module";
 import { ActivityModule } from "@/activity/activity.module";
 import { CommentsModule } from "@/comments/comments.module";
+import { AttachmentsModule } from "@/attachments/attachments.module";
 import { InvitationsModule } from "@/invitations/invitations.module";
 import { AdminModule } from "@/admin/admin.module";
 
 /**
  * TASK-36 state: auth, boards/membership, commands (columns/cards/labels/
- * checklists), activity feeds, comments and the master-account admin module
- * are live; users/api-tokens remain stubs (§7.6).
+ * checklists), activity feeds, comments, file attachments (TASK-47) and the
+ * master-account admin module are live.
  */
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AdminModule } from "@/admin/admin.module";
     CommandsModule,
     ActivityModule,
     CommentsModule,
+    AttachmentsModule,
     InvitationsModule,
     AdminModule,
   ],
