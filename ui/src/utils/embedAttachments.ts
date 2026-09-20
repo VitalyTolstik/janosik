@@ -55,9 +55,11 @@ export function embedMarkdown(file: File, attachmentId: string): string {
  * MDXEditor `imagePreviewHandler`: an `<img>` fetch cannot carry the
  * Authorization header, so embedded attachment URLs are resolved to
  * authenticated blob object URLs (cached for the session); every other
- * source passes through untouched.
+ * source passes through untouched. The reverse map (object URL → attachment
+ * id) backs the fullscreen viewer below.
  */
 const previewCache = new Map<string, Promise<string>>();
+const blobUrlOwners = new Map<string, string>();
 
 export function attachmentImagePreviewHandler(src: string): Promise<string> {
   const id = attachmentIdFromUrl(src);
@@ -66,11 +68,92 @@ export function attachmentImagePreviewHandler(src: string): Promise<string> {
   if (!cached) {
     cached = api
       .fetchAttachment(id)
-      .then((blob) => URL.createObjectURL(blob))
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        blobUrlOwners.set(url, id);
+        return url;
+      })
       .catch(() => src);
     previewCache.set(id, cached);
   }
   return cached;
+}
+
+/**
+ * Fullscreen viewer for embedded images (Jira's lightbox): an imperative
+ * overlay above every dialog — a single click anywhere or Escape closes it.
+ */
+export function openImageLightbox(src: string): void {
+  if (document.getElementById("attachment-lightbox")) return;
+  const overlay = document.createElement("div");
+  overlay.id = "attachment-lightbox";
+  overlay.setAttribute("data-testid", "attachment-lightbox");
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Image preview");
+  overlay.style.cssText =
+    "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.82);" +
+    "display:flex;align-items:center;justify-content:center;padding:2rem;cursor:zoom-out";
+  const img = document.createElement("img");
+  img.src = src;
+  img.alt = "";
+  img.style.cssText =
+    "max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;" +
+    "box-shadow:0 12px 48px rgba(0,0,0,0.55)";
+  overlay.appendChild(img);
+  document.body.appendChild(overlay);
+
+  const close = () => {
+    overlay.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      close();
+    }
+  };
+  overlay.addEventListener("click", close);
+  document.addEventListener("keydown", onKey);
+}
+
+/** Resolve an embedded image's blob URL (cached when already previewed). */
+function embeddedImageSrc(img: HTMLImageElement): string | Promise<string> {
+  const src = img.getAttribute("src") ?? "";
+  if (src.startsWith("blob:")) {
+    return blobUrlOwners.has(src) ? src : "";
+  }
+  const id = attachmentIdFromUrl(src);
+  if (!id) return "";
+  // Not resolved yet (or resolution failed): fetch a fresh blob URL.
+  return api
+    .fetchAttachment(id)
+    .then((blob) => {
+      const url = URL.createObjectURL(blob);
+      blobUrlOwners.set(url, id);
+      return url;
+    })
+    .catch(() => src);
+}
+
+/**
+ * Open the fullscreen viewer for one embedded attachment image. Shared by
+ * the click delegation (read-only surfaces) and the double-click delegation
+ * (edit mode, where a single click must keep the editor's image selection).
+ */
+export function handleAttachmentImageOpen(
+  event: ReactMouseEvent | MouseEvent,
+): void {
+  const target = event.target as HTMLElement | null;
+  const img = target?.closest?.("img");
+  if (!img) return;
+  const src = embeddedImageSrc(img);
+  if (src === "") return;
+  event.preventDefault();
+  event.stopPropagation();
+  void Promise.resolve(src)
+    .then((url) => openImageLightbox(url))
+    .catch(() => undefined);
 }
 
 /**

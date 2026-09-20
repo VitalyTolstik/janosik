@@ -1,10 +1,12 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 import {
   attachmentContentUrl,
   attachmentIdFromUrl,
   attachmentImagePreviewHandler,
   embedMarkdown,
+  handleAttachmentImageOpen,
+  openImageLightbox,
 } from "./embedAttachments";
 
 vi.mock("@/api/client", () => ({
@@ -118,5 +120,96 @@ describe("attachmentImagePreviewHandler", () => {
     expect(api.fetchAttachment).toHaveBeenCalledTimes(1);
     expect(api.fetchAttachment).toHaveBeenCalledWith("att-cache");
     vi.unstubAllGlobals();
+  });
+});
+
+describe("fullscreen viewer (lightbox)", () => {
+  function imageEvent(src: string) {
+    const img = document.createElement("img");
+    img.setAttribute("src", src);
+    return {
+      target: img,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    } as unknown as React.MouseEvent;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    document.getElementById("attachment-lightbox")?.remove();
+    vi.stubGlobal(
+      "URL",
+      Object.assign(URL, {
+        createObjectURL: (blob: Blob) =>
+          `blob:lb-${(blob as Blob).size}-${Math.random()}`,
+      }),
+    );
+  });
+
+  afterEach(() => {
+    document.getElementById("attachment-lightbox")?.remove();
+    vi.unstubAllGlobals();
+  });
+
+  it("opens for a previewed blob image and closes on click or Escape", async () => {
+    vi.mocked(api.fetchAttachment).mockResolvedValue(
+      new Blob(["x".repeat(7)], { type: "image/png" }),
+    );
+    const src = await attachmentImagePreviewHandler(
+      "/api/v1/attachments/att-lb/content",
+    );
+    expect(src).toMatch(/^blob:lb-7-/);
+
+    handleAttachmentImageOpen(imageEvent(src));
+    await vi.waitFor(() => {
+      expect(document.getElementById("attachment-lightbox")).not.toBeNull();
+    });
+    const overlay = document.getElementById("attachment-lightbox");
+    expect(
+      (overlay?.querySelector("img") as HTMLImageElement).getAttribute("src"),
+    ).toBe(src);
+
+    overlay!.click();
+    expect(document.getElementById("attachment-lightbox")).toBeNull();
+
+    handleAttachmentImageOpen(imageEvent(src));
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(document.getElementById("attachment-lightbox")).toBeNull();
+  });
+
+  it("ignores non-images and unknown blob sources", () => {
+    const div = document.createElement("div");
+    const miss = {
+      target: div,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    } as unknown as React.MouseEvent;
+    handleAttachmentImageOpen(miss);
+    expect(miss.preventDefault).not.toHaveBeenCalled();
+    expect(document.getElementById("attachment-lightbox")).toBeNull();
+
+    handleAttachmentImageOpen(imageEvent("blob:never-seen"));
+    expect(document.getElementById("attachment-lightbox")).toBeNull();
+  });
+
+  it("fetches a fresh blob for an image whose preview never resolved", async () => {
+    vi.mocked(api.fetchAttachment).mockResolvedValue(
+      new Blob(["y".repeat(9)], { type: "image/png" }),
+    );
+    handleAttachmentImageOpen(
+      imageEvent("/api/v1/attachments/att-fresh/content"),
+    );
+    await vi.waitFor(() => {
+      expect(document.getElementById("attachment-lightbox")).not.toBeNull();
+    });
+    expect(api.fetchAttachment).toHaveBeenCalledWith("att-fresh");
+  });
+
+  it("openImageLightbox is idempotent", () => {
+    openImageLightbox("blob:one");
+    openImageLightbox("blob:two");
+    expect(
+      document.querySelectorAll('[data-testid="attachment-lightbox"]'),
+    ).toHaveLength(1);
   });
 });

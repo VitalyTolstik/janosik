@@ -12,7 +12,10 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { sanitizeMarkdownForImport } from "@/utils/sanitizeMarkdown";
 import { emojify } from "@/utils/emoji";
-import { handleAttachmentLinkClick } from "@/utils/embedAttachments";
+import {
+  handleAttachmentImageOpen,
+  handleAttachmentLinkClick,
+} from "@/utils/embedAttachments";
 import {
   descriptionEditorPlugins,
   descriptionViewerPlugins,
@@ -79,13 +82,22 @@ export const DescriptionEditor = forwardRef<
   );
 
   // Capture phase: attachment links must be intercepted before Lexical's
-  // own click handling (link toolbar in edit mode) sees them.
+  // own click handling (link toolbar in edit mode) sees them. Images open
+  // the fullscreen viewer — single click when read-only, double click in
+  // edit mode so a plain click keeps the editor's image selection.
   const onLinkClickCapture = (event: ReactMouseEvent) => {
     handleAttachmentLinkClick(event);
+    if (readOnly) handleAttachmentImageOpen(event);
+  };
+  const onImageDoubleClickCapture = (event: ReactMouseEvent) => {
+    if (!readOnly) handleAttachmentImageOpen(event);
   };
 
   return (
-    <div onClickCapture={onLinkClickCapture}>
+    <div
+      onClickCapture={onLinkClickCapture}
+      onDoubleClickCapture={onImageDoubleClickCapture}
+    >
       <MDXEditor
         ref={methodsRef}
         // Re-key on language change so toolbar tooltips/labels re-resolve.

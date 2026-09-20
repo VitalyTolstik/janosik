@@ -18,6 +18,7 @@ import { autolinkMarkdown } from "@/utils/linkify";
 import { emojify } from "@/utils/emoji";
 import {
   embedMarkdown,
+  handleAttachmentImageOpen,
   handleAttachmentLinkClick,
 } from "@/utils/embedAttachments";
 import { LIMITS } from "@janosik/shared";
@@ -123,6 +124,9 @@ export const CommentComposerEditor = forwardRef<
       onClickCapture={(event: ReactMouseEvent) =>
         handleAttachmentLinkClick(event)
       }
+      onDoubleClickCapture={(event: ReactMouseEvent) =>
+        handleAttachmentImageOpen(event)
+      }
     >
       <MDXEditor
         ref={methodsRef}
@@ -163,7 +167,13 @@ export function CommentBody({
   const { lang } = useI18n();
 
   return (
-    <div onClickCapture={(event) => handleAttachmentLinkClick(event)}>
+    <div
+      onClickCapture={(event) => {
+        handleAttachmentLinkClick(event);
+        handleAttachmentImageOpen(event);
+      }}
+      onDoubleClickCapture={(event) => handleAttachmentImageOpen(event)}
+    >
       <MDXEditor
         key={lang}
         className={cn("janosik-mdx janosik-mdx-readonly", className)}
