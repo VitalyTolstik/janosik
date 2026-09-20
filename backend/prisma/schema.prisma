@@ -36,6 +36,7 @@ model User {
   commands       Command[]
   refreshTokens  RefreshToken[]
   attachments    Attachment[]
+  assignedCards  Card[]       @relation("CardAssignee")
 }
 
 model RefreshToken {
@@ -162,6 +163,8 @@ model Card {
   coverValue      String?
   dueDate         DateTime?
   priority        String? // TASK-45: blocker|highest|high|medium|low|lowest (null = medium)
+  assigneeId      String? // TASK-49 Jira-style assignee; null = unassigned
+  assignee        User?    @relation("CardAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   archivedAt      DateTime? // TASK-18.1: card archive
   deletedAt       DateTime? // soft-delete (§7.0)
   version         Int          @default(0) // ifMatch → 409 (§7.0)
@@ -181,6 +184,7 @@ model Card {
   attachments     Attachment[]
 
   @@index([columnId, position])
+  @@index([assigneeId]) // admin user-detail "assigned cards" (TASK-49)
 }
 
 // Card links (TASK-46). Directional: `fromCard` holds the row and "blocks"

@@ -282,6 +282,31 @@ describe("Commands API (e2e)", () => {
         }),
       );
 
+      // Assignee (TASK-49): only an accepted member passes the server
+      // precondition; unassign drops the field. The contract below proves
+      // the writer keeps the column in step with the reducer.
+      await invite(boardId, MEMBER_EMAIL, "MEMBER", memberToken);
+      const assignee = await prisma.user.findUnique({
+        where: { email: MEMBER_EMAIL },
+        select: { id: true },
+      });
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "SET_CARD_ASSIGN",
+          cardId: "card-1",
+          assigneeId: assignee?.id,
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "SET_CARD_ASSIGN",
+          cardId: "card-1",
+          assigneeId: null,
+        }),
+      );
+
       // Card links (TASK-46): add on card-1 towards card-2, then a second
       // row on a fresh pair; removal goes by link id.
       await applyAndAssert(

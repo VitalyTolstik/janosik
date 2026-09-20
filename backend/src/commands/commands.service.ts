@@ -73,6 +73,7 @@ const SUPPORTED_ACTIONS = new Set<string>([
   "ARCHIVE_COLUMN_CARDS",
   "SET_CARD_DUE_DATE",
   "SET_CARD_PRIORITY",
+  "SET_CARD_ASSIGN",
   "ADD_CARD_LINK",
   "REMOVE_CARD_LINK",
   "SET_CARD_COVER",
@@ -183,6 +184,7 @@ export class CommandsService {
           boardId,
           referencedEntityIds(action),
         );
+        await this.assertAssigneeIsBoardMember(tx, boardId, action);
 
         const before = await loadBoardAggregate(tx, boardId);
         if (!before) {
@@ -395,6 +397,38 @@ export class CommandsService {
       throw new ConflictException({
         message: `Entity id already used on another board: ${offender.table}:${offender.row.id}`,
         field: "action",
+      });
+    }
+  }
+
+  /**
+   * Jira-style assignee (TASK-49): the assignee must be an active board
+   * member — a row that has accepted its invitation (TASK-35 addendum)
+   * and is not an expired VIEWER. Inverse commands are exempt: undo
+   * restores a historical state even when the member has since left, the
+   * same way it restores a label that was renamed since.
+   */
+  private async assertAssigneeIsBoardMember(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    action: BoardAction,
+  ): Promise<void> {
+    if (action.type !== "SET_CARD_ASSIGN") return;
+    if ("inverse" in action && action.inverse === true) return;
+    if (action.assigneeId === null) return;
+    const member = await tx.boardMember.findFirst({
+      where: {
+        boardId,
+        userId: action.assigneeId,
+        acceptedAt: { not: null },
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      select: { id: true },
+    });
+    if (!member) {
+      throw new BadRequestException({
+        message: "Assignee must be an active board member",
+        field: "action.assigneeId",
       });
     }
   }

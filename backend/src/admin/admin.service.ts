@@ -870,6 +870,7 @@ export class AdminService {
           columnId: true,
           priority: true,
           dueDate: true,
+          assignee: { select: { id: true, email: true } },
           column: {
             select: {
               title: true,
@@ -900,6 +901,8 @@ export class AdminService {
         updatedAt: card.updatedAt.getTime(),
         priority: card.priority,
         dueDate: card.dueDate?.getTime() ?? null,
+        assigneeId: card.assignee?.id ?? null,
+        assigneeEmail: card.assignee?.email ?? null,
         archivedAt: card.archivedAt?.getTime() ?? null,
         deletedAt: card.deletedAt?.getTime() ?? null,
       })),

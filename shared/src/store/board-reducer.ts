@@ -451,6 +451,14 @@ export interface SetCardPriorityAction {
   priority: CardPriority;
 }
 
+/** Jira-style assignee (TASK-49). */
+export interface SetCardAssignAction {
+  type: "SET_CARD_ASSIGN";
+  cardId: string;
+  /** The new assignee's user id, or `null` to unassign. */
+  assigneeId: string | null;
+}
+
 /** Jira-style card links (TASK-46) — the types live in `types/kanban.ts`. */
 export interface AddCardLinkAction {
   type: "ADD_CARD_LINK";
@@ -682,6 +690,7 @@ export type BoardAction =
   | BoardScoped<DeleteChecklistItemAction>
   | BoardScoped<SetCardDueDateAction>
   | BoardScoped<SetCardPriorityAction>
+  | BoardScoped<SetCardAssignAction>
   | BoardScoped<AddCardLinkAction>
   | BoardScoped<RemoveCardLinkAction>
   | BoardScoped<SetCardCoverAction>
@@ -1529,6 +1538,51 @@ function setCardPriority(
 }
 
 /**
+ * Set a card's assignee (TASK-49). `null` (or a blank id) clears the
+ * assignment — the field is dropped entirely (optional-field convention).
+ * The server validates that the id is an active board member before this
+ * runs; the reducer itself only checks shape, so undo replays of
+ * historical states (a member who has since left) still apply. The
+ * activity's `detail` carries the raw id, or `""` when unassigned — the
+ * UI resolves it to a member name.
+ */
+function setCardAssign(
+  board: Board,
+  action: BoardScoped<SetCardAssignAction>,
+  options: ReduceOptions,
+): Board {
+  const target = board.cards[action.cardId];
+  if (!target) return board;
+  const assigneeId =
+    action.assigneeId !== null && action.assigneeId.trim() !== ""
+      ? action.assigneeId
+      : null;
+  if ((target.assigneeId ?? null) === assigneeId) return board;
+  let nextCard: Card = { ...target, updatedAt: cardStamp(action) };
+  if (assigneeId === null) {
+    // Drop the field entirely (no `assigneeId: null` key left behind).
+    delete nextCard.assigneeId;
+  } else {
+    nextCard.assigneeId = assigneeId;
+  }
+  nextCard = appendActivity(
+    nextCard,
+    "assignee-set",
+    action,
+    0,
+    options,
+    assigneeId ?? "",
+  );
+  return {
+    ...board,
+    cards: {
+      ...board.cards,
+      [action.cardId]: nextCard,
+    },
+  };
+}
+
+/**
  * Add a link row on the source card (TASK-46). Guards: known cards, no
  * self-link, one link per unordered pair, the source card's row cap, and —
  * for `blocks` — no cycle. Inverses step past the guards (they put back
@@ -2189,6 +2243,8 @@ export function boardReducer(
       return committed(setCardDueDate(board, action, options));
     case "SET_CARD_PRIORITY":
       return committed(setCardPriority(board, action, options));
+    case "SET_CARD_ASSIGN":
+      return committed(setCardAssign(board, action, options));
     case "ADD_CARD_LINK":
       return committed(addCardLink(board, action, options));
     case "REMOVE_CARD_LINK":

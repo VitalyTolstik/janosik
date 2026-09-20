@@ -170,6 +170,10 @@ export interface AdminCardRowDto {
   priority: string | null;
   /** Unix ms deadline; `null` when unset. */
   dueDate: number | null;
+  /** Jira-style assignee (TASK-49): `User.id`; `null` when unassigned. */
+  assigneeId: string | null;
+  /** Label of `assigneeId`; `null` when unassigned. */
+  assigneeEmail: string | null;
   archivedAt: number | null;
   deletedAt: number | null;
 }
@@ -580,6 +584,8 @@ export interface AdminUserDetailDto {
   counters: {
     boards: number;
     cardsCreated: number;
+    /** Cards where the user is the assignee (TASK-49). */
+    cardsAssigned: number;
     comments: number;
     attachments: number;
     sessions: number;
@@ -588,6 +594,8 @@ export interface AdminUserDetailDto {
   };
   memberships: AdminUserMembershipDto[];
   createdCards: AdminCardRowDto[];
+  /** Cards assigned to the user (TASK-49), live rows only. */
+  assignedCards: AdminCardRowDto[];
   comments: AdminCommentRowDto[];
   attachments: AdminAttachmentRowDto[];
   sessions: AdminSessionRowDto[];
@@ -632,6 +640,8 @@ export interface AdminCardDetailDto {
     description: string | null;
     dueDate: number | null;
     priority: string | null;
+    /** Display name of the assignee (TASK-49); `null` when unassigned. */
+    assigneeDisplayName: string | null;
     coverType: string | null;
     coverValue: string | null;
     version: number;

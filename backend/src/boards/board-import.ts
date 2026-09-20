@@ -113,6 +113,16 @@ export async function persistBoard(
     cardIdMap.set(oldId, id);
     const createdAt = new Date(card.createdAt);
     const updatedAt = new Date(card.updatedAt);
+    // FK guard (TASK-49): a hand-edited file may name a user that does not
+    // exist here — the import stays permissive and drops the assignment
+    // instead of failing the whole board.
+    const assigneeId = card.assigneeId ?? null;
+    const assigneeExists = assigneeId
+      ? await tx.user.findFirst({
+          where: { id: assigneeId },
+          select: { id: true },
+        })
+      : null;
     await tx.card.create({
       data: {
         id,
@@ -123,6 +133,7 @@ export async function persistBoard(
         coverValue: card.cover?.value ?? null,
         dueDate: card.dueDate ? new Date(card.dueDate) : null,
         priority: card.priority ?? null,
+        assigneeId: assigneeExists ? assigneeId : null,
         archivedAt: card.archivedAt ? new Date(card.archivedAt) : null,
         position: positionForCard.get(oldId) ?? 0,
         createdAt,

@@ -470,6 +470,18 @@ function parseAction(action: Record<string, unknown>): BoardAction {
       }
       break;
     }
+    case "SET_CARD_ASSIGN": {
+      common(action);
+      readString(action, "cardId", "action.cardId", { nonBlank: true });
+      const { assigneeId } = action;
+      if (
+        assigneeId !== null &&
+        (typeof assigneeId !== "string" || assigneeId.trim() === "")
+      ) {
+        fail("action.assigneeId", "must be null or a non-blank user id");
+      }
+      break;
+    }
     case "ADD_CARD_LINK":
     case "REMOVE_CARD_LINK": {
       common(action);

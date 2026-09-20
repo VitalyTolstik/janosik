@@ -149,6 +149,13 @@ export interface Card {
    */
   priority?: CardPriority;
   /**
+   * Jira-style assignee (TASK-49): the board member's user id. Omitted =
+   * unassigned — the field is dropped entirely when cleared, like every
+   * other optional. Display data (name, avatar) is not denormalized into
+   * the board JSON: the UI resolves it from the board's member directory.
+   */
+  assigneeId?: string;
+  /**
    * Links this card holds towards other cards (TASK-46). Omitted when the
    * card has none. A link whose target no longer exists (the target was
    * deleted) is kept — undoing the deletion revives the link, and every
@@ -203,6 +210,7 @@ export const CARD_ACTIVITY_TYPES = [
   "due-date-set",
   "due-date-removed",
   "priority-set",
+  "assignee-set",
   "link-added",
   "link-removed",
   "cover-set",

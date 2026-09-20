@@ -171,6 +171,30 @@ describe("commandDetails", () => {
     ]);
   });
 
+  it("captures the assignee change with null for unassigned", () => {
+    const before = makeBoard();
+    const withAssignee = makeBoard(makeCard({ assigneeId: "user-2" } as never));
+    const set = {
+      ...base,
+      type: "SET_CARD_ASSIGN",
+      cardId: "card-1",
+      assigneeId: "user-2",
+    } as BoardAction;
+    const unassign = {
+      ...base,
+      type: "SET_CARD_ASSIGN",
+      cardId: "card-1",
+      assigneeId: null,
+    } as BoardAction;
+
+    expect(commandDetails(set, before, withAssignee)?.changes).toEqual([
+      { field: "assignee", from: null, to: "user-2" },
+    ]);
+    expect(commandDetails(unassign, withAssignee, before)?.changes).toEqual([
+      { field: "assignee", from: "user-2", to: null },
+    ]);
+  });
+
   it("freezes the linked card's title on add and remove", () => {
     const target = makeCard({ id: "card-2", title: "Target card" });
     const source = makeCard({
