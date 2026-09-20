@@ -508,7 +508,7 @@ function AssigneeBadge({
             event.stopPropagation();
             openProfile(assigneeId);
           }}
-          className="absolute bottom-2 right-2 z-10 rounded-full shadow-sm transition-transform hover:scale-110"
+          className="absolute bottom-2 right-2 z-10 rounded-full transition-transform hover:scale-110"
         >
           <UserAvatar
             userId={member?.userId ?? assigneeId}
@@ -517,7 +517,6 @@ function AssigneeBadge({
             color={member?.avatarColor}
             avatarPath={member?.avatarPath}
             size="sm"
-            className="ring-2 ring-background"
           />
         </button>
       </TooltipTrigger>
