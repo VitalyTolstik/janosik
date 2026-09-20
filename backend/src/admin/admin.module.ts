@@ -9,6 +9,7 @@ import { AdminAuthService } from "./admin-auth.service";
 import { AdminController } from "./admin.controller";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
 import { AdminJwtStrategy } from "./admin-jwt.strategy";
+import { AdminEntitiesService } from "./admin-entities.service";
 import { AdminService } from "./admin.service";
 
 /**
@@ -28,6 +29,7 @@ import { AdminService } from "./admin.service";
   ],
   controllers: [AdminAuthController, AdminController],
   providers: [
+    AdminEntitiesService,
     AdminAuthService,
     AdminJwtStrategy,
     AdminJwtAuthGuard,

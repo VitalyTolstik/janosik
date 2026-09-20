@@ -341,3 +341,355 @@ export const ADMIN_PASSWORD_MAX = 100;
 
 /** `GET /admin/*` page size bounds. */
 export const ADMIN_PAGE_LIMITS = { min: 1, max: 100, default: 50 } as const;
+
+// ---------------------------------------------------------------------------
+// Admin v2 (TASK-48): full Prisma coverage — every model browsable, every
+// relation one click away, one generic listing endpoint, entity details and
+// a cross-entity search for the omnibox.
+// ---------------------------------------------------------------------------
+
+/** Every entity the generic `GET /admin/entities/:entity` listing serves. */
+export const ADMIN_ENTITIES = [
+  "users",
+  "boards",
+  "boardMembers",
+  "columns",
+  "cards",
+  "cardLinks",
+  "labels",
+  "cardLabels",
+  "checklists",
+  "checklistItems",
+  "comments",
+  "attachments",
+  "activity",
+  "commands",
+  "sessions",
+  "tokens",
+  "admins",
+  "audit",
+] as const;
+
+export type AdminEntity = (typeof ADMIN_ENTITIES)[number];
+
+/** A row of `GET /admin/entities/columns` — a kanban column. */
+export interface AdminColumnRowDto {
+  id: string;
+  /** `Column.boardId`. */
+  boardId: string;
+  boardTitle: string;
+  title: string;
+  wipLimit: number | null;
+  position: number;
+  /** Live cards in the column (soft-delete respected). */
+  cardCount: number;
+  deletedAt: number | null;
+  version: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A row of `GET /admin/entities/labels` — a board label. */
+export interface AdminLabelRowDto {
+  id: string;
+  /** `Label.boardId`. */
+  boardId: string;
+  boardTitle: string;
+  name: string;
+  /** Palette color key. */
+  color: string;
+  position: number;
+  /** Cards currently carrying the label (soft-delete respected). */
+  cardCount: number;
+  deletedAt: number | null;
+  version: number;
+}
+
+/** A row of `GET /admin/entities/cardLabels` — the card↔label join. */
+export interface AdminCardLabelRowDto {
+  cardId: string;
+  cardTitle: string;
+  /** `Label.id`. */
+  labelId: string;
+  labelName: string;
+  labelColor: string;
+  /** `Card.column.boardId`. */
+  boardId: string;
+  boardTitle: string;
+  position: number;
+}
+
+/** A row of `GET /admin/entities/checklists` — a card checklist. */
+export interface AdminChecklistRowDto {
+  id: string;
+  /** `Checklist.cardId`. */
+  cardId: string;
+  cardTitle: string;
+  /** `Card.column.boardId`. */
+  boardId: string;
+  boardTitle: string;
+  title: string;
+  position: number;
+  /** Items on the checklist (soft-delete respected). */
+  itemCount: number;
+  doneCount: number;
+  deletedAt: number | null;
+  version: number;
+}
+
+/** A row of `GET /admin/entities/checklistItems`. */
+export interface AdminChecklistItemRowDto {
+  id: string;
+  /** `ChecklistItem.checklistId`. */
+  checklistId: string;
+  checklistTitle: string;
+  cardId: string;
+  cardTitle: string;
+  /** `Card.column.boardId`. */
+  boardId: string;
+  boardTitle: string;
+  text: string;
+  done: boolean;
+  position: number;
+  deletedAt: number | null;
+  version: number;
+}
+
+/** A row of `GET /admin/entities/cardLinks` — directional card links. */
+export interface AdminCardLinkRowDto {
+  id: string;
+  /** `CardLink.boardId`. */
+  boardId: string;
+  boardTitle: string;
+  fromCardId: string;
+  fromCardTitle: string;
+  toCardId: string;
+  toCardTitle: string;
+  /** blocks | relates_to | duplicates. */
+  type: string;
+  position: number;
+  deletedAt: number | null;
+  createdAt: number;
+}
+
+/** A row of `GET /admin/entities/boardMembers` — a board membership. */
+export interface AdminBoardMemberRowDto {
+  id: string;
+  /** `BoardMember.boardId`. */
+  boardId: string;
+  boardTitle: string;
+  boardDeletedAt: number | null;
+  /** `BoardMember.userId`. */
+  userId: string;
+  userEmail: string;
+  userDisplayName: string | null;
+  userDisabledAt: number | null;
+  /** ADMIN | MEMBER | VIEWER. */
+  role: string;
+  expiresAt: number | null;
+  /** `null` while the invitation is pending. */
+  acceptedAt: number | null;
+  invitedById: string | null;
+  invitedByEmail: string | null;
+  createdAt: number;
+}
+
+/** A row of `GET /admin/entities/attachments` — uploaded files. */
+export interface AdminAttachmentRowDto {
+  id: string;
+  /** `Attachment.cardId`. */
+  cardId: string;
+  cardTitle: string;
+  /** `Attachment.boardId`. */
+  boardId: string;
+  boardTitle: string;
+  fileName: string;
+  /** Server-generated blob name — never a filesystem path on the client. */
+  storedName: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedById: string;
+  uploadedByEmail: string;
+  deletedAt: number | null;
+  createdAt: number;
+}
+
+/** A row of `GET /admin/entities/activity` — membership + comment events. */
+export interface AdminActivityRowDto {
+  id: string;
+  /** `Activity.boardId`. */
+  boardId: string;
+  boardTitle: string;
+  cardId: string | null;
+  cardTitle: string | null;
+  /** member_invited | member_role_changed | member_removed | comment_added … */
+  type: string;
+  actorId: string;
+  actorEmail: string;
+  details: Record<string, unknown> | null;
+  createdAt: number;
+}
+
+/** Row shape of every `GET /admin/entities/:entity` variant. */
+export interface AdminEntityRowMap {
+  users: AdminUserRowDto;
+  boards: AdminBoardRowDto;
+  boardMembers: AdminBoardMemberRowDto;
+  columns: AdminColumnRowDto;
+  cards: AdminCardRowDto;
+  cardLinks: AdminCardLinkRowDto;
+  labels: AdminLabelRowDto;
+  cardLabels: AdminCardLabelRowDto;
+  checklists: AdminChecklistRowDto;
+  checklistItems: AdminChecklistItemRowDto;
+  comments: AdminCommentRowDto;
+  attachments: AdminAttachmentRowDto;
+  activity: AdminActivityRowDto;
+  commands: AdminCommandRowDto;
+  sessions: AdminSessionRowDto;
+  tokens: AdminTokenRowDto;
+  admins: AdminMasterRowDto;
+  audit: AdminAuditRowDto;
+}
+
+/** Membership line of `GET /admin/users/:id`. */
+export interface AdminUserMembershipDto {
+  id: string;
+  boardId: string;
+  boardTitle: string;
+  boardDeletedAt: number | null;
+  role: string;
+  acceptedAt: number | null;
+  expiresAt: number | null;
+  invitedByEmail: string | null;
+  createdAt: number;
+}
+
+/**
+ * `GET /admin/users/:id` — the whole user graph a support agent needs:
+ * profile, counters, memberships, derived created cards (from `ADD_CARD` /
+ * `DUPLICATE_CARD` commands authored by the user), moderation surfaces.
+ */
+export interface AdminUserDetailDto {
+  user: AdminUserRowDto;
+  counters: {
+    boards: number;
+    cardsCreated: number;
+    comments: number;
+    attachments: number;
+    sessions: number;
+    tokens: number;
+    commands: number;
+  };
+  memberships: AdminUserMembershipDto[];
+  createdCards: AdminCardRowDto[];
+  comments: AdminCommentRowDto[];
+  attachments: AdminAttachmentRowDto[];
+  sessions: AdminSessionRowDto[];
+  tokens: AdminTokenRowDto[];
+  recentCommands: AdminCommandRowDto[];
+  recentActivity: AdminActivityRowDto[];
+}
+
+/** Checklist with its items inside `GET /admin/cards/:id`. */
+export interface AdminCardChecklistDto {
+  id: string;
+  title: string;
+  position: number;
+  deletedAt: number | null;
+  items: Array<{
+    id: string;
+    text: string;
+    done: boolean;
+    position: number;
+    deletedAt: number | null;
+  }>;
+}
+
+/** One directional link line of `GET /admin/cards/:id`. */
+export interface AdminCardLinkEndDto {
+  id: string;
+  /** The card on the other end of the link. */
+  otherCardId: string;
+  otherCardTitle: string;
+  type: string;
+  deletedAt: number | null;
+  createdAt: number;
+}
+
+/**
+ * `GET /admin/cards/:id` — full card graph: meta, labels, checklists, links
+ * (both directions), comments, attachments and a merged activity timeline
+ * (Activity rows + commands whose `touches` include the card).
+ */
+export interface AdminCardDetailDto {
+  card: AdminCardRowDto & {
+    description: string | null;
+    dueDate: number | null;
+    priority: string | null;
+    coverType: string | null;
+    coverValue: string | null;
+    version: number;
+    attachmentCount: number;
+    /** Label of `Card.lastActorId`; `null` when untouched. */
+    lastActorEmail: string | null;
+  };
+  labels: Array<{ id: string; name: string; color: string; position: number }>;
+  checklists: AdminCardChecklistDto[];
+  linksOut: AdminCardLinkEndDto[];
+  linksIn: AdminCardLinkEndDto[];
+  comments: AdminCommentRowDto[];
+  attachments: AdminAttachmentRowDto[];
+  timeline: Array<{
+    id: string;
+    /** "activity" (membership/comment feed) | "command" (board action). */
+    kind: "activity" | "command";
+    type: string;
+    actorId: string;
+    actorEmail: string;
+    details: Record<string, unknown> | null;
+    createdAt: number;
+  }>;
+  /**
+   * Who created the card — `Card` has no creator column, so it is derived
+   * from the first `ADD_CARD`/`DUPLICATE_CARD` command whose payload names
+   * this card. `null` for rows imported before the command log (or cards
+   * created by `IMPORT_BOARDS`).
+   */
+  createdBy: {
+    actorId: string;
+    actorEmail: string;
+    at: number;
+  } | null;
+}
+
+/** Board meta line of `GET /admin/boards/:id/meta`. */
+export interface AdminBoardDetailDto {
+  board: AdminBoardRowDto & {
+    version: number;
+    counts: {
+      members: number;
+      columns: number;
+      cards: number;
+      labels: number;
+      links: number;
+      comments: number;
+      attachments: number;
+      commands: number;
+      activity: number;
+    };
+  };
+  members: AdminBoardMemberRowDto[];
+  columns: AdminColumnRowDto[];
+  labels: AdminLabelRowDto[];
+}
+
+/** `GET /admin/search?q=` — grouped top matches for the omnibox. */
+export interface AdminGlobalSearchDto {
+  users: AdminUserRowDto[];
+  boards: AdminBoardRowDto[];
+  cards: AdminCardRowDto[];
+  comments: AdminCommentRowDto[];
+  attachments: AdminAttachmentRowDto[];
+  labels: AdminLabelRowDto[];
+}
