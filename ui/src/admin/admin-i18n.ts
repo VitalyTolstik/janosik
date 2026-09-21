@@ -21,6 +21,7 @@ const en = {
   "admin.nav.comments": "Comments",
   "admin.nav.sessions": "Sessions",
   "admin.nav.tokens": "API tokens",
+  "admin.nav.email": "Email service",
   "admin.nav.section.monitoring": "Monitoring",
   "admin.nav.section.content": "Content",
   "admin.nav.section.security": "Security",
@@ -64,6 +65,51 @@ const en = {
   "admin.common.details": "Details",
   "admin.common.offline": "No connection to the server",
   "admin.common.forbidden": "Access denied",
+
+  "admin.email.title": "Email service",
+  "admin.email.subtitle":
+    "Outgoing mail — pick a provider, enter credentials, no code changes needed",
+  "admin.email.status.on": "Delivery is active via {provider} ({host}:{port}).",
+  "admin.email.status.env":
+    "Delivery is active via the server's SMTP_* env bootstrap — settings saved here take over.",
+  "admin.email.status.off":
+    "Delivery is off — the saved settings are kept but unused.",
+  "admin.email.status.log":
+    "Delivery is not configured — emails are written to the server log.",
+  "admin.email.readonly":
+    "Viewing only — email settings can be changed by an owner.",
+  "admin.email.provider.title": "Provider",
+  "admin.email.preset.gmail": "Gmail",
+  "admin.email.preset.yandex": "Yandex",
+  "admin.email.preset.mailru": "Mail.ru",
+  "admin.email.preset.brevo": "Brevo",
+  "admin.email.preset.sendgrid": "SendGrid",
+  "admin.email.preset.custom": "Custom SMTP",
+  "admin.email.preset.customHint": "Your own host and port",
+  "admin.email.host": "SMTP host",
+  "admin.email.port": "SMTP port",
+  "admin.email.secure": "Implicit TLS (port 465)",
+  "admin.email.from": "From address",
+  "admin.email.username": "SMTP username",
+  "admin.email.password": "SMTP password",
+  "admin.email.password.saved": "Saved — leave blank to keep",
+  "admin.email.password.hint":
+    "Providers require an app password or API key instead of the account password.",
+  "admin.email.password.help": "How to get it",
+  "admin.email.enabled": "Enable delivery",
+  "admin.email.saving": "Saving…",
+  "admin.email.saved":
+    "Settings saved — the mail transport is reconfigured live.",
+  "admin.email.lastTest.label": "Last probe:",
+  "admin.email.lastTest.ok": "delivered",
+  "admin.email.lastTest.failed": "failed",
+  "admin.email.test.title": "Test delivery",
+  "admin.email.test.logHint":
+    "Delivery is currently off — a probe email is written to the server log instead of being sent.",
+  "admin.email.test.send": "Send test email",
+  "admin.email.test.sending": "Sending…",
+  "admin.email.test.ok": "Test email sent successfully.",
+  "admin.email.test.failed": "Test email failed: {error}",
 
   "admin.dashboard.users": "Users",
   "admin.dashboard.usersHint": "+{count} in 7 days",
@@ -500,6 +546,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.nav.comments": "Комментарии",
   "admin.nav.sessions": "Сессии",
   "admin.nav.tokens": "API-токены",
+  "admin.nav.email": "Email-рассылка",
   "admin.nav.section.monitoring": "Наблюдение",
   "admin.nav.section.content": "Контент",
   "admin.nav.section.security": "Безопасность",
@@ -542,6 +589,51 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.common.details": "Детали",
   "admin.common.offline": "Нет связи с сервером",
   "admin.common.forbidden": "Доступ запрещён",
+
+  "admin.email.title": "Email-рассылка",
+  "admin.email.subtitle":
+    "Исходящая почта — выберите провайдера, введите доступы, без изменений в коде",
+  "admin.email.status.on": "Отправка активна через {provider} ({host}:{port}).",
+  "admin.email.status.env":
+    "Отправка активна через SMTP_* переменные окружения сервера — сохранённые здесь настройки имеют приоритет.",
+  "admin.email.status.off":
+    "Отправка выключена — сохранённые настройки хранятся, но не используются.",
+  "admin.email.status.log":
+    "Отправка не настроена — письма пишутся в журнал сервера.",
+  "admin.email.readonly":
+    "Только просмотр — изменять настройки рассылки может владелец.",
+  "admin.email.provider.title": "Провайдер",
+  "admin.email.preset.gmail": "Gmail",
+  "admin.email.preset.yandex": "Яндекс",
+  "admin.email.preset.mailru": "Mail.ru",
+  "admin.email.preset.brevo": "Brevo",
+  "admin.email.preset.sendgrid": "SendGrid",
+  "admin.email.preset.custom": "Свой SMTP",
+  "admin.email.preset.customHint": "Свой хост и порт",
+  "admin.email.host": "SMTP-хост",
+  "admin.email.port": "SMTP-порт",
+  "admin.email.secure": "Неявный TLS (порт 465)",
+  "admin.email.from": "Адрес отправителя",
+  "admin.email.username": "SMTP-логин",
+  "admin.email.password": "SMTP-пароль",
+  "admin.email.password.saved": "Сохранён — оставьте поле пустым",
+  "admin.email.password.hint":
+    "Провайдеры требуют пароль приложения или API-ключ вместо пароля от аккаунта.",
+  "admin.email.password.help": "Как получить",
+  "admin.email.enabled": "Включить рассылку",
+  "admin.email.saving": "Сохранение…",
+  "admin.email.saved":
+    "Настройки сохранены — отправка почты обновлена на лету.",
+  "admin.email.lastTest.label": "Последняя проверка:",
+  "admin.email.lastTest.ok": "доставлено",
+  "admin.email.lastTest.failed": "ошибка",
+  "admin.email.test.title": "Проверка доставки",
+  "admin.email.test.logHint":
+    "Отправка сейчас выключена — проверочное письмо попадёт в журнал сервера вместо отправки.",
+  "admin.email.test.send": "Отправить тестовое письмо",
+  "admin.email.test.sending": "Отправка…",
+  "admin.email.test.ok": "Тестовое письмо отправлено.",
+  "admin.email.test.failed": "Ошибка отправки тестового письма: {error}",
 
   "admin.dashboard.users": "Пользователи",
   "admin.dashboard.usersHint": "+{count} за 7 дней",

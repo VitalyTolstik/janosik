@@ -9,6 +9,15 @@ export interface SentEmail {
   html: string;
 }
 
+/** Connection settings for a live SMTP transport (TASK-52). */
+export interface SmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  username: string;
+  password: string;
+}
+
 /** UI locales the templates exist for. */
 export type MailLocale = "en" | "ru";
 

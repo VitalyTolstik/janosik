@@ -1,4 +1,4 @@
-import { boardReducer } from "@janosik/shared";
+import { boardReducer, EMAIL_SMTP_PRESETS } from "@janosik/shared";
 import type {
   BoardAction,
   BoardAggregate,
@@ -8,11 +8,14 @@ import type {
   AdminCardRowDto,
   AdminCommandRowDto,
   AdminCommentRowDto,
+  AdminEmailSettingsDto,
+  AdminEmailTestResponse,
   AdminMasterRowDto,
   AdminMetricsDto,
   AdminRole,
   AdminSessionRowDto,
   AdminTokenRowDto,
+  AdminUpdateEmailSettingsRequest,
   AdminUserRowDto,
 } from "@janosik/shared";
 
@@ -231,6 +234,24 @@ export class FakeAdminServer {
   sessionRole: AdminRole = "OWNER";
   /** Extra master rows returned by `GET /admin/admins` (besides the owner). */
   masters: AdminMasterRowDto[] = [];
+  /** Saved mail transport settings (TASK-52); bootstrapped to log mode. */
+  emailSettings: AdminEmailSettingsDto = {
+    provider: "custom",
+    host: "",
+    port: 587,
+    secure: false,
+    from: "",
+    username: "",
+    enabled: false,
+    hasPassword: false,
+    source: "none",
+    active: false,
+    lastTestAt: null,
+    lastTestOk: null,
+    lastError: null,
+    updatedBy: null,
+    updatedAt: null,
+  };
 
   constructor(state: FakeAdminState = emptyAdminState()) {
     this.state = state;
@@ -572,6 +593,59 @@ export class FakeAdminServer {
     }
     if (path === "/admin/audit") {
       return this.json(this.page(this.state.audit, url));
+    }
+
+    // Email service settings (TASK-52): view for any signed-in master,
+    // edit/probe owner-only, mirroring the real backend.
+    if (path === "/admin/email-settings" && method === "GET") {
+      return this.json(this.emailSettings);
+    }
+    if (path === "/admin/email-settings" && method === "PUT") {
+      if (this.sessionRole !== "OWNER") {
+        return this.json({ message: "Owner rights are required" }, 403);
+      }
+      const input = (jsonBody ??
+        {}) as Partial<AdminUpdateEmailSettingsRequest>;
+      // Mirror the real backend: preset providers carry their fixed
+      // connection settings, `custom` takes the client's host/port/secure.
+      const preset = EMAIL_SMTP_PRESETS.find(
+        (item) => item.id === input.provider,
+      );
+      const custom = preset !== undefined && preset.id === "custom";
+      this.emailSettings = {
+        ...this.emailSettings,
+        provider: preset?.id ?? this.emailSettings.provider,
+        host: custom
+          ? (input.host ?? this.emailSettings.host)
+          : (preset?.host ?? this.emailSettings.host),
+        port: custom
+          ? (input.port ?? this.emailSettings.port)
+          : (preset?.port ?? this.emailSettings.port),
+        secure: custom
+          ? (input.secure ?? this.emailSettings.secure)
+          : (preset?.secure ?? this.emailSettings.secure),
+        from: input.from ?? this.emailSettings.from,
+        username: input.username ?? this.emailSettings.username,
+        enabled: input.enabled ?? this.emailSettings.enabled,
+        hasPassword:
+          input.password !== undefined
+            ? input.password !== null
+            : this.emailSettings.hasPassword,
+        source: "db",
+        active: input.enabled ?? false,
+        updatedBy: this.principal().email,
+        updatedAt: new Date(now).toISOString(),
+      };
+      return this.json(this.emailSettings);
+    }
+    if (path === "/admin/email-settings/test" && method === "POST") {
+      if (this.sessionRole !== "OWNER") {
+        return this.json({ message: "Owner rights are required" }, 403);
+      }
+      return this.json({
+        ok: true,
+        error: null,
+      } satisfies AdminEmailTestResponse);
     }
 
     // Admin v2 (TASK-48): generic entity listing mirrors the real backend's

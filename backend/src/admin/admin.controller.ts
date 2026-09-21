@@ -3,9 +3,11 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   UseGuards,
@@ -15,6 +17,8 @@ import type {
   AdminBoardCommandRequest,
   AdminBoardDetailDto,
   AdminCardDetailDto,
+  AdminEmailSettingsDto,
+  AdminEmailTestResponse,
   AdminEntity,
   AdminEntityRowMap,
   AdminGlobalSearchDto,
@@ -47,7 +51,9 @@ import { AdminCreateBoardDto } from "./dto/admin-create-board.dto";
 import { AdminCreateMasterDto } from "./dto/admin-create-master.dto";
 import { AdminUpdateMasterDto } from "./dto/admin-update-master.dto";
 import { AdminCreateUserDto } from "./dto/admin-create-user.dto";
+import { AdminEmailTestDto } from "./dto/admin-email-test.dto";
 import { AdminListQueryDto } from "./dto/admin-list-query.dto";
+import { AdminUpdateEmailSettingsDto } from "./dto/admin-update-email-settings.dto";
 import { AdminUpdateUserDto } from "./dto/admin-update-user.dto";
 
 /**
@@ -348,5 +354,31 @@ export class AdminController {
     @Query() query: AdminListQueryDto,
   ): Promise<AdminPage<AdminAuditRowDto>> {
     return this.admin.listAudit(query);
+  }
+
+  // ------------------------------------------- email settings (TASK-52)
+
+  /** Saved outgoing-mail transport; every admin may view, owners edit. */
+  @Get("email-settings")
+  getEmailSettings(): Promise<AdminEmailSettingsDto> {
+    return this.admin.getEmailSettings();
+  }
+
+  @Put("email-settings")
+  updateEmailSettings(
+    @Body() dto: AdminUpdateEmailSettingsDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminEmailSettingsDto> {
+    return this.admin.updateEmailSettings(dto, admin);
+  }
+
+  /** Probe delivery — outcome (ok/error) is returned and recorded. */
+  @Post("email-settings/test")
+  @HttpCode(200)
+  testEmailSettings(
+    @Body() dto: AdminEmailTestDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminEmailTestResponse> {
+    return this.admin.testEmailSettings(dto, admin);
   }
 }
