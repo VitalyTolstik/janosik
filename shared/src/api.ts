@@ -291,6 +291,12 @@ export interface CommentPage {
   nextCursor: string | null;
 }
 
+/** Lifecycle of the TASK-50 video transcode ("ужиматор"): video uploads
+ * re-encode to a compact H.264 MP4 in a background job — `none` for
+ * non-videos, `pending` while queued/running, `done` once `content`
+ * serves the MP4, `failed` keeps the playable original. */
+export type AttachmentTranscodeStatus = "none" | "pending" | "done" | "failed";
+
 /** One card file attachment (TASK-47) — metadata only; the blob streams
  * from `GET /attachments/:id/content` to board members. */
 export interface AttachmentDto {
@@ -303,6 +309,8 @@ export interface AttachmentDto {
   uploadedById: string;
   /** Unix ms. */
   createdAt: number;
+  /** TASK-50 video transcode state; `none` for non-video files. */
+  transcodeStatus: AttachmentTranscodeStatus;
 }
 
 /**

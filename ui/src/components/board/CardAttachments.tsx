@@ -8,6 +8,7 @@ import {
   FileVideo,
   File as FileIcon,
   Download,
+  Loader2,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -166,7 +167,10 @@ export function CardAttachments({
       if (event.boardId !== boardId || event.cardId !== cardId) return;
       if (
         event.kind === "attachment_added" ||
-        event.kind === "attachment_deleted"
+        event.kind === "attachment_deleted" ||
+        // TASK-50: the background encode swapped the blob — re-read the
+        // row for the new size/mime/status (the content URL is unchanged).
+        event.kind === "attachment_updated"
       ) {
         void refreshNewest();
       }
@@ -257,6 +261,15 @@ export function CardAttachments({
                 >
                   {attachment.fileName}
                 </span>
+                {attachment.transcodeStatus === "pending" ? (
+                  <span
+                    className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground"
+                    data-testid="card-attachment-encoding"
+                  >
+                    <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                    {t("card.attachments.encoding")}
+                  </span>
+                ) : null}
                 <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
                   {formatSize(attachment.sizeBytes)}
                 </span>

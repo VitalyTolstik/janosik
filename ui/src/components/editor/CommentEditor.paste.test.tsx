@@ -87,6 +87,7 @@ function attachment(id: string, fileName: string, mimeType: string) {
     mimeType,
     sizeBytes: 4,
     uploadedById: "user-1",
+    transcodeStatus: "none" as const,
     createdAt: 0,
   };
 }
