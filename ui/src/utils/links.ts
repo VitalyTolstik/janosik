@@ -229,3 +229,80 @@ export const LINK_TYPE_OPTIONS: {
   { option: "duplicates", linkType: "duplicates", holder: "source" },
   { option: "duplicatedBy", linkType: "duplicates", holder: "target" },
 ];
+
+/** One navigable linked-card row, shared by the dialog and the popover. */
+export interface LinkRow {
+  linkId: string;
+  /** The other end of the relation — where a click navigates. */
+  targetCardId: string;
+  type: CardLinkType;
+  /** Target title, or the localized "Deleted card" for a dangling row. */
+  title: string;
+  /** False for a row whose target card no longer exists. */
+  live: boolean;
+}
+
+/** Row group keyed by how the relation reads from the card. */
+export type LinkGroupKey =
+  | "blocks"
+  | "blockedBy"
+  | "relatesTo"
+  | "duplicates"
+  | "duplicatedBy"
+  | "dangling";
+
+/**
+ * A card's relations grouped the way they read from *this* card (the same
+ * order the card dialog lists them in). Typed groups hold only live rows;
+ * rows pointing at a deleted card land in the tail `dangling` group with
+ * their "Deleted card" title — they still occupy the card's link cap, so
+ * every view that lists relations must render them.
+ */
+export function linkRowGroups(
+  cards: Board["cards"],
+  facts: CardLinkFacts,
+  deletedCardTitle: string,
+): { key: LinkGroupKey; rows: LinkRow[] }[] {
+  const outOf = (type: CardLinkType): LinkRow[] =>
+    facts.outgoing
+      .filter((link) => link.type === type && link.targetCardId in cards)
+      .map((link) => ({
+        linkId: link.id,
+        targetCardId: link.targetCardId,
+        type,
+        title: cards[link.targetCardId]?.title ?? "",
+        live: true,
+      }));
+  const inOf = (type: CardLinkType): LinkRow[] =>
+    facts.incoming
+      .filter((entry) => entry.link.type === type)
+      .map((entry) => ({
+        linkId: entry.link.id,
+        targetCardId: entry.fromCardId,
+        type: entry.link.type,
+        title: cards[entry.fromCardId]?.title ?? "",
+        live: true,
+      }));
+  const dangling = (): LinkRow[] =>
+    facts.outgoing
+      .filter((link) => !(link.targetCardId in cards))
+      .map((link) => ({
+        linkId: link.id,
+        targetCardId: link.targetCardId,
+        type: link.type,
+        title: deletedCardTitle,
+        live: false,
+      }));
+  const build = (key: LinkGroupKey, rows: LinkRow[]) =>
+    rows.length === 0
+      ? null
+      : { key, rows: rows.sort((a, b) => a.title.localeCompare(b.title)) };
+  return [
+    build("blocks", outOf("blocks")),
+    build("blockedBy", inOf("blocks")),
+    build("relatesTo", [...outOf("relates_to"), ...inOf("relates_to")]),
+    build("duplicates", outOf("duplicates")),
+    build("duplicatedBy", inOf("duplicates")),
+    build("dangling", dangling()),
+  ].filter((group) => group !== null);
+}
