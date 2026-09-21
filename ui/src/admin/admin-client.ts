@@ -13,6 +13,9 @@ import type {
   AdminCreateMasterResponse,
   AdminCreateUserRequest,
   AdminCreateUserResponse,
+  AdminEmailSettingsDto,
+  AdminEmailTestRequest,
+  AdminEmailTestResponse,
   AdminEntity,
   AdminEntityRowMap,
   AdminGlobalSearchDto,
@@ -21,6 +24,7 @@ import type {
   AdminTokenRowDto,
   AdminMetricsDto,
   AdminPage,
+  AdminUpdateEmailSettingsRequest,
   AdminUpdateMasterRequest,
   AdminUpdateUserRequest,
   AdminUserDetailDto,
@@ -398,6 +402,30 @@ export class AdminApiClient {
     return this.request<AdminPage<AdminAuditRowDto>>(
       `/admin/audit${this.query(params)}`,
     );
+  }
+
+  // ------------------------------------------- email settings (TASK-52)
+
+  getEmailSettings(): Promise<AdminEmailSettingsDto> {
+    return this.request<AdminEmailSettingsDto>("/admin/email-settings");
+  }
+
+  updateEmailSettings(
+    body: AdminUpdateEmailSettingsRequest,
+  ): Promise<AdminEmailSettingsDto> {
+    return this.request<AdminEmailSettingsDto>("/admin/email-settings", {
+      method: "PUT",
+      body,
+    });
+  }
+
+  testEmailSettings(
+    body: AdminEmailTestRequest,
+  ): Promise<AdminEmailTestResponse> {
+    return this.request<AdminEmailTestResponse>("/admin/email-settings/test", {
+      method: "POST",
+      body,
+    });
   }
 
   private query(params: AdminListParams): string {

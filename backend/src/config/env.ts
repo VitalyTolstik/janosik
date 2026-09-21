@@ -34,6 +34,16 @@ if (process.env.NODE_ENV === "test" && process.env.TEST_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 }
 
+// Tests are hermetic: a developer machine's SMTP_* (backend/.env) must not
+// turn e2e runs into live senders. Specs that exercise a transport start
+// one explicitly via MailerService.reconfigure.
+if (process.env.NODE_ENV === "test") {
+  process.env.SMTP_HOST = "";
+  process.env.SMTP_USER = "";
+  process.env.SMTP_PASS = "";
+  process.env.SMTP_FROM = "";
+}
+
 // envalid 8 has no per-var validate option — a custom validator gives
 // JWT_SECRET a clean fail-fast instead of a passport stack trace later.
 const jwtSecret = makeValidator((v) => {
@@ -102,5 +112,13 @@ export const env = cleanEnv(process.env, {
     desc: "From header for outgoing emails",
     default: "Janosik <no-reply@janosik.local>",
     example: "Janosik <no-reply@example.com>",
+  }),
+  // Master-panel mail settings (TASK-52): SMTP credentials saved from the
+  // admin UI are encrypted at rest with this key. When unset the key is
+  // derived from JWT_SECRET, so self-hosters need no extra configuration.
+  SETTINGS_SECRET: str({
+    desc: "Encryption key for credentials stored via the master panel; derived from JWT_SECRET when unset",
+    default: "",
+    example: "openssl rand -hex 32",
   }),
 });

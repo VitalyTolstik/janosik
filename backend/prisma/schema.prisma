@@ -58,6 +58,25 @@ model RefreshToken {
 // the sha256 of the code is stored, one live row per user (a new request
 // deletes the previous one), single-use, short TTL, and an attempts counter
 // so a code cannot be brute-forced inside its lifetime.
+model EmailSettings {
+  // Singleton row (id is always "singleton") — the master-panel editable
+  // mail transport (TASK-52). Overrides the SMTP_* env bootstrap at runtime.
+  id          String    @id
+  provider    String // gmail | yandex | mailru | brevo | sendgrid | custom
+  host        String
+  port        Int
+  secure      Boolean   @default(false)
+  from        String
+  username    String
+  passwordEnc String? // AES-256-GCM (secret-box); never leaves the backend
+  enabled     Boolean   @default(false)
+  lastTestAt  DateTime?
+  lastTestOk  Boolean?
+  lastError   String?
+  updatedBy   String?
+  updatedAt   DateTime  @updatedAt
+}
+
 model EmailChangeCode {
   id         String    @id @default(cuid())
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)

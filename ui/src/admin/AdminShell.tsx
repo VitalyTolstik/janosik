@@ -10,6 +10,7 @@ import {
   Link2,
   ListChecks,
   LogOut,
+  Mail,
   MessageSquare,
   Paperclip,
   ScrollText,
@@ -117,6 +118,12 @@ const NAV_SECTIONS: Array<{
         icon: ShieldCheck,
       },
       { to: "/admin/tokens", labelKey: "admin.nav.tokens", icon: KeyRound },
+      {
+        to: "/admin/email",
+        labelKey: "admin.nav.email",
+        icon: Mail,
+        ownerOnly: true,
+      },
     ],
   },
 ];

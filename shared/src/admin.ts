@@ -347,9 +347,148 @@ export const ADMIN_AUDIT_ACTIONS = [
   "session.revoke",
   "token.revoke",
   "comment.delete",
+  "email.settings_changed",
+  "email.test_sent",
 ] as const;
 
 export type AdminAuditAction = (typeof ADMIN_AUDIT_ACTIONS)[number];
+
+/**
+ * Outgoing mail presets (TASK-52): the master panel picks a provider and
+ * only supplies credentials — host/port/TLS come from the preset, so no
+ * code or env change is needed to switch provider. `custom` keeps the
+ * host/port editable for anything not on the list.
+ */
+export interface EmailSmtpPreset {
+  id: "gmail" | "yandex" | "mailru" | "brevo" | "sendgrid" | "custom";
+  label: string;
+  host: string;
+  port: number;
+  /** `true` → implicit TLS (465); `false` → STARTTLS on a plain port. */
+  secure: boolean;
+  usernameHint: string;
+  passwordLabel: string;
+  helpUrl: string;
+}
+
+export const EMAIL_SMTP_PRESETS: readonly EmailSmtpPreset[] = [
+  {
+    id: "gmail",
+    label: "Gmail",
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    usernameHint: "you@gmail.com",
+    passwordLabel: "App password (16 characters)",
+    helpUrl: "https://support.google.com/accounts/answer/185833",
+  },
+  {
+    id: "yandex",
+    label: "Yandex",
+    host: "smtp.yandex.ru",
+    port: 465,
+    secure: true,
+    usernameHint: "you@yandex.ru",
+    passwordLabel: "App password",
+    helpUrl: "https://id.yandex.ru/security/authorization-apps",
+  },
+  {
+    id: "mailru",
+    label: "Mail.ru",
+    host: "smtp.mail.ru",
+    port: 465,
+    secure: true,
+    usernameHint: "you@mail.ru",
+    passwordLabel: "App password",
+    helpUrl: "https://help.mail.ru/mail/mail-settings/password",
+  },
+  {
+    id: "brevo",
+    label: "Brevo",
+    host: "smtp-relay.brevo.com",
+    port: 587,
+    secure: false,
+    usernameHint: "Brevo account email",
+    passwordLabel: "SMTP key",
+    helpUrl: "https://app.brevo.com/settings/keys/api",
+  },
+  {
+    id: "sendgrid",
+    label: "SendGrid",
+    host: "smtp.sendgrid.net",
+    port: 587,
+    secure: false,
+    usernameHint: "apikey",
+    passwordLabel: "API key",
+    helpUrl: "https://app.sendgrid.com/settings/api_keys",
+  },
+  {
+    id: "custom",
+    label: "Custom SMTP",
+    host: "",
+    port: 587,
+    secure: false,
+    usernameHint: "SMTP username",
+    passwordLabel: "SMTP password",
+    helpUrl: "",
+  },
+] as const;
+
+/** Preset ids that carry their own fixed connection settings. */
+export const EMAIL_SMTP_PRESET_IDS = EMAIL_SMTP_PRESETS.map((p) => p.id);
+
+/**
+ * `GET /admin/email-settings` — the saved transport config with the password
+ * masked (`hasPassword`); the secret itself never leaves the backend.
+ * `source` says where the currently active transport comes from: the saved
+ * row, the SMTP_* env bootstrap, or nothing (log mode).
+ */
+export interface AdminEmailSettingsDto {
+  provider: (typeof EMAIL_SMTP_PRESET_IDS)[number];
+  host: string;
+  port: number;
+  secure: boolean;
+  from: string;
+  username: string;
+  enabled: boolean;
+  hasPassword: boolean;
+  source: "db" | "env" | "none";
+  /** A transport is configured right now (saved enabled row or env). */
+  active: boolean;
+  lastTestAt: string | null;
+  lastTestOk: boolean | null;
+  lastError: string | null;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * `PUT /admin/email-settings`. For a preset provider the backend takes
+ * host/port/secure from the preset and ignores the client's values; with
+ * `custom` they are required. `password` semantics: `undefined` = keep the
+ * stored one, `null` = clear it, a string = replace it.
+ */
+export interface AdminUpdateEmailSettingsRequest {
+  provider: (typeof EMAIL_SMTP_PRESET_IDS)[number];
+  host?: string;
+  port?: number;
+  secure?: boolean;
+  from: string;
+  username: string;
+  password?: string | null;
+  enabled: boolean;
+}
+
+/** Body of `POST /admin/email-settings/test`. */
+export interface AdminEmailTestRequest {
+  to: string;
+}
+
+/** `POST /admin/email-settings/test` answer. */
+export interface AdminEmailTestResponse {
+  ok: boolean;
+  error: string | null;
+}
 
 /** Validation bounds for master-created accounts (mirrors the register DTO). */
 export const ADMIN_PASSWORD_MIN = 8;

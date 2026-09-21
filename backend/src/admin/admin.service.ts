@@ -16,6 +16,8 @@ import type {
   AdminCardRowDto,
   AdminCommandRowDto,
   AdminCommentRowDto,
+  AdminEmailSettingsDto,
+  AdminEmailTestResponse,
   AdminRuntimeDto,
   AdminSessionRowDto,
   AdminTokenRowDto,
@@ -41,9 +43,12 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
 import { MailerService } from "@/mailer/mailer.service";
+import { EmailSettingsService } from "@/mailer/email-settings.service";
 import { emailChangedNoticeEmail } from "@/mailer/templates";
 import type { AdminPrincipal } from "./admin.types";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
+import type { AdminUpdateEmailSettingsDto } from "./dto/admin-update-email-settings.dto";
+import type { AdminEmailTestDto } from "./dto/admin-email-test.dto";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SPARKLINE_DAYS = 14;
@@ -79,6 +84,7 @@ export class AdminService {
     private readonly boards: BoardsService,
     private readonly commands: CommandsService,
     private readonly mailer: MailerService,
+    private readonly emailSettings: EmailSettingsService,
   ) {}
 
   // ---------------------------------------------------------------- metrics
@@ -1311,6 +1317,48 @@ export class AdminService {
       limit,
       offset,
     };
+  }
+
+  // --------------------------------------------------- email settings (52)
+
+  /** The saved mail transport settings; operators may view, only owners edit. */
+  async getEmailSettings(): Promise<AdminEmailSettingsDto> {
+    return this.emailSettings.getPublic();
+  }
+
+  async updateEmailSettings(
+    dto: AdminUpdateEmailSettingsDto,
+    admin: AdminPrincipal,
+  ): Promise<AdminEmailSettingsDto> {
+    this.assertOwner(admin);
+    const saved = await this.emailSettings.update(dto, admin.email);
+    await this.audit(
+      admin,
+      "email.settings_changed",
+      "email_settings",
+      "singleton",
+      {
+        provider: saved.provider,
+        host: saved.host,
+        port: saved.port,
+        enabled: saved.enabled,
+        passwordChanged: dto.password !== undefined,
+      },
+    );
+    return saved;
+  }
+
+  async testEmailSettings(
+    dto: AdminEmailTestDto,
+    admin: AdminPrincipal,
+  ): Promise<AdminEmailTestResponse> {
+    this.assertOwner(admin);
+    const result = await this.emailSettings.test(dto.to);
+    await this.audit(admin, "email.test_sent", "email_settings", "singleton", {
+      to: dto.to,
+      ok: result.ok,
+    });
+    return result;
   }
 
   async listAudit(
