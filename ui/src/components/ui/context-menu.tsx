@@ -163,6 +163,8 @@ function ContextMenuSubContent({
     <ContextMenuContent
       data-slot="context-menu-sub-content"
       side="right"
+      // A visible gap so the submenu never covers the parent menu.
+      sideOffset={6}
       {...props}
     />
   );
@@ -173,9 +175,12 @@ function ContextMenuCheckboxItem({
   children,
   checked,
   inset,
+  hideIndicator = false,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.CheckboxItem> & {
   inset?: boolean;
+  /** Renders no check indicator — the item brings its own visual. */
+  hideIndicator?: boolean;
 }) {
   return (
     <ContextMenuPrimitive.CheckboxItem
@@ -188,11 +193,13 @@ function ContextMenuCheckboxItem({
       checked={checked}
       {...props}
     >
-      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
-        <ContextMenuPrimitive.CheckboxItemIndicator>
-          <CheckIcon className="size-4" />
-        </ContextMenuPrimitive.CheckboxItemIndicator>
-      </span>
+      {hideIndicator ? null : (
+        <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
+          <ContextMenuPrimitive.CheckboxItemIndicator>
+            <CheckIcon className="size-4" />
+          </ContextMenuPrimitive.CheckboxItemIndicator>
+        </span>
+      )}
       {children}
     </ContextMenuPrimitive.CheckboxItem>
   );

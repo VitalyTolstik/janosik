@@ -804,8 +804,24 @@ function ChecklistSub({
                     key={item.id}
                     checked={item.done}
                     onCheckedChange={() => onToggleItem(checklist.id, item.id)}
+                    hideIndicator
                     data-testid={`ctx-checklist-item-${item.id}`}
                   >
+                    {/* A always-visible checkbox square — the plain check
+                        indicator alone reads as empty space while unticked. */}
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "pointer-events-none absolute left-2 flex size-3.5 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
+                        item.done
+                          ? "border-primary bg-primary"
+                          : "border-muted-foreground/40 bg-background",
+                      )}
+                    >
+                      {item.done ? (
+                        <Check className="size-3 text-primary-foreground" />
+                      ) : null}
+                    </span>
                     <span
                       className={cn(
                         "min-w-0 flex-1 truncate text-xs",
