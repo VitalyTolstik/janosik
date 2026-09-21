@@ -170,6 +170,66 @@ describe("AdminApp", () => {
     ).toBeTruthy();
   });
 
+  it("changes a user's email from the detail page (TASK-51)", async () => {
+    const state = serverWith().state;
+    state.users = [adminUser()];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users/u-1");
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-user-detail-actions"),
+      { button: 0 },
+    );
+    fireEvent.click(await screen.findByTestId("admin-user-change-email"));
+    const dialog = await screen.findByTestId("admin-change-email-dialog");
+    fireEvent.change(within(dialog).getByTestId("admin-change-email-input"), {
+      target: { value: "moved@example.com" },
+    });
+    fireEvent.click(within(dialog).getByTestId("admin-change-email-submit"));
+
+    await waitFor(() => {
+      expect(server.state.users[0]?.email).toBe("moved@example.com");
+    });
+    expect(
+      server.requests.some(
+        (request) =>
+          request.method === "PATCH" &&
+          request.path === "/admin/users/u-1" &&
+          (request.body as { email?: string }).email === "moved@example.com",
+      ),
+    ).toBe(true);
+    // The panel heard about it: the subtitle now shows the new address.
+    expect(await screen.findAllByText("moved@example.com")).toBeTruthy();
+  });
+
+  it("refuses to move a user's email onto a taken address", async () => {
+    const state = serverWith().state;
+    state.users = [
+      adminUser(),
+      adminUser({ id: "u-2", email: "x@example.com" }),
+    ];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users/u-1");
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-user-detail-actions"),
+      { button: 0 },
+    );
+    fireEvent.click(await screen.findByTestId("admin-user-change-email"));
+    const dialog = await screen.findByTestId("admin-change-email-dialog");
+    fireEvent.change(within(dialog).getByTestId("admin-change-email-input"), {
+      target: { value: "x@example.com" },
+    });
+    fireEvent.click(within(dialog).getByTestId("admin-change-email-submit"));
+
+    expect(
+      await within(dialog).findByTestId("admin-change-email-error"),
+    ).toHaveTextContent(t("admin.users.changeEmail.taken"));
+    expect(server.state.users[0]?.email).not.toBe("x@example.com");
+  });
+
   it("creates a user and reveals the generated password once", async () => {
     const server = serverWith();
     vi.stubGlobal("fetch", server.fetchImpl);

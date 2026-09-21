@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import dotenv from "dotenv";
-import { cleanEnv, makeValidator, num, port, str, url } from "envalid";
+import { bool, cleanEnv, makeValidator, num, port, str, url } from "envalid";
 
 /**
  * Backend config — the single place where process.env is read and validated.
@@ -78,5 +78,29 @@ export const env = cleanEnv(process.env, {
     desc: "Refresh token lifetime in days",
     default: 30,
     example: "30",
+  }),
+  // Mail (TASK-51): every var is optional — without SMTP_HOST the mailer
+  // logs outgoing emails to the server log instead of sending them, so
+  // self-hosters get a working dev setup out of the box.
+  SMTP_HOST: str({
+    desc: "SMTP server host; unset = emails are logged, never sent",
+    default: "",
+    example: "smtp.gmail.com",
+  }),
+  SMTP_PORT: port({
+    desc: "SMTP server port",
+    default: 587,
+    example: "587",
+  }),
+  SMTP_SECURE: bool({
+    desc: "Use implicit TLS for SMTP (true for port 465)",
+    default: false,
+  }),
+  SMTP_USER: str({ desc: "SMTP user (optional)", default: "" }),
+  SMTP_PASS: str({ desc: "SMTP password (optional)", default: "" }),
+  SMTP_FROM: str({
+    desc: "From header for outgoing emails",
+    default: "Janosik <no-reply@janosik.local>",
+    example: "Janosik <no-reply@example.com>",
   }),
 });

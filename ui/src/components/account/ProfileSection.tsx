@@ -4,6 +4,7 @@ import { DISPLAY_NAME_MAX, type UserAvatarColor } from "@janosik/shared";
 
 import { api, ApiError } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
+import { EmailChangeDialog } from "@/components/account/EmailChangeDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/Toast";
@@ -19,9 +20,9 @@ import {
 
 /**
  * Profile section (TASK-36.1): the avatar preview and palette picker, the
- * editable display name and the read-only email. Email changes need a
- * verification flow the project does not have yet, so the field is locked
- * with a hint instead of pretending it is editable.
+ * editable display name and the sign-in email. Since TASK-51 the email can
+ * be changed through the double opt-in dialog (password proof + code to the
+ * new address); the field itself stays read-only — the dialog owns the flow.
  */
 export function ProfileSection() {
   const { user, updateUser } = useAuth();
@@ -33,6 +34,7 @@ export function ProfileSection() {
   );
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [changingEmail, setChangingEmail] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
   if (user === null) return null;
@@ -217,18 +219,30 @@ export function ProfileSection() {
           >
             {t("account.profile.emailLabel")}
           </label>
-          <Input
-            id="account-email"
-            data-testid="account-email"
-            value={user.email}
-            disabled
-            readOnly
-          />
+          <div className="flex gap-2">
+            <Input
+              id="account-email"
+              data-testid="account-email"
+              value={user.email}
+              disabled
+              readOnly
+            />
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="account-email-change"
+              onClick={() => setChangingEmail(true)}
+            >
+              {t("account.email.change")}
+            </Button>
+          </div>
           <p className="text-[11px] text-muted-foreground">
             {t("account.profile.emailHint")}
           </p>
         </div>
       </form>
+
+      <EmailChangeDialog open={changingEmail} onOpenChange={setChangingEmail} />
     </section>
   );
 }

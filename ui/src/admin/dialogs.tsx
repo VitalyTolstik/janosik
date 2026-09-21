@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
@@ -342,5 +343,135 @@ export function CreateBoardButton({ reload }: { reload: () => void }) {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * Master override of the sign-in address (TASK-51). Unlike the self-service
+ * flow in the account panel there is no verification code: the master is
+ * accountable through the audit trail, every user session is revoked
+ * server-side and the old address receives a notice.
+ */
+export function ChangeUserEmailDialog({
+  user,
+  onClose,
+  onDone,
+}: {
+  user: { id: string; email: string } | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const t = useAdminT();
+  const toast = useToast();
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  /** Closing always resets, so reopening starts from a clean form. */
+  const close = () => {
+    setEmail("");
+    setError(null);
+    setBusy(false);
+    onClose();
+  };
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (user === null || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await adminApi.updateUser(user.id, {
+        email: email.trim(),
+      });
+      toast.success(t("admin.users.toast.emailChanged", { email: next.email }));
+      onDone();
+      close();
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 409) {
+        setError(t("admin.users.changeEmail.taken"));
+      } else if (cause instanceof ApiError && cause.status === 400) {
+        setError(t("admin.users.changeEmail.invalid"));
+      } else {
+        setError(t("admin.common.actionFailed"));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={user !== null}
+      onOpenChange={(next) => {
+        if (!next) close();
+      }}
+    >
+      <DialogContent
+        className="max-w-sm"
+        data-testid="admin-change-email-dialog"
+      >
+        <DialogHeader>
+          <DialogTitle className="text-sm">
+            {t("admin.users.changeEmail.title")}
+          </DialogTitle>
+          {user !== null ? (
+            <DialogDescription className="text-xs">
+              {user.email}
+            </DialogDescription>
+          ) : null}
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-3">
+          <div className="space-y-1.5">
+            <label
+              htmlFor="admin-change-email"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              {t("admin.users.changeEmail.newLabel")}
+            </label>
+            <Input
+              id="admin-change-email"
+              data-testid="admin-change-email-input"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {t("admin.users.changeEmail.warning")}
+          </p>
+          {error !== null ? (
+            <p
+              role="alert"
+              data-testid="admin-change-email-error"
+              className="text-xs text-danger"
+            >
+              {error}
+            </p>
+          ) : null}
+          <DialogFooter className="gap-2">
+            <Button
+              size="sm"
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              onClick={close}
+            >
+              {t("admin.common.cancel")}
+            </Button>
+            <Button
+              size="sm"
+              type="submit"
+              disabled={busy || !email.trim()}
+              data-testid="admin-change-email-submit"
+            >
+              {t("admin.users.changeEmail.title")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

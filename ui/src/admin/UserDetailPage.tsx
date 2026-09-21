@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
+  AtSign,
   KanbanSquare,
   KeyRound,
   MessageSquare,
@@ -29,6 +30,7 @@ import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
+import { ChangeUserEmailDialog } from "./dialogs";
 import {
   DateCell,
   EntityLink,
@@ -100,6 +102,7 @@ export function UserDetailPage() {
   const [detail, setDetail] = useState<AdminUserDetailDto | null>(null);
   const [error, setError] = useState(false);
   const [tab, setTab] = useState<TabKey>("memberships");
+  const [emailDialog, setEmailDialog] = useState(false);
 
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -247,6 +250,13 @@ export function UserDetailPage() {
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem
+                  onSelect={() => setEmailDialog(true)}
+                  data-testid="admin-user-change-email"
+                >
+                  <AtSign className="h-3.5 w-3.5" aria-hidden />
+                  {t("admin.users.action.changeEmail")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
                   className="text-danger focus:text-danger"
                   onSelect={() =>
                     void run(t("admin.users.action.revokeSessions"), () =>
@@ -271,6 +281,12 @@ export function UserDetailPage() {
           }
         />
       </div>
+
+      <ChangeUserEmailDialog
+        user={emailDialog ? { id: user.id, email: user.email } : null}
+        onClose={() => setEmailDialog(false)}
+        onDone={reload}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <IdCell id={user.id} />

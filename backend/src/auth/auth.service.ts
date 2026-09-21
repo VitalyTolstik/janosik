@@ -1,24 +1,43 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { Prisma, User } from "@prisma/client";
 import { argon2id, hash as argonHash, verify as argonVerify } from "argon2";
-import { createHash, randomBytes } from "node:crypto";
+import {
+  createHash,
+  randomBytes,
+  randomInt,
+  timingSafeEqual,
+} from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
+import {
+  emailChangeCodeEmail,
+  emailChangedNoticeEmail,
+} from "@/mailer/templates";
+import type { MailLocale } from "@/mailer/mail.types";
+import { MailerService } from "@/mailer/mailer.service";
 import { toAuthUser } from "./auth-user.mapper";
 import { USER_JWT_AUDIENCE } from "./auth.types";
 import type { AuthResult } from "./auth.types";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
 import type { ChangePasswordDto } from "./dto/change-password.dto";
+import type { ConfirmEmailChangeDto } from "./dto/confirm-email-change.dto";
+import type { RequestEmailChangeDto } from "./dto/request-email-change.dto";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Verification code lifetime (TASK-51). */
+const EMAIL_CHANGE_TTL_MS = 15 * 60 * 1000;
+/** Wrong confirmations allowed before the code is destroyed. */
+const EMAIL_CHANGE_MAX_ATTEMPTS = 5;
 
 /**
  * Credentials and sessions (§7.0):
@@ -35,6 +54,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly mailer: MailerService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResult> {
@@ -171,6 +191,148 @@ export class AuthService {
         data: { revokedAt: new Date() },
       });
     }
+  }
+
+  /**
+   * Email change, step 1 (TASK-51): verify the current password, park a
+   * 6-digit code against the NEW address and email it there. A new request
+   * replaces any pending code, so only the newest code ever works.
+   */
+  async requestEmailChange(
+    userId: string,
+    dto: RequestEmailChangeDto,
+    locale: MailLocale,
+  ): Promise<{ expiresAt: number }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    const valid = await argonVerify(user.passwordHash, dto.currentPassword);
+    if (!valid) {
+      throw new UnauthorizedException("Current password is incorrect");
+    }
+    if (dto.newEmail === user.email) {
+      throw new BadRequestException(
+        "New email must differ from the current one",
+      );
+    }
+    const taken = await this.prisma.user.findUnique({
+      where: { email: dto.newEmail },
+      select: { id: true },
+    });
+    if (taken) {
+      throw new ConflictException("Email is already registered");
+    }
+    const code = randomInt(0, 1_000_000).toString().padStart(6, "0");
+    const expiresAt = new Date(Date.now() + EMAIL_CHANGE_TTL_MS);
+    await this.prisma.emailChangeCode.deleteMany({ where: { userId } });
+    await this.prisma.emailChangeCode.create({
+      data: {
+        userId,
+        newEmail: dto.newEmail,
+        codeHash: this.hashToken(code),
+        expiresAt,
+      },
+    });
+    const message = emailChangeCodeEmail(
+      code,
+      EMAIL_CHANGE_TTL_MS / 60_000,
+      locale,
+    );
+    try {
+      await this.mailer.send({ to: dto.newEmail, ...message });
+    } catch {
+      throw new ServiceUnavailableException(
+        "Failed to send the verification email",
+      );
+    }
+    return { expiresAt: expiresAt.getTime() };
+  }
+
+  /**
+   * Email change, step 2 (TASK-51): swap the address once the code from the
+   * new inbox is presented, revoke every other refresh session, and notify
+   * the old address (best-effort). The caller keeps their session via a
+   * fresh token pair; the route lives under `/auth` so the cookie that
+   * identifies it is actually sent.
+   */
+  async confirmEmailChange(
+    userId: string,
+    dto: ConfirmEmailChangeDto,
+    refreshToken: string | undefined,
+    locale: MailLocale,
+  ): Promise<AuthResult> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    const stored = await this.prisma.emailChangeCode.findFirst({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+    });
+    if (
+      !stored ||
+      stored.consumedAt !== null ||
+      stored.expiresAt.getTime() <= Date.now()
+    ) {
+      throw new BadRequestException("No pending email change");
+    }
+    const presented = this.hashToken(dto.code);
+    const matches =
+      presented.length === stored.codeHash.length &&
+      timingSafeEqual(Buffer.from(presented), Buffer.from(stored.codeHash));
+    if (!matches) {
+      // 6 digits over a 15-minute window stay safe because wrong guesses
+      // burn the code after a handful of tries.
+      const attempts = stored.attempts + 1;
+      if (attempts >= EMAIL_CHANGE_MAX_ATTEMPTS) {
+        await this.prisma.emailChangeCode.deleteMany({ where: { userId } });
+      } else {
+        await this.prisma.emailChangeCode.update({
+          where: { id: stored.id },
+          data: { attempts },
+        });
+      }
+      throw new BadRequestException("Invalid verification code");
+    }
+    let updated: User;
+    try {
+      updated = await this.prisma.$transaction(async (tx) => {
+        const next = await tx.user.update({
+          where: { id: userId },
+          data: { email: stored.newEmail },
+        });
+        await tx.emailChangeCode.update({
+          where: { id: stored.id },
+          data: { consumedAt: new Date() },
+        });
+        return next;
+      });
+    } catch (error) {
+      // Someone registered the address between request and confirm.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        throw new ConflictException("Email is already registered");
+      }
+      throw error;
+    }
+    if (refreshToken !== undefined) {
+      await this.prisma.refreshToken.updateMany({
+        where: {
+          userId,
+          revokedAt: null,
+          tokenHash: { not: this.hashToken(refreshToken) },
+        },
+        data: { revokedAt: new Date() },
+      });
+    }
+    const notice = emailChangedNoticeEmail(updated.email, locale);
+    await this.mailer
+      .send({ to: user.email, ...notice })
+      .catch(() => undefined);
+    return this.startSession(updated);
   }
 
   private async startSession(user: User): Promise<AuthResult> {

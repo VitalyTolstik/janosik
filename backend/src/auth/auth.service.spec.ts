@@ -1,6 +1,8 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
@@ -8,6 +10,7 @@ import { Prisma, type User } from "@prisma/client";
 import argon2 from "argon2";
 import { createHash } from "node:crypto";
 import type { PrismaService } from "@/common/prisma/prisma.service";
+import type { MailerService } from "@/mailer/mailer.service";
 import { AuthService } from "./auth.service";
 
 const prismaMock = {
@@ -21,14 +24,30 @@ const prismaMock = {
     findUnique: jest.fn(),
     updateMany: jest.fn(),
   },
+  emailChangeCode: {
+    findFirst: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+  $transaction: jest.fn(),
 } as unknown as PrismaService & {
   user: Record<"create" | "findUnique" | "update", jest.Mock>;
   refreshToken: Record<"create" | "findUnique" | "updateMany", jest.Mock>;
+  emailChangeCode: Record<
+    "findFirst" | "create" | "update" | "deleteMany",
+    jest.Mock
+  >;
+  $transaction: jest.Mock;
 };
 
 const jwtMock = { signAsync: jest.fn() } as unknown as JwtService & {
   signAsync: jest.Mock;
 };
+
+const mailerMock = {
+  send: jest.fn(),
+} as unknown as MailerService & { send: jest.Mock };
 
 const makeUser = (overrides: Partial<User> = {}): User => ({
   id: "user-1",
@@ -36,6 +55,7 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   passwordHash: "",
   displayName: null,
   avatarColor: null,
+  avatarPath: null,
   disabledAt: null,
   createdAt: new Date("2026-09-01T00:00:00Z"),
   ...overrides,
@@ -49,7 +69,7 @@ describe("AuthService", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    service = new AuthService(prismaMock, jwtMock);
+    service = new AuthService(prismaMock, jwtMock, mailerMock);
     jwtMock.signAsync.mockResolvedValue("access-token");
     prismaMock.refreshToken.create.mockResolvedValue({});
   });
@@ -75,6 +95,7 @@ describe("AuthService", () => {
         email: "user@example.com",
         displayName: "Vera",
         avatarColor: null,
+        avatarPath: null,
         createdAt: new Date("2026-09-01T00:00:00Z").getTime(),
       });
       expect(result.accessToken).toBe("access-token");
@@ -371,6 +392,255 @@ describe("AuthService", () => {
 
       expect(prismaMock.user.update).toHaveBeenCalled();
       expect(prismaMock.refreshToken.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("email change (TASK-51)", () => {
+    const currentPassword = "correct horse battery";
+
+    const passwordHashOf = async () =>
+      argon2.hash(currentPassword, { type: argon2.argon2id });
+
+    describe("requestEmailChange", () => {
+      it("replaces any pending code and emails a fresh one to the new address", async () => {
+        prismaMock.user.findUnique
+          .mockResolvedValueOnce(
+            makeUser({ passwordHash: await passwordHashOf() }),
+          )
+          .mockResolvedValueOnce(null); // uniqueness pre-check
+        prismaMock.emailChangeCode.deleteMany.mockResolvedValue({ count: 1 });
+        prismaMock.emailChangeCode.create.mockResolvedValue({});
+        mailerMock.send.mockResolvedValue(undefined);
+
+        const result = await service.requestEmailChange(
+          "user-1",
+          { newEmail: "new@example.com", currentPassword },
+          "en",
+        );
+
+        expect(prismaMock.emailChangeCode.deleteMany).toHaveBeenCalledWith({
+          where: { userId: "user-1" },
+        });
+        const created = prismaMock.emailChangeCode.create.mock.calls[0][0].data;
+        expect(created.userId).toBe("user-1");
+        expect(created.newEmail).toBe("new@example.com");
+        // Only the sha256 of the code is ever persisted.
+        expect(created.codeHash).toMatch(/^[0-9a-f]{64}$/);
+        expect(created.expiresAt.getTime()).toBeGreaterThan(Date.now());
+        const sent = mailerMock.send.mock.calls[0][0];
+        expect(sent.to).toBe("new@example.com");
+        expect(sent.subject).toContain("verification code");
+        const code = sent.text.match(/\b\d{6}\b/)?.[0] ?? "";
+        expect(sha256(code)).toBe(created.codeHash);
+        expect(result.expiresAt).toBe(created.expiresAt.getTime());
+      });
+
+      it("rejects a wrong current password without creating a code", async () => {
+        prismaMock.user.findUnique.mockResolvedValue(
+          makeUser({ passwordHash: await passwordHashOf() }),
+        );
+
+        const error = await service
+          .requestEmailChange(
+            "user-1",
+            { newEmail: "new@example.com", currentPassword: "wrong" },
+            "en",
+          )
+          .catch((e) => e);
+
+        expect(error).toBeInstanceOf(UnauthorizedException);
+        expect(error.message).toBe("Current password is incorrect");
+        expect(prismaMock.emailChangeCode.create).not.toHaveBeenCalled();
+        expect(mailerMock.send).not.toHaveBeenCalled();
+      });
+
+      it("refuses the unchanged address", async () => {
+        prismaMock.user.findUnique.mockResolvedValue(
+          makeUser({ passwordHash: await passwordHashOf() }),
+        );
+
+        await expect(
+          service.requestEmailChange(
+            "user-1",
+            { newEmail: "user@example.com", currentPassword },
+            "en",
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(prismaMock.emailChangeCode.create).not.toHaveBeenCalled();
+      });
+
+      it("refuses an address that is already registered", async () => {
+        prismaMock.user.findUnique
+          .mockResolvedValueOnce(
+            makeUser({ passwordHash: await passwordHashOf() }),
+          )
+          .mockResolvedValueOnce(makeUser({ id: "other-user" }));
+
+        await expect(
+          service.requestEmailChange(
+            "user-1",
+            { newEmail: "taken@example.com", currentPassword },
+            "en",
+          ),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(prismaMock.emailChangeCode.create).not.toHaveBeenCalled();
+      });
+
+      it("maps a mailer failure to 503 and keeps no code", async () => {
+        prismaMock.user.findUnique
+          .mockResolvedValueOnce(
+            makeUser({ passwordHash: await passwordHashOf() }),
+          )
+          .mockResolvedValueOnce(null);
+        prismaMock.emailChangeCode.create.mockResolvedValue({});
+        mailerMock.send.mockRejectedValue(new Error("smtp down"));
+
+        await expect(
+          service.requestEmailChange(
+            "user-1",
+            { newEmail: "new@example.com", currentPassword },
+            "en",
+          ),
+        ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      });
+    });
+
+    describe("confirmEmailChange", () => {
+      const code = "123456";
+      const future = new Date(Date.now() + 60_000);
+      const pendingRow = () => ({
+        id: "change-1",
+        userId: "user-1",
+        newEmail: "new@example.com",
+        codeHash: sha256(code),
+        attempts: 0,
+        expiresAt: future,
+        consumedAt: null,
+        createdAt: new Date(),
+      });
+
+      const expectConfirmation = async (
+        stored: Record<string, unknown> | null,
+      ) => {
+        prismaMock.user.findUnique.mockResolvedValue(
+          makeUser({ passwordHash: await passwordHashOf() }),
+        );
+        prismaMock.emailChangeCode.findFirst.mockResolvedValue(stored);
+      };
+
+      it("moves the email, consumes the code and keeps only the caller's session", async () => {
+        await expectConfirmation(pendingRow());
+        const updatedUser = makeUser({ email: "new@example.com" });
+        const txUserUpdate = jest.fn().mockResolvedValue(updatedUser);
+        const txCodeUpdate = jest.fn().mockResolvedValue({});
+        prismaMock.$transaction.mockImplementation(
+          async (fn: (tx: unknown) => Promise<unknown>) =>
+            fn({
+              user: { update: txUserUpdate },
+              emailChangeCode: { update: txCodeUpdate },
+            }),
+        );
+        prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 2 });
+        mailerMock.send.mockResolvedValue(undefined);
+
+        const result = await service.confirmEmailChange(
+          "user-1",
+          { code },
+          "caller-cookie",
+          "ru",
+        );
+
+        expect(txUserUpdate).toHaveBeenCalledWith({
+          where: { id: "user-1" },
+          data: { email: "new@example.com" },
+        });
+        expect(txCodeUpdate).toHaveBeenCalledWith({
+          where: { id: "change-1" },
+          data: { consumedAt: expect.any(Date) },
+        });
+        expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
+          where: {
+            userId: "user-1",
+            revokedAt: null,
+            tokenHash: { not: sha256("caller-cookie") },
+          },
+          data: { revokedAt: expect.any(Date) },
+        });
+        // The notice goes to the OLD address, in the caller's locale.
+        const sent = mailerMock.send.mock.calls[0][0];
+        expect(sent.to).toBe("user@example.com");
+        expect(sent.subject).toContain("изменён");
+        expect(result.user.email).toBe("new@example.com");
+        expect(result.accessToken).toBe("access-token");
+      });
+
+      it("rejects a wrong code and burns an attempt", async () => {
+        await expectConfirmation(pendingRow());
+        prismaMock.emailChangeCode.update.mockResolvedValue({});
+
+        await expect(
+          service.confirmEmailChange(
+            "user-1",
+            { code: "000000" },
+            undefined,
+            "en",
+          ),
+        ).rejects.toThrow("Invalid verification code");
+        expect(prismaMock.emailChangeCode.update).toHaveBeenCalledWith({
+          where: { id: "change-1" },
+          data: { attempts: 1 },
+        });
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      });
+
+      it("destroys the code after the fifth wrong attempt", async () => {
+        await expectConfirmation({ ...pendingRow(), attempts: 4 });
+        prismaMock.emailChangeCode.deleteMany.mockResolvedValue({ count: 1 });
+
+        await expect(
+          service.confirmEmailChange(
+            "user-1",
+            { code: "000000" },
+            undefined,
+            "en",
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(prismaMock.emailChangeCode.deleteMany).toHaveBeenCalledWith({
+          where: { userId: "user-1" },
+        });
+        expect(prismaMock.emailChangeCode.update).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        [
+          "expired",
+          () => ({ ...pendingRow(), expiresAt: new Date(Date.now() - 1) }),
+        ],
+        ["consumed", () => ({ ...pendingRow(), consumedAt: new Date() })],
+        ["absent", () => null],
+      ])("answers no-pending for a %s code", async (_label, row) => {
+        await expectConfirmation(row());
+
+        await expect(
+          service.confirmEmailChange("user-1", { code }, undefined, "en"),
+        ).rejects.toThrow("No pending email change");
+        expect(prismaMock.user.update).not.toHaveBeenCalled();
+      });
+
+      it("maps a late unique-constraint violation to 409", async () => {
+        await expectConfirmation(pendingRow());
+        prismaMock.$transaction.mockRejectedValue(
+          new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+            code: "P2002",
+            clientVersion: "test",
+          }),
+        );
+
+        await expect(
+          service.confirmEmailChange("user-1", { code }, undefined, "en"),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(mailerMock.send).not.toHaveBeenCalled();
+      });
     });
   });
 });
