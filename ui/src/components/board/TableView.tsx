@@ -44,6 +44,7 @@ import {
 import { useToast } from "@/components/Toast";
 import { formatDateOnly, useI18n } from "@/i18n";
 import { useCardLabels } from "@/hooks/use-card-labels";
+import { cardHref, openCardInNewTab } from "@/utils/card-nav";
 import {
   useBoardMember,
   useBoardMembersList,
@@ -612,7 +613,18 @@ function TableRowBody({
   return (
     <tr
       onClick={() => onOpen(card.id)}
+      onAuxClick={(event) => {
+        // Wheel-click (middle button) opens the card in a new tab — the
+        // row is a <tr>, so the browser has no href to act on by itself.
+        // Ctrl/Cmd+click is already covered: on a plain <tr> the browser
+        // has no link semantics, so we route it through the deep link too.
+        if (event.button === 1 && boardId) {
+          event.preventDefault();
+          openCardInNewTab(boardId, card.id);
+        }
+      }}
       data-testid="table-row"
+      data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
       className={cn(
         "cursor-pointer border-b border-border/40 transition-colors last:border-b-0 hover:bg-muted/40",
         attribution?.highlight === true && "janosik-foreign-row",

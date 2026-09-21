@@ -27,6 +27,11 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { useBoardMember, useEntityAttribution } from "@/store/board-live";
 import { descriptionSnippet } from "@/utils/filter";
+import {
+  cardHref,
+  openCardInNewTab,
+  shouldLeaveToBrowser,
+} from "@/utils/card-nav";
 import { userAvatarVar, userLabel } from "@/utils/avatar";
 import type { CardLinkFacts } from "@/utils/links";
 import {
@@ -189,8 +194,36 @@ function CardItemView({
 
   return (
     <article
-      onClick={onClick ? () => onClick(card.id) : undefined}
+      onClick={
+        onClick
+          ? (event) => {
+              // Ctrl/Cmd+click = the browser's own new-tab gesture — hand
+              // it the card's deep link instead of the in-app dialog.
+              if (shouldLeaveToBrowser(event)) {
+                if (boardId) {
+                  event.preventDefault();
+                  openCardInNewTab(boardId, card.id);
+                }
+                return;
+              }
+              onClick(card.id);
+            }
+          : undefined
+      }
+      onAuxClick={
+        onClick && boardId
+          ? (event) => {
+              // Wheel-click (middle button): the card face is an <article>,
+              // so the browser has no href to act on — bridge to the deep
+              // link ourselves.
+              if (event.button !== 1) return;
+              event.preventDefault();
+              openCardInNewTab(boardId, card.id);
+            }
+          : undefined
+      }
       data-card-cursor={isCursor || undefined}
+      data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
       className={cn(
         "group animate-card-in relative cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2.5 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
         isDragging && "opacity-40",

@@ -47,6 +47,11 @@ import {
   LIMITS,
 } from "@janosik/shared";
 import { isColumnFull } from "@janosik/shared";
+import {
+  cardHref,
+  openCardInNewTab,
+  shouldLeaveToBrowser,
+} from "@/utils/card-nav";
 import { dueStatus } from "@/utils/due-date";
 import { formatTimeOfDay } from "@/utils/time";
 
@@ -454,6 +459,18 @@ export function CalendarView({
     event.dataTransfer.effectAllowed = "move";
   };
 
+  // Middle-click / Cmd+click open the card in a new tab: the chip carries
+  // the card's deep link for the browser, the plain click stays an SPA
+  // dialog swap. `boardId` may be missing in tests/local edge renders —
+  // then there is simply nothing to hand to a new tab.
+  const boardId = board?.id;
+  const chipAuxOpen = (event: React.MouseEvent, cardId: string) => {
+    if (event.button === 1 && boardId) {
+      event.preventDefault();
+      openCardInNewTab(boardId, cardId);
+    }
+  };
+
   const renderChip = (
     { card, columnTitle, labels }: DayEntry,
     withTime: boolean,
@@ -465,9 +482,11 @@ export function CalendarView({
         type="button"
         draggable={!readOnly}
         data-testid="calendar-chip"
+        data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
         onDragStart={
           readOnly ? undefined : (event) => chipDragStart(event, card.id)
         }
+        onAuxClick={(event) => chipAuxOpen(event, card.id)}
         title={`${
           withTime
             ? `${formatTime(
@@ -478,6 +497,10 @@ export function CalendarView({
             : ""
         }${columnTitle} · ${card.title}${labels.length > 0 ? ` · ${labels.map((l) => l.name).join(", ")}` : ""}`}
         onClick={(event) => {
+          // Cmd/Ctrl+click keep the browser gesture (the aux handler and
+          // the modifier check cover new-tab); a plain click opens the
+          // dialog in place.
+          if (shouldLeaveToBrowser(event)) return;
           event.stopPropagation();
           onCardClick(card.id);
         }}
@@ -679,8 +702,15 @@ export function CalendarView({
                         ? undefined
                         : (event) => chipDragStart(event, card.id)
                     }
+                    onAuxClick={(event) => chipAuxOpen(event, card.id)}
                     title={`${columnTitle} · ${card.title}`}
-                    onClick={() => onCardClick(card.id)}
+                    data-card-href={
+                      boardId ? cardHref(boardId, card.id) : undefined
+                    }
+                    onClick={(event) => {
+                      if (shouldLeaveToBrowser(event)) return;
+                      onCardClick(card.id);
+                    }}
                     className={cn(
                       "block w-full truncate rounded-md border border-border/60 bg-muted/40 px-1.5 py-1 text-left text-[11px] text-foreground/80 transition-colors hover:border-primary/50",
                       !readOnly && "cursor-grab active:cursor-grabbing",
@@ -844,10 +874,19 @@ export function CalendarView({
                                 ? undefined
                                 : (event) => chipDragStart(event, entry.card.id)
                             }
+                            onAuxClick={(event) =>
+                              chipAuxOpen(event, entry.card.id)
+                            }
                             onClick={(event) => {
+                              if (shouldLeaveToBrowser(event)) return;
                               event.stopPropagation();
                               onCardClick(entry.card.id);
                             }}
+                            data-card-href={
+                              boardId
+                                ? cardHref(boardId, entry.card.id)
+                                : undefined
+                            }
                             title={`${entry.columnTitle} · ${entry.card.title}${entry.labels.length > 0 ? ` · ${entry.labels.map((l) => l.name).join(", ")}` : ""}`}
                             className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] text-foreground/80 transition-colors hover:bg-hover"
                           >
