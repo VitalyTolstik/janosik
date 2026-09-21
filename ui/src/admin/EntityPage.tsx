@@ -49,6 +49,16 @@ export interface EntityAction {
   confirmTitle?: string;
   confirmBody?: string;
   run: () => Promise<unknown>;
+  /**
+   * A custom dialog host (TASK-51: the email-change form) instead of the
+   * confirm flow. When present the menu item mounts this node; the action
+   * closes itself via `close` and refreshes the list via `reload`. `run`
+   * stays unused for such actions.
+   */
+  renderDialog?: (options: {
+    close: () => void;
+    reload: () => void;
+  }) => ReactNode;
 }
 
 export interface EntityColumn<T> {
@@ -86,6 +96,7 @@ function RowActions({
 }) {
   const t = useAdminT();
   const [pending, setPending] = useState<EntityAction | null>(null);
+  const [dialog, setDialog] = useState<EntityAction | null>(null);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
 
@@ -135,9 +146,15 @@ function RowActions({
               className={
                 action.destructive ? "text-danger focus:text-danger" : undefined
               }
-              onSelect={() =>
-                action.confirmTitle ? setPending(action) : void execute(action)
-              }
+              onSelect={() => {
+                if (action.renderDialog) {
+                  setDialog(action);
+                } else if (action.confirmTitle) {
+                  setPending(action);
+                } else {
+                  void execute(action);
+                }
+              }}
             >
               {action.label}
             </DropdownMenuItem>
@@ -156,6 +173,9 @@ function RowActions({
           onClose={() => (busy ? undefined : setPending(null))}
         />
       ) : null}
+      {dialog?.renderDialog
+        ? dialog.renderDialog({ close: () => setDialog(null), reload })
+        : null}
     </>
   );
 }

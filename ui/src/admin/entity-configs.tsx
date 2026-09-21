@@ -38,7 +38,11 @@ import {
   TranscodeBadge,
 } from "./cells";
 import type { EntityListConfig } from "./EntityPage";
-import { CreateBoardButton, CreateUserButton } from "./dialogs";
+import {
+  ChangeUserEmailDialog,
+  CreateBoardButton,
+  CreateUserButton,
+} from "./dialogs";
 
 /**
  * Per-entity table configs (TASK-48) — one human-readable value per cell,
@@ -144,6 +148,17 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                     .updateUser(user.id, { disabled: false })
                     .then(() => undefined),
               },
+          {
+            label: t("admin.users.action.changeEmail"),
+            run: async () => undefined,
+            renderDialog: ({ close, reload }) => (
+              <ChangeUserEmailDialog
+                user={user}
+                onClose={close}
+                onDone={reload}
+              />
+            ),
+          },
           {
             label: t("admin.users.action.revokeSessions"),
             destructive: true,
