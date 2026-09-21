@@ -18,6 +18,7 @@ import {
   type CSSProperties,
 } from "react";
 
+import { CardContextMenu } from "@/components/board/CardContextMenu";
 import { DueBadge } from "@/components/board/DueBadge";
 import { PriorityBadge } from "@/components/board/PriorityBadge";
 import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
@@ -611,319 +612,328 @@ function TableRowBody({
     authorMember?.avatarColor,
   );
   return (
-    <tr
-      onClick={() => onOpen(card.id)}
-      onAuxClick={(event) => {
-        // Wheel-click (middle button) opens the card in a new tab — the
-        // row is a <tr>, so the browser has no href to act on by itself.
-        // Ctrl/Cmd+click is already covered: on a plain <tr> the browser
-        // has no link semantics, so we route it through the deep link too.
-        if (event.button === 1 && boardId) {
-          event.preventDefault();
-          openCardInNewTab(boardId, card.id);
-        }
-      }}
-      data-testid="table-row"
-      data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
-      className={cn(
-        "cursor-pointer border-b border-border/40 transition-colors last:border-b-0 hover:bg-muted/40",
-        attribution?.highlight === true && "janosik-foreign-row",
-      )}
-      style={
-        attribution?.highlight === true
-          ? ({ "--janosik-foreign-color": foreignColor } as CSSProperties)
-          : undefined
-      }
+    <CardContextMenu
+      cardId={card.id}
+      readOnly={readOnly}
+      onOpen={onOpen}
+      onArchive={onArchive}
     >
-      <td className="relative max-w-0 px-3 py-2">
-        {isEditingTitle ? (
-          <Input
-            autoFocus
-            name="table-title-edit"
-            defaultValue={card.title}
-            maxLength={LIMITS.cardTitle}
-            aria-label={t("view.table.rename")}
-            data-testid="table-title-input"
-            onClick={(event) => event.stopPropagation()}
-            onBlur={(event) => onSubmitTitle(card.id, event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter")
-                onSubmitTitle(card.id, event.currentTarget.value);
-              if (event.key === "Escape") onCancelTitle();
-            }}
-            className="h-7 text-sm"
-          />
-        ) : (
-          <span className="group/title block">
-            <span
-              onDoubleClick={
-                readOnly
-                  ? undefined
-                  : (event) => {
-                      event.stopPropagation();
-                      onStartTitleEdit(card.id);
-                    }
-              }
-              className={cn(
-                "block truncate text-foreground/90",
-                !readOnly && "group-hover/title:pr-9",
-              )}
-            >
-              <HighlightedText text={card.title} query={highlight ?? ""} />
-            </span>
-            {readOnly ? null : isArchiveConfirm ? (
-              <span
-                data-testid="table-archive-confirm"
-                className="absolute right-2 top-1/2 z-10 flex h-6 -translate-y-1/2 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  aria-label={t("card.archiveConfirmYes")}
-                  className="flex h-5 w-5 items-center justify-center rounded-md text-danger hover:bg-danger/10"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onArchiveConfirm(null);
-                    onArchive(card.id);
-                  }}
-                >
-                  <Check className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={t("card.archiveConfirmCancel")}
-                  className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onArchiveConfirm(null);
-                  }}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </span>
-            ) : (
-              <button
-                type="button"
-                aria-label={t("card.archive")}
-                data-testid="table-archive-btn"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onArchiveConfirm(card.id);
-                }}
-                className="no-hover:hidden absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/title:opacity-100"
-              >
-                <Archive className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </span>
+      <tr
+        onClick={() => onOpen(card.id)}
+        onAuxClick={(event) => {
+          // Wheel-click (middle button) opens the card in a new tab — the
+          // row is a <tr>, so the browser has no href to act on by itself.
+          // Ctrl/Cmd+click is already covered: on a plain <tr> the browser
+          // has no link semantics, so we route it through the deep link too.
+          if (event.button === 1 && boardId) {
+            event.preventDefault();
+            openCardInNewTab(boardId, card.id);
+          }
+        }}
+        data-testid="table-row"
+        data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
+        className={cn(
+          "cursor-pointer border-b border-border/40 transition-colors last:border-b-0 hover:bg-muted/40",
+          attribution?.highlight === true && "janosik-foreign-row",
         )}
-      </td>
-      <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
-        {readOnly ? (
-          <span className="inline-flex max-w-full items-center truncate rounded-md bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground">
-            {columnTitle}
-          </span>
-        ) : (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                data-testid="table-column-cell"
-                title={t("view.table.moveHint")}
-                className="inline-flex max-w-full items-center truncate rounded-md bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                {columnTitle}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuLabel>{t("view.table.column")}</DropdownMenuLabel>
-              {columns.map((col) => {
-                const full = col.id !== columnId && isColumnFull(col);
-                return (
-                  <DropdownMenuItem
-                    key={col.id}
-                    disabled={col.id === columnId || full}
-                    onSelect={() => onMoveToColumn(card.id, columnId, col.id)}
-                  >
-                    <span className="truncate">{col.title}</span>
-                    {col.wipLimit !== undefined && (
-                      <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
-                        {col.cardIds.length}/{col.wipLimit}
-                      </span>
-                    )}
-                  </DropdownMenuItem>
-                );
-              })}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                data-testid="table-archive-card"
-                onSelect={() => onArchive(card.id)}
-              >
-                <Archive className="h-4 w-4" />
-                {t("card.archive")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      </td>
-      <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
-        {readOnly ? (
-          typeof card.dueDate === "number" ? (
-            <DueBadge dueDate={card.dueDate} />
-          ) : (
-            <span className="text-xs text-muted-foreground/60">—</span>
-          )
-        ) : (
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                data-testid="table-due-cell"
-                className="rounded transition-opacity hover:opacity-80"
-                aria-label={t("dueDate.label")}
-              >
-                {typeof card.dueDate === "number" ? (
-                  <DueBadge dueDate={card.dueDate} />
-                ) : (
-                  <span className="text-xs text-muted-foreground/60">—</span>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="relative w-auto p-3">
-              <DueDatePickerContent cardId={card.id} dueDate={card.dueDate} />
-            </PopoverContent>
-          </Popover>
-        )}
-      </td>
-      <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
-        {readOnly ? (
-          <span className="flex max-w-44 flex-wrap gap-1">
-            {cardLabels.map((label) => (
-              <span
-                key={label.id}
-                className={
-                  "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
-                  LABEL_COLOR_CHIP[label.color]
-                }
-              >
-                <span
-                  className="h-1.5 w-1.5 rounded-full bg-current"
-                  aria-hidden
-                />
-                {label.name}
-              </span>
-            ))}
-            {cardLabels.length === 0 ? (
-              <span className="text-xs text-muted-foreground/60">—</span>
-            ) : null}
-          </span>
-        ) : (
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                data-testid="table-labels-cell"
-                className="max-w-44"
-                aria-label={t("view.table.labels")}
-              >
-                {card.labelIds.length > 0 ? (
-                  <span className="flex flex-wrap gap-1">
-                    {cardLabels.map((label) => (
-                      <span
-                        key={label.id}
-                        className={
-                          "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
-                          LABEL_COLOR_CHIP[label.color]
-                        }
-                      >
-                        <span
-                          className="h-1.5 w-1.5 rounded-full bg-current"
-                          aria-hidden
-                        />
-                        {label.name}
-                      </span>
-                    ))}
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground/60">—</span>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-64 p-3">
-              <LabelPicker
-                labels={labels}
-                selected={card.labelIds}
-                onToggle={(labelId) => onToggleLabel(card.id, labelId)}
-                onCreate={(name, color) => onCreateLabel(card.id, name, color)}
-                onRename={onRenameLabel}
-                onRecolor={onRecolorLabel}
-                onDelete={onDeleteLabel}
-              />
-            </PopoverContent>
-          </Popover>
-        )}
-      </td>
-      {visibleColumns.includes("priority") ? (
-        <td className="px-3 py-2" data-testid="table-priority">
-          <PriorityBadge priority={card.priority ?? "medium"} showLabel />
-        </td>
-      ) : null}
-      {visibleColumns.includes("assignee") ? (
-        <td className="px-3 py-2" data-testid="table-assignee">
-          <AssigneeCell boardId={boardId} assigneeId={card.assigneeId} />
-        </td>
-      ) : null}
-      {visibleColumns.includes("checklists") ? (
-        <td className="px-3 py-2">
-          {(() => {
-            const { done, total } = checklistProgress(card);
-            return total > 0 ? (
-              <span
-                data-testid="table-checklist"
-                title={t("checklist.badgeTooltip", { done, total })}
-                className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 text-[11px] text-muted-foreground"
-              >
-                <ListChecks className="h-3 w-3" aria-hidden />
-                {done}/{total}
-              </span>
-            ) : (
-              <span className="text-xs text-muted-foreground/60">—</span>
-            );
-          })()}
-        </td>
-      ) : null}
-      {visibleColumns.includes("description") ? (
-        <td className="px-3 py-2">
-          {card.description ? (
-            <AlignLeft
-              data-testid="table-description"
-              className="h-3.5 w-3.5 text-muted-foreground"
-              aria-label={t("view.table.description")}
+        style={
+          attribution?.highlight === true
+            ? ({ "--janosik-foreign-color": foreignColor } as CSSProperties)
+            : undefined
+        }
+      >
+        <td className="relative max-w-0 px-3 py-2">
+          {isEditingTitle ? (
+            <Input
+              autoFocus
+              name="table-title-edit"
+              defaultValue={card.title}
+              maxLength={LIMITS.cardTitle}
+              aria-label={t("view.table.rename")}
+              data-testid="table-title-input"
+              onClick={(event) => event.stopPropagation()}
+              onBlur={(event) => onSubmitTitle(card.id, event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter")
+                  onSubmitTitle(card.id, event.currentTarget.value);
+                if (event.key === "Escape") onCancelTitle();
+              }}
+              className="h-7 text-sm"
             />
           ) : (
-            <span className="text-xs text-muted-foreground/60">—</span>
+            <span className="group/title block">
+              <span
+                onDoubleClick={
+                  readOnly
+                    ? undefined
+                    : (event) => {
+                        event.stopPropagation();
+                        onStartTitleEdit(card.id);
+                      }
+                }
+                className={cn(
+                  "block truncate text-foreground/90",
+                  !readOnly && "group-hover/title:pr-9",
+                )}
+              >
+                <HighlightedText text={card.title} query={highlight ?? ""} />
+              </span>
+              {readOnly ? null : isArchiveConfirm ? (
+                <span
+                  data-testid="table-archive-confirm"
+                  className="absolute right-2 top-1/2 z-10 flex h-6 -translate-y-1/2 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    aria-label={t("card.archiveConfirmYes")}
+                    className="flex h-5 w-5 items-center justify-center rounded-md text-danger hover:bg-danger/10"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onArchiveConfirm(null);
+                      onArchive(card.id);
+                    }}
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={t("card.archiveConfirmCancel")}
+                    className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onArchiveConfirm(null);
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  aria-label={t("card.archive")}
+                  data-testid="table-archive-btn"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onArchiveConfirm(card.id);
+                  }}
+                  className="no-hover:hidden absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/title:opacity-100"
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </span>
           )}
         </td>
-      ) : null}
-      {visibleColumns.includes("createdAt") ? (
-        <td className="px-3 py-2 text-xs text-muted-foreground">
-          {formatDateOnly(card.createdAt, lang)}
+        <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
+          {readOnly ? (
+            <span className="inline-flex max-w-full items-center truncate rounded-md bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground">
+              {columnTitle}
+            </span>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  data-testid="table-column-cell"
+                  title={t("view.table.moveHint")}
+                  className="inline-flex max-w-full items-center truncate rounded-md bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  {columnTitle}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>{t("view.table.column")}</DropdownMenuLabel>
+                {columns.map((col) => {
+                  const full = col.id !== columnId && isColumnFull(col);
+                  return (
+                    <DropdownMenuItem
+                      key={col.id}
+                      disabled={col.id === columnId || full}
+                      onSelect={() => onMoveToColumn(card.id, columnId, col.id)}
+                    >
+                      <span className="truncate">{col.title}</span>
+                      {col.wipLimit !== undefined && (
+                        <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                          {col.cardIds.length}/{col.wipLimit}
+                        </span>
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  data-testid="table-archive-card"
+                  onSelect={() => onArchive(card.id)}
+                >
+                  <Archive className="h-4 w-4" />
+                  {t("card.archive")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </td>
-      ) : null}
-      {visibleColumns.includes("updatedAt") ? (
-        <td className="px-3 py-2 text-xs text-muted-foreground">
-          {formatDateOnly(card.updatedAt, lang)}
+        <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
+          {readOnly ? (
+            typeof card.dueDate === "number" ? (
+              <DueBadge dueDate={card.dueDate} />
+            ) : (
+              <span className="text-xs text-muted-foreground/60">—</span>
+            )
+          ) : (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  data-testid="table-due-cell"
+                  className="rounded transition-opacity hover:opacity-80"
+                  aria-label={t("dueDate.label")}
+                >
+                  {typeof card.dueDate === "number" ? (
+                    <DueBadge dueDate={card.dueDate} />
+                  ) : (
+                    <span className="text-xs text-muted-foreground/60">—</span>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="relative w-auto p-3">
+                <DueDatePickerContent cardId={card.id} dueDate={card.dueDate} />
+              </PopoverContent>
+            </Popover>
+          )}
         </td>
-      ) : null}
-      {visibleColumns.includes("activity") ? (
-        <td className="px-3 py-2">
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <MessageSquare className="h-3 w-3" aria-hidden />
-            {card.activity?.length ?? 0}
-          </span>
+        <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
+          {readOnly ? (
+            <span className="flex max-w-44 flex-wrap gap-1">
+              {cardLabels.map((label) => (
+                <span
+                  key={label.id}
+                  className={
+                    "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
+                    LABEL_COLOR_CHIP[label.color]
+                  }
+                >
+                  <span
+                    className="h-1.5 w-1.5 rounded-full bg-current"
+                    aria-hidden
+                  />
+                  {label.name}
+                </span>
+              ))}
+              {cardLabels.length === 0 ? (
+                <span className="text-xs text-muted-foreground/60">—</span>
+              ) : null}
+            </span>
+          ) : (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  data-testid="table-labels-cell"
+                  className="max-w-44"
+                  aria-label={t("view.table.labels")}
+                >
+                  {card.labelIds.length > 0 ? (
+                    <span className="flex flex-wrap gap-1">
+                      {cardLabels.map((label) => (
+                        <span
+                          key={label.id}
+                          className={
+                            "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
+                            LABEL_COLOR_CHIP[label.color]
+                          }
+                        >
+                          <span
+                            className="h-1.5 w-1.5 rounded-full bg-current"
+                            aria-hidden
+                          />
+                          {label.name}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground/60">—</span>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-3">
+                <LabelPicker
+                  labels={labels}
+                  selected={card.labelIds}
+                  onToggle={(labelId) => onToggleLabel(card.id, labelId)}
+                  onCreate={(name, color) =>
+                    onCreateLabel(card.id, name, color)
+                  }
+                  onRename={onRenameLabel}
+                  onRecolor={onRecolorLabel}
+                  onDelete={onDeleteLabel}
+                />
+              </PopoverContent>
+            </Popover>
+          )}
         </td>
-      ) : null}
-    </tr>
+        {visibleColumns.includes("priority") ? (
+          <td className="px-3 py-2" data-testid="table-priority">
+            <PriorityBadge priority={card.priority ?? "medium"} showLabel />
+          </td>
+        ) : null}
+        {visibleColumns.includes("assignee") ? (
+          <td className="px-3 py-2" data-testid="table-assignee">
+            <AssigneeCell boardId={boardId} assigneeId={card.assigneeId} />
+          </td>
+        ) : null}
+        {visibleColumns.includes("checklists") ? (
+          <td className="px-3 py-2">
+            {(() => {
+              const { done, total } = checklistProgress(card);
+              return total > 0 ? (
+                <span
+                  data-testid="table-checklist"
+                  title={t("checklist.badgeTooltip", { done, total })}
+                  className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                >
+                  <ListChecks className="h-3 w-3" aria-hidden />
+                  {done}/{total}
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground/60">—</span>
+              );
+            })()}
+          </td>
+        ) : null}
+        {visibleColumns.includes("description") ? (
+          <td className="px-3 py-2">
+            {card.description ? (
+              <AlignLeft
+                data-testid="table-description"
+                className="h-3.5 w-3.5 text-muted-foreground"
+                aria-label={t("view.table.description")}
+              />
+            ) : (
+              <span className="text-xs text-muted-foreground/60">—</span>
+            )}
+          </td>
+        ) : null}
+        {visibleColumns.includes("createdAt") ? (
+          <td className="px-3 py-2 text-xs text-muted-foreground">
+            {formatDateOnly(card.createdAt, lang)}
+          </td>
+        ) : null}
+        {visibleColumns.includes("updatedAt") ? (
+          <td className="px-3 py-2 text-xs text-muted-foreground">
+            {formatDateOnly(card.updatedAt, lang)}
+          </td>
+        ) : null}
+        {visibleColumns.includes("activity") ? (
+          <td className="px-3 py-2">
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+              <MessageSquare className="h-3 w-3" aria-hidden />
+              {card.activity?.length ?? 0}
+            </span>
+          </td>
+        ) : null}
+      </tr>
+    </CardContextMenu>
   );
 }
 

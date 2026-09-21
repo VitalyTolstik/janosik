@@ -402,6 +402,7 @@ function ColumnViewBody({
                           onCardArchive={readOnly ? undefined : archiveCard}
                           duplicateDisabled={duplicateDisabled}
                           duplicateDisabledReason={duplicateDisabledReason}
+                          readOnly={readOnly}
                         />
                       </li>
                     </Fragment>

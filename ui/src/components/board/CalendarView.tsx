@@ -52,6 +52,7 @@ import {
   openCardInNewTab,
   shouldLeaveToBrowser,
 } from "@/utils/card-nav";
+import { CardContextMenu } from "@/components/board/CardContextMenu";
 import { dueStatus } from "@/utils/due-date";
 import { formatTimeOfDay } from "@/utils/time";
 
@@ -477,76 +478,85 @@ export function CalendarView({
   ) => {
     const status = dueStatus(card.dueDate as number);
     return (
-      <button
+      <CardContextMenu
         key={card.id}
-        type="button"
-        draggable={!readOnly}
-        data-testid="calendar-chip"
-        data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
-        onDragStart={
-          readOnly ? undefined : (event) => chipDragStart(event, card.id)
-        }
-        onAuxClick={(event) => chipAuxOpen(event, card.id)}
-        title={`${
-          withTime
-            ? `${formatTime(
-                formatTimeOfDay(new Date(card.dueDate as number)),
-                lang,
-                hour12,
-              )} · `
-            : ""
-        }${columnTitle} · ${card.title}${labels.length > 0 ? ` · ${labels.map((l) => l.name).join(", ")}` : ""}`}
-        onClick={(event) => {
-          // Cmd/Ctrl+click keep the browser gesture (the aux handler and
-          // the modifier check cover new-tab); a plain click opens the
-          // dialog in place.
-          if (shouldLeaveToBrowser(event)) return;
-          event.stopPropagation();
-          onCardClick(card.id);
-        }}
-        className={cn(
-          "flex items-stretch gap-1 overflow-hidden rounded-md border text-left text-[11px] leading-tight transition-colors hover:border-primary/50",
-          status === "overdue" && "border-danger/40 bg-danger/10 text-danger",
-          status === "soon" && "border-warning/40 bg-warning/10 text-warning",
-          status === "later" &&
-            "border-border/60 bg-muted/40 text-foreground/80",
-        )}
+        cardId={card.id}
+        readOnly={readOnly}
+        onOpen={onCardClick}
       >
-        {/* Label stripe: one thin bar, segmented per label — every label
-            stays visible regardless of count (TASK-14.1). */}
-        {labels.length > 0 ? (
-          <span
-            className="flex w-[3px] shrink-0 flex-col overflow-hidden rounded-l-md"
-            aria-hidden
-          >
-            {labels.map((label) => (
-              <span
-                key={label.id}
-                className={cn("min-h-0.5 flex-1", LABEL_COLOR_DOT[label.color])}
-              />
-            ))}
-          </span>
-        ) : null}
-        <span
+        <button
+          type="button"
+          draggable={!readOnly}
+          data-testid="calendar-chip"
+          data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
+          onDragStart={
+            readOnly ? undefined : (event) => chipDragStart(event, card.id)
+          }
+          onAuxClick={(event) => chipAuxOpen(event, card.id)}
+          title={`${
+            withTime
+              ? `${formatTime(
+                  formatTimeOfDay(new Date(card.dueDate as number)),
+                  lang,
+                  hour12,
+                )} · `
+              : ""
+          }${columnTitle} · ${card.title}${labels.length > 0 ? ` · ${labels.map((l) => l.name).join(", ")}` : ""}`}
+          onClick={(event) => {
+            // Cmd/Ctrl+click keep the browser gesture (the aux handler and
+            // the modifier check cover new-tab); a plain click opens the
+            // dialog in place.
+            if (shouldLeaveToBrowser(event)) return;
+            event.stopPropagation();
+            onCardClick(card.id);
+          }}
           className={cn(
-            "flex min-w-0 items-center gap-1 py-0.5 pr-1.5",
-            // Chips without a stripe start the title at the same offset as
-            // striped ones (stripe 3px + gap).
-            labels.length === 0 && "pl-[7px]",
+            "flex items-stretch gap-1 overflow-hidden rounded-md border text-left text-[11px] leading-tight transition-colors hover:border-primary/50",
+            status === "overdue" && "border-danger/40 bg-danger/10 text-danger",
+            status === "soon" && "border-warning/40 bg-warning/10 text-warning",
+            status === "later" &&
+              "border-border/60 bg-muted/40 text-foreground/80",
           )}
         >
-          {withTime ? (
-            <span className="shrink-0 tabular-nums opacity-70">
-              {formatTime(
-                formatTimeOfDay(new Date(card.dueDate as number)),
-                lang,
-                hour12,
-              )}
+          {/* Label stripe: one thin bar, segmented per label — every label
+            stays visible regardless of count (TASK-14.1). */}
+          {labels.length > 0 ? (
+            <span
+              className="flex w-[3px] shrink-0 flex-col overflow-hidden rounded-l-md"
+              aria-hidden
+            >
+              {labels.map((label) => (
+                <span
+                  key={label.id}
+                  className={cn(
+                    "min-h-0.5 flex-1",
+                    LABEL_COLOR_DOT[label.color],
+                  )}
+                />
+              ))}
             </span>
           ) : null}
-          <span className="truncate">{card.title}</span>
-        </span>
-      </button>
+          <span
+            className={cn(
+              "flex min-w-0 items-center gap-1 py-0.5 pr-1.5",
+              // Chips without a stripe start the title at the same offset as
+              // striped ones (stripe 3px + gap).
+              labels.length === 0 && "pl-[7px]",
+            )}
+          >
+            {withTime ? (
+              <span className="shrink-0 tabular-nums opacity-70">
+                {formatTime(
+                  formatTimeOfDay(new Date(card.dueDate as number)),
+                  lang,
+                  hour12,
+                )}
+              </span>
+            ) : null}
+            <span className="truncate">{card.title}</span>
+          </span>
+        </button>
+      </CardContextMenu>
     );
   };
 
@@ -693,31 +703,37 @@ export function CalendarView({
                 </p>
               ) : (
                 unscheduled.map(({ card, columnTitle }) => (
-                  <button
+                  <CardContextMenu
                     key={card.id}
-                    type="button"
-                    draggable={!readOnly}
-                    onDragStart={
-                      readOnly
-                        ? undefined
-                        : (event) => chipDragStart(event, card.id)
-                    }
-                    onAuxClick={(event) => chipAuxOpen(event, card.id)}
-                    title={`${columnTitle} · ${card.title}`}
-                    data-card-href={
-                      boardId ? cardHref(boardId, card.id) : undefined
-                    }
-                    onClick={(event) => {
-                      if (shouldLeaveToBrowser(event)) return;
-                      onCardClick(card.id);
-                    }}
-                    className={cn(
-                      "block w-full truncate rounded-md border border-border/60 bg-muted/40 px-1.5 py-1 text-left text-[11px] text-foreground/80 transition-colors hover:border-primary/50",
-                      !readOnly && "cursor-grab active:cursor-grabbing",
-                    )}
+                    cardId={card.id}
+                    readOnly={readOnly}
+                    onOpen={onCardClick}
                   >
-                    {card.title}
-                  </button>
+                    <button
+                      type="button"
+                      draggable={!readOnly}
+                      onDragStart={
+                        readOnly
+                          ? undefined
+                          : (event) => chipDragStart(event, card.id)
+                      }
+                      onAuxClick={(event) => chipAuxOpen(event, card.id)}
+                      title={`${columnTitle} · ${card.title}`}
+                      data-card-href={
+                        boardId ? cardHref(boardId, card.id) : undefined
+                      }
+                      onClick={(event) => {
+                        if (shouldLeaveToBrowser(event)) return;
+                        onCardClick(card.id);
+                      }}
+                      className={cn(
+                        "block w-full truncate rounded-md border border-border/60 bg-muted/40 px-1.5 py-1 text-left text-[11px] text-foreground/80 transition-colors hover:border-primary/50",
+                        !readOnly && "cursor-grab active:cursor-grabbing",
+                      )}
+                    >
+                      {card.title}
+                    </button>
+                  </CardContextMenu>
                 ))
               )}
             </div>
@@ -865,56 +881,63 @@ export function CalendarView({
                         </p>
                       ) : (
                         entries.map((entry) => (
-                          <button
+                          <CardContextMenu
                             key={entry.card.id}
-                            type="button"
-                            draggable={!readOnly}
-                            onDragStart={
-                              readOnly
-                                ? undefined
-                                : (event) => chipDragStart(event, entry.card.id)
-                            }
-                            onAuxClick={(event) =>
-                              chipAuxOpen(event, entry.card.id)
-                            }
-                            onClick={(event) => {
-                              if (shouldLeaveToBrowser(event)) return;
-                              event.stopPropagation();
-                              onCardClick(entry.card.id);
-                            }}
-                            data-card-href={
-                              boardId
-                                ? cardHref(boardId, entry.card.id)
-                                : undefined
-                            }
-                            title={`${entry.columnTitle} · ${entry.card.title}${entry.labels.length > 0 ? ` · ${entry.labels.map((l) => l.name).join(", ")}` : ""}`}
-                            className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] text-foreground/80 transition-colors hover:bg-hover"
+                            cardId={entry.card.id}
+                            readOnly={readOnly}
+                            onOpen={onCardClick}
                           >
-                            {entry.labels.length > 0 ? (
-                              <span
-                                className="flex w-[3px] shrink-0 self-stretch flex-col overflow-hidden rounded-full"
-                                aria-hidden
-                              >
-                                {entry.labels.map((label) => (
-                                  <span
-                                    key={label.id}
-                                    className={cn(
-                                      "min-h-0.5 flex-1",
-                                      LABEL_COLOR_DOT[label.color],
-                                    )}
-                                  />
-                                ))}
-                              </span>
-                            ) : null}
-                            <span
-                              className={cn(
-                                "truncate",
-                                entry.labels.length === 0 && "pl-[7px]",
-                              )}
+                            <button
+                              type="button"
+                              draggable={!readOnly}
+                              onDragStart={
+                                readOnly
+                                  ? undefined
+                                  : (event) =>
+                                      chipDragStart(event, entry.card.id)
+                              }
+                              onAuxClick={(event) =>
+                                chipAuxOpen(event, entry.card.id)
+                              }
+                              onClick={(event) => {
+                                if (shouldLeaveToBrowser(event)) return;
+                                event.stopPropagation();
+                                onCardClick(entry.card.id);
+                              }}
+                              data-card-href={
+                                boardId
+                                  ? cardHref(boardId, entry.card.id)
+                                  : undefined
+                              }
+                              title={`${entry.columnTitle} · ${entry.card.title}${entry.labels.length > 0 ? ` · ${entry.labels.map((l) => l.name).join(", ")}` : ""}`}
+                              className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] text-foreground/80 transition-colors hover:bg-hover"
                             >
-                              {entry.card.title}
-                            </span>
-                          </button>
+                              {entry.labels.length > 0 ? (
+                                <span
+                                  className="flex w-[3px] shrink-0 self-stretch flex-col overflow-hidden rounded-full"
+                                  aria-hidden
+                                >
+                                  {entry.labels.map((label) => (
+                                    <span
+                                      key={label.id}
+                                      className={cn(
+                                        "min-h-0.5 flex-1",
+                                        LABEL_COLOR_DOT[label.color],
+                                      )}
+                                    />
+                                  ))}
+                                </span>
+                              ) : null}
+                              <span
+                                className={cn(
+                                  "truncate",
+                                  entry.labels.length === 0 && "pl-[7px]",
+                                )}
+                              >
+                                {entry.card.title}
+                              </span>
+                            </button>
+                          </CardContextMenu>
                         ))
                       )}
                     </div>
