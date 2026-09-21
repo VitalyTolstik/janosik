@@ -183,8 +183,12 @@ describe("CardLinks (TASK-46)", () => {
     const row = await within(dialog).findByTestId("card-link-row");
     expect(row).toHaveAttribute("data-link-type", "relates_to");
     expect(within(row).getByText(/deleted card/i)).toBeDefined();
-    // Nowhere to navigate: the target is gone.
-    expect(within(row).getByTestId("card-link-open")).toBeDisabled();
+    // Nowhere to navigate: the target is gone (a muted, aria-disabled
+    // span — an anchor needs a href to be disabled from).
+    expect(within(row).getByTestId("card-link-open")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
 
     // Removing it is what frees the card's row cap.
     fireEvent.click(within(row).getByTestId("card-link-remove"));

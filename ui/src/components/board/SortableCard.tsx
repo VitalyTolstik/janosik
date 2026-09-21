@@ -3,6 +3,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { memo } from "react";
 
 import { CardItem } from "@/components/board/CardItem";
+import type { CardLinkFacts } from "@/utils/links";
 import type { Card, Label } from "@janosik/shared";
 
 interface SortableCardProps {
@@ -16,7 +17,7 @@ interface SortableCardProps {
   /** True when this card holds the j/k keyboard cursor (focus ring). */
   isCursor?: boolean;
   /** Link facts for the card-front badges (TASK-46) — see CardItem. */
-  linkFacts?: { degree: number; blocked: boolean };
+  linkFacts?: CardLinkFacts;
   /** Fired when the rendered card is clicked — opens the card dialog. */
   onCardClick?: (cardId: string) => void;
   /** Fired by the hover duplicate button on the card. */

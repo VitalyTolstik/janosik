@@ -1,10 +1,8 @@
 import {
   AlignLeft,
   Archive,
-  Ban,
   Check,
   CopyPlus,
-  Link2,
   ListTodo,
   Paperclip,
   X,
@@ -17,6 +15,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { DueBadge } from "@/components/board/DueBadge";
+import { LinkedCardsPopover } from "@/components/board/LinkedCardsPopover";
 import { PriorityBadge } from "@/components/board/PriorityBadge";
 import type { CardPriority } from "@janosik/shared";
 import { DEFAULT_CARD_PRIORITY } from "@janosik/shared";
@@ -29,6 +28,7 @@ import { useI18n } from "@/i18n";
 import { useBoardMember, useEntityAttribution } from "@/store/board-live";
 import { descriptionSnippet } from "@/utils/filter";
 import { userAvatarVar, userLabel } from "@/utils/avatar";
+import type { CardLinkFacts } from "@/utils/links";
 import {
   LABEL_COLOR_CHIP,
   coverBackground,
@@ -57,12 +57,13 @@ interface CardItemProps {
   /** True when this card holds the j/k keyboard cursor (focus ring). */
   isCursor?: boolean;
   /**
-   * Jira-style link facts (TASK-46): total link count for the badge and
-   * the red "Blocked" marker for an incoming `blocks` from a live card.
-   * Computed once per board change by the caller (WeakMap-cached index)
-   * so this memoized component stays free of board subscriptions.
+   * Jira-style link facts (TASK-46): the full facts for the linked-cards
+   * popover (degree for the badge number, blocked for the red marker, and
+   * the rows themselves). Computed once per board change by the caller
+   * (WeakMap-cached index) so this memoized component stays free of board
+   * subscriptions; the popover itself subscribes only while open.
    */
-  linkFacts?: { degree: number; blocked: boolean };
+  linkFacts?: CardLinkFacts;
   /**
    * Fired on click — opens the card detail dialog. The card id is passed
    * back so the parent can keep one stable handler for the whole column
@@ -184,7 +185,6 @@ function CardItemView({
   // The face stays quiet about the default "medium" (TASK-45).
   const hasPriority =
     card.priority !== undefined && card.priority !== DEFAULT_CARD_PRIORITY;
-  const hasLinks = (linkFacts?.degree ?? 0) > 0;
   const attachmentCount = card.attachmentCount ?? 0;
 
   return (
@@ -331,44 +331,18 @@ function CardItemView({
       total > 0 ||
       hasDueDate ||
       hasPriority ||
-      hasLinks ||
+      linkFacts !== undefined ||
       attachmentCount > 0 ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          {linkFacts?.blocked ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  className="inline-flex h-5 items-center gap-1 rounded-md border border-danger/40 bg-danger/10 px-1.5 text-[11px] font-semibold text-danger"
-                  data-testid="card-blocked-badge"
-                >
-                  <Ban className="h-3 w-3" aria-hidden />
-                  {t("card.links.blockedBadge")}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>{t("card.links.blockedTooltip")}</TooltipContent>
-            </Tooltip>
+          {/* Linked-cards badges (TASK-46): both the red "Blocked" marker
+              and the link count open the linked-cards popover instead of
+              bubbling into the card dialog. */}
+          {linkFacts ? (
+            <LinkedCardsPopover boardId={boardId} facts={linkFacts} />
           ) : null}
           {hasDueDate ? <DueBadge dueDate={card.dueDate as number} /> : null}
           {hasPriority ? (
             <PriorityBadge priority={card.priority as CardPriority} />
-          ) : null}
-          {hasLinks ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  className="inline-flex h-5 items-center gap-1 rounded-md border border-border/60 bg-muted/50 px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary"
-                  data-testid="card-links-badge"
-                >
-                  <Link2 className="h-3.5 w-3.5" aria-hidden />
-                  {linkFacts?.degree}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {t("card.links.badgeTooltip", {
-                  count: linkFacts?.degree ?? 0,
-                })}
-              </TooltipContent>
-            </Tooltip>
           ) : null}
           {attachmentCount > 0 ? (
             <Tooltip>
