@@ -45,6 +45,7 @@ function attachment(overrides: Partial<AttachmentDto> = {}): AttachmentDto {
     mimeType: "application/pdf",
     sizeBytes: 2048,
     uploadedById: "user-1",
+    transcodeStatus: "none",
     createdAt: Date.UTC(2026, 8, 20, 10, 0),
     ...overrides,
   };
@@ -78,6 +79,22 @@ describe("CardAttachments", () => {
     expect(screen.getByText("spec.pdf")).toBeInTheDocument();
     expect(screen.getByText("2 KB")).toBeInTheDocument();
     expect(screen.getByTestId("card-attachments-upload")).toBeEnabled();
+  });
+
+  it("marks a video that is still encoding (TASK-50)", async () => {
+    vi.spyOn(api, "listAttachments").mockResolvedValue([
+      attachment({
+        id: "att-mov",
+        fileName: "take.mov",
+        mimeType: "video/quicktime",
+        transcodeStatus: "pending",
+      }),
+    ]);
+    renderSection();
+    await screen.findByText("take.mov");
+    expect(
+      await screen.findByTestId("card-attachment-encoding"),
+    ).toBeInTheDocument();
   });
 
   it("shows a real thumbnail for image attachments", async () => {

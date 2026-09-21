@@ -519,6 +519,8 @@ export interface AdminAttachmentRowDto {
   sizeBytes: number;
   uploadedById: string;
   uploadedByEmail: string;
+  /** TASK-50 video transcode state (none|pending|done|failed). */
+  transcodeStatus: string;
   deletedAt: number | null;
   createdAt: number;
 }

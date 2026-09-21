@@ -14,6 +14,7 @@ import type { AuthUser } from "@/auth/auth.types";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { ATTACHMENT_MIME_ALLOWLIST, StorageService } from "./storage.service";
+import { TranscodeService } from "./transcode.service";
 
 /** Express multer file shape used by the controller. */
 export interface UploadedBlob {
@@ -35,6 +36,7 @@ export class AttachmentsService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly realtime: RealtimeService,
+    private readonly transcode: TranscodeService,
   ) {}
 
   async create(
@@ -83,6 +85,12 @@ export class AttachmentsService {
     await this.storage.ensureDirs();
     await writeFile(this.storage.attachmentPath(storedName), file.buffer);
 
+    // TASK-50: videos take the "ужиматор" route — the upload is playable
+    // immediately; the background job swaps the blob for a compact MP4.
+    const transcodeStatus = file.mimetype.startsWith("video/")
+      ? "pending"
+      : "none";
+
     const now = new Date();
     // Inline media (pasted into the description/comment body) skip the
     // card-face counter, the activity row and the SSE frame: nothing in
@@ -99,6 +107,7 @@ export class AttachmentsService {
           sizeBytes: file.size,
           uploadedById: user.id,
           isInline,
+          transcodeStatus,
           createdAt: now,
         },
       });
@@ -121,8 +130,12 @@ export class AttachmentsService {
       return { row, activityId: null };
     });
 
-    if (created.activityId === null) return toAttachmentDto(created.row);
+    if (created.activityId === null) {
+      if (transcodeStatus === "pending") this.transcode.enqueue(created.row.id);
+      return toAttachmentDto(created.row);
+    }
 
+    if (transcodeStatus === "pending") this.transcode.enqueue(created.row.id);
     this.publish(
       card.column.boardId,
       cardId,
@@ -247,6 +260,7 @@ function toAttachmentDto(row: {
   mimeType: string;
   sizeBytes: number;
   uploadedById: string;
+  transcodeStatus: string;
   createdAt: Date;
 }): AttachmentDto {
   return {
@@ -256,6 +270,7 @@ function toAttachmentDto(row: {
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
     uploadedById: row.uploadedById,
+    transcodeStatus: row.transcodeStatus as AttachmentDto["transcodeStatus"],
     createdAt: row.createdAt.getTime(),
   };
 }

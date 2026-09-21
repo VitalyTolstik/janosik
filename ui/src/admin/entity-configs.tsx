@@ -35,6 +35,7 @@ import {
   SizeCell,
   StatusBadge,
   TextCell,
+  TranscodeBadge,
 } from "./cells";
 import type { EntityListConfig } from "./EntityPage";
 import { CreateBoardButton, CreateUserButton } from "./dialogs";
@@ -798,6 +799,10 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                 {file.mimeType}
               </span>
             ),
+          },
+          {
+            label: t("admin.attachments.column.transcode"),
+            render: (file) => <TranscodeBadge status={file.transcodeStatus} />,
           },
           {
             label: t("admin.attachments.column.uploader"),

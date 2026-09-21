@@ -206,6 +206,29 @@ export function SizeCell({ bytes }: { bytes: number }) {
   );
 }
 
+/** TASK-50 video encode state — the "ужиматор" lifecycle chip. */
+export function TranscodeBadge({ status }: { status: string }) {
+  if (status === "none")
+    return <span className="text-muted-foreground">—</span>;
+  const tone =
+    status === "done"
+      ? "bg-success/15 text-success"
+      : status === "failed"
+        ? "bg-danger/15 text-danger"
+        : "bg-muted text-muted-foreground";
+  return (
+    <span
+      data-testid="admin-transcode-status"
+      className={cn(
+        "inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-medium",
+        tone,
+      )}
+    >
+      {status}
+    </span>
+  );
+}
+
 export function LabelChip({ name, color }: { name: string; color: string }) {
   const chip = LABEL_COLOR_CHIP[color as LabelColor] ?? LABEL_COLOR_CHIP.plain;
   return (

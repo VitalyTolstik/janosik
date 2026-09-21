@@ -698,6 +698,7 @@ export class AdminEntitiesService {
           storedName: true,
           mimeType: true,
           sizeBytes: true,
+          transcodeStatus: true,
           deletedAt: true,
           createdAt: true,
           cardId: true,
@@ -723,6 +724,7 @@ export class AdminEntitiesService {
         sizeBytes: file.sizeBytes,
         uploadedById: file.uploadedById,
         uploadedByEmail: file.uploadedBy.email,
+        transcodeStatus: file.transcodeStatus,
         deletedAt: MS(file.deletedAt),
         createdAt: file.createdAt.getTime(),
       })),
@@ -908,6 +910,7 @@ export class AdminEntitiesService {
             storedName: true,
             mimeType: true,
             sizeBytes: true,
+            transcodeStatus: true,
             deletedAt: true,
             createdAt: true,
             cardId: true,
@@ -985,6 +988,7 @@ export class AdminEntitiesService {
         sizeBytes: file.sizeBytes,
         uploadedById: file.uploadedById,
         uploadedByEmail: file.uploadedBy.email,
+        transcodeStatus: file.transcodeStatus,
         deletedAt: MS(file.deletedAt),
         createdAt: file.createdAt.getTime(),
       })),
@@ -1635,6 +1639,7 @@ type AttachmentJoin = {
   storedName: string;
   mimeType: string;
   sizeBytes: number;
+  transcodeStatus: string;
   deletedAt: Date | null;
   createdAt: Date;
   cardId: string;
@@ -1657,6 +1662,7 @@ function toAttachmentRow(file: AttachmentJoin): AdminAttachmentRowDto {
     sizeBytes: file.sizeBytes,
     uploadedById: file.uploadedById,
     uploadedByEmail: file.uploadedBy.email,
+    transcodeStatus: file.transcodeStatus,
     deletedAt: MS(file.deletedAt),
     createdAt: file.createdAt.getTime(),
   };
@@ -1668,6 +1674,7 @@ const ATTACHMENT_SELECT = {
   storedName: true,
   mimeType: true,
   sizeBytes: true,
+  transcodeStatus: true,
   deletedAt: true,
   createdAt: true,
   cardId: true,

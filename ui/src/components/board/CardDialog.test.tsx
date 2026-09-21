@@ -154,6 +154,7 @@ describe("CardDialog description editor", () => {
       mimeType: "image/png",
       sizeBytes: 4,
       uploadedById: "user-1",
+      transcodeStatus: "none",
       createdAt: 0,
     });
     const dialog = await openCardDialog("Design the new onboarding flow");
@@ -186,10 +187,11 @@ describe("CardDialog description editor", () => {
     const upload = vi.spyOn(api, "uploadAttachment").mockResolvedValue({
       id: "att-file",
       cardId: "card-1",
-      fileName: "spec.pdf",
-      mimeType: "application/pdf",
+      fileName: "notes.txt",
+      mimeType: "text/plain",
       sizeBytes: 4,
       uploadedById: "user-1",
+      transcodeStatus: "none",
       createdAt: 0,
     });
     await openCardDialog("Design the new onboarding flow");
