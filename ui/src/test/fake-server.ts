@@ -90,6 +90,10 @@ export class FakeServer {
   /** Personal API tokens of the account (TASK-36.1). */
   readonly apiTokens: UserTokenDto[] = [];
   refreshValid = true;
+  /** Email-change (TASK-51) knobs the tests control. */
+  emailChangeCode = "123456";
+  takenEmails: string[] = ["taken@example.com"];
+  private pendingEmail: string | null = null;
   /** Caller's role per board summary (`GET /boards`) — drives VIEWER tests. */
   role: BoardRole = "ADMIN";
   /** Per-board role overrides (mixed-role switcher lists, TASK-36.2). */
@@ -385,6 +389,36 @@ export class FakeServer {
       }
       this.account.password = newPassword ?? this.account.password;
       return json(200, { status: "ok" });
+    }
+    // Email change (TASK-51): password proof, then a code against the new
+    // address. The test controls the code via `emailChangeCode`.
+    if (path === "/api/v1/auth/email/change/request" && method === "POST") {
+      const { newEmail, currentPassword } = (body ?? {}) as Record<
+        string,
+        string
+      >;
+      if (currentPassword !== this.account.password) {
+        return json(401, { message: "Current password is incorrect" });
+      }
+      if (newEmail === this.account.email) {
+        return json(400, {
+          message: "New email must differ from the current one",
+        });
+      }
+      if (this.takenEmails.includes(newEmail)) {
+        return json(409, { message: "Email is already registered" });
+      }
+      this.pendingEmail = newEmail;
+      return json(200, { expiresAt: Date.now() + 15 * 60 * 1000 });
+    }
+    if (path === "/api/v1/auth/email/change/confirm" && method === "POST") {
+      const { code } = (body ?? {}) as Record<string, string>;
+      if (this.pendingEmail === null || code !== this.emailChangeCode) {
+        return json(400, { message: "Invalid verification code" });
+      }
+      this.account.email = this.pendingEmail;
+      this.pendingEmail = null;
+      return json(200, this.session());
     }
     if (path === "/api/v1/users/me" && method === "PATCH") {
       const patch = (body ?? {}) as UpdateProfileRequest;

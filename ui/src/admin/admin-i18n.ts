@@ -93,8 +93,15 @@ const en = {
   "admin.users.status.disabled": "Blocked",
   "admin.users.action.disable": "Block",
   "admin.users.action.enable": "Unblock",
+  "admin.users.action.changeEmail": "Change email",
   "admin.users.action.revokeSessions": "Revoke sessions",
   "admin.users.action.revokeTokens": "Revoke API tokens",
+  "admin.users.changeEmail.title": "Change email",
+  "admin.users.changeEmail.newLabel": "New email",
+  "admin.users.changeEmail.taken": "This email is already registered",
+  "admin.users.changeEmail.invalid": "Enter a valid email address",
+  "admin.users.changeEmail.warning":
+    "The sign-in address moves instantly — no verification code. The user is signed out on every device and the old address is notified by email.",
   "admin.users.confirm.disable.title": "Block {email}?",
   "admin.users.confirm.disable.body":
     "The user cannot sign in and every active session is revoked immediately.",
@@ -122,6 +129,7 @@ const en = {
   "admin.users.toast.sessionsRevoked": "Sessions revoked: {count}",
   "admin.users.toast.tokensRevoked": "API tokens revoked: {count}",
   "admin.users.toast.created": "{email} created",
+  "admin.users.toast.emailChanged": "Email changed to {email}",
 
   "admin.boards.title": "Boards",
   "admin.boards.subtitle": "{total} boards",
@@ -563,8 +571,15 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.users.status.disabled": "Заблокирован",
   "admin.users.action.disable": "Заблокировать",
   "admin.users.action.enable": "Разблокировать",
+  "admin.users.action.changeEmail": "Изменить email",
   "admin.users.action.revokeSessions": "Ревокнуть сессии",
   "admin.users.action.revokeTokens": "Ревокнуть API-токены",
+  "admin.users.changeEmail.title": "Изменение email",
+  "admin.users.changeEmail.newLabel": "Новый email",
+  "admin.users.changeEmail.taken": "Этот email уже занят",
+  "admin.users.changeEmail.invalid": "Укажите корректный email",
+  "admin.users.changeEmail.warning":
+    "Адрес для входа меняется сразу — без кода подтверждения. Пользователь выйдет на всех устройствах, а на старый адрес уйдёт уведомление.",
   "admin.users.confirm.disable.title": "Заблокировать {email}?",
   "admin.users.confirm.disable.body":
     "Пользователь не сможет войти, все активные сессии отзовутся немедленно.",
@@ -592,6 +607,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.users.toast.sessionsRevoked": "Отозвано сессий: {count}",
   "admin.users.toast.tokensRevoked": "Отозвано API-токенов: {count}",
   "admin.users.toast.created": "{email} создан",
+  "admin.users.toast.emailChanged": "Email изменён на {email}",
 
   "admin.boards.title": "Доски",
   "admin.boards.subtitle": "Всего: {total}",

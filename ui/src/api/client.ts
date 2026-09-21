@@ -247,6 +247,39 @@ export class ApiClient {
     });
   }
 
+  /**
+   * `POST /auth/email/change/request` (TASK-51) — step 1 of the double
+   * opt-in: verifies the current password and emails a 6-digit code to the
+   * new address. The code itself never travels through this client.
+   */
+  requestEmailChange(
+    newEmail: string,
+    currentPassword: string,
+  ): Promise<{ expiresAt: number }> {
+    return this.request<{ expiresAt: number }>("/auth/email/change/request", {
+      method: "POST",
+      body: { newEmail, currentPassword },
+    });
+  }
+
+  /**
+   * `POST /auth/email/change/confirm` (TASK-51) — step 2: the code swaps
+   * the address and the response carries a fresh session (same contract as
+   * login), so the stored access token is replaced here.
+   */
+  async confirmEmailChange(code: string): Promise<AuthResponseDto> {
+    const response = await this.request<AuthResponseDto>(
+      "/auth/email/change/confirm",
+      {
+        method: "POST",
+        body: { code },
+      },
+    );
+    this.accessToken = response.accessToken;
+    this.sessionEpoch += 1;
+    return response;
+  }
+
   /** `GET /users/me/tokens` — personal API tokens (TASK-36.1). */
   listTokens(): Promise<UserTokenDto[]> {
     return this.request<UserTokenDto[]>("/users/me/tokens");

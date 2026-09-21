@@ -419,7 +419,22 @@ export class FakeAdminServer {
       if (jsonBody?.disabled !== undefined) {
         user.disabledAt = jsonBody.disabled ? now : null;
       }
-      this.revokeSessionsOf(userPatch[1]);
+      if (jsonBody?.email !== undefined) {
+        const next = String(jsonBody.email).trim().toLowerCase();
+        if (
+          this.state.users.some(
+            (item) => item.id !== user.id && item.email === next,
+          )
+        ) {
+          return this.json({ message: "Email is already registered" }, 409);
+        }
+        user.email = next;
+        // TASK-51: the master override revokes every session of the user.
+        this.revokeSessionsOf(user.id);
+      }
+      if (jsonBody?.displayName !== undefined) {
+        user.displayName = String(jsonBody.displayName);
+      }
       return this.json(user);
     }
     const sessions = path.match(/^\/admin\/users\/([^/]+)\/sessions\/revoke$/);

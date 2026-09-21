@@ -57,7 +57,7 @@
       "path": [
         "dist/assets/AdminApp-*.js"
       ],
-      "limit": "32 KB",
+      "limit": "33 KB",
       "gzip": true
     },
     {
@@ -108,6 +108,7 @@
     "react-day-picker": "^10.0.1",
     "react-dom": "^18.3.1",
     "react-i18next": "^17.0.13",
+    "react-otp-input": "^3.1.1",
     "react-router-dom": "^7.18.3",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3"

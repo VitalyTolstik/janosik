@@ -290,6 +290,12 @@ export interface AdminCreateUserResponse {
 export interface AdminUpdateUserRequest {
   disabled?: boolean;
   displayName?: string;
+  /**
+   * TASK-51: master override — moves the sign-in address instantly, without
+   * the double opt-in the self-service flow requires. Every session of the
+   * user is revoked and the change is audited.
+   */
+  email?: string;
 }
 
 /** Body of `POST /admin/boards` — a board is always created for an owner. */
@@ -325,6 +331,7 @@ export const ADMIN_AUDIT_ACTIONS = [
   "admin.owner_granted",
   "user.create",
   "user.update",
+  "user.email_changed",
   "user.disable",
   "user.enable",
   "user.sessions_revoked",

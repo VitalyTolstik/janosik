@@ -37,6 +37,7 @@ model User {
   refreshTokens  RefreshToken[]
   attachments    Attachment[]
   assignedCards  Card[]       @relation("CardAssignee")
+  emailChanges   EmailChangeCode[]
 }
 
 model RefreshToken {
@@ -49,6 +50,26 @@ model RefreshToken {
   createdAt DateTime  @default(now()) // session review page (TASK-43)
 
   @@index([userId, createdAt])
+}
+
+// Email change (TASK-51) — double opt-in: the user proves the current
+// password, a 6-digit code goes to the NEW address and must be presented
+// back before `User.email` moves. Mirrors the RefreshToken discipline: only
+// the sha256 of the code is stored, one live row per user (a new request
+// deletes the previous one), single-use, short TTL, and an attempts counter
+// so a code cannot be brute-forced inside its lifetime.
+model EmailChangeCode {
+  id         String    @id @default(cuid())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  newEmail   String
+  codeHash   String    @unique
+  attempts   Int       @default(0) // wrong guesses; ≥ MAX → row deleted
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model Board {

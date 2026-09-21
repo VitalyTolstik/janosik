@@ -40,6 +40,8 @@ import type { CommandResponse } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
+import { MailerService } from "@/mailer/mailer.service";
+import { emailChangedNoticeEmail } from "@/mailer/templates";
 import type { AdminPrincipal } from "./admin.types";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
 
@@ -76,6 +78,7 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly boards: BoardsService,
     private readonly commands: CommandsService,
+    private readonly mailer: MailerService,
   ) {}
 
   // ---------------------------------------------------------------- metrics
@@ -302,10 +305,38 @@ export class AdminService {
     if (dto.disabled !== undefined) {
       data.disabledAt = dto.disabled ? new Date() : null;
     }
+    const emailChanged =
+      dto.email !== undefined && dto.email !== user.email ? dto.email : null;
+    if (emailChanged !== null) {
+      const taken = await this.prisma.user.findUnique({
+        where: { email: emailChanged },
+        select: { id: true },
+      });
+      if (taken) {
+        throw new ConflictException("Email is already registered");
+      }
+      data.email = emailChanged;
+    }
     const updated =
       Object.keys(data).length > 0
         ? await this.prisma.user.update({ where: { id: userId }, data })
         : user;
+
+    // Moving the sign-in address is a security action of its own (TASK-51):
+    // the old address must stop working everywhere immediately, so every
+    // session is revoked and both the audit log and the old inbox hear
+    // about it.
+    if (emailChanged !== null) {
+      await this.revokeUserSessions(userId, admin, { silent: true });
+      await this.audit(admin, "user.email_changed", "user", userId, {
+        from: user.email,
+        to: emailChanged,
+      });
+      const notice = emailChangedNoticeEmail(emailChanged, "en");
+      await this.mailer
+        .send({ to: user.email, ...notice })
+        .catch(() => undefined);
+    }
 
     // Blocking an account is a security action — it also kills its sessions
     // immediately, so the block cannot be outlived by a live refresh token.

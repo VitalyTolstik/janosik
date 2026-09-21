@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Post,
@@ -11,13 +12,16 @@ import {
 import { Throttle } from "@nestjs/throttler";
 import type { Response } from "express";
 import { env } from "@/config/env";
+import { pickLocale } from "@/mailer/mail.types";
 import { REFRESH_COOKIE } from "./auth.types";
 import type { AuthResult, AuthResponse, AuthUser } from "./auth.types";
 import { AuthService } from "./auth.service";
 import { CurrentUser } from "./current-user.decorator";
 import { ChangePasswordDto } from "./dto/change-password.dto";
+import { ConfirmEmailChangeDto } from "./dto/confirm-email-change.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
+import { RequestEmailChangeDto } from "./dto/request-email-change.dto";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import { RefreshToken } from "./refresh-token.decorator";
 
@@ -92,6 +96,54 @@ export class AuthController {
   ): Promise<{ status: "ok" }> {
     await this.auth.changePassword(user.id, dto, refreshToken);
     return { status: "ok" };
+  }
+
+  /**
+   * Email change (TASK-51), step 1 — a code goes to the new address. The
+   * request itself sends an email, so it is the most expensive authenticated
+   * endpoint: 3 per hour per IP, with the per-user single-code policy
+   * server-side on top.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 3, ttl: 3_600_000 } })
+  @Post("email/change/request")
+  @HttpCode(HttpStatus.OK)
+  async requestEmailChange(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: RequestEmailChangeDto,
+    @Headers("accept-language") acceptLanguage: string | undefined,
+  ): Promise<{ expiresAt: number }> {
+    return this.auth.requestEmailChange(
+      user.id,
+      dto,
+      pickLocale(acceptLanguage),
+    );
+  }
+
+  /**
+   * Email change (TASK-51), step 2 — code in, address swapped, every other
+   * session revoked, fresh token pair handed back (same contract as login).
+   * Lives under `/auth` so the refresh cookie identifies the caller's
+   * session — like `POST /password`.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post("email/change/confirm")
+  @HttpCode(HttpStatus.OK)
+  async confirmEmailChange(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ConfirmEmailChangeDto,
+    @RefreshToken() refreshToken: string | undefined,
+    @Headers("accept-language") acceptLanguage: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponse> {
+    const result = await this.auth.confirmEmailChange(
+      user.id,
+      dto,
+      refreshToken,
+      pickLocale(acceptLanguage),
+    );
+    return this.withRefreshCookie(res, result);
   }
 
   private withRefreshCookie(res: Response, result: AuthResult): AuthResponse {
