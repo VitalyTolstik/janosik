@@ -25,8 +25,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useI18n, type MessageKey } from "@/i18n";
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { LABEL_COLOR_KEYS } from "@/utils/palette-keys";
 import {
   LABEL_COLOR_DOT,
   LABEL_COLORS,
@@ -49,27 +50,6 @@ interface LabelPickerProps {
   /** VIEWER mode (TASK-35): shows the selected chips only, nothing to click. */
   readOnly?: boolean;
 }
-
-/**
- * Localized name per picker color — a typed dictionary instead of a template
- * string so `t()` still receives real `MessageKey`s (N-6).
- */
-const LABEL_COLOR_KEYS = {
-  red: "label.color.red",
-  orange: "label.color.orange",
-  yellow: "label.color.yellow",
-  brown: "label.color.brown",
-  green: "label.color.green",
-  teal: "label.color.teal",
-  cyan: "label.color.cyan",
-  blue: "label.color.blue",
-  indigo: "label.color.indigo",
-  brand: "label.color.brand",
-  fuchsia: "label.color.fuchsia",
-  pink: "label.color.pink",
-  slate: "label.color.slate",
-  plain: "label.color.plain",
-} satisfies Record<(typeof LABEL_COLORS)[number], MessageKey>;
 
 /** Row of color swatches — used for the "new label" form and recolor menu. */
 function ColorSwatches({

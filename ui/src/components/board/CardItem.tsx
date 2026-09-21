@@ -14,6 +14,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { CardContextMenu } from "@/components/board/CardContextMenu";
 import { DueBadge } from "@/components/board/DueBadge";
 import { LinkedCardsPopover } from "@/components/board/LinkedCardsPopover";
 import { PriorityBadge } from "@/components/board/PriorityBadge";
@@ -83,6 +84,11 @@ interface CardItemProps {
   duplicateDisabled?: boolean;
   /** Tooltip text shown while `duplicateDisabled`. */
   duplicateDisabledReason?: string;
+  /**
+   * VIEWER mode (TASK-35): the right-click context menu keeps only the
+   * read-only actions (open, copy link, new tab).
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -137,6 +143,7 @@ function CardItemView({
   onArchive,
   duplicateDisabled = false,
   duplicateDisabledReason,
+  readOnly = false,
 }: CardItemProps) {
   const [titleRef, titleClamped] = useClamped();
   const { t } = useI18n();
@@ -193,286 +200,296 @@ function CardItemView({
   const attachmentCount = card.attachmentCount ?? 0;
 
   return (
-    <article
-      onClick={
-        onClick
-          ? (event) => {
-              // Ctrl/Cmd+click = the browser's own new-tab gesture — hand
-              // it the card's deep link instead of the in-app dialog.
-              if (shouldLeaveToBrowser(event)) {
-                if (boardId) {
-                  event.preventDefault();
-                  openCardInNewTab(boardId, card.id);
-                }
-                return;
-              }
-              onClick(card.id);
-            }
-          : undefined
-      }
-      onAuxClick={
-        onClick && boardId
-          ? (event) => {
-              // Wheel-click (middle button): the card face is an <article>,
-              // so the browser has no href to act on — bridge to the deep
-              // link ourselves.
-              if (event.button !== 1) return;
-              event.preventDefault();
-              openCardInNewTab(boardId, card.id);
-            }
-          : undefined
-      }
-      data-card-cursor={isCursor || undefined}
-      data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
-      className={cn(
-        "group animate-card-in relative cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2.5 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
-        isDragging && "opacity-40",
-        isCursor && "border-primary ring-2 ring-primary/60",
-      )}
+    <CardContextMenu
+      cardId={card.id}
+      readOnly={readOnly}
+      onOpen={onClick}
+      onDuplicate={onDuplicate}
+      onArchive={onArchive}
     >
-      {/* Hover duplicate (Trello quick-edit style): a compact icon in the
+      <article
+        onClick={
+          onClick
+            ? (event) => {
+                // Ctrl/Cmd+click = the browser's own new-tab gesture — hand
+                // it the card's deep link instead of the in-app dialog.
+                if (shouldLeaveToBrowser(event)) {
+                  if (boardId) {
+                    event.preventDefault();
+                    openCardInNewTab(boardId, card.id);
+                  }
+                  return;
+                }
+                onClick(card.id);
+              }
+            : undefined
+        }
+        onAuxClick={
+          onClick && boardId
+            ? (event) => {
+                // Wheel-click (middle button): the card face is an <article>,
+                // so the browser has no href to act on — bridge to the deep
+                // link ourselves.
+                if (event.button !== 1) return;
+                event.preventDefault();
+                openCardInNewTab(boardId, card.id);
+              }
+            : undefined
+        }
+        data-card-cursor={isCursor || undefined}
+        data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
+        className={cn(
+          "group animate-card-in relative cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2.5 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
+          isDragging && "opacity-40",
+          isCursor && "border-primary ring-2 ring-primary/60",
+        )}
+      >
+        {/* Hover duplicate (Trello quick-edit style): a compact icon in the
           top-right corner, visible only while hovered. Hidden while dragging
           and when there is nowhere to put the copy handler. Disabled when
           the card's column is full — the reducer would refuse the copy.
           Touch devices have no hover: there the button would stay invisible
           yet tappable, so it is removed entirely (`no-hover`) — the card
           dialog owns duplicate/archive on touch. */}
-      {onDuplicate && !isDragging && !confirmArchive ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            {/* Positioning and hover-visibility live on the wrapper: a
-                disabled button drops pointer events, and the tooltip needs
-                an element that still receives them. */}
-            <span className="no-hover:hidden absolute right-1.5 top-1.5 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-              <button
-                type="button"
-                aria-label={t("card.duplicate")}
-                disabled={duplicateDisabled}
-                className="flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-                onClick={(e) => {
-                  // Don't let the click open the card dialog.
-                  e.stopPropagation();
-                  onDuplicate(card.id);
-                }}
-              >
-                <CopyPlus className="h-3.5 w-3.5" />
-              </button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>
-            {duplicateDisabled
-              ? (duplicateDisabledReason ?? t("card.duplicate"))
-              : t("card.duplicate")}
-          </TooltipContent>
-        </Tooltip>
-      ) : null}
-      {onArchive && !isDragging ? (
-        confirmArchive ? (
-          <span
-            data-testid="card-archive-confirm"
-            className="absolute right-1.5 top-1.5 z-10 flex h-6 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              aria-label={t("card.archiveConfirmYes")}
-              className="flex h-5 w-5 items-center justify-center rounded-md text-danger hover:bg-danger/10"
-              onClick={(e) => {
-                e.stopPropagation();
-                setConfirmArchive(false);
-                onArchive(card.id);
-              }}
-            >
-              <Check className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              aria-label={t("card.archiveConfirmCancel")}
-              className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
-              onClick={(e) => {
-                e.stopPropagation();
-                setConfirmArchive(false);
-              }}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </span>
-        ) : (
+        {onDuplicate && !isDragging && !confirmArchive ? (
           <Tooltip>
             <TooltipTrigger asChild>
+              {/* Positioning and hover-visibility live on the wrapper: a
+                disabled button drops pointer events, and the tooltip needs
+                an element that still receives them. */}
+              <span className="no-hover:hidden absolute right-1.5 top-1.5 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                <button
+                  type="button"
+                  aria-label={t("card.duplicate")}
+                  disabled={duplicateDisabled}
+                  className="flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                  onClick={(e) => {
+                    // Don't let the click open the card dialog.
+                    e.stopPropagation();
+                    onDuplicate(card.id);
+                  }}
+                >
+                  <CopyPlus className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {duplicateDisabled
+                ? (duplicateDisabledReason ?? t("card.duplicate"))
+                : t("card.duplicate")}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+        {onArchive && !isDragging ? (
+          confirmArchive ? (
+            <span
+              data-testid="card-archive-confirm"
+              className="absolute right-1.5 top-1.5 z-10 flex h-6 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
+              onClick={(e) => e.stopPropagation()}
+            >
               <button
                 type="button"
-                aria-label={t("card.archive")}
-                data-testid="card-archive"
-                className="no-hover:hidden absolute right-8 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 hover:bg-warning/10 hover:text-warning group-hover:opacity-100"
+                aria-label={t("card.archiveConfirmYes")}
+                className="flex h-5 w-5 items-center justify-center rounded-md text-danger hover:bg-danger/10"
                 onClick={(e) => {
-                  // Don't let the click open the card dialog.
                   e.stopPropagation();
-                  setConfirmArchive(true);
+                  setConfirmArchive(false);
+                  onArchive(card.id);
                 }}
               >
-                <Archive className="h-3.5 w-3.5" />
+                <Check className="h-3.5 w-3.5" />
               </button>
-            </TooltipTrigger>
-            <TooltipContent>{t("card.archive")}</TooltipContent>
-          </Tooltip>
-        )
-      ) : null}
-      {/* Cover: a slim top strip — same height for colors and gradients
+              <button
+                type="button"
+                aria-label={t("card.archiveConfirmCancel")}
+                className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmArchive(false);
+                }}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t("card.archive")}
+                  data-testid="card-archive"
+                  className="no-hover:hidden absolute right-8 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 hover:bg-warning/10 hover:text-warning group-hover:opacity-100"
+                  onClick={(e) => {
+                    // Don't let the click open the card dialog.
+                    e.stopPropagation();
+                    setConfirmArchive(true);
+                  }}
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{t("card.archive")}</TooltipContent>
+            </Tooltip>
+          )
+        ) : null}
+        {/* Cover: a slim top strip — same height for colors and gradients
           (matches the label chip row scale). Negative margins bleed it into
           the card padding; the card clips it (overflow-hidden). */}
-      {card.cover ? (
-        <div
-          aria-hidden
-          data-testid="card-cover"
-          data-cover-type={card.cover.type}
-          className="-mx-3 -mt-2.5 mb-2.5 h-1.5 w-[calc(100%+1.5rem)]"
-          style={{ background: coverBackground(card.cover) }}
-        />
-      ) : null}
-      {labels.length > 0 ? (
-        <div className="mb-1.5 flex flex-wrap items-center gap-1">
-          {labels.map((label) => (
-            <span
-              key={label.id}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                LABEL_COLOR_CHIP[label.color],
-              )}
-            >
+        {card.cover ? (
+          <div
+            aria-hidden
+            data-testid="card-cover"
+            data-cover-type={card.cover.type}
+            className="-mx-3 -mt-2.5 mb-2.5 h-1.5 w-[calc(100%+1.5rem)]"
+            style={{ background: coverBackground(card.cover) }}
+          />
+        ) : null}
+        {labels.length > 0 ? (
+          <div className="mb-1.5 flex flex-wrap items-center gap-1">
+            {labels.map((label) => (
               <span
-                className="h-1.5 w-1.5 rounded-full bg-current"
-                aria-hidden
-              />
-              {label.name}
-            </span>
-          ))}
-        </div>
-      ) : null}
-      {/* `overflow-wrap:anywhere` (not just break-words) so a pasted URL
+                key={label.id}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                  LABEL_COLOR_CHIP[label.color],
+                )}
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-current"
+                  aria-hidden
+                />
+                {label.name}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {/* `overflow-wrap:anywhere` (not just break-words) so a pasted URL
           can't blow out the card's intrinsic width; `text-wrap:pretty`
           avoids orphan single-word last lines under the clamp. */}
-      <p
-        ref={titleRef}
-        title={titleClamped ? card.title : undefined}
-        className="line-clamp-3 break-words text-sm leading-snug text-foreground/90 [overflow-wrap:anywhere] [text-wrap:pretty]"
-        data-testid="card-title"
-      >
-        <HighlightedText text={card.title} query={highlight ?? ""} />
-      </p>
-      {hasDescription ||
-      total > 0 ||
-      hasDueDate ||
-      hasPriority ||
-      linkFacts !== undefined ||
-      attachmentCount > 0 ? (
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          {/* Linked-cards badges (TASK-46): both the red "Blocked" marker
+        <p
+          ref={titleRef}
+          title={titleClamped ? card.title : undefined}
+          className="line-clamp-3 break-words text-sm leading-snug text-foreground/90 [overflow-wrap:anywhere] [text-wrap:pretty]"
+          data-testid="card-title"
+        >
+          <HighlightedText text={card.title} query={highlight ?? ""} />
+        </p>
+        {hasDescription ||
+        total > 0 ||
+        hasDueDate ||
+        hasPriority ||
+        linkFacts !== undefined ||
+        attachmentCount > 0 ? (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {/* Linked-cards badges (TASK-46): both the red "Blocked" marker
               and the link count open the linked-cards popover instead of
               bubbling into the card dialog. */}
-          {linkFacts ? (
-            <LinkedCardsPopover boardId={boardId} facts={linkFacts} />
-          ) : null}
-          {hasDueDate ? <DueBadge dueDate={card.dueDate as number} /> : null}
-          {hasPriority ? (
-            <PriorityBadge priority={card.priority as CardPriority} />
-          ) : null}
-          {attachmentCount > 0 ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  className="inline-flex h-5 items-center gap-1 rounded-md border border-border/60 bg-muted/50 px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary"
-                  data-testid="card-attachments-badge"
-                >
-                  <Paperclip className="h-3.5 w-3.5" aria-hidden />
-                  {attachmentCount}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {t("card.attachments.badgeTooltip", { count: attachmentCount })}
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
-          {total > 0 ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  className={cn(
-                    "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
-                    done === total
-                      ? "border-success/40 bg-success/10 text-success"
-                      : "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-primary",
-                  )}
-                  data-testid="card-checklist-badge"
-                >
-                  <ListTodo className="h-3.5 w-3.5" aria-hidden />
-                  {done}/{total}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {t("checklist.badgeTooltip", { done, total })}
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
-          {hasDescription ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  className={cn(
-                    "inline-flex h-5 items-center rounded-md border px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary",
-                    descriptionOnly &&
-                      "border-primary/40 bg-primary/10 text-primary",
-                  )}
-                  data-testid="card-description-badge"
-                  {...(descriptionOnly
-                    ? { "data-highlight": "description" }
-                    : {})}
-                >
-                  <AlignLeft className="h-3.5 w-3.5" aria-hidden />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {descriptionOnly && snippetText
-                  ? snippetText
-                  : t("card.hasDescription")}
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
-        </div>
-      ) : null}
-      {/* Assignee (TASK-49): Jira puts the assignee's avatar in the card's
+            {linkFacts ? (
+              <LinkedCardsPopover boardId={boardId} facts={linkFacts} />
+            ) : null}
+            {hasDueDate ? <DueBadge dueDate={card.dueDate as number} /> : null}
+            {hasPriority ? (
+              <PriorityBadge priority={card.priority as CardPriority} />
+            ) : null}
+            {attachmentCount > 0 ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="inline-flex h-5 items-center gap-1 rounded-md border border-border/60 bg-muted/50 px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary"
+                    data-testid="card-attachments-badge"
+                  >
+                    <Paperclip className="h-3.5 w-3.5" aria-hidden />
+                    {attachmentCount}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {t("card.attachments.badgeTooltip", {
+                    count: attachmentCount,
+                  })}
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
+            {total > 0 ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className={cn(
+                      "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
+                      done === total
+                        ? "border-success/40 bg-success/10 text-success"
+                        : "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-primary",
+                    )}
+                    data-testid="card-checklist-badge"
+                  >
+                    <ListTodo className="h-3.5 w-3.5" aria-hidden />
+                    {done}/{total}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {t("checklist.badgeTooltip", { done, total })}
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
+            {hasDescription ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className={cn(
+                      "inline-flex h-5 items-center rounded-md border px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary",
+                      descriptionOnly &&
+                        "border-primary/40 bg-primary/10 text-primary",
+                    )}
+                    data-testid="card-description-badge"
+                    {...(descriptionOnly
+                      ? { "data-highlight": "description" }
+                      : {})}
+                  >
+                    <AlignLeft className="h-3.5 w-3.5" aria-hidden />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {descriptionOnly && snippetText
+                    ? snippetText
+                    : t("card.hasDescription")}
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
+          </div>
+        ) : null}
+        {/* Assignee (TASK-49): Jira puts the assignee's avatar in the card's
           bottom-right corner — visible without opening the card, opening the
           profile on click like the other identity chips. The member
           directory (not the board JSON) owns the display data. */}
-      {card.assigneeId ? (
-        <AssigneeBadge assigneeId={card.assigneeId} boardId={boardId} />
-      ) : null}
-      {/* Foreign-change highlight (TASK-36): a soft ring in the author's own
+        {card.assigneeId ? (
+          <AssigneeBadge assigneeId={card.assigneeId} boardId={boardId} />
+        ) : null}
+        {/* Foreign-change highlight (TASK-36): a soft ring in the author's own
           color for two seconds, or — under reduced motion — a static dot
           badge instead of the animated ring. */}
-      {foreignAuthor?.highlight ? (
-        <span
-          aria-hidden="true"
-          data-foreign={foreignAuthor.userId}
-          style={
-            {
-              "--janosik-foreign-color": foreignColor,
-            } as React.CSSProperties
-          }
-        >
+        {foreignAuthor?.highlight ? (
           <span
-            className="janosik-foreign-ring pointer-events-none absolute inset-0 rounded-lg"
-            style={{
-              boxShadow: `inset 0 0 0 2px color-mix(in srgb, ${foreignColor} 65%, transparent)`,
-            }}
-          />
-          <span
-            className="janosik-foreign-dot pointer-events-none absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full"
-            style={{ backgroundColor: foreignColor }}
-          />
-        </span>
-      ) : null}
-    </article>
+            aria-hidden="true"
+            data-foreign={foreignAuthor.userId}
+            style={
+              {
+                "--janosik-foreign-color": foreignColor,
+              } as React.CSSProperties
+            }
+          >
+            <span
+              className="janosik-foreign-ring pointer-events-none absolute inset-0 rounded-lg"
+              style={{
+                boxShadow: `inset 0 0 0 2px color-mix(in srgb, ${foreignColor} 65%, transparent)`,
+              }}
+            />
+            <span
+              className="janosik-foreign-dot pointer-events-none absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full"
+              style={{ backgroundColor: foreignColor }}
+            />
+          </span>
+        ) : null}
+      </article>
+    </CardContextMenu>
   );
 }
 
