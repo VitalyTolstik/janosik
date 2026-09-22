@@ -360,7 +360,14 @@ export type AdminAuditAction = (typeof ADMIN_AUDIT_ACTIONS)[number];
  * host/port editable for anything not on the list.
  */
 export interface EmailSmtpPreset {
-  id: "gmail" | "yandex" | "mailru" | "brevo" | "sendgrid" | "custom";
+  id:
+    | "gmail"
+    | "yandex"
+    | "mailru"
+    | "brevo"
+    | "sendgrid"
+    | "custom"
+    | "ethereal";
   label: string;
   host: string;
   port: number;
@@ -434,8 +441,30 @@ export const EMAIL_SMTP_PRESETS: readonly EmailSmtpPreset[] = [
   },
 ] as const;
 
-/** Preset ids that carry their own fixed connection settings. */
-export const EMAIL_SMTP_PRESET_IDS = EMAIL_SMTP_PRESETS.map((p) => p.id);
+/**
+ * Sandbox presets (TASK-52.1): real SMTP that never reaches real inboxes —
+ * letters land in a disposable web inbox the owner can open. The Ethereal
+ * account is created server-side on save; the panel then shows its web
+ * login so the mail can actually be read.
+ */
+export const EMAIL_SMTP_TEST_PRESETS: readonly EmailSmtpPreset[] = [
+  {
+    id: "ethereal",
+    label: "Ethereal",
+    host: "smtp.ethereal.email",
+    port: 587,
+    secure: false,
+    usernameHint: "created automatically",
+    passwordLabel: "created automatically",
+    helpUrl: "https://ethereal.email",
+  },
+] as const;
+
+/** Every provider id the settings row/API accepts. */
+export const EMAIL_SMTP_PRESET_IDS = [
+  ...EMAIL_SMTP_PRESETS,
+  ...EMAIL_SMTP_TEST_PRESETS,
+].map((p) => p.id);
 
 /**
  * `GET /admin/email-settings` — the saved transport config with the password
@@ -460,13 +489,21 @@ export interface AdminEmailSettingsDto {
   lastError: string | null;
   updatedBy: string | null;
   updatedAt: string | null;
+  /**
+   * Sandbox inbox credentials for the `ethereal` test provider — the place
+   * where its letters can actually be read. Populated for owners only;
+   * always `null` for every other provider.
+   */
+  webViewer: { url: string; user: string; pass: string } | null;
 }
 
 /**
  * `PUT /admin/email-settings`. For a preset provider the backend takes
  * host/port/secure from the preset and ignores the client's values; with
  * `custom` they are required. `password` semantics: `undefined` = keep the
- * stored one, `null` = clear it, a string = replace it.
+ * stored one, `null` = clear it, a string = replace it. With `ethereal` the
+ * credentials are server-generated (a sandbox account is created on save)
+ * and the client's username/password are ignored.
  */
 export interface AdminUpdateEmailSettingsRequest {
   provider: (typeof EMAIL_SMTP_PRESET_IDS)[number];

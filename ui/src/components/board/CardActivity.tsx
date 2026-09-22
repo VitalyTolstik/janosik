@@ -106,9 +106,11 @@ export function CardActivity({
         })}
       </div>
 
-      {/* The inactive view unmounts: returning to it re-reads the newest
-          page, which keeps a long thread from going stale in the background. */}
-      {view === "comments" ? (
+      {/* Both views stay mounted (the inactive one is display-hidden): the
+          counts load with the dialog instead of after the first tab click,
+          and the SSE subscriptions inside each view keep the hidden thread
+          fresh, so switching tabs shows live data without a refetch. */}
+      <div className={cn(view !== "comments" && "hidden")}>
         <CardComments
           key={cardId}
           cardId={cardId}
@@ -116,7 +118,8 @@ export function CardActivity({
           readOnly={readOnly}
           onCountChange={setCommentCount}
         />
-      ) : (
+      </div>
+      <div className={cn(view !== "history" && "hidden")}>
         <CardHistory
           key={cardId}
           cardId={cardId}
@@ -125,7 +128,7 @@ export function CardActivity({
           localActivity={localActivity}
           onCountChange={setHistoryCount}
         />
-      )}
+      </div>
     </CollapsibleSection>
   );
 }

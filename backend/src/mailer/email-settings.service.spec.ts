@@ -37,6 +37,7 @@ const makeRow = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("EmailSettingsService", () => {
+  // vi.unstubAllGlobals comes from each ethereal test's afterEach.
   let mailer: MailerService;
   let service: EmailSettingsService;
   // Tiny in-memory stand-in for the singleton row: findUnique reads it,
@@ -262,6 +263,136 @@ describe("EmailSettingsService", () => {
 
       expect(result.ok).toBe(true);
       expect(prismaMock.emailSettings.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("ethereal sandbox provider", () => {
+    const etherealResponse = (user: string, pass: string) =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: "success",
+          user,
+          pass,
+          web: "https://ethereal.email",
+        }),
+      }) as unknown as Response;
+    const realFetch = globalThis.fetch;
+    const stubFetch = (impl: jest.Mock) => {
+      globalThis.fetch = impl as unknown as typeof fetch;
+    };
+
+    afterEach(() => {
+      globalThis.fetch = realFetch;
+    });
+
+    it("mints a sandbox account on save and exposes its web login to owners", async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(
+          etherealResponse("sandbox-1@ethereal.email", "pass-1"),
+        );
+      stubFetch(fetchMock);
+
+      const dto = await service.update(
+        { provider: "ethereal", from: "", username: "", enabled: true },
+        "owner@example.com",
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(dto).toMatchObject({
+        provider: "ethereal",
+        host: "smtp.ethereal.email",
+        port: 587,
+        secure: false,
+        username: "sandbox-1@ethereal.email",
+        from: "Janosik <sandbox-1@ethereal.email>",
+        enabled: true,
+        hasPassword: true,
+        active: true,
+      });
+      expect(dto.webViewer).toEqual({
+        url: "https://ethereal.email",
+        user: "sandbox-1@ethereal.email",
+        pass: "pass-1",
+      });
+      expect(mailer.enabled).toBe(true);
+    });
+
+    it("hides the web login from operators", async () => {
+      savedRow = makeRow({
+        provider: "ethereal",
+        username: "sandbox-1@ethereal.email",
+        passwordEnc: encryptSecret("pass-1"),
+        enabled: true,
+      });
+
+      const operatorView = await service.getPublic(false);
+      expect(operatorView.webViewer).toBeNull();
+
+      const ownerView = await service.getPublic(true);
+      expect(ownerView.webViewer).toMatchObject({
+        user: "sandbox-1@ethereal.email",
+        pass: "pass-1",
+      });
+    });
+
+    it("reuses the stored sandbox account on later saves", async () => {
+      savedRow = makeRow({
+        provider: "ethereal",
+        username: "sandbox-1@ethereal.email",
+        from: "Janosik <sandbox-1@ethereal.email>",
+        passwordEnc: encryptSecret("pass-1"),
+        enabled: true,
+      });
+      const fetchMock = jest.fn();
+      stubFetch(fetchMock);
+
+      const dto = await service.update(
+        { provider: "ethereal", from: "", username: "", enabled: true },
+        "owner@example.com",
+      );
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(dto.username).toBe("sandbox-1@ethereal.email");
+      expect(dto.webViewer).toMatchObject({ pass: "pass-1" });
+    });
+
+    it("a fresh ethereal save after another provider mints a new account", async () => {
+      savedRow = makeRow({
+        provider: "gmail",
+        username: "you@gmail.com",
+        passwordEnc: encryptSecret("gmail pass"),
+      });
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(
+          etherealResponse("sandbox-2@ethereal.email", "pass-2"),
+        );
+      stubFetch(fetchMock);
+
+      const dto = await service.update(
+        { provider: "ethereal", from: "", username: "", enabled: false },
+        "owner@example.com",
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(dto.username).toBe("sandbox-2@ethereal.email");
+      expect(dto.enabled).toBe(false);
+      expect(mailer.enabled).toBe(false);
+    });
+
+    it("an API failure answers 400 and stores nothing", async () => {
+      stubFetch(jest.fn().mockRejectedValue(new Error("network down")));
+
+      await expect(
+        service.update(
+          { provider: "ethereal", from: "", username: "", enabled: true },
+          "owner@example.com",
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(prismaMock.emailSettings.upsert).not.toHaveBeenCalled();
     });
   });
 

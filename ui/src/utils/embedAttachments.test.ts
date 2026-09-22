@@ -130,6 +130,23 @@ describe("attachmentImagePreviewHandler", () => {
     expect(api.fetchAttachment).toHaveBeenCalledWith("att-cache");
     vi.unstubAllGlobals();
   });
+
+  it("a failed fetch resolves to the calm unavailable-image placeholder", async () => {
+    vi.mocked(api.fetchAttachment).mockRejectedValue(new Error("404"));
+
+    const url = await attachmentImagePreviewHandler(
+      "/api/v1/attachments/att-gone/content",
+    );
+
+    expect(url.startsWith("data:image/svg+xml,")).toBe(true);
+    const svg = decodeURIComponent(url.replace("data:image/svg+xml,", ""));
+    expect(svg).toContain("image unavailable");
+    // No harsh fallback styling: the muted slate palette, no red, no ⚠️.
+    expect(svg).toContain("#8b8fa3");
+    expect(svg).not.toContain("red");
+    expect(svg).not.toContain("⚠");
+    vi.unstubAllGlobals();
+  });
 });
 
 describe("fullscreen viewer (lightbox)", () => {

@@ -1,4 +1,8 @@
-import { boardReducer, EMAIL_SMTP_PRESETS } from "@janosik/shared";
+import {
+  boardReducer,
+  EMAIL_SMTP_PRESETS,
+  EMAIL_SMTP_TEST_PRESETS,
+} from "@janosik/shared";
 import type {
   BoardAction,
   BoardAggregate,
@@ -251,6 +255,7 @@ export class FakeAdminServer {
     lastError: null,
     updatedBy: null,
     updatedAt: null,
+    webViewer: null,
   };
 
   constructor(state: FakeAdminState = emptyAdminState()) {
@@ -607,11 +612,19 @@ export class FakeAdminServer {
       const input = (jsonBody ??
         {}) as Partial<AdminUpdateEmailSettingsRequest>;
       // Mirror the real backend: preset providers carry their fixed
-      // connection settings, `custom` takes the client's host/port/secure.
-      const preset = EMAIL_SMTP_PRESETS.find(
+      // connection settings, `custom` takes the client's host/port/secure,
+      // and the `ethereal` sandbox mints its own credentials.
+      const preset = [...EMAIL_SMTP_PRESETS, ...EMAIL_SMTP_TEST_PRESETS].find(
         (item) => item.id === input.provider,
       );
       const custom = preset !== undefined && preset.id === "custom";
+      const sandbox = preset !== undefined && preset.id === "ethereal";
+      const sandboxUser =
+        this.emailSettings.source === "db" &&
+        this.emailSettings.provider === "ethereal" &&
+        this.emailSettings.username !== ""
+          ? this.emailSettings.username
+          : "sandbox-1@ethereal.email";
       this.emailSettings = {
         ...this.emailSettings,
         provider: preset?.id ?? this.emailSettings.provider,
@@ -624,17 +637,31 @@ export class FakeAdminServer {
         secure: custom
           ? (input.secure ?? this.emailSettings.secure)
           : (preset?.secure ?? this.emailSettings.secure),
-        from: input.from ?? this.emailSettings.from,
-        username: input.username ?? this.emailSettings.username,
+        from:
+          sandbox && (input.from ?? "") === ""
+            ? `Janosik <${sandboxUser}>`
+            : (input.from ?? this.emailSettings.from),
+        username: sandbox
+          ? sandboxUser
+          : (input.username ?? this.emailSettings.username),
         enabled: input.enabled ?? this.emailSettings.enabled,
-        hasPassword:
-          input.password !== undefined
+        hasPassword: sandbox
+          ? true
+          : input.password !== undefined
             ? input.password !== null
             : this.emailSettings.hasPassword,
         source: "db",
         active: input.enabled ?? false,
         updatedBy: this.principal().email,
         updatedAt: new Date(now).toISOString(),
+        webViewer:
+          sandbox && this.sessionRole === "OWNER"
+            ? {
+                url: "https://ethereal.email",
+                user: sandboxUser,
+                pass: "generated-pass",
+              }
+            : null,
       };
       return this.json(this.emailSettings);
     }

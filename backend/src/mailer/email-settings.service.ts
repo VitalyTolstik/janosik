@@ -9,7 +9,7 @@ import type {
   AdminUpdateEmailSettingsRequest,
   EMAIL_SMTP_PRESET_IDS,
 } from "@janosik/shared";
-import { EMAIL_SMTP_PRESETS } from "@janosik/shared";
+import { EMAIL_SMTP_PRESETS, EMAIL_SMTP_TEST_PRESETS } from "@janosik/shared";
 import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import type { SmtpConfig } from "./mail.types";
@@ -57,8 +57,13 @@ export class EmailSettingsService implements OnModuleInit {
     }
   }
 
-  /** The saved row, or the env bootstrap, or nothing — with masked secret. */
-  async getPublic(): Promise<AdminEmailSettingsDto> {
+  /**
+   * The saved row, or the env bootstrap, or nothing — with masked secret.
+   * `viewerIsOwner` gates the sandbox web-inbox credentials (ethereal):
+   * they are the one secret the panel deliberately shows, and only owners
+   * may see them.
+   */
+  async getPublic(viewerIsOwner = false): Promise<AdminEmailSettingsDto> {
     const row = await this.prisma.emailSettings.findUnique({
       where: { id: SETTINGS_ID },
     });
@@ -79,6 +84,7 @@ export class EmailSettingsService implements OnModuleInit {
         lastError: row.lastError,
         updatedBy: row.updatedBy,
         updatedAt: row.updatedAt.toISOString(),
+        webViewer: this.webViewer(row, viewerIsOwner),
       };
     }
     const envActive = env.SMTP_HOST !== "";
@@ -98,28 +104,90 @@ export class EmailSettingsService implements OnModuleInit {
       lastError: null,
       updatedBy: null,
       updatedAt: null,
+      webViewer: null,
+    };
+  }
+
+  /** Sandbox inbox credentials — ethereal only, owners only. */
+  private webViewer(
+    row: {
+      provider: string;
+      username: string;
+      passwordEnc: string | null;
+    },
+    viewerIsOwner: boolean,
+  ): AdminEmailSettingsDto["webViewer"] {
+    if (!viewerIsOwner || row.provider !== "ethereal") return null;
+    if (row.passwordEnc === null || row.username === "") return null;
+    return {
+      url: "https://ethereal.email",
+      user: row.username,
+      pass: decryptSecret(row.passwordEnc),
     };
   }
 
   /**
    * Validates, stores and applies new settings. `password === undefined`
-   * keeps the stored one, `null` clears it, a string replaces it.
+   * keeps the stored one, `null` clears it, a string replaces it. With the
+   * `ethereal` test provider the credentials are server-generated: the
+   * first save mints a sandbox account via the nodemailer API, later saves
+   * reuse it — the client's username/password are ignored.
    */
   async update(
     input: AdminUpdateEmailSettingsRequest,
     updatedBy: string,
   ): Promise<AdminEmailSettingsDto> {
-    const preset = EMAIL_SMTP_PRESETS.find((p) => p.id === input.provider);
+    const preset = [...EMAIL_SMTP_PRESETS, ...EMAIL_SMTP_TEST_PRESETS].find(
+      (p) => p.id === input.provider,
+    );
     if (preset === undefined) {
       throw new BadRequestException("Unknown provider preset");
     }
+    const sandbox = preset.id === "ethereal";
     const host =
       preset.id === "custom" ? (input.host ?? "").trim() : preset.host;
     const port = preset.id === "custom" ? input.port : preset.port;
     const secure =
       preset.id === "custom" ? (input.secure ?? false) : preset.secure;
-    const from = input.from.trim();
-    const username = input.username.trim();
+
+    const rowBefore = await this.prisma.emailSettings.findUnique({
+      where: { id: SETTINGS_ID },
+    });
+
+    let username: string;
+    let from: string;
+    let passwordEnc: string | null;
+    if (sandbox) {
+      const account = await this.ensureEtherealAccount(rowBefore);
+      username = account.username;
+      from = input.from.trim() === "" ? account.from : input.from.trim();
+      passwordEnc = encryptSecret(account.password);
+    } else {
+      username = input.username.trim();
+      from = input.from.trim();
+      const storedPassword = rowBefore?.passwordEnc ?? null;
+      if (
+        input.enabled &&
+        input.password === undefined &&
+        storedPassword === null
+      ) {
+        throw new BadRequestException(
+          "An SMTP password is required to enable delivery",
+        );
+      }
+      if (input.enabled && input.password === null) {
+        throw new BadRequestException(
+          "Delivery cannot be enabled without an SMTP password",
+        );
+      }
+      passwordEnc = storedPassword;
+      if (input.password !== undefined) {
+        passwordEnc =
+          input.password === null || input.password === ""
+            ? null
+            : encryptSecret(input.password);
+      }
+    }
 
     if (host === "" || port === undefined) {
       throw new BadRequestException("SMTP host and port are required");
@@ -128,32 +196,6 @@ export class EmailSettingsService implements OnModuleInit {
       throw new BadRequestException(
         "From address and SMTP username are required",
       );
-    }
-    const rowBefore = await this.prisma.emailSettings.findUnique({
-      where: { id: SETTINGS_ID },
-    });
-    const storedPassword = rowBefore?.passwordEnc ?? null;
-    if (
-      input.enabled &&
-      input.password === undefined &&
-      storedPassword === null
-    ) {
-      throw new BadRequestException(
-        "An SMTP password is required to enable delivery",
-      );
-    }
-    if (input.enabled && input.password === null) {
-      throw new BadRequestException(
-        "Delivery cannot be enabled without an SMTP password",
-      );
-    }
-
-    let passwordEnc = storedPassword;
-    if (input.password !== undefined) {
-      passwordEnc =
-        input.password === null || input.password === ""
-          ? null
-          : encryptSecret(input.password);
     }
 
     const row = await this.prisma.emailSettings.upsert({
@@ -192,7 +234,72 @@ export class EmailSettingsService implements OnModuleInit {
     } else {
       this.mailer.reconfigure(null, row.from);
     }
-    return this.getPublic();
+    return this.getPublic(true);
+  }
+
+  /**
+   * Reuses the stored sandbox account when the saved row already is one
+   * (and the request does not force a change), otherwise mints a fresh one
+   * through the nodemailer account API — no signup, credentials returned
+   * once and stored encrypted.
+   */
+  private async ensureEtherealAccount(
+    rowBefore: {
+      provider: string;
+      username: string;
+      from: string;
+      passwordEnc: string | null;
+    } | null,
+  ): Promise<{ username: string; password: string; from: string }> {
+    if (
+      rowBefore !== null &&
+      rowBefore.provider === "ethereal" &&
+      rowBefore.passwordEnc !== null
+    ) {
+      return {
+        username: rowBefore.username,
+        password: decryptSecret(rowBefore.passwordEnc),
+        from: rowBefore.from,
+      };
+    }
+    let response: Response;
+    try {
+      response = await fetch("https://api.nodemailer.com/user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          // Informational metadata for the nodemailer account API.
+          requestor: "janosik",
+          version: "1.0.0",
+        }),
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch (cause) {
+      throw new BadRequestException(
+        `The sandbox account could not be created: ${String(cause)}`,
+      );
+    }
+    if (!response.ok) {
+      throw new BadRequestException(
+        `The sandbox account could not be created (HTTP ${response.status})`,
+      );
+    }
+    const data = (await response.json()) as {
+      status?: string;
+      user?: string;
+      pass?: string;
+      web?: string;
+    };
+    if (data.status !== "success" || !data.user || !data.pass) {
+      throw new BadRequestException(
+        "The sandbox account could not be created (unexpected API answer)",
+      );
+    }
+    return {
+      username: data.user,
+      password: data.pass,
+      from: `Janosik <${data.user}>`,
+    };
   }
 
   /**

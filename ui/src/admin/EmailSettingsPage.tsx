@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { CircleAlert, CircleCheck } from "lucide-react";
+import { CircleAlert, CircleCheck, ExternalLink } from "lucide-react";
 import type {
   AdminEmailSettingsDto,
   AdminEmailTestResponse,
   EmailSmtpPreset,
 } from "@janosik/shared";
-import { EMAIL_SMTP_PRESETS } from "@janosik/shared";
+import { EMAIL_SMTP_PRESETS, EMAIL_SMTP_TEST_PRESETS } from "@janosik/shared";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -42,6 +42,7 @@ const PRESET_LABEL_KEYS: Record<EmailSmtpPreset["id"], AdminMessageKey> = {
   brevo: "admin.email.preset.brevo",
   sendgrid: "admin.email.preset.sendgrid",
   custom: "admin.email.preset.custom",
+  ethereal: "admin.email.preset.ethereal",
 };
 
 const toDraft = (dto: AdminEmailSettingsDto): Draft => ({
@@ -158,7 +159,9 @@ export function EmailSettingsPage() {
 
   const selectPreset = useCallback(
     (id: EmailSmtpPreset["id"]) => {
-      const preset = EMAIL_SMTP_PRESETS.find((p) => p.id === id);
+      const preset = [...EMAIL_SMTP_PRESETS, ...EMAIL_SMTP_TEST_PRESETS].find(
+        (p) => p.id === id,
+      );
       if (preset === undefined) return;
       patch({
         provider: id,
@@ -176,14 +179,18 @@ export function EmailSettingsPage() {
     setSaving(true);
     try {
       const custom = draft.provider === "custom";
+      const sandbox = draft.provider === "ethereal";
       const saved = await adminApi.updateEmailSettings({
         provider: draft.provider,
         ...(custom
           ? { host: draft.host, port: draft.port, secure: draft.secure }
           : {}),
+        // The sandbox account is server-generated — no credentials to send.
         from: draft.from,
-        username: draft.username,
-        ...(draft.password === "" ? {} : { password: draft.password }),
+        username: sandbox ? "" : draft.username,
+        ...(sandbox || draft.password === ""
+          ? {}
+          : { password: draft.password }),
         enabled: draft.enabled,
       });
       setSettings(saved);
@@ -224,10 +231,15 @@ export function EmailSettingsPage() {
     return <ErrorState onRetry={retry} />;
   }
 
-  const preset = EMAIL_SMTP_PRESETS.find((p) => p.id === draft.provider);
+  const preset = [...EMAIL_SMTP_PRESETS, ...EMAIL_SMTP_TEST_PRESETS].find(
+    (p) => p.id === draft.provider,
+  );
   const custom = draft.provider === "custom";
+  const sandbox = draft.provider === "ethereal";
   const passwordStored = settings.hasPassword;
-  const saveDisabled = saving || draft.from === "" || draft.username === "";
+  // The sandbox needs nothing from the user — the account is minted on save.
+  const saveDisabled =
+    saving || (sandbox ? false : draft.from === "" || draft.username === "");
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4 p-6">
@@ -279,6 +291,39 @@ export function EmailSettingsPage() {
           })}
         </div>
 
+        <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {t("admin.email.testproviders.title")}
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          {t("admin.email.testproviders.hint")}
+        </p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {EMAIL_SMTP_TEST_PRESETS.map((item) => {
+            const selected = draft.provider === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                data-testid={`admin-email-preset-${item.id}`}
+                disabled={!isOwner}
+                onClick={() => selectPreset(item.id)}
+                className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                  selected
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border bg-background/50 text-muted-foreground hover:bg-hover"
+                } disabled:cursor-not-allowed disabled:opacity-60`}
+              >
+                <span className="block font-medium text-foreground">
+                  {t(PRESET_LABEL_KEYS[item.id])}
+                </span>
+                <span className="block truncate">
+                  {t("admin.email.preset.sandboxHint")}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         {custom ? (
           <div className="grid grid-cols-2 gap-3">
             <label className="space-y-1 text-xs text-muted-foreground">
@@ -324,45 +369,53 @@ export function EmailSettingsPage() {
           />
         </label>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="block space-y-1 text-xs text-muted-foreground">
-            <span>{t("admin.email.username")}</span>
-            <Input
-              value={draft.username}
-              disabled={!isOwner}
-              placeholder={preset?.usernameHint ?? ""}
-              data-testid="admin-email-username"
-              onChange={(event) => patch({ username: event.target.value })}
-            />
-          </label>
-          <label className="block space-y-1 text-xs text-muted-foreground">
-            <span>{t("admin.email.password")}</span>
-            <Input
-              type="password"
-              value={draft.password}
-              disabled={!isOwner}
-              autoComplete="new-password"
-              placeholder={
-                passwordStored ? t("admin.email.password.saved") : undefined
-              }
-              data-testid="admin-email-password"
-              onChange={(event) => patch({ password: event.target.value })}
-            />
-          </label>
-        </div>
-        <p className="text-[11px] text-muted-foreground">
-          {t("admin.email.password.hint")}{" "}
-          {preset?.helpUrl ? (
-            <a
-              href={preset.helpUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary underline underline-offset-2"
-            >
-              {t("admin.email.password.help")}
-            </a>
-          ) : null}
-        </p>
+        {sandbox ? (
+          <p className="text-[11px] text-muted-foreground">
+            {t("admin.email.ethereal.auto")}
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block space-y-1 text-xs text-muted-foreground">
+                <span>{t("admin.email.username")}</span>
+                <Input
+                  value={draft.username}
+                  disabled={!isOwner}
+                  placeholder={preset?.usernameHint ?? ""}
+                  data-testid="admin-email-username"
+                  onChange={(event) => patch({ username: event.target.value })}
+                />
+              </label>
+              <label className="block space-y-1 text-xs text-muted-foreground">
+                <span>{t("admin.email.password")}</span>
+                <Input
+                  type="password"
+                  value={draft.password}
+                  disabled={!isOwner}
+                  autoComplete="new-password"
+                  placeholder={
+                    passwordStored ? t("admin.email.password.saved") : undefined
+                  }
+                  data-testid="admin-email-password"
+                  onChange={(event) => patch({ password: event.target.value })}
+                />
+              </label>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {t("admin.email.password.hint")}{" "}
+              {preset?.helpUrl ? (
+                <a
+                  href={preset.helpUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary underline underline-offset-2"
+                >
+                  {t("admin.email.password.help")}
+                </a>
+              ) : null}
+            </p>
+          </>
+        )}
 
         <label className="flex items-center gap-2 text-xs font-medium text-foreground">
           <Checkbox
@@ -418,12 +471,21 @@ export function EmailSettingsPage() {
         </div>
         {testResult !== null ? (
           testResult.ok ? (
-            <p
-              className="text-xs text-success"
-              data-testid="admin-email-test-ok"
-            >
-              {t("admin.email.test.ok")}
-            </p>
+            settings.active ? (
+              <p
+                className="text-xs text-success"
+                data-testid="admin-email-test-ok"
+              >
+                {t("admin.email.test.ok")}
+              </p>
+            ) : (
+              <p
+                className="text-xs text-muted-foreground"
+                data-testid="admin-email-test-ok"
+              >
+                {t("admin.email.test.logOk")}
+              </p>
+            )
           ) : (
             <p
               className="text-xs text-danger"
@@ -437,6 +499,37 @@ export function EmailSettingsPage() {
           )
         ) : null}
       </Panel>
+
+      {settings.webViewer !== null ? (
+        <Panel className="space-y-3 p-4" data-testid="admin-email-webviewer">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {t("admin.email.ethereal.inboxTitle")}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {t("admin.email.ethereal.note")}
+          </p>
+          <div className="space-y-1.5 font-mono text-xs text-foreground">
+            <p>
+              <span className="mr-2 font-sans text-[11px] uppercase tracking-wide text-muted-foreground">
+                {t("admin.email.ethereal.login")}
+              </span>
+              {settings.webViewer.user}
+            </p>
+            <p>
+              <span className="mr-2 font-sans text-[11px] uppercase tracking-wide text-muted-foreground">
+                {t("admin.email.ethereal.password")}
+              </span>
+              {settings.webViewer.pass}
+            </p>
+          </div>
+          <Button size="sm" variant="outline" asChild>
+            <a href={settings.webViewer.url} target="_blank" rel="noreferrer">
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+              {t("admin.email.ethereal.open")}
+            </a>
+          </Button>
+        </Panel>
+      ) : null}
     </div>
   );
 }

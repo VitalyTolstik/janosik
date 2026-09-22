@@ -30,16 +30,18 @@ import { useAdminT } from "./admin-i18n";
 export function Panel({
   className,
   children,
+  ...rest
 }: {
   className?: string;
   children: ReactNode;
-}) {
+} & React.HTMLAttributes<HTMLElement>) {
   return (
     <section
       className={cn(
         "rounded-xl border border-border bg-card/70 backdrop-blur-sm",
         className,
       )}
+      {...rest}
     >
       {children}
     </section>
