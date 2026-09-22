@@ -69,11 +69,11 @@ describe("CardItem fixed tile layout", () => {
   it("renders every card at the same fixed size", () => {
     renderCard();
     const card = screen.getByTestId("card-title").closest("article");
-    expect(card?.className).toContain("h-[136px]");
+    expect(card?.className).toContain("h-[88px]");
     expect(card?.className).toContain("flex-col");
   });
 
-  it("keeps the labels on one clipped line", () => {
+  it("shares the first line between the title (75%) and the labels (25%)", () => {
     renderCard(
       baseCard,
       Array.from({ length: 6 }, (_, i) => ({
@@ -82,10 +82,16 @@ describe("CardItem fixed tile layout", () => {
         color: "slate" as const,
       })),
     );
-    const row = screen.getByTestId("card-labels");
-    expect(row.className).toContain("whitespace-nowrap");
-    expect(row.className).toContain("overflow-hidden");
-    expect(row.children.length).toBe(6);
+    const title = screen.getByTestId("card-title");
+    const labels = screen.getByTestId("card-labels");
+    // Same row container: the labels sit beside the title, not below it.
+    expect(title.parentElement).toBe(labels.parentElement);
+    expect(title.className).toContain("w-3/4");
+    expect(title.className).toContain("truncate");
+    // The label quarter stays on one clipped line.
+    expect(labels.className).toContain("whitespace-nowrap");
+    expect(labels.className).toContain("overflow-hidden");
+    expect(labels.children.length).toBe(6);
   });
 
   it("renders the medium priority badge (the default is no longer hidden)", () => {
@@ -96,7 +102,7 @@ describe("CardItem fixed tile layout", () => {
     );
   });
 
-  it("orders the face rows: labels, title, due, meta, priority/assignee footer", () => {
+  it("orders the rows: title+labels, due, meta with priority+assignee", () => {
     const live = createBoardLive();
     live.members.set("b-1", [
       {
@@ -156,22 +162,14 @@ describe("CardItem fixed tile layout", () => {
         child.contains(el as Node),
       );
     };
-    const rows = [
-      "card-labels",
-      "card-title",
-      "card-due-badge",
-      "card-description-badge",
-    ].map(rowOf);
-    // Every row sits after the previous one in the tile's flow.
-    for (let i = 1; i < rows.length; i += 1) {
-      const a = rows[i - 1] as HTMLElement;
-      const b = rows[i] as HTMLElement;
-      expect(
-        a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
-    }
-    // The priority and the assignee share the footer row.
-    expect(rowOf("card-priority-badge")).toBe(rowOf("card-assignee"));
+    // First line: the labels share the title's row.
+    expect(rowOf("card-labels")).toBe(rowOf("card-title"));
+    // Second line: only the due badge.
+    expect(rowOf("card-due-badge")).not.toBe(rowOf("card-title"));
+    // Third line: meta badges and the priority + assignee pair together.
+    const meta = rowOf("card-description-badge");
+    expect(meta).toBe(rowOf("card-priority-badge"));
+    expect(meta).toBe(rowOf("card-assignee"));
     // Attachments no longer own a badge on the face.
     expect(
       card?.querySelector("[data-testid='card-attachments-badge']"),
