@@ -333,22 +333,18 @@ export function CardDialog({
             instead of growing the dialog from both ends. */}
         <DialogContent className="h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] sm:max-w-3xl">
           <DialogHeader className="group/header shrink-0 pr-8">
-            <div className="flex items-start gap-1.5">
-              <div className="min-w-0 space-y-1.5">
-                <DialogTitle className="text-base">
-                  {t("card.detailsTitle")}
-                </DialogTitle>
-                <DialogDescription>
-                  {t("card.detailsSubtitle")}
-                </DialogDescription>
-              </div>
-              {/* Copy link sits next to the header text (Jira-style) and is
-                  revealed while hovering the header — not pinned to the far
-                  right edge. Keyboard focus reveals it too. */}
-              <span className="mt-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/header:opacity-100">
+            {/* Copy link hugs the title text (Jira-style): it pops out
+                immediately after "Card details" while the header is
+                hovered — not after the (much wider) subtitle block. */}
+            <div className="flex items-center gap-1.5">
+              <DialogTitle className="text-base">
+                {t("card.detailsTitle")}
+              </DialogTitle>
+              <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover/header:opacity-100">
                 <CopyCardLinkButton />
               </span>
             </div>
+            <DialogDescription>{t("card.detailsSubtitle")}</DialogDescription>
           </DialogHeader>
 
           {/* Scrollable body: the dialog caps itself to the viewport height
