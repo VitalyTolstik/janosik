@@ -59,6 +59,20 @@ export function embedMarkdown(file: File, attachmentId: string): string {
 }
 
 /**
+ * Calm placeholder shown in place of an embedded image whose attachment can
+ * no longer be loaded (deleted file, expired session, 404). MDXEditor's own
+ * broken-image fallback is a harsh red-dashed box with a ⚠️ glyph — this
+ * replaces it with a quiet dotted panel and a muted picture glyph that
+ * reads as "intentionally empty" rather than "error". Theme-neutral: the
+ * slate tone sits softly on both the light and the dark surface.
+ */
+const IMAGE_UNAVAILABLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="240" viewBox="0 0 420 240" role="img" aria-label="image unavailable"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b8fa3" stop-opacity="0.14"/><stop offset="1" stop-color="#8b8fa3" stop-opacity="0.05"/></linearGradient></defs><rect x="1" y="1" width="418" height="238" rx="14" fill="url(#bg)" stroke="#8b8fa3" stroke-opacity="0.4" stroke-width="1.5" stroke-dasharray="1 7" stroke-linecap="round"/><g transform="translate(186 96)" fill="none" stroke="#8b8fa3" stroke-opacity="0.6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="0" y="0" width="48" height="48" rx="10"/><circle cx="16" cy="16" r="4.2"/><path d="M44 34 L31 21 L9 43"/></g></svg>`;
+
+const imageUnavailableUrl = `data:image/svg+xml,${encodeURIComponent(
+  IMAGE_UNAVAILABLE_SVG,
+)}`;
+
+/**
  * MDXEditor `imagePreviewHandler`: an `<img>` fetch cannot carry the
  * Authorization header, so embedded attachment URLs are resolved to
  * authenticated blob object URLs (cached for the session); every other
@@ -80,7 +94,10 @@ export function attachmentImagePreviewHandler(src: string): Promise<string> {
         blobUrlOwners.set(url, id);
         return url;
       })
-      .catch(() => src);
+      // The raw src would keep failing as an <img> (no auth header) and
+      // surface MDXEditor's red broken-image box — show the calm
+      // placeholder instead.
+      .catch(() => imageUnavailableUrl);
     previewCache.set(id, cached);
   }
   return cached;

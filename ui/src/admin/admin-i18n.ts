@@ -109,7 +109,22 @@ const en = {
   "admin.email.test.send": "Send test email",
   "admin.email.test.sending": "Sending…",
   "admin.email.test.ok": "Test email sent successfully.",
+  "admin.email.test.logOk":
+    "Delivery is off — the probe email was written to the server log.",
   "admin.email.test.failed": "Test email failed: {error}",
+  "admin.email.testproviders.title": "Test providers",
+  "admin.email.testproviders.hint":
+    "Sandbox SMTP for trying things out — letters never reach real addresses, they land in a web inbox you can open.",
+  "admin.email.preset.ethereal": "Ethereal (sandbox)",
+  "admin.email.preset.sandboxHint": "Zero setup, disposable inbox",
+  "admin.email.ethereal.auto":
+    "The sandbox account is created automatically on save — there is nothing to enter. After saving, the inbox login appears below.",
+  "admin.email.ethereal.inboxTitle": "Sandbox inbox",
+  "admin.email.ethereal.note":
+    "Letters sent through the sandbox arrive in this web inbox — sign in with these credentials to read them. Anyone with them can read the inbox, so it is for testing only.",
+  "admin.email.ethereal.login": "Login",
+  "admin.email.ethereal.password": "Password",
+  "admin.email.ethereal.open": "Open the inbox",
 
   "admin.dashboard.users": "Users",
   "admin.dashboard.usersHint": "+{count} in 7 days",
@@ -633,7 +648,22 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.email.test.send": "Отправить тестовое письмо",
   "admin.email.test.sending": "Отправка…",
   "admin.email.test.ok": "Тестовое письмо отправлено.",
+  "admin.email.test.logOk":
+    "Отправка выключена — пробное письмо записано в журнал сервера.",
   "admin.email.test.failed": "Ошибка отправки тестового письма: {error}",
+  "admin.email.testproviders.title": "Тестовые провайдеры",
+  "admin.email.testproviders.hint":
+    "Песочница SMTP для проб: письма не доходят до реальных адресов — они падают в веб-ящик, который можно открыть.",
+  "admin.email.preset.ethereal": "Ethereal (песочница)",
+  "admin.email.preset.sandboxHint": "Без настройки, одноразовый ящик",
+  "admin.email.ethereal.auto":
+    "Аккаунт песочницы создаётся автоматически при сохранении — вводить ничего не нужно. После сохранения логин ящика появится ниже.",
+  "admin.email.ethereal.inboxTitle": "Ящик песочницы",
+  "admin.email.ethereal.note":
+    "Письма из песочницы приходят в этот веб-ящик — войдите с этими данными, чтобы прочитать их. Доступ к ящику есть у любого, кто знает эти данные, поэтому он только для тестов.",
+  "admin.email.ethereal.login": "Логин",
+  "admin.email.ethereal.password": "Пароль",
+  "admin.email.ethereal.open": "Открыть ящик",
 
   "admin.dashboard.users": "Пользователи",
   "admin.dashboard.usersHint": "+{count} за 7 дней",

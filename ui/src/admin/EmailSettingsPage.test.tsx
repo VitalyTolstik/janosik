@@ -61,9 +61,35 @@ describe("EmailSettingsPage", () => {
       "brevo",
       "sendgrid",
       "custom",
+      "ethereal",
     ]) {
       expect(screen.getByTestId(`admin-email-preset-${id}`)).toBeTruthy();
     }
+  });
+
+  it("saving with the sandbox preset stores generated credentials and shows the web inbox", async () => {
+    const server = new FakeAdminServer();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderEmailSettings();
+
+    await screen.findByText(t("admin.email.status.log"));
+    fireEvent.click(screen.getByTestId("admin-email-preset-ethereal"));
+    // The sandbox needs no credentials: no username field, save is enabled.
+    expect(screen.queryByTestId("admin-email-username")).toBeNull();
+    const save = screen.getByTestId("admin-email-save") as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+
+    fireEvent.click(save);
+
+    const inbox = await screen.findByTestId("admin-email-webviewer");
+    expect(inbox.textContent).toContain("sandbox-1@ethereal.email");
+    expect(inbox.textContent).toContain("generated-pass");
+    expect(server.emailSettings).toMatchObject({
+      provider: "ethereal",
+      username: "sandbox-1@ethereal.email",
+      enabled: false,
+      active: false,
+    });
   });
 
   it("switching to a preset fills its connection settings and saving activates delivery", async () => {
