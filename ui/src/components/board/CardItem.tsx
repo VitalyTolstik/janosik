@@ -432,9 +432,9 @@ function CardItemView({
             </Tooltip>
           ) : null}
         </div>
-        {/* Footer: the priority on the left, the assignee's avatar on the
+        {/* Footer: the priority sits next to the assignee's avatar on the
           right — the tile's last line, nothing else. */}
-        <div className="mt-auto flex h-6 shrink-0 items-center justify-between">
+        <div className="mt-auto flex h-6 shrink-0 items-center justify-end gap-1.5">
           <PriorityBadge priority={priority} />
           {card.assigneeId ? (
             <AssigneeBadge assigneeId={card.assigneeId} boardId={boardId} />
