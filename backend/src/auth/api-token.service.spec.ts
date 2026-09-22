@@ -39,7 +39,9 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   passwordHash: "",
   displayName: null,
   avatarColor: null,
+  avatarPath: null,
   disabledAt: null,
+  emailVerifiedAt: null,
   createdAt: new Date("2026-09-01T00:00:00Z"),
   ...overrides,
 });
@@ -95,6 +97,8 @@ describe("ApiTokenService", () => {
         email: "user@example.com",
         displayName: "Vera",
         avatarColor: "teal",
+        avatarPath: null,
+        emailVerifiedAt: null,
         createdAt: new Date("2026-09-01T00:00:00Z").getTime(),
       });
       expect(prismaMock.apiToken.update).toHaveBeenCalledWith({

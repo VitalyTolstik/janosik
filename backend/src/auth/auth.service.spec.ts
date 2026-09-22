@@ -57,6 +57,7 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   avatarColor: null,
   avatarPath: null,
   disabledAt: null,
+  emailVerifiedAt: null,
   createdAt: new Date("2026-09-01T00:00:00Z"),
   ...overrides,
 });
@@ -81,6 +82,8 @@ describe("AuthService", () => {
           email: data.email,
           passwordHash: data.passwordHash,
           displayName: data.displayName,
+          // The service decides verification at creation time (TASK-53).
+          emailVerifiedAt: data.emailVerifiedAt,
         }),
       );
 
@@ -97,6 +100,8 @@ describe("AuthService", () => {
         avatarColor: null,
         avatarPath: null,
         createdAt: new Date("2026-09-01T00:00:00Z").getTime(),
+        // No mail transport in the unit env — the account auto-verifies.
+        emailVerifiedAt: expect.any(Number),
       });
       expect(result.accessToken).toBe("access-token");
       // Audience isolation (TASK-36): user tokens are signed for this
