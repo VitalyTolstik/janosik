@@ -125,7 +125,9 @@ function readStoredColumns(): OptionalColumn[] {
   } catch {
     /* storage unavailable — the defaults apply */
   }
-  return [];
+  // Default set (owner's call): the assignee column is always on until
+  // the user builds their own column set.
+  return ["assignee"];
 }
 
 /**

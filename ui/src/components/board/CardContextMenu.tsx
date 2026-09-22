@@ -334,7 +334,8 @@ function CardContextMenuBody({
 
       <ContextMenuSeparator />
       <ContextMenuItem onClick={copyLink} data-testid="ctx-copy-link">
-        <Link2 />
+        {/* Jira-style: the chain link is tilted, not horizontal. */}
+        <Link2 className="-rotate-45" />
         {t("card.copyLink")}
       </ContextMenuItem>
       <ContextMenuItem

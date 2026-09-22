@@ -153,10 +153,15 @@ describe("card context menu (right-click)", () => {
     const high = screen.getByTestId("ctx-priority-high");
     expect(high).toHaveAttribute("aria-checked", "false");
     fireEvent.click(high);
-    // The card front picks the badge up from the board store.
-    expect(
-      await screen.findByTestId("card-priority-badge"),
-    ).toBeInTheDocument();
+    // The card front picks the badge up from the board store — sibling
+    // cards render their (default medium) badges too.
+    await waitFor(() => {
+      expect(
+        screen
+          .getAllByTestId("card-priority-badge")
+          .some((badge) => badge.getAttribute("data-priority") === "high"),
+      ).toBe(true);
+    });
   });
 
   it("sets a due date from the calendar submenu", async () => {

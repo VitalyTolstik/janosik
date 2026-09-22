@@ -1,12 +1,4 @@
-import {
-  AlignLeft,
-  Archive,
-  Check,
-  CopyPlus,
-  ListTodo,
-  Paperclip,
-  X,
-} from "lucide-react";
+import { AlignLeft, Archive, Check, CopyPlus, ListTodo, X } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 
 import {
@@ -18,7 +10,6 @@ import { CardContextMenu } from "@/components/board/CardContextMenu";
 import { DueBadge } from "@/components/board/DueBadge";
 import { LinkedCardsPopover } from "@/components/board/LinkedCardsPopover";
 import { PriorityBadge } from "@/components/board/PriorityBadge";
-import type { CardPriority } from "@janosik/shared";
 import { DEFAULT_CARD_PRIORITY } from "@janosik/shared";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { HighlightedText } from "@/components/ui/highlight";
@@ -92,8 +83,8 @@ interface CardItemProps {
 }
 
 /**
- * True while the title is visually clipped by `line-clamp-3` (scrollHeight
- * exceeds the clamped clientHeight). Mirrors Jira's behaviour: the native
+ * True while the title is visually clipped by `truncate` (scrollWidth
+ * exceeds the clipped clientWidth). Mirrors Jira's behaviour: the native
  * `title` tooltip appears only when something is actually hidden — no
  * tooltip noise on short titles.
  */
@@ -103,9 +94,13 @@ function useClamped(): [React.RefCallback<HTMLParagraphElement>, boolean] {
   useEffect(() => {
     const el = elRef.current;
     if (!el) return;
-    const check = () => setClamped(el.scrollHeight > el.clientHeight + 1);
+    const check = () =>
+      setClamped(
+        el.scrollWidth > el.clientWidth + 1 ||
+          el.scrollHeight > el.clientHeight + 1,
+      );
     check();
-    // Re-check when the card content reflows (fonts, resize, label wrap).
+    // Re-check when the card content reflows (fonts, resize).
     const observer = new ResizeObserver(check);
     observer.observe(el);
     return () => observer.disconnect();
@@ -121,10 +116,12 @@ function useClamped(): [React.RefCallback<HTMLParagraphElement>, boolean] {
  * Hover uses border/shadow changes (no transform) so it stays compatible
  * with the drag layer that @dnd-kit applies on top of it.
  *
- * The title is clamped to 3 lines (Jira's budget — Linear clips at 1,
- * Trello/Notion don't clamp at all and grow runaway-tall cards). The clip
- * is purely visual: the full text stays in the accessibility tree and a
- * native `title` tooltip surfaces it on hover, only when truncated.
+ * The face is a fixed-size uniform grid tile (owner's call): every card
+ * shares the same width and height regardless of content, and each row
+ * owns one line — labels (clipped), title (truncated), due date, meta
+ * badges (description / linked cards / checklists) and a footer with the
+ * priority and the assignee's avatar. Empty rows keep their slot so all
+ * cards line up.
  *
  * The description itself is not rendered on the front (Trello-style):
  * a compact badge only signals that the card has one — full text lives
@@ -194,10 +191,9 @@ function CardItemView({
 
   // Due-date badge: overdue (red) / due within 24h (yellow) / later.
   const hasDueDate = typeof card.dueDate === "number";
-  // The face stays quiet about the default "medium" (TASK-45).
-  const hasPriority =
-    card.priority !== undefined && card.priority !== DEFAULT_CARD_PRIORITY;
-  const attachmentCount = card.attachmentCount ?? 0;
+  // The footer renders the priority at all times — "medium" included
+  // (owner's call): the badge doubles as the row's anchor on every card.
+  const priority = card.priority ?? DEFAULT_CARD_PRIORITY;
 
   return (
     <CardContextMenu
@@ -239,7 +235,7 @@ function CardItemView({
         data-card-cursor={isCursor || undefined}
         data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
         className={cn(
-          "group animate-card-in relative cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2.5 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
+          "group animate-card-in relative flex h-[136px] cursor-pointer flex-col gap-1 overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
           isDragging && "opacity-40",
           isCursor && "border-primary ring-2 ring-primary/60",
         )}
@@ -333,136 +329,117 @@ function CardItemView({
           )
         ) : null}
         {/* Cover: a slim top strip — same height for colors and gradients
-          (matches the label chip row scale). Negative margins bleed it into
-          the card padding; the card clips it (overflow-hidden). */}
+          (matches the label chip row scale). Absolutely positioned so the
+          fixed-height tile never reflows: it just paints the padding band. */}
         {card.cover ? (
           <div
             aria-hidden
             data-testid="card-cover"
             data-cover-type={card.cover.type}
-            className="-mx-3 -mt-2.5 mb-2.5 h-1.5 w-[calc(100%+1.5rem)]"
+            className="absolute inset-x-0 top-0 h-1.5"
             style={{ background: coverBackground(card.cover) }}
           />
         ) : null}
-        {labels.length > 0 ? (
-          <div className="mb-1.5 flex flex-wrap items-center gap-1">
-            {labels.map((label) => (
+        {/* Labels: exactly one line — extra chips are clipped (with a fade
+          at the cut) rather than wrapping and growing the tile. */}
+        <div
+          data-testid="card-labels"
+          className="flex h-5 shrink-0 items-center gap-1 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,black_85%,transparent)]"
+        >
+          {labels.map((label) => (
+            <span
+              key={label.id}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                LABEL_COLOR_CHIP[label.color],
+              )}
+            >
               <span
-                key={label.id}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                  LABEL_COLOR_CHIP[label.color],
-                )}
-              >
-                <span
-                  className="h-1.5 w-1.5 rounded-full bg-current"
-                  aria-hidden
-                />
-                {label.name}
-              </span>
-            ))}
-          </div>
-        ) : null}
-        {/* `overflow-wrap:anywhere` (not just break-words) so a pasted URL
-          can't blow out the card's intrinsic width; `text-wrap:pretty`
-          avoids orphan single-word last lines under the clamp. */}
+                className="h-1.5 w-1.5 rounded-full bg-current"
+                aria-hidden
+              />
+              {label.name}
+            </span>
+          ))}
+        </div>
+        {/* Title: exactly one line (`truncate`); `overflow-wrap:anywhere`
+          so a pasted URL can't blow out the tile's intrinsic width. The
+          full text stays in the accessibility tree and a native `title`
+          tooltip surfaces it, only when truncated. */}
         <p
           ref={titleRef}
           title={titleClamped ? card.title : undefined}
-          className="line-clamp-3 break-words text-sm leading-snug text-foreground/90 [overflow-wrap:anywhere] [text-wrap:pretty]"
+          className="shrink-0 truncate break-words text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]"
           data-testid="card-title"
         >
           <HighlightedText text={card.title} query={highlight ?? ""} />
         </p>
-        {hasDescription ||
-        total > 0 ||
-        hasDueDate ||
-        hasPriority ||
-        linkFacts !== undefined ||
-        attachmentCount > 0 ? (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            {/* Linked-cards badges (TASK-46): both the red "Blocked" marker
-              and the link count open the linked-cards popover instead of
-              bubbling into the card dialog. */}
-            {linkFacts ? (
-              <LinkedCardsPopover boardId={boardId} facts={linkFacts} />
-            ) : null}
-            {hasDueDate ? <DueBadge dueDate={card.dueDate as number} /> : null}
-            {hasPriority ? (
-              <PriorityBadge priority={card.priority as CardPriority} />
-            ) : null}
-            {attachmentCount > 0 ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="inline-flex h-5 items-center gap-1 rounded-md border border-border/60 bg-muted/50 px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary"
-                    data-testid="card-attachments-badge"
-                  >
-                    <Paperclip className="h-3.5 w-3.5" aria-hidden />
-                    {attachmentCount}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t("card.attachments.badgeTooltip", {
-                    count: attachmentCount,
-                  })}
-                </TooltipContent>
-              </Tooltip>
-            ) : null}
-            {total > 0 ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className={cn(
-                      "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
-                      done === total
-                        ? "border-success/40 bg-success/10 text-success"
-                        : "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-primary",
-                    )}
-                    data-testid="card-checklist-badge"
-                  >
-                    <ListTodo className="h-3.5 w-3.5" aria-hidden />
-                    {done}/{total}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t("checklist.badgeTooltip", { done, total })}
-                </TooltipContent>
-              </Tooltip>
-            ) : null}
-            {hasDescription ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className={cn(
-                      "inline-flex h-5 items-center rounded-md border px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary",
-                      descriptionOnly &&
-                        "border-primary/40 bg-primary/10 text-primary",
-                    )}
-                    data-testid="card-description-badge"
-                    {...(descriptionOnly
-                      ? { "data-highlight": "description" }
-                      : {})}
-                  >
-                    <AlignLeft className="h-3.5 w-3.5" aria-hidden />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {descriptionOnly && snippetText
-                    ? snippetText
-                    : t("card.hasDescription")}
-                </TooltipContent>
-              </Tooltip>
-            ) : null}
-          </div>
-        ) : null}
-        {/* Assignee (TASK-49): Jira puts the assignee's avatar in the card's
-          bottom-right corner — visible without opening the card, opening the
-          profile on click like the other identity chips. The member
-          directory (not the board JSON) owns the display data. */}
-        {card.assigneeId ? (
-          <AssigneeBadge assigneeId={card.assigneeId} boardId={boardId} />
-        ) : null}
+        {/* Due row: only the date badge. */}
+        <div className="flex h-5 shrink-0 items-center overflow-hidden">
+          {hasDueDate ? <DueBadge dueDate={card.dueDate as number} /> : null}
+        </div>
+        {/* Meta row: description presence, linked cards, checklist progress. */}
+        <div className="flex h-5 shrink-0 items-center gap-1.5 overflow-hidden">
+          {hasDescription ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className={cn(
+                    "inline-flex h-5 items-center rounded-md border px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary",
+                    descriptionOnly &&
+                      "border-primary/40 bg-primary/10 text-primary",
+                  )}
+                  data-testid="card-description-badge"
+                  {...(descriptionOnly
+                    ? { "data-highlight": "description" }
+                    : {})}
+                >
+                  <AlignLeft className="h-3.5 w-3.5" aria-hidden />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {descriptionOnly && snippetText
+                  ? snippetText
+                  : t("card.hasDescription")}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+          {/* Linked-cards badges (TASK-46): both the red "Blocked" marker
+            and the link count open the linked-cards popover instead of
+            bubbling into the card dialog. */}
+          {linkFacts ? (
+            <LinkedCardsPopover boardId={boardId} facts={linkFacts} />
+          ) : null}
+          {total > 0 ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className={cn(
+                    "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
+                    done === total
+                      ? "border-success/40 bg-success/10 text-success"
+                      : "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-primary",
+                  )}
+                  data-testid="card-checklist-badge"
+                >
+                  <ListTodo className="h-3.5 w-3.5" aria-hidden />
+                  {done}/{total}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t("checklist.badgeTooltip", { done, total })}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+        </div>
+        {/* Footer: the priority on the left, the assignee's avatar on the
+          right — the tile's last line, nothing else. */}
+        <div className="mt-auto flex h-6 shrink-0 items-center justify-between">
+          <PriorityBadge priority={priority} />
+          {card.assigneeId ? (
+            <AssigneeBadge assigneeId={card.assigneeId} boardId={boardId} />
+          ) : null}
+        </div>
         {/* Foreign-change highlight (TASK-36): a soft ring in the author's own
           color for two seconds, or — under reduced motion — a static dot
           badge instead of the animated ring. */}
@@ -503,10 +480,11 @@ function CardItemView({
 export const CardItem = memo(CardItemView);
 
 /**
- * The assignee's avatar in the card face's bottom-right corner (TASK-49).
- * Resolves display data from the member directory; falls back to initials
- * when the assignee has left the board (the id survives in the aggregate).
- * Rendered only when the card is assigned — the face stays quiet otherwise.
+ * The assignee's avatar in the card face's footer row (TASK-49, reworked
+ * to a fixed-size tile). Resolves display data from the member directory;
+ * falls back to initials when the assignee has left the board (the id
+ * survives in the aggregate). Rendered only when the card is assigned —
+ * the footer stays quiet otherwise.
  */
 function AssigneeBadge({
   assigneeId,
@@ -532,7 +510,7 @@ function AssigneeBadge({
             event.stopPropagation();
             openProfile(assigneeId);
           }}
-          className="absolute bottom-2 right-2 z-10 rounded-full transition-transform hover:scale-110"
+          className="shrink-0 rounded-full transition-transform hover:scale-110"
         >
           <UserAvatar
             userId={member?.userId ?? assigneeId}
