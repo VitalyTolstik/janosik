@@ -33,6 +33,55 @@ function shell(title: string, bodyHtml: string): string {
 const CODE_STYLES =
   "display:inline-block;margin:8px 0 16px 0;padding:14px 24px;border-radius:10px;background:#eef2ff;border:1px solid #c7d2fe;font-size:30px;letter-spacing:8px;font-weight:700;color:#3730a3;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;";
 
+/**
+ * The registration confirmation email (TASK-53) — the 6-digit code that
+ * activates a freshly created account.
+ */
+export function verificationCodeEmail(
+  code: string,
+  minutes: number,
+  locale: MailLocale,
+): { subject: string; text: string; html: string } {
+  if (locale === "ru") {
+    const text = [
+      "Подтверждение email",
+      "",
+      `Ваш код: ${code}`,
+      "",
+      `Код действует ${minutes} минут и работает один раз.`,
+      "Если вы не создавали аккаунт — просто проигнорируйте это письмо.",
+    ].join("\n");
+    return {
+      subject: `${BRAND}: код подтверждения ${code}`,
+      text,
+      html: shell(
+        "Подтверждение email",
+        `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Введите этот код, чтобы активировать аккаунт:</p>
+         <span ${codeStyleAttr()}>${code}</span>
+         <p style="margin:0 0 8px 0;font-size:13px;line-height:1.6;color:#52525b;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Код действует ${minutes} минут и работает один раз.<br>Если вы не создавали аккаунт — просто проигнорируйте письмо.</p>`,
+      ),
+    };
+  }
+  const text = [
+    "Confirm your email",
+    "",
+    `Your code: ${code}`,
+    "",
+    `The code expires in ${minutes} minutes and works once.`,
+    "If you did not create an account, ignore this message.",
+  ].join("\n");
+  return {
+    subject: `${BRAND}: confirmation code ${code}`,
+    text,
+    html: shell(
+      "Confirm your email",
+      `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Enter this code to activate your account:</p>
+       <span ${codeStyleAttr()}>${code}</span>
+       <p style="margin:0 0 8px 0;font-size:13px;line-height:1.6;color:#52525b;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">The code expires in ${minutes} minutes and works once.<br>If you did not create an account, ignore this message.</p>`,
+    ),
+  };
+}
+
 /** The verification code email — sent to the NEW address. */
 export function emailChangeCodeEmail(
   code: string,

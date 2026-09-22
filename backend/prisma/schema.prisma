@@ -20,24 +20,26 @@ datasource db {
 }
 
 model User {
-  id             String         @id @default(cuid())
-  email          String         @unique
-  passwordHash   String
-  displayName    String?
-  avatarColor    String? // USER_AVATAR_COLORS key (TASK-36.1); null → id-hash default
-  avatarPath     String? // TASK-47 stored avatar image name; null → initials
-  disabledAt     DateTime? // master block (TASK-36); login/refresh → 403
-  createdAt      DateTime       @default(now())
-  memberships    BoardMember[]
-  invitedMembers BoardMember[]  @relation("BoardMemberInviter")
-  activity       Activity[]
-  comments       Comment[]
-  apiTokens      ApiToken[]
-  commands       Command[]
-  refreshTokens  RefreshToken[]
-  attachments    Attachment[]
-  assignedCards  Card[]       @relation("CardAssignee")
-  emailChanges   EmailChangeCode[]
+  id              String    @id @default(cuid())
+  email           String    @unique
+  passwordHash    String
+  displayName     String?
+  avatarColor     String? // USER_AVATAR_COLORS key (TASK-36.1); null → id-hash default
+  avatarPath      String? // TASK-47 stored avatar image name; null → initials
+  disabledAt      DateTime? // master block (TASK-36); login/refresh → 403
+  emailVerifiedAt DateTime? // TASK-53; null → the address is not confirmed yet
+  createdAt       DateTime  @default(now())
+  memberships     BoardMember[]
+  invitedMembers  BoardMember[] @relation("BoardMemberInviter")
+  activity        Activity[]
+  comments        Comment[]
+  apiTokens       ApiToken[]
+  commands        Command[]
+  refreshTokens   RefreshToken[]
+  attachments     Attachment[]
+  assignedCards   Card[]        @relation("CardAssignee")
+  emailChanges    EmailChangeCode[]
+  verifications   EmailVerificationCode[]
 }
 
 model RefreshToken {
@@ -82,6 +84,23 @@ model EmailChangeCode {
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId     String
   newEmail   String
+  codeHash   String    @unique
+  attempts   Int       @default(0) // wrong guesses; ≥ MAX → row deleted
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Registration email confirmation (TASK-53): the same discipline as the
+// email-change codes — only the sha256 of the code is stored, one live row
+// per user, single-use, short TTL, and an attempts counter so a code cannot
+// be brute-forced inside its lifetime.
+model EmailVerificationCode {
+  id         String    @id @default(cuid())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
   codeHash   String    @unique
   attempts   Int       @default(0) // wrong guesses; ≥ MAX → row deleted
   expiresAt  DateTime

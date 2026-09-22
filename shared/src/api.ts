@@ -330,6 +330,12 @@ export interface AuthUserDto {
   avatarPath: string | null;
   /** Unix ms of account creation — "member since" in the account panel. */
   createdAt: number;
+  /**
+   * Unix ms of the email confirmation (TASK-53); `null` (or absent, in test
+   * doubles) → the address is not confirmed yet and the app shows the
+   * verification gate.
+   */
+  emailVerifiedAt?: number | null;
 }
 
 /**
