@@ -236,7 +236,7 @@ function CardItemView({
         data-card-cursor={isCursor || undefined}
         data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
         className={cn(
-          "group animate-card-in relative flex h-[88px] cursor-pointer flex-col gap-1 overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
+          "group animate-card-in relative flex h-[92px] cursor-pointer flex-col gap-1 overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
           isDragging && "opacity-40",
           isCursor && "border-primary ring-2 ring-primary/60",
         )}
@@ -383,8 +383,10 @@ function CardItemView({
         </div>
         {/* Last line: meta badges (description presence, linked cards,
           checklist progress) on the left, the priority beside the assignee's
-          avatar on the right. */}
-        <div className="mt-auto flex h-6 shrink-0 items-center justify-between gap-2 overflow-hidden">
+          avatar on the right. No overflow clipping here — the 24px avatar
+          was getting shaved by sub-pixel rounding; the card's own clip plus
+          the padding absorb any stray pixel. */}
+        <div className="mt-auto flex h-7 shrink-0 items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5">
             {hasDescription ? (
               <Tooltip>

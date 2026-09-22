@@ -69,7 +69,7 @@ describe("CardItem fixed tile layout", () => {
   it("renders every card at the same fixed size", () => {
     renderCard();
     const card = screen.getByTestId("card-title").closest("article");
-    expect(card?.className).toContain("h-[88px]");
+    expect(card?.className).toContain("h-[92px]");
     expect(card?.className).toContain("flex-col");
   });
 
