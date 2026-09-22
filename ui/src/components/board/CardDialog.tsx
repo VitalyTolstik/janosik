@@ -332,8 +332,8 @@ export function CardDialog({
             bottom) — long descriptions and checklists scroll in the body
             instead of growing the dialog from both ends. */}
         <DialogContent className="h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] sm:max-w-3xl">
-          <DialogHeader className="shrink-0 pr-8">
-            <div className="flex items-start justify-between gap-2">
+          <DialogHeader className="group/header shrink-0 pr-8">
+            <div className="flex items-start gap-1.5">
               <div className="min-w-0 space-y-1.5">
                 <DialogTitle className="text-base">
                   {t("card.detailsTitle")}
@@ -342,7 +342,12 @@ export function CardDialog({
                   {t("card.detailsSubtitle")}
                 </DialogDescription>
               </div>
-              <CopyCardLinkButton />
+              {/* Copy link sits next to the header text (Jira-style) and is
+                  revealed while hovering the header — not pinned to the far
+                  right edge. Keyboard focus reveals it too. */}
+              <span className="mt-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/header:opacity-100">
+                <CopyCardLinkButton />
+              </span>
             </div>
           </DialogHeader>
 
@@ -394,6 +399,18 @@ export function CardDialog({
                 limit={LIMITS.cardTitle}
                 testId="card-title-counter"
               />
+            </div>
+
+            {/* Attribution line: directly under the title (owner's layout),
+                before the content sections begin. */}
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
+              <CalendarClock className="h-3.5 w-3.5" />
+              {t("card.created", {
+                date: formatDate(card.createdAt, lang, hour12),
+              })}
+              {card.updatedAt > card.createdAt
+                ? ` · ${t("card.updated", { date: formatDate(card.updatedAt, lang, hour12) })}`
+                : ""}
             </div>
 
             <CollapsibleSection
@@ -483,15 +500,15 @@ export function CardDialog({
               />
             </div>
 
-            <CardDueDate
-              cardId={card.id}
-              dueDate={card.dueDate}
-              readOnly={readOnly}
-            />
-
             <CardPriority
               cardId={card.id}
               priority={card.priority}
+              readOnly={readOnly}
+            />
+
+            <CardDueDate
+              cardId={card.id}
+              dueDate={card.dueDate}
               readOnly={readOnly}
             />
 
@@ -557,16 +574,6 @@ export function CardDialog({
                 </DropdownMenu>
               </div>
             )}
-
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
-              <CalendarClock className="h-3.5 w-3.5" />
-              {t("card.created", {
-                date: formatDate(card.createdAt, lang, hour12),
-              })}
-              {card.updatedAt > card.createdAt
-                ? ` · ${t("card.updated", { date: formatDate(card.updatedAt, lang, hour12) })}`
-                : ""}
-            </div>
 
             {/* Last on purpose: the thread is the part that grows and
                 scrolls, everything above stays put. */}
@@ -736,7 +743,7 @@ function CopyCardLinkButton() {
           data-testid="card-copy-link"
           onClick={() => void handleCopy()}
         >
-          <Link2 className="h-4 w-4" />
+          <Link2 className="h-4 w-4 -rotate-45" />
         </Button>
       </TooltipTrigger>
       <TooltipContent>{t("card.copyLink")}</TooltipContent>

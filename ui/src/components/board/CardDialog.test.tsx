@@ -764,3 +764,42 @@ describe("CardDialog archive", () => {
     expect(within(openDialog).getByLabelText("Title")).toBeInTheDocument();
   });
 });
+
+describe("CardDialog layout (fixed visual order)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("orders the body: title, created/updated, description, labels, priority, due date", async () => {
+    const dialog = await openCardDialog("Design the new onboarding flow");
+
+    const chain = [
+      within(dialog).getByLabelText("Title"),
+      within(dialog).getByText(/Created /),
+      within(dialog).getAllByText("Description")[0],
+      within(dialog).getByText("Label"),
+      within(dialog).getByText("Priority"),
+      within(dialog).getByText("Due date"),
+    ];
+    for (let i = 1; i < chain.length; i += 1) {
+      expect(
+        chain[i - 1].compareDocumentPosition(chain[i]) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  it("keeps copy link in the header, next to the title, revealed on hover", async () => {
+    const dialog = await openCardDialog("Design the new onboarding flow");
+
+    const button = within(dialog).getByTestId("card-copy-link");
+    // Hover-reveal: transparent until the header is hovered (or focused).
+    const wrapper = button.closest("span");
+    expect(wrapper?.className).toContain("opacity-0");
+    expect(wrapper?.className).toContain("group-hover/header:opacity-100");
+    // …and it lives in the fixed header, not the scrollable body.
+    const title = within(dialog).getByText("Card details");
+    expect(button.closest(".overflow-y-auto")).toBeNull();
+    expect(title.closest(".overflow-y-auto")).toBeNull();
+  });
+});
