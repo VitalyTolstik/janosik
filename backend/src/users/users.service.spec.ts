@@ -30,7 +30,9 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   passwordHash: "",
   displayName: null,
   avatarColor: null,
+  avatarPath: null,
   disabledAt: null,
+  emailVerifiedAt: null,
   createdAt: new Date("2026-09-01T00:00:00Z"),
   ...overrides,
 });
@@ -63,6 +65,8 @@ describe("UsersService", () => {
         email: "user@example.com",
         displayName: "Vera",
         avatarColor: "pink",
+        avatarPath: null,
+        emailVerifiedAt: null,
         createdAt: new Date("2026-09-01T00:00:00Z").getTime(),
       });
     });
@@ -109,6 +113,7 @@ describe("UsersService", () => {
       expect(presenceMock.updateUser).toHaveBeenCalledWith("user-1", {
         displayName: "Vera",
         avatarColor: "pink",
+        avatarPath: null,
       });
       expect(prismaMock.boardMember.findMany).toHaveBeenCalledWith({
         where: { userId: "user-1", acceptedAt: { not: null } },

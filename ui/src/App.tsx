@@ -8,6 +8,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Header } from "@/components/Header";
 import { UserProfileProvider } from "@/components/board/UserProfileDialog";
 import { LoginPage } from "@/components/auth/LoginPage";
+import { EmailVerificationGate } from "@/components/auth/EmailVerificationGate";
 import { ToastProvider } from "@/components/Toast";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardGlassProvider } from "@/hooks/use-board-glass";
@@ -148,15 +149,22 @@ function BoardShell() {
  * refresh cookie is being checked the app shows a splash instead of
  * flashing the login screen; an anonymous session gets the login screen; an
  * authenticated one mounts the board provider — and unmounts it again on
- * logout, so no board data outlives the session.
+ * logout, so no board data outlives the session. An authenticated account
+ * with an unconfirmed email sees the verification gate instead of the boards
+ * (TASK-53) until the code from the signup email is presented.
  */
 function AppGate() {
-  const { status } = useAuth();
+  const { status, user } = useAuth();
   const { t } = useI18n();
+
+  const needsVerification =
+    status === "authenticated" && user !== null && user.emailVerifiedAt == null;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
-      {status === "authenticated" ? (
+      {needsVerification ? (
+        <EmailVerificationGate />
+      ) : status === "authenticated" ? (
         <BoardProvider>
           <BoardShell />
         </BoardProvider>

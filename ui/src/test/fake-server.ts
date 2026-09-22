@@ -94,6 +94,16 @@ export class FakeServer {
   emailChangeCode = "123456";
   takenEmails: string[] = ["taken@example.com"];
   private pendingEmail: string | null = null;
+  /**
+   * Registration verification (TASK-53) knobs: `unverifiedEmail` makes
+   * register/login hand out an unconfirmed account (default keeps every
+   * other test on the verified path); `emailVerifyCode` is the code the
+   * verify route accepts.
+   */
+  unverifiedEmail = false;
+  emailVerifyCode = "123456";
+  /** Live flag the verify route flips; tests may set it directly. */
+  emailVerified = true;
   /** Caller's role per board summary (`GET /boards`) — drives VIEWER tests. */
   role: BoardRole = "ADMIN";
   /** Per-board role overrides (mixed-role switcher lists, TASK-36.2). */
@@ -371,10 +381,27 @@ export class FakeServer {
         : json(401, { message: "Invalid credentials" });
     }
     if (path === "/api/v1/auth/register" && method === "POST") {
+      this.emailVerified = !this.unverifiedEmail;
       return json(200, this.session());
     }
     if (path === "/api/v1/auth/logout" && method === "POST") {
       return json(200, { status: "ok" });
+    }
+    // Registration verification (TASK-53): the code route activates the
+    // account, the resend route mimics the email dispatch.
+    if (path === "/api/v1/auth/verify-email" && method === "POST") {
+      const { code } = (body ?? {}) as Record<string, string>;
+      if (this.emailVerified || code !== this.emailVerifyCode) {
+        return json(400, { message: "Invalid verification code" });
+      }
+      this.emailVerified = true;
+      return json(200, { user: this.publicUser() });
+    }
+    if (path === "/api/v1/auth/verify-email/resend" && method === "POST") {
+      if (this.emailVerified) {
+        return json(400, { message: "Email is already verified" });
+      }
+      return json(200, { expiresAt: Date.now() + 15 * 60 * 1000 });
     }
     if (path === "/api/v1/auth/me" && method === "GET") {
       return json(200, this.publicUser());
@@ -718,6 +745,7 @@ export class FakeServer {
       avatarColor: this.account.avatarColor,
       avatarPath: null,
       createdAt: this.account.createdAt,
+      emailVerifiedAt: this.emailVerified ? this.account.createdAt : null,
     };
   }
 

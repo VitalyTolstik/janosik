@@ -85,6 +85,8 @@ describe("Auth API (e2e)", () => {
       avatarColor: null,
       avatarPath: null,
       createdAt: expect.any(Number),
+      // SMTP is unconfigured in the test env — registrations auto-verify.
+      emailVerifiedAt: expect.any(Number),
     });
   });
 

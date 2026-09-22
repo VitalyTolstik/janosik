@@ -248,6 +248,29 @@ export class ApiClient {
   }
 
   /**
+   * `POST /auth/verify-email` (TASK-53) — activates the account with the
+   * 6-digit code from the signup email; the response carries the fresh
+   * profile (the session itself stays valid).
+   */
+  verifyEmail(code: string): Promise<{ user: AuthUserDto }> {
+    return this.request<{ user: AuthUserDto }>("/auth/verify-email", {
+      method: "POST",
+      body: { code },
+    });
+  }
+
+  /**
+   * `POST /auth/verify-email/resend` (TASK-53) — a fresh code goes to the
+   * registered address.
+   */
+  resendEmailVerification(): Promise<{ expiresAt: number }> {
+    return this.request<{ expiresAt: number }>("/auth/verify-email/resend", {
+      method: "POST",
+      body: {},
+    });
+  }
+
+  /**
    * `POST /auth/email/change/request` (TASK-51) — step 1 of the double
    * opt-in: verifies the current password and emails a 6-digit code to the
    * new address. The code itself never travels through this client.

@@ -103,6 +103,7 @@ describe("Users API (e2e)", () => {
         avatarColor: "teal",
         avatarPath: null,
         createdAt: expect.any(Number),
+        emailVerifiedAt: expect.any(Number),
       });
 
       const me = await server()
@@ -135,6 +136,7 @@ describe("Users API (e2e)", () => {
         avatarColor: null,
         avatarPath: null,
         createdAt: expect.any(Number),
+        emailVerifiedAt: expect.any(Number),
       });
     });
 

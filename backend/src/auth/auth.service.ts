@@ -21,14 +21,16 @@ import { env } from "@/config/env";
 import {
   emailChangeCodeEmail,
   emailChangedNoticeEmail,
+  verificationCodeEmail,
 } from "@/mailer/templates";
 import type { MailLocale } from "@/mailer/mail.types";
 import { MailerService } from "@/mailer/mailer.service";
 import { toAuthUser } from "./auth-user.mapper";
 import { USER_JWT_AUDIENCE } from "./auth.types";
-import type { AuthResult } from "./auth.types";
+import type { AuthResult, AuthUser } from "./auth.types";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
+import type { VerifyEmailDto } from "./dto/verify-email.dto";
 import type { ChangePasswordDto } from "./dto/change-password.dto";
 import type { ConfirmEmailChangeDto } from "./dto/confirm-email-change.dto";
 import type { RequestEmailChangeDto } from "./dto/request-email-change.dto";
@@ -38,6 +40,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const EMAIL_CHANGE_TTL_MS = 15 * 60 * 1000;
 /** Wrong confirmations allowed before the code is destroyed. */
 const EMAIL_CHANGE_MAX_ATTEMPTS = 5;
+/** Registration confirmation code lifetime (TASK-53). */
+const EMAIL_VERIFY_TTL_MS = 15 * 60 * 1000;
+/** Wrong confirmations allowed before the code is destroyed. */
+const EMAIL_VERIFY_MAX_ATTEMPTS = 5;
 
 /**
  * Credentials and sessions (§7.0):
@@ -57,25 +63,41 @@ export class AuthService {
     private readonly mailer: MailerService,
   ) {}
 
-  async register(dto: RegisterDto): Promise<AuthResult> {
+  async register(
+    dto: RegisterDto,
+    locale: MailLocale = "en",
+  ): Promise<AuthResult> {
     const passwordHash = await argonHash(dto.password, { type: argon2id });
-    let user: User;
-    try {
-      user = await this.prisma.user.create({
+    // When no mail transport is live (TASK-52 log mode) there is no channel
+    // the code could travel through — a fresh self-hosted instance must not
+    // dead-end behind a confirmation gate, so such accounts start verified.
+    const user = await this.prisma.user
+      .create({
         data: {
           email: dto.email,
           passwordHash,
           displayName: dto.displayName ?? null,
+          emailVerifiedAt: this.mailer.enabled ? null : new Date(),
         },
+      })
+      .catch((error) => {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2002"
+        ) {
+          throw new ConflictException("Email is already registered");
+        }
+        throw error;
       });
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
-        throw new ConflictException("Email is already registered");
-      }
-      throw error;
+    if (user.emailVerifiedAt === null) {
+      // Best-effort: the account exists either way, and the verification
+      // gate offers a resend — a transient SMTP hiccup must not fail the
+      // registration itself.
+      await this.issueEmailVerificationCode(user, locale).catch((error) => {
+        this.logger.warn(
+          `Verification email for ${user.email} failed: ${String(error)}`,
+        );
+      });
     }
     return this.startSession(user);
   }
@@ -333,6 +355,117 @@ export class AuthService {
       .send({ to: user.email, ...notice })
       .catch(() => undefined);
     return this.startSession(updated);
+  }
+
+  /**
+   * Registration confirmation (TASK-53), resend — a fresh code goes to the
+   * address the account was registered with. Like the email-change request,
+   * the call itself sends an email: 3 per hour per IP, one live code per
+   * user on top.
+   */
+  async resendEmailVerification(
+    userId: string,
+    locale: MailLocale,
+  ): Promise<{ expiresAt: number }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    if (user.emailVerifiedAt !== null) {
+      throw new BadRequestException("Email is already verified");
+    }
+    const { expiresAt } = await this.issueEmailVerificationCode(user, locale);
+    return { expiresAt: expiresAt.getTime() };
+  }
+
+  /**
+   * Registration confirmation (TASK-53) — code in, the account activates.
+   * The caller keeps their session; wrong guesses burn the code after a
+   * handful of tries, exactly like the email-change confirmation.
+   */
+  async verifyEmail(
+    userId: string,
+    dto: VerifyEmailDto,
+  ): Promise<{ user: AuthUser }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    if (user.emailVerifiedAt !== null) {
+      throw new BadRequestException("Email is already verified");
+    }
+    const stored = await this.prisma.emailVerificationCode.findFirst({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+    });
+    if (
+      !stored ||
+      stored.consumedAt !== null ||
+      stored.expiresAt.getTime() <= Date.now()
+    ) {
+      throw new BadRequestException("No pending email verification");
+    }
+    const presented = this.hashToken(dto.code);
+    const matches =
+      presented.length === stored.codeHash.length &&
+      timingSafeEqual(Buffer.from(presented), Buffer.from(stored.codeHash));
+    if (!matches) {
+      const attempts = stored.attempts + 1;
+      if (attempts >= EMAIL_VERIFY_MAX_ATTEMPTS) {
+        await this.prisma.emailVerificationCode.deleteMany({
+          where: { userId },
+        });
+      } else {
+        await this.prisma.emailVerificationCode.update({
+          where: { id: stored.id },
+          data: { attempts },
+        });
+      }
+      throw new BadRequestException("Invalid verification code");
+    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const next = await tx.user.update({
+        where: { id: userId },
+        data: { emailVerifiedAt: new Date() },
+      });
+      await tx.emailVerificationCode.update({
+        where: { id: stored.id },
+        data: { consumedAt: new Date() },
+      });
+      return next;
+    });
+    return { user: toAuthUser(updated) };
+  }
+
+  /**
+   * Generates the 6-digit confirmation code, stores only its sha256 (one
+   * live row per user) and emails it. Throws on transport failure — the
+   * callers decide whether that fails the request (resend) or not
+   * (registration).
+   */
+  private async issueEmailVerificationCode(
+    user: User,
+    locale: MailLocale,
+  ): Promise<{ code: string; expiresAt: Date }> {
+    const code = randomInt(0, 1_000_000).toString().padStart(6, "0");
+    const expiresAt = new Date(Date.now() + EMAIL_VERIFY_TTL_MS);
+    await this.prisma.emailVerificationCode.deleteMany({
+      where: { userId: user.id },
+    });
+    await this.prisma.emailVerificationCode.create({
+      data: {
+        userId: user.id,
+        codeHash: this.hashToken(code),
+        expiresAt,
+      },
+    });
+    const message = verificationCodeEmail(
+      code,
+      EMAIL_VERIFY_TTL_MS / 60_000,
+      locale,
+    );
+    await this.mailer.send({ to: user.email, ...message });
+    return { code, expiresAt };
   }
 
   private async startSession(user: User): Promise<AuthResult> {

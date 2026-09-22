@@ -15,5 +15,8 @@ export function toAuthUser(user: User): AuthUser {
     avatarColor: (user.avatarColor as UserAvatarColor | null) ?? null,
     avatarPath: user.avatarPath,
     createdAt: user.createdAt.getTime(),
+    // TASK-53: null → the address is not confirmed yet, the UI shows the
+    // verification gate instead of the boards.
+    emailVerifiedAt: user.emailVerifiedAt?.getTime() ?? null,
   };
 }
