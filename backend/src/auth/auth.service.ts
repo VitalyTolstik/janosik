@@ -44,6 +44,13 @@ const EMAIL_CHANGE_MAX_ATTEMPTS = 5;
 const EMAIL_VERIFY_TTL_MS = 15 * 60 * 1000;
 /** Wrong confirmations allowed before the code is destroyed. */
 const EMAIL_VERIFY_MAX_ATTEMPTS = 5;
+/**
+ * How recent a refresh-token revocation may be and still count as a lost
+ * race (tab frozen mid-refresh, response lost) instead of token theft.
+ * Beyond it, reuse is answered with the §7.0 all-sessions revocation.
+ */
+const REFRESH_REUSE_GRACE_MS = 60_000;
+export { REFRESH_REUSE_GRACE_MS };
 
 /**
  * Credentials and sessions (§7.0):
@@ -51,7 +58,9 @@ const EMAIL_VERIFY_MAX_ATTEMPTS = 5;
  * - access token — 15 min JWT `{sub: userId}`;
  * - refresh token — opaque random string, DB stores only its sha256 hash;
  * - refresh rotates on every use; presenting an already-revoked token is a
- *   theft signal → every session of that user is revoked.
+ *   theft signal → every session of that user is revoked, unless the
+ *   revocation is within `REFRESH_REUSE_GRACE_MS` (a lost rotation race,
+ *   see `refresh`).
  */
 @Injectable()
 export class AuthService {
@@ -135,8 +144,22 @@ export class AuthService {
     }
 
     // Reuse of an already-rotated/revoked token is a theft signal (§7.0):
-    // revoke every session of the user, then reject the request.
+    // revoke every session of the user, then reject the request — unless
+    // the revocation is brand new. A rotation whose response never reached
+    // the browser (tab frozen by the OS mid-refresh, network drop) leaves
+    // the client on the stale cookie; its retry then presents a token that
+    // was revoked moments ago. Killing every session for that lost race
+    // locked the owner out of ALL their tabs (live incident 2026-09-23),
+    // so a revocation younger than the grace window is answered with a
+    // plain 401: the affected tab re-authenticates, the rest survive.
     if (stored.revokedAt) {
+      const revokedAgo = Date.now() - stored.revokedAt.getTime();
+      if (revokedAgo <= REFRESH_REUSE_GRACE_MS) {
+        this.logger.log(
+          `Refresh token race for user ${stored.userId} (revoked ${Math.round(revokedAgo / 1000)}s ago) — rejecting without session revocation`,
+        );
+        throw new UnauthorizedException("Refresh token race detected");
+      }
       await this.revokeAllSessions(stored.userId);
       this.logger.warn(
         `Refresh token reuse detected for user ${stored.userId}: all sessions revoked`,
@@ -152,17 +175,17 @@ export class AuthService {
       throw new ForbiddenException("Account is disabled");
     }
     // Rotate atomically: if a concurrent request revoked this token first,
-    // it is the same theft signal as presenting a revoked token.
+    // that is the same sub-second race as above — reject without the
+    // theft response, the racing tab recovers through the winner's cookie.
     const rotated = await this.prisma.refreshToken.updateMany({
       where: { id: stored.id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
     if (rotated.count === 0) {
-      await this.revokeAllSessions(stored.userId);
-      this.logger.warn(
-        `Concurrent refresh reuse detected for user ${stored.userId}: all sessions revoked`,
+      this.logger.log(
+        `Concurrent refresh race for user ${stored.userId} — rejecting without session revocation`,
       );
-      throw new UnauthorizedException("Refresh token reuse detected");
+      throw new UnauthorizedException("Refresh token race detected");
     }
     return this.startSession(stored.user);
   }
