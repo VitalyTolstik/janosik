@@ -369,6 +369,37 @@ describe("BoardSection", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByTestId("route-probe")).toHaveTextContent("");
   });
+
+  // Regression: a server commit landing right after a deliberate close
+  // (e.g. the "Duplicate card" click) must not flash the dialog back open
+  // while the ?card= cleanup is still settling.
+  it("keeps the dialog closed when a board update lands around the close", async () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard("/board/board-view?card=card-plain");
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Plain card")).toBeInTheDocument();
+
+    // Close, then immediately touch the board state (a rename) — the same
+    // interleaving a live command commit produces.
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    fireEvent.click(screen.getByRole("heading", { name: "Views" }));
+    const input = screen.getByRole("textbox", { name: "Board title" });
+    fireEvent.change(input, { target: { value: "Views 2.0" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // The dialog stays closed and the deep-link param is gone.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByTestId("route-probe")).toHaveTextContent("");
+    expect(
+      screen.getByRole("heading", { name: "Views 2.0" }),
+    ).toBeInTheDocument();
+
+    // A fresh deep link still opens the dialog after all that.
+    fireEvent.click(screen.getByText("Plain card"));
+    expect(
+      within(screen.getByRole("dialog")).getByText("Plain card"),
+    ).toBeInTheDocument();
+  });
 });
 
 /** Today's local calendar-day key, as CalendarView builds it. */

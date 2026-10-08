@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { FilterBar } from "@/components/board/FilterBar";
@@ -83,15 +83,29 @@ export function BoardSection() {
   // is always a copy-pasteable link to the open card.
   const [openCardId, setOpenCardId] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  // The card deliberately closed a moment ago. The close handler clears the
+  // `?card=` param asynchronously; a board update landing in that window
+  // (e.g. the server commit of a "Duplicate card" click) would otherwise
+  // re-run this effect with the stale param and reopen the just-closed
+  // dialog — the "closed → flashed open → closed" churn. The marker only
+  // suppresses the SAME card and resets once the URL caught up, so deep
+  // links and browser Back keep working.
+  const closedCardRef = useRef<string | null>(null);
   useEffect(() => {
     const cardParam = searchParams.get("card");
-    if (cardParam && board?.cards[cardParam] && openCardId !== cardParam) {
+    if (
+      cardParam &&
+      board?.cards[cardParam] &&
+      openCardId !== cardParam &&
+      closedCardRef.current !== cardParam
+    ) {
       setOpenCardId(cardParam);
     } else if (!cardParam && openCardId) {
       // The param disappeared without the dialog closing itself (browser
       // Back after a click-open) — close the dialog with it.
       setOpenCardId(null);
     }
+    if (!cardParam) closedCardRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to URL changes only; including openCardId would reopen the dialog right after the user closes it (the close handler clears the param asynchronously)
   }, [searchParams, board]);
   const handleCardClick = useCallback(
@@ -172,6 +186,9 @@ export function BoardSection() {
         readOnly={readOnly}
         onOpenChange={(open) => {
           if (!open) {
+            // Mark the closing card so a server commit landing between the
+            // state update and the param cleanup cannot reopen the dialog.
+            closedCardRef.current = openCardId;
             setOpenCardId(null);
             // Drop the deep-link param so a refresh doesn't reopen the card.
             if (searchParams.get("card")) {

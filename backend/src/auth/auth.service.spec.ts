@@ -11,7 +11,7 @@ import argon2 from "argon2";
 import { createHash } from "node:crypto";
 import type { PrismaService } from "@/common/prisma/prisma.service";
 import type { MailerService } from "@/mailer/mailer.service";
-import { AuthService } from "./auth.service";
+import { AuthService, REFRESH_REUSE_GRACE_MS } from "./auth.service";
 
 const prismaMock = {
   user: {
@@ -266,7 +266,8 @@ describe("AuthService", () => {
         tokenHash: sha256(rawToken),
         userId: "user-1",
         expiresAt: new Date(Date.now() + 60_000),
-        revokedAt: new Date(Date.now() - 1000),
+        // Beyond the grace window — a real theft signal (§7.0).
+        revokedAt: new Date(Date.now() - 2 * REFRESH_REUSE_GRACE_MS),
         user: makeUser(),
       });
       prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 2 });
@@ -276,6 +277,50 @@ describe("AuthService", () => {
       );
       expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
         where: { userId: "user-1", revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+      expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it("treats a reuse within the grace window as a lost race, not theft", async () => {
+      // A rotation whose response never reached the browser (frozen tab,
+      // dropped network) leaves the client on the stale cookie; its retry
+      // presents a just-revoked token. No sessions may die for that.
+      prismaMock.refreshToken.findUnique.mockResolvedValue({
+        id: "token-1",
+        tokenHash: sha256(rawToken),
+        userId: "user-1",
+        expiresAt: new Date(Date.now() + 60_000),
+        revokedAt: new Date(Date.now() - 1000),
+        user: makeUser(),
+      });
+
+      await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(prismaMock.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it("answers a concurrent rotation race with 401 and keeps the sessions", async () => {
+      prismaMock.refreshToken.findUnique.mockResolvedValue({
+        id: "token-1",
+        tokenHash: sha256(rawToken),
+        userId: "user-1",
+        expiresAt: new Date(Date.now() + 60_000),
+        revokedAt: null,
+        user: makeUser(),
+      });
+      // Another request rotated the token between the read and the write.
+      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      // Only the single-token rotation attempt, no all-sessions revocation.
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledTimes(1);
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { id: "token-1", revokedAt: null },
         data: { revokedAt: expect.any(Date) },
       });
       expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
