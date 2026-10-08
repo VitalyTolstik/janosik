@@ -22,13 +22,15 @@ datasource db {
 model User {
   id              String    @id @default(cuid())
   email           String    @unique
-  passwordHash    String
+  // Nullable (TASK-54): OAuth-only accounts have no local password — login
+  // rejects them until one is adopted via the password change.
+  passwordHash    String?
   displayName     String?
-  avatarColor     String? // USER_AVATAR_COLORS key (TASK-36.1); null → id-hash default
-  avatarPath      String? // TASK-47 stored avatar image name; null → initials
-  disabledAt      DateTime? // master block (TASK-36); login/refresh → 403
+  avatarColor String? // USER_AVATAR_COLORS key (TASK-36.1); null → id-hash default
+  avatarPath String? // TASK-47 stored avatar image name; null → initials
+  disabledAt DateTime? // master block (TASK-36); login/refresh → 403
   emailVerifiedAt DateTime? // TASK-53; null → the address is not confirmed yet
-  createdAt       DateTime  @default(now())
+  createdAt DateTime @default(now())
   memberships     BoardMember[]
   invitedMembers  BoardMember[] @relation("BoardMemberInviter")
   activity        Activity[]
@@ -108,6 +110,19 @@ model EmailVerificationCode {
   createdAt  DateTime  @default(now())
 
   @@index([userId])
+}
+
+// OAuth login (TASK-54) — one row per external provider (the id IS the
+// provider id: "google" | "yandex"), editable from the master panel. The
+// client secret is encrypted at rest with secret-box (AES-256-GCM) and
+// never leaves the backend, like EmailSettings.passwordEnc.
+model OAuthProviderSettings {
+  id              String   @id
+  clientId        String
+  clientSecretEnc String? // AES-256-GCM (secret-box); never leaves the backend
+  enabled         Boolean  @default(false)
+  updatedBy       String?
+  updatedAt       DateTime @updatedAt
 }
 
 model Board {

@@ -22,6 +22,7 @@ const en = {
   "admin.nav.sessions": "Sessions",
   "admin.nav.tokens": "API tokens",
   "admin.nav.email": "Email service",
+  "admin.nav.oauth": "OAuth login",
   "admin.nav.section.monitoring": "Monitoring",
   "admin.nav.section.content": "Content",
   "admin.nav.section.security": "Security",
@@ -124,6 +125,24 @@ const en = {
     "Letters sent through the sandbox arrive in this web inbox — sign in with these credentials to read them. Anyone with them can read the inbox, so it is for testing only.",
   "admin.email.ethereal.login": "Login",
   "admin.email.ethereal.password": "Password",
+  "admin.oauth.title": "OAuth login",
+  "admin.oauth.subtitle":
+    "Sign-in through external providers (Google, Yandex). Paste the app credentials; the secret never leaves the backend.",
+  "admin.oauth.readonly":
+    "Only owners can change the OAuth providers — the settings are shown read-only.",
+  "admin.oauth.provider.google": "Google",
+  "admin.oauth.provider.yandex": "Яндекс",
+  "admin.oauth.clientId": "Client ID",
+  "admin.oauth.clientSecret": "Client secret",
+  "admin.oauth.secretStored": "stored — leave blank to keep",
+  "admin.oauth.callback": "Callback URL (register it in the provider console)",
+  "admin.oauth.callbackHint":
+    "Copy this address into the authorized redirect URIs of your {provider} OAuth app.",
+  "admin.oauth.enabled": "Enable sign-in through this provider",
+  "admin.oauth.status.on": "Enabled",
+  "admin.oauth.status.off": "Disabled",
+  "admin.oauth.saving": "Saving…",
+  "admin.oauth.saved": "Settings saved — the sign-in screen is updated.",
   "admin.email.ethereal.open": "Open the inbox",
 
   "admin.dashboard.users": "Users",
@@ -562,6 +581,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.nav.sessions": "Сессии",
   "admin.nav.tokens": "API-токены",
   "admin.nav.email": "Email-рассылка",
+  "admin.nav.oauth": "OAuth-вход",
   "admin.nav.section.monitoring": "Наблюдение",
   "admin.nav.section.content": "Контент",
   "admin.nav.section.security": "Безопасность",
@@ -664,6 +684,25 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.email.ethereal.login": "Логин",
   "admin.email.ethereal.password": "Пароль",
   "admin.email.ethereal.open": "Открыть ящик",
+  "admin.oauth.title": "OAuth-вход",
+  "admin.oauth.subtitle":
+    "Вход через внешние сервисы (Google, Яндекс). Вставьте учётные данные приложения; секрет не покидает бэкенд.",
+  "admin.oauth.readonly":
+    "Изменять OAuth-провайдеров могут только владельцы — настройки показаны для просмотра.",
+  "admin.oauth.provider.google": "Google",
+  "admin.oauth.provider.yandex": "Яндекс",
+  "admin.oauth.clientId": "Client ID",
+  "admin.oauth.clientSecret": "Client secret",
+  "admin.oauth.secretStored": "сохранён — оставьте поле пустым",
+  "admin.oauth.callback":
+    "Callback URL (зарегистрируйте его в консоли провайдера)",
+  "admin.oauth.callbackHint":
+    "Скопируйте этот адрес в список разрешённых redirect URI вашего {provider}-приложения.",
+  "admin.oauth.enabled": "Включить вход через этого провайдера",
+  "admin.oauth.status.on": "Включён",
+  "admin.oauth.status.off": "Выключен",
+  "admin.oauth.saving": "Сохранение…",
+  "admin.oauth.saved": "Настройки сохранены — экран входа обновлён.",
 
   "admin.dashboard.users": "Пользователи",
   "admin.dashboard.usersHint": "+{count} за 7 дней",

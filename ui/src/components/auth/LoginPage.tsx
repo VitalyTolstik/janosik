@@ -1,10 +1,12 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 
-import { ApiError } from "@/api/client";
+import { api, ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/auth/AuthContext";
 import { useI18n, type MessageKey } from "@/i18n";
+import type { OAuthProviderDto } from "@janosik/shared";
 
 /**
  * Login / registration screen (TASK-29).
@@ -36,14 +38,41 @@ function authErrorMessage(
 export function LoginPage() {
   const { t } = useI18n();
   const { login, register } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [oauthProviders, setOauthProviders] = useState<OAuthProviderDto[]>([]);
 
   const isRegister = mode === "register";
+
+  // An OAuth round trip that failed server-side lands back here with
+  // ?authError=oauth_failed — surface it and clean the URL.
+  useEffect(() => {
+    if (searchParams.get("authError") !== null) {
+      setError(t("auth.oauthFailed"));
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on mount
+  }, []);
+
+  // Enabled providers only — an unconfigured instance renders no buttons
+  // and behaves exactly like before TASK-54.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listOAuthProviders()
+      .then((response) => {
+        if (!cancelled) setOauthProviders(response.providers);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -170,6 +199,30 @@ export function LoginPage() {
           <Button type="submit" data-testid="login-submit" disabled={pending}>
             {isRegister ? t("auth.register") : t("auth.login")}
           </Button>
+
+          {oauthProviders.length > 0 ? (
+            <>
+              <div className="my-1 flex items-center gap-3">
+                <span className="h-px flex-1 bg-border" />
+                <span className="text-xs text-muted-foreground">
+                  {t("auth.oauthDivider")}
+                </span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+              {oauthProviders.map((provider) => (
+                <Button
+                  key={provider.id}
+                  variant="outline"
+                  asChild
+                  data-testid={`login-oauth-${provider.id}`}
+                >
+                  <a href={api.oauthStartUrl(provider.id)}>
+                    {t("auth.oauthThrough", { provider: provider.label })}
+                  </a>
+                </Button>
+              ))}
+            </>
+          ) : null}
 
           <button
             type="button"

@@ -12,6 +12,7 @@ import { ActivityModule } from "@/activity/activity.module";
 import { CommentsModule } from "@/comments/comments.module";
 import { AttachmentsModule } from "@/attachments/attachments.module";
 import { InvitationsModule } from "@/invitations/invitations.module";
+import { OAuthModule } from "@/oauth/oauth.module";
 import { AdminModule } from "@/admin/admin.module";
 
 /**
@@ -35,6 +36,7 @@ import { AdminModule } from "@/admin/admin.module";
     CommentsModule,
     AttachmentsModule,
     InvitationsModule,
+    OAuthModule,
     AdminModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

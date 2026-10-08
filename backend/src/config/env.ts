@@ -121,4 +121,12 @@ export const env = cleanEnv(process.env, {
     default: "",
     example: "openssl rand -hex 32",
   }),
+  // OAuth login (TASK-54): the canonical public base URL of the app (the
+  // UI). Builds the provider callback URLs that must be registered in the
+  // Google/Yandex consoles verbatim, and the post-login redirect target.
+  PUBLIC_ORIGIN: url({
+    desc: "Public base URL of the UI; OAuth callback URLs are derived from it",
+    default: "http://localhost:5173",
+    example: "https://kanban.example.com",
+  }),
 });

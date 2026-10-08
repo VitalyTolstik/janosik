@@ -38,17 +38,24 @@ import { ADMIN_PAGE_LIMITS } from "@janosik/shared";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { env } from "@/config/env";
-import type { CommandResponse } from "@janosik/shared";
+import {
+  OAUTH_PROVIDER_IDS,
+  type AdminOAuthProviderDto,
+  type CommandResponse,
+  type OAuthProviderId,
+} from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
 import { MailerService } from "@/mailer/mailer.service";
 import { EmailSettingsService } from "@/mailer/email-settings.service";
 import { emailChangedNoticeEmail } from "@/mailer/templates";
+import { OAuthSettingsService } from "@/oauth/oauth-settings.service";
 import type { AdminPrincipal } from "./admin.types";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
 import type { AdminUpdateEmailSettingsDto } from "./dto/admin-update-email-settings.dto";
 import type { AdminEmailTestDto } from "./dto/admin-email-test.dto";
+import type { AdminUpdateOAuthProviderDto } from "./dto/admin-update-oauth-provider.dto";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SPARKLINE_DAYS = 14;
@@ -85,6 +92,7 @@ export class AdminService {
     private readonly commands: CommandsService,
     private readonly mailer: MailerService,
     private readonly emailSettings: EmailSettingsService,
+    private readonly oauthSettings: OAuthSettingsService,
   ) {}
 
   // ---------------------------------------------------------------- metrics
@@ -1362,6 +1370,41 @@ export class AdminService {
       ok: result.ok,
     });
     return result;
+  }
+
+  // --------------------------------------------- oauth providers (TASK-54)
+
+  /** Saved OAuth login settings; operators may view, only owners edit. */
+  async getOAuthProviders(): Promise<AdminOAuthProviderDto[]> {
+    return this.oauthSettings.listAdmin();
+  }
+
+  async updateOAuthProvider(
+    provider: string,
+    dto: AdminUpdateOAuthProviderDto,
+    admin: AdminPrincipal,
+  ): Promise<AdminOAuthProviderDto> {
+    this.assertOwner(admin);
+    if (!OAUTH_PROVIDER_IDS.includes(provider as OAuthProviderId)) {
+      throw new BadRequestException("Unknown OAuth provider");
+    }
+    const saved = await this.oauthSettings.update(
+      provider as OAuthProviderId,
+      dto,
+      admin.email,
+    );
+    await this.audit(
+      admin,
+      "oauth.settings_changed",
+      "oauth_provider",
+      provider,
+      {
+        clientId: saved.clientId,
+        enabled: saved.enabled,
+        secretChanged: dto.clientSecret !== undefined,
+      },
+    );
+    return saved;
   }
 
   async listAudit(

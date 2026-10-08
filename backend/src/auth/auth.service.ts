@@ -119,6 +119,11 @@ export class AuthService {
       await this.burnPasswordTime(dto.password);
       throw new UnauthorizedException("Invalid credentials");
     }
+    // OAuth-only account (TASK-54): no local password was ever set.
+    if (user.passwordHash === null) {
+      await this.burnPasswordTime(dto.password);
+      throw new UnauthorizedException("Invalid credentials");
+    }
     const valid = await argonVerify(user.passwordHash, dto.password);
     if (!valid) {
       throw new UnauthorizedException("Invalid credentials");
@@ -217,9 +222,13 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException();
     }
-    const valid = await argonVerify(user.passwordHash, dto.currentPassword);
-    if (!valid) {
-      throw new UnauthorizedException("Current password is incorrect");
+    // An OAuth-only account (TASK-54) adopts its first password without the
+    // current-password proof — there is no local secret to verify against.
+    if (user.passwordHash !== null) {
+      const valid = await argonVerify(user.passwordHash, dto.currentPassword);
+      if (!valid) {
+        throw new UnauthorizedException("Current password is incorrect");
+      }
     }
     const passwordHash = await argonHash(dto.newPassword, { type: argon2id });
     await this.prisma.user.update({
@@ -252,9 +261,14 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException();
     }
-    const valid = await argonVerify(user.passwordHash, dto.currentPassword);
-    if (!valid) {
-      throw new UnauthorizedException("Current password is incorrect");
+    // For an OAuth-only account (TASK-54) the provider already proves
+    // mailbox ownership on every login, so no current password is checked —
+    // the change itself still requires the code sent to the NEW address.
+    if (user.passwordHash !== null) {
+      const valid = await argonVerify(user.passwordHash, dto.currentPassword);
+      if (!valid) {
+        throw new UnauthorizedException("Current password is incorrect");
+      }
     }
     if (dto.newEmail === user.email) {
       throw new BadRequestException(
@@ -491,7 +505,12 @@ export class AuthService {
     return { code, expiresAt };
   }
 
-  private async startSession(user: User): Promise<AuthResult> {
+  /**
+   * Issues the session pair for an already-authenticated principal. Public
+   * so the OAuth login (TASK-54) converges on the exact same machinery —
+   * audience, refresh rotation and TTLs stay in one place.
+   */
+  async startSession(user: User): Promise<AuthResult> {
     // The audience separates the two auth contours (TASK-36): a user token
     // fails the admin strategy and an admin token fails this one, so a
     // leaked session can never be replayed against the other surface.

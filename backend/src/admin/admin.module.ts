@@ -5,6 +5,7 @@ import { AttachmentsModule } from "@/attachments/attachments.module";
 import { BoardsModule } from "@/boards/boards.module";
 import { CommandsModule } from "@/commands/commands.module";
 import { env } from "@/config/env";
+import { OAuthModule } from "@/oauth/oauth.module";
 import { AdminAuthController } from "./admin-auth.controller";
 import { AdminAuthService } from "./admin-auth.service";
 import { AdminController } from "./admin.controller";
@@ -28,6 +29,7 @@ import { AdminService } from "./admin.service";
     BoardsModule,
     CommandsModule,
     AttachmentsModule,
+    OAuthModule,
   ],
   controllers: [AdminAuthController, AdminController],
   providers: [

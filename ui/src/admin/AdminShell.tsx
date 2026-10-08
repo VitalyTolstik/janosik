@@ -18,8 +18,9 @@ import {
   ShieldCheck,
   Tags,
   Users,
-  Columns3,
   ClipboardList,
+  Columns3,
+  Fingerprint,
 } from "lucide-react";
 
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -122,6 +123,12 @@ const NAV_SECTIONS: Array<{
         to: "/admin/email",
         labelKey: "admin.nav.email",
         icon: Mail,
+        ownerOnly: true,
+      },
+      {
+        to: "/admin/oauth",
+        labelKey: "admin.nav.oauth",
+        icon: Fingerprint,
         ownerOnly: true,
       },
     ],

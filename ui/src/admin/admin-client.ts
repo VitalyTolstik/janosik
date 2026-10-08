@@ -16,6 +16,8 @@ import type {
   AdminEmailSettingsDto,
   AdminEmailTestRequest,
   AdminEmailTestResponse,
+  AdminOAuthProviderDto,
+  AdminUpdateOAuthProviderRequest,
   AdminEntity,
   AdminEntityRowMap,
   AdminGlobalSearchDto,
@@ -426,6 +428,22 @@ export class AdminApiClient {
       method: "POST",
       body,
     });
+  }
+
+  // ------------------------------------------- oauth providers (TASK-54)
+
+  listOAuthProviders(): Promise<AdminOAuthProviderDto[]> {
+    return this.request<AdminOAuthProviderDto[]>("/admin/oauth-providers");
+  }
+
+  updateOAuthProvider(
+    provider: string,
+    body: AdminUpdateOAuthProviderRequest,
+  ): Promise<AdminOAuthProviderDto> {
+    return this.request<AdminOAuthProviderDto>(
+      `/admin/oauth-providers/${provider}`,
+      { method: "PUT", body },
+    );
   }
 
   private query(params: AdminListParams): string {

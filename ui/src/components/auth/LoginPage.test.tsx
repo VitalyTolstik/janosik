@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 
 import type { AuthUserDto } from "@janosik/shared";
 import { api } from "@/api/client";
@@ -30,12 +31,14 @@ function pathOf(input: RequestInfo | URL): string {
   ).pathname;
 }
 
-function renderPage() {
+function renderPage(initialEntries: string[] = ["/"]) {
   return render(
     <I18nProvider>
-      <AuthProvider>
-        <LoginPage />
-      </AuthProvider>
+      <MemoryRouter initialEntries={initialEntries}>
+        <AuthProvider>
+          <LoginPage />
+        </AuthProvider>
+      </MemoryRouter>
     </I18nProvider>,
   );
 }
@@ -107,5 +110,59 @@ describe("LoginPage", () => {
     submit("admin@example.com", "password123");
     await waitFor(() => expect(api.getAccessToken()).toBe("access-1"));
     expect(screen.queryByTestId("login-error")).toBeNull();
+  });
+
+  it("renders a start link for every enabled OAuth provider (TASK-54)", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (pathOf(input).endsWith("/auth/refresh")) {
+        return json({ message: "Unauthorized" }, 401);
+      }
+      if (pathOf(input).endsWith("/auth/oauth/providers")) {
+        return json({
+          providers: [
+            { id: "google", label: "Google" },
+            { id: "yandex", label: "Яндекс" },
+          ],
+        });
+      }
+      throw new Error(`unexpected fetch: ${String(input)}`);
+    });
+
+    renderPage();
+    const google = await screen.findByTestId("login-oauth-google");
+    expect(google.closest("a")).toHaveAttribute(
+      "href",
+      "http://api.test/api/v1/auth/oauth/google/start",
+    );
+    expect(
+      screen.getByTestId("login-oauth-yandex").closest("a"),
+    ).toHaveAttribute("href", "http://api.test/api/v1/auth/oauth/yandex/start");
+  });
+
+  it("renders no OAuth buttons when no provider is enabled", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (pathOf(input).endsWith("/auth/oauth/providers")) {
+        return json({ providers: [] });
+      }
+      return json({ message: "Unauthorized" }, 401);
+    });
+
+    renderPage();
+    await waitFor(() =>
+      expect(screen.queryByTestId("login-oauth-google")).toBeNull(),
+    );
+  });
+
+  it("surfaces the OAuth failure returned via ?authError and clears it", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (pathOf(input).endsWith("/auth/oauth/providers")) {
+        return json({ providers: [] });
+      }
+      return json({ message: "Unauthorized" }, 401);
+    });
+
+    renderPage(["/?authError=oauth_failed"]);
+    const error = await screen.findByTestId("login-error");
+    expect(error.textContent).not.toBe("");
   });
 });
