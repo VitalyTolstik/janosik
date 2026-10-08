@@ -17,6 +17,8 @@ import { JwtStrategy } from "./jwt.strategy";
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, JwtAuthGuard, ApiTokenService],
-  exports: [JwtAuthGuard, ApiTokenService],
+  // AuthService is exported for the OAuth login (TASK-54): the session
+  // issuance machinery must stay single-sourced.
+  exports: [JwtAuthGuard, ApiTokenService, AuthService],
 })
 export class AuthModule {}

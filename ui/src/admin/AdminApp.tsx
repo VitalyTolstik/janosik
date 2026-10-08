@@ -6,6 +6,7 @@ import { AdminLoginPage } from "./AdminLoginPage";
 import { AdminShell } from "./AdminShell";
 import { DashboardPage } from "./DashboardPage";
 import { EmailSettingsPage } from "./EmailSettingsPage";
+import { OAuthSettingsPage } from "./OAuthSettingsPage";
 import { EntityPage } from "./EntityPage";
 import { useEntityConfig } from "./entity-configs";
 import { UserDetailPage } from "./UserDetailPage";
@@ -96,6 +97,7 @@ function AdminGate() {
         <Route path="sessions" element={<EntityRoute entity="sessions" />} />
         <Route path="tokens" element={<EntityRoute entity="tokens" />} />
         <Route path="email" element={<EmailSettingsPage />} />
+        <Route path="oauth" element={<OAuthSettingsPage />} />
         <Route path="audit" element={<EntityRoute entity="audit" />} />
         <Route path="masters" element={<MastersPage />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />

@@ -1,6 +1,7 @@
 import type {
   ActivityFeedPage,
   AttachmentDto,
+  AuthOAuthProvidersResponse,
   AuthResponseDto,
   AuthUserDto,
   BoardAggregate,
@@ -222,6 +223,31 @@ export class ApiClient {
   /** `GET /auth/me` — verifies the in-memory access token. */
   me(): Promise<AuthUserDto> {
     return this.request<AuthUserDto>("/auth/me");
+  }
+
+  /**
+   * `GET /auth/oauth/providers` (TASK-54) — which external login buttons the
+   * sign-in screen should render. A failure means "no buttons", never an
+   * error state: password login must stay fully functional without it.
+   */
+  async listOAuthProviders(): Promise<AuthOAuthProvidersResponse> {
+    try {
+      const body = await this.request<AuthOAuthProvidersResponse>(
+        "/auth/oauth/providers",
+        { auth: false },
+      );
+      // Defensive against a newer/older backend that answers differently.
+      return {
+        providers: Array.isArray(body?.providers) ? body.providers : [],
+      };
+    } catch {
+      return { providers: [] };
+    }
+  }
+
+  /** Full-page navigation target that starts the OAuth round trip. */
+  oauthStartUrl(provider: string): string {
+    return `${apiBaseUrl()}/auth/oauth/${provider}/start`;
   }
 
   /** `PATCH /users/me` — display name / avatar color (TASK-36.1). */

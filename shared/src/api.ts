@@ -347,6 +347,28 @@ export interface AuthResponseDto {
   user: AuthUserDto;
 }
 
+/**
+ * OAuth login (TASK-54). The backend speaks the authorization-code flow of
+ * each provider; the ids are stable wire values shared by the admin
+ * settings API, so the provider list lives here next to the auth DTOs.
+ */
+export const OAUTH_PROVIDER_IDS = ["google", "yandex"] as const;
+
+/** Every provider id the OAuth endpoints and admin settings accept. */
+export type OAuthProviderId = (typeof OAUTH_PROVIDER_IDS)[number];
+
+/** One login button on the sign-in screen (only enabled providers appear). */
+export interface OAuthProviderDto {
+  id: OAuthProviderId;
+  /** Human-readable button label ("Google", "Яндекс"). */
+  label: string;
+}
+
+/** Body of `GET /auth/oauth/providers`. */
+export interface AuthOAuthProvidersResponse {
+  providers: OAuthProviderDto[];
+}
+
 /** Body of `PATCH /users/me` (TASK-36.1): only changed fields are sent. */
 export interface UpdateProfileRequest {
   /** `null` clears the name (the UI then falls back to the email). */

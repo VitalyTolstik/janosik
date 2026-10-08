@@ -19,6 +19,7 @@ import type {
   AdminCardDetailDto,
   AdminEmailSettingsDto,
   AdminEmailTestResponse,
+  AdminOAuthProviderDto,
   AdminEntity,
   AdminEntityRowMap,
   AdminGlobalSearchDto,
@@ -54,6 +55,7 @@ import { AdminCreateUserDto } from "./dto/admin-create-user.dto";
 import { AdminEmailTestDto } from "./dto/admin-email-test.dto";
 import { AdminListQueryDto } from "./dto/admin-list-query.dto";
 import { AdminUpdateEmailSettingsDto } from "./dto/admin-update-email-settings.dto";
+import { AdminUpdateOAuthProviderDto } from "./dto/admin-update-oauth-provider.dto";
 import { AdminUpdateUserDto } from "./dto/admin-update-user.dto";
 
 /**
@@ -382,5 +384,22 @@ export class AdminController {
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminEmailTestResponse> {
     return this.admin.testEmailSettings(dto, admin);
+  }
+
+  // ------------------------------------------- oauth providers (TASK-54)
+
+  /** Saved OAuth login settings; every admin may view, owners edit. */
+  @Get("oauth-providers")
+  getOAuthProviders(): Promise<AdminOAuthProviderDto[]> {
+    return this.admin.getOAuthProviders();
+  }
+
+  @Put("oauth-providers/:provider")
+  updateOAuthProvider(
+    @Param("provider") provider: string,
+    @Body() dto: AdminUpdateOAuthProviderDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminOAuthProviderDto> {
+    return this.admin.updateOAuthProvider(provider, dto, admin);
   }
 }

@@ -2,6 +2,7 @@ import {
   boardReducer,
   EMAIL_SMTP_PRESETS,
   EMAIL_SMTP_TEST_PRESETS,
+  OAUTH_PROVIDER_IDS,
 } from "@janosik/shared";
 import type {
   BoardAction,
@@ -16,10 +17,12 @@ import type {
   AdminEmailTestResponse,
   AdminMasterRowDto,
   AdminMetricsDto,
+  AdminOAuthProviderDto,
   AdminRole,
   AdminSessionRowDto,
   AdminTokenRowDto,
   AdminUpdateEmailSettingsRequest,
+  AdminUpdateOAuthProviderRequest,
   AdminUserRowDto,
 } from "@janosik/shared";
 
@@ -257,6 +260,19 @@ export class FakeAdminServer {
     updatedAt: null,
     webViewer: null,
   };
+
+  /** Saved OAuth provider settings (TASK-54); bootstrapped unconfigured. */
+  oauthProviders: AdminOAuthProviderDto[] = OAUTH_PROVIDER_IDS.map(
+    (provider) => ({
+      provider,
+      clientId: "",
+      enabled: false,
+      hasSecret: false,
+      callbackUrl: `http://app.test/api/v1/auth/oauth/${provider}/callback`,
+      updatedBy: null,
+      updatedAt: null,
+    }),
+  );
 
   constructor(state: FakeAdminState = emptyAdminState()) {
     this.state = state;
@@ -665,6 +681,55 @@ export class FakeAdminServer {
       };
       return this.json(this.emailSettings);
     }
+    // OAuth provider settings (TASK-54): view for any signed-in master,
+    // edit owner-only, mirroring the real backend.
+    if (path === "/admin/oauth-providers" && method === "GET") {
+      return this.json(this.oauthProviders);
+    }
+    if (path.startsWith("/admin/oauth-providers/") && method === "PUT") {
+      if (this.sessionRole !== "OWNER") {
+        return this.json({ message: "Owner rights are required" }, 403);
+      }
+      const provider = path.slice("/admin/oauth-providers/".length);
+      if (!OAUTH_PROVIDER_IDS.includes(provider as never)) {
+        return this.json({ message: "Unknown OAuth provider" }, 400);
+      }
+      const input = (jsonBody ??
+        {}) as Partial<AdminUpdateOAuthProviderRequest>;
+      if ((input.clientId ?? "").trim() === "") {
+        return this.json({ message: "Client ID is required" }, 400);
+      }
+      const previous = this.oauthProviders.find(
+        (row) => row.provider === provider,
+      );
+      if (
+        (input.enabled ?? false) &&
+        !previous?.hasSecret &&
+        input.clientSecret === undefined
+      ) {
+        return this.json(
+          { message: "Client secret is required to enable the provider" },
+          400,
+        );
+      }
+      const saved: AdminOAuthProviderDto = {
+        provider: provider as AdminOAuthProviderDto["provider"],
+        clientId: input.clientId ?? "",
+        enabled: input.enabled ?? false,
+        hasSecret:
+          input.clientSecret === undefined
+            ? (previous?.hasSecret ?? false)
+            : input.clientSecret !== null,
+        callbackUrl: `http://app.test/api/v1/auth/oauth/${provider}/callback`,
+        updatedBy: this.principal().email,
+        updatedAt: new Date(now).toISOString(),
+      };
+      this.oauthProviders = this.oauthProviders.map((row) =>
+        row.provider === provider ? saved : row,
+      );
+      return this.json(saved);
+    }
+
     if (path === "/admin/email-settings/test" && method === "POST") {
       if (this.sessionRole !== "OWNER") {
         return this.json({ message: "Owner rights are required" }, 403);

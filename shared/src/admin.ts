@@ -1,3 +1,4 @@
+import type { OAuthProviderId } from "./api";
 import type { BoardAction } from "./store/board-reducer";
 
 /**
@@ -349,6 +350,7 @@ export const ADMIN_AUDIT_ACTIONS = [
   "comment.delete",
   "email.settings_changed",
   "email.test_sent",
+  "oauth.settings_changed",
 ] as const;
 
 export type AdminAuditAction = (typeof ADMIN_AUDIT_ACTIONS)[number];
@@ -525,6 +527,33 @@ export interface AdminEmailTestRequest {
 export interface AdminEmailTestResponse {
   ok: boolean;
   error: string | null;
+}
+
+/**
+ * `GET /admin/oauth-providers` row (TASK-54): the saved OAuth login config
+ * for one external provider, with the client secret masked (`hasSecret`);
+ * the secret itself never leaves the backend. `callbackUrl` is the exact
+ * URL to register in the provider's console, derived from PUBLIC_ORIGIN.
+ */
+export interface AdminOAuthProviderDto {
+  provider: OAuthProviderId;
+  clientId: string;
+  enabled: boolean;
+  hasSecret: boolean;
+  callbackUrl: string;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * `PUT /admin/oauth-providers/:provider`. `clientSecret` semantics mirror
+ * the email settings password: `undefined` = keep the stored one, `null` =
+ * clear it, a string = replace it.
+ */
+export interface AdminUpdateOAuthProviderRequest {
+  clientId: string;
+  clientSecret?: string | null;
+  enabled: boolean;
 }
 
 /** Validation bounds for master-created accounts (mirrors the register DTO). */
