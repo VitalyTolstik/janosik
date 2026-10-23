@@ -42,7 +42,7 @@ const PRESET_LABEL_KEYS: Record<EmailSmtpPreset["id"], AdminMessageKey> = {
   brevo: "admin.email.preset.brevo",
   sendgrid: "admin.email.preset.sendgrid",
   custom: "admin.email.preset.custom",
-  ethereal: "admin.email.preset.ethereal",
+  mailpit: "admin.email.preset.mailpit",
 };
 
 const toDraft = (dto: AdminEmailSettingsDto): Draft => ({
@@ -58,7 +58,9 @@ const toDraft = (dto: AdminEmailSettingsDto): Draft => ({
 
 function StatusBanner({ settings }: { settings: AdminEmailSettingsDto }) {
   const t = useAdminT();
-  const preset = EMAIL_SMTP_PRESETS.find((p) => p.id === settings.provider);
+  const preset = [...EMAIL_SMTP_PRESETS, ...EMAIL_SMTP_TEST_PRESETS].find(
+    (p) => p.id === settings.provider,
+  );
   let tone: "ok" | "muted" = "muted";
   let text: string;
   if (settings.source === "db" && settings.enabled) {
@@ -179,7 +181,7 @@ export function EmailSettingsPage() {
     setSaving(true);
     try {
       const custom = draft.provider === "custom";
-      const sandbox = draft.provider === "ethereal";
+      const sandbox = draft.provider === "mailpit";
       const saved = await adminApi.updateEmailSettings({
         provider: draft.provider,
         ...(custom
@@ -235,9 +237,9 @@ export function EmailSettingsPage() {
     (p) => p.id === draft.provider,
   );
   const custom = draft.provider === "custom";
-  const sandbox = draft.provider === "ethereal";
+  const sandbox = draft.provider === "mailpit";
   const passwordStored = settings.hasPassword;
-  // The sandbox needs nothing from the user — the account is minted on save.
+  // The sandbox needs nothing from the user — Mailpit takes no credentials.
   const saveDisabled =
     saving || (sandbox ? false : draft.from === "" || draft.username === "");
 
@@ -371,7 +373,7 @@ export function EmailSettingsPage() {
 
         {sandbox ? (
           <p className="text-[11px] text-muted-foreground">
-            {t("admin.email.ethereal.auto")}
+            {t("admin.email.sandbox.hint")}
           </p>
         ) : (
           <>
@@ -503,29 +505,15 @@ export function EmailSettingsPage() {
       {settings.webViewer !== null ? (
         <Panel className="space-y-3 p-4" data-testid="admin-email-webviewer">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {t("admin.email.ethereal.inboxTitle")}
+            {t("admin.email.sandbox.inboxTitle")}
           </p>
           <p className="text-[11px] text-muted-foreground">
-            {t("admin.email.ethereal.note")}
+            {t("admin.email.sandbox.note")}
           </p>
-          <div className="space-y-1.5 font-mono text-xs text-foreground">
-            <p>
-              <span className="mr-2 font-sans text-[11px] uppercase tracking-wide text-muted-foreground">
-                {t("admin.email.ethereal.login")}
-              </span>
-              {settings.webViewer.user}
-            </p>
-            <p>
-              <span className="mr-2 font-sans text-[11px] uppercase tracking-wide text-muted-foreground">
-                {t("admin.email.ethereal.password")}
-              </span>
-              {settings.webViewer.pass}
-            </p>
-          </div>
           <Button size="sm" variant="outline" asChild>
             <a href={settings.webViewer.url} target="_blank" rel="noreferrer">
               <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-              {t("admin.email.ethereal.open")}
+              {t("admin.email.sandbox.open")}
             </a>
           </Button>
         </Panel>

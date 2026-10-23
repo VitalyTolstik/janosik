@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   Param,
   Patch,
@@ -362,10 +363,8 @@ export class AdminController {
 
   /** Saved outgoing-mail transport; every admin may view, owners edit. */
   @Get("email-settings")
-  getEmailSettings(
-    @CurrentAdmin() admin: AdminPrincipal,
-  ): Promise<AdminEmailSettingsDto> {
-    return this.admin.getEmailSettings(admin);
+  getEmailSettings(): Promise<AdminEmailSettingsDto> {
+    return this.admin.getEmailSettings();
   }
 
   @Put("email-settings")
@@ -376,14 +375,15 @@ export class AdminController {
     return this.admin.updateEmailSettings(dto, admin);
   }
 
-  /** Probe delivery — outcome (ok/error) is returned and recorded. */
+  /** Probe delivery with a real app email — outcome is returned and recorded. */
   @Post("email-settings/test")
   @HttpCode(200)
   testEmailSettings(
     @Body() dto: AdminEmailTestDto,
     @CurrentAdmin() admin: AdminPrincipal,
+    @Headers("accept-language") acceptLanguage: string | undefined,
   ): Promise<AdminEmailTestResponse> {
-    return this.admin.testEmailSettings(dto, admin);
+    return this.admin.testEmailSettings(dto, admin, acceptLanguage);
   }
 
   // ------------------------------------------- oauth providers (TASK-54)

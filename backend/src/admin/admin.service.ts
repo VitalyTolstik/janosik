@@ -49,6 +49,7 @@ import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
 import { MailerService } from "@/mailer/mailer.service";
 import { EmailSettingsService } from "@/mailer/email-settings.service";
+import { pickLocale } from "@/mailer/mail.types";
 import { emailChangedNoticeEmail } from "@/mailer/templates";
 import { OAuthSettingsService } from "@/oauth/oauth-settings.service";
 import type { AdminPrincipal } from "./admin.types";
@@ -1330,11 +1331,8 @@ export class AdminService {
   // --------------------------------------------------- email settings (52)
 
   /** The saved mail transport settings; operators may view, only owners edit. */
-  async getEmailSettings(
-    admin: AdminPrincipal,
-  ): Promise<AdminEmailSettingsDto> {
-    // The sandbox web-inbox credentials ride along for owners only.
-    return this.emailSettings.getPublic(admin.role === "OWNER");
+  async getEmailSettings(): Promise<AdminEmailSettingsDto> {
+    return this.emailSettings.getPublic();
   }
 
   async updateEmailSettings(
@@ -1362,9 +1360,13 @@ export class AdminService {
   async testEmailSettings(
     dto: AdminEmailTestDto,
     admin: AdminPrincipal,
+    acceptLanguage?: string,
   ): Promise<AdminEmailTestResponse> {
     this.assertOwner(admin);
-    const result = await this.emailSettings.test(dto.to);
+    const result = await this.emailSettings.test(
+      dto.to,
+      pickLocale(acceptLanguage),
+    );
     await this.audit(admin, "email.test_sent", "email_settings", "singleton", {
       to: dto.to,
       ok: result.ok,
