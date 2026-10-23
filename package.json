@@ -40,6 +40,7 @@
     "format:check": "prettier --check .",
     "format": "prettier --write .",
     "size": "npm run size -w ui",
+    "demo:swarm": "node scripts/demo-board-swarm.mjs",
     "prepare": "husky"
   },
   "devDependencies": {
