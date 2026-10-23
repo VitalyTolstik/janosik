@@ -42,7 +42,10 @@ export class EmailSettingsService implements OnModuleInit {
     const row = await this.prisma.emailSettings.findUnique({
       where: { id: SETTINGS_ID },
     });
-    if (row === null || !row.enabled || row.passwordEnc === null) return;
+    if (row === null || !row.enabled) return;
+    // A password is required for every real provider; the `mailpit` sandbox
+    // is anonymous and safe to re-apply without one.
+    if (row.passwordEnc === null && row.provider !== "mailpit") return;
     try {
       this.mailer.reconfigure(this.toConfig(row), row.from);
       this.logger.log(
@@ -59,11 +62,8 @@ export class EmailSettingsService implements OnModuleInit {
 
   /**
    * The saved row, or the env bootstrap, or nothing — with masked secret.
-   * `viewerIsOwner` gates the sandbox web-inbox credentials (ethereal):
-   * they are the one secret the panel deliberately shows, and only owners
-   * may see them.
    */
-  async getPublic(viewerIsOwner = false): Promise<AdminEmailSettingsDto> {
+  async getPublic(): Promise<AdminEmailSettingsDto> {
     const row = await this.prisma.emailSettings.findUnique({
       where: { id: SETTINGS_ID },
     });
@@ -78,13 +78,16 @@ export class EmailSettingsService implements OnModuleInit {
         enabled: row.enabled,
         hasPassword: row.passwordEnc !== null,
         source: "db",
-        active: row.enabled && row.passwordEnc !== null && this.mailer.enabled,
+        active:
+          row.enabled &&
+          (row.provider === "mailpit" || row.passwordEnc !== null) &&
+          this.mailer.enabled,
         lastTestAt: row.lastTestAt?.toISOString() ?? null,
         lastTestOk: row.lastTestOk,
         lastError: row.lastError,
         updatedBy: row.updatedBy,
         updatedAt: row.updatedAt.toISOString(),
-        webViewer: this.webViewer(row, viewerIsOwner),
+        webViewer: this.webViewer(row),
       };
     }
     const envActive = env.SMTP_HOST !== "";
@@ -108,30 +111,20 @@ export class EmailSettingsService implements OnModuleInit {
     };
   }
 
-  /** Sandbox inbox credentials — ethereal only, owners only. */
-  private webViewer(
-    row: {
-      provider: string;
-      username: string;
-      passwordEnc: string | null;
-    },
-    viewerIsOwner: boolean,
-  ): AdminEmailSettingsDto["webViewer"] {
-    if (!viewerIsOwner || row.provider !== "ethereal") return null;
-    if (row.passwordEnc === null || row.username === "") return null;
-    return {
-      url: "https://ethereal.email",
-      user: row.username,
-      pass: decryptSecret(row.passwordEnc),
-    };
+  /** Sandbox web inbox (Mailpit) — a fixed localhost URL, no credentials. */
+  private webViewer(row: {
+    provider: string;
+  }): AdminEmailSettingsDto["webViewer"] {
+    if (row.provider !== "mailpit") return null;
+    const preset = EMAIL_SMTP_TEST_PRESETS.find((p) => p.id === "mailpit");
+    return preset === undefined ? null : { url: preset.helpUrl };
   }
 
   /**
    * Validates, stores and applies new settings. `password === undefined`
    * keeps the stored one, `null` clears it, a string replaces it. With the
-   * `ethereal` test provider the credentials are server-generated: the
-   * first save mints a sandbox account via the nodemailer API, later saves
-   * reuse it — the client's username/password are ignored.
+   * `mailpit` sandbox there are no credentials at all: the transport is
+   * anonymous, `username`/`password` are ignored and enabling needs neither.
    */
   async update(
     input: AdminUpdateEmailSettingsRequest,
@@ -143,7 +136,7 @@ export class EmailSettingsService implements OnModuleInit {
     if (preset === undefined) {
       throw new BadRequestException("Unknown provider preset");
     }
-    const sandbox = preset.id === "ethereal";
+    const sandbox = preset.id === "mailpit";
     const host =
       preset.id === "custom" ? (input.host ?? "").trim() : preset.host;
     const port = preset.id === "custom" ? input.port : preset.port;
@@ -158,10 +151,13 @@ export class EmailSettingsService implements OnModuleInit {
     let from: string;
     let passwordEnc: string | null;
     if (sandbox) {
-      const account = await this.ensureEtherealAccount(rowBefore);
-      username = account.username;
-      from = input.from.trim() === "" ? account.from : input.from.trim();
-      passwordEnc = encryptSecret(account.password);
+      // Anonymous local catcher — no username, no password, nothing minted.
+      username = "";
+      from =
+        input.from.trim() === ""
+          ? "Janosik <no-reply@janosik.local>"
+          : input.from.trim();
+      passwordEnc = null;
     } else {
       username = input.username.trim();
       from = input.from.trim();
@@ -192,7 +188,7 @@ export class EmailSettingsService implements OnModuleInit {
     if (host === "" || port === undefined) {
       throw new BadRequestException("SMTP host and port are required");
     }
-    if (from === "" || username === "") {
+    if (from === "" || (!sandbox && username === "")) {
       throw new BadRequestException(
         "From address and SMTP username are required",
       );
@@ -229,77 +225,12 @@ export class EmailSettingsService implements OnModuleInit {
       },
     });
 
-    if (input.enabled && passwordEnc !== null) {
+    if (input.enabled && (sandbox || passwordEnc !== null)) {
       this.mailer.reconfigure(this.toConfig(row), row.from);
     } else {
       this.mailer.reconfigure(null, row.from);
     }
-    return this.getPublic(true);
-  }
-
-  /**
-   * Reuses the stored sandbox account when the saved row already is one
-   * (and the request does not force a change), otherwise mints a fresh one
-   * through the nodemailer account API — no signup, credentials returned
-   * once and stored encrypted.
-   */
-  private async ensureEtherealAccount(
-    rowBefore: {
-      provider: string;
-      username: string;
-      from: string;
-      passwordEnc: string | null;
-    } | null,
-  ): Promise<{ username: string; password: string; from: string }> {
-    if (
-      rowBefore !== null &&
-      rowBefore.provider === "ethereal" &&
-      rowBefore.passwordEnc !== null
-    ) {
-      return {
-        username: rowBefore.username,
-        password: decryptSecret(rowBefore.passwordEnc),
-        from: rowBefore.from,
-      };
-    }
-    let response: Response;
-    try {
-      response = await fetch("https://api.nodemailer.com/user", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          // Informational metadata for the nodemailer account API.
-          requestor: "janosik",
-          version: "1.0.0",
-        }),
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch (cause) {
-      throw new BadRequestException(
-        `The sandbox account could not be created: ${String(cause)}`,
-      );
-    }
-    if (!response.ok) {
-      throw new BadRequestException(
-        `The sandbox account could not be created (HTTP ${response.status})`,
-      );
-    }
-    const data = (await response.json()) as {
-      status?: string;
-      user?: string;
-      pass?: string;
-      web?: string;
-    };
-    if (data.status !== "success" || !data.user || !data.pass) {
-      throw new BadRequestException(
-        "The sandbox account could not be created (unexpected API answer)",
-      );
-    }
-    return {
-      username: data.user,
-      password: data.pass,
-      from: `Janosik <${data.user}>`,
-    };
+    return this.getPublic();
   }
 
   /**
@@ -346,15 +277,14 @@ export class EmailSettingsService implements OnModuleInit {
     username: string;
     passwordEnc: string | null;
   }): SmtpConfig {
-    if (row.passwordEnc === null) {
-      throw new Error("SMTP password is not set");
-    }
     return {
       host: row.host,
       port: row.port,
       secure: row.secure,
       username: row.username,
-      password: decryptSecret(row.passwordEnc),
+      // The `mailpit` sandbox is anonymous (passwordEnc null, username "");
+      // buildTransport then omits auth entirely.
+      password: row.passwordEnc === null ? "" : decryptSecret(row.passwordEnc),
     };
   }
 }

@@ -629,18 +629,12 @@ export class FakeAdminServer {
         {}) as Partial<AdminUpdateEmailSettingsRequest>;
       // Mirror the real backend: preset providers carry their fixed
       // connection settings, `custom` takes the client's host/port/secure,
-      // and the `ethereal` sandbox mints its own credentials.
+      // and the `mailpit` sandbox is anonymous (no credentials).
       const preset = [...EMAIL_SMTP_PRESETS, ...EMAIL_SMTP_TEST_PRESETS].find(
         (item) => item.id === input.provider,
       );
       const custom = preset !== undefined && preset.id === "custom";
-      const sandbox = preset !== undefined && preset.id === "ethereal";
-      const sandboxUser =
-        this.emailSettings.source === "db" &&
-        this.emailSettings.provider === "ethereal" &&
-        this.emailSettings.username !== ""
-          ? this.emailSettings.username
-          : "sandbox-1@ethereal.email";
+      const sandbox = preset !== undefined && preset.id === "mailpit";
       this.emailSettings = {
         ...this.emailSettings,
         provider: preset?.id ?? this.emailSettings.provider,
@@ -655,14 +649,14 @@ export class FakeAdminServer {
           : (preset?.secure ?? this.emailSettings.secure),
         from:
           sandbox && (input.from ?? "") === ""
-            ? `Janosik <${sandboxUser}>`
+            ? "Janosik <no-reply@janosik.local>"
             : (input.from ?? this.emailSettings.from),
         username: sandbox
-          ? sandboxUser
+          ? ""
           : (input.username ?? this.emailSettings.username),
         enabled: input.enabled ?? this.emailSettings.enabled,
         hasPassword: sandbox
-          ? true
+          ? false
           : input.password !== undefined
             ? input.password !== null
             : this.emailSettings.hasPassword,
@@ -670,14 +664,7 @@ export class FakeAdminServer {
         active: input.enabled ?? false,
         updatedBy: this.principal().email,
         updatedAt: new Date(now).toISOString(),
-        webViewer:
-          sandbox && this.sessionRole === "OWNER"
-            ? {
-                url: "https://ethereal.email",
-                user: sandboxUser,
-                pass: "generated-pass",
-              }
-            : null,
+        webViewer: sandbox ? { url: "http://localhost:8025" } : null,
       };
       return this.json(this.emailSettings);
     }

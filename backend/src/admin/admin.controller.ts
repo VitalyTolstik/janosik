@@ -362,10 +362,8 @@ export class AdminController {
 
   /** Saved outgoing-mail transport; every admin may view, owners edit. */
   @Get("email-settings")
-  getEmailSettings(
-    @CurrentAdmin() admin: AdminPrincipal,
-  ): Promise<AdminEmailSettingsDto> {
-    return this.admin.getEmailSettings(admin);
+  getEmailSettings(): Promise<AdminEmailSettingsDto> {
+    return this.admin.getEmailSettings();
   }
 
   @Put("email-settings")

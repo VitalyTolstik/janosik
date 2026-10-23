@@ -1330,11 +1330,8 @@ export class AdminService {
   // --------------------------------------------------- email settings (52)
 
   /** The saved mail transport settings; operators may view, only owners edit. */
-  async getEmailSettings(
-    admin: AdminPrincipal,
-  ): Promise<AdminEmailSettingsDto> {
-    // The sandbox web-inbox credentials ride along for owners only.
-    return this.emailSettings.getPublic(admin.role === "OWNER");
+  async getEmailSettings(): Promise<AdminEmailSettingsDto> {
+    return this.emailSettings.getPublic();
   }
 
   async updateEmailSettings(

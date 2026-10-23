@@ -115,16 +115,14 @@ const en = {
   "admin.email.test.failed": "Test email failed: {error}",
   "admin.email.testproviders.title": "Test providers",
   "admin.email.testproviders.hint":
-    "Sandbox SMTP for trying things out — letters never reach real addresses, they land in a web inbox you can open.",
-  "admin.email.preset.ethereal": "Ethereal (sandbox)",
-  "admin.email.preset.sandboxHint": "Zero setup, disposable inbox",
-  "admin.email.ethereal.auto":
-    "The sandbox account is created automatically on save — there is nothing to enter. After saving, the inbox login appears below.",
-  "admin.email.ethereal.inboxTitle": "Sandbox inbox",
-  "admin.email.ethereal.note":
-    "Letters sent through the sandbox arrive in this web inbox — sign in with these credentials to read them. Anyone with them can read the inbox, so it is for testing only.",
-  "admin.email.ethereal.login": "Login",
-  "admin.email.ethereal.password": "Password",
+    "A local mail catcher for trying things out — letters never reach real addresses. Run a Mailpit sidecar and they land in a web inbox you can open.",
+  "admin.email.preset.mailpit": "Mailpit (sandbox)",
+  "admin.email.preset.sandboxHint": "Local inbox — no external service",
+  "admin.email.sandbox.hint":
+    "Sends to a local Mailpit inbox (localhost:1025). Start it with `docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit`, then read the letters at localhost:8025. No credentials needed.",
+  "admin.email.sandbox.inboxTitle": "Sandbox inbox",
+  "admin.email.sandbox.note":
+    "Letters sent through the sandbox land in the local Mailpit web inbox. It runs on this machine only, so it is for testing.",
   "admin.oauth.title": "OAuth login",
   "admin.oauth.subtitle":
     "Sign-in through external providers (Google, Yandex). Paste the app credentials; the secret never leaves the backend.",
@@ -143,7 +141,7 @@ const en = {
   "admin.oauth.status.off": "Disabled",
   "admin.oauth.saving": "Saving…",
   "admin.oauth.saved": "Settings saved — the sign-in screen is updated.",
-  "admin.email.ethereal.open": "Open the inbox",
+  "admin.email.sandbox.open": "Open the inbox",
 
   "admin.dashboard.users": "Users",
   "admin.dashboard.usersHint": "+{count} in 7 days",
@@ -673,17 +671,15 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.email.test.failed": "Ошибка отправки тестового письма: {error}",
   "admin.email.testproviders.title": "Тестовые провайдеры",
   "admin.email.testproviders.hint":
-    "Песочница SMTP для проб: письма не доходят до реальных адресов — они падают в веб-ящик, который можно открыть.",
-  "admin.email.preset.ethereal": "Ethereal (песочница)",
-  "admin.email.preset.sandboxHint": "Без настройки, одноразовый ящик",
-  "admin.email.ethereal.auto":
-    "Аккаунт песочницы создаётся автоматически при сохранении — вводить ничего не нужно. После сохранения логин ящика появится ниже.",
-  "admin.email.ethereal.inboxTitle": "Ящик песочницы",
-  "admin.email.ethereal.note":
-    "Письма из песочницы приходят в этот веб-ящик — войдите с этими данными, чтобы прочитать их. Доступ к ящику есть у любого, кто знает эти данные, поэтому он только для тестов.",
-  "admin.email.ethereal.login": "Логин",
-  "admin.email.ethereal.password": "Пароль",
-  "admin.email.ethereal.open": "Открыть ящик",
+    "Локальная ловушка писем для проб: письма не доходят до реальных адресов. Запустите Mailpit — они упадут в веб-ящик, который можно открыть.",
+  "admin.email.preset.mailpit": "Mailpit (песочница)",
+  "admin.email.preset.sandboxHint": "Локальный ящик — без внешних сервисов",
+  "admin.email.sandbox.hint":
+    "Отправляет в локальный ящик Mailpit (localhost:1025). Запустите `docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit` и читайте письма на localhost:8025. Учётные данные не нужны.",
+  "admin.email.sandbox.inboxTitle": "Ящик песочницы",
+  "admin.email.sandbox.note":
+    "Письма из песочницы падают в локальный веб-ящик Mailpit. Он работает только на этой машине — это для тестов.",
+  "admin.email.sandbox.open": "Открыть ящик",
   "admin.oauth.title": "OAuth-вход",
   "admin.oauth.subtitle":
     "Вход через внешние сервисы (Google, Яндекс). Вставьте учётные данные приложения; секрет не покидает бэкенд.",

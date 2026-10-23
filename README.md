@@ -146,6 +146,23 @@ npm run dev
 
 Register an account in the UI — the boards now live in PostgreSQL and sync through the command log. To open the master panel at `/admin`, create the first master on the server (see below).
 
+### Enabling outgoing email (optional)
+
+The API boots fine **without any mail setup**: with no SMTP transport configured it runs in **log mode** — every message (verification codes, email-change notices) is written to the server log instead of being sent, and registration auto-verifies so nobody is locked out.
+
+To actually send mail, open **`/admin` → Email service** (owner only), pick a preset and paste the credentials, then flip **Enable delivery** and hit **Send test email**:
+
+- **Gmail / Yandex / Mail.ru** — free for a personal account, but you need an **app password** (2-step verification enabled), not your login password.
+- **Brevo / SendGrid** — transactional relays with solid free tiers (username `apikey` + API key for SendGrid).
+- **Custom SMTP** — any host / port / TLS.
+
+**Trying it out locally (Mailpit).** The **Mailpit (sandbox)** preset sends to a local catcher and needs no credentials — letters land in a web inbox instead of a real address. Start it, then open the inbox:
+
+```bash
+docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit
+# open http://localhost:8025, or click "Open the inbox" in the panel
+```
+
 ---
 
 ## Master panel (platform admin)
