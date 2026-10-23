@@ -228,7 +228,7 @@ describe("EmailSettingsService", () => {
       mailer.reconfigure(null, "Janosik <no-reply@example.com>");
       savedRow = makeRow();
 
-      const result = await service.test("owner@example.com");
+      const result = await service.test("owner@example.com", "en");
 
       expect(result).toEqual({ ok: true, error: null });
       expect(mailer.outbox).toHaveLength(1);
@@ -240,11 +240,23 @@ describe("EmailSettingsService", () => {
       );
     });
 
+    it("renders a real application email, not a generic note", async () => {
+      mailer.reconfigure(null, "Janosik <no-reply@example.com>");
+
+      await service.test("owner@example.com", "en");
+      expect(mailer.outbox[0].subject).toContain("confirmation code");
+      expect(mailer.outbox[0].html).toContain("Enter this code");
+
+      await service.test("owner@example.com", "ru");
+      expect(mailer.outbox[1].subject).toContain("код подтверждения");
+      expect(mailer.outbox[1].html).toContain("активировать аккаунт");
+    });
+
     it("a dead transport reports the error without throwing", async () => {
       savedRow = makeRow({ passwordEnc: "ZW5jcnlwdGVk", enabled: true });
       jest.spyOn(mailer, "send").mockRejectedValue(new Error("ECONNREFUSED"));
 
-      const result = await service.test("owner@example.com");
+      const result = await service.test("owner@example.com", "en");
 
       expect(result.ok).toBe(false);
       expect(result.error).toContain("ECONNREFUSED");
@@ -258,7 +270,7 @@ describe("EmailSettingsService", () => {
     it("does not record a probe when only the env bootstrap exists", async () => {
       mailer.reconfigure(null, "Janosik <no-reply@example.com>");
 
-      const result = await service.test("owner@example.com");
+      const result = await service.test("owner@example.com", "en");
 
       expect(result.ok).toBe(true);
       expect(prismaMock.emailSettings.update).not.toHaveBeenCalled();

@@ -12,8 +12,9 @@ import type {
 import { EMAIL_SMTP_PRESETS, EMAIL_SMTP_TEST_PRESETS } from "@janosik/shared";
 import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
-import type { SmtpConfig } from "./mail.types";
+import type { MailLocale, SmtpConfig } from "./mail.types";
 import { MailerService } from "./mailer.service";
+import { verificationCodeEmail } from "./templates";
 import { decryptSecret, encryptSecret } from "./secret-box";
 
 type ProviderId = (typeof EMAIL_SMTP_PRESET_IDS)[number];
@@ -234,22 +235,23 @@ export class EmailSettingsService implements OnModuleInit {
   }
 
   /**
-   * Sends a probe email through the live transport. Never throws — the
-   * outcome (including the transport error) is returned and recorded on
-   * the row so the panel can show it next to the settings.
+   * Sends a probe through the live transport. The probe is a **real
+   * application email** — the registration confirmation-code template — so
+   * the owner sees exactly what recipients get, not a generic "it works"
+   * note. Never throws: the outcome (including the transport error) is
+   * returned and recorded on the row so the panel can show it next to the
+   * settings. `locale` comes from the caller's Accept-Language.
    */
-  async test(to: string): Promise<{ ok: boolean; error: string | null }> {
-    const subject = "Janosik — test email / Тестовое письмо";
-    const text =
-      "This is a test email from the Janosik master panel. " +
-      "If you received it, outgoing mail delivery works.\n\n" +
-      "Это тестовое письмо из панели администратора Janosik. " +
-      "Если вы его получили — отправка почты работает.";
-    const html =
-      "<p>This is a test email from the <strong>Janosik</strong> master panel. If you received it, outgoing mail delivery works.</p>" +
-      '<p style="color:#6b7280">Это тестовое письмо из панели администратора Janosik. Если вы его получили — отправка почты работает.</p>';
+  async test(
+    to: string,
+    locale: MailLocale,
+  ): Promise<{ ok: boolean; error: string | null }> {
+    // A throwaway code and the real TTL — the message shape is the point,
+    // the digits are irrelevant.
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const message = verificationCodeEmail(code, 15, locale);
     try {
-      await this.mailer.send({ to, subject, text, html });
+      await this.mailer.send({ to, ...message });
       await this.recordTest(true, null);
       return { ok: true, error: null };
     } catch (cause) {
