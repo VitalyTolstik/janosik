@@ -54,8 +54,6 @@ interface DemoManifest {
   userIds: string[];
   /** Real user that owns a dedicated board (watcher); never deleted. */
   watcherId?: string;
-  /** True when the watcher account did not exist and the run created it. */
-  watcherCreated?: boolean;
   columnIds: string[];
   labelIds: string[];
   cardIds: string[];
@@ -197,35 +195,23 @@ export class DemoService implements OnModuleDestroy {
     };
 
     // 1. Dispatcher (opens a dedicated board). With `watcherEmail` the board
-    //    is owned by that real account, so the operator can open it in the app
-    //    and watch — it is never deleted on cleanup.
+    //    is owned by that **existing** account — the operator signs into the
+    //    app as it to watch. A missing account is a client error (no silent
+    //    placeholder user); cleanup drops the membership but keeps the user.
     let dispatcherId: string;
     if (input.watcherEmail && !input.boardId) {
-      const email = input.watcherEmail;
       const existing = await this.prisma.user.findFirst({
-        where: { email, disabledAt: null },
+        where: { email: input.watcherEmail, disabledAt: null },
         select: { id: true },
       });
-      if (existing !== null) {
-        dispatcherId = existing.id;
-        manifest.watcherId = existing.id;
-        manifest.watcherCreated = false;
-      } else {
-        // No account for that email — create one on the spot (verified, no
-        // password) so the demo never fails; cleaned up on stop if we made it.
-        const created = await this.prisma.user.create({
-          data: {
-            id: newId("du"),
-            email,
-            displayName: email.split("@")[0],
-            emailVerifiedAt: new Date(),
-          },
-          select: { id: true },
+      if (existing === null) {
+        throw new BadRequestException({
+          message: `No active account for ${input.watcherEmail}`,
+          field: "watcherEmail",
         });
-        dispatcherId = created.id;
-        manifest.watcherId = created.id;
-        manifest.watcherCreated = true;
       }
+      dispatcherId = existing.id;
+      manifest.watcherId = existing.id;
     } else {
       dispatcherId = await this.createUser(runTag, "Диспетчер", 0);
       manifest.userIds.push(dispatcherId);
@@ -653,19 +639,15 @@ export class DemoService implements OnModuleDestroy {
       createdBoard,
       userIds,
       watcherId,
-      watcherCreated,
       columnIds,
       labelIds,
       cardIds,
     } = manifest;
     const cards = { in: cardIds };
-    // Demo users author the commands/activity; the watcher owns the board.
-    // A pre-existing account stays; one the run created is removed too.
+    // Demo users author the commands/activity; the watcher owns the board but
+    // is a real account — its membership goes, the user stays.
     const demoUsers = { in: userIds };
     const members = { in: watcherId ? [...userIds, watcherId] : userIds };
-    const userCleanup = {
-      in: watcherCreated && watcherId ? [...userIds, watcherId] : userIds,
-    };
     await this.boardWrite.run(boardId, async (tx) => {
       await tx.cardLabel.deleteMany({ where: { cardId: cards } });
       await tx.checklistItem.deleteMany({
@@ -693,6 +675,6 @@ export class DemoService implements OnModuleDestroy {
     });
     // Demo users have no rows left pointing at them once the board content and
     // their authored commands/activity are gone.
-    await this.prisma.user.deleteMany({ where: { id: userCleanup } });
+    await this.prisma.user.deleteMany({ where: { id: demoUsers } });
   }
 }

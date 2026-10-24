@@ -71,16 +71,6 @@ export function DemoPage() {
     load();
   }, [load]);
 
-  // Default "Watch as" to the signed-in master's email, once, unless the
-  // operator already has a remembered account.
-  const watcherDefaulted = useRef(false);
-  useEffect(() => {
-    if (!watcherDefaulted.current && watcherEmail === "" && admin?.email) {
-      watcherDefaulted.current = true;
-      setWatcherEmail(admin.email);
-    }
-  }, [admin?.email, watcherEmail]);
-
   // Poll while the page is open so the counters advance on their own. The
   // `mounted` flag is raised here (not in the load effect): under React
   // StrictMode the load effect's cleanup would set it false and nothing would

@@ -218,9 +218,12 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
     expect(audit).not.toBeNull();
   });
 
-  it("creates + owns the board under the watcher email, then cleans it up", async () => {
+  it("owns the board under an existing watcher and keeps that account on cleanup", async () => {
     const watcher = "demo-watcher@example.com";
     await prisma.user.deleteMany({ where: { email: watcher } });
+    await prisma.user.create({
+      data: { email: watcher, emailVerifiedAt: new Date() },
+    });
 
     const started = await server()
       .post("/api/v1/admin/demo/start")
@@ -229,7 +232,6 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
       .expect(201);
     const boardId: string = started.body.boardId;
 
-    // The account is created on the spot and owns the dedicated board.
     const owner = await prisma.boardMember.findFirst({
       where: { boardId, role: "ADMIN" },
       include: { user: true },
@@ -241,8 +243,21 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
       .set("Authorization", `Bearer ${ownerToken}`)
       .expect(201);
 
-    // A watcher the run created is gone too; a board it did not own is spared
-    // (covered by the standalone path — this one was created by the run).
-    expect(await prisma.user.count({ where: { email: watcher } })).toBe(0);
+    // A real account is never deleted — only its membership is dropped.
+    expect(await prisma.user.count({ where: { email: watcher } })).toBe(1);
+    await prisma.user.deleteMany({ where: { email: watcher } });
+  });
+
+  it("rejects a watcher email with no account", async () => {
+    await server()
+      .post("/api/v1/admin/demo/start")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({
+        users: 1,
+        cards: 1,
+        run: false,
+        watcherEmail: "ghost@example.com",
+      })
+      .expect(400);
   });
 });
