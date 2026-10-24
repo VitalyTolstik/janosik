@@ -24,7 +24,7 @@ import { AdminModule } from "@/admin/admin.module";
 @Module({
   imports: [
     ThrottlerModule.forRoot({
-      throttlers: [{ name: "default", ttl: 60_000, limit: 2000 }],
+      throttlers: [{ name: "default", ttl: 60_000, limit: 10000 }],
     }),
     PrismaModule,
     BoardWriteModule,

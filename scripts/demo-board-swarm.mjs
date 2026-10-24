@@ -3,9 +3,9 @@
 //
 // A "dispatcher" creates a backlog on a board and hands each card to one of N
 // worker streams; every worker then drives its cards across the flow
-// (Новые → В работе → На ревью → [rework] → Готово) through the public API,
-// adding comments, checklists and screenshot attachments along the way. About
-// 45% of the cards bounce back from review before finishing.
+// (Новые → В работе → На ревью → [rework] → Тестирование → Готово), adding
+// comments, checklists and screenshot attachments along the way. About 45% of
+// the cards bounce back from review before finishing.
 //
 // Everything the streams *do* travels over HTTP:
 //   * commands   POST /boards/:id/commands        (ADD_COLUMN/CARD, MOVE_CARD, …)
@@ -82,7 +82,7 @@ const WORKERS = Array.from({ length: WORKERS_COUNT }, (_, i) => {
   return { name, email };
 });
 
-const COLS = ["Новые", "В работе", "На ревью", "Готово"];
+const COLS = ["Новые", "В работе", "На ревью", "Тестирование", "Готово"];
 const LABELS = [
   { name: "bug", color: "red" },
   { name: "feature", color: "green" },
@@ -198,18 +198,10 @@ async function snapshot(token) {
   return { board: data, seq: Number(headers.get("x-board-seq") ?? 0) };
 }
 
-// Concurrent command transactions on one board deadlock in Postgres (40P01:
-// the board-row lock that serializes `seq`). Every mutating call is funneled
-// through one in-process mutex and retried on 5xx, so writers never overlap.
-let writeLock = Promise.resolve();
-function serialize(fn) {
-  const next = writeLock.then(fn, fn);
-  writeLock = next.then(
-    () => {},
-    () => {},
-  );
-  return next;
-}
+// Board writes are serialized *server-side* per board (BoardWriteService,
+// TASK-56), so the demo fires every call concurrently — many agents act on
+// the board at once. A transient 5xx is still retried with the same
+// idempotent commandId.
 async function withRetry(fn, tries = 4) {
   let lastErr;
   for (let i = 0; i < tries; i++) {
@@ -230,17 +222,15 @@ function send(auth, action) {
     commandId: newId("cmd"),
     action: { boardId: BOARD, at: Date.now(), ...action },
   };
-  return serialize(() =>
-    withRetry(
-      async () =>
-        (
-          await api(`/boards/${BOARD}/commands`, {
-            method: "POST",
-            token: auth.accessToken,
-            body,
-          })
-        ).data,
-    ),
+  return withRetry(
+    async () =>
+      (
+        await api(`/boards/${BOARD}/commands`, {
+          method: "POST",
+          token: auth.accessToken,
+          body,
+        })
+      ).data,
   );
 }
 
@@ -361,33 +351,29 @@ function pngBytes(w, h, seed) {
   ]);
 }
 function uploadScreenshot(auth, cardId, seed) {
-  return serialize(() =>
-    withRetry(async () => {
-      const fd = new FormData();
-      fd.append(
-        "file",
-        new Blob([pngBytes(480, 270, seed)], { type: "image/png" }),
-        `screenshot-${seed}.png`,
-      );
-      return (
-        await api(`/cards/${cardId}/attachments`, {
-          method: "POST",
-          token: auth.accessToken,
-          form: fd,
-        })
-      ).data;
-    }),
-  );
-}
-function comment(auth, cardId, text) {
-  return serialize(() =>
-    withRetry(() =>
-      api(`/cards/${cardId}/comments`, {
+  return withRetry(async () => {
+    const fd = new FormData();
+    fd.append(
+      "file",
+      new Blob([pngBytes(480, 270, seed)], { type: "image/png" }),
+      `screenshot-${seed}.png`,
+    );
+    return (
+      await api(`/cards/${cardId}/attachments`, {
         method: "POST",
         token: auth.accessToken,
-        body: { text },
-      }),
-    ),
+        form: fd,
+      })
+    ).data;
+  });
+}
+function comment(auth, cardId, text) {
+  return withRetry(() =>
+    api(`/cards/${cardId}/comments`, {
+      method: "POST",
+      token: auth.accessToken,
+      body: { text },
+    }),
   );
 }
 
@@ -489,8 +475,13 @@ async function processCard(auth, worker, columns, item) {
     await sleep(jitter(1000, 1800));
   }
 
-  await move(auth, columns, cid, "На ревью", "Готово");
-  await comment(auth, cid, "Готово, проверил(а) на стейдже.");
+  await move(auth, columns, cid, "На ревью", "Тестирование");
+  log(worker.name, `«${title}» → Тестирование`);
+  await comment(auth, cid, "Ушло на тестирование, собираю на стенде.");
+  await sleep(jitter(800, 1600));
+
+  await move(auth, columns, cid, "Тестирование", "Готово");
+  await comment(auth, cid, "Тестирование пройдено, закрываю задачу.");
   log(worker.name, `«${title}» → Готово${rework ? " (после правок)" : ""}`);
   await sleep(jitter(500, 1000));
 }
