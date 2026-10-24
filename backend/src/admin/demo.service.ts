@@ -465,9 +465,9 @@ export class DemoService implements OnModuleDestroy {
       await tx.card.deleteMany({ where: { id: { in: cardIds } } });
       await tx.column.deleteMany({ where: { boardId } });
       await tx.label.deleteMany({ where: { boardId } });
-      await tx.boardMember.deleteMany({
-        where: { boardId, userId: { in: userIds } },
-      });
+      // The whole board is ours (title marker): clear every member, watcher
+      // included, before the FK-bound board delete.
+      await tx.boardMember.deleteMany({ where: { boardId } });
       await tx.board.deleteMany({ where: { id: boardId } });
     });
     if (userIds.length > 0) {
@@ -668,7 +668,13 @@ export class DemoService implements OnModuleDestroy {
       await tx.card.deleteMany({ where: { id: cards } });
       await tx.column.deleteMany({ where: { id: { in: columnIds } } });
       await tx.label.deleteMany({ where: { id: { in: labelIds } } });
-      await tx.boardMember.deleteMany({ where: { boardId, userId: members } });
+      // A board the run created is entirely ours: drop every membership (the
+      // watcher's ADMIN row included) before deleting it, or the board FK
+      // (BoardMember.boardId) blocks the delete. A provided board keeps its
+      // other members; only ours and the watcher's rows go.
+      await tx.boardMember.deleteMany({
+        where: createdBoard ? { boardId } : { boardId, userId: members },
+      });
       if (createdBoard) {
         await tx.board.deleteMany({ where: { id: boardId } });
       }
