@@ -125,6 +125,29 @@ model OAuthProviderSettings {
   updatedAt       DateTime @updatedAt
 }
 
+// Global API rate limit (TASK-57) — singleton row (id is always "singleton")
+// editable from the master panel. Overrides the THROTTLE_LIMIT env default at
+// runtime; the throttler reads it per request, so changes need no restart.
+model ThrottleSettings {
+  id        String   @id
+  limit     Int
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+}
+
+// Master-panel demo runner (TASK-57). One row per run; `manifest` records the
+// exact ids the run created (owner, users, columns, labels, cards), so `stop`
+// deletes precisely those rows — cleanup never guesses from names.
+model DemoRun {
+  id        String    @id @default(cuid())
+  boardId   String
+  status    String    @default("running") // running | stopped
+  manifest  Json
+  startedBy String // master email (snapshot)
+  startedAt DateTime  @default(now())
+  stoppedAt DateTime?
+}
+
 model Board {
   id         String        @id @default(cuid())
   title      String        @db.VarChar(100) // LIMITS.boardTitle

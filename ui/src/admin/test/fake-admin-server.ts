@@ -13,6 +13,8 @@ import type {
   AdminCardRowDto,
   AdminCommandRowDto,
   AdminCommentRowDto,
+  AdminDemoStartRequest,
+  AdminDemoStatusDto,
   AdminEmailSettingsDto,
   AdminEmailTestResponse,
   AdminMasterRowDto,
@@ -20,9 +22,12 @@ import type {
   AdminOAuthProviderDto,
   AdminRole,
   AdminSessionRowDto,
+  AdminThrottleSettingsDto,
   AdminTokenRowDto,
+  AdminTrafficDto,
   AdminUpdateEmailSettingsRequest,
   AdminUpdateOAuthProviderRequest,
+  AdminUpdateThrottleSettingsRequest,
   AdminUserRowDto,
 } from "@janosik/shared";
 
@@ -273,6 +278,26 @@ export class FakeAdminServer {
       updatedAt: null,
     }),
   );
+
+  /** Global rate limit (TASK-57); starts on the env default. */
+  throttleSettings: AdminThrottleSettingsDto = {
+    limit: 300,
+    source: "env",
+    updatedBy: null,
+    updatedAt: null,
+  };
+
+  /** Demo runner snapshot (TASK-57). */
+  demoStatus: AdminDemoStatusDto = {
+    running: false,
+    boardId: null,
+    startedAt: null,
+    users: 0,
+    columns: 0,
+    labels: 0,
+    cards: 0,
+    cardsDone: 0,
+  };
 
   constructor(state: FakeAdminState = emptyAdminState()) {
     this.state = state;
@@ -725,6 +750,71 @@ export class FakeAdminServer {
         ok: true,
         error: null,
       } satisfies AdminEmailTestResponse);
+    }
+
+    // Rate limit & traffic (TASK-57): view for any master, edit owner-only.
+    if (path === "/admin/throttle-settings" && method === "GET") {
+      return this.json(this.throttleSettings);
+    }
+    if (path === "/admin/throttle-settings" && method === "PUT") {
+      if (this.sessionRole !== "OWNER") {
+        return this.json({ message: "Owner rights are required" }, 403);
+      }
+      const input = (jsonBody ??
+        {}) as Partial<AdminUpdateThrottleSettingsRequest>;
+      const limit = input.limit;
+      if (limit === undefined || !Number.isInteger(limit) || limit < 1) {
+        return this.json({ message: "limit must be >= 1" }, 400);
+      }
+      this.throttleSettings = {
+        limit,
+        source: "db",
+        updatedBy: this.principal().email,
+        updatedAt: new Date(now).toISOString(),
+      };
+      return this.json(this.throttleSettings);
+    }
+    if (path === "/admin/traffic" && method === "GET") {
+      const perSecond: number[] = Array.from({ length: 60 }, (_, index) =>
+        index >= 55 ? 3 : 0,
+      );
+      return this.json({
+        lastMinute: perSecond.reduce<number>((sum, count) => sum + count, 0),
+        perSecond,
+        throttledLastMinute: 0,
+        limit: this.throttleSettings.limit,
+        at: now,
+      } satisfies AdminTrafficDto);
+    }
+
+    // Demo runner (TASK-57): view for any master, start/stop owner-only.
+    if (path === "/admin/demo" && method === "GET") {
+      return this.json(this.demoStatus);
+    }
+    if (path === "/admin/demo/start" && method === "POST") {
+      if (this.sessionRole !== "OWNER") {
+        return this.json({ message: "Owner rights are required" }, 403);
+      }
+      const input = (jsonBody ?? {}) as Partial<AdminDemoStartRequest>;
+      const users = input.users ?? 20;
+      this.demoStatus = {
+        running: true,
+        boardId: "demo-board",
+        startedAt: new Date(now).toISOString(),
+        users: users + 1,
+        columns: 5,
+        labels: 5,
+        cards: users,
+        cardsDone: 0,
+      };
+      return this.json(this.demoStatus, 201);
+    }
+    if (path === "/admin/demo/stop" && method === "POST") {
+      if (this.sessionRole !== "OWNER") {
+        return this.json({ message: "Owner rights are required" }, 403);
+      }
+      this.demoStatus = { ...this.demoStatus, running: false };
+      return this.json(this.demoStatus, 201);
     }
 
     // Admin v2 (TASK-48): generic entity listing mirrors the real backend's

@@ -4,6 +4,7 @@ import type { StringValue } from "ms";
 import { AttachmentsModule } from "@/attachments/attachments.module";
 import { BoardsModule } from "@/boards/boards.module";
 import { CommandsModule } from "@/commands/commands.module";
+import { CommentsModule } from "@/comments/comments.module";
 import { env } from "@/config/env";
 import { OAuthModule } from "@/oauth/oauth.module";
 import { AdminAuthController } from "./admin-auth.controller";
@@ -13,6 +14,8 @@ import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
 import { AdminJwtStrategy } from "./admin-jwt.strategy";
 import { AdminEntitiesService } from "./admin-entities.service";
 import { AdminService } from "./admin.service";
+import { DemoService } from "./demo.service";
+import { ThrottleSettingsService } from "./throttle-settings.service";
 
 /**
  * Master-account module (TASK-36): its own auth contour and data plane.
@@ -28,6 +31,7 @@ import { AdminService } from "./admin.service";
     }),
     BoardsModule,
     CommandsModule,
+    CommentsModule,
     AttachmentsModule,
     OAuthModule,
   ],
@@ -38,6 +42,8 @@ import { AdminService } from "./admin.service";
     AdminJwtStrategy,
     AdminJwtAuthGuard,
     AdminService,
+    ThrottleSettingsService,
+    DemoService,
   ],
 })
 export class AdminModule {}

@@ -4,6 +4,7 @@ import {
   Activity,
   ArrowLeft,
   FileText,
+  Gauge,
   KanbanSquare,
   KeyRound,
   LayoutDashboard,
@@ -13,6 +14,7 @@ import {
   Mail,
   MessageSquare,
   Paperclip,
+  PlayCircle,
   ScrollText,
   Search,
   ShieldCheck,
@@ -130,6 +132,21 @@ const NAV_SECTIONS: Array<{
         labelKey: "admin.nav.oauth",
         icon: Fingerprint,
         ownerOnly: true,
+      },
+    ],
+  },
+  {
+    labelKey: "admin.nav.section.ops",
+    items: [
+      {
+        to: "/admin/traffic",
+        labelKey: "admin.nav.traffic",
+        icon: Gauge,
+      },
+      {
+        to: "/admin/demo",
+        labelKey: "admin.nav.demo",
+        icon: PlayCircle,
       },
     ],
   },

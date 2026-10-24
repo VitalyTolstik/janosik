@@ -40,12 +40,16 @@ import { createRequire } from "node:module";
 import { env } from "@/config/env";
 import {
   OAUTH_PROVIDER_IDS,
+  type AdminDemoStatusDto,
   type AdminOAuthProviderDto,
+  type AdminThrottleSettingsDto,
+  type AdminTrafficDto,
   type CommandResponse,
   type OAuthProviderId,
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
+import { TrafficService } from "@/common/traffic.service";
 import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
 import { MailerService } from "@/mailer/mailer.service";
@@ -58,6 +62,10 @@ import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
 import type { AdminUpdateEmailSettingsDto } from "./dto/admin-update-email-settings.dto";
 import type { AdminEmailTestDto } from "./dto/admin-email-test.dto";
 import type { AdminUpdateOAuthProviderDto } from "./dto/admin-update-oauth-provider.dto";
+import type { AdminUpdateThrottleSettingsDto } from "./dto/admin-update-throttle-settings.dto";
+import type { AdminDemoStartDto } from "./dto/admin-demo-start.dto";
+import { DemoService } from "./demo.service";
+import { ThrottleSettingsService } from "./throttle-settings.service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SPARKLINE_DAYS = 14;
@@ -96,6 +104,9 @@ export class AdminService {
     private readonly mailer: MailerService,
     private readonly emailSettings: EmailSettingsService,
     private readonly oauthSettings: OAuthSettingsService,
+    private readonly throttleSettings: ThrottleSettingsService,
+    private readonly traffic: TrafficService,
+    private readonly demo: DemoService,
   ) {}
 
   // ---------------------------------------------------------------- metrics
@@ -1421,6 +1432,63 @@ export class AdminService {
       },
     );
     return saved;
+  }
+
+  // ------------------------------------- rate limit & traffic (TASK-57)
+
+  /** The active global rate limit; operators may view, only owners edit. */
+  async getThrottleSettings(): Promise<AdminThrottleSettingsDto> {
+    return this.throttleSettings.getPublic();
+  }
+
+  async updateThrottleSettings(
+    dto: AdminUpdateThrottleSettingsDto,
+    admin: AdminPrincipal,
+  ): Promise<AdminThrottleSettingsDto> {
+    this.assertOwner(admin);
+    const saved = await this.throttleSettings.update(dto.limit, admin.email);
+    await this.audit(
+      admin,
+      "throttle.settings_changed",
+      "throttle_settings",
+      "singleton",
+      { limit: saved.limit },
+    );
+    return saved;
+  }
+
+  /** Live request-rate snapshot — polled by the panel's traffic gauge. */
+  getTraffic(): AdminTrafficDto {
+    return this.traffic.snapshot();
+  }
+
+  // ------------------------------------------------------- demo runner (57)
+
+  async getDemo(): Promise<AdminDemoStatusDto> {
+    return this.demo.status();
+  }
+
+  async startDemo(
+    dto: AdminDemoStartDto,
+    admin: AdminPrincipal,
+  ): Promise<AdminDemoStatusDto> {
+    this.assertOwner(admin);
+    const status = await this.demo.start(dto, admin.email);
+    await this.audit(admin, "demo.started", "demo", status.boardId ?? "demo", {
+      users: status.users,
+      cards: status.cards,
+    });
+    return status;
+  }
+
+  async stopDemo(admin: AdminPrincipal): Promise<AdminDemoStatusDto> {
+    this.assertOwner(admin);
+    const status = await this.demo.stop(admin.email);
+    await this.audit(admin, "demo.stopped", "demo", status.boardId ?? "demo", {
+      users: status.users,
+      cards: status.cards,
+    });
+    return status;
   }
 
   async listAudit(

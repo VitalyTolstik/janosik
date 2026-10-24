@@ -18,12 +18,15 @@ import type {
   AdminBoardCommandRequest,
   AdminBoardDetailDto,
   AdminCardDetailDto,
+  AdminDemoStatusDto,
   AdminEmailSettingsDto,
   AdminEmailTestResponse,
   AdminOAuthProviderDto,
   AdminEntity,
   AdminEntityRowMap,
   AdminGlobalSearchDto,
+  AdminThrottleSettingsDto,
+  AdminTrafficDto,
   AdminUserDetailDto,
   AdminBoardRowDto,
   AdminCardRowDto,
@@ -53,10 +56,12 @@ import { AdminCreateBoardDto } from "./dto/admin-create-board.dto";
 import { AdminCreateMasterDto } from "./dto/admin-create-master.dto";
 import { AdminUpdateMasterDto } from "./dto/admin-update-master.dto";
 import { AdminCreateUserDto } from "./dto/admin-create-user.dto";
+import { AdminDemoStartDto } from "./dto/admin-demo-start.dto";
 import { AdminEmailTestDto } from "./dto/admin-email-test.dto";
 import { AdminListQueryDto } from "./dto/admin-list-query.dto";
 import { AdminUpdateEmailSettingsDto } from "./dto/admin-update-email-settings.dto";
 import { AdminUpdateOAuthProviderDto } from "./dto/admin-update-oauth-provider.dto";
+import { AdminUpdateThrottleSettingsDto } from "./dto/admin-update-throttle-settings.dto";
 import { AdminUpdateUserDto } from "./dto/admin-update-user.dto";
 
 /**
@@ -401,5 +406,48 @@ export class AdminController {
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminOAuthProviderDto> {
     return this.admin.updateOAuthProvider(provider, dto, admin);
+  }
+
+  // ------------------------------------- rate limit & traffic (TASK-57)
+
+  /** The active global API rate limit; every admin may view, owners edit. */
+  @Get("throttle-settings")
+  getThrottleSettings(): Promise<AdminThrottleSettingsDto> {
+    return this.admin.getThrottleSettings();
+  }
+
+  @Put("throttle-settings")
+  updateThrottleSettings(
+    @Body() dto: AdminUpdateThrottleSettingsDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminThrottleSettingsDto> {
+    return this.admin.updateThrottleSettings(dto, admin);
+  }
+
+  /** Live request-rate snapshot (rolling 60s) for the traffic gauge. */
+  @Get("traffic")
+  traffic(): AdminTrafficDto {
+    return this.admin.getTraffic();
+  }
+
+  // --------------------------------------------------- demo runner (57)
+
+  /** The live demo run (or the last one). */
+  @Get("demo")
+  getDemo(): Promise<AdminDemoStatusDto> {
+    return this.admin.getDemo();
+  }
+
+  @Post("demo/start")
+  startDemo(
+    @Body() dto: AdminDemoStartDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminDemoStatusDto> {
+    return this.admin.startDemo(dto, admin);
+  }
+
+  @Post("demo/stop")
+  stopDemo(@CurrentAdmin() admin: AdminPrincipal): Promise<AdminDemoStatusDto> {
+    return this.admin.stopDemo(admin);
   }
 }

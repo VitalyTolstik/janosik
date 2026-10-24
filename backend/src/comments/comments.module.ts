@@ -10,5 +10,7 @@ import { CommentsService } from "./comments.service";
   imports: [AuthModule, RealtimeModule],
   controllers: [CommentsController],
   providers: [CommentsService, CardAccessGuard],
+  // Reused by the master-panel demo runner (TASK-57) to post as demo agents.
+  exports: [CommentsService],
 })
 export class CommentsModule {}

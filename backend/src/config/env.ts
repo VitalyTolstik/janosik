@@ -34,6 +34,13 @@ if (process.env.NODE_ENV === "test" && process.env.TEST_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 }
 
+// Tests are hermetic (see below); the global rate limit must not flake a
+// thousand-request e2e suite either — specs that assert the limiter patch the
+// guard or set their own @Throttle, so a huge default here is safe.
+if (process.env.NODE_ENV === "test") {
+  process.env.THROTTLE_LIMIT = "1000000";
+}
+
 // Tests are hermetic: a developer machine's SMTP_* (backend/.env) must not
 // turn e2e runs into live senders. Specs that exercise a transport start
 // one explicitly via MailerService.reconfigure.
@@ -88,6 +95,14 @@ export const env = cleanEnv(process.env, {
     desc: "Refresh token lifetime in days",
     default: 30,
     example: "30",
+  }),
+  // Global API rate limit (requests per minute, per client). The default is a
+  // sane self-host guard; the master panel can override it at runtime without
+  // a restart, and demo runs raise it locally via this env var.
+  THROTTLE_LIMIT: num({
+    desc: "Global API rate limit in requests per minute, per client",
+    default: 300,
+    example: "300",
   }),
   // Mail (TASK-51): every var is optional — without SMTP_HOST the mailer
   // logs outgoing emails to the server log instead of sending them, so

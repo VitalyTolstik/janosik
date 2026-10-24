@@ -13,10 +13,15 @@ import type {
   AdminCreateMasterResponse,
   AdminCreateUserRequest,
   AdminCreateUserResponse,
+  AdminDemoStartRequest,
+  AdminDemoStatusDto,
   AdminEmailSettingsDto,
   AdminEmailTestRequest,
   AdminEmailTestResponse,
   AdminOAuthProviderDto,
+  AdminThrottleSettingsDto,
+  AdminTrafficDto,
+  AdminUpdateThrottleSettingsRequest,
   AdminUpdateOAuthProviderRequest,
   AdminEntity,
   AdminEntityRowMap,
@@ -444,6 +449,45 @@ export class AdminApiClient {
       `/admin/oauth-providers/${provider}`,
       { method: "PUT", body },
     );
+  }
+
+  // ------------------------------------ rate limit & traffic (TASK-57)
+
+  getThrottleSettings(): Promise<AdminThrottleSettingsDto> {
+    return this.request<AdminThrottleSettingsDto>("/admin/throttle-settings");
+  }
+
+  updateThrottleSettings(
+    body: AdminUpdateThrottleSettingsRequest,
+  ): Promise<AdminThrottleSettingsDto> {
+    return this.request<AdminThrottleSettingsDto>("/admin/throttle-settings", {
+      method: "PUT",
+      body,
+    });
+  }
+
+  getTraffic(): Promise<AdminTrafficDto> {
+    return this.request<AdminTrafficDto>("/admin/traffic");
+  }
+
+  // ------------------------------------------------- demo runner (57)
+
+  getDemo(): Promise<AdminDemoStatusDto> {
+    return this.request<AdminDemoStatusDto>("/admin/demo");
+  }
+
+  startDemo(body: AdminDemoStartRequest): Promise<AdminDemoStatusDto> {
+    return this.request<AdminDemoStatusDto>("/admin/demo/start", {
+      method: "POST",
+      body,
+    });
+  }
+
+  stopDemo(): Promise<AdminDemoStatusDto> {
+    return this.request<AdminDemoStatusDto>("/admin/demo/stop", {
+      method: "POST",
+      body: {},
+    });
   }
 
   private query(params: AdminListParams): string {

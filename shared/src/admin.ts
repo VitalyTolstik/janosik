@@ -351,6 +351,9 @@ export const ADMIN_AUDIT_ACTIONS = [
   "email.settings_changed",
   "email.test_sent",
   "oauth.settings_changed",
+  "throttle.settings_changed",
+  "demo.started",
+  "demo.stopped",
 ] as const;
 
 export type AdminAuditAction = (typeof ADMIN_AUDIT_ACTIONS)[number];
@@ -917,4 +920,71 @@ export interface AdminGlobalSearchDto {
   comments: AdminCommentRowDto[];
   attachments: AdminAttachmentRowDto[];
   labels: AdminLabelRowDto[];
+}
+
+/**
+ * `GET /admin/throttle-settings` — the global API rate limit (requests per
+ * minute, per client). Editable from the panel; until a saved row exists the
+ * `THROTTLE_LIMIT` env default applies. Changing it takes effect on the next
+ * request, without a restart.
+ */
+export interface AdminThrottleSettingsDto {
+  limit: number;
+  /** Where the active limit comes from: a saved row, or the env default. */
+  source: "db" | "env";
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+/** Body of `PUT /admin/throttle-settings`. */
+export interface AdminUpdateThrottleSettingsRequest {
+  limit: number;
+}
+
+/**
+ * `GET /admin/traffic` — a live snapshot of the API request rate, sampled
+ * once a second over a rolling 60-second window. The panel polls this to
+ * render the "requests per minute" gauge while a demo runs.
+ */
+export interface AdminTrafficDto {
+  /** Requests observed in the last 60 seconds. */
+  lastMinute: number;
+  /** Requests per second, oldest first (exactly 60 entries). */
+  perSecond: number[];
+  /** Requests rejected by the rate limiter in the last 60 seconds. */
+  throttledLastMinute: number;
+  /** The limit currently enforced (requests / minute). */
+  limit: number;
+  /** Unix ms when the snapshot was taken. */
+  at: number;
+}
+
+/**
+ * `GET /admin/demo` — state of the master-panel demo runner. The runner
+ * provisions a throwaway population (demo users on the `@janosik.demo` domain,
+ * columns, labels and cards) and, when running, advances the cards towards
+ * "done". Every id it creates is recorded on the run, so `stop` deletes
+ * exactly those rows — no name-based guessing.
+ */
+export interface AdminDemoStatusDto {
+  running: boolean;
+  boardId: string | null;
+  /** ISO timestamp the current/last run started; `null` before the first. */
+  startedAt: string | null;
+  users: number;
+  columns: number;
+  labels: number;
+  cards: number;
+  /** Cards that reached the last column of the run so far. */
+  cardsDone: number;
+}
+
+/** Body of `POST /admin/demo/start`. */
+export interface AdminDemoStartRequest {
+  /** Board to populate; a dedicated "Demo" board is created when omitted. */
+  boardId?: string;
+  /** Number of demo agents (and cards). */
+  users?: number;
+  /** Let the agents act immediately; `false` seeds and waits. */
+  run?: boolean;
 }
