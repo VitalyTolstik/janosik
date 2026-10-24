@@ -297,6 +297,7 @@ export class FakeAdminServer {
     labels: 0,
     cards: 0,
     cardsDone: 0,
+    cleanupPending: false,
   };
 
   constructor(state: FakeAdminState = emptyAdminState()) {
@@ -807,6 +808,7 @@ export class FakeAdminServer {
         labels: 5,
         cards,
         cardsDone: 0,
+        cleanupPending: true,
       };
       return this.json(this.demoStatus, 201);
     }
@@ -814,7 +816,11 @@ export class FakeAdminServer {
       if (this.sessionRole !== "OWNER") {
         return this.json({ message: "Owner rights are required" }, 403);
       }
-      this.demoStatus = { ...this.demoStatus, running: false };
+      this.demoStatus = {
+        ...this.demoStatus,
+        running: false,
+        cleanupPending: false,
+      };
       return this.json(this.demoStatus, 201);
     }
 

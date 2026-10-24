@@ -1,0 +1,122 @@
+- generic [ref=f1e2]:
+    - generic [ref=f1e6]:
+        - complementary [ref=f1e7]:
+            - generic [ref=f1e13]:
+                - paragraph [ref=f1e14]: Janosik
+                - paragraph [ref=f1e15]: Master
+            - navigation [ref=f1e16]:
+                - generic [ref=f1e17]:
+                    - paragraph [ref=f1e18]: Monitoring
+                    - link "Dashboard" [ref=f1e19] [cursor=pointer]:
+                        - /url: /admin
+                    - link "Activity" [ref=f1e25] [cursor=pointer]:
+                        - /url: /admin/activity
+                    - link "Command log" [ref=f1e28] [cursor=pointer]:
+                        - /url: /admin/commands
+                    - link "Audit trail" [ref=f1e32] [cursor=pointer]:
+                        - /url: /admin/audit
+                - generic [ref=f1e36]:
+                    - paragraph [ref=f1e37]: People
+                    - link "Users" [ref=f1e38] [cursor=pointer]:
+                        - /url: /admin/users
+                    - link "Masters" [ref=f1e44] [cursor=pointer]:
+                        - /url: /admin/masters
+                - generic [ref=f1e48]:
+                    - paragraph [ref=f1e49]: Content
+                    - link "Boards" [ref=f1e50] [cursor=pointer]:
+                        - /url: /admin/boards
+                    - link "Cards" [ref=f1e53] [cursor=pointer]:
+                        - /url: /admin/cards
+                    - link "Columns" [ref=f1e57] [cursor=pointer]:
+                        - /url: /admin/columns
+                    - link "Labels" [ref=f1e60] [cursor=pointer]:
+                        - /url: /admin/labels
+                    - link "Checklists" [ref=f1e65] [cursor=pointer]:
+                        - /url: /admin/checklists
+                    - link "Card links" [ref=f1e69] [cursor=pointer]:
+                        - /url: /admin/cardLinks
+                - generic [ref=f1e73]:
+                    - paragraph [ref=f1e74]: Collaboration
+                    - link "Comments" [ref=f1e75] [cursor=pointer]:
+                        - /url: /admin/comments
+                    - link "Attachments" [ref=f1e78] [cursor=pointer]:
+                        - /url: /admin/attachments
+                - generic [ref=f1e81]:
+                    - paragraph [ref=f1e82]: Security
+                    - link "Sessions" [ref=f1e83] [cursor=pointer]:
+                        - /url: /admin/sessions
+                    - link "API tokens" [ref=f1e87] [cursor=pointer]:
+                        - /url: /admin/tokens
+                    - link "Email service" [ref=f1e91] [cursor=pointer]:
+                        - /url: /admin/email
+                    - link "OAuth login" [ref=f1e95] [cursor=pointer]:
+                        - /url: /admin/oauth
+                - generic [ref=f1e105]:
+                    - paragraph [ref=f1e106]: Operations
+                    - link "Traffic & limits" [ref=f1e107] [cursor=pointer]:
+                        - /url: /admin/traffic
+                    - link "Demo runner" [ref=f1e111] [cursor=pointer]:
+                        - /url: /admin/demo
+            - generic [ref=f1e116]:
+                - button "Change language" [ref=f1e117]
+                - link "Back to boards" [ref=f1e119] [cursor=pointer]:
+                    - /url: /
+        - generic [ref=f1e122]:
+            - banner [ref=f1e123]:
+                - paragraph [ref=f1e124]: Signed in as admin@admin.comMaster
+                - generic [ref=f1e125]:
+                    - button "Search everything ⌘K" [ref=f1e126]:
+                        - generic [ref=f1e130]: Search everything
+                        - generic [ref=f1e131]: ⌘K
+                    - button "Sign out" [ref=f1e132]
+            - main [ref=f1e136]:
+                - generic [ref=f1e137]:
+                    - generic [ref=f1e138]:
+                        - generic [ref=f1e139]:
+                            - heading "Demo runner" [level=1] [ref=f1e140]
+                            - paragraph [ref=f1e141]: Seed a demo board of AI agents, watch them work, then clean up
+                        - generic [ref=f1e142]: Running
+                    - generic [ref=f1e145]:
+                        - generic [ref=f1e146]:
+                            - paragraph [ref=f1e147]: Agents
+                            - paragraph [ref=f1e148]: "21"
+                        - generic [ref=f1e149]:
+                            - paragraph [ref=f1e150]: Cards
+                            - paragraph [ref=f1e151]: "20"
+                        - generic [ref=f1e152]:
+                            - paragraph [ref=f1e153]: Done
+                            - paragraph [ref=f1e154]: "0"
+                    - generic [ref=f1e155]:
+                        - generic [ref=f1e156]: Board
+                        - code [ref=f1e158]: cmvmt24yj004aonnz7t7o6p5d
+                    - generic [ref=f1e159]:
+                        - generic [ref=f1e160]:
+                            - text: Board id (optional)
+                            - generic [ref=f1e161]:
+                                - textbox "Board id (optional)" [disabled] [ref=f1e162]:
+                                    - /placeholder: auto — a new demo board
+                                - button "Save" [disabled]
+                            - paragraph [ref=f1e164]: Leave empty to create a dedicated demo board
+                        - generic [ref=f1e165]:
+                            - generic [ref=f1e166]:
+                                - generic [ref=f1e167]:
+                                    - text: Agents
+                                    - generic [ref=f1e168]:
+                                        - textbox "Agents" [disabled] [ref=f1e169]: "20"
+                                        - generic [ref=f1e170]:
+                                            - button "Increase" [disabled]
+                                            - button "Decrease" [disabled]
+                                - generic [ref=f1e177]:
+                                    - text: Tasks
+                                    - generic [ref=f1e178]:
+                                        - textbox "Tasks" [disabled] [ref=f1e179]: "20"
+                                        - generic [ref=f1e180]:
+                                            - button "Increase" [disabled]
+                                            - button "Decrease" [disabled]
+                            - generic [ref=f1e187]:
+                                - button "Start demo" [disabled]
+                                - button "Stop & clean up" [ref=f1e189]
+    - region "Notifications":
+        - status [ref=f1e190]:
+            - paragraph [ref=f1e194]: Demo started
+            - button "Dismiss notification" [ref=f1e195]

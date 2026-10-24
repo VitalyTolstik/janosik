@@ -120,6 +120,7 @@ describe("DemoPage", () => {
       labels: 5,
       cards: 3,
       cardsDone: 1,
+      cleanupPending: true,
     };
     vi.stubGlobal("fetch", server.fetchImpl);
     renderDemo();
@@ -132,6 +133,29 @@ describe("DemoPage", () => {
       expect(screen.getByTestId("admin-demo-status")).toHaveTextContent(
         t("admin.demo.idle"),
       ),
+    );
+  });
+
+  it("keeps clean-up available after the swarm finished", async () => {
+    const server = new FakeAdminServer();
+    server.demoStatus = {
+      running: false,
+      boardId: "demo-board",
+      startedAt: new Date().toISOString(),
+      users: 4,
+      columns: 5,
+      labels: 5,
+      cards: 8,
+      cardsDone: 8,
+      cleanupPending: true,
+    };
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderDemo();
+
+    const stop = await screen.findByTestId("admin-demo-stop");
+    expect(stop).not.toBeDisabled();
+    expect(screen.getByTestId("admin-demo-status")).toHaveTextContent(
+      t("admin.demo.idle"),
     );
   });
 

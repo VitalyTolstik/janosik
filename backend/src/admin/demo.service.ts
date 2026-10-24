@@ -37,6 +37,8 @@ const SUMMARIES = [
 ];
 const MAX_USERS = 100;
 const MAX_CARDS = 1000;
+/** Title prefix of a board this service creates — our own cleanup marker. */
+const DEMO_BOARD_PREFIX = "Демо · рой агентов";
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -80,6 +82,8 @@ interface ActiveRun {
 export class DemoService implements OnModuleDestroy {
   private readonly logger = new Logger(DemoService.name);
   private active: ActiveRun | null = null;
+  /** The most recently finished run — shown (not "running") until cleaned. */
+  private lastRun: ActiveRun | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -93,12 +97,13 @@ export class DemoService implements OnModuleDestroy {
     if (this.active) this.active.stop = true;
   }
 
-  /** `GET /admin/demo` — the live run, or the last one from the DB. */
+  /** `GET /admin/demo` — the live run, the last finished one, or the DB. */
   async status(): Promise<AdminDemoStatusDto> {
-    if (this.active) {
-      const { manifest, done, startedAt } = this.active;
+    const run = this.active ?? this.lastRun;
+    if (run) {
+      const { manifest, done, startedAt } = run;
       return {
-        running: true,
+        running: this.active !== null,
         boardId: manifest.boardId,
         startedAt,
         users: manifest.userIds.length,
@@ -106,12 +111,14 @@ export class DemoService implements OnModuleDestroy {
         labels: manifest.labelIds.length,
         cards: manifest.cardIds.length,
         cardsDone: done,
+        cleanupPending: true,
       };
     }
-    const last = await this.prisma.demoRun.findFirst({
+    const pending = await this.prisma.demoRun.findFirst({
+      where: { status: "running" },
       orderBy: { startedAt: "desc" },
     });
-    if (last === null) {
+    if (pending === null) {
       return {
         running: false,
         boardId: null,
@@ -121,18 +128,20 @@ export class DemoService implements OnModuleDestroy {
         labels: 0,
         cards: 0,
         cardsDone: 0,
+        cleanupPending: false,
       };
     }
-    const manifest = last.manifest as unknown as DemoManifest;
+    const manifest = pending.manifest as unknown as DemoManifest;
     return {
       running: false,
       boardId: manifest.boardId,
-      startedAt: last.startedAt.toISOString(),
+      startedAt: pending.startedAt.toISOString(),
       users: manifest.userIds.length,
       columns: manifest.columnIds.length,
       labels: manifest.labelIds.length,
       cards: manifest.cardIds.length,
       cardsDone: 0,
+      cleanupPending: true,
     };
   }
 
@@ -147,6 +156,10 @@ export class DemoService implements OnModuleDestroy {
     if (this.active) {
       throw new ConflictException("A demo is already running");
     }
+    // Clean everything a previous demo left behind, then create the new one —
+    // so a fresh start never accumulates boards or demo users.
+    await this.cleanAllDemo();
+    this.lastRun = null;
     const agents = input.users ?? 20;
     if (!Number.isInteger(agents) || agents < 1 || agents > MAX_USERS) {
       throw new BadRequestException({
@@ -199,7 +212,7 @@ export class DemoService implements OnModuleDestroy {
       manifest.boardId = existing.id;
     } else {
       const board = await this.boards.createBoard(dispatcherId, {
-        title: `Демо · рой агентов (${runTag})`,
+        title: `${DEMO_BOARD_PREFIX} (${runTag})`,
       });
       manifest.boardId = board.id;
       manifest.createdBoard = true;
@@ -316,34 +329,122 @@ export class DemoService implements OnModuleDestroy {
     return this.status();
   }
 
-  /** Stop the swarm and delete exactly the run's footprint (board + users). */
+  /** Stop the swarm and delete every recorded run's footprint. */
   async stop(stoppedBy: string): Promise<AdminDemoStatusDto> {
-    const run = this.active;
-    if (run) {
-      run.stop = true;
+    if (this.active) {
+      this.active.stop = true;
       this.active = null;
     }
-    const last = await this.prisma.demoRun.findFirst({
+    this.lastRun = null;
+    const pending = await this.prisma.demoRun.count({
       where: { status: "running" },
-      orderBy: { startedAt: "desc" },
     });
-    const target =
-      run?.manifest ?? (last?.manifest as unknown as DemoManifest | undefined);
-    if (target === undefined || target === null) {
+    if (pending === 0) {
       throw new ConflictException("No demo to stop");
     }
-    await this.purge(target);
-    await this.prisma.demoRun.updateMany({
-      where: { boardId: target.boardId, status: "running" },
-      data: { status: "stopped", stoppedAt: new Date() },
-    });
+    const { users, cards } = await this.purgeAllRecorded();
     this.logger.log(
-      `Demo stopped (by ${stoppedBy}): ${target.userIds.length} users, ${target.cardIds.length} cards removed`,
+      `Demo stopped (by ${stoppedBy}): ${users} users, ${cards} cards removed`,
     );
     return this.status();
   }
 
   // ------------------------------------------------------------- internals
+
+  /**
+   * Delete every recorded run's footprint, whatever its status — a finished
+   * run, one left by a restart, or an already-stopped row whose board somehow
+   * survived. Idempotent; used by `start` ("clean everything, then create")
+   * and `stop`. Returns the totals removed, for logging.
+   */
+  private async purgeAllRecorded(): Promise<{ users: number; cards: number }> {
+    const runs = await this.prisma.demoRun.findMany();
+    let users = 0;
+    let cards = 0;
+    for (const entry of runs) {
+      const manifest = entry.manifest as unknown as DemoManifest;
+      try {
+        await this.purge(manifest);
+        users += manifest.userIds.length;
+        cards += manifest.cardIds.length;
+      } catch (error) {
+        this.logger.warn(
+          `Demo cleanup failed for ${manifest.boardId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    await this.prisma.demoRun.updateMany({
+      where: { status: "running" },
+      data: { status: "stopped", stoppedAt: new Date() },
+    });
+    return { users, cards };
+  }
+
+  /**
+   * Clean every demo artifact before a new run: the recorded runs plus any
+   * orphan board a failed/older run left behind (recognised by our own title
+   * marker — never a user board). Then the caller can create a fresh demo.
+   */
+  private async cleanAllDemo(): Promise<void> {
+    await this.purgeAllRecorded();
+    const orphans = await this.prisma.board.findMany({
+      where: { title: { startsWith: DEMO_BOARD_PREFIX } },
+      select: { id: true },
+    });
+    for (const { id } of orphans) {
+      try {
+        await this.purgeWholeBoard(id);
+      } catch (error) {
+        this.logger.warn(
+          `Demo orphan cleanup failed for ${id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Remove a whole board this service created — every child row, its demo
+   * users and the board itself. Safe because the board is ours (title marker);
+   * used to clean orphans that predate a recorded manifest.
+   */
+  private async purgeWholeBoard(boardId: string): Promise<void> {
+    const cards = await this.prisma.card.findMany({
+      where: { column: { boardId } },
+      select: { id: true },
+    });
+    const cardIds = cards.map((card) => card.id);
+    const members = await this.prisma.boardMember.findMany({
+      where: { boardId, user: { email: { endsWith: "@janosik.demo" } } },
+      select: { userId: true },
+    });
+    const userIds = members.map((member) => member.userId);
+    await this.boardWrite.run(boardId, async (tx) => {
+      await tx.cardLabel.deleteMany({ where: { cardId: { in: cardIds } } });
+      await tx.checklistItem.deleteMany({
+        where: { checklist: { cardId: { in: cardIds } } },
+      });
+      await tx.checklist.deleteMany({ where: { cardId: { in: cardIds } } });
+      await tx.cardLink.deleteMany({ where: { boardId } });
+      await tx.attachment.deleteMany({ where: { cardId: { in: cardIds } } });
+      await tx.comment.deleteMany({ where: { cardId: { in: cardIds } } });
+      await tx.activity.deleteMany({ where: { boardId } });
+      await tx.command.deleteMany({ where: { boardId } });
+      await tx.card.deleteMany({ where: { id: { in: cardIds } } });
+      await tx.column.deleteMany({ where: { boardId } });
+      await tx.label.deleteMany({ where: { boardId } });
+      await tx.boardMember.deleteMany({
+        where: { boardId, userId: { in: userIds } },
+      });
+      await tx.board.deleteMany({ where: { id: boardId } });
+    });
+    if (userIds.length > 0) {
+      await this.prisma.user.deleteMany({ where: { id: { in: userIds } } });
+    }
+  }
 
   private async createUser(
     runTag: string,
@@ -369,7 +470,6 @@ export class DemoService implements OnModuleDestroy {
     actorId: string,
     action: Record<string, unknown> & { type: string },
   ): Promise<void> {
-    if (this.active?.stop) return;
     await this.commands.apply(boardId, actorId, {
       commandId: newId("cmd"),
       action: { boardId, at: Date.now(), ...action },
@@ -395,6 +495,14 @@ export class DemoService implements OnModuleDestroy {
         });
       run.tasks.push(task);
     }
+    // When the whole swarm settles, the run is no longer "live": keep it for
+    // display/cleanup but free the start slot so a new demo can begin.
+    void Promise.all(run.tasks).then(() => {
+      if (this.active === run) {
+        this.lastRun = run;
+        this.active = null;
+      }
+    });
   }
 
   private async processCard(
@@ -523,7 +631,7 @@ export class DemoService implements OnModuleDestroy {
       await tx.label.deleteMany({ where: { id: { in: labelIds } } });
       await tx.boardMember.deleteMany({ where: { boardId, userId: users } });
       if (createdBoard) {
-        await tx.board.delete({ where: { id: boardId } });
+        await tx.board.deleteMany({ where: { id: boardId } });
       }
     });
     // Demo users have no rows left pointing at them once the board content and

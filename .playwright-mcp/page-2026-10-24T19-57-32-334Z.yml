@@ -1,0 +1,151 @@
+- generic:
+    - generic [aria-hidden]:
+        - generic:
+            - complementary:
+                - generic:
+                    - generic:
+                        - paragraph: Janosik
+                        - paragraph: Master
+                - navigation:
+                    - generic:
+                        - paragraph: Monitoring
+                        - link:
+                            - /url: /admin
+                            - text: Dashboard
+                        - link:
+                            - /url: /admin/activity
+                            - text: Activity
+                        - link:
+                            - /url: /admin/commands
+                            - text: Command log
+                        - link:
+                            - /url: /admin/audit
+                            - text: Audit trail
+                    - generic:
+                        - paragraph: People
+                        - link:
+                            - /url: /admin/users
+                            - text: Users
+                        - link:
+                            - /url: /admin/masters
+                            - text: Masters
+                    - generic:
+                        - paragraph: Content
+                        - link:
+                            - /url: /admin/boards
+                            - text: Boards
+                        - link:
+                            - /url: /admin/cards
+                            - text: Cards
+                        - link:
+                            - /url: /admin/columns
+                            - text: Columns
+                        - link:
+                            - /url: /admin/labels
+                            - text: Labels
+                        - link:
+                            - /url: /admin/checklists
+                            - text: Checklists
+                        - link:
+                            - /url: /admin/cardLinks
+                            - text: Card links
+                    - generic:
+                        - paragraph: Collaboration
+                        - link:
+                            - /url: /admin/comments
+                            - text: Comments
+                        - link:
+                            - /url: /admin/attachments
+                            - text: Attachments
+                    - generic:
+                        - paragraph: Security
+                        - link:
+                            - /url: /admin/sessions
+                            - text: Sessions
+                        - link:
+                            - /url: /admin/tokens
+                            - text: API tokens
+                        - link:
+                            - /url: /admin/email
+                            - text: Email service
+                        - link:
+                            - /url: /admin/oauth
+                            - text: OAuth login
+                    - generic:
+                        - paragraph: Operations
+                        - link:
+                            - /url: /admin/traffic
+                            - text: Traffic & limits
+                        - link:
+                            - /url: /admin/demo
+                            - text: Demo runner
+                - generic:
+                    - generic:
+                        - button
+                        - link:
+                            - /url: /
+                            - text: Back to boards
+            - generic:
+                - banner:
+                    - paragraph: Signed in as admin@admin.comMaster
+                    - generic:
+                        - button:
+                            - generic: Search everything
+                            - generic: ⌘K
+                        - button: Sign out
+                - main:
+                    - generic:
+                        - generic:
+                            - generic:
+                                - heading [level=1]: Demo runner
+                                - paragraph: Seed a demo board of AI agents, watch them work, then clean up
+                            - generic: Idle
+                        - generic:
+                            - generic:
+                                - paragraph: Agents
+                                - paragraph: "4"
+                            - generic:
+                                - paragraph: Cards
+                                - paragraph: "6"
+                            - generic:
+                                - paragraph: Done
+                                - paragraph: "6"
+                        - generic:
+                            - generic: Board
+                            - generic:
+                                - code: cmvmtk77h00028zqajk6hnw6u
+                        - generic:
+                            - generic:
+                                - text: Board id (optional)
+                                - generic:
+                                    - textbox:
+                                        - /placeholder: auto — a new demo board
+                                    - button: Save
+                                - paragraph: Leave empty to create a dedicated demo board
+                            - generic:
+                                - generic:
+                                    - generic:
+                                        - text: Agents
+                                        - generic:
+                                            - textbox: "3"
+                                            - generic:
+                                                - button
+                                                - button
+                                    - generic:
+                                        - text: Tasks
+                                        - generic:
+                                            - textbox: "6"
+                                            - generic:
+                                                - button
+                                                - button
+                                - generic:
+                                    - button: Start demo
+                                    - button: Stop & clean up
+    - dialog [ref=f4e200]:
+        - generic [ref=f4e201]:
+            - heading "Stop & clean up" [level=2] [ref=f4e202]
+            - paragraph [ref=f4e203]: Stop the demo and delete its board, cards and demo users?
+        - generic [ref=f4e204]:
+            - button "Cancel" [active] [ref=f4e205]
+            - button "Stop & clean up" [ref=f4e206]
+        - button "Close" [ref=f4e207]

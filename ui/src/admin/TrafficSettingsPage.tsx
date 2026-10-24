@@ -48,13 +48,13 @@ export function TrafficSettingsPage() {
 
   useEffect(() => {
     load();
-    return () => {
-      mounted.current = false;
-    };
   }, [load]);
 
-  // Poll the live gauge once a second while the page is open.
+  // Poll the live gauge once a second while the page is open. `mounted` is
+  // raised here (not in the load effect) so StrictMode's double-mount cannot
+  // leave it stuck at false and freeze the gauge.
   useEffect(() => {
+    mounted.current = true;
     const tick = () => {
       adminApi
         .getTraffic()
@@ -67,7 +67,10 @@ export function TrafficSettingsPage() {
     };
     tick();
     const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
+    return () => {
+      mounted.current = false;
+      clearInterval(id);
+    };
   }, []);
 
   const save = useCallback(async () => {

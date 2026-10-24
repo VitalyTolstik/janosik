@@ -55,13 +55,14 @@ export function DemoPage() {
 
   useEffect(() => {
     load();
-    return () => {
-      mounted.current = false;
-    };
   }, [load]);
 
-  // Poll while a run is live so the counters advance.
+  // Poll while the page is open so the counters advance on their own. The
+  // `mounted` flag is raised here (not in the load effect): under React
+  // StrictMode the load effect's cleanup would set it false and nothing would
+  // ever turn it back on, freezing the counter.
   useEffect(() => {
+    mounted.current = true;
     const id = setInterval(() => {
       adminApi
         .getDemo()
@@ -72,7 +73,10 @@ export function DemoPage() {
           /* keep the last snapshot */
         });
     }, 2000);
-    return () => clearInterval(id);
+    return () => {
+      mounted.current = false;
+      clearInterval(id);
+    };
   }, []);
 
   const start = useCallback(async () => {
@@ -129,6 +133,7 @@ export function DemoPage() {
   if (phase === "error") return <ErrorState onRetry={retry} />;
 
   const running = demo?.running ?? false;
+  const cleanupPending = demo?.cleanupPending ?? false;
   const shownBoard = selectedBoardId.trim() || demo?.boardId || "";
 
   return (
@@ -315,7 +320,7 @@ export function DemoPage() {
                 size="sm"
                 variant="destructive"
                 data-testid="admin-demo-stop"
-                disabled={!running || busy}
+                disabled={!cleanupPending || busy}
                 onClick={() => setConfirming(true)}
               >
                 <Trash2 className="mr-1.5 h-3.5 w-3.5" aria-hidden />

@@ -43,10 +43,23 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
     await prisma.adminUser.deleteMany();
     await prisma.demoRun.deleteMany();
     await prisma.throttleSettings.deleteMany();
-    await prisma.user.deleteMany({
-      where: { email: { contains: "@janosik.demo" } },
-    });
     await prisma.refreshToken.deleteMany();
+    // The e2e DB accumulates across runs — wipe content (child → parent) so a
+    // previous demo run's commands/users cannot block this suite's setup.
+    await prisma.command.deleteMany();
+    await prisma.activity.deleteMany();
+    await prisma.comment.deleteMany();
+    await prisma.attachment.deleteMany();
+    await prisma.cardLabel.deleteMany();
+    await prisma.checklistItem.deleteMany();
+    await prisma.checklist.deleteMany();
+    await prisma.cardLink.deleteMany();
+    await prisma.card.deleteMany();
+    await prisma.column.deleteMany();
+    await prisma.label.deleteMany();
+    await prisma.boardMember.deleteMany();
+    await prisma.board.deleteMany();
+    await prisma.user.deleteMany();
 
     await prisma.adminUser.createMany({
       data: [

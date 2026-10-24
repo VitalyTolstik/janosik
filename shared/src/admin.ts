@@ -977,6 +977,9 @@ export interface AdminDemoStatusDto {
   cards: number;
   /** Cards that reached the last column of the run so far. */
   cardsDone: number;
+  /** A run's footprint still exists and `stop` would clean it (even if the
+   * swarm already finished), so the panel keeps "Stop & clean up" enabled. */
+  cleanupPending: boolean;
 }
 
 /** Body of `POST /admin/demo/start`. */
