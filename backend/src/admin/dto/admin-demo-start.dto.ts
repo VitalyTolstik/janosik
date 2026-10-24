@@ -1,5 +1,6 @@
 import {
   IsBoolean,
+  IsEmail,
   IsInt,
   IsOptional,
   IsString,
@@ -13,6 +14,11 @@ export class AdminDemoStartDto {
   @IsOptional()
   @IsString()
   boardId?: string;
+
+  /** Account that will own the dedicated demo board (watch it in the app). */
+  @IsOptional()
+  @IsEmail()
+  watcherEmail?: string;
 
   /** Number of demo agents. */
   @IsOptional()

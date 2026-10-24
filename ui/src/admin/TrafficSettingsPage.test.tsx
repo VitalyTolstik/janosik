@@ -53,8 +53,9 @@ describe("TrafficSettingsPage", () => {
     vi.stubGlobal("fetch", server.fetchImpl);
     renderTraffic();
 
-    expect(await screen.findByTestId("admin-traffic-rpm")).toHaveTextContent(
-      "15",
+    await screen.findByTestId("admin-traffic-rpm");
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-traffic-rpm")).toHaveTextContent("15"),
     );
     expect(screen.getByTestId("admin-traffic-throttled")).toHaveTextContent(
       "0",

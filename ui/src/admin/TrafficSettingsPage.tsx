@@ -8,6 +8,7 @@ import { NumberStepper } from "@/components/ui/number-stepper";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
+import { pollWhileFocused } from "@/lib/visible-poll";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
@@ -65,28 +66,11 @@ export function TrafficSettingsPage() {
           /* a missed sample is not worth surfacing */
         });
     };
-    // Run only while the tab is visible: a background admin tab must not keep
-    // hammering the API once a second.
-    let id: ReturnType<typeof setInterval> | null = null;
-    const start = () => {
-      if (id !== null) return;
-      tick();
-      id = setInterval(tick, 1000);
-    };
-    const stop = () => {
-      if (id !== null) clearInterval(id);
-      id = null;
-    };
-    const onVisibility = () => {
-      if (document.hidden) stop();
-      else start();
-    };
-    start();
-    document.addEventListener("visibilitychange", onVisibility);
+    // Visible-and-focused tabs only (see `pollWhileFocused`).
+    const stopPolling = pollWhileFocused(tick, 1000);
     return () => {
       mounted.current = false;
-      stop();
-      document.removeEventListener("visibilitychange", onVisibility);
+      stopPolling();
     };
   }, []);
 

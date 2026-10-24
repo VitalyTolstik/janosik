@@ -50,7 +50,10 @@ const newId = (prefix: string): string =>
 interface DemoManifest {
   boardId: string;
   createdBoard: boolean;
+  /** Demo users created by the run — deleted on cleanup. */
   userIds: string[];
+  /** Real user that owns a dedicated board (watcher); never deleted. */
+  watcherId?: string;
   columnIds: string[];
   labelIds: string[];
   cardIds: string[];
@@ -150,7 +153,13 @@ export class DemoService implements OnModuleDestroy {
    * Refuses while another run is active.
    */
   async start(
-    input: { boardId?: string; users?: number; cards?: number; run?: boolean },
+    input: {
+      boardId?: string;
+      watcherEmail?: string;
+      users?: number;
+      cards?: number;
+      run?: boolean;
+    },
     startedBy: string,
   ): Promise<AdminDemoStatusDto> {
     if (this.active) {
@@ -185,10 +194,29 @@ export class DemoService implements OnModuleDestroy {
       cardIds: [],
     };
 
-    // 1. Demo participants — one dispatcher (board opener) + N agents, all on
-    //    the reserved `@janosik.demo` domain and already verified.
-    const dispatcherId = await this.createUser(runTag, "Диспетчер", 0);
-    manifest.userIds.push(dispatcherId);
+    // 1. Dispatcher (opens a dedicated board). With `watcherEmail` the board
+    //    is owned by that real account, so the operator can open it in the app
+    //    and watch — it is never deleted on cleanup.
+    let dispatcherId: string;
+    if (input.watcherEmail && !input.boardId) {
+      const watcher = await this.prisma.user.findFirst({
+        where: { email: input.watcherEmail, disabledAt: null },
+        select: { id: true },
+      });
+      if (watcher === null) {
+        throw new BadRequestException({
+          message: `No active account for ${input.watcherEmail}`,
+          field: "watcherEmail",
+        });
+      }
+      dispatcherId = watcher.id;
+      manifest.watcherId = watcher.id;
+    } else {
+      dispatcherId = await this.createUser(runTag, "Диспетчер", 0);
+      manifest.userIds.push(dispatcherId);
+    }
+
+    // 2. N demo agents on the reserved `@janosik.demo` domain.
     const workers: string[] = [];
     for (let i = 0; i < agents; i += 1) {
       const id = await this.createUser(
@@ -200,7 +228,7 @@ export class DemoService implements OnModuleDestroy {
       workers.push(id);
     }
 
-    // 2. Board — a provided one, or a fresh dedicated "Демо" board.
+    // 3. Board — a provided one, or a fresh dedicated "Демо" board.
     if (input.boardId) {
       const existing = await this.prisma.board.findFirst({
         where: { id: input.boardId, deletedAt: null },
@@ -605,10 +633,20 @@ export class DemoService implements OnModuleDestroy {
    * board itself.
    */
   private async purge(manifest: DemoManifest): Promise<void> {
-    const { boardId, createdBoard, userIds, columnIds, labelIds, cardIds } =
-      manifest;
+    const {
+      boardId,
+      createdBoard,
+      userIds,
+      watcherId,
+      columnIds,
+      labelIds,
+      cardIds,
+    } = manifest;
     const cards = { in: cardIds };
-    const users = { in: userIds };
+    // Demo users author the commands/activity; the watcher owns the board but
+    // is a real account — its membership goes, the user stays.
+    const demoUsers = { in: userIds };
+    const members = { in: watcherId ? [...userIds, watcherId] : userIds };
     await this.boardWrite.run(boardId, async (tx) => {
       await tx.cardLabel.deleteMany({ where: { cardId: cards } });
       await tx.checklistItem.deleteMany({
@@ -621,21 +659,21 @@ export class DemoService implements OnModuleDestroy {
       await tx.activity.deleteMany({
         where: createdBoard
           ? { boardId }
-          : { boardId, OR: [{ actorId: users }, { cardId: cards }] },
+          : { boardId, OR: [{ actorId: demoUsers }, { cardId: cards }] },
       });
       await tx.command.deleteMany({
-        where: createdBoard ? { boardId } : { boardId, actorId: users },
+        where: createdBoard ? { boardId } : { boardId, actorId: demoUsers },
       });
       await tx.card.deleteMany({ where: { id: cards } });
       await tx.column.deleteMany({ where: { id: { in: columnIds } } });
       await tx.label.deleteMany({ where: { id: { in: labelIds } } });
-      await tx.boardMember.deleteMany({ where: { boardId, userId: users } });
+      await tx.boardMember.deleteMany({ where: { boardId, userId: members } });
       if (createdBoard) {
         await tx.board.deleteMany({ where: { id: boardId } });
       }
     });
     // Demo users have no rows left pointing at them once the board content and
     // their authored commands/activity are gone.
-    await this.prisma.user.deleteMany({ where: { id: users } });
+    await this.prisma.user.deleteMany({ where: { id: demoUsers } });
   }
 }

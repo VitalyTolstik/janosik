@@ -109,6 +109,23 @@ describe("DemoPage", () => {
     });
   });
 
+  it("sends a watcher account for a dedicated board", async () => {
+    const server = new FakeAdminServer();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderDemo();
+
+    fireEvent.change(await screen.findByTestId("admin-demo-watcher-input"), {
+      target: { value: "me@example.com" },
+    });
+    fireEvent.click(screen.getByTestId("admin-demo-start"));
+
+    await waitFor(() => expect(server.demoStatus.running).toBe(true));
+    const call = server.requests.find(
+      (item) => item.method === "POST" && item.path === "/admin/demo/start",
+    );
+    expect(call?.body).toMatchObject({ watcherEmail: "me@example.com" });
+  });
+
   it("stops the demo after confirmation", async () => {
     const server = new FakeAdminServer();
     server.demoStatus = {

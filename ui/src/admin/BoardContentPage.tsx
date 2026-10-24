@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
+import { pollWhileFocused } from "@/lib/visible-poll";
 import { routes } from "@/routes";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
@@ -80,6 +81,21 @@ export function BoardContentPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Live view (TASK-57): while this page is visible and focused, re-fetch the
+  // aggregate every 2s so a running demo is watched in place — the manual
+  // refresh stays for a one-off peek.
+  useEffect(() => {
+    const tick = () => {
+      adminApi
+        .getBoardContent(boardId)
+        .then(setBoard)
+        .catch(() => {
+          /* a transient error keeps the last aggregate on screen */
+        });
+    };
+    return pollWhileFocused(tick, 2000);
+  }, [boardId]);
 
   const send = useCallback(
     async (action: Record<string, unknown>, successMessage: string) => {

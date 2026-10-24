@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PlayCircle, Trash2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ExternalLink, PlayCircle, Trash2 } from "lucide-react";
 import type { AdminDemoStatusDto } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +8,7 @@ import { NumberStepper } from "@/components/ui/number-stepper";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
+import { pollWhileFocused } from "@/lib/visible-poll";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
@@ -39,6 +41,7 @@ export function DemoPage() {
   const [cards, setCards] = useState("20");
   const [boardId, setBoardId] = useState("");
   const [selectedBoardId, setSelectedBoardId] = useState("");
+  const [watcherEmail, setWatcherEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const mounted = useRef(true);
@@ -73,27 +76,11 @@ export function DemoPage() {
           /* keep the last snapshot */
         });
     };
-    // Visible tabs only: a background admin tab must not keep polling.
-    let id: ReturnType<typeof setInterval> | null = null;
-    const start = () => {
-      if (id !== null) return;
-      tick();
-      id = setInterval(tick, 2000);
-    };
-    const stop = () => {
-      if (id !== null) clearInterval(id);
-      id = null;
-    };
-    const onVisibility = () => {
-      if (document.hidden) stop();
-      else start();
-    };
-    start();
-    document.addEventListener("visibilitychange", onVisibility);
+    // Visible-and-focused tabs only (see `pollWhileFocused`).
+    const stopPolling = pollWhileFocused(tick, 2000);
     return () => {
       mounted.current = false;
-      stop();
-      document.removeEventListener("visibilitychange", onVisibility);
+      stopPolling();
     };
   }, []);
 
@@ -105,11 +92,13 @@ export function DemoPage() {
     setBusy(true);
     try {
       const target = selectedBoardId.trim();
+      const watcher = watcherEmail.trim();
       const value = await adminApi.startDemo({
         users,
         cards: taskCount,
         run: true,
         ...(target === "" ? {} : { boardId: target }),
+        ...(target === "" && watcher !== "" ? { watcherEmail: watcher } : {}),
       });
       setDemo(value);
       toast.success(t("admin.demo.started"));
@@ -122,7 +111,7 @@ export function DemoPage() {
     } finally {
       setBusy(false);
     }
-  }, [agents, cards, selectedBoardId, t, toast]);
+  }, [agents, cards, selectedBoardId, watcherEmail, t, toast]);
 
   const stop = useCallback(async () => {
     setBusy(true);
@@ -232,14 +221,29 @@ export function DemoPage() {
             {t("admin.demo.boardPlaceholder")}
           </span>
         ) : (
-          <Badge variant="neutral">
-            <code
-              data-testid="admin-demo-board"
-              className="font-mono text-[11px]"
+          <div className="flex items-center gap-2">
+            <Badge variant="neutral">
+              <code
+                data-testid="admin-demo-board"
+                className="font-mono text-[11px]"
+              >
+                {shownBoard}
+              </code>
+            </Badge>
+            {/* The real board UI, in a new tab. Dedicated demo boards are
+                owned by the "Watch as" account, so sign in as it (or its
+                session) to see the swarm; a board you already own just opens. */}
+            <Link
+              to={`/board/${shownBoard}`}
+              target="_blank"
+              rel="noreferrer"
+              data-testid="admin-demo-open-board"
+              className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-background/50 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
             >
-              {shownBoard}
-            </code>
-          </Badge>
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+              {t("admin.demo.openBoard")}
+            </Link>
+          </div>
         )}
       </Panel>
 
@@ -279,6 +283,27 @@ export function DemoPage() {
             </div>
             <p className="text-[11px] text-muted-foreground">
               {t("admin.demo.boardHint")}
+            </p>
+          </div>
+          <div className="space-y-1">
+            <label
+              htmlFor="admin-demo-watcher-input"
+              className="text-xs font-medium text-foreground"
+            >
+              {t("admin.demo.watcher")}
+            </label>
+            <Input
+              id="admin-demo-watcher-input"
+              data-testid="admin-demo-watcher-input"
+              type="email"
+              value={watcherEmail}
+              disabled={running || busy || boardId.trim() !== ""}
+              autoComplete="off"
+              placeholder="you@example.com"
+              onChange={(event) => setWatcherEmail(event.target.value)}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {t("admin.demo.watcherHint")}
             </p>
           </div>
           <div className="flex flex-wrap items-end justify-between gap-3">

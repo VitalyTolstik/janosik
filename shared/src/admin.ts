@@ -986,6 +986,12 @@ export interface AdminDemoStatusDto {
 export interface AdminDemoStartRequest {
   /** Board to populate; a dedicated "Demo" board is created when omitted. */
   boardId?: string;
+  /**
+   * Email of the account that should own the dedicated demo board, so the
+   * operator can open it in the app and watch. A real user only — it is never
+   * deleted on cleanup. Ignored when `boardId` is given.
+   */
+  watcherEmail?: string;
   /** Number of demo agents. */
   users?: number;
   /** Number of cards to seed (defaults to the agent count). */
