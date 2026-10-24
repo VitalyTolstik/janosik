@@ -72,6 +72,26 @@ describe("DemoPage", () => {
     expect(server.demoStatus.running).toBe(true);
   });
 
+  it("starts a demo on a provided board id", async () => {
+    const server = new FakeAdminServer();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderDemo();
+
+    fireEvent.change(await screen.findByTestId("admin-demo-board-input"), {
+      target: { value: "board-xyz" },
+    });
+    fireEvent.change(screen.getByTestId("admin-demo-agents-input"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByTestId("admin-demo-start"));
+
+    await waitFor(() => expect(server.demoStatus.running).toBe(true));
+    const call = server.requests.find(
+      (item) => item.method === "POST" && item.path === "/admin/demo/start",
+    );
+    expect(call?.body).toMatchObject({ users: 2, boardId: "board-xyz" });
+  });
+
   it("stops the demo after confirmation", async () => {
     const server = new FakeAdminServer();
     server.demoStatus = {

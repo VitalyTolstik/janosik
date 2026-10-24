@@ -14,6 +14,7 @@ import {
   ConfirmDialog,
   ErrorState,
   LoadingState,
+  NumberField,
   PageHeader,
   Panel,
 } from "./ui";
@@ -35,6 +36,7 @@ export function DemoPage() {
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [demo, setDemo] = useState<AdminDemoStatusDto | null>(null);
   const [agents, setAgents] = useState("20");
+  const [boardId, setBoardId] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const mounted = useRef(true);
@@ -76,7 +78,12 @@ export function DemoPage() {
     if (!Number.isInteger(users) || users < 1) return;
     setBusy(true);
     try {
-      const value = await adminApi.startDemo({ users, run: true });
+      const trimmed = boardId.trim();
+      const value = await adminApi.startDemo({
+        users,
+        run: true,
+        ...(trimmed === "" ? {} : { boardId: trimmed }),
+      });
       setDemo(value);
       toast.success(t("admin.demo.started"));
     } catch (cause) {
@@ -88,7 +95,7 @@ export function DemoPage() {
     } finally {
       setBusy(false);
     }
-  }, [agents, t, toast]);
+  }, [agents, boardId, t, toast]);
 
   const stop = useCallback(async () => {
     setBusy(true);
@@ -199,8 +206,28 @@ export function DemoPage() {
       ) : null}
 
       {isOwner ? (
-        <Panel className="space-y-3 p-4">
-          <div className="flex items-end justify-between gap-3">
+        <Panel className="space-y-4 p-4">
+          <div className="space-y-1">
+            <label
+              htmlFor="admin-demo-board-input"
+              className="text-xs font-medium text-foreground"
+            >
+              {t("admin.demo.boardInput")}
+            </label>
+            <Input
+              id="admin-demo-board-input"
+              data-testid="admin-demo-board-input"
+              value={boardId}
+              disabled={running || busy}
+              autoComplete="off"
+              placeholder={t("admin.demo.boardPlaceholder")}
+              onChange={(event) => setBoardId(event.target.value)}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {t("admin.demo.boardHint")}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="space-y-1">
               <label
                 htmlFor="admin-demo-agents-input"
@@ -208,17 +235,14 @@ export function DemoPage() {
               >
                 {t("admin.demo.agents")}
               </label>
-              <Input
+              <NumberField
                 id="admin-demo-agents-input"
-                data-testid="admin-demo-agents-input"
-                type="number"
+                testId="admin-demo-agents-input"
                 min={1}
                 max={100}
-                inputMode="numeric"
                 value={agents}
                 disabled={running || busy}
-                onChange={(event) => setAgents(event.target.value)}
-                className="w-28"
+                onChange={setAgents}
               />
             </div>
             <div className="flex items-center gap-2">

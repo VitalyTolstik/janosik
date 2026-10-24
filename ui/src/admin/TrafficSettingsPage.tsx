@@ -4,14 +4,20 @@ import type {
   AdminTrafficDto,
 } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
-import { Badge, ErrorState, LoadingState, PageHeader, Panel } from "./ui";
+import {
+  Badge,
+  ErrorState,
+  LoadingState,
+  NumberField,
+  PageHeader,
+  Panel,
+} from "./ui";
 
 /**
  * Traffic & limits (TASK-57) — the live API request rate and the global rate
@@ -180,21 +186,25 @@ export function TrafficSettingsPage() {
           >
             {t("admin.traffic.limit")}
           </label>
-          <Input
+          <NumberField
             id="admin-traffic-limit-input"
-            data-testid="admin-traffic-limit-input"
-            type="number"
+            testId="admin-traffic-limit-input"
             min={1}
-            inputMode="numeric"
+            max={1_000_000}
             value={draft}
             disabled={!isOwner}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={setDraft}
           />
-          <Badge variant={settings?.source === "db" ? "primary" : "neutral"}>
-            {settings?.source === "db"
-              ? t("admin.traffic.limitSource.db")
-              : t("admin.traffic.limitSource.env")}
-          </Badge>
+          <div className="flex items-center gap-2 pt-0.5">
+            <span className="text-[11px] text-muted-foreground">
+              {t("admin.traffic.limitSource")}:
+            </span>
+            <Badge variant={settings?.source === "db" ? "primary" : "neutral"}>
+              {settings?.source === "db"
+                ? t("admin.traffic.limitSource.db")
+                : t("admin.traffic.limitSource.env")}
+            </Badge>
+          </div>
         </div>
         {isOwner ? (
           <div className="flex justify-end">
