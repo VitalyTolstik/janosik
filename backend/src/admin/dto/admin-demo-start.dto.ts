@@ -14,12 +14,19 @@ export class AdminDemoStartDto {
   @IsString()
   boardId?: string;
 
-  /** Number of demo agents (and cards). */
+  /** Number of demo agents. */
   @IsOptional()
   @IsInt()
   @Min(1)
   @Max(100)
   users?: number;
+
+  /** Number of cards to seed (defaults to the agent count). */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  cards?: number;
 
   /** Let the agents act immediately; `false` seeds and waits. */
   @IsOptional()

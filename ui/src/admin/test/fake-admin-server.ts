@@ -797,14 +797,15 @@ export class FakeAdminServer {
       }
       const input = (jsonBody ?? {}) as Partial<AdminDemoStartRequest>;
       const users = input.users ?? 20;
+      const cards = input.cards ?? users;
       this.demoStatus = {
         running: true,
-        boardId: "demo-board",
+        boardId: input.boardId ?? "demo-board",
         startedAt: new Date(now).toISOString(),
         users: users + 1,
         columns: 5,
         labels: 5,
-        cards: users,
+        cards,
         cardsDone: 0,
       };
       return this.json(this.demoStatus, 201);

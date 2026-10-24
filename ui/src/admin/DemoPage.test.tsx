@@ -60,6 +60,9 @@ describe("DemoPage", () => {
     fireEvent.change(screen.getByTestId("admin-demo-agents-input"), {
       target: { value: "3" },
     });
+    fireEvent.change(screen.getByTestId("admin-demo-cards-input"), {
+      target: { value: "8" },
+    });
     fireEvent.click(screen.getByTestId("admin-demo-start"));
 
     await waitFor(() =>
@@ -68,11 +71,12 @@ describe("DemoPage", () => {
       ),
     );
     expect(screen.getByTestId("admin-demo-agents")).toHaveTextContent("4");
-    expect(screen.getByTestId("admin-demo-cards")).toHaveTextContent("3");
+    // Tasks are independent of the agent count.
+    expect(screen.getByTestId("admin-demo-cards")).toHaveTextContent("8");
     expect(server.demoStatus.running).toBe(true);
   });
 
-  it("starts a demo on a provided board id", async () => {
+  it("binds the demo to a saved board id (Save shows it above)", async () => {
     const server = new FakeAdminServer();
     vi.stubGlobal("fetch", server.fetchImpl);
     renderDemo();
@@ -80,7 +84,16 @@ describe("DemoPage", () => {
     fireEvent.change(await screen.findByTestId("admin-demo-board-input"), {
       target: { value: "board-xyz" },
     });
+    fireEvent.click(screen.getByTestId("admin-demo-board-save"));
+    // The board panel above reflects the saved selection.
+    expect(screen.getByTestId("admin-demo-board")).toHaveTextContent(
+      "board-xyz",
+    );
+
     fireEvent.change(screen.getByTestId("admin-demo-agents-input"), {
+      target: { value: "2" },
+    });
+    fireEvent.change(screen.getByTestId("admin-demo-cards-input"), {
       target: { value: "2" },
     });
     fireEvent.click(screen.getByTestId("admin-demo-start"));
@@ -89,7 +102,11 @@ describe("DemoPage", () => {
     const call = server.requests.find(
       (item) => item.method === "POST" && item.path === "/admin/demo/start",
     );
-    expect(call?.body).toMatchObject({ users: 2, boardId: "board-xyz" });
+    expect(call?.body).toMatchObject({
+      users: 2,
+      cards: 2,
+      boardId: "board-xyz",
+    });
   });
 
   it("stops the demo after confirmation", async () => {

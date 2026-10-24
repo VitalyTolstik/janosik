@@ -150,12 +150,12 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
     const started = await server()
       .post("/api/v1/admin/demo/start")
       .set("Authorization", `Bearer ${ownerToken}`)
-      .send({ users: 3, run: false })
+      .send({ users: 3, cards: 5, run: false })
       .expect(201);
     expect(started.body).toMatchObject({
       running: true,
       users: 4, // dispatcher + 3 agents
-      cards: 3,
+      cards: 5, // independent of the agent count
     });
     const boardId: string = started.body.boardId;
     expect(typeof boardId).toBe("string");
@@ -173,7 +173,7 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
     expect(board?._count.columns).toBe(5);
     expect(board?._count.labels).toBe(5);
     expect(board?._count.members).toBe(4);
-    expect(await prisma.card.count({ where: { column: { boardId } } })).toBe(3);
+    expect(await prisma.card.count({ where: { column: { boardId } } })).toBe(5);
 
     // A second start while one is live is refused.
     await server()

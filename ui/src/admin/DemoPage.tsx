@@ -3,6 +3,7 @@ import { PlayCircle, Trash2 } from "lucide-react";
 import type { AdminDemoStatusDto } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberStepper } from "@/components/ui/number-stepper";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
@@ -14,7 +15,6 @@ import {
   ConfirmDialog,
   ErrorState,
   LoadingState,
-  NumberField,
   PageHeader,
   Panel,
 } from "./ui";
@@ -36,7 +36,9 @@ export function DemoPage() {
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [demo, setDemo] = useState<AdminDemoStatusDto | null>(null);
   const [agents, setAgents] = useState("20");
+  const [cards, setCards] = useState("20");
   const [boardId, setBoardId] = useState("");
+  const [selectedBoardId, setSelectedBoardId] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const mounted = useRef(true);
@@ -75,14 +77,17 @@ export function DemoPage() {
 
   const start = useCallback(async () => {
     const users = Number(agents);
+    const taskCount = Number(cards);
     if (!Number.isInteger(users) || users < 1) return;
+    if (!Number.isInteger(taskCount) || taskCount < 1) return;
     setBusy(true);
     try {
-      const trimmed = boardId.trim();
+      const target = selectedBoardId.trim();
       const value = await adminApi.startDemo({
         users,
+        cards: taskCount,
         run: true,
-        ...(trimmed === "" ? {} : { boardId: trimmed }),
+        ...(target === "" ? {} : { boardId: target }),
       });
       setDemo(value);
       toast.success(t("admin.demo.started"));
@@ -95,7 +100,7 @@ export function DemoPage() {
     } finally {
       setBusy(false);
     }
-  }, [agents, boardId, t, toast]);
+  }, [agents, cards, selectedBoardId, t, toast]);
 
   const stop = useCallback(async () => {
     setBusy(true);
@@ -124,6 +129,7 @@ export function DemoPage() {
   if (phase === "error") return <ErrorState onRetry={retry} />;
 
   const running = demo?.running ?? false;
+  const shownBoard = selectedBoardId.trim() || demo?.boardId || "";
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4 p-6">
@@ -194,16 +200,25 @@ export function DemoPage() {
         </div>
       </Panel>
 
-      {demo?.boardId ? (
-        <Panel className="flex items-center justify-between gap-3 p-4">
-          <span className="text-xs text-muted-foreground">
-            {t("admin.demo.board")}
+      <Panel className="flex items-center justify-between gap-3 p-4">
+        <span className="text-xs text-muted-foreground">
+          {t("admin.demo.board")}
+        </span>
+        {shownBoard === "" ? (
+          <span className="text-[11px] text-muted-foreground">
+            {t("admin.demo.boardPlaceholder")}
           </span>
+        ) : (
           <Badge variant="neutral">
-            <code className="font-mono text-[11px]">{demo.boardId}</code>
+            <code
+              data-testid="admin-demo-board"
+              className="font-mono text-[11px]"
+            >
+              {shownBoard}
+            </code>
           </Badge>
-        </Panel>
-      ) : null}
+        )}
+      </Panel>
 
       {isOwner ? (
         <Panel className="space-y-4 p-4">
@@ -214,42 +229,83 @@ export function DemoPage() {
             >
               {t("admin.demo.boardInput")}
             </label>
-            <Input
-              id="admin-demo-board-input"
-              data-testid="admin-demo-board-input"
-              value={boardId}
-              disabled={running || busy}
-              autoComplete="off"
-              placeholder={t("admin.demo.boardPlaceholder")}
-              onChange={(event) => setBoardId(event.target.value)}
-            />
+            <div className="flex items-center gap-2">
+              <Input
+                id="admin-demo-board-input"
+                data-testid="admin-demo-board-input"
+                value={boardId}
+                disabled={running || busy}
+                autoComplete="off"
+                placeholder={t("admin.demo.boardPlaceholder")}
+                onChange={(event) => setBoardId(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    setSelectedBoardId(boardId.trim());
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="admin-demo-board-save"
+                disabled={running || busy}
+                onClick={() => setSelectedBoardId(boardId.trim())}
+              >
+                {t("admin.common.save")}
+              </Button>
+            </div>
             <p className="text-[11px] text-muted-foreground">
               {t("admin.demo.boardHint")}
             </p>
           </div>
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="space-y-1">
-              <label
-                htmlFor="admin-demo-agents-input"
-                className="text-xs font-medium text-foreground"
-              >
-                {t("admin.demo.agents")}
-              </label>
-              <NumberField
-                id="admin-demo-agents-input"
-                testId="admin-demo-agents-input"
-                min={1}
-                max={100}
-                value={agents}
-                disabled={running || busy}
-                onChange={setAgents}
-              />
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="space-y-1">
+                <label
+                  htmlFor="admin-demo-agents-input"
+                  className="text-xs font-medium text-foreground"
+                >
+                  {t("admin.demo.agents")}
+                </label>
+                <NumberStepper
+                  id="admin-demo-agents-input"
+                  testId="admin-demo-agents-input"
+                  min={1}
+                  max={100}
+                  value={agents}
+                  disabled={running || busy}
+                  onChange={setAgents}
+                  ariaLabel={t("admin.demo.agents")}
+                  increaseLabel={t("admin.common.increase")}
+                  decreaseLabel={t("admin.common.decrease")}
+                />
+              </div>
+              <div className="space-y-1">
+                <label
+                  htmlFor="admin-demo-cards-input"
+                  className="text-xs font-medium text-foreground"
+                >
+                  {t("admin.demo.tasks")}
+                </label>
+                <NumberStepper
+                  id="admin-demo-cards-input"
+                  testId="admin-demo-cards-input"
+                  min={1}
+                  max={1000}
+                  value={cards}
+                  disabled={running || busy}
+                  onChange={setCards}
+                  ariaLabel={t("admin.demo.tasks")}
+                  increaseLabel={t("admin.common.increase")}
+                  decreaseLabel={t("admin.common.decrease")}
+                />
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 data-testid="admin-demo-start"
-                disabled={running || busy || agents === ""}
+                disabled={running || busy || agents === "" || cards === ""}
                 onClick={() => void start()}
               >
                 <PlayCircle className="mr-1.5 h-3.5 w-3.5" aria-hidden />

@@ -983,8 +983,10 @@ export interface AdminDemoStatusDto {
 export interface AdminDemoStartRequest {
   /** Board to populate; a dedicated "Demo" board is created when omitted. */
   boardId?: string;
-  /** Number of demo agents (and cards). */
+  /** Number of demo agents. */
   users?: number;
+  /** Number of cards to seed (defaults to the agent count). */
+  cards?: number;
   /** Let the agents act immediately; `false` seeds and waits. */
   run?: boolean;
 }

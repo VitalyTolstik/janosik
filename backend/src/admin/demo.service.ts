@@ -36,6 +36,7 @@ const SUMMARIES = [
   "Логирование команд",
 ];
 const MAX_USERS = 100;
+const MAX_CARDS = 1000;
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -140,7 +141,7 @@ export class DemoService implements OnModuleDestroy {
    * Refuses while another run is active.
    */
   async start(
-    input: { boardId?: string; users?: number; run?: boolean },
+    input: { boardId?: string; users?: number; cards?: number; run?: boolean },
     startedBy: string,
   ): Promise<AdminDemoStatusDto> {
     if (this.active) {
@@ -151,6 +152,13 @@ export class DemoService implements OnModuleDestroy {
       throw new BadRequestException({
         message: `users must be an integer between 1 and ${MAX_USERS}`,
         field: "users",
+      });
+    }
+    const cards = input.cards ?? agents;
+    if (!Number.isInteger(cards) || cards < 1 || cards > MAX_CARDS) {
+      throw new BadRequestException({
+        message: `cards must be an integer between 1 and ${MAX_CARDS}`,
+        field: "cards",
       });
     }
 
@@ -233,10 +241,10 @@ export class DemoService implements OnModuleDestroy {
     // 5. One card per agent, in the backlog, assigned to that agent.
     const specs: Array<{ cardId: string; summary: string; worker: string }> =
       [];
-    for (let i = 0; i < workers.length; i += 1) {
+    for (let i = 0; i < cards; i += 1) {
       const cardId = newId("card");
       const summary = SUMMARIES[i % SUMMARIES.length];
-      const worker = workers[i];
+      const worker = workers[i % workers.length];
       await this.send(boardId, dispatcherId, {
         type: "ADD_CARD",
         newCardId: cardId,

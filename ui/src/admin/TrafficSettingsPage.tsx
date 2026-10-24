@@ -4,20 +4,14 @@ import type {
   AdminTrafficDto,
 } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
+import { NumberStepper } from "@/components/ui/number-stepper";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
-import {
-  Badge,
-  ErrorState,
-  LoadingState,
-  NumberField,
-  PageHeader,
-  Panel,
-} from "./ui";
+import { Badge, ErrorState, LoadingState, PageHeader, Panel } from "./ui";
 
 /**
  * Traffic & limits (TASK-57) — the live API request rate and the global rate
@@ -186,7 +180,7 @@ export function TrafficSettingsPage() {
           >
             {t("admin.traffic.limit")}
           </label>
-          <NumberField
+          <NumberStepper
             id="admin-traffic-limit-input"
             testId="admin-traffic-limit-input"
             min={1}
@@ -194,6 +188,9 @@ export function TrafficSettingsPage() {
             value={draft}
             disabled={!isOwner}
             onChange={setDraft}
+            ariaLabel={t("admin.traffic.limit")}
+            increaseLabel={t("admin.common.increase")}
+            decreaseLabel={t("admin.common.decrease")}
           />
           <div className="flex items-center gap-2 pt-0.5">
             <span className="text-[11px] text-muted-foreground">

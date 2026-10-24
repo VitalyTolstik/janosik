@@ -6,8 +6,6 @@ import {
   ChevronRight,
   Copy,
   Loader2,
-  Minus,
-  Plus,
   Search,
 } from "lucide-react";
 
@@ -441,81 +439,6 @@ export function ConfirmDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-/**
- * A numeric field with a styled −/+ stepper (TASK-57): the native number
- * input's spinners are browser chrome and look foreign in the panel, so this
- * renders a plain text input with matching controls. Only digits are accepted.
- */
-export function NumberField({
-  value,
-  onChange,
-  min,
-  max,
-  id,
-  testId,
-  label,
-  disabled,
-  className,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  min?: number;
-  max?: number;
-  id?: string;
-  testId?: string;
-  label?: string;
-  disabled?: boolean;
-  className?: string;
-}) {
-  const t = useAdminT();
-  const clamp = (next: number): number =>
-    Math.min(max ?? next, Math.max(min ?? next, next));
-  const step = (delta: number) => {
-    const current = Number(value);
-    const base = Number.isFinite(current) ? current : (min ?? 0);
-    onChange(String(clamp(base + delta)));
-  };
-  const stepperClass =
-    "flex w-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
-  return (
-    <div
-      className={cn(
-        "inline-flex h-9 items-stretch overflow-hidden rounded-md border border-input bg-transparent shadow-sm focus-within:ring-2 focus-within:ring-ring",
-        className,
-      )}
-    >
-      <button
-        type="button"
-        aria-label={t("admin.common.decrease")}
-        disabled={disabled}
-        onClick={() => step(-1)}
-        className={stepperClass}
-      >
-        <Minus className="h-3.5 w-3.5" aria-hidden />
-      </button>
-      <input
-        id={id}
-        data-testid={testId}
-        aria-label={label}
-        inputMode="numeric"
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value.replace(/\D/g, ""))}
-        className="w-16 min-w-0 border-x border-input bg-transparent text-center text-sm tabular-nums text-foreground outline-none disabled:opacity-50"
-      />
-      <button
-        type="button"
-        aria-label={t("admin.common.increase")}
-        disabled={disabled}
-        onClick={() => step(1)}
-        className={stepperClass}
-      >
-        <Plus className="h-3.5 w-3.5" aria-hidden />
-      </button>
-    </div>
   );
 }
 
