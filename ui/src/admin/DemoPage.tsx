@@ -63,7 +63,7 @@ export function DemoPage() {
   // ever turn it back on, freezing the counter.
   useEffect(() => {
     mounted.current = true;
-    const id = setInterval(() => {
+    const tick = () => {
       adminApi
         .getDemo()
         .then((value) => {
@@ -72,10 +72,28 @@ export function DemoPage() {
         .catch(() => {
           /* keep the last snapshot */
         });
-    }, 2000);
+    };
+    // Visible tabs only: a background admin tab must not keep polling.
+    let id: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (id !== null) return;
+      tick();
+      id = setInterval(tick, 2000);
+    };
+    const stop = () => {
+      if (id !== null) clearInterval(id);
+      id = null;
+    };
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else start();
+    };
+    start();
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       mounted.current = false;
-      clearInterval(id);
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 

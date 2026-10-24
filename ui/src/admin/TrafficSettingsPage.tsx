@@ -65,11 +65,28 @@ export function TrafficSettingsPage() {
           /* a missed sample is not worth surfacing */
         });
     };
-    tick();
-    const id = setInterval(tick, 1000);
+    // Run only while the tab is visible: a background admin tab must not keep
+    // hammering the API once a second.
+    let id: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (id !== null) return;
+      tick();
+      id = setInterval(tick, 1000);
+    };
+    const stop = () => {
+      if (id !== null) clearInterval(id);
+      id = null;
+    };
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else start();
+    };
+    start();
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       mounted.current = false;
-      clearInterval(id);
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 
