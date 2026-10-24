@@ -21,6 +21,9 @@ import {
   Panel,
 } from "./ui";
 
+/** Remembered "Watch as" account (localStorage) — defaults to the master's email. */
+const WATCHER_KEY = "janosik.admin.demo.watcher";
+
 /**
  * Demo runner (TASK-57) — start a swarm of AI agents on a throwaway board,
  * watch them work, then clean up. The backend provisions the demo users,
@@ -41,7 +44,15 @@ export function DemoPage() {
   const [cards, setCards] = useState("20");
   const [boardId, setBoardId] = useState("");
   const [selectedBoardId, setSelectedBoardId] = useState("");
-  const [watcherEmail, setWatcherEmail] = useState("");
+  // "Watch as": defaults to the signed-in master's email, and remembers the
+  // last account the operator actually used.
+  const [watcherEmail, setWatcherEmail] = useState(() => {
+    try {
+      return localStorage.getItem(WATCHER_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const mounted = useRef(true);
@@ -59,6 +70,16 @@ export function DemoPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Default "Watch as" to the signed-in master's email, once, unless the
+  // operator already has a remembered account.
+  const watcherDefaulted = useRef(false);
+  useEffect(() => {
+    if (!watcherDefaulted.current && watcherEmail === "" && admin?.email) {
+      watcherDefaulted.current = true;
+      setWatcherEmail(admin.email);
+    }
+  }, [admin?.email, watcherEmail]);
 
   // Poll while the page is open so the counters advance on their own. The
   // `mounted` flag is raised here (not in the load effect): under React
@@ -101,6 +122,13 @@ export function DemoPage() {
         ...(target === "" && watcher !== "" ? { watcherEmail: watcher } : {}),
       });
       setDemo(value);
+      if (watcher !== "") {
+        try {
+          localStorage.setItem(WATCHER_KEY, watcher);
+        } catch {
+          /* private mode — not worth surfacing */
+        }
+      }
       toast.success(t("admin.demo.started"));
     } catch (cause) {
       const message =
@@ -141,7 +169,9 @@ export function DemoPage() {
 
   const running = demo?.running ?? false;
   const cleanupPending = demo?.cleanupPending ?? false;
-  const shownBoard = selectedBoardId.trim() || demo?.boardId || "";
+  // The run's own board wins: a leftover "next run" selection must never override
+  // what was actually started (that made "Open board" point at a stale board).
+  const shownBoard = demo?.boardId || selectedBoardId.trim();
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4 p-6">

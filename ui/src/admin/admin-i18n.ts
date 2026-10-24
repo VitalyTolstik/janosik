@@ -66,7 +66,7 @@ const en = {
   "admin.demo.boardPlaceholder": "auto — a new demo board",
   "admin.demo.watcher": "Watch as (your account email)",
   "admin.demo.watcherHint":
-    "A dedicated board is created under this account, so you can open it in the app and watch; leave empty for a synthetic owner (view it via the panel only).",
+    "The demo board is created under this account — sign in to the app as it to watch via “Open board”. If no such account exists, one is created automatically. Leave empty to use a throwaway owner (panel-only).",
   "admin.demo.startedAt": "Started",
   "admin.demo.started": "Demo started",
   "admin.demo.stopped": "Demo stopped, everything cleaned up",
@@ -667,7 +667,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.demo.boardPlaceholder": "авто — новая демо-доска",
   "admin.demo.watcher": "Наблюдать как (email вашего аккаунта)",
   "admin.demo.watcherHint":
-    "Отдельная доска создаётся под этим аккаунтом — зайдите им в приложение и смотрите; пусто — служебный владелец (видно только в панели).",
+    "Демо-доска создаётся под этим аккаунтом — войдите им в приложение и откройте кнопкой «Открыть доску». Если аккаунта нет — он создастся сам. Пусто — служебный владелец (видно только в панели).",
   "admin.demo.startedAt": "Запущено",
   "admin.demo.started": "Демо запущено",
   "admin.demo.stopped": "Демо остановлено, всё очищено",
