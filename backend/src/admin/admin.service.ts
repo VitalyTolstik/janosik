@@ -45,6 +45,7 @@ import {
   type OAuthProviderId,
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { BoardWriteService } from "@/common/board-write.service";
 import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
 import { MailerService } from "@/mailer/mailer.service";
@@ -89,6 +90,7 @@ const BACKEND_VERSION: string = (() => {
 export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly boardWrite: BoardWriteService,
     private readonly boards: BoardsService,
     private readonly commands: CommandsService,
     private readonly mailer: MailerService,
@@ -747,10 +749,12 @@ export class AdminService {
     if (!board) {
       throw new NotFoundException("Board not found");
     }
-    await this.prisma.board.update({
-      where: { id: boardId },
-      data: { archivedAt: archived ? new Date() : null },
-    });
+    await this.boardWrite.run(boardId, (tx) =>
+      tx.board.update({
+        where: { id: boardId },
+        data: { archivedAt: archived ? new Date() : null },
+      }),
+    );
     await this.audit(
       admin,
       archived ? "board.archive" : "board.unarchive",
@@ -966,15 +970,21 @@ export class AdminService {
   ): Promise<{ status: "ok" }> {
     const card = await this.prisma.card.findUnique({
       where: { id: cardId },
-      select: { id: true, title: true },
+      select: {
+        id: true,
+        title: true,
+        column: { select: { boardId: true } },
+      },
     });
     if (!card) {
       throw new NotFoundException("Card not found");
     }
-    await this.prisma.card.update({
-      where: { id: cardId },
-      data: { archivedAt: archived ? new Date() : null },
-    });
+    await this.boardWrite.run(card.column.boardId, (tx) =>
+      tx.card.update({
+        where: { id: cardId },
+        data: { archivedAt: archived ? new Date() : null },
+      }),
+    );
     await this.audit(
       admin,
       archived ? "card.archive" : "card.unarchive",
@@ -992,25 +1002,29 @@ export class AdminService {
   ): Promise<{ status: "ok" }> {
     const card = await this.prisma.card.findUnique({
       where: { id: cardId },
-      select: { id: true, title: true },
+      select: {
+        id: true,
+        title: true,
+        column: { select: { boardId: true } },
+      },
     });
     if (!card) {
       throw new NotFoundException("Card not found");
     }
-    await this.prisma.$transaction([
-      this.prisma.checklistItem.updateMany({
+    await this.boardWrite.run(card.column.boardId, async (tx) => {
+      await tx.checklistItem.updateMany({
         where: { checklist: { cardId } },
         data: { deletedAt: new Date() },
-      }),
-      this.prisma.checklist.updateMany({
+      });
+      await tx.checklist.updateMany({
         where: { cardId },
         data: { deletedAt: new Date() },
-      }),
-      this.prisma.card.update({
+      });
+      await tx.card.update({
         where: { id: cardId },
         data: { deletedAt: new Date() },
-      }),
-    ]);
+      });
+    });
     await this.audit(admin, "card.delete", "card", cardId, {
       title: card.title,
     });

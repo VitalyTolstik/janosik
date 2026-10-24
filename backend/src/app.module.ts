@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { PrismaModule } from "@/common/prisma/prisma.module";
+import { BoardWriteModule } from "@/common/board-write.module";
 import { HealthModule } from "@/health/health.module";
 import { MailerModule } from "@/mailer/mailer.module";
 import { AuthModule } from "@/auth/auth.module";
@@ -26,6 +27,7 @@ import { AdminModule } from "@/admin/admin.module";
       throttlers: [{ name: "default", ttl: 60_000, limit: 2000 }],
     }),
     PrismaModule,
+    BoardWriteModule,
     MailerModule,
     HealthModule,
     AuthModule,

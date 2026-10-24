@@ -4,9 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import type { Comment } from "@prisma/client";
+import type { Comment, Prisma } from "@prisma/client";
 import type { CommentDto, CommentPage } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import type { CreateCommentDto } from "./dto/create-comment.dto";
 
@@ -36,6 +37,7 @@ const INLINE_ATTACHMENT_URL =
 export class CommentsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly boardWrite: BoardWriteService,
     private readonly realtime: RealtimeService,
   ) {}
 
@@ -51,14 +53,15 @@ export class CommentsService {
         field: "text",
       });
     }
-    const created = await this.prisma.$transaction(async (tx) => {
-      const card = await tx.card.findFirst({
-        where: { id: cardId, deletedAt: null },
-        select: { id: true, column: { select: { boardId: true } } },
-      });
-      if (!card) {
-        throw new NotFoundException("Card not found");
-      }
+    const card = await this.prisma.card.findFirst({
+      where: { id: cardId, deletedAt: null },
+      select: { column: { select: { boardId: true } } },
+    });
+    if (!card) {
+      throw new NotFoundException("Card not found");
+    }
+    const boardId = card.column.boardId;
+    const created = await this.boardWrite.run(boardId, async (tx) => {
       const comment = await tx.comment.create({
         data: { cardId, authorId, text },
       });
@@ -72,7 +75,7 @@ export class CommentsService {
       });
       const activity = await tx.activity.create({
         data: {
-          boardId: card.column.boardId,
+          boardId,
           cardId,
           type: "comment_added",
           actorId: authorId,
@@ -82,7 +85,7 @@ export class CommentsService {
       return {
         comment,
         activityId: activity.id,
-        boardId: card.column.boardId,
+        boardId,
       };
     });
     this.publishActivity(
@@ -151,26 +154,29 @@ export class CommentsService {
     if (comment.authorId !== userId) {
       throw new ForbiddenException("Only the author can delete a comment");
     }
-    const removed = await this.prisma.$transaction(async (tx) => {
-      await tx.comment.update({
-        where: { id: comment.id },
-        data: { deletedAt: new Date() },
-      });
-      const activity = await tx.activity.create({
-        data: {
+    const removed = await this.boardWrite.run(
+      comment.card.column.boardId,
+      async (tx) => {
+        await tx.comment.update({
+          where: { id: comment.id },
+          data: { deletedAt: new Date() },
+        });
+        const activity = await tx.activity.create({
+          data: {
+            boardId: comment.card.column.boardId,
+            cardId: comment.cardId,
+            type: "comment_deleted",
+            actorId: userId,
+            details: { commentId: comment.id, text: comment.text },
+          },
+        });
+        return {
+          activityId: activity.id,
           boardId: comment.card.column.boardId,
-          cardId: comment.cardId,
-          type: "comment_deleted",
-          actorId: userId,
-          details: { commentId: comment.id, text: comment.text },
-        },
-      });
-      return {
-        activityId: activity.id,
-        boardId: comment.card.column.boardId,
-        at: activity.createdAt.getTime(),
-      };
-    });
+          at: activity.createdAt.getTime(),
+        };
+      },
+    );
     this.publishActivity(
       removed.boardId,
       comment.cardId,
@@ -182,15 +188,21 @@ export class CommentsService {
     );
     // Inline media pasted into the comment die with it — soft-deleted like
     // every attachment (the physical blob stays, matching the soft-delete
-    // restore story; the purge job reclaims rows later).
-    await this.unlinkInlineAttachments(comment.text);
+    // restore story; the purge job reclaims rows later). Runs under the same
+    // board lock so it never races a concurrent command.
+    await this.boardWrite.run(comment.card.column.boardId, (tx) =>
+      this.unlinkInlineAttachments(tx, comment.text),
+    );
   }
 
   /** Soft-delete the inline attachments embedded in a deleted comment. */
-  private async unlinkInlineAttachments(text: string): Promise<void> {
+  private async unlinkInlineAttachments(
+    tx: Prisma.TransactionClient,
+    text: string,
+  ): Promise<void> {
     const ids = [...text.matchAll(INLINE_ATTACHMENT_URL)].map((m) => m[1]);
     if (ids.length === 0) return;
-    await this.prisma.attachment.updateMany({
+    await tx.attachment.updateMany({
       where: { id: { in: ids }, isInline: true, deletedAt: null },
       data: { deletedAt: new Date() },
     });

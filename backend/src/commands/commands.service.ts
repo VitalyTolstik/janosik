@@ -27,6 +27,7 @@ import {
 } from "@janosik/shared";
 import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { applyCommandWrites, collectVersions } from "./command-writers";
 import { commandDetails } from "./command-details";
@@ -103,6 +104,7 @@ const SUPPORTED_ACTIONS = new Set<string>([
 export class CommandsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly boardWrite: BoardWriteService,
     private readonly realtime: RealtimeService,
   ) {}
 
@@ -136,7 +138,8 @@ export class CommandsService {
       });
     }
 
-    const applied = await this.prisma.$transaction(
+    const applied = await this.boardWrite.run(
+      boardId,
       async (
         tx,
       ): Promise<{
@@ -144,17 +147,14 @@ export class CommandsService {
         fresh: boolean;
         touches: string[];
       }> => {
-        // Serialize commands per board on the board row itself: concurrent
-        // requests queue here, so the `ifMatch` check below sees every
-        // committed predecessor. Without this lock two parallel commands with
-        // the same `ifMatch` would both pass under Read Committed (reproduced
-        // in review, 2026-09-16). Other boards never block each other.
-        const locked = await tx.$queryRaw<{ id: string }[]>`
-        SELECT "id" FROM "Board"
-        WHERE "id" = ${boardId} AND "deletedAt" IS NULL
-        FOR UPDATE
-      `;
-        if (locked.length === 0) {
+        // The board write lock (BoardWriteService) already serializes every
+        // command on this board — the `ifMatch` check below sees each
+        // committed predecessor. We only need the board to exist.
+        const board = await tx.board.findFirst({
+          where: { id: boardId, deletedAt: null },
+          select: { id: true },
+        });
+        if (!board) {
           throw new NotFoundException("Board not found");
         }
 

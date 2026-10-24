@@ -5,6 +5,7 @@ import {
 } from "@nestjs/common";
 import type { BoardInvitationDto } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 
 /**
@@ -21,6 +22,7 @@ import { RealtimeService } from "@/realtime/realtime.service";
 export class InvitationsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly boardWrite: BoardWriteService,
     private readonly realtime: RealtimeService,
   ) {}
 
@@ -58,7 +60,7 @@ export class InvitationsService {
       await this.prisma.boardMember.delete({ where: { id: invitation.id } });
       throw new ConflictException("Invitation has expired");
     }
-    await this.prisma.$transaction(async (tx) => {
+    await this.boardWrite.run(invitation.boardId, async (tx) => {
       await tx.boardMember.update({
         where: { id: invitation.id },
         data: { acceptedAt: new Date() },
@@ -85,7 +87,7 @@ export class InvitationsService {
   /** Decline a pending invitation — the row is dropped, access never granted. */
   async decline(userId: string, invitationId: string): Promise<void> {
     const invitation = await this.findPending(userId, invitationId);
-    await this.prisma.$transaction(async (tx) => {
+    await this.boardWrite.run(invitation.boardId, async (tx) => {
       await tx.boardMember.delete({ where: { id: invitation.id } });
       await tx.activity.create({
         data: {

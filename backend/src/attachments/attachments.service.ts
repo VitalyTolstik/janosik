@@ -12,6 +12,7 @@ import { LIMITS } from "@janosik/shared";
 
 import type { AuthUser } from "@/auth/auth.types";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { ATTACHMENT_MIME_ALLOWLIST, StorageService } from "./storage.service";
 import { TranscodeService } from "./transcode.service";
@@ -34,6 +35,7 @@ export interface UploadedBlob {
 export class AttachmentsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly boardWrite: BoardWriteService,
     private readonly storage: StorageService,
     private readonly realtime: RealtimeService,
     private readonly transcode: TranscodeService,
@@ -95,40 +97,43 @@ export class AttachmentsService {
     // Inline media (pasted into the description/comment body) skip the
     // card-face counter, the activity row and the SSE frame: nothing in
     // the attachment UI changes, only the body markdown references them.
-    const created = await this.prisma.$transaction(async (tx) => {
-      const row = await tx.attachment.create({
-        data: {
-          id: randomUUID(),
-          cardId,
-          boardId: card.column.boardId,
-          fileName,
-          storedName,
-          mimeType: file.mimetype,
-          sizeBytes: file.size,
-          uploadedById: user.id,
-          isInline,
-          transcodeStatus,
-          createdAt: now,
-        },
-      });
-      if (!isInline) {
-        await tx.card.update({
-          where: { id: cardId },
-          data: { attachmentCount: { increment: 1 } },
-        });
-        const activity = await tx.activity.create({
+    const created = await this.boardWrite.run(
+      card.column.boardId,
+      async (tx) => {
+        const row = await tx.attachment.create({
           data: {
-            boardId: card.column.boardId,
+            id: randomUUID(),
             cardId,
-            type: "attachment_added",
-            actorId: user.id,
-            details: { attachmentId: row.id, fileName },
+            boardId: card.column.boardId,
+            fileName,
+            storedName,
+            mimeType: file.mimetype,
+            sizeBytes: file.size,
+            uploadedById: user.id,
+            isInline,
+            transcodeStatus,
+            createdAt: now,
           },
         });
-        return { row, activityId: activity.id };
-      }
-      return { row, activityId: null };
-    });
+        if (!isInline) {
+          await tx.card.update({
+            where: { id: cardId },
+            data: { attachmentCount: { increment: 1 } },
+          });
+          const activity = await tx.activity.create({
+            data: {
+              boardId: card.column.boardId,
+              cardId,
+              type: "attachment_added",
+              actorId: user.id,
+              details: { attachmentId: row.id, fileName },
+            },
+          });
+          return { row, activityId: activity.id };
+        }
+        return { row, activityId: null };
+      },
+    );
 
     if (created.activityId === null) {
       if (transcodeStatus === "pending") this.transcode.enqueue(created.row.id);
@@ -198,7 +203,7 @@ export class AttachmentsService {
       if (membership?.role !== "ADMIN") throw new ForbiddenException();
     }
 
-    const removed = await this.prisma.$transaction(async (tx) => {
+    const removed = await this.boardWrite.run(row.boardId, async (tx) => {
       const updated = await tx.attachment.updateMany({
         where: { id: attachmentId, deletedAt: null },
         data: { deletedAt: new Date() },

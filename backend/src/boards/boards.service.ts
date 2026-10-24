@@ -14,6 +14,7 @@ import type {
 } from "@janosik/shared";
 import { parseExport, serializeExport } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import {
   loadBoardAggregate,
@@ -37,6 +38,7 @@ import type { UpdateMemberDto } from "./dto/update-member.dto";
 export class BoardsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly boardWrite: BoardWriteService,
     private readonly realtime: RealtimeService,
   ) {}
 
@@ -148,7 +150,7 @@ export class BoardsService {
    * set, so the 30-day purge job can reclaim them.
    */
   async deleteBoard(boardId: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+    await this.boardWrite.run(boardId, async (tx) => {
       const now = new Date();
 
       const cards = await tx.card.findMany({
@@ -241,7 +243,7 @@ export class BoardsService {
     }
 
     const expiresAt = this.resolveExpiresAt(dto.role, dto.expiresAt, null);
-    const member = await this.prisma.$transaction(async (tx) => {
+    const member = await this.boardWrite.run(boardId, async (tx) => {
       const created = await tx.boardMember.create({
         data: {
           boardId,
@@ -313,7 +315,7 @@ export class BoardsService {
     const expiryChanged =
       (expiresAt?.getTime() ?? null) !== (member.expiresAt?.getTime() ?? null);
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.boardWrite.run(boardId, async (tx) => {
       const row = await tx.boardMember.update({
         where: { id: member.id },
         data: { role, expiresAt },
@@ -372,7 +374,7 @@ export class BoardsService {
     if (member.acceptedAt !== null && member.role === Role.ADMIN) {
       await this.assertNotLastAdmin(boardId, targetUserId, "remove");
     }
-    await this.prisma.$transaction(async (tx) => {
+    await this.boardWrite.run(boardId, async (tx) => {
       await tx.boardMember.delete({ where: { id: member.id } });
       await tx.activity.create({
         data: {
