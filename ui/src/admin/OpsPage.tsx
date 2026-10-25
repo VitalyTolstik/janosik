@@ -6,6 +6,7 @@ import type {
 } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberStepper } from "@/components/ui/number-stepper";
 import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
@@ -49,7 +50,8 @@ export function OpsPage() {
         setRetention(nextRetention);
         setMessage(nextOps.maintenanceMessage ?? "");
         setPerUser(nextOps.perUserRateLimit?.toString() ?? "");
-        setRetentionDays(nextOps.retentionDays?.toString() ?? "");
+        // Default retention window: 30 days (mirrors the backend default).
+        setRetentionDays(String(nextOps.retentionDays ?? 30));
         setPhase("ready");
       })
       .catch(() => setPhase("error"));
@@ -127,6 +129,10 @@ export function OpsPage() {
       setPurging(false);
     }
   }, [load, t, toast]);
+
+  const effectiveDays =
+    retentionDays.trim() === "" ? 30 : Number(retentionDays);
+  const daysValid = Number.isFinite(effectiveDays) && effectiveDays >= 1;
 
   if (phase === "loading") return <LoadingState />;
   if (phase === "error") {
@@ -214,23 +220,34 @@ export function OpsPage() {
             <span className="text-muted-foreground">
               {t("admin.ops.perUserLimit")}
             </span>
-            <Input
+            <NumberStepper
+              testId="admin-ops-peruser"
+              min={1}
+              max={100_000}
               value={perUser}
-              inputMode="numeric"
-              data-testid="admin-ops-peruser"
-              onChange={(event) => setPerUser(event.target.value)}
+              ariaLabel={t("admin.ops.perUserLimit")}
+              increaseLabel={t("admin.common.increase")}
+              decreaseLabel={t("admin.common.decrease")}
+              onChange={setPerUser}
             />
           </label>
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground">
               {t("admin.ops.retentionDays")}
             </span>
-            <Input
+            <NumberStepper
+              testId="admin-ops-retention"
+              min={1}
+              max={3650}
               value={retentionDays}
-              inputMode="numeric"
-              data-testid="admin-ops-retention"
-              onChange={(event) => setRetentionDays(event.target.value)}
+              ariaLabel={t("admin.ops.retentionDays")}
+              increaseLabel={t("admin.common.increase")}
+              decreaseLabel={t("admin.common.decrease")}
+              onChange={setRetentionDays}
             />
+            <span className="text-[11px] text-muted-foreground">
+              {t("admin.ops.retentionDaysHint")}
+            </span>
           </label>
         </div>
         <div className="mt-3 flex justify-end">
@@ -248,6 +265,9 @@ export function OpsPage() {
       <Panel className="p-4">
         <h2 className="mb-1 text-sm font-medium">{t("admin.ops.retention")}</h2>
         <p className="text-xs text-muted-foreground">
+          {t("admin.ops.retention.olderThan", { days: effectiveDays })}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
           {t("admin.ops.retention.purgeable", {
             cards: retention?.purgeable.cards ?? 0,
             comments: retention?.purgeable.comments ?? 0,
@@ -266,6 +286,7 @@ export function OpsPage() {
           <Button
             variant="destructive"
             size="sm"
+            disabled={!daysValid}
             data-testid="admin-ops-purge"
             onClick={() => setPurging(true)}
           >
@@ -277,7 +298,7 @@ export function OpsPage() {
       <ConfirmDialog
         open={purging}
         title={t("admin.ops.retention.confirm.title")}
-        body={t("admin.ops.retention.confirm.body")}
+        body={t("admin.ops.retention.confirm.body", { days: effectiveDays })}
         confirmLabel={t("admin.ops.retention.purge")}
         busy={false}
         onConfirm={() => void purge()}

@@ -200,15 +200,19 @@ const en = {
   "admin.ops.maintenance.off": "Maintenance mode off",
   "admin.ops.maintenanceMessage": "Maintenance message",
   "admin.ops.perUserLimit": "Per-user requests / min",
-  "admin.ops.retentionDays": "Retention window (days)",
+  "admin.ops.retentionDays": "Delete soft-deleted data after (days)",
+  "admin.ops.retentionDaysHint":
+    "The grace window before Purge may remove it. Default 30 days.",
   "admin.ops.saved": "Saved",
   "admin.ops.retention": "Soft-deleted data",
+  "admin.ops.retention.olderThan":
+    "Only already-deleted items older than {days} days are eligible.",
   "admin.ops.retention.purgeable":
     "{cards} cards · {comments} comments · {attachments} attachments · {columns} columns",
   "admin.ops.retention.purge": "Purge now",
   "admin.ops.retention.confirm.title": "Purge soft-deleted data?",
   "admin.ops.retention.confirm.body":
-    "Rows past the retention window are permanently deleted.",
+    "Permanently deletes already-deleted cards, comments, attachments and columns of all users older than {days} days. Live data is never touched.",
   "admin.ops.retention.purged": "Purged {count} rows",
   "admin.ops.backups.configured": "Backups: {location}",
   "admin.ops.backups.none": "No backup location configured",
@@ -1041,15 +1045,19 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.ops.maintenance.off": "Режим обслуживания выключен",
   "admin.ops.maintenanceMessage": "Сообщение обслуживания",
   "admin.ops.perUserLimit": "Запросов на пользователя в минуту",
-  "admin.ops.retentionDays": "Окно хранения (дней)",
+  "admin.ops.retentionDays": "Удалять soft-deleted данные через (дней)",
+  "admin.ops.retentionDaysHint":
+    "Срок «на передумать» до того, как очистка их удалит. По умолчанию 30 дней.",
   "admin.ops.saved": "Сохранено",
   "admin.ops.retention": "Удалённые (soft-delete) данные",
+  "admin.ops.retention.olderThan":
+    "Под очистку попадают только уже удалённые элементы старше {days} дней.",
   "admin.ops.retention.purgeable":
     "{cards} карточек · {comments} комментариев · {attachments} вложений · {columns} колонок",
   "admin.ops.retention.purge": "Очистить",
   "admin.ops.retention.confirm.title": "Очистить soft-deleted данные?",
   "admin.ops.retention.confirm.body":
-    "Строки старше окна хранения будут удалены навсегда.",
+    "Безвозвратно удалит уже удалённые карточки, комментарии, вложения и колонки всех пользователей старше {days} дней. Живые данные не затрагиваются.",
   "admin.ops.retention.purged": "Очищено строк: {count}",
   "admin.ops.backups.configured": "Бэкапы: {location}",
   "admin.ops.backups.none": "Каталог бэкапов не задан",
