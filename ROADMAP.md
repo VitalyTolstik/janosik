@@ -1599,9 +1599,11 @@ TASK-36 и TASK-37.)*
 > таблицах, бейдж verified, баннер «view as», in-app баннер объявлений;
 > автодополнение получателей; en+ru. Плюс расширение TASK-62: рассылка
 > новостей/апдейтов в приложение (all или выбранным юзерам) с опциональным
-> «также на email»; веерная отправка через in-process BroadcastQueueService
-> (сид для Bull/Redis — одномодульная MVP-конвенция §7.0). Гейты: shared
-> 367, backend 132 unit + 228 e2e, ui 769, lint/build/size зелёные.
+> «также на email»; веерная отправка — **BullMQ** (`@nestjs/bullmq` + `bullmq`
+> на Redis, очередь `broadcast`, воркер `BroadcastProcessor`, `attempts`+
+> backoff); `redis` добавлен в `backend/docker-compose.yml`, подключение через
+> env `REDIS_URL`; без `REDIS_URL` — фолбэк на in-process очередь. Гейты:
+> shared 367, backend 138 unit + 228 e2e, ui 769, lint/build/size зелёные.
 > **Не покрыто тестами UI:** новые страницы (Ops/Comms/Observability/Security) —
 > добавлены без отдельного ui-набора; логика покрыта backend e2e/unit.
 

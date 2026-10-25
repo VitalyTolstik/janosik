@@ -90,7 +90,7 @@ export class CommsService {
     // request returns immediately; a no-op when the mailer is in log mode.
     if (row.sendEmail && this.mailer.enabled) {
       const emails = await this.recipientEmails(row.audience, row.segment);
-      this.broadcasts.enqueue({
+      void this.broadcasts.enqueue({
         emails,
         subject: row.title,
         text: row.body,

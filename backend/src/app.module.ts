@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { BullModule } from "@nestjs/bullmq";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { env } from "@/config/env";
 import { throttleLimit } from "@/config/throttle";
 import { PrismaModule } from "@/common/prisma/prisma.module";
 import { BoardWriteModule } from "@/common/board-write.module";
@@ -51,6 +53,17 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
     ShareModule,
     AdminModule,
     OpsModule,
+    // BullMQ root config (TASK-62) — only when a Redis URL is configured;
+    // `OpsModule` then registers the broadcast queue and its worker.
+    ...(env.REDIS_URL.trim().length > 0
+      ? [
+          BullModule.forRootAsync({
+            useFactory: () => ({
+              connection: { url: env.REDIS_URL },
+            }),
+          }),
+        ]
+      : []),
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

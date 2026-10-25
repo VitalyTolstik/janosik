@@ -22,5 +22,22 @@ services:
       timeout: 5s
       retries: 10
 
+  # Redis backs the BullMQ jobs (outgoing mail fan-out / broadcast queue,
+  # TASK-62). Optional: with no `REDIS_URL` the backend falls back to the
+  # in-process queue, so a bare self-host still works.
+  redis:
+    image: redis:7-alpine
+    container_name: janosik-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - janosik-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   janosik-pgdata:
+  janosik-redisdata:

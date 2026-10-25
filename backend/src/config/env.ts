@@ -157,6 +157,14 @@ export const env = cleanEnv(process.env, {
     default: "Janosik <no-reply@janosik.local>",
     example: "Janosik <no-reply@example.com>",
   }),
+  // BullMQ job backend (TASK-62). When set (e.g. redis://localhost:6379) the
+  // outgoing-mail broadcast runs through BullMQ on Redis; unset falls back to
+  // the in-process queue, so a bare self-host needs no Redis.
+  REDIS_URL: str({
+    desc: "Redis connection URL for BullMQ queues; unset = in-process queue",
+    default: "",
+    example: "redis://localhost:6379",
+  }),
   // Master-panel mail settings (TASK-52): SMTP credentials saved from the
   // admin UI are encrypted at rest with this key. When unset the key is
   // derived from JWT_SECRET, so self-hosters need no extra configuration.
