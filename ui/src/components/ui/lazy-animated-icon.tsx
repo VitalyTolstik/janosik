@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Bell,
   Clock,
+  ExternalLink,
   Keyboard,
   Languages,
   LogOut,
@@ -29,6 +30,7 @@ export type AnimatedIconName =
   | "arrow-right"
   | "bell"
   | "clock"
+  | "external-link"
   | "keyboard"
   | "languages"
   | "logout"
@@ -96,6 +98,14 @@ const ICONS: Record<AnimatedIconName, IconEntry> = {
     Lazy: lazy(() =>
       import("@/components/ui/clock-icon").then((m) => ({
         default: m.ClockIcon,
+      })),
+    ),
+  },
+  "external-link": {
+    Fallback: ExternalLink,
+    Lazy: lazy(() =>
+      import("@/components/ui/external-link-icon").then((m) => ({
+        default: m.ExternalLinkIcon,
       })),
     ),
   },

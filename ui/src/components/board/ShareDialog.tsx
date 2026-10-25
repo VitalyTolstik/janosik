@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, Copy, Link2, RefreshCw, Share2, Trash2 } from "lucide-react";
+import { Check, Copy, Link2, RefreshCw, Trash2 } from "lucide-react";
 
 import type { BoardShareDto, BoardShareMode } from "@janosik/shared";
 import { SHARE_TTL_HOURS } from "@janosik/shared";
@@ -16,6 +16,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import {
   Tooltip,
   TooltipContent,
@@ -49,7 +50,7 @@ export function ShareDialog() {
               aria-label={t("share.button")}
               data-testid="share-trigger"
             >
-              <Share2 className="h-5 w-5" aria-hidden />
+              <LazyAnimatedIcon name="external-link" size={20} aria-hidden />
             </Button>
           </DialogTrigger>
         </TooltipTrigger>

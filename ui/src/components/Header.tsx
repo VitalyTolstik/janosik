@@ -1,4 +1,5 @@
 import { AccountDialog } from "@/components/account/AccountDialog";
+import { BrandMark } from "@/components/BrandMark";
 import { BoardMembersDialog } from "@/components/board/BoardMembersDialog";
 import { ShareDialog } from "@/components/board/ShareDialog";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
@@ -32,62 +33,7 @@ export function Header() {
         {/* `group` re-enables the CSS hover animations (feather sway +
             sparkle twinkle) that key off `.group:hover` in index.css. */}
         <div className="group flex items-center gap-1.5">
-          <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-secondary text-primary-foreground shadow-sm">
-            <svg
-              className="janosik-feather"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              aria-hidden
-            >
-              <defs>
-                <linearGradient
-                  id="janosik-feather-grad"
-                  x1="0"
-                  y1="1"
-                  x2="1"
-                  y2="0"
-                >
-                  <stop
-                    offset="0"
-                    stopColor="currentColor"
-                    stopOpacity="0.95"
-                  />
-                  <stop
-                    offset="1"
-                    stopColor="currentColor"
-                    stopOpacity="0.72"
-                  />
-                </linearGradient>
-              </defs>
-              <path
-                d="M14.086 18.412A2 2 0 0112.67 19H5v-7.672a2 2 0 01.586-1.414L11.75 3.75a6 6 0 118.49 8.49z"
-                fill="url(#janosik-feather-grad)"
-              />
-              <path
-                d="M16 8 2 22"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-              />
-              <path
-                d="M17.488 15H9"
-                stroke="currentColor"
-                strokeWidth="1.1"
-                strokeLinecap="round"
-                opacity="0.6"
-              />
-            </svg>
-            <svg
-              className="janosik-sparkle pointer-events-none absolute -right-0.5 -top-0.5 h-3 w-3"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              aria-hidden
-            >
-              <path d="M12 0c.9 5.2 3.6 7.8 12 12-8.4 4.2-11.1 6.8-12 12-.9-5.2-3.6-7.8-12-12 8.4-4.2 11.1-6.8 12-12z" />
-            </svg>
-          </div>
+          <BrandMark />
           {/* Board title (inline-editable) + its switcher — the Trello model:
               one name on screen, switch and rename are separate triggers. */}
           <BoardTitle />

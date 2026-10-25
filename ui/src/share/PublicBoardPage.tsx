@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Lock, Sparkles } from "lucide-react";
+import { Loader2, Lock } from "lucide-react";
 import { useParams, useSearchParams } from "react-router-dom";
 
 import type { Board, BoardMemberDto, PublicBoardDto } from "@janosik/shared";
 import { boardReducer } from "@janosik/shared";
+import { BoardTitle } from "@/components/board/BoardTitle";
+import { BrandMark } from "@/components/BrandMark";
 import { DndBoard } from "@/components/board/DndBoard";
 import { useI18n } from "@/i18n";
 import { ShareBoardProvider } from "@/store/BoardContext";
@@ -129,8 +131,9 @@ export function PublicBoardPage() {
 
   if (status !== "ready" || dto === null || board === null) {
     return (
-      <PublicShell embed={embed}>
-        <div className="flex flex-1 items-center justify-center p-10 text-muted-foreground">
+      <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+        {!embed ? <PublicHeaderChrome /> : null}
+        <main className="flex flex-1 items-center justify-center p-10 text-muted-foreground">
           {status === "loading" ? (
             <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
           ) : (
@@ -140,67 +143,75 @@ export function PublicBoardPage() {
                 : t("share.public.unavailable")}
             </p>
           )}
-        </div>
-      </PublicShell>
+        </main>
+      </div>
     );
   }
 
   return (
-    <PublicShell embed={embed} title={board.title} mode={dto.mode}>
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       <ShareBoardProvider board={board} members={members}>
-        <DndBoard readOnly onCardClick={(cardId) => setOpenCardId(cardId)} />
-        {openCardId !== null ? (
-          <PublicCardDialog
-            token={token}
-            board={board}
-            members={members}
-            cardId={openCardId}
-            includeComments={dto.includeComments}
-            includeAttachments={dto.includeAttachments}
-            onClose={() => setOpenCardId(null)}
-          />
-        ) : null}
+        {!embed ? <PublicHeader mode={dto.mode} /> : null}
+        <main className="flex min-h-0 flex-1 flex-col">
+          <DndBoard readOnly onCardClick={(cardId) => setOpenCardId(cardId)} />
+          {openCardId !== null ? (
+            <PublicCardDialog
+              token={token}
+              board={board}
+              members={members}
+              cardId={openCardId}
+              includeComments={dto.includeComments}
+              includeAttachments={dto.includeAttachments}
+              onClose={() => setOpenCardId(null)}
+            />
+          ) : null}
+        </main>
       </ShareBoardProvider>
-    </PublicShell>
+    </div>
   );
 }
 
-/** Page chrome: brand, read-only badge and (in embed mode) nothing else. */
-function PublicShell({
-  embed,
-  title,
-  mode,
-  children,
-}: {
-  embed: boolean;
-  title?: string;
-  mode?: "snapshot" | "live";
-  children: React.ReactNode;
-}) {
+/**
+ * The app header, read-only (TASK-58): the exact same shell as
+ * `components/Header` — brand mark, gradient band, the board title rendered
+ * by `BoardTitle` (which draws the VIEWER heading when the role is VIEWER,
+ * as it is on the public contour) — plus a "read-only" badge in place of the
+ * editing controls, which the public route must not offer.
+ */
+function PublicHeader({ mode }: { mode?: "snapshot" | "live" }) {
   const { t } = useI18n();
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
-      {!embed ? (
-        <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-md sm:px-6">
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-secondary text-primary-foreground shadow-sm">
-              <Sparkles className="h-4 w-4" aria-hidden />
-            </div>
-            <span className="truncate text-sm font-medium">
-              {title ?? "Janosik"}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5 rounded-full border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground">
-            <Lock className="h-3.5 w-3.5" aria-hidden />
-            <span>
-              {mode === "live"
-                ? t("share.public.badgeLive")
-                : t("share.public.badge")}
-            </span>
-          </div>
-        </header>
-      ) : null}
-      <main className="flex min-h-0 flex-1 flex-col">{children}</main>
-    </div>
+    <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-4 backdrop-blur-md sm:px-6">
+      <div className="flex items-center gap-2 sm:gap-3">
+        <div className="group flex items-center gap-1.5">
+          <BrandMark />
+          <BoardTitle />
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 rounded-full border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground">
+        <Lock className="h-3.5 w-3.5" aria-hidden />
+        <span>
+          {mode === "live"
+            ? t("share.public.badgeLive")
+            : t("share.public.badge")}
+        </span>
+      </div>
+    </header>
+  );
+}
+
+/** The same chrome without a title — shown before the payload (no provider). */
+function PublicHeaderChrome() {
+  const { t } = useI18n();
+  return (
+    <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-4 backdrop-blur-md sm:px-6">
+      <div className="group flex items-center gap-1.5">
+        <BrandMark />
+      </div>
+      <div className="flex items-center gap-1.5 rounded-full border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground">
+        <Lock className="h-3.5 w-3.5" aria-hidden />
+        <span>{t("share.public.badge")}</span>
+      </div>
+    </header>
   );
 }
