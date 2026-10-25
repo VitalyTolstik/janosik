@@ -38,6 +38,7 @@ import { SAVE_DEBOUNCE_MS } from "@/store/constants";
 import type {
   Board,
   BoardEnvelope,
+  BoardMemberDto,
   BoardRole,
   CardCover,
   CardLinkType,
@@ -1738,4 +1739,126 @@ export function useBoard(): BoardContextValue {
     ...useBoardHistory(),
     ...useBoardActions(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Public read-only sharing (TASK-58, §7.9). A public `/s/:token` page mounts
+// the very same board components in `readOnly` mode, so it needs the same four
+// contexts — but with a fixed board, no persistence, no server sync and only
+// no-op actions. `ShareBoardProvider` supplies exactly that; every action it
+// hands out is inert (the public contour has no write route at all).
+// ---------------------------------------------------------------------------
+
+/** A board actions object whose every member is a no-op (read-only mount). */
+function createReadOnlyBoardActions(): BoardActionsValue {
+  const noop = (): void => undefined;
+  return {
+    dispatch: noop,
+    roleOf: () => "VIEWER",
+    addColumn: noop,
+    renameBoard: noop,
+    renameColumn: noop,
+    deleteColumn: noop,
+    addCard: noop,
+    updateCard: noop,
+    touchCard: noop,
+    deleteCard: noop,
+    archiveCard: noop,
+    unarchiveCard: noop,
+    archiveColumnCards: noop,
+    toggleCardLabel: noop,
+    addLabel: noop,
+    renameLabel: noop,
+    setLabelColor: noop,
+    deleteLabel: noop,
+    addChecklist: noop,
+    renameChecklist: noop,
+    deleteChecklist: noop,
+    addChecklistItem: noop,
+    toggleChecklistItem: noop,
+    renameChecklistItem: noop,
+    deleteChecklistItem: noop,
+    setCardDueDate: noop,
+    setCardPriority: noop,
+    setCardAssign: noop,
+    addCardLink: noop,
+    removeCardLink: noop,
+    setCardCover: noop,
+    duplicateCard: noop,
+    duplicateColumn: noop,
+    moveCard: noop,
+    moveColumn: noop,
+    setColumnWipLimit: noop,
+    sortColumn: noop,
+    addBoard: () => "",
+    removeBoard: noop,
+    archiveBoard: noop,
+    unarchiveBoard: noop,
+    undo: noop,
+    redo: noop,
+    importBoards: noop,
+    refreshBoards: () => Promise.resolve(),
+    dismissDataIssue: noop,
+  };
+}
+
+/**
+ * Read-only board contexts for the public share page. `board` is the rendered
+ * board (a live aggregate that updates over SSE, or a frozen snapshot);
+ * `members` is the sanitized roster so assignee faces resolve. Everything the
+ * writing components would call is inert, and history is permanently empty.
+ */
+export function ShareBoardProvider({
+  board,
+  members,
+  children,
+}: {
+  board: Board;
+  members: BoardMemberDto[];
+  children: ReactNode;
+}) {
+  const [live] = useState(createBoardLive);
+
+  useEffect(() => {
+    live.members.set(board.id, members);
+  }, [live, board.id, members]);
+
+  useEffect(() => {
+    live.attribution.seed(board);
+  }, [live, board]);
+
+  useEffect(() => {
+    return () => live.dispose();
+  }, [live]);
+
+  const actions = useMemo<BoardActionsValue>(
+    () => createReadOnlyBoardActions(),
+    [],
+  );
+  const history = useMemo<BoardHistoryValue>(
+    () => ({ canUndo: false, canRedo: false }),
+    [],
+  );
+  const identity = useMemo<BoardIdentityValue>(
+    () => ({ id: board.id, title: board.title }),
+    [board.id, board.title],
+  );
+  const stateValue = useMemo<BoardStateValue>(
+    () => ({ board, boards: [board], dataIssue: null, syncStatus: "ready" }),
+    [board],
+  );
+
+  return (
+    <BoardLiveProvider live={live}>
+      <BoardActionsContext.Provider value={actions}>
+        <BoardHistoryContext.Provider value={history}>
+          <BoardIdentityContext.Provider value={identity}>
+            <BoardStateContext.Provider value={stateValue}>
+              {children}
+            </BoardStateContext.Provider>
+          </BoardIdentityContext.Provider>
+        </BoardHistoryContext.Provider>
+      </BoardActionsContext.Provider>
+    </BoardLiveProvider>
+  );
 }

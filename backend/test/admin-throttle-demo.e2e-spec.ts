@@ -58,6 +58,7 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
     await prisma.column.deleteMany();
     await prisma.label.deleteMany();
     await prisma.boardMember.deleteMany();
+    await prisma.boardShare.deleteMany();
     await prisma.board.deleteMany();
     await prisma.user.deleteMany();
 
@@ -218,46 +219,26 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
     expect(audit).not.toBeNull();
   });
 
-  it("owns the board under an existing watcher and keeps that account on cleanup", async () => {
-    const watcher = "demo-watcher@example.com";
-    await prisma.user.deleteMany({ where: { email: watcher } });
-    await prisma.user.create({
-      data: { email: watcher, emailVerifiedAt: new Date() },
-    });
-
+  it("mints a live share for the run and the token reads read-only", async () => {
     const started = await server()
       .post("/api/v1/admin/demo/start")
       .set("Authorization", `Bearer ${ownerToken}`)
-      .send({ users: 1, cards: 1, run: false, watcherEmail: watcher })
+      .send({ users: 1, cards: 1, run: false })
       .expect(201);
-    const boardId: string = started.body.boardId;
+    const token: string = started.body.shareToken;
+    expect(typeof token).toBe("string");
 
-    const owner = await prisma.boardMember.findFirst({
-      where: { boardId, role: "ADMIN" },
-      include: { user: true },
-    });
-    expect(owner?.user.email).toBe(watcher);
+    const payload = await server().get(`/api/v1/share/${token}`).expect(200);
+    expect(payload.body.mode).toBe("live");
+    expect(payload.body.board.title).toContain("Демо");
+    // The public contour stays write-free.
+    await server().post(`/api/v1/share/${token}`).expect(405);
 
+    // Stopping the run takes the link down with it.
     await server()
       .post("/api/v1/admin/demo/stop")
       .set("Authorization", `Bearer ${ownerToken}`)
       .expect(201);
-
-    // A real account is never deleted — only its membership is dropped.
-    expect(await prisma.user.count({ where: { email: watcher } })).toBe(1);
-    await prisma.user.deleteMany({ where: { email: watcher } });
-  });
-
-  it("rejects a watcher email with no account", async () => {
-    await server()
-      .post("/api/v1/admin/demo/start")
-      .set("Authorization", `Bearer ${ownerToken}`)
-      .send({
-        users: 1,
-        cards: 1,
-        run: false,
-        watcherEmail: "ghost@example.com",
-      })
-      .expect(400);
+    await server().get(`/api/v1/share/${token}`).expect(404);
   });
 });

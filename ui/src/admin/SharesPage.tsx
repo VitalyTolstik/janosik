@@ -1,0 +1,227 @@
+import { useCallback, useEffect, useState } from "react";
+import { Copy, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import type { AdminShareRowDto } from "@janosik/shared";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/Toast";
+import { adminApi } from "./admin-client";
+import { useAdminT } from "./admin-i18n";
+import { Badge, ErrorState, LoadingState, PageHeader, Panel } from "./ui";
+
+/**
+ * Public shares (TASK-58) — every read-only link minted against any board,
+ * with its mode/flags/views and a one-click revoke. The token is shown so an
+ * operator can re-copy a link for support; a link whose board is gone is
+ * flagged (a live share of a deleted board no longer resolves).
+ */
+export function SharesPage() {
+  const t = useAdminT();
+  const toast = useToast();
+  const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
+  const [rows, setRows] = useState<AdminShareRowDto[]>([]);
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    adminApi
+      .listShares({ search: query || undefined, limit: 100 })
+      .then((page) => {
+        setRows(page.items);
+        setPhase("ready");
+      })
+      .catch(() => setPhase("error"));
+  }, [query]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const revoke = useCallback(
+    async (id: string) => {
+      setBusy(id);
+      try {
+        await adminApi.revokeShare(id);
+        toast.success(t("admin.shares.revoked"));
+        load();
+      } catch {
+        toast.error(t("admin.common.error"));
+      } finally {
+        setBusy(null);
+      }
+    },
+    [load, t, toast],
+  );
+
+  if (phase === "loading") return <LoadingState />;
+  if (phase === "error") {
+    return (
+      <ErrorState
+        onRetry={() => {
+          setPhase("loading");
+          load();
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-5xl space-y-4 p-6">
+      <PageHeader
+        title={t("admin.shares.title")}
+        subtitle={t("admin.shares.subtitle")}
+      />
+
+      <div className="flex items-center gap-2">
+        <Input
+          value={search}
+          placeholder={t("admin.shares.search")}
+          data-testid="admin-shares-search"
+          onChange={(event) => setSearch(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") setQuery(search.trim());
+          }}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setQuery(search.trim())}
+        >
+          {t("admin.common.search")}
+        </Button>
+      </div>
+
+      <Panel className="p-0">
+        {rows.length === 0 ? (
+          <p className="p-4 text-sm text-muted-foreground">
+            {t("admin.shares.empty")}
+          </p>
+        ) : (
+          <table className="w-full text-sm" data-testid="admin-shares-table">
+            <thead className="border-b text-left text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2">{t("admin.shares.col.board")}</th>
+                <th className="px-3 py-2">{t("admin.shares.col.mode")}</th>
+                <th className="px-3 py-2">{t("admin.shares.col.flags")}</th>
+                <th className="px-3 py-2">{t("admin.shares.col.views")}</th>
+                <th className="px-3 py-2">{t("admin.shares.col.created")}</th>
+                <th className="px-3 py-2 text-right">
+                  {t("admin.shares.col.actions")}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id} className="border-b last:border-0">
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col">
+                      {row.boardDeleted ? (
+                        <span className="text-muted-foreground">
+                          {row.boardTitle ?? row.boardId}
+                          <span className="ml-2 inline-flex">
+                            <Badge variant="danger">
+                              {t("admin.shares.boardGone")}
+                            </Badge>
+                          </span>
+                        </span>
+                      ) : (
+                        <Link
+                          to={`/admin/boards/${row.boardId}`}
+                          className="text-foreground hover:underline"
+                        >
+                          {row.boardTitle ?? row.boardId}
+                        </Link>
+                      )}
+                      <code className="font-mono text-[11px] text-muted-foreground">
+                        /s/{row.token}
+                      </code>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <Badge variant="neutral">
+                      {row.mode === "live"
+                        ? t("admin.shares.mode.live")
+                        : t("admin.shares.mode.snapshot")}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">
+                    {[
+                      row.includeComments
+                        ? t("admin.shares.flag.comments")
+                        : null,
+                      row.includeAttachments
+                        ? t("admin.shares.flag.attachments")
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || "—"}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-muted-foreground">
+                    {row.views}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">
+                    {new Date(row.createdAt).toLocaleString()}
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-xs"
+                        data-testid={`admin-share-copy-${row.id}`}
+                        onClick={() => {
+                          const url = `${window.location.origin}/s/${row.token}`;
+                          void navigator.clipboard
+                            ?.writeText(url)
+                            .then(() => toast.success(t("admin.shares.copied")))
+                            .catch(() => undefined);
+                        }}
+                      >
+                        <Copy className="h-3.5 w-3.5" aria-hidden />
+                        {t("admin.shares.copy")}
+                      </Button>
+                      <a
+                        href={`/s/${row.token}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-hover hover:text-foreground"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                        {t("admin.shares.open")}
+                      </a>
+                      {row.revokedAt !== null ? (
+                        <Badge variant="danger">
+                          {t("admin.shares.revokedLabel")}
+                        </Badge>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1 px-2 text-xs text-destructive"
+                          disabled={busy === row.id}
+                          data-testid={`admin-share-revoke-${row.id}`}
+                          onClick={() => void revoke(row.id)}
+                        >
+                          {busy === row.id ? (
+                            <RefreshCw
+                              className="h-3.5 w-3.5 animate-spin"
+                              aria-hidden
+                            />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                          )}
+                          {t("admin.shares.revoke")}
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Panel>
+    </div>
+  );
+}

@@ -30,6 +30,7 @@ import type {
   AdminSessionRowDto,
   AdminTokenRowDto,
   AdminMetricsDto,
+  AdminShareRowDto,
   AdminPage,
   AdminUpdateEmailSettingsRequest,
   AdminUpdateMasterRequest,
@@ -488,6 +489,23 @@ export class AdminApiClient {
       method: "POST",
       body: {},
     });
+  }
+
+  // ------------------------------------------------- public shares (58)
+
+  listShares(
+    params: AdminListParams = {},
+  ): Promise<AdminPage<AdminShareRowDto>> {
+    return this.request<AdminPage<AdminShareRowDto>>(
+      `/admin/shares${this.query(params)}`,
+    );
+  }
+
+  revokeShare(id: string): Promise<AdminShareRowDto> {
+    return this.request<AdminShareRowDto>(
+      `/admin/shares/${encodeURIComponent(id)}/revoke`,
+      { method: "POST", body: {} },
+    );
   }
 
   private query(params: AdminListParams): string {

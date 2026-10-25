@@ -8,16 +8,19 @@ import type {
   BoardEnvelope,
   BoardInvitationDto,
   BoardMemberDto,
+  BoardShareDto,
   BoardSummary,
   CommandRequest,
   CommandResponse,
   CommentDto,
   CommentPage,
+  CreateShareRequest,
   CreateUserTokenRequest,
   CreateUserTokenResponse,
   InviteMemberRequest,
   UpdateMemberRequest,
   UpdateProfileRequest,
+  UpdateShareRequest,
   UserTokenDto,
 } from "@janosik/shared";
 
@@ -432,6 +435,48 @@ export class ApiClient {
 
   exportBoard(boardId: string): Promise<BoardEnvelope> {
     return this.request<BoardEnvelope>(`/boards/${boardId}/export`);
+  }
+
+  // ------------------------------------------- public shares (TASK-58)
+
+  /** The board's public links (ADMIN) — for the "Share" dialog. */
+  listShares(boardId: string): Promise<BoardShareDto[]> {
+    return this.request<BoardShareDto[]>(`/boards/${boardId}/shares`);
+  }
+
+  createShare(
+    boardId: string,
+    request: CreateShareRequest,
+  ): Promise<BoardShareDto> {
+    return this.request<BoardShareDto>(`/boards/${boardId}/shares`, {
+      method: "POST",
+      body: request,
+    });
+  }
+
+  /** Re-freeze a snapshot share with the board's current content. */
+  refreshShare(boardId: string, shareId: string): Promise<BoardShareDto> {
+    return this.request<BoardShareDto>(
+      `/boards/${boardId}/shares/${shareId}/refresh`,
+      { method: "POST" },
+    );
+  }
+
+  updateShare(
+    boardId: string,
+    shareId: string,
+    request: UpdateShareRequest,
+  ): Promise<BoardShareDto> {
+    return this.request<BoardShareDto>(`/boards/${boardId}/shares/${shareId}`, {
+      method: "PATCH",
+      body: request,
+    });
+  }
+
+  revokeShare(boardId: string, shareId: string): Promise<BoardShareDto> {
+    return this.request<BoardShareDto>(`/boards/${boardId}/shares/${shareId}`, {
+      method: "DELETE",
+    });
   }
 
   sendCommand(

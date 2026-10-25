@@ -33,6 +33,7 @@ import type {
   AdminUpdateMasterRequest,
   AdminUpdateUserRequest,
   AdminUserRowDto,
+  AdminShareRowDto,
 } from "@janosik/shared";
 import { ADMIN_PAGE_LIMITS } from "@janosik/shared";
 import { randomUUID } from "node:crypto";
@@ -57,6 +58,7 @@ import { EmailSettingsService } from "@/mailer/email-settings.service";
 import { pickLocale } from "@/mailer/mail.types";
 import { emailChangedNoticeEmail } from "@/mailer/templates";
 import { OAuthSettingsService } from "@/oauth/oauth-settings.service";
+import { ShareService } from "@/share/share.service";
 import type { AdminPrincipal } from "./admin.types";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
 import type { AdminUpdateEmailSettingsDto } from "./dto/admin-update-email-settings.dto";
@@ -107,6 +109,7 @@ export class AdminService {
     private readonly throttleSettings: ThrottleSettingsService,
     private readonly traffic: TrafficService,
     private readonly demo: DemoService,
+    private readonly shares: ShareService,
   ) {}
 
   // ---------------------------------------------------------------- metrics
@@ -1489,6 +1492,108 @@ export class AdminService {
       cards: status.cards,
     });
     return status;
+  }
+
+  // ------------------------------------------- public shares (TASK-58)
+
+  /** Every public share link, newest first — with its board's title/state. */
+  async listShares(
+    query: AdminListQueryDto,
+  ): Promise<AdminPage<AdminShareRowDto>> {
+    const where: Prisma.BoardShareWhereInput = {};
+    if (query.search) {
+      where.OR = [
+        { id: { contains: query.search } },
+        { token: { contains: query.search } },
+        { title: { contains: query.search, mode: "insensitive" } },
+        { createdBy: { contains: query.search, mode: "insensitive" } },
+        { board: { title: { contains: query.search, mode: "insensitive" } } },
+      ];
+    }
+    where.createdAt = this.dateRange(query);
+    const { limit, offset } = this.window(query);
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.boardShare.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: offset,
+        take: limit,
+        include: {
+          board: { select: { title: true, deletedAt: true, archivedAt: true } },
+        },
+      }),
+      this.prisma.boardShare.count({ where }),
+    ]);
+
+    return {
+      items: items.map((row) => ({
+        id: row.id,
+        token: row.token,
+        boardId: row.boardId,
+        boardTitle: row.board?.title ?? null,
+        boardDeleted:
+          row.board === null ||
+          row.board.deletedAt !== null ||
+          row.board.archivedAt !== null,
+        mode: row.mode as AdminShareRowDto["mode"],
+        title: row.title,
+        includeComments: row.includeComments,
+        includeAttachments: row.includeAttachments,
+        expiresAt: row.expiresAt?.getTime() ?? null,
+        revokedAt: row.revokedAt?.getTime() ?? null,
+        views: row.views,
+        lastViewedAt: row.lastViewedAt?.getTime() ?? null,
+        createdAt: row.createdAt.getTime(),
+        createdBy: row.createdBy,
+      })),
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  /** Revoke any share from the panel (support/inspection). Idempotent. */
+  async revokeShare(
+    id: string,
+    admin: AdminPrincipal,
+  ): Promise<AdminShareRowDto> {
+    const existing = await this.prisma.boardShare.findUnique({
+      where: { id },
+      include: {
+        board: { select: { title: true, deletedAt: true, archivedAt: true } },
+      },
+    });
+    if (!existing) {
+      throw new NotFoundException("Share not found");
+    }
+    const updated = await this.prisma.boardShare.update({
+      where: { id },
+      data: { revokedAt: existing.revokedAt ?? new Date() },
+    });
+    await this.audit(admin, "share.revoked", "share", id, {
+      boardId: existing.boardId,
+      mode: existing.mode,
+    });
+    return {
+      id: updated.id,
+      token: updated.token,
+      boardId: updated.boardId,
+      boardTitle: existing.board?.title ?? null,
+      boardDeleted:
+        existing.board === null ||
+        existing.board.deletedAt !== null ||
+        existing.board.archivedAt !== null,
+      mode: updated.mode as AdminShareRowDto["mode"],
+      title: updated.title,
+      includeComments: updated.includeComments,
+      includeAttachments: updated.includeAttachments,
+      expiresAt: updated.expiresAt?.getTime() ?? null,
+      revokedAt: updated.revokedAt?.getTime() ?? null,
+      views: updated.views,
+      lastViewedAt: updated.lastViewedAt?.getTime() ?? null,
+      createdAt: updated.createdAt.getTime(),
+      createdBy: updated.createdBy,
+    };
   }
 
   async listAudit(

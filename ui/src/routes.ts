@@ -16,4 +16,11 @@ export const routes = {
   adminPattern: "/admin/*",
   /** Content editor of one board inside the master panel (TASK-43). */
   adminBoardContent: (boardId: string) => `/admin/boards/${boardId}/content`,
+  /**
+   * Public read-only board share (TASK-58, §7.9) — outside the auth shell
+   * entirely, opened by token without a login. `?embed=1` drops the chrome
+   * for an iframe.
+   */
+  sharePattern: "/s/:token",
+  share: (token: string) => `/s/${token}`,
 } as const;

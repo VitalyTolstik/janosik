@@ -18,4 +18,5 @@ export * from "./utils/column-limits";
 export * from "./utils/board-serialization";
 export * from "./utils/storage-keys";
 export * from "./api";
+export * from "./share";
 export * from "./admin";

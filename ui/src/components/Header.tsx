@@ -1,5 +1,6 @@
 import { AccountDialog } from "@/components/account/AccountDialog";
 import { BoardMembersDialog } from "@/components/board/BoardMembersDialog";
+import { ShareDialog } from "@/components/board/ShareDialog";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
 import { DataMenu } from "@/components/DataMenu";
@@ -93,6 +94,7 @@ export function Header() {
           <BoardSwitcher />
           <NotificationsBell />
           <BoardMembersDialog />
+          <ShareDialog />
           <PresenceStack />
         </div>
       </div>

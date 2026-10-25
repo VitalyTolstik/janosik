@@ -163,6 +163,7 @@ describe("Attachments (TASK-47)", () => {
     await db.label.deleteMany();
     await db.boardMember.deleteMany();
     await db.apiToken.deleteMany();
+    await db.boardShare.deleteMany();
     await db.board.deleteMany();
     await db.refreshToken.deleteMany();
     await db.user.deleteMany();

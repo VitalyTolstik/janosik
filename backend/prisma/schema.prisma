@@ -162,6 +162,36 @@ model Board {
   cardLinks  CardLink[]
   activity   Activity[]
   commands   Command[]
+  shares     BoardShare[]
+}
+
+// Public read-only board link (TASK-58, §7.9). A share is its own entity —
+// token + mode + privacy flags + TTL + revoke — never a "public" flag on the
+// board itself, so a link can be handed out, embedded and revoked on its own.
+// `mode` "snapshot" freezes a BoardEnvelope in `snapshot` (survives the
+// source board being deleted); "live" reads the board as it is and dies with
+// it. The token is stored as-is (it must round-trip into a URL/embed) and its
+// 128-bit entropy + `expiresAt` + `revokedAt` + rate limit are the guard.
+model BoardShare {
+  id                 String    @id @default(cuid())
+  token              String    @unique // 128-bit base64url
+  board              Board     @relation(fields: [boardId], references: [id])
+  boardId            String
+  mode               String    @default("snapshot") // snapshot | live
+  snapshot           Json? // the frozen BoardEnvelope (null for live)
+  snapshotVersion    Int? // board seq at snapshot time ("taken at")
+  title              String? // owner-side label for the share list
+  includeComments    Boolean   @default(true)
+  includeAttachments Boolean   @default(false)
+  expiresAt          DateTime? // TTL; null = no expiry
+  revokedAt          DateTime? // manual revoke
+  createdBy          String // userId (board) or admin email (panel/demo)
+  views              Int       @default(0)
+  lastViewedAt       DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@index([boardId])
+  @@index([createdBy])
 }
 
 model BoardMember {

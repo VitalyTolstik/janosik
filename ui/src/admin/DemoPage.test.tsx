@@ -109,21 +109,26 @@ describe("DemoPage", () => {
     });
   });
 
-  it("sends a watcher account for a dedicated board", async () => {
+  it("shows the live share link once a run mints one", async () => {
     const server = new FakeAdminServer();
+    server.demoStatus = {
+      running: true,
+      boardId: "demo-board",
+      startedAt: new Date().toISOString(),
+      users: 4,
+      columns: 5,
+      labels: 5,
+      cards: 3,
+      cardsDone: 1,
+      cleanupPending: true,
+      shareToken: "livetoken",
+    };
     vi.stubGlobal("fetch", server.fetchImpl);
     renderDemo();
 
-    fireEvent.change(await screen.findByTestId("admin-demo-watcher-input"), {
-      target: { value: "me@example.com" },
-    });
-    fireEvent.click(screen.getByTestId("admin-demo-start"));
-
-    await waitFor(() => expect(server.demoStatus.running).toBe(true));
-    const call = server.requests.find(
-      (item) => item.method === "POST" && item.path === "/admin/demo/start",
-    );
-    expect(call?.body).toMatchObject({ watcherEmail: "me@example.com" });
+    const live = await screen.findByTestId("admin-demo-live-view");
+    expect(live).toHaveAttribute("href", "/s/livetoken");
+    expect(screen.getByTestId("admin-demo-copy-link")).toBeTruthy();
   });
 
   it("stops the demo after confirmation", async () => {
@@ -138,6 +143,7 @@ describe("DemoPage", () => {
       cards: 3,
       cardsDone: 1,
       cleanupPending: true,
+      shareToken: null,
     };
     vi.stubGlobal("fetch", server.fetchImpl);
     renderDemo();
@@ -165,6 +171,7 @@ describe("DemoPage", () => {
       cards: 8,
       cardsDone: 8,
       cleanupPending: true,
+      shareToken: null,
     };
     vi.stubGlobal("fetch", server.fetchImpl);
     renderDemo();

@@ -40,6 +40,7 @@ import type {
   AdminTokenRowDto,
   AdminPage,
   AdminAuditRowDto,
+  AdminShareRowDto,
   AdminUserRowDto,
   BoardAggregate,
   CommandResponse,
@@ -449,5 +450,23 @@ export class AdminController {
   @Post("demo/stop")
   stopDemo(@CurrentAdmin() admin: AdminPrincipal): Promise<AdminDemoStatusDto> {
     return this.admin.stopDemo(admin);
+  }
+
+  // ------------------------------------------------- public shares (TASK-58)
+
+  /** Every public share link, for support/inspection. */
+  @Get("shares")
+  listShares(
+    @Query() query: AdminListQueryDto,
+  ): Promise<AdminPage<AdminShareRowDto>> {
+    return this.admin.listShares(query);
+  }
+
+  @Post("shares/:id/revoke")
+  revokeShare(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminShareRowDto> {
+    return this.admin.revokeShare(id, admin);
   }
 }

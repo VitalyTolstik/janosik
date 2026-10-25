@@ -354,6 +354,9 @@ export const ADMIN_AUDIT_ACTIONS = [
   "throttle.settings_changed",
   "demo.started",
   "demo.stopped",
+  "share.created",
+  "share.refreshed",
+  "share.revoked",
 ] as const;
 
 export type AdminAuditAction = (typeof ADMIN_AUDIT_ACTIONS)[number];
@@ -980,22 +983,48 @@ export interface AdminDemoStatusDto {
   /** A run's footprint still exists and `stop` would clean it (even if the
    * swarm already finished), so the panel keeps "Stop & clean up" enabled. */
   cleanupPending: boolean;
+  /**
+   * Live-share token of the run's board (TASK-58): the observation path that
+   * replaced the old watcher account. `null` before a run, or when the run's
+   * board no longer exists.
+   */
+  shareToken: string | null;
 }
 
 /** Body of `POST /admin/demo/start`. */
 export interface AdminDemoStartRequest {
   /** Board to populate; a dedicated "Demo" board is created when omitted. */
   boardId?: string;
-  /**
-   * Email of the account that should own the dedicated demo board, so the
-   * operator can open it in the app and watch. A real user only — it is never
-   * deleted on cleanup. Ignored when `boardId` is given.
-   */
-  watcherEmail?: string;
   /** Number of demo agents. */
   users?: number;
   /** Number of cards to seed (defaults to the agent count). */
   cards?: number;
   /** Let the agents act immediately; `false` seeds and waits. */
   run?: boolean;
+}
+
+/**
+ * One row of `GET /admin/shares` (TASK-58) — a public board link as the
+ * master panel sees it: enough to recognise the board and revoke the link,
+ * plus the token so an operator can re-copy it for support.
+ */
+export interface AdminShareRowDto {
+  id: string;
+  token: string;
+  boardId: string;
+  boardTitle: string | null;
+  /** Whether the source board still exists (a live share dies with it). */
+  boardDeleted: boolean;
+  mode: "snapshot" | "live";
+  title: string | null;
+  includeComments: boolean;
+  includeAttachments: boolean;
+  /** Unix ms expiry; `null` = no expiry. */
+  expiresAt: number | null;
+  /** Unix ms revoke time; `null` while active. */
+  revokedAt: number | null;
+  views: number;
+  lastViewedAt: number | null;
+  createdAt: number;
+  createdBy: string;
 }

@@ -14,6 +14,7 @@ import { BoardWriteService } from "@/common/board-write.service";
 import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
 import { CommentsService } from "@/comments/comments.service";
+import { ShareService } from "@/share/share.service";
 
 const COLS = ["Новые", "В работе", "На ревью", "Тестирование", "Готово"];
 const LABELS: Array<{ name: string; color: string }> = [
@@ -52,8 +53,9 @@ interface DemoManifest {
   createdBoard: boolean;
   /** Demo users created by the run — deleted on cleanup. */
   userIds: string[];
-  /** Real user that owns a dedicated board (watcher); never deleted. */
-  watcherId?: string;
+  /** Live observation share minted for the run's board (TASK-58). */
+  shareId?: string;
+  shareToken?: string;
   columnIds: string[];
   labelIds: string[];
   cardIds: string[];
@@ -94,6 +96,7 @@ export class DemoService implements OnModuleDestroy {
     private readonly boards: BoardsService,
     private readonly commands: CommandsService,
     private readonly comments: CommentsService,
+    private readonly shares: ShareService,
   ) {}
 
   onModuleDestroy(): void {
@@ -115,6 +118,7 @@ export class DemoService implements OnModuleDestroy {
         cards: manifest.cardIds.length,
         cardsDone: done,
         cleanupPending: true,
+        shareToken: manifest.shareToken ?? null,
       };
     }
     const pending = await this.prisma.demoRun.findFirst({
@@ -132,6 +136,7 @@ export class DemoService implements OnModuleDestroy {
         cards: 0,
         cardsDone: 0,
         cleanupPending: false,
+        shareToken: null,
       };
     }
     const manifest = pending.manifest as unknown as DemoManifest;
@@ -145,6 +150,7 @@ export class DemoService implements OnModuleDestroy {
       cards: manifest.cardIds.length,
       cardsDone: 0,
       cleanupPending: true,
+      shareToken: manifest.shareToken ?? null,
     };
   }
 
@@ -155,7 +161,6 @@ export class DemoService implements OnModuleDestroy {
   async start(
     input: {
       boardId?: string;
-      watcherEmail?: string;
       users?: number;
       cards?: number;
       run?: boolean;
@@ -194,28 +199,11 @@ export class DemoService implements OnModuleDestroy {
       cardIds: [],
     };
 
-    // 1. Dispatcher (opens a dedicated board). With `watcherEmail` the board
-    //    is owned by that **existing** account — the operator signs into the
-    //    app as it to watch. A missing account is a client error (no silent
-    //    placeholder user); cleanup drops the membership but keeps the user.
-    let dispatcherId: string;
-    if (input.watcherEmail && !input.boardId) {
-      const existing = await this.prisma.user.findFirst({
-        where: { email: input.watcherEmail, disabledAt: null },
-        select: { id: true },
-      });
-      if (existing === null) {
-        throw new BadRequestException({
-          message: `No active account for ${input.watcherEmail}`,
-          field: "watcherEmail",
-        });
-      }
-      dispatcherId = existing.id;
-      manifest.watcherId = existing.id;
-    } else {
-      dispatcherId = await this.createUser(runTag, "Диспетчер", 0);
-      manifest.userIds.push(dispatcherId);
-    }
+    // 1. Dispatcher (opens a dedicated board). Always a throwaway demo account:
+    //    observing the swarm no longer needs a second real login — the run's
+    //    live share link (TASK-58) is the watching path instead.
+    const dispatcherId = await this.createUser(runTag, "Диспетчер", 0);
+    manifest.userIds.push(dispatcherId);
 
     // 2. N demo agents on the reserved `@janosik.demo` domain.
     const workers: string[] = [];
@@ -256,6 +244,18 @@ export class DemoService implements OnModuleDestroy {
         update: { acceptedAt: new Date(), role: Role.MEMBER },
       });
     }
+
+    // 3b. Live observation share (TASK-58): the whole point of replacing the
+    //     watcher account — open `/s/<token>` with no login and watch the
+    //     swarm move. Comments are on (this is "watch how we work").
+    const share = await this.shares.create(boardId, startedBy, {
+      mode: "live",
+      title: "Демо-рой · живой просмотр",
+      includeComments: true,
+      includeAttachments: false,
+    });
+    manifest.shareId = share.id;
+    manifest.shareToken = share.token;
 
     // 4. Flow columns and labels (as the dispatcher).
     const columns: Record<string, string> = {};
@@ -462,6 +462,7 @@ export class DemoService implements OnModuleDestroy {
       await tx.comment.deleteMany({ where: { cardId: { in: cardIds } } });
       await tx.activity.deleteMany({ where: { boardId } });
       await tx.command.deleteMany({ where: { boardId } });
+      await tx.boardShare.deleteMany({ where: { boardId } });
       await tx.card.deleteMany({ where: { id: { in: cardIds } } });
       await tx.column.deleteMany({ where: { boardId } });
       await tx.label.deleteMany({ where: { boardId } });
@@ -634,20 +635,13 @@ export class DemoService implements OnModuleDestroy {
    * board itself.
    */
   private async purge(manifest: DemoManifest): Promise<void> {
-    const {
-      boardId,
-      createdBoard,
-      userIds,
-      watcherId,
-      columnIds,
-      labelIds,
-      cardIds,
-    } = manifest;
+    const { boardId, createdBoard, userIds, columnIds, labelIds, cardIds } =
+      manifest;
     const cards = { in: cardIds };
-    // Demo users author the commands/activity; the watcher owns the board but
-    // is a real account — its membership goes, the user stays.
+    // Demo users author the commands/activity; cleanup deletes them outright
+    // (no watcher account survives now — the live share is the observation
+    // path, TASK-58).
     const demoUsers = { in: userIds };
-    const members = { in: watcherId ? [...userIds, watcherId] : userIds };
     await this.boardWrite.run(boardId, async (tx) => {
       await tx.cardLabel.deleteMany({ where: { cardId: cards } });
       await tx.checklistItem.deleteMany({
@@ -668,12 +662,20 @@ export class DemoService implements OnModuleDestroy {
       await tx.card.deleteMany({ where: { id: cards } });
       await tx.column.deleteMany({ where: { id: { in: columnIds } } });
       await tx.label.deleteMany({ where: { id: { in: labelIds } } });
-      // A board the run created is entirely ours: drop every membership (the
-      // watcher's ADMIN row included) before deleting it, or the board FK
-      // (BoardMember.boardId) blocks the delete. A provided board keeps its
-      // other members; only ours and the watcher's rows go.
+      // The run's live share dies with the run: the token must stop resolving
+      // the instant `stop` runs (a live share of a deleted board would only
+      // answer 410; deleting the row is cleaner). On a created board every
+      // share is ours; on a provided board only the one we minted.
+      await tx.boardShare.deleteMany({
+        where: createdBoard
+          ? { boardId }
+          : { id: manifest.shareId ?? "__none__" },
+      });
+      // A board the run created is entirely ours: drop every membership before
+      // deleting it, or the board FK (BoardMember.boardId) blocks the delete.
+      // A provided board keeps its other members; only ours go.
       await tx.boardMember.deleteMany({
-        where: createdBoard ? { boardId } : { boardId, userId: members },
+        where: createdBoard ? { boardId } : { boardId, userId: demoUsers },
       });
       if (createdBoard) {
         await tx.board.deleteMany({ where: { id: boardId } });

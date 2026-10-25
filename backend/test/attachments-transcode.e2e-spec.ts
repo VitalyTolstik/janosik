@@ -89,6 +89,7 @@ describe("Video transcode (TASK-50)", () => {
     await db.card.deleteMany({ where: { id: cardId } });
     await db.column.deleteMany({ where: { boardId } });
     await db.boardMember.deleteMany({ where: { boardId } });
+    await db.boardShare.deleteMany({ where: { boardId } });
     await db.board.deleteMany({ where: { id: boardId } });
     await db.refreshToken.deleteMany({
       where: { user: { email: { startsWith: "tr-" } } },

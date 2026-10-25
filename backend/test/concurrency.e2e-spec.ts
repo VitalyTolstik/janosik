@@ -223,6 +223,7 @@ async function wipe(prisma: PrismaService): Promise<void> {
   await prisma.label.deleteMany();
   await prisma.column.deleteMany();
   await prisma.boardMember.deleteMany();
+  await prisma.boardShare.deleteMany();
   await prisma.board.deleteMany();
   await prisma.apiToken.deleteMany();
   await prisma.emailVerificationCode.deleteMany();

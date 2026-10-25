@@ -16,6 +16,7 @@ import { CommentsModule } from "@/comments/comments.module";
 import { AttachmentsModule } from "@/attachments/attachments.module";
 import { InvitationsModule } from "@/invitations/invitations.module";
 import { OAuthModule } from "@/oauth/oauth.module";
+import { ShareModule } from "@/share/share.module";
 import { AdminModule } from "@/admin/admin.module";
 
 /**
@@ -44,6 +45,7 @@ import { AdminModule } from "@/admin/admin.module";
     AttachmentsModule,
     InvitationsModule,
     OAuthModule,
+    ShareModule,
     AdminModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ExternalLink, PlayCircle, Trash2 } from "lucide-react";
+import { Copy, ExternalLink, PlayCircle, Trash2 } from "lucide-react";
 import type { AdminDemoStatusDto } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,9 +21,6 @@ import {
   Panel,
 } from "./ui";
 
-/** Remembered "Watch as" account (localStorage) — defaults to the master's email. */
-const WATCHER_KEY = "janosik.admin.demo.watcher";
-
 /**
  * Demo runner (TASK-57) — start a swarm of AI agents on a throwaway board,
  * watch them work, then clean up. The backend provisions the demo users,
@@ -31,6 +28,10 @@ const WATCHER_KEY = "janosik.admin.demo.watcher";
  * id it created; `stop` deletes exactly those rows (board, cards, demo users)
  * — nothing is guessed by name. While a run is live the panel polls its
  * status, so the counters move on their own.
+ *
+ * Since TASK-58 the observation path is a **live share link**: the runner
+ * mints a public read-only share for the run's board and hands its token
+ * back here, so "Open live view" opens the swarm with no login at all.
  */
 export function DemoPage() {
   const t = useAdminT();
@@ -44,15 +45,6 @@ export function DemoPage() {
   const [cards, setCards] = useState("20");
   const [boardId, setBoardId] = useState("");
   const [selectedBoardId, setSelectedBoardId] = useState("");
-  // "Watch as": defaults to the signed-in master's email, and remembers the
-  // last account the operator actually used.
-  const [watcherEmail, setWatcherEmail] = useState(() => {
-    try {
-      return localStorage.getItem(WATCHER_KEY) ?? "";
-    } catch {
-      return "";
-    }
-  });
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const mounted = useRef(true);
@@ -103,22 +95,13 @@ export function DemoPage() {
     setBusy(true);
     try {
       const target = selectedBoardId.trim();
-      const watcher = watcherEmail.trim();
       const value = await adminApi.startDemo({
         users,
         cards: taskCount,
         run: true,
         ...(target === "" ? {} : { boardId: target }),
-        ...(target === "" && watcher !== "" ? { watcherEmail: watcher } : {}),
       });
       setDemo(value);
-      if (watcher !== "") {
-        try {
-          localStorage.setItem(WATCHER_KEY, watcher);
-        } catch {
-          /* private mode — not worth surfacing */
-        }
-      }
       toast.success(t("admin.demo.started"));
     } catch (cause) {
       const message =
@@ -129,7 +112,7 @@ export function DemoPage() {
     } finally {
       setBusy(false);
     }
-  }, [agents, cards, selectedBoardId, watcherEmail, t, toast]);
+  }, [agents, cards, selectedBoardId, t, toast]);
 
   const stop = useCallback(async () => {
     setBusy(true);
@@ -241,7 +224,7 @@ export function DemoPage() {
             {t("admin.demo.boardPlaceholder")}
           </span>
         ) : (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant="neutral">
               <code
                 data-testid="admin-demo-board"
@@ -250,19 +233,36 @@ export function DemoPage() {
                 {shownBoard}
               </code>
             </Badge>
-            {/* The real board UI, in a new tab. Dedicated demo boards are
-                owned by the "Watch as" account, so sign in as it (or its
-                session) to see the swarm; a board you already own just opens. */}
-            <Link
-              to={`/board/${shownBoard}`}
-              target="_blank"
-              rel="noreferrer"
-              data-testid="admin-demo-open-board"
-              className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-background/50 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
-            >
-              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-              {t("admin.demo.openBoard")}
-            </Link>
+            {demo?.shareToken ? (
+              <Link
+                to={`/s/${demo.shareToken}`}
+                target="_blank"
+                rel="noreferrer"
+                data-testid="admin-demo-live-view"
+                className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-background/50 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+              >
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                {t("admin.demo.liveView")}
+              </Link>
+            ) : null}
+            {demo?.shareToken ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 gap-1.5 px-2 text-xs"
+                data-testid="admin-demo-copy-link"
+                onClick={() => {
+                  const url = `${window.location.origin}/s/${demo.shareToken}`;
+                  void navigator.clipboard
+                    ?.writeText(url)
+                    .then(() => toast.success(t("admin.demo.copied")))
+                    .catch(() => undefined);
+                }}
+              >
+                <Copy className="h-3.5 w-3.5" aria-hidden />
+                {t("admin.demo.copyLink")}
+              </Button>
+            ) : null}
           </div>
         )}
       </Panel>
@@ -303,27 +303,6 @@ export function DemoPage() {
             </div>
             <p className="text-[11px] text-muted-foreground">
               {t("admin.demo.boardHint")}
-            </p>
-          </div>
-          <div className="space-y-1">
-            <label
-              htmlFor="admin-demo-watcher-input"
-              className="text-xs font-medium text-foreground"
-            >
-              {t("admin.demo.watcher")}
-            </label>
-            <Input
-              id="admin-demo-watcher-input"
-              data-testid="admin-demo-watcher-input"
-              type="email"
-              value={watcherEmail}
-              disabled={running || busy || boardId.trim() !== ""}
-              autoComplete="off"
-              placeholder="you@example.com"
-              onChange={(event) => setWatcherEmail(event.target.value)}
-            />
-            <p className="text-[11px] text-muted-foreground">
-              {t("admin.demo.watcherHint")}
             </p>
           </div>
           <div className="flex flex-wrap items-end justify-between gap-3">

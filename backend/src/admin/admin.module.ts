@@ -7,6 +7,7 @@ import { CommandsModule } from "@/commands/commands.module";
 import { CommentsModule } from "@/comments/comments.module";
 import { env } from "@/config/env";
 import { OAuthModule } from "@/oauth/oauth.module";
+import { ShareModule } from "@/share/share.module";
 import { AdminAuthController } from "./admin-auth.controller";
 import { AdminAuthService } from "./admin-auth.service";
 import { AdminController } from "./admin.controller";
@@ -34,6 +35,7 @@ import { ThrottleSettingsService } from "./throttle-settings.service";
     CommentsModule,
     AttachmentsModule,
     OAuthModule,
+    ShareModule,
   ],
   controllers: [AdminAuthController, AdminController],
   providers: [

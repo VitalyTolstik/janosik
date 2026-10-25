@@ -104,6 +104,13 @@ export const env = cleanEnv(process.env, {
     default: 300,
     example: "300",
   }),
+  // Public read-only board sharing (TASK-58, §7.9). On by default so a fresh
+  // self-host can hand out a link; a private installation sets it to `false`
+  // and the whole `/share/*` contour answers 404 (no share is readable).
+  ALLOW_PUBLIC_SHARES: bool({
+    desc: "Master switch for public read-only board share links",
+    default: true,
+  }),
   // Mail (TASK-51): every var is optional — without SMTP_HOST the mailer
   // logs outgoing emails to the server log instead of sending them, so
   // self-hosters get a working dev setup out of the box.

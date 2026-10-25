@@ -28,6 +28,17 @@ import { useI18n } from "@/i18n";
 const AdminApp = lazy(() => import("@/admin/AdminApp"));
 
 /**
+ * The public read-only board share (TASK-58) is its own lazy chunk, outside
+ * the auth shell: an anonymous visitor downloading a link must not pull in
+ * the app's session/board machinery.
+ */
+const PublicBoardPage = lazy(() =>
+  import("@/share/PublicBoardPage").then((m) => ({
+    default: m.PublicBoardPage,
+  })),
+);
+
+/**
  * `/` and unknown URLs: the empty-state screen (Trello's boards home).
  * Shown when there are no active boards — nothing yet, or every board
  * archived. Never a dead end: the primary CTA creates a board, and
@@ -215,6 +226,10 @@ export default function App() {
                         <Route
                           path={routes.adminPattern}
                           element={<AdminApp />}
+                        />
+                        <Route
+                          path={routes.sharePattern}
+                          element={<PublicBoardPage />}
                         />
                         <Route
                           path="*"

@@ -62,6 +62,7 @@ describe("Admin API (e2e)", () => {
     await prisma.column.deleteMany();
     await prisma.label.deleteMany();
     await prisma.boardMember.deleteMany();
+    await prisma.boardShare.deleteMany();
     await prisma.board.deleteMany();
     await prisma.apiToken.deleteMany();
     await prisma.refreshToken.deleteMany();

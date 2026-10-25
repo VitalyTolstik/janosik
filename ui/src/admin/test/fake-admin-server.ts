@@ -16,6 +16,7 @@ import type {
   AdminDemoStartRequest,
   AdminDemoStatusDto,
   AdminEmailSettingsDto,
+  AdminShareRowDto,
   AdminEmailTestResponse,
   AdminMasterRowDto,
   AdminMetricsDto,
@@ -298,7 +299,11 @@ export class FakeAdminServer {
     cards: 0,
     cardsDone: 0,
     cleanupPending: false,
+    shareToken: null,
   };
+
+  /** Public shares (TASK-58). */
+  shares: AdminShareRowDto[] = [];
 
   constructor(state: FakeAdminState = emptyAdminState()) {
     this.state = state;
@@ -809,6 +814,7 @@ export class FakeAdminServer {
         cards,
         cardsDone: 0,
         cleanupPending: true,
+        shareToken: "demo-live-token",
       };
       return this.json(this.demoStatus, 201);
     }
@@ -820,8 +826,27 @@ export class FakeAdminServer {
         ...this.demoStatus,
         running: false,
         cleanupPending: false,
+        shareToken: null,
       };
       return this.json(this.demoStatus, 201);
+    }
+
+    // Public shares (TASK-58): listing for any master, revoke for any master.
+    if (path === "/admin/shares" && method === "GET") {
+      return this.json({
+        items: this.shares,
+        total: this.shares.length,
+        limit: 100,
+        offset: 0,
+      });
+    }
+    const shareRevoke = path.match(/^\/admin\/shares\/([^/]+)\/revoke$/);
+    if (shareRevoke && method === "POST") {
+      const id = decodeURIComponent(shareRevoke[1] ?? "");
+      const row = this.shares.find((item) => item.id === id);
+      if (!row) return this.json({ message: "Share not found" }, 404);
+      row.revokedAt = now;
+      return this.json(row, 201);
     }
 
     // Admin v2 (TASK-48): generic entity listing mirrors the real backend's
