@@ -6,11 +6,12 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Req,
   Res,
   UseGuards,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { env } from "@/config/env";
 import { pickLocale } from "@/mailer/mail.types";
 import { REFRESH_COOKIE } from "./auth.types";
@@ -40,9 +41,11 @@ export class AuthController {
   async register(
     @Body() dto: RegisterDto,
     @Headers("accept-language") acceptLanguage: string | undefined,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
     const result = await this.auth.register(dto, pickLocale(acceptLanguage));
+    await this.tagSession(req, result);
     return this.withRefreshCookie(res, result);
   }
 
@@ -51,9 +54,11 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() dto: LoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
     const result = await this.auth.login(dto);
+    await this.tagSession(req, result);
     return this.withRefreshCookie(res, result);
   }
 
@@ -61,9 +66,11 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async refresh(
     @RefreshToken() refreshToken: string | undefined,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
     const result = await this.auth.refresh(refreshToken);
+    await this.tagSession(req, result);
     return this.withRefreshCookie(res, result);
   }
 
@@ -182,6 +189,13 @@ export class AuthController {
       user.id,
       pickLocale(acceptLanguage),
     );
+  }
+
+  private async tagSession(req: Request, result: AuthResult): Promise<void> {
+    await this.auth.tagSession(result.refreshToken, {
+      ip: req.ip ?? null,
+      userAgent: req.headers["user-agent"] ?? null,
+    });
   }
 
   private withRefreshCookie(res: Response, result: AuthResult): AuthResponse {

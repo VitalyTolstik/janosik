@@ -123,6 +123,8 @@ export interface AdminUserRowDto {
   createdAt: number;
   /** Unix ms when the master blocked the account; `null` while active. */
   disabledAt: number | null;
+  /** Unix ms the address was confirmed (TASK-53/59); `null` while unverified. */
+  emailVerifiedAt: number | null;
 }
 
 /**
@@ -190,6 +192,9 @@ export interface AdminSessionRowDto {
   createdAt: number;
   /** Unix ms. */
   expiresAt: number;
+  /** Session provenance (TASK-65); `null` for sessions minted before capture. */
+  ip: string | null;
+  userAgent: string | null;
 }
 
 /** A row of `GET /admin/tokens` — a personal API token (TASK-43). */
@@ -297,6 +302,12 @@ export interface AdminUpdateUserRequest {
    * user is revoked and the change is audited.
    */
   email?: string;
+  /**
+   * TASK-59: master override of the registration gate (TASK-53) — set the
+   * address verified (`true`) or withdraw the confirmation (`false`) without
+   * the user's six-digit code. Audited `user.verified` / `user.unverified`.
+   */
+  emailVerified?: boolean;
 }
 
 /** Body of `POST /admin/boards` — a board is always created for an owner. */
@@ -337,21 +348,48 @@ export const ADMIN_AUDIT_ACTIONS = [
   "user.enable",
   "user.sessions_revoked",
   "user.tokens_revoked",
+  "user.verified",
+  "user.unverified",
+  "user.verification_resent",
+  "user.password_reset",
+  "user.delete",
+  "user.impersonated",
+  "user.promoted",
+  "user.demoted",
   "board.create",
   "board.archive",
   "board.unarchive",
   "board.delete",
   "board.command",
+  "board.member_added",
+  "board.member_removed",
+  "board.member_role_changed",
+  "board.owner_transferred",
   "card.archive",
   "card.unarchive",
   "card.delete",
+  "attachment.delete",
+  "entity.restored",
+  "entity.bulk_deleted",
   "session.revoke",
   "token.revoke",
   "comment.delete",
   "email.settings_changed",
   "email.test_sent",
+  "email.sent",
+  "email.template_changed",
   "oauth.settings_changed",
   "throttle.settings_changed",
+  "flag.changed",
+  "ops.settings_changed",
+  "announcement.created",
+  "announcement.updated",
+  "announcement.deleted",
+  "data.exported",
+  "retention.changed",
+  "security.totp_enabled",
+  "security.totp_disabled",
+  "security.ip_allowlist_changed",
   "demo.started",
   "demo.stopped",
   "share.created",
@@ -1027,4 +1065,316 @@ export interface AdminShareRowDto {
   lastViewedAt: number | null;
   createdAt: number;
   createdBy: string;
+}
+
+// ---------------------------------------------------------------------------
+// Panel v3 (TASK-59…65).
+// ---------------------------------------------------------------------------
+
+/** TASK-59: public projection minted for "view as" support sessions. */
+export interface AdminImpersonationDto {
+  /** Short-lived user JWT (audience `janosik-user`), 15 min. */
+  accessToken: string;
+  /** Unix ms expiry of `accessToken`. */
+  expiresAt: number;
+  user: { id: string; email: string; displayName: string | null };
+}
+
+/** TASK-59: `POST /admin/users/:id/password/reset` answer. */
+export interface AdminResetUserPasswordResponse {
+  user: AdminUserRowDto;
+  temporaryPassword: string;
+}
+
+/**
+ * TASK-59: `POST /admin/users/:id/verification/resend` answer. `delivered` is
+ * `false` when the mailer runs in log mode (the code only reaches the log).
+ */
+export interface AdminResendVerificationResponse {
+  ok: true;
+  /** Unix ms code expiry. */
+  expiresAt: number;
+  delivered: boolean;
+}
+
+/** TASK-59: `POST /admin/users/:id/promote` answer. */
+export interface AdminPromoteUserResponse {
+  admin: AdminMasterRowDto;
+  temporaryPassword: string;
+}
+
+// --- TASK-60: membership + moderation -------------------------------------
+
+/** `POST /admin/boards/:id/members` — master-side membership add. */
+export interface AdminAddBoardMemberRequest {
+  email: string;
+  role?: string;
+  /** Unix ms; `null`/absent = VIEWER without a budget. */
+  expiresAt?: number | null;
+}
+
+/** `PATCH /admin/boards/:id/members/:memberId`. */
+export interface AdminUpdateBoardMemberRequest {
+  role?: string;
+  expiresAt?: number | null;
+  /** Accept a pending invitation on the user's behalf. */
+  accepted?: boolean;
+}
+
+/** `POST /admin/boards/:id/owner` — transfer board ownership. */
+export interface AdminTransferOwnerRequest {
+  userId: string;
+}
+
+/** `POST /admin/entities/:entity/bulk` — a master bulk operation. */
+export interface AdminBulkActionRequest {
+  ids: string[];
+  /** delete | restore | archive | unarchive. */
+  action: "delete" | "restore" | "archive" | "unarchive";
+}
+
+/** Answer of a bulk operation / a single restore. */
+export interface AdminBulkResultDto {
+  affected: number;
+}
+
+// --- TASK-61: flags + ops --------------------------------------------------
+
+/** One switchable behaviour flag. */
+export interface AdminFeatureFlagDto {
+  key: string;
+  label: string;
+  description: string;
+  /** Global switch. */
+  enabled: boolean;
+  /** Number of per-user overrides currently set. */
+  overrides: number;
+  /** Env default the flag falls back to when no row exists. */
+  envDefault: boolean;
+  updatedBy: string | null;
+  updatedAt: number | null;
+}
+
+/**
+ * Catalog of behaviour flags (TASK-61). Each key is a real switch wired into
+ * a code path; `envKey` where the env-provided default comes from, `label`/
+ * `description` are English fallbacks (the panel renders its own i18n).
+ */
+export const FEATURE_FLAGS = [
+  {
+    key: "registration_open",
+    label: "Open registration",
+    description: "Allow anyone to create a new account.",
+    envDefault: true,
+  },
+  {
+    key: "public_shares",
+    label: "Public board shares",
+    description: "Allow read-only public links to boards.",
+    envDefault: true,
+  },
+  {
+    key: "video_transcode",
+    label: "Video compression",
+    description: "Re-encode uploaded videos to a compact MP4.",
+    envDefault: true,
+  },
+  {
+    key: "realtime_sse",
+    label: "Realtime updates",
+    description: "Stream live board changes over SSE.",
+    envDefault: true,
+  },
+] as const;
+
+export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
+
+/** `GET /admin/flags`. */
+export interface AdminFeatureFlagsDto {
+  flags: AdminFeatureFlagDto[];
+}
+
+/** `PATCH /admin/flags/:key`. `perUser` replaces the whole override map. */
+export interface AdminUpdateFeatureFlagRequest {
+  enabled?: boolean;
+  perUser?: Record<string, boolean> | null;
+}
+
+/**
+ * `GET /admin/ops` — runtime operational settings. `null` values fall back
+ * to the env default (the registration/public-share switches live in flags).
+ */
+export interface AdminOpsSettingsDto {
+  maintenanceMode: boolean;
+  maintenanceMessage: string | null;
+  perUserRateLimit: number | null;
+  retentionDays: number | null;
+  updatedBy: string | null;
+  updatedAt: number | null;
+}
+
+/** `PUT /admin/ops`. `null` resets a field to the env default. */
+export interface AdminUpdateOpsSettingsRequest {
+  maintenanceMode?: boolean;
+  maintenanceMessage?: string | null;
+  perUserRateLimit?: number | null;
+  retentionDays?: number | null;
+}
+
+// --- TASK-62: comms --------------------------------------------------------
+
+/** `GET /admin/announcements` row. */
+export interface AdminAnnouncementDto {
+  id: string;
+  title: string;
+  body: string;
+  level: "info" | "warning" | "danger";
+  audience: "all" | "segment";
+  segment: string | null;
+  active: boolean;
+  /** TASK-62: the letter is also queued to the recipients' inbox. */
+  sendEmail: boolean;
+  startsAt: number | null;
+  endsAt: number | null;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** `POST /admin/announcements`. */
+export interface AdminCreateAnnouncementRequest {
+  title: string;
+  body: string;
+  level?: "info" | "warning" | "danger";
+  audience?: "all" | "segment";
+  segment?: string | null;
+  active?: boolean;
+  /** Also email every recipient, not just show the in-app banner. */
+  sendEmail?: boolean;
+  startsAt?: number | null;
+  endsAt?: number | null;
+}
+
+/** `PATCH /admin/announcements/:id`. */
+export type AdminUpdateAnnouncementRequest =
+  Partial<AdminCreateAnnouncementRequest>;
+
+/** `POST /admin/email/send` — a one-off letter to a user. */
+export interface AdminSendEmailRequest {
+  to: string;
+  subject: string;
+  body: string;
+}
+
+/** `POST /admin/email/send` answer. */
+export interface AdminSendEmailResponse {
+  ok: boolean;
+  error: string | null;
+}
+
+/** `GET /admin/email-templates` row. */
+export interface AdminEmailTemplateDto {
+  key: string;
+  label: string;
+  subject: string;
+  bodyHtml: string;
+  /** True when the saved row overrides the built-in template. */
+  custom: boolean;
+  updatedBy: string | null;
+  updatedAt: number | null;
+}
+
+/** `PUT /admin/email-templates/:key`. */
+export interface AdminUpdateEmailTemplateRequest {
+  subject: string;
+  bodyHtml: string;
+}
+
+/** Active announcement shown to a signed-in user (app banner). */
+export interface AnnouncementDto {
+  id: string;
+  title: string;
+  body: string;
+  level: "info" | "warning" | "danger";
+}
+
+// --- TASK-63: data + compliance --------------------------------------------
+
+/** `GET /admin/users/:id/export` — a GDPR data export bundle. */
+export interface AdminUserExportDto {
+  generatedAt: number;
+  filename: string;
+  data: Record<string, unknown>;
+}
+
+/** `GET /admin/retention` — retention policy + what a purge would remove. */
+export interface AdminRetentionDto {
+  retentionDays: number | null;
+  purgeable: {
+    cards: number;
+    comments: number;
+    attachments: number;
+    columns: number;
+  };
+  backups: { configured: boolean; location: string | null };
+}
+
+// --- TASK-64: observability ------------------------------------------------
+
+/** `GET /admin/observability`. */
+export interface AdminObservabilityDto {
+  version: string;
+  nodeEnv: string;
+  uptimeSec: number;
+  deploy: { startedAt: number; commit: string | null };
+  database: {
+    sizeBytes: number;
+    sizePretty: string;
+    tables: Array<{ name: string; rows: number; sizeBytes: number }>;
+  };
+  jobs: {
+    transcode: { pending: number; done: number; failed: number };
+    demo: { running: boolean; boardId: string | null };
+    realtime: { boards: number; clients: number };
+  };
+  health: Array<{ name: string; ok: boolean; detail: string }>;
+}
+
+// --- TASK-65: security -----------------------------------------------------
+
+/** `GET /admin/security` — master security posture. */
+export interface AdminSecurityDto {
+  totpEnabled: boolean;
+  ipAllowlist: string | null;
+  alerts: AdminSecurityAlertDto[];
+}
+
+/** One suspicious-activity line derived from the audit log. */
+export interface AdminSecurityAlertDto {
+  id: string;
+  action: string;
+  adminEmail: string;
+  ip: string | null;
+  createdAt: number;
+  detail: string;
+}
+
+/** `POST /admin/security/totp` — begin enrollment (returns the secret). */
+export interface AdminTotpSetupDto {
+  /** Base32 secret to type into an authenticator app. */
+  secret: string;
+  /** `otpauth://` URL (may be rendered as text when QR is unavailable). */
+  otpauthUrl: string;
+}
+
+/** `POST /admin/security/totp/verify` — finish enrollment with a code. */
+export interface AdminVerifyTotpRequest {
+  code: string;
+}
+
+/** `PUT /admin/security` — ip allowlist and/or disable 2FA. */
+export interface AdminUpdateSecurityRequest {
+  ipAllowlist?: string | null;
+  totpEnabled?: boolean;
+  totpCode?: string;
 }

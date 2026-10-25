@@ -3,13 +3,19 @@ import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   AtSign,
+  Download,
+  Eye,
   KanbanSquare,
   KeyRound,
+  MailCheck,
+  MailX,
   MessageSquare,
   Paperclip,
+  Send,
   ShieldCheck,
   ShieldOff,
   Terminal,
+  Trash2,
   Users,
 } from "lucide-react";
 import type {
@@ -30,7 +36,12 @@ import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
-import { ChangeUserEmailDialog } from "./dialogs";
+import {
+  ChangeUserEmailDialog,
+  DeleteUserDialog,
+  ResetUserPasswordDialog,
+} from "./dialogs";
+import { exportUser, impersonateUser } from "./user-actions";
 import {
   DateCell,
   EntityLink,
@@ -103,6 +114,8 @@ export function UserDetailPage() {
   const [error, setError] = useState(false);
   const [tab, setTab] = useState<TabKey>("memberships");
   const [emailDialog, setEmailDialog] = useState(false);
+  const [resetDialog, setResetDialog] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState(false);
 
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -276,6 +289,86 @@ export function UserDetailPage() {
                 >
                   {t("admin.users.action.revokeTokens")}
                 </DropdownMenuItem>
+                {user.emailVerifiedAt === null ? (
+                  <DropdownMenuItem
+                    data-testid="admin-user-verify"
+                    onSelect={() =>
+                      void run(t("admin.userDetail.action.verify"), () =>
+                        adminApi
+                          .updateUser(user.id, { emailVerified: true })
+                          .then(() => undefined),
+                      )
+                    }
+                  >
+                    <MailCheck className="h-3.5 w-3.5" aria-hidden />
+                    {t("admin.userDetail.action.verify")}
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem
+                    data-testid="admin-user-unverify"
+                    onSelect={() =>
+                      void run(t("admin.userDetail.action.unverify"), () =>
+                        adminApi
+                          .updateUser(user.id, { emailVerified: false })
+                          .then(() => undefined),
+                      )
+                    }
+                  >
+                    <MailX className="h-3.5 w-3.5" aria-hidden />
+                    {t("admin.userDetail.action.unverify")}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  data-testid="admin-user-resend"
+                  onSelect={() =>
+                    void run(t("admin.userDetail.action.resend"), () =>
+                      adminApi.resendUserVerification(user.id),
+                    )
+                  }
+                >
+                  <Send className="h-3.5 w-3.5" aria-hidden />
+                  {t("admin.userDetail.action.resend")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  data-testid="admin-user-reset-password"
+                  onSelect={() => setResetDialog(true)}
+                >
+                  <KeyRound className="h-3.5 w-3.5" aria-hidden />
+                  {t("admin.userDetail.action.resetPassword")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  data-testid="admin-user-promote"
+                  onSelect={() =>
+                    void run(t("admin.userDetail.action.promote"), () =>
+                      adminApi.promoteUser(user.id),
+                    )
+                  }
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+                  {t("admin.userDetail.action.promote")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  data-testid="admin-user-impersonate"
+                  onSelect={() => void impersonateUser(user.id)}
+                >
+                  <Eye className="h-3.5 w-3.5" aria-hidden />
+                  {t("admin.userDetail.action.impersonate")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  data-testid="admin-user-export"
+                  onSelect={() => void exportUser(user.id)}
+                >
+                  <Download className="h-3.5 w-3.5" aria-hidden />
+                  {t("admin.userDetail.action.export")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-danger focus:text-danger"
+                  data-testid="admin-user-delete"
+                  onSelect={() => setDeleteDialog(true)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  {t("admin.userDetail.action.deleteUser")}
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           }
@@ -286,6 +379,19 @@ export function UserDetailPage() {
         user={emailDialog ? { id: user.id, email: user.email } : null}
         onClose={() => setEmailDialog(false)}
         onDone={reload}
+      />
+
+      <ResetUserPasswordDialog
+        user={resetDialog ? { id: user.id, email: user.email } : null}
+        onClose={() => setResetDialog(false)}
+      />
+
+      <DeleteUserDialog
+        user={deleteDialog ? { id: user.id, email: user.email } : null}
+        onClose={() => setDeleteDialog(false)}
+        onDone={() => {
+          window.location.assign("/admin/users");
+        }}
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -305,6 +411,17 @@ export function UserDetailPage() {
             {formatDate(user.disabledAt, lang, hour12)}
           </span>
         ) : null}
+        {user.emailVerifiedAt === null ? (
+          <Badge variant="warning" data-testid="admin-user-verified-badge">
+            {t("admin.userDetail.unverified")}
+          </Badge>
+        ) : (
+          <Badge variant="success" data-testid="admin-user-verified-badge">
+            {t("admin.userDetail.verifiedAt", {
+              date: formatDate(user.emailVerifiedAt, lang, hour12),
+            })}
+          </Badge>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">

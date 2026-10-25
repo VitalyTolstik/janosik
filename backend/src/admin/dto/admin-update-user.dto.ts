@@ -28,4 +28,9 @@ export class AdminUpdateUserDto {
   )
   @IsEmail()
   email?: string;
+
+  /** TASK-59: master override of the registration confirmation gate. */
+  @IsOptional()
+  @IsBoolean()
+  emailVerified?: boolean;
 }

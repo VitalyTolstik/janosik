@@ -26,6 +26,10 @@ import {
   ClipboardList,
   Columns3,
   Fingerprint,
+  SlidersHorizontal,
+  Megaphone,
+  ServerCog,
+  ShieldAlert,
 } from "lucide-react";
 
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -141,6 +145,11 @@ const NAV_SECTIONS: Array<{
         icon: Fingerprint,
         ownerOnly: true,
       },
+      {
+        to: "/admin/security",
+        labelKey: "admin.nav.security",
+        icon: ShieldAlert,
+      },
     ],
   },
   {
@@ -160,6 +169,21 @@ const NAV_SECTIONS: Array<{
         to: "/admin/shares",
         labelKey: "admin.nav.shares",
         icon: Share2,
+      },
+      {
+        to: "/admin/ops",
+        labelKey: "admin.nav.ops",
+        icon: SlidersHorizontal,
+      },
+      {
+        to: "/admin/comms",
+        labelKey: "admin.nav.comms",
+        icon: Megaphone,
+      },
+      {
+        to: "/admin/observability",
+        labelKey: "admin.nav.observability",
+        icon: ServerCog,
       },
     ],
   },

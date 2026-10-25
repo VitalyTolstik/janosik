@@ -12,7 +12,8 @@ import { argon2id, hash as argonHash, verify as argonVerify } from "argon2";
 import { createHash, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
-import { LoginDto } from "@/auth/dto/login.dto";
+import { AdminLoginDto } from "@/auth/dto/login.dto";
+import { SecurityService } from "./security.service";
 import {
   ADMIN_JWT_AUDIENCE,
   ADMIN_LOCKOUT_MS,
@@ -40,9 +41,13 @@ export class AdminAuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly security: SecurityService,
   ) {}
 
-  async login(dto: LoginDto): Promise<AdminSessionResult> {
+  async login(
+    dto: AdminLoginDto,
+    context: { ip?: string | null; userAgent?: string | null } = {},
+  ): Promise<AdminSessionResult> {
     const admin = await this.prisma.adminUser.findUnique({
       where: { email: dto.email },
     });
@@ -92,6 +97,28 @@ export class AdminAuthService {
       throw new ForbiddenException("Account is disabled");
     }
 
+    // IP allowlist (TASK-65): a source outside the master's list is refused
+    // after the password check, so an attacker never learns the list without
+    // a valid password.
+    if (!(await this.security.isIpAllowed(admin.id, context.ip ?? null))) {
+      await this.auditLoginFailed(dto.email, admin.id, "ip not allowed", {
+        ip: context.ip ?? null,
+      });
+      throw new ForbiddenException("Sign-in from this IP is not allowed");
+    }
+
+    // Two-factor (TASK-65): when enabled, the password alone is not enough.
+    const totpSecret = await this.security.requiredSecret(admin.id);
+    if (totpSecret) {
+      if (
+        !dto.totpCode ||
+        !this.security.verifyCode(totpSecret, dto.totpCode)
+      ) {
+        await this.auditLoginFailed(dto.email, admin.id, "2fa required");
+        throw new UnauthorizedException("A valid two-factor code is required");
+      }
+    }
+
     const updated = await this.prisma.adminUser.update({
       where: { id: admin.id },
       data: {
@@ -105,12 +132,16 @@ export class AdminAuthService {
         adminId: admin.id,
         adminEmail: admin.email,
         action: "admin.login",
+        details: { ip: context.ip ?? null },
       },
     });
-    return this.startSession(updated);
+    return this.startSession(updated, context);
   }
 
-  async refresh(rawToken: string | undefined): Promise<AdminSessionResult> {
+  async refresh(
+    rawToken: string | undefined,
+    context: { ip?: string | null; userAgent?: string | null } = {},
+  ): Promise<AdminSessionResult> {
     if (!rawToken) {
       throw new UnauthorizedException("Missing refresh token");
     }
@@ -151,7 +182,7 @@ export class AdminAuthService {
       await this.revokeAllSessions(stored.adminId);
       throw new UnauthorizedException("Refresh token reuse detected");
     }
-    return this.startSession(stored.admin);
+    return this.startSession(stored.admin, context);
   }
 
   /** Idempotent: absent/stale/unknown cookies still end in 200. */
@@ -179,22 +210,30 @@ export class AdminAuthService {
     });
   }
 
-  private async startSession(admin: AdminUser): Promise<AdminSessionResult> {
+  private async startSession(
+    admin: AdminUser,
+    context: { ip?: string | null; userAgent?: string | null } = {},
+  ): Promise<AdminSessionResult> {
     const accessToken = await this.jwtService.signAsync(
       { sub: admin.id, typ: ADMIN_TOKEN_TYPE },
       { audience: ADMIN_JWT_AUDIENCE },
     );
-    const refreshToken = await this.issueRefreshToken(admin.id);
+    const refreshToken = await this.issueRefreshToken(admin.id, context);
     return { accessToken, refreshToken, admin: this.toPrincipal(admin) };
   }
 
-  private async issueRefreshToken(adminId: string): Promise<string> {
+  private async issueRefreshToken(
+    adminId: string,
+    context: { ip?: string | null; userAgent?: string | null } = {},
+  ): Promise<string> {
     const token = randomBytes(48).toString("base64url");
     await this.prisma.adminRefreshToken.create({
       data: {
         tokenHash: this.hashToken(token),
         adminId,
         expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_TTL_DAYS * DAY_MS),
+        ip: context.ip ?? null,
+        userAgent: context.userAgent ?? null,
       },
     });
     return token;

@@ -160,6 +160,10 @@ function makeHarness(options: { alive?: boolean } = {}) {
     boards as never,
     comments as never,
     attachments as never,
+    {
+      isEnabled: async () => true,
+      assertEnabled: async () => undefined,
+    } as never,
   );
   return {
     service,

@@ -1,0 +1,219 @@
+import { Transform, Type } from "class-transformer";
+import {
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from "class-validator";
+
+/** TASK-59…65 request bodies for the master panel. */
+
+export class AdminAddBoardMemberDto {
+  @Transform(({ value }) =>
+    typeof value === "string" ? value.trim().toLowerCase() : value,
+  )
+  @IsEmail()
+  email!: string;
+
+  @IsOptional()
+  @IsIn(["ADMIN", "MEMBER", "VIEWER"])
+  role?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  expiresAt?: number | null;
+}
+
+export class AdminUpdateBoardMemberDto {
+  @IsOptional()
+  @IsIn(["ADMIN", "MEMBER", "VIEWER"])
+  role?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  expiresAt?: number | null;
+
+  @IsOptional()
+  @IsBoolean()
+  accepted?: boolean;
+}
+
+export class AdminTransferOwnerDto {
+  @IsString()
+  userId!: string;
+}
+
+export class AdminBulkDto {
+  @IsArray()
+  @IsString({ each: true })
+  ids!: string[];
+
+  @IsIn(["delete", "restore", "archive", "unarchive"])
+  action!: "delete" | "restore" | "archive" | "unarchive";
+}
+
+export class AdminUpdateFeatureFlagDto {
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @IsOptional()
+  perUser?: Record<string, boolean> | null;
+}
+
+export class AdminUpdateOpsDto {
+  @IsOptional()
+  @IsBoolean()
+  maintenanceMode?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  maintenanceMessage?: string | null;
+
+  @IsOptional()
+  @IsInt()
+  perUserRateLimit?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  retentionDays?: number | null;
+}
+
+export class AdminCreateAnnouncementDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  title!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2000)
+  body!: string;
+
+  @IsOptional()
+  @IsIn(["info", "warning", "danger"])
+  level?: "info" | "warning" | "danger";
+
+  @IsOptional()
+  @IsIn(["all", "segment"])
+  audience?: "all" | "segment";
+
+  @IsOptional()
+  @IsString()
+  segment?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  sendEmail?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  startsAt?: number | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  endsAt?: number | null;
+}
+
+export class AdminUpdateAnnouncementDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  body?: string;
+
+  @IsOptional()
+  @IsIn(["info", "warning", "danger"])
+  level?: "info" | "warning" | "danger";
+
+  @IsOptional()
+  @IsIn(["all", "segment"])
+  audience?: "all" | "segment";
+
+  @IsOptional()
+  @IsString()
+  segment?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  startsAt?: number | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  endsAt?: number | null;
+}
+
+export class AdminSendEmailDto {
+  @Transform(({ value }) =>
+    typeof value === "string" ? value.trim().toLowerCase() : value,
+  )
+  @IsEmail()
+  to!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  subject!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(20000)
+  body!: string;
+}
+
+export class AdminUpdateEmailTemplateDto {
+  @IsString()
+  @MaxLength(200)
+  subject!: string;
+
+  @IsString()
+  @MaxLength(20000)
+  bodyHtml!: string;
+}
+
+export class AdminVerifyTotpDto {
+  @IsString()
+  @MinLength(6)
+  @MaxLength(6)
+  code!: string;
+}
+
+export class AdminUpdateSecurityDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  ipAllowlist?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  totpEnabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(6)
+  totpCode?: string;
+}

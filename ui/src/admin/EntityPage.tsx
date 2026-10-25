@@ -12,6 +12,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
@@ -83,6 +85,8 @@ export interface EntityListConfig<T> {
   actions?: (row: T, reload: () => void) => Array<EntityAction>;
   /** Rows without natural actions still align with the action column. */
   skipActions?: boolean;
+  /** Enable bulk selection (delete / restore) for entities with `deletedAt`. */
+  bulk?: boolean;
 }
 
 function RowActions({
@@ -193,6 +197,52 @@ export function EntityPage<E extends AdminEntity>({
         AdminPage<AdminEntityRowMap[E]>
       >,
   );
+  const toast = useToast();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const bulkEnabled = config.bulk === true;
+  const visibleIds = list.items
+    .map((row) => rowId(row))
+    .filter((id): id is string => id !== null);
+  const allSelected =
+    bulkEnabled &&
+    visibleIds.length > 0 &&
+    visibleIds.every((id) => selected.has(id));
+
+  const toggleRow = (id: string) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelected((current) => {
+      if (allSelected) {
+        const next = new Set(current);
+        for (const id of visibleIds) next.delete(id);
+        return next;
+      }
+      return new Set([...current, ...visibleIds]);
+    });
+  };
+
+  const runBulk = async (
+    action: "delete" | "restore",
+    label: string,
+  ): Promise<void> => {
+    const ids = visibleIds.filter((id) => selected.has(id));
+    if (ids.length === 0) return;
+    try {
+      await adminApi.bulkEntity(config.entity, ids, action);
+      toast.success(label);
+      setSelected(new Set());
+      list.reload();
+    } catch {
+      toast.error(t("admin.common.actionFailed"));
+    }
+  };
 
   const statusOptions =
     config.statuses === undefined
@@ -249,9 +299,54 @@ export function EntityPage<E extends AdminEntity>({
           <EmptyState />
         ) : (
           <>
+            {bulkEnabled && selected.size > 0 ? (
+              <div className="flex items-center gap-2 border-b border-divider px-3 py-2 text-xs">
+                <span className="text-muted-foreground">
+                  {t("admin.bulk.selected", { count: selected.size })}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs text-destructive"
+                  data-testid="admin-bulk-delete"
+                  onClick={() => void runBulk("delete", t("admin.bulk.delete"))}
+                >
+                  {t("admin.bulk.delete")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs"
+                  data-testid="admin-bulk-restore"
+                  onClick={() =>
+                    void runBulk("restore", t("admin.bulk.restore"))
+                  }
+                >
+                  {t("admin.bulk.restore")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="ml-auto h-7 px-2 text-xs"
+                  onClick={() => setSelected(new Set())}
+                >
+                  {t("admin.bulk.clear")}
+                </Button>
+              </div>
+            ) : null}
             <Table>
               <thead>
                 <tr>
+                  {bulkEnabled ? (
+                    <Th className="w-8">
+                      <Checkbox
+                        aria-label={t("admin.bulk.delete")}
+                        data-testid="admin-select-all"
+                        checked={allSelected}
+                        onCheckedChange={toggleAll}
+                      />
+                    </Th>
+                  ) : null}
                   {config.columns.map((column) => (
                     <Th key={column.label} className={column.className}>
                       {column.label}
@@ -272,6 +367,7 @@ export function EntityPage<E extends AdminEntity>({
                   const testId =
                     config.rowTestId?.(row) ??
                     `admin-row-${config.entity}-${index}`;
+                  const id = rowId(row);
                   return (
                     <tr
                       key={rowHrefKey(row, index)}
@@ -283,6 +379,20 @@ export function EntityPage<E extends AdminEntity>({
                       }
                       onClick={href ? () => void navigate(href) : undefined}
                     >
+                      {bulkEnabled && id !== null ? (
+                        <Td className="w-8">
+                          <span onClick={(event) => event.stopPropagation()}>
+                            <Checkbox
+                              aria-label={id}
+                              data-testid={`admin-select-${id}`}
+                              checked={selected.has(id)}
+                              onCheckedChange={() => toggleRow(id)}
+                            />
+                          </span>
+                        </Td>
+                      ) : bulkEnabled ? (
+                        <Td className="w-8" />
+                      ) : null}
                       {config.columns.map((column) => (
                         <Td key={column.label} className={column.className}>
                           {column.render(row)}
@@ -333,4 +443,10 @@ function rowHrefKey(row: unknown, index: number): string {
     return `${composite.cardId}:${composite.labelId}`;
   }
   return String(index);
+}
+
+/** Stable id for bulk selection (composite rows opt out — no id). */
+function rowId(row: unknown): string | null {
+  const candidate = row as { id?: unknown };
+  return typeof candidate.id === "string" ? candidate.id : null;
 }

@@ -32,6 +32,29 @@ import type {
   AdminMetricsDto,
   AdminShareRowDto,
   AdminPage,
+  AdminAnnouncementDto,
+  AdminBulkResultDto,
+  AdminCreateAnnouncementRequest,
+  AdminEmailTemplateDto,
+  AdminFeatureFlagDto,
+  AdminImpersonationDto,
+  AdminObservabilityDto,
+  AdminOpsSettingsDto,
+  AdminPromoteUserResponse,
+  AdminResendVerificationResponse,
+  AdminResetUserPasswordResponse,
+  AdminRetentionDto,
+  AdminSecurityDto,
+  AdminSendEmailRequest,
+  AdminSendEmailResponse,
+  AdminTotpSetupDto,
+  AdminUpdateAnnouncementRequest,
+  AdminUpdateFeatureFlagRequest,
+  AdminUpdateOpsSettingsRequest,
+  AdminUpdateSecurityRequest,
+  AdminUserExportDto,
+  AdminAddBoardMemberRequest,
+  AdminUpdateBoardMemberRequest,
   AdminUpdateEmailSettingsRequest,
   AdminUpdateMasterRequest,
   AdminUpdateUserRequest,
@@ -506,6 +529,247 @@ export class AdminApiClient {
       `/admin/shares/${encodeURIComponent(id)}/revoke`,
       { method: "POST", body: {} },
     );
+  }
+
+  // -------------------------------------------- user support (TASK-59)
+
+  resendUserVerification(id: string): Promise<AdminResendVerificationResponse> {
+    return this.request<AdminResendVerificationResponse>(
+      `/admin/users/${encodeURIComponent(id)}/verification/resend`,
+      { method: "POST", body: {} },
+    );
+  }
+
+  resetUserPassword(id: string): Promise<AdminResetUserPasswordResponse> {
+    return this.request<AdminResetUserPasswordResponse>(
+      `/admin/users/${encodeURIComponent(id)}/password/reset`,
+      { method: "POST", body: {} },
+    );
+  }
+
+  deleteUser(id: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/admin/users/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  promoteUser(id: string): Promise<AdminPromoteUserResponse> {
+    return this.request<AdminPromoteUserResponse>(
+      `/admin/users/${encodeURIComponent(id)}/promote`,
+      { method: "POST", body: {} },
+    );
+  }
+
+  impersonateUser(id: string): Promise<AdminImpersonationDto> {
+    return this.request<AdminImpersonationDto>(
+      `/admin/users/${encodeURIComponent(id)}/impersonate`,
+      { method: "POST", body: {} },
+    );
+  }
+
+  demoteMaster(id: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/admin/admins/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  exportUser(id: string): Promise<AdminUserExportDto> {
+    return this.request<AdminUserExportDto>(
+      `/admin/users/${encodeURIComponent(id)}/export`,
+    );
+  }
+
+  // ------------------------------------------- membership (TASK-60)
+
+  addBoardMember(
+    boardId: string,
+    body: AdminAddBoardMemberRequest,
+  ): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/admin/boards/${encodeURIComponent(boardId)}/members`,
+      { method: "POST", body },
+    );
+  }
+
+  updateBoardMember(
+    boardId: string,
+    memberId: string,
+    body: AdminUpdateBoardMemberRequest,
+  ): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/admin/boards/${encodeURIComponent(boardId)}/members/${encodeURIComponent(memberId)}`,
+      { method: "PATCH", body },
+    );
+  }
+
+  removeBoardMember(
+    boardId: string,
+    memberId: string,
+  ): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/admin/boards/${encodeURIComponent(boardId)}/members/${encodeURIComponent(memberId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  transferOwner(boardId: string, userId: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/admin/boards/${encodeURIComponent(boardId)}/owner`,
+      { method: "POST", body: { userId } },
+    );
+  }
+
+  deleteAttachment(id: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/admin/attachments/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  restoreEntity(entity: AdminEntity, id: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/admin/entities/${entity}/${encodeURIComponent(id)}/restore`,
+      { method: "POST", body: {} },
+    );
+  }
+
+  bulkEntity(
+    entity: AdminEntity,
+    ids: string[],
+    action: "delete" | "restore" | "archive" | "unarchive",
+  ): Promise<AdminBulkResultDto> {
+    return this.request<AdminBulkResultDto>(`/admin/entities/${entity}/bulk`, {
+      method: "POST",
+      body: { ids, action },
+    });
+  }
+
+  // ----------------------------------------------- flags + ops (TASK-61)
+
+  listFlags(): Promise<AdminFeatureFlagDto[]> {
+    return this.request<AdminFeatureFlagDto[]>("/admin/flags");
+  }
+
+  updateFlag(
+    key: string,
+    body: AdminUpdateFeatureFlagRequest,
+  ): Promise<AdminFeatureFlagDto> {
+    return this.request<AdminFeatureFlagDto>(
+      `/admin/flags/${encodeURIComponent(key)}`,
+      { method: "PATCH", body },
+    );
+  }
+
+  getOps(): Promise<AdminOpsSettingsDto> {
+    return this.request<AdminOpsSettingsDto>("/admin/ops");
+  }
+
+  updateOps(body: AdminUpdateOpsSettingsRequest): Promise<AdminOpsSettingsDto> {
+    return this.request<AdminOpsSettingsDto>("/admin/ops", {
+      method: "PUT",
+      body,
+    });
+  }
+
+  // -------------------------------------------------------- comms (TASK-62)
+
+  listAnnouncements(): Promise<AdminAnnouncementDto[]> {
+    return this.request<AdminAnnouncementDto[]>("/admin/announcements");
+  }
+
+  createAnnouncement(
+    body: AdminCreateAnnouncementRequest,
+  ): Promise<AdminAnnouncementDto> {
+    return this.request<AdminAnnouncementDto>("/admin/announcements", {
+      method: "POST",
+      body,
+    });
+  }
+
+  updateAnnouncement(
+    id: string,
+    body: AdminUpdateAnnouncementRequest,
+  ): Promise<AdminAnnouncementDto> {
+    return this.request<AdminAnnouncementDto>(
+      `/admin/announcements/${encodeURIComponent(id)}`,
+      { method: "PATCH", body },
+    );
+  }
+
+  deleteAnnouncement(id: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/admin/announcements/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  sendEmail(body: AdminSendEmailRequest): Promise<AdminSendEmailResponse> {
+    return this.request<AdminSendEmailResponse>("/admin/email/send", {
+      method: "POST",
+      body,
+    });
+  }
+
+  listEmailTemplates(): Promise<AdminEmailTemplateDto[]> {
+    return this.request<AdminEmailTemplateDto[]>("/admin/email-templates");
+  }
+
+  updateEmailTemplate(
+    key: string,
+    body: { subject: string; bodyHtml: string },
+  ): Promise<AdminEmailTemplateDto> {
+    return this.request<AdminEmailTemplateDto>(
+      `/admin/email-templates/${encodeURIComponent(key)}`,
+      { method: "PUT", body },
+    );
+  }
+
+  // -------------------------------------------- data/compliance (TASK-63)
+
+  getRetention(): Promise<AdminRetentionDto> {
+    return this.request<AdminRetentionDto>("/admin/retention");
+  }
+
+  purgeSoftDeleted(): Promise<AdminBulkResultDto> {
+    return this.request<AdminBulkResultDto>("/admin/retention/purge", {
+      method: "POST",
+      body: {},
+    });
+  }
+
+  // -------------------------------------------- observability (TASK-64)
+
+  getObservability(): Promise<AdminObservabilityDto> {
+    return this.request<AdminObservabilityDto>("/admin/observability");
+  }
+
+  // --------------------------------------------------- security (TASK-65)
+
+  getSecurity(): Promise<AdminSecurityDto> {
+    return this.request<AdminSecurityDto>("/admin/security");
+  }
+
+  setupTotp(): Promise<AdminTotpSetupDto> {
+    return this.request<AdminTotpSetupDto>("/admin/security/totp", {
+      method: "POST",
+      body: {},
+    });
+  }
+
+  verifyTotp(code: string): Promise<{ totpEnabled: true }> {
+    return this.request<{ totpEnabled: true }>("/admin/security/totp/verify", {
+      method: "POST",
+      body: { code },
+    });
+  }
+
+  updateSecurity(body: AdminUpdateSecurityRequest): Promise<AdminSecurityDto> {
+    return this.request<AdminSecurityDto>("/admin/security", {
+      method: "PUT",
+      body,
+    });
   }
 
   private query(params: AdminListParams): string {

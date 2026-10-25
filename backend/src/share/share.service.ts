@@ -19,11 +19,11 @@ import type {
   AttachmentDto,
 } from "@janosik/shared";
 import { SHARE_LIMITS, serializeExport } from "@janosik/shared";
-import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardsService } from "@/boards/boards.service";
 import { CommentsService } from "@/comments/comments.service";
 import { AttachmentsService } from "@/attachments/attachments.service";
+import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import type { CreateShareDto, UpdateShareDto } from "./dto/share.dto";
 import { renderBoardPng } from "./og-image";
 
@@ -49,6 +49,7 @@ export class ShareService {
     private readonly boards: BoardsService,
     private readonly comments: CommentsService,
     private readonly attachments: AttachmentsService,
+    private readonly flags: FeatureFlagsService,
   ) {}
 
   // ------------------------------------------------------------ owner side
@@ -188,7 +189,7 @@ export class ShareService {
    * it once existed.
    */
   async resolveToken(token: string): Promise<ShareRow> {
-    if (!this.isPublicSharingEnabled()) {
+    if (!(await this.isPublicSharingEnabled())) {
       throw new NotFoundException("Not found");
     }
     const row = await this.prisma.boardShare.findUnique({ where: { token } });
@@ -402,12 +403,12 @@ export class ShareService {
   }
 
   /**
-   * The `ALLOW_PUBLIC_SHARES` master switch. Isolated in one method so a test
-   * (and only a test) can flip it — the env object itself is frozen by
-   * envalid, and a whole disabled-instance boot is disproportionate.
+   * The public-share master switch (TASK-58/61). The env value is the
+   * fallback; an operator can override it from the panel via the
+   * `public_shares` feature flag, and the check is awaited on every resolve.
    */
-  private isPublicSharingEnabled(): boolean {
-    return env.ALLOW_PUBLIC_SHARES;
+  private isPublicSharingEnabled(): Promise<boolean> {
+    return this.flags.isEnabled("public_shares");
   }
 
   private parseExpiry(raw: string | null | undefined): Date | null {

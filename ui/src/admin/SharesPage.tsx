@@ -185,7 +185,9 @@ export function SharesPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 w-16 gap-1.5 px-2 text-xs"
+                        className="h-7 w-7 p-0"
+                        aria-label={t("admin.shares.copy")}
+                        title={t("admin.shares.copy")}
                         data-testid={`admin-share-copy-${row.id}`}
                         onClick={() => {
                           const url = `${window.location.origin}/s/${row.token}`;
@@ -203,28 +205,28 @@ export function SharesPage() {
                         ) : (
                           <Copy className="h-3.5 w-3.5" aria-hidden />
                         )}
-                        {t("admin.shares.copy")}
                       </Button>
                       <a
                         href={`/s/${row.token}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex h-7 w-16 items-center justify-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-hover hover:text-foreground"
+                        aria-label={t("admin.shares.open")}
+                        title={t("admin.shares.open")}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground"
                       >
                         <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-                        {t("admin.shares.open")}
                       </a>
                       {row.revokedAt !== null ? (
-                        <span className="inline-flex h-7 w-20 items-center justify-center">
-                          <Badge variant="danger">
-                            {t("admin.shares.revokedLabel")}
-                          </Badge>
-                        </span>
+                        <Badge variant="danger">
+                          {t("admin.shares.revokedLabel")}
+                        </Badge>
                       ) : (
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 w-20 gap-1.5 px-2 text-xs text-destructive"
+                          className="h-7 w-7 p-0 text-destructive"
+                          aria-label={t("admin.shares.revoke")}
+                          title={t("admin.shares.revoke")}
                           disabled={busy === row.id}
                           data-testid={`admin-share-revoke-${row.id}`}
                           onClick={() => void revoke(row.id)}
@@ -237,7 +239,6 @@ export function SharesPage() {
                           ) : (
                             <Trash2 className="h-3.5 w-3.5" aria-hidden />
                           )}
-                          {t("admin.shares.revoke")}
                         </Button>
                       )}
                     </div>

@@ -14,6 +14,7 @@ import type { BoardSseEvent } from "@janosik/shared";
 @Injectable()
 export class RealtimeService {
   private readonly channels = new Map<string, Subject<BoardSseEvent>>();
+  private subscribers = 0;
 
   /** Push one committed event to every subscriber of the board. */
   publish(boardId: string, event: BoardSseEvent): void {
@@ -23,6 +24,27 @@ export class RealtimeService {
   /** Events committed from now on; catch-up from the log is the caller's. */
   watch(boardId: string): Observable<BoardSseEvent> {
     return this.channel(boardId).asObservable();
+  }
+
+  /** Boards with a live channel (TASK-64 observability). */
+  get activeBoards(): number {
+    return this.channels.size;
+  }
+
+  /** Live SSE subscriber count (TASK-64 observability). */
+  get subscriberCount(): number {
+    return this.subscribers;
+  }
+
+  /** Registers/unregisters an SSE consumer for the counters above. */
+  trackSubscription(): () => void {
+    this.subscribers += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.subscribers = Math.max(0, this.subscribers - 1);
+    };
   }
 
   private channel(boardId: string): Subject<BoardSseEvent> {

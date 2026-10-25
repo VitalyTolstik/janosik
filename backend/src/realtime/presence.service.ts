@@ -69,6 +69,13 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
     this.boards.clear();
   }
 
+  /** Total live presence sessions across every board (TASK-64). */
+  totalSessions(): number {
+    let total = 0;
+    for (const sessions of this.boards.values()) total += sessions.size;
+    return total;
+  }
+
   /** Register a connection and broadcast the roster. Always published, so
    * the fresh connection receives the current roster as its first frame —
    * duplicate roster frames are cheap, a missing one is a bug. */

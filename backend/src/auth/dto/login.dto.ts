@@ -1,5 +1,5 @@
 import { Transform } from "class-transformer";
-import { IsEmail, IsString, MaxLength } from "class-validator";
+import { IsEmail, IsOptional, IsString, MaxLength } from "class-validator";
 
 export class LoginDto {
   @Transform(({ value }) =>
@@ -14,4 +14,12 @@ export class LoginDto {
   @IsString()
   @MaxLength(100)
   password!: string;
+}
+
+/** Fields the master login adds on top of the user login (TASK-65 2FA). */
+export class AdminLoginDto extends LoginDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(6)
+  totpCode?: string;
 }

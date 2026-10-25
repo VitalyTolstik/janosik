@@ -42,7 +42,10 @@ import {
   ChangeUserEmailDialog,
   CreateBoardButton,
   CreateUserButton,
+  DeleteUserDialog,
+  ResetUserPasswordDialog,
 } from "./dialogs";
+import { exportUser, impersonateUser } from "./user-actions";
 
 /**
  * Per-entity table configs (TASK-48) — one human-readable value per cell,
@@ -177,6 +180,74 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             }),
             run: () => adminApi.revokeUserTokens(user.id),
           },
+          user.emailVerifiedAt === null
+            ? {
+                label: t("admin.userDetail.action.verify"),
+                confirmTitle: t("admin.userDetail.confirm.verify.title", {
+                  email: user.email,
+                }),
+                confirmBody: t("admin.userDetail.confirm.verify.body"),
+                run: () =>
+                  adminApi
+                    .updateUser(user.id, { emailVerified: true })
+                    .then(() => undefined),
+              }
+            : {
+                label: t("admin.userDetail.action.unverify"),
+                destructive: true,
+                confirmTitle: t("admin.userDetail.confirm.unverify.title", {
+                  email: user.email,
+                }),
+                confirmBody: t("admin.userDetail.confirm.unverify.body"),
+                run: () =>
+                  adminApi
+                    .updateUser(user.id, { emailVerified: false })
+                    .then(() => undefined),
+              },
+          {
+            label: t("admin.userDetail.action.resend"),
+            noToast: false,
+            run: () => adminApi.resendUserVerification(user.id),
+          },
+          {
+            label: t("admin.userDetail.action.resetPassword"),
+            run: async () => undefined,
+            renderDialog: ({ close }) => (
+              <ResetUserPasswordDialog
+                user={{ id: user.id, email: user.email }}
+                onClose={close}
+              />
+            ),
+          },
+          {
+            label: t("admin.userDetail.action.promote"),
+            confirmTitle: t("admin.userDetail.confirm.promote.title", {
+              email: user.email,
+            }),
+            confirmBody: t("admin.userDetail.confirm.promote.body"),
+            run: () => adminApi.promoteUser(user.id),
+          },
+          {
+            label: t("admin.userDetail.action.impersonate"),
+            noToast: true,
+            run: () => impersonateUser(user.id),
+          },
+          {
+            label: t("admin.userDetail.action.export"),
+            noToast: true,
+            run: () => exportUser(user.id),
+          },
+          {
+            label: t("admin.userDetail.action.deleteUser"),
+            run: async () => undefined,
+            renderDialog: ({ close, reload }) => (
+              <DeleteUserDialog
+                user={{ id: user.id, email: user.email }}
+                onClose={close}
+                onDone={reload}
+              />
+            ),
+          },
         ],
       };
       return config;
@@ -185,6 +256,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
     case "boards": {
       const config: EntityListConfig<AdminBoardRowDto> = {
         entity,
+        bulk: true,
         title: t("admin.boards.title"),
         subtitle: t("admin.boards.subtitle"),
         statuses: [
@@ -279,6 +351,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
     case "columns": {
       const config: EntityListConfig<AdminColumnRowDto> = {
         entity,
+        bulk: true,
         title: t("admin.columns.title"),
         subtitle: t("admin.columns.subtitle"),
         statuses: [
@@ -337,6 +410,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
     case "cards": {
       const config: EntityListConfig<AdminCardRowDto> = {
         entity,
+        bulk: true,
         title: t("admin.cards.title"),
         subtitle: t("admin.cards.subtitle"),
         statuses: [
@@ -449,6 +523,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
     case "cardLinks": {
       const config: EntityListConfig<AdminCardLinkRowDto> = {
         entity,
+        bulk: true,
         title: t("admin.cardLinks.title"),
         subtitle: t("admin.cardLinks.subtitle"),
         statuses: [
@@ -512,6 +587,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
     case "labels": {
       const config: EntityListConfig<AdminLabelRowDto> = {
         entity,
+        bulk: true,
         title: t("admin.labels.title"),
         subtitle: t("admin.labels.subtitle"),
         statuses: [
@@ -600,6 +676,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
     case "checklists": {
       const config: EntityListConfig<AdminChecklistRowDto> = {
         entity,
+        bulk: true,
         title: t("admin.checklists.title"),
         subtitle: t("admin.checklists.subtitle"),
         statuses: [
@@ -658,6 +735,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
     case "checklistItems": {
       const config: EntityListConfig<AdminChecklistItemRowDto> = {
         entity,
+        bulk: true,
         title: t("admin.checklistItems.title"),
         subtitle: t("admin.checklistItems.subtitle"),
         statuses: [
@@ -707,6 +785,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
     case "comments": {
       const config: EntityListConfig<AdminCommentRowDto> = {
         entity,
+        bulk: true,
         title: t("admin.comments.title"),
         subtitle: t("admin.comments.subtitle"),
         columns: [
@@ -771,6 +850,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
     case "attachments": {
       const config: EntityListConfig<AdminAttachmentRowDto> = {
         entity,
+        bulk: true,
         title: t("admin.attachments.title"),
         subtitle: t("admin.attachments.subtitle"),
         statuses: [
@@ -847,6 +927,25 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             ),
           },
         ],
+        actions: (file) =>
+          file.deletedAt !== null
+            ? [
+                {
+                  label: t("admin.entities.restore"),
+                  run: () => adminApi.restoreEntity("attachments", file.id),
+                },
+              ]
+            : [
+                {
+                  label: t("admin.attachments.action.delete"),
+                  destructive: true,
+                  confirmTitle: t("admin.attachments.confirm.delete.title", {
+                    name: file.fileName,
+                  }),
+                  confirmBody: t("admin.attachments.confirm.delete.body"),
+                  run: () => adminApi.deleteAttachment(file.id),
+                },
+              ],
       };
       return config;
     }
@@ -996,6 +1095,18 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.sessions.column.expires"),
             render: (session) => <DateCell value={session.expiresAt} />,
+          },
+          {
+            label: t("admin.sessions.column.ip"),
+            render: (session) => (
+              <TextCell value={session.ip} maxWidth="10rem" />
+            ),
+          },
+          {
+            label: t("admin.sessions.column.userAgent"),
+            render: (session) => (
+              <TextCell value={session.userAgent} maxWidth="16rem" />
+            ),
           },
           {
             label: t("admin.sessions.column.id"),

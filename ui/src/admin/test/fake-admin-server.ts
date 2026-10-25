@@ -30,6 +30,14 @@ import type {
   AdminUpdateOAuthProviderRequest,
   AdminUpdateThrottleSettingsRequest,
   AdminUserRowDto,
+  AdminBoardMemberRowDto,
+  AdminAnnouncementDto,
+  AdminEmailTemplateDto,
+  AdminFeatureFlagDto,
+  AdminObservabilityDto,
+  AdminOpsSettingsDto,
+  AdminRetentionDto,
+  AdminSecurityDto,
 } from "@janosik/shared";
 
 /**
@@ -127,6 +135,8 @@ export function adminSession(
     userEmail: "member@example.com",
     createdAt: now,
     expiresAt: now + 86_400_000,
+    ip: "203.0.113.7",
+    userAgent: "Mozilla/5.0",
     ...overrides,
   };
 }
@@ -191,6 +201,7 @@ export function adminUser(
     displayName: "Member",
     createdAt: now,
     disabledAt: null,
+    emailVerifiedAt: now,
     ...overrides,
   };
 }
@@ -224,6 +235,28 @@ export function adminBoard(
     updatedAt: now,
     archivedAt: null,
     deletedAt: null,
+    ...overrides,
+  };
+}
+
+export function boardMember(
+  overrides: Partial<AdminBoardMemberRowDto> = {},
+): AdminBoardMemberRowDto {
+  return {
+    id: "member-1",
+    boardId: "b-1",
+    boardTitle: "Roadmap",
+    boardDeletedAt: null,
+    userId: "u-1",
+    userEmail: "member@example.com",
+    userDisplayName: "Member",
+    userDisabledAt: null,
+    role: "MEMBER",
+    expiresAt: null,
+    acceptedAt: now,
+    invitedById: null,
+    invitedByEmail: null,
+    createdAt: now,
     ...overrides,
   };
 }
@@ -304,6 +337,81 @@ export class FakeAdminServer {
 
   /** Public shares (TASK-58). */
   shares: AdminShareRowDto[] = [];
+
+  /** Feature flags (TASK-61). */
+  flags: AdminFeatureFlagDto[] = [
+    {
+      key: "registration_open",
+      label: "Open registration",
+      description: "Allow anyone to create a new account.",
+      enabled: true,
+      overrides: 0,
+      envDefault: true,
+      updatedBy: null,
+      updatedAt: null,
+    },
+  ];
+
+  /** Operational settings (TASK-61). */
+  ops: AdminOpsSettingsDto = {
+    maintenanceMode: false,
+    maintenanceMessage: null,
+    perUserRateLimit: null,
+    retentionDays: null,
+    updatedBy: null,
+    updatedAt: null,
+  };
+
+  /** Announcements (TASK-62). */
+  announcements: AdminAnnouncementDto[] = [];
+
+  /** Editable mail templates (TASK-62). */
+  emailTemplates: AdminEmailTemplateDto[] = [
+    {
+      key: "verification_code",
+      label: "Email verification code",
+      subject: "",
+      bodyHtml: "",
+      custom: false,
+      updatedBy: null,
+      updatedAt: null,
+    },
+  ];
+
+  /** Security posture (TASK-65). */
+  security: AdminSecurityDto = {
+    totpEnabled: false,
+    ipAllowlist: null,
+    alerts: [],
+  };
+
+  /** Retention/compliance snapshot (TASK-63). */
+  retention: AdminRetentionDto = {
+    retentionDays: null,
+    purgeable: { cards: 0, comments: 0, attachments: 0, columns: 0 },
+    backups: { configured: false, location: null },
+  };
+
+  /** Observability snapshot (TASK-64). */
+  observability: AdminObservabilityDto = {
+    version: "0.1.0",
+    nodeEnv: "test",
+    uptimeSec: 42,
+    deploy: { startedAt: now, commit: null },
+    database: { sizeBytes: 1024, sizePretty: "1.0 KB", tables: [] },
+    jobs: {
+      transcode: { pending: 0, done: 0, failed: 0 },
+      demo: { running: false, boardId: null },
+      realtime: { boards: 0, clients: 0 },
+    },
+    health: [{ name: "database", ok: true, detail: "ok" }],
+  };
+
+  /** Board members keyed by boardId (TASK-60 moderation tests). */
+  boardMembers: Record<string, AdminBoardMemberRowDto[]> = {};
+
+  /** Totp enrollment secret echoed by `POST /admin/security/totp`. */
+  totpSecret = "JBSWY3DPEHPK3PXP";
 
   constructor(state: FakeAdminState = emptyAdminState()) {
     this.state = state;
@@ -847,6 +955,288 @@ export class FakeAdminServer {
       if (!row) return this.json({ message: "Share not found" }, 404);
       row.revokedAt = now;
       return this.json(row, 201);
+    }
+
+    // ------------------------------------------ user support (TASK-59)
+    const userById = (id: string) =>
+      this.state.users.find((user) => user.id === decodeURIComponent(id));
+
+    const resendVerify = path.match(
+      /^\/admin\/users\/([^/]+)\/verification\/resend$/,
+    );
+    if (resendVerify && method === "POST") {
+      const user = userById(resendVerify[1] ?? "");
+      if (!user) return this.json({ message: "User not found" }, 404);
+      if (user.emailVerifiedAt !== null) {
+        return this.json({ message: "Email is already verified" }, 409);
+      }
+      return this.json(
+        { ok: true, expiresAt: now + 900_000, delivered: true },
+        201,
+      );
+    }
+
+    const resetPwd = path.match(/^\/admin\/users\/([^/]+)\/password\/reset$/);
+    if (resetPwd && method === "POST") {
+      const user = userById(resetPwd[1] ?? "");
+      if (!user) return this.json({ message: "User not found" }, 404);
+      return this.json({ user, temporaryPassword: "Temp-pass-123" }, 201);
+    }
+
+    const promote = path.match(/^\/admin\/users\/([^/]+)\/promote$/);
+    if (promote && method === "POST") {
+      const user = userById(promote[1] ?? "");
+      if (!user) return this.json({ message: "User not found" }, 404);
+      return this.json(
+        {
+          admin: adminMaster({
+            email: user.email,
+            displayName: user.displayName,
+          }),
+          temporaryPassword: "Temp-pass-123",
+        },
+        201,
+      );
+    }
+
+    const impersonate = path.match(/^\/admin\/users\/([^/]+)\/impersonate$/);
+    if (impersonate && method === "POST") {
+      const user = userById(impersonate[1] ?? "");
+      if (!user) return this.json({ message: "User not found" }, 404);
+      return this.json(
+        {
+          accessToken: "impersonation-token",
+          expiresAt: now + 900_000,
+          user: user.email
+            ? { id: user.id, email: user.email, displayName: user.displayName }
+            : { id: user.id, email: "", displayName: user.displayName },
+        },
+        201,
+      );
+    }
+
+    const exportUser = path.match(/^\/admin\/users\/([^/]+)\/export$/);
+    if (exportUser && method === "GET") {
+      const user = userById(exportUser[1] ?? "");
+      if (!user) return this.json({ message: "User not found" }, 404);
+      return this.json({
+        generatedAt: now,
+        filename: `janosik-user-${user.id}.json`,
+        data: { user },
+      });
+    }
+
+    const deleteUser = path.match(/^\/admin\/users\/([^/]+)$/);
+    if (deleteUser && method === "DELETE") {
+      const id = decodeURIComponent(deleteUser[1] ?? "");
+      this.state.users = this.state.users.filter((user) => user.id !== id);
+      return this.json({ status: "ok" });
+    }
+
+    const demote = path.match(/^\/admin\/admins\/([^/]+)$/);
+    if (demote && method === "DELETE") {
+      if (this.sessionRole !== "OWNER") {
+        return this.json({ message: "Owner rights are required" }, 403);
+      }
+      return this.json({ status: "ok" });
+    }
+
+    // -------------------------------------------- membership (TASK-60)
+    const boardMembers = (boardId: string) =>
+      (this.boardMembers[boardId] ??= []);
+
+    const addMember = path.match(/^\/admin\/boards\/([^/]+)\/members$/);
+    if (addMember && method === "POST") {
+      const payload = jsonBody as { email?: string; role?: string };
+      boardMembers(decodeURIComponent(addMember[1] ?? "")).push(
+        boardMember({
+          boardId: decodeURIComponent(addMember[1] ?? ""),
+          userId: `user-${payload.email ?? "new"}`,
+          userEmail: payload.email ?? "new@example.com",
+          role: payload.role ?? "MEMBER",
+        }),
+      );
+      return this.json({ status: "ok" }, 201);
+    }
+
+    const memberOne = path.match(
+      /^\/admin\/boards\/([^/]+)\/members\/([^/]+)$/,
+    );
+    if (memberOne && method === "PATCH") {
+      return this.json({ status: "ok" });
+    }
+    if (memberOne && method === "DELETE") {
+      return this.json({ status: "ok" });
+    }
+
+    const transfer = path.match(/^\/admin\/boards\/([^/]+)\/owner$/);
+    if (transfer && method === "POST") {
+      return this.json({ status: "ok" }, 201);
+    }
+
+    const deleteAttachment = path.match(/^\/admin\/attachments\/([^/]+)$/);
+    if (deleteAttachment && method === "DELETE") {
+      return this.json({ status: "ok" });
+    }
+
+    const restore = path.match(
+      /^\/admin\/entities\/([a-zA-Z]+)\/([^/]+)\/restore$/,
+    );
+    if (restore && method === "POST") {
+      return this.json({ status: "ok" }, 201);
+    }
+
+    const bulk = path.match(/^\/admin\/entities\/([a-zA-Z]+)\/bulk$/);
+    if (bulk && method === "POST") {
+      const payload = jsonBody as { ids?: string[] };
+      return this.json({ affected: payload.ids?.length ?? 0 }, 201);
+    }
+
+    // ----------------------------------------------- flags + ops (TASK-61)
+    if (path === "/admin/flags" && method === "GET") {
+      return this.json(this.flags);
+    }
+    const flagOne = path.match(/^\/admin\/flags\/([^/]+)$/);
+    if (flagOne && method === "PATCH") {
+      const key = decodeURIComponent(flagOne[1] ?? "");
+      const payload = jsonBody as { enabled?: boolean };
+      const flag = this.flags.find((entry) => entry.key === key);
+      if (!flag) return this.json({ message: "Unknown flag" }, 404);
+      if (payload.enabled !== undefined) flag.enabled = payload.enabled;
+      flag.updatedAt = now;
+      flag.updatedBy = "master@example.com";
+      return this.json(flag);
+    }
+    if (path === "/admin/ops" && method === "GET") {
+      return this.json(this.ops);
+    }
+    if (path === "/admin/ops" && method === "PUT") {
+      const payload = jsonBody as Partial<AdminOpsSettingsDto>;
+      this.ops = {
+        ...this.ops,
+        ...payload,
+        updatedBy: "master@example.com",
+        updatedAt: now,
+      };
+      return this.json(this.ops);
+    }
+
+    // -------------------------------------------------------- comms (TASK-62)
+    if (path === "/admin/announcements" && method === "GET") {
+      return this.json(this.announcements);
+    }
+    if (path === "/admin/announcements" && method === "POST") {
+      const payload = jsonBody as {
+        title?: string;
+        body?: string;
+        level?: string;
+        audience?: "all" | "segment";
+        segment?: string | null;
+        sendEmail?: boolean;
+      };
+      const created: AdminAnnouncementDto = {
+        id: `ann-${this.announcements.length + 1}`,
+        title: payload.title ?? "",
+        body: payload.body ?? "",
+        level: (payload.level as AdminAnnouncementDto["level"]) ?? "info",
+        audience: payload.audience ?? "all",
+        segment: payload.segment ?? null,
+        active: true,
+        sendEmail: payload.sendEmail ?? false,
+        startsAt: null,
+        endsAt: null,
+        createdBy: "master@example.com",
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.announcements.push(created);
+      return this.json(created, 201);
+    }
+    const annOne = path.match(/^\/admin\/announcements\/([^/]+)$/);
+    if (annOne && method === "PATCH") {
+      const id = decodeURIComponent(annOne[1] ?? "");
+      const row = this.announcements.find((entry) => entry.id === id);
+      if (!row) return this.json({ message: "Not found" }, 404);
+      Object.assign(row, jsonBody as object, { updatedAt: now });
+      return this.json(row);
+    }
+    if (annOne && method === "DELETE") {
+      const id = decodeURIComponent(annOne[1] ?? "");
+      this.announcements = this.announcements.filter((e) => e.id !== id);
+      return this.json({ status: "ok" });
+    }
+    if (path === "/admin/email/send" && method === "POST") {
+      return this.json({ ok: true, error: null }, 201);
+    }
+    if (path === "/admin/email-templates" && method === "GET") {
+      return this.json(this.emailTemplates);
+    }
+    const tplOne = path.match(/^\/admin\/email-templates\/([^/]+)$/);
+    if (tplOne && method === "PUT") {
+      const key = decodeURIComponent(tplOne[1] ?? "");
+      const payload = jsonBody as { subject?: string; bodyHtml?: string };
+      const row = this.emailTemplates.find((entry) => entry.key === key) ?? {
+        key,
+        label: key,
+        subject: "",
+        bodyHtml: "",
+        custom: false,
+        updatedBy: null,
+        updatedAt: null,
+      };
+      row.subject = payload.subject ?? "";
+      row.bodyHtml = payload.bodyHtml ?? "";
+      row.custom = true;
+      row.updatedAt = now;
+      return this.json(row);
+    }
+
+    // ---------------------------------------------- data/compliance (TASK-63)
+    if (path === "/admin/retention" && method === "GET") {
+      return this.json(this.retention);
+    }
+    if (path === "/admin/retention/purge" && method === "POST") {
+      return this.json({ affected: 3 }, 201);
+    }
+
+    // ---------------------------------------------- observability (TASK-64)
+    if (path === "/admin/observability" && method === "GET") {
+      return this.json(this.observability);
+    }
+
+    // --------------------------------------------------- security (TASK-65)
+    if (path === "/admin/security" && method === "GET") {
+      return this.json(this.security);
+    }
+    if (path === "/admin/security/totp" && method === "POST") {
+      return this.json(
+        {
+          secret: this.totpSecret,
+          otpauthUrl: `otpauth://totp/Janosik:master@example.com?secret=${this.totpSecret}&issuer=Janosik`,
+        },
+        201,
+      );
+    }
+    if (path === "/admin/security/totp/verify" && method === "POST") {
+      const payload = jsonBody as { code?: string };
+      if (payload.code !== "123456") {
+        return this.json({ message: "Invalid code" }, 401);
+      }
+      this.security = { ...this.security, totpEnabled: true };
+      return this.json({ totpEnabled: true });
+    }
+    if (path === "/admin/security" && method === "PUT") {
+      const payload = jsonBody as {
+        ipAllowlist?: string | null;
+        totpEnabled?: boolean;
+      };
+      if (payload.ipAllowlist !== undefined) {
+        this.security = { ...this.security, ipAllowlist: payload.ipAllowlist };
+      }
+      if (payload.totpEnabled === false) {
+        this.security = { ...this.security, totpEnabled: false };
+      }
+      return this.json(this.security);
     }
 
     // Admin v2 (TASK-48): generic entity listing mirrors the real backend's

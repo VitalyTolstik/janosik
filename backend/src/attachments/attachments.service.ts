@@ -14,6 +14,7 @@ import type { AuthUser } from "@/auth/auth.types";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
+import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import { ATTACHMENT_MIME_ALLOWLIST, StorageService } from "./storage.service";
 import { TranscodeService } from "./transcode.service";
 
@@ -39,6 +40,7 @@ export class AttachmentsService {
     private readonly storage: StorageService,
     private readonly realtime: RealtimeService,
     private readonly transcode: TranscodeService,
+    private readonly flags: FeatureFlagsService,
   ) {}
 
   async create(
@@ -89,9 +91,12 @@ export class AttachmentsService {
 
     // TASK-50: videos take the "ужиматор" route — the upload is playable
     // immediately; the background job swaps the blob for a compact MP4.
-    const transcodeStatus = file.mimetype.startsWith("video/")
-      ? "pending"
-      : "none";
+    // The `video_transcode` flag (TASK-61) can switch it off per-user/globally.
+    const transcodeStatus =
+      file.mimetype.startsWith("video/") &&
+      (await this.flags.isEnabled("video_transcode", user.id))
+        ? "pending"
+        : "none";
 
     const now = new Date();
     // Inline media (pasted into the description/comment body) skip the

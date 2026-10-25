@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Copy, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -468,6 +468,217 @@ export function ChangeUserEmailDialog({
               data-testid="admin-change-email-submit"
             >
               {t("admin.users.changeEmail.title")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * TASK-59: issues a temporary password and shows it exactly once. Mounted
+ * with a non-null `user` (that opens it); the request fires on open so the
+ * password exists the moment the dialog appears.
+ */
+export function ResetUserPasswordDialog({
+  user,
+  onClose,
+}: {
+  user: { id: string; email: string } | null;
+  onClose: () => void;
+}) {
+  const t = useAdminT();
+  const toast = useToast();
+  const [password, setPassword] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Fire the reset whenever a user is opened.
+  useEffect(() => {
+    if (user === null) return;
+    let active = true;
+    setPassword(null);
+    setError(null);
+    setCopied(false);
+    adminApi
+      .resetUserPassword(user.id)
+      .then((result) => {
+        if (!active) return;
+        setPassword(result.temporaryPassword);
+        toast.success(t("admin.userDetail.reset.done"));
+      })
+      .catch(() => {
+        if (active) setError(t("admin.common.actionFailed"));
+      });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on user id
+  }, [user?.id]);
+
+  const close = () => {
+    setPassword(null);
+    onClose();
+  };
+
+  const copy = () => {
+    if (!password) return;
+    void navigator.clipboard
+      ?.writeText(password)
+      .then(() => setCopied(true))
+      .catch(() => undefined);
+  };
+
+  return (
+    <Dialog
+      open={user !== null}
+      onOpenChange={(next) => (next ? undefined : close())}
+    >
+      <DialogContent
+        className="max-w-sm"
+        data-testid="admin-reset-password-dialog"
+      >
+        <DialogHeader>
+          <DialogTitle>
+            {t("admin.userDetail.action.resetPassword")}
+          </DialogTitle>
+          <DialogDescription>{user?.email}</DialogDescription>
+        </DialogHeader>
+        {error !== null ? (
+          <p role="alert" className="text-xs text-danger">
+            {error}
+          </p>
+        ) : password === null ? (
+          <p className="text-xs text-muted-foreground">
+            {t("admin.common.loading")}
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <code
+              className="block break-all rounded-md bg-hover p-2 font-mono text-sm"
+              data-testid="admin-reset-password-value"
+            >
+              {password}
+            </code>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] text-muted-foreground">
+                {t("admin.userDetail.reset.oneTime")}
+              </p>
+              <Button size="sm" variant="outline" type="button" onClick={copy}>
+                {copied ? (
+                  <Check className="h-3.5 w-3.5" aria-hidden />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" aria-hidden />
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          <Button size="sm" variant="ghost" type="button" onClick={close}>
+            {t("admin.common.close")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * TASK-59 erase: the destructive twin of disable. The confirmation requires
+ * typing the account's exact email, so a stray click can never erase a user.
+ */
+export function DeleteUserDialog({
+  user,
+  onClose,
+  onDone,
+}: {
+  user: { id: string; email: string } | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const t = useAdminT();
+  const toast = useToast();
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const close = () => {
+    setTyped("");
+    onClose();
+  };
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!user || typed.trim().toLowerCase() !== user.email.toLowerCase())
+      return;
+    setBusy(true);
+    try {
+      await adminApi.deleteUser(user.id);
+      toast.success(t("admin.userDetail.delete.done"));
+      onDone();
+      close();
+    } catch {
+      toast.error(t("admin.common.actionFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const mismatch =
+    typed.trim() !== "" &&
+    user !== null &&
+    typed.trim().toLowerCase() !== user.email.toLowerCase();
+
+  return (
+    <Dialog
+      open={user !== null}
+      onOpenChange={(next) => (next ? undefined : close())}
+    >
+      <DialogContent
+        className="max-w-sm"
+        data-testid="admin-delete-user-dialog"
+      >
+        <DialogHeader>
+          <DialogTitle>{t("admin.userDetail.action.deleteUser")}</DialogTitle>
+          <DialogDescription>
+            {t("admin.userDetail.confirm.delete.body")}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-3">
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">
+              {t("admin.userDetail.delete.prompt", {
+                email: user?.email ?? "",
+              })}
+            </span>
+            <Input
+              value={typed}
+              data-testid="admin-delete-user-input"
+              onChange={(event) => setTyped(event.target.value)}
+            />
+          </label>
+          {mismatch ? (
+            <p role="alert" className="text-xs text-danger">
+              {t("admin.userDetail.delete.mismatch")}
+            </p>
+          ) : null}
+          <DialogFooter className="gap-2">
+            <Button size="sm" type="button" variant="ghost" onClick={close}>
+              {t("admin.common.cancel")}
+            </Button>
+            <Button
+              size="sm"
+              type="submit"
+              variant="destructive"
+              disabled={
+                busy ||
+                user === null ||
+                typed.trim().toLowerCase() !== user.email.toLowerCase()
+              }
+              data-testid="admin-delete-user-submit"
+            >
+              {t("admin.common.delete")}
             </Button>
           </DialogFooter>
         </form>

@@ -1,5 +1,6 @@
 import type {
   ActivityFeedPage,
+  AnnouncementDto,
   AttachmentDto,
   AuthOAuthProvidersResponse,
   AuthResponseDto,
@@ -182,6 +183,12 @@ export class ApiClient {
     this.sessionEpoch += 1;
   }
 
+  /** Adopts an externally-minted access token (TASK-59 impersonation). */
+  setAccessToken(token: string): void {
+    this.accessToken = token;
+    this.sessionEpoch += 1;
+  }
+
   /** `POST /auth/register` — creates the account and starts the session. */
   async register(
     email: string,
@@ -226,6 +233,11 @@ export class ApiClient {
   /** `GET /auth/me` — verifies the in-memory access token. */
   me(): Promise<AuthUserDto> {
     return this.request<AuthUserDto>("/auth/me");
+  }
+
+  /** `GET /announcements/active` — banners the signed-in user should see. */
+  activeAnnouncements(): Promise<AnnouncementDto[]> {
+    return this.request<AnnouncementDto[]>("/announcements/active");
   }
 
   /**

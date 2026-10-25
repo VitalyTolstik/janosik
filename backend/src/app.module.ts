@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { APP_GUARD } from "@nestjs/core";
+import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { throttleLimit } from "@/config/throttle";
 import { PrismaModule } from "@/common/prisma/prisma.module";
@@ -18,6 +18,9 @@ import { InvitationsModule } from "@/invitations/invitations.module";
 import { OAuthModule } from "@/oauth/oauth.module";
 import { ShareModule } from "@/share/share.module";
 import { AdminModule } from "@/admin/admin.module";
+import { OpsModule } from "@/ops/ops.module";
+import { MaintenanceGuard } from "@/ops/maintenance.guard";
+import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.interceptor";
 
 /**
  * TASK-36 state: auth, boards/membership, commands (columns/cards/labels/
@@ -47,7 +50,12 @@ import { AdminModule } from "@/admin/admin.module";
     OAuthModule,
     ShareModule,
     AdminModule,
+    OpsModule,
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: MaintenanceGuard },
+    { provide: APP_INTERCEPTOR, useClass: PerUserRateLimitInterceptor },
+  ],
 })
 export class AppModule {}

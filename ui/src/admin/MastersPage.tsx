@@ -7,6 +7,7 @@ import {
   MoreHorizontal,
   ShieldOff,
   ShieldCheck,
+  Trash2,
   UserPlus,
 } from "lucide-react";
 import type { AdminMasterRowDto } from "@janosik/shared";
@@ -57,6 +58,7 @@ type PendingAction =
   | { kind: "enable"; master: AdminMasterRowDto }
   | { kind: "reset"; master: AdminMasterRowDto }
   | { kind: "sessions"; master: AdminMasterRowDto }
+  | { kind: "remove"; master: AdminMasterRowDto }
   | null;
 
 function OneTimePassword({
@@ -309,6 +311,11 @@ export function MastersPage() {
           email: response.admin.email,
           password: response.temporaryPassword,
         });
+      } else if (action.kind === "remove") {
+        await adminApi.demoteMaster(action.master.id);
+        toast.success(
+          t("admin.masters.toast.removed", { email: action.master.email }),
+        );
       } else {
         const response = await adminApi.revokeMasterSessions(action.master.id);
         toast.success(
@@ -347,6 +354,13 @@ export function MastersPage() {
         title: t("admin.masters.confirm.reset.title", { email }),
         body: t("admin.masters.confirm.reset.body"),
         label: t("admin.masters.action.resetPassword"),
+      };
+    }
+    if (action.kind === "remove") {
+      return {
+        title: t("admin.masters.confirm.remove.title", { email }),
+        body: t("admin.masters.confirm.remove.body"),
+        label: t("admin.masters.action.remove"),
       };
     }
     return {
@@ -498,6 +512,17 @@ export function MastersPage() {
                         >
                           <ShieldOff className="h-3.5 w-3.5" aria-hidden />
                           {t("admin.masters.action.revokeSessions")}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={master.id === current?.id}
+                          className="text-danger focus:text-danger"
+                          data-testid={`admin-master-remove-${master.email}`}
+                          onSelect={() =>
+                            setPending({ kind: "remove", master })
+                          }
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                          {t("admin.masters.action.remove")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

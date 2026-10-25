@@ -5,14 +5,15 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Req,
   Res,
   UseGuards,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import type { AdminAuthResponseDto } from "@janosik/shared";
 import { env } from "@/config/env";
-import { LoginDto } from "@/auth/dto/login.dto";
+import { AdminLoginDto } from "@/auth/dto/login.dto";
 import { RefreshToken } from "@/auth/refresh-token.decorator";
 import { AdminAuthService } from "./admin-auth.service";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
@@ -37,10 +38,11 @@ export class AdminAuthController {
   @Post("login")
   @HttpCode(HttpStatus.OK)
   async login(
-    @Body() dto: LoginDto,
+    @Body() dto: AdminLoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AdminAuthResponseDto> {
-    const result = await this.adminAuth.login(dto);
+    const result = await this.adminAuth.login(dto, this.context(req));
     return this.withRefreshCookie(res, result);
   }
 
@@ -49,9 +51,13 @@ export class AdminAuthController {
   @HttpCode(HttpStatus.OK)
   async refresh(
     @RefreshToken(ADMIN_REFRESH_COOKIE) refreshToken: string | undefined,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AdminAuthResponseDto> {
-    const result = await this.adminAuth.refresh(refreshToken);
+    const result = await this.adminAuth.refresh(
+      refreshToken,
+      this.context(req),
+    );
     return this.withRefreshCookie(res, result);
   }
 
@@ -70,6 +76,16 @@ export class AdminAuthController {
   @Get("me")
   me(@CurrentAdmin() admin: AdminPrincipal): AdminPrincipal {
     return admin;
+  }
+
+  private context(req: Request): {
+    ip: string | null;
+    userAgent: string | null;
+  } {
+    return {
+      ip: req.ip ?? null,
+      userAgent: req.headers["user-agent"] ?? null,
+    };
   }
 
   private withRefreshCookie(

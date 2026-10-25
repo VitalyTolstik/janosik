@@ -69,6 +69,7 @@ export class EventsController {
       let ready = false;
       let lastSeq = since;
       const buffered: CommandSseEvent[] = [];
+      const releaseTracking = this.realtime.trackSubscription();
 
       const push = (event: CommandSseEvent): void => {
         if (event.seq <= lastSeq) return;
@@ -145,6 +146,7 @@ export class EventsController {
       return () => {
         live.unsubscribe();
         keepAlive.unsubscribe();
+        releaseTracking();
         if (user) this.presence.leave(boardId, clientId);
       };
     });

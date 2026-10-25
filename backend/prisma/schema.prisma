@@ -52,6 +52,10 @@ model RefreshToken {
   expiresAt DateTime
   revokedAt DateTime? // rotation; reuse of a revoked token revokes all user sessions
   createdAt DateTime  @default(now()) // session review page (TASK-43)
+  // Session provenance (TASK-65): captured at login so support can see where
+  // a session came from. Nullable — sessions minted before the column exists.
+  ip        String?
+  userAgent String?
 
   @@index([userId, createdAt])
 }
@@ -487,6 +491,12 @@ model AdminUser {
   disabledAt   DateTime?
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
+  // Master 2FA (TASK-65): a TOTP secret encrypted at rest (secret-box) and
+  // the on/off switch. When `totpEnabled`, login additionally requires a
+  // 6-digit code. `ipAllowlist` is a CSV of IPs/CIDRs; null = unrestricted.
+  totpSecretEnc String?
+  totpEnabled   Boolean   @default(false)
+  ipAllowlist   String?
 
   refreshTokens AdminRefreshToken[]
   auditLogs     AdminAuditLog[]
@@ -500,6 +510,9 @@ model AdminRefreshToken {
   expiresAt DateTime
   revokedAt DateTime? // rotation; reuse of a revoked token kills all sessions
   createdAt DateTime  @default(now())
+  // Session provenance (TASK-65): captured at login for the sessions view.
+  ip        String?
+  userAgent String?
 
   @@index([adminId])
 }
@@ -521,4 +534,65 @@ model AdminAuditLog {
   @@index([createdAt])
   @@index([adminId, createdAt])
   @@index([targetType, targetId])
+}
+
+// ---------------------------------------------------------------------------
+// Panel v3 (TASK-61…65): feature flags, operational singletons, announcements
+// and editable mail templates.
+// ---------------------------------------------------------------------------
+
+// Feature flags (TASK-61) — one row per flag key, global switch plus an
+// optional per-user override map (`{ "<userId>": true }`). The key IS the id.
+model FeatureFlag {
+  key       String   @id
+  enabled   Boolean  @default(false)
+  perUser   Json?
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+}
+
+// Operational singleton (TASK-61/63): nullable booleans mean "unset → the
+// env default applies". `maintenanceMode` closes the user API; the rest are
+// runtime overrides the panel can set without a redeploy.
+model OpsSettings {
+  id                   String   @id // always "singleton"
+  registrationEnabled  Boolean?
+  publicSharesEnabled  Boolean?
+  maintenanceMode      Boolean  @default(false)
+  maintenanceMessage   String?
+  perUserRateLimit     Int?
+  retentionDays        Int?
+  updatedBy            String?
+  updatedAt            DateTime @updatedAt
+}
+
+// In-app announcement / banner (TASK-62). `audience` "all" shows to every
+// signed-in user; "segment" restricts to a CSV of user emails in `segment`.
+model Announcement {
+  id        String    @id @default(cuid())
+  title     String
+  body      String    @db.Text
+  level     String    @default("info") // info | warning | danger
+  audience  String    @default("all") // all | segment
+  segment   String? // CSV of user emails when audience = segment
+  active    Boolean   @default(true)
+  // TASK-62 broadcast: when true the letter is also queued to every
+  // recipient's inbox (behind the in-process broadcast queue).
+  sendEmail Boolean   @default(false)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+// Editable mail template (TASK-62) — overrides the built-in template of the
+// same key (the key IS the id). `{{code}}`, `{{name}}`, `{{url}}` placeholders
+// are substituted at send time; the built-in body is the fallback.
+model EmailTemplate {
+  key       String   @id
+  subject   String
+  bodyHtml  String   @db.Text
+  updatedBy String?
+  updatedAt DateTime @updatedAt
 }

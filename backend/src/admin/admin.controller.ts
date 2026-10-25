@@ -42,12 +42,32 @@ import type {
   AdminAuditRowDto,
   AdminShareRowDto,
   AdminUserRowDto,
+  AdminAnnouncementDto,
+  AdminBulkResultDto,
+  AdminEmailTemplateDto,
+  AdminFeatureFlagDto,
+  AdminImpersonationDto,
+  AdminObservabilityDto,
+  AdminOpsSettingsDto,
+  AdminPromoteUserResponse,
+  AdminResendVerificationResponse,
+  AdminResetUserPasswordResponse,
+  AdminRetentionDto,
+  AdminSecurityDto,
+  AdminSendEmailResponse,
+  AdminTotpSetupDto,
+  AdminUserExportDto,
   BoardAggregate,
   CommandResponse,
 } from "@janosik/shared";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
 import { AdminEntitiesService } from "./admin-entities.service";
 import { AdminService } from "./admin.service";
+import { CommsService } from "./comms.service";
+import { SecurityService } from "./security.service";
+import { ObservabilityService } from "./observability.service";
+import { OpsSettingsService } from "@/ops/ops-settings.service";
+import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import { AttachmentsService } from "@/attachments/attachments.service";
 import { StorageService } from "@/attachments/storage.service";
 import { CurrentAdmin } from "./current-admin.decorator";
@@ -64,6 +84,20 @@ import { AdminUpdateEmailSettingsDto } from "./dto/admin-update-email-settings.d
 import { AdminUpdateOAuthProviderDto } from "./dto/admin-update-oauth-provider.dto";
 import { AdminUpdateThrottleSettingsDto } from "./dto/admin-update-throttle-settings.dto";
 import { AdminUpdateUserDto } from "./dto/admin-update-user.dto";
+import {
+  AdminAddBoardMemberDto,
+  AdminBulkDto,
+  AdminCreateAnnouncementDto,
+  AdminSendEmailDto,
+  AdminTransferOwnerDto,
+  AdminUpdateAnnouncementDto,
+  AdminUpdateBoardMemberDto,
+  AdminUpdateEmailTemplateDto,
+  AdminUpdateFeatureFlagDto,
+  AdminUpdateOpsDto,
+  AdminUpdateSecurityDto,
+  AdminVerifyTotpDto,
+} from "./dto/admin-v3.dto";
 
 /**
  * Master-account API (§7.4, TASK-36). Every route sits behind
@@ -79,6 +113,11 @@ export class AdminController {
     private readonly entities: AdminEntitiesService,
     private readonly attachments: AttachmentsService,
     private readonly storage: StorageService,
+    private readonly comms: CommsService,
+    private readonly security: SecurityService,
+    private readonly observabilityService: ObservabilityService,
+    private readonly ops: OpsSettingsService,
+    private readonly flags: FeatureFlagsService,
   ) {}
 
   /**
@@ -468,5 +507,337 @@ export class AdminController {
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminShareRowDto> {
     return this.admin.revokeShare(id, admin);
+  }
+
+  // -------------------------------------------- user support (TASK-59)
+
+  @Post("users/:id/verification/resend")
+  resendVerification(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminResendVerificationResponse> {
+    return this.admin.resendUserVerification(id, admin);
+  }
+
+  @Post("users/:id/password/reset")
+  resetPassword(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminResetUserPasswordResponse> {
+    return this.admin.resetUserPassword(id, admin);
+  }
+
+  @Delete("users/:id")
+  deleteUser(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    return this.admin.deleteUser(id, admin);
+  }
+
+  @Post("users/:id/promote")
+  promoteUser(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminPromoteUserResponse> {
+    return this.admin.promoteUser(id, admin);
+  }
+
+  @Post("users/:id/impersonate")
+  impersonateUser(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminImpersonationDto> {
+    return this.admin.impersonateUser(id, admin);
+  }
+
+  /** TASK-59 demote — removes a master account (owners only, service-guarded). */
+  @Delete("admins/:id")
+  demoteMaster(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    return this.admin.demoteMaster(id, admin);
+  }
+
+  @Get("users/:id/export")
+  exportUser(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminUserExportDto> {
+    return this.admin.exportUser(id, admin);
+  }
+
+  // ------------------------------------------ membership (TASK-60)
+
+  @Post("boards/:id/members")
+  addBoardMember(
+    @Param("id") boardId: string,
+    @Body() dto: AdminAddBoardMemberDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    return this.admin.addBoardMember(boardId, dto, admin);
+  }
+
+  @Patch("boards/:id/members/:memberId")
+  updateBoardMember(
+    @Param("id") boardId: string,
+    @Param("memberId") memberId: string,
+    @Body() dto: AdminUpdateBoardMemberDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    return this.admin.updateBoardMember(boardId, memberId, dto, admin);
+  }
+
+  @Delete("boards/:id/members/:memberId")
+  removeBoardMember(
+    @Param("id") boardId: string,
+    @Param("memberId") memberId: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    return this.admin.removeBoardMember(boardId, memberId, admin);
+  }
+
+  @Post("boards/:id/owner")
+  transferOwner(
+    @Param("id") boardId: string,
+    @Body() dto: AdminTransferOwnerDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    return this.admin.transferOwner(boardId, dto.userId, admin);
+  }
+
+  @Delete("attachments/:id")
+  deleteAttachment(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    return this.admin.deleteAttachment(id, admin);
+  }
+
+  @Post("entities/:entity/:id/restore")
+  restoreEntity(
+    @Param("entity") entity: AdminEntity,
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    return this.admin.restoreEntity(entity, id, admin);
+  }
+
+  @Post("entities/:entity/bulk")
+  bulkEntity(
+    @Param("entity") entity: AdminEntity,
+    @Body() dto: AdminBulkDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminBulkResultDto> {
+    return this.admin.bulkEntity(entity, dto.ids, dto.action, admin);
+  }
+
+  // ------------------------------------------------ flags + ops (TASK-61)
+
+  @Get("flags")
+  listFlags(): Promise<AdminFeatureFlagDto[]> {
+    return this.flags.list();
+  }
+
+  @Patch("flags/:key")
+  async updateFlag(
+    @Param("key") key: string,
+    @Body() dto: AdminUpdateFeatureFlagDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminFeatureFlagDto> {
+    const flag = await this.flags.update(key, dto, admin.email);
+    await this.admin.audit(admin, "flag.changed", "flag", key, {
+      ...dto,
+    });
+    return flag;
+  }
+
+  @Get("ops")
+  getOps(): Promise<AdminOpsSettingsDto> {
+    return this.ops.get();
+  }
+
+  @Put("ops")
+  async updateOps(
+    @Body() dto: AdminUpdateOpsDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminOpsSettingsDto> {
+    const settings = await this.ops.update(dto, admin.email);
+    await this.admin.audit(admin, "ops.settings_changed", "ops", null, {
+      ...dto,
+    });
+    return settings;
+  }
+
+  // ------------------------------------------------------ comms (TASK-62)
+
+  @Get("announcements")
+  listAnnouncements(): Promise<AdminAnnouncementDto[]> {
+    return this.comms.listAnnouncements();
+  }
+
+  @Post("announcements")
+  async createAnnouncement(
+    @Body() dto: AdminCreateAnnouncementDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminAnnouncementDto> {
+    const created = await this.comms.createAnnouncement(dto, admin.email);
+    await this.admin.audit(
+      admin,
+      "announcement.created",
+      "announcement",
+      created.id,
+      {
+        title: dto.title,
+      },
+    );
+    return created;
+  }
+
+  @Patch("announcements/:id")
+  async updateAnnouncement(
+    @Param("id") id: string,
+    @Body() dto: AdminUpdateAnnouncementDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminAnnouncementDto> {
+    const updated = await this.comms.updateAnnouncement(id, dto);
+    await this.admin.audit(
+      admin,
+      "announcement.updated",
+      "announcement",
+      id,
+      {},
+    );
+    return updated;
+  }
+
+  @Delete("announcements/:id")
+  async deleteAnnouncement(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ status: "ok" }> {
+    await this.comms.deleteAnnouncement(id);
+    await this.admin.audit(
+      admin,
+      "announcement.deleted",
+      "announcement",
+      id,
+      {},
+    );
+    return { status: "ok" };
+  }
+
+  @Post("email/send")
+  async sendEmail(
+    @Body() dto: AdminSendEmailDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminSendEmailResponse> {
+    const result = await this.comms.sendEmail(dto.to, dto.subject, dto.body);
+    await this.admin.audit(admin, "email.sent", "email", null, {
+      to: dto.to,
+      ok: result.ok,
+    });
+    return result;
+  }
+
+  @Get("email-templates")
+  listEmailTemplates(): Promise<AdminEmailTemplateDto[]> {
+    return this.comms.listTemplates();
+  }
+
+  @Put("email-templates/:key")
+  async updateEmailTemplate(
+    @Param("key") key: string,
+    @Body() dto: AdminUpdateEmailTemplateDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminEmailTemplateDto> {
+    const template = await this.comms.updateTemplate(key, dto, admin.email);
+    await this.admin.audit(
+      admin,
+      "email.template_changed",
+      "email_template",
+      key,
+      {},
+    );
+    return template;
+  }
+
+  // --------------------------------------------- data/compliance (TASK-63)
+
+  @Get("retention")
+  getRetention(): Promise<AdminRetentionDto> {
+    return this.admin.getRetention();
+  }
+
+  @Post("retention/purge")
+  purgeSoftDeleted(
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminBulkResultDto> {
+    return this.admin.purgeSoftDeleted(admin);
+  }
+
+  // --------------------------------------------- observability (TASK-64)
+
+  @Get("observability")
+  observability(): Promise<AdminObservabilityDto> {
+    return this.observabilityService.snapshot();
+  }
+
+  // ---------------------------------------------------- security (TASK-65)
+
+  @Get("security")
+  getSecurity(
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminSecurityDto> {
+    return this.security.get(admin);
+  }
+
+  @Post("security/totp")
+  setupTotp(@CurrentAdmin() admin: AdminPrincipal): Promise<AdminTotpSetupDto> {
+    return this.security.setup(admin);
+  }
+
+  @Post("security/totp/verify")
+  async verifyTotp(
+    @Body() dto: AdminVerifyTotpDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ totpEnabled: true }> {
+    const result = await this.security.confirm(admin, dto.code);
+    await this.admin.audit(
+      admin,
+      "security.totp_enabled",
+      "admin",
+      admin.id,
+      {},
+    );
+    return result;
+  }
+
+  @Put("security")
+  async updateSecurity(
+    @Body() dto: AdminUpdateSecurityDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminSecurityDto> {
+    const result = await this.security.update(admin, dto);
+    if (dto.ipAllowlist !== undefined) {
+      await this.admin.audit(
+        admin,
+        "security.ip_allowlist_changed",
+        "admin",
+        admin.id,
+        { ipAllowlist: result.ipAllowlist },
+      );
+    }
+    if (dto.totpEnabled === false) {
+      await this.admin.audit(
+        admin,
+        "security.totp_disabled",
+        "admin",
+        admin.id,
+        {},
+      );
+    }
+    return result;
   }
 }

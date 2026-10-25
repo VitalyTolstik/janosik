@@ -826,6 +826,7 @@ export class AdminEntitiesService {
             displayName: true,
             createdAt: true,
             disabledAt: true,
+            emailVerifiedAt: true,
           },
         }),
         this.prisma.board.findMany({
@@ -953,6 +954,7 @@ export class AdminEntitiesService {
         displayName: user.displayName,
         createdAt: user.createdAt.getTime(),
         disabledAt: MS(user.disabledAt),
+        emailVerifiedAt: MS(user.emailVerifiedAt),
       })),
       boards: boards.map((board) => ({
         id: board.id,
@@ -1018,6 +1020,7 @@ export class AdminEntitiesService {
         displayName: true,
         createdAt: true,
         disabledAt: true,
+        emailVerifiedAt: true,
       },
     });
     if (!user) throw new NotFoundException("User not found");
@@ -1145,6 +1148,7 @@ export class AdminEntitiesService {
       displayName: user.displayName,
       createdAt: user.createdAt.getTime(),
       disabledAt: MS(user.disabledAt),
+      emailVerifiedAt: MS(user.emailVerifiedAt),
     };
 
     return {
@@ -1689,6 +1693,8 @@ type SessionJoin = {
   createdAt: Date;
   expiresAt: Date;
   userId: string;
+  ip: string | null;
+  userAgent: string | null;
   user: { email: string };
 };
 
@@ -1699,6 +1705,8 @@ function toSessionRow(session: SessionJoin): AdminSessionRowDto {
     userEmail: session.user.email,
     createdAt: session.createdAt.getTime(),
     expiresAt: session.expiresAt.getTime(),
+    ip: session.ip,
+    userAgent: session.userAgent,
   };
 }
 
@@ -1707,6 +1715,8 @@ const SESSION_SELECT = {
   createdAt: true,
   expiresAt: true,
   userId: true,
+  ip: true,
+  userAgent: true,
   user: { select: { email: true } },
 } satisfies Prisma.RefreshTokenSelect;
 

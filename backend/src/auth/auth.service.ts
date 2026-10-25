@@ -18,11 +18,8 @@ import {
 } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
-import {
-  emailChangeCodeEmail,
-  emailChangedNoticeEmail,
-  verificationCodeEmail,
-} from "@/mailer/templates";
+import { EmailTemplateService } from "@/ops/email-template.service";
+import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import type { MailLocale } from "@/mailer/mail.types";
 import { MailerService } from "@/mailer/mailer.service";
 import { toAuthUser } from "./auth-user.mapper";
@@ -70,12 +67,17 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly mailer: MailerService,
+    private readonly emailTemplates: EmailTemplateService,
+    private readonly flags: FeatureFlagsService,
   ) {}
 
   async register(
     dto: RegisterDto,
     locale: MailLocale = "en",
   ): Promise<AuthResult> {
+    // Registration can be switched off from the panel (TASK-61 flag); with
+    // it off, sign-up is refused for everyone.
+    await this.flags.assertEnabled("registration_open");
     const passwordHash = await argonHash(dto.password, { type: argon2id });
     // When no mail transport is live (TASK-52 log mode) there is no channel
     // the code could travel through — a fresh self-hosted instance must not
@@ -293,7 +295,7 @@ export class AuthService {
         expiresAt,
       },
     });
-    const message = emailChangeCodeEmail(
+    const message = await this.emailTemplates.emailChangeEmail(
       code,
       EMAIL_CHANGE_TTL_MS / 60_000,
       locale,
@@ -387,7 +389,10 @@ export class AuthService {
         data: { revokedAt: new Date() },
       });
     }
-    const notice = emailChangedNoticeEmail(updated.email, locale);
+    const notice = await this.emailTemplates.emailChangedNotice(
+      updated.email,
+      locale,
+    );
     await this.mailer
       .send({ to: user.email, ...notice })
       .catch(() => undefined);
@@ -496,7 +501,7 @@ export class AuthService {
         expiresAt,
       },
     });
-    const message = verificationCodeEmail(
+    const message = await this.emailTemplates.verificationEmail(
       code,
       EMAIL_VERIFY_TTL_MS / 60_000,
       locale,
@@ -536,6 +541,27 @@ export class AuthService {
       },
     });
     return token;
+  }
+
+  /**
+   * Records where a freshly-minted session came from (TASK-65): the controller
+   * hands over the source IP and User-Agent right after `startSession`, so the
+   * sessions view can show them. Best-effort — a missing row is not an error.
+   */
+  async tagSession(
+    refreshToken: string | undefined,
+    context: { ip?: string | null; userAgent?: string | null },
+  ): Promise<void> {
+    if (!refreshToken) return;
+    await this.prisma.refreshToken
+      .update({
+        where: { tokenHash: this.hashToken(refreshToken) },
+        data: {
+          ip: context.ip ?? null,
+          userAgent: context.userAgent ?? null,
+        },
+      })
+      .catch(() => undefined);
   }
 
   private async revokeAllSessions(userId: string): Promise<void> {

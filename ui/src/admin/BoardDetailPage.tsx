@@ -1,8 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import { ArrowLeft, ExternalLink, MoreHorizontal } from "lucide-react";
 import type { AdminBoardDetailDto } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -75,6 +83,10 @@ export function BoardDetailPage() {
   const toast = useToast();
   const [detail, setDetail] = useState<AdminBoardDetailDto | null>(null);
   const [error, setError] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newRole, setNewRole] = useState("MEMBER");
+  const [adding, setAdding] = useState(false);
 
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -123,6 +135,24 @@ export function BoardDetailPage() {
       } else {
         toast.error(t("admin.common.actionFailed"));
       }
+    }
+  };
+
+  const addMember = async () => {
+    setAdding(true);
+    try {
+      await adminApi.addBoardMember(board.id, {
+        email: newEmail.trim(),
+        role: newRole,
+      });
+      toast.success(t("admin.boardDetail.member.addDone"));
+      setAddOpen(false);
+      setNewEmail("");
+      reload();
+    } catch {
+      toast.error(t("admin.common.actionFailed"));
+    } finally {
+      setAdding(false);
     }
   };
 
@@ -266,9 +296,20 @@ export function BoardDetailPage() {
       </Panel>
 
       <Panel>
-        <p className="px-3 pt-2.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-          {t("admin.boardDetail.members")}
-        </p>
+        <div className="flex items-center justify-between px-3 pt-2.5">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            {t("admin.boardDetail.members")}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2 text-xs"
+            data-testid="admin-board-add-member"
+            onClick={() => setAddOpen(true)}
+          >
+            {t("admin.boardDetail.member.add")}
+          </Button>
+        </div>
         <Table maxHeight="22rem">
           <thead>
             <tr>
@@ -277,6 +318,7 @@ export function BoardDetailPage() {
               <Th>{t("admin.userDetail.col.accepted")}</Th>
               <Th>{t("admin.userDetail.col.expires")}</Th>
               <Th>{t("admin.userDetail.col.invitedBy")}</Th>
+              <Th>{t("admin.common.actions")}</Th>
             </tr>
           </thead>
           <tbody>
@@ -304,11 +346,127 @@ export function BoardDetailPage() {
                   <DateCell value={member.expiresAt} />
                 </Td>
                 <Td>{member.invitedByEmail ?? "—"}</Td>
+                <Td>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0"
+                        data-testid={`admin-member-actions-${member.id}`}
+                        aria-label={t("admin.common.actions")}
+                      >
+                        <MoreHorizontal className="h-4 w-4" aria-hidden />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {(["MEMBER", "ADMIN", "VIEWER"] as const)
+                        .filter((role) => role !== member.role)
+                        .map((role) => (
+                          <DropdownMenuItem
+                            key={role}
+                            onSelect={() =>
+                              void run(
+                                t("admin.boardDetail.member.roleDone"),
+                                () =>
+                                  adminApi.updateBoardMember(
+                                    board.id,
+                                    member.id,
+                                    {
+                                      role,
+                                    },
+                                  ),
+                              )
+                            }
+                          >
+                            {role}
+                          </DropdownMenuItem>
+                        ))}
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          void run(
+                            t("admin.boardDetail.member.ownerDone"),
+                            () =>
+                              adminApi.transferOwner(board.id, member.userId),
+                          )
+                        }
+                      >
+                        {t("admin.boardDetail.member.makeOwner")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-danger focus:text-danger"
+                        onSelect={() =>
+                          void run(
+                            t("admin.boardDetail.member.removeDone"),
+                            () =>
+                              adminApi.removeBoardMember(board.id, member.id),
+                          )
+                        }
+                      >
+                        {t("admin.boardDetail.member.remove")}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </Td>
               </tr>
             ))}
           </tbody>
         </Table>
       </Panel>
+
+      <Dialog
+        open={addOpen}
+        onOpenChange={(next) => (next ? undefined : setAddOpen(false))}
+      >
+        <DialogContent
+          className="max-w-sm"
+          data-testid="admin-add-member-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle>{t("admin.boardDetail.member.add")}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">
+                {t("admin.boardDetail.member.email")}
+              </span>
+              <Input
+                value={newEmail}
+                data-testid="admin-add-member-email"
+                onChange={(event) => setNewEmail(event.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">
+                {t("admin.userDetail.col.role")}
+              </span>
+              <select
+                value={newRole}
+                data-testid="admin-add-member-role"
+                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+                onChange={(event) => setNewRole(event.target.value)}
+              >
+                <option value="MEMBER">MEMBER</option>
+                <option value="ADMIN">ADMIN</option>
+                <option value="VIEWER">VIEWER</option>
+              </select>
+            </label>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setAddOpen(false)}>
+              {t("admin.common.cancel")}
+            </Button>
+            <Button
+              size="sm"
+              disabled={adding || newEmail.trim() === ""}
+              data-testid="admin-add-member-submit"
+              onClick={() => void addMember()}
+            >
+              {t("admin.boardDetail.member.add")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Panel>
         <p className="px-3 pt-2.5 text-[10px] uppercase tracking-wide text-muted-foreground">

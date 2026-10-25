@@ -10,6 +10,10 @@ import { OAuthSettingsPage } from "./OAuthSettingsPage";
 import { TrafficSettingsPage } from "./TrafficSettingsPage";
 import { DemoPage } from "./DemoPage";
 import { SharesPage } from "./SharesPage";
+import { OpsPage } from "./OpsPage";
+import { CommsPage } from "./CommsPage";
+import { ObservabilityPage } from "./ObservabilityPage";
+import { SecurityPage } from "./SecurityPage";
 import { EntityPage } from "./EntityPage";
 import { useEntityConfig } from "./entity-configs";
 import { UserDetailPage } from "./UserDetailPage";
@@ -104,6 +108,10 @@ function AdminGate() {
         <Route path="traffic" element={<TrafficSettingsPage />} />
         <Route path="demo" element={<DemoPage />} />
         <Route path="shares" element={<SharesPage />} />
+        <Route path="ops" element={<OpsPage />} />
+        <Route path="comms" element={<CommsPage />} />
+        <Route path="observability" element={<ObservabilityPage />} />
+        <Route path="security" element={<SecurityPage />} />
         <Route path="audit" element={<EntityRoute entity="audit" />} />
         <Route path="masters" element={<MastersPage />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />

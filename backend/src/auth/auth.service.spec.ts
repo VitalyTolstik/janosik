@@ -11,6 +11,13 @@ import argon2 from "argon2";
 import { createHash } from "node:crypto";
 import type { PrismaService } from "@/common/prisma/prisma.service";
 import type { MailerService } from "@/mailer/mailer.service";
+import {
+  emailChangeCodeEmail,
+  emailChangedNoticeEmail,
+  verificationCodeEmail,
+} from "@/mailer/templates";
+import type { EmailTemplateService } from "@/ops/email-template.service";
+import type { FeatureFlagsService } from "@/ops/feature-flags.service";
 import { AuthService, REFRESH_REUSE_GRACE_MS } from "./auth.service";
 
 const prismaMock = {
@@ -49,6 +56,25 @@ const mailerMock = {
   send: jest.fn(),
 } as unknown as MailerService & { send: jest.Mock };
 
+const emailTemplatesMock = {
+  verificationEmail: jest.fn(
+    (code: string, minutes: number, locale: "en" | "ru") =>
+      Promise.resolve(verificationCodeEmail(code, minutes, locale)),
+  ),
+  emailChangeEmail: jest.fn(
+    (code: string, minutes: number, locale: "en" | "ru") =>
+      Promise.resolve(emailChangeCodeEmail(code, minutes, locale)),
+  ),
+  emailChangedNotice: jest.fn((email: string, locale: "en" | "ru") =>
+    Promise.resolve(emailChangedNoticeEmail(email, locale)),
+  ),
+} as unknown as EmailTemplateService;
+
+const flagsMock = {
+  assertEnabled: jest.fn(async () => undefined),
+  isEnabled: jest.fn(async () => true),
+} as unknown as FeatureFlagsService;
+
 const makeUser = (overrides: Partial<User> = {}): User => ({
   id: "user-1",
   email: "user@example.com",
@@ -70,7 +96,25 @@ describe("AuthService", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    service = new AuthService(prismaMock, jwtMock, mailerMock);
+    emailTemplatesMock.verificationEmail.mockImplementation(
+      (code: string, minutes: number, locale: "en" | "ru") =>
+        Promise.resolve(verificationCodeEmail(code, minutes, locale)),
+    );
+    emailTemplatesMock.emailChangeEmail.mockImplementation(
+      (code: string, minutes: number, locale: "en" | "ru") =>
+        Promise.resolve(emailChangeCodeEmail(code, minutes, locale)),
+    );
+    emailTemplatesMock.emailChangedNotice.mockImplementation(
+      (email: string, locale: "en" | "ru") =>
+        Promise.resolve(emailChangedNoticeEmail(email, locale)),
+    );
+    service = new AuthService(
+      prismaMock,
+      jwtMock,
+      mailerMock,
+      emailTemplatesMock,
+      flagsMock,
+    );
     jwtMock.signAsync.mockResolvedValue("access-token");
     prismaMock.refreshToken.create.mockResolvedValue({});
   });

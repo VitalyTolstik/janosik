@@ -3,6 +3,8 @@ import { BrowserRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { Archive, Loader2, Plus } from "lucide-react";
 
 import { BoardSection } from "@/components/BoardSection";
+import { AnnouncementBanner } from "@/components/AnnouncementBanner";
+import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { DataSafetyBanner } from "@/components/DataSafetyBanner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Header } from "@/components/Header";
@@ -173,10 +175,12 @@ function AppGate() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <ImpersonationBanner />
       {needsVerification ? (
         <EmailVerificationGate />
       ) : status === "authenticated" ? (
         <BoardProvider>
+          <AnnouncementBanner />
           <BoardShell />
         </BoardProvider>
       ) : status === "anonymous" ? (
