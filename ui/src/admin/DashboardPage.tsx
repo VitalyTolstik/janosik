@@ -16,6 +16,7 @@ import { useHour12, useI18n, formatDate } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
+import { Chart } from "./chart/chart";
 import { ErrorState, LoadingState, PageHeader, Panel } from "./ui";
 
 /**
@@ -78,37 +79,6 @@ function formatUptime(seconds: number): string {
   const minutes = Math.floor((seconds % 3600) / 60);
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m ${seconds % 60}s`;
-}
-
-function Sparkline({
-  points,
-  accent,
-}: {
-  points: Array<{ date: string; count: number }>;
-  accent: string;
-}) {
-  const max = Math.max(1, ...points.map((point) => point.count));
-  return (
-    <div className="flex h-24 items-end gap-1.5" role="img">
-      {points.map((point) => (
-        <div
-          key={point.date}
-          title={`${point.date}: ${point.count}`}
-          className="group flex h-full flex-1 flex-col justify-end"
-        >
-          <div
-            className={cn(
-              "w-full rounded-sm transition-colors",
-              point.count === 0 ? "bg-border" : accent,
-            )}
-            style={{
-              height: `${Math.max((point.count / max) * 100, point.count === 0 ? 4 : 12)}%`,
-            }}
-          />
-        </div>
-      ))}
-    </div>
-  );
 }
 
 export function DashboardPage() {
@@ -231,9 +201,23 @@ export function DashboardPage() {
               {t("admin.dashboard.registrations")}
             </h2>
           </div>
-          <Sparkline
-            points={metrics.registrationsByDay}
-            accent="bg-primary/70 group-hover:bg-primary"
+          <Chart
+            x={metrics.registrationsByDay.map((_, index) => index)}
+            series={[
+              {
+                label: t("admin.dashboard.registrations"),
+                values: metrics.registrationsByDay.map((point) => point.count),
+                colorToken: "--primary",
+              },
+            ]}
+            xFormat={(value) =>
+              metrics.registrationsByDay[value]?.date.slice(5) ?? ""
+            }
+            xTicks={[0, 4, 8, 13]}
+            xLabel={t("admin.chart.day")}
+            height={160}
+            ariaLabel={t("admin.dashboard.registrations")}
+            testId="admin-chart-registrations"
           />
         </Panel>
         <Panel className="space-y-3 p-4">
@@ -243,9 +227,23 @@ export function DashboardPage() {
               {t("admin.dashboard.activity")}
             </h2>
           </div>
-          <Sparkline
-            points={metrics.commandsByDay}
-            accent="bg-secondary/70 group-hover:bg-secondary"
+          <Chart
+            x={metrics.commandsByDay.map((_, index) => index)}
+            series={[
+              {
+                label: t("admin.dashboard.activity"),
+                values: metrics.commandsByDay.map((point) => point.count),
+                colorToken: "--secondary",
+              },
+            ]}
+            xFormat={(value) =>
+              metrics.commandsByDay[value]?.date.slice(5) ?? ""
+            }
+            xTicks={[0, 4, 8, 13]}
+            xLabel={t("admin.chart.day")}
+            height={160}
+            ariaLabel={t("admin.dashboard.activity")}
+            testId="admin-chart-commands"
           />
         </Panel>
       </div>

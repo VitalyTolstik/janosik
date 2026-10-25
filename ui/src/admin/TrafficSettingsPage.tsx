@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { pollWhileFocused } from "@/lib/visible-poll";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
+import { Chart } from "./chart/chart";
 import { useAdminAuth } from "./AdminAuthContext";
 import { Badge, ErrorState, LoadingState, PageHeader, Panel } from "./ui";
 
@@ -103,7 +104,6 @@ export function TrafficSettingsPage() {
   if (phase === "error") return <ErrorState onRetry={retry} />;
 
   const perSecond = traffic?.perSecond ?? new Array<number>(60).fill(0);
-  const max = Math.max(1, ...perSecond);
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4 p-6">
@@ -162,15 +162,22 @@ export function TrafficSettingsPage() {
       </Panel>
 
       <Panel className="space-y-3 p-4">
-        <div className="flex h-20 items-end gap-px" aria-hidden>
-          {perSecond.map((count, index) => (
-            <div
-              key={index}
-              className="flex-1 rounded-sm bg-primary/60"
-              style={{ height: `${Math.max(2, (count / max) * 100)}%` }}
-            />
-          ))}
-        </div>
+        <Chart
+          x={perSecond.map((_, index) => index)}
+          series={[
+            {
+              label: t("admin.traffic.perSecond"),
+              values: perSecond,
+              colorToken: "--primary",
+            },
+          ]}
+          xFormat={(value) => `${59 - value}s`}
+          xTicks={[0, 15, 30, 45, 59]}
+          xLabel={t("admin.chart.second")}
+          height={160}
+          ariaLabel={t("admin.traffic.title")}
+          testId="admin-traffic-chart"
+        />
         <p className="text-[11px] text-muted-foreground">
           {t("admin.traffic.subtitle")}
         </p>

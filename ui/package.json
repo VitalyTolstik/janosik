@@ -68,6 +68,16 @@
       "limit": "6 KB",
       "gzip": true,
       "running": false
+    },
+    {
+      "name": "lazy admin chart (uPlot + wrapper, gzip)",
+      "path": [
+        "dist/assets/uplot-chart-*.js",
+        "dist/assets/uplot-chart-*.css"
+      ],
+      "limit": "26 KB",
+      "gzip": true,
+      "running": false
     }
   ],
   "scripts": {
@@ -111,7 +121,8 @@
     "react-otp-input": "^3.1.1",
     "react-router-dom": "^7.18.3",
     "tailwind-merge": "^3.6.0",
-    "tailwindcss": "^4.3.3"
+    "tailwindcss": "^4.3.3",
+    "uplot": "^1.6.32"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
