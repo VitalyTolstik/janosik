@@ -27,6 +27,7 @@ import { RealtimeService } from "@/realtime/realtime.service";
 import { StorageService } from "@/attachments/storage.service";
 import { CurrentShare } from "./current-share.decorator";
 import { ShareAccessGuard } from "./share-access.guard";
+import { ShareThrottlerGuard } from "./share-throttler.guard";
 import { ShareService } from "./share.service";
 
 /** Keep-alive comment cadence for proxies and idle connections. */
@@ -42,6 +43,7 @@ const KEEP_ALIVE_MS = 25_000;
  * `X-Robots-Tag: noindex` — a share is "only by link".
  */
 @Controller("share")
+@UseGuards(ShareThrottlerGuard)
 export class ShareController {
   constructor(
     private readonly shares: ShareService,

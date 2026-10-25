@@ -325,6 +325,19 @@ describe("Public board shares (e2e)", () => {
     expect(res.headers["x-robots-tag"]).toContain("noindex");
   });
 
+  it("rate-limits one token (per-token budget, §7.9.4)", async () => {
+    const { boardId } = await newBoard("Share rate limit");
+    const share = await createShare(boardId, { mode: "snapshot" });
+    // The test env pins the per-token budget to 50; the 51st request trips it.
+    let last = 200;
+    for (let i = 0; i < 52; i += 1) {
+      const res = await server().get(`/api/v1/share/${share.token}`);
+      last = res.status;
+      if (last === 429) break;
+    }
+    expect(last).toBe(429);
+  });
+
   it("increments the view counter on each payload read", async () => {
     const { boardId } = await newBoard("Share views");
     const share = await createShare(boardId, { mode: "snapshot" });

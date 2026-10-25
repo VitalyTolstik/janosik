@@ -8,6 +8,7 @@ import { MembershipGuard } from "@/common/membership.guard";
 import { RealtimeModule } from "@/realtime/realtime.module";
 import { BoardSharesController } from "./board-shares.controller";
 import { ShareAccessGuard } from "./share-access.guard";
+import { ShareThrottlerGuard } from "./share-throttler.guard";
 import { ShareController } from "./share.controller";
 import { ShareService } from "./share.service";
 
@@ -27,7 +28,12 @@ import { ShareService } from "./share.service";
     RealtimeModule,
   ],
   controllers: [ShareController, BoardSharesController],
-  providers: [ShareService, ShareAccessGuard, MembershipGuard],
+  providers: [
+    ShareService,
+    ShareAccessGuard,
+    ShareThrottlerGuard,
+    MembershipGuard,
+  ],
   exports: [ShareService],
 })
 export class ShareModule {}

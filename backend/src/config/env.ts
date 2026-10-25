@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import dotenv from "dotenv";
 import { bool, cleanEnv, makeValidator, num, port, str, url } from "envalid";
+import { SHARE_LIMITS } from "@janosik/shared";
 
 /**
  * Backend config — the single place where process.env is read and validated.
@@ -39,6 +40,14 @@ if (process.env.NODE_ENV === "test" && process.env.TEST_DATABASE_URL) {
 // guard or set their own @Throttle, so a huge default here is safe.
 if (process.env.NODE_ENV === "test") {
   process.env.THROTTLE_LIMIT = "1000000";
+}
+
+// The public share contour has its own per-token budget; keep it small in
+// tests so a burst spec can actually trip the 429 while the other share specs
+// (a handful of requests per fresh token) stay well under it.
+if (process.env.NODE_ENV === "test") {
+  process.env.SHARE_RATE_LIMIT = "50";
+  process.env.SHARE_OG_RATE_LIMIT = "50";
 }
 
 // Tests are hermetic: a developer machine's SMTP_* (backend/.env) must not
@@ -110,6 +119,19 @@ export const env = cleanEnv(process.env, {
   ALLOW_PUBLIC_SHARES: bool({
     desc: "Master switch for public read-only board share links",
     default: true,
+  }),
+  // Per-token budget of the public share contour (requests/min). Keys by the
+  // share token, not the IP, so one hammered link is bounded regardless of
+  // how many readers hit it. The OG preview is heavier, hence a tighter one.
+  SHARE_RATE_LIMIT: num({
+    desc: "Public share requests per minute, per token",
+    default: SHARE_LIMITS.rateLimitPerMinute,
+    example: "240",
+  }),
+  SHARE_OG_RATE_LIMIT: num({
+    desc: "Public share OG preview requests per minute, per token",
+    default: SHARE_LIMITS.ogRateLimitPerMinute,
+    example: "60",
   }),
   // Mail (TASK-51): every var is optional — without SMTP_HOST the mailer
   // logs outgoing emails to the server log instead of sending them, so

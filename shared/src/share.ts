@@ -35,6 +35,14 @@ export const SHARE_LIMITS = {
   defaultIncludeCommentsSnapshot: false,
   /** Attachments are opt-in on both modes (blob exposure). */
   defaultIncludeAttachments: false,
+  /**
+   * Requests per minute, per token, on the public contour (§7.9.4). A viewer
+   * loads the page once plus the SSE stream, so this is generous but still
+   * bounds one hammered link from any number of IPs.
+   */
+  rateLimitPerMinute: 240,
+  /** The preview image is heavier to render — a tighter sub-limit. */
+  ogRateLimitPerMinute: 60,
 } as const;
 
 /** A public-safe board member: never an email, only the visuals. */
