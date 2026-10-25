@@ -1209,14 +1209,11 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
         columns: [
           {
             label: t("admin.comms.col.title"),
-            render: (row) => (
-              <div className="flex flex-col">
-                <span className="font-medium">{row.title}</span>
-                <span className="max-w-md truncate text-[11px] text-muted-foreground">
-                  {row.body}
-                </span>
-              </div>
-            ),
+            render: (row) => <span className="font-medium">{row.title}</span>,
+          },
+          {
+            label: t("admin.comms.col.body"),
+            render: (row) => <TextCell value={row.body} maxWidth="28rem" />,
           },
           {
             label: t("admin.comms.col.level"),
@@ -1287,6 +1284,25 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             run: () => adminApi.deleteAnnouncement(row.id),
           },
         ],
+        renderExpanded: (row) => (
+          <div className="space-y-1">
+            <div
+              className={
+                row.level === "danger"
+                  ? "rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                  : row.level === "warning"
+                    ? "rounded-md bg-warning/10 px-3 py-2 text-sm"
+                    : "rounded-md bg-primary/10 px-3 py-2 text-sm"
+              }
+            >
+              <p className="font-medium">{row.title}</p>
+              <p className="whitespace-pre-line opacity-90">{row.body}</p>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {t("admin.announcements.preview")}
+            </p>
+          </div>
+        ),
       };
       return config;
     }

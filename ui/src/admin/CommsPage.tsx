@@ -391,7 +391,7 @@ export function CommsPage() {
               data-testid="admin-announcement-submit"
               onClick={() => void create()}
             >
-              {t("admin.common.save")}
+              {t("admin.announcements.send")}
             </Button>
           </DialogFooter>
         </DialogContent>

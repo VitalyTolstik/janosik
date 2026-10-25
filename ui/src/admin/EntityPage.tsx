@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { MoreHorizontal } from "lucide-react";
+import { ChevronDown, ChevronRight, MoreHorizontal } from "lucide-react";
 import type {
   AdminEntity,
   AdminEntityRowMap,
@@ -87,6 +87,8 @@ export interface EntityListConfig<T> {
   skipActions?: boolean;
   /** Enable bulk selection (delete / restore) for entities with `deletedAt`. */
   bulk?: boolean;
+  /** When set, each row gets a chevron that reveals this node below it. */
+  renderExpanded?: (row: T) => ReactNode;
 }
 
 function RowActions({
@@ -199,7 +201,14 @@ export function EntityPage<E extends AdminEntity>({
   );
   const toast = useToast();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<string | null>(null);
   const bulkEnabled = config.bulk === true;
+  const expandable = typeof config.renderExpanded === "function";
+  const columnCount =
+    config.columns.length +
+    (bulkEnabled ? 1 : 0) +
+    (expandable ? 1 : 0) +
+    (config.actions || !config.skipActions ? 1 : 0);
   const visibleIds = list.items
     .map((row) => rowId(row))
     .filter((id): id is string => id !== null);
@@ -347,6 +356,7 @@ export function EntityPage<E extends AdminEntity>({
                       />
                     </Th>
                   ) : null}
+                  {expandable ? <Th className="w-6" /> : null}
                   {config.columns.map((column) => (
                     <Th key={column.label} className={column.className}>
                       {column.label}
@@ -369,52 +379,89 @@ export function EntityPage<E extends AdminEntity>({
                     `admin-row-${config.entity}-${index}`;
                   const id = rowId(row);
                   return (
-                    <tr
-                      key={rowHrefKey(row, index)}
-                      data-testid={testId}
-                      className={
-                        href
-                          ? "cursor-pointer transition-colors hover:bg-hover/50"
-                          : undefined
-                      }
-                      onClick={href ? () => void navigate(href) : undefined}
-                    >
-                      {bulkEnabled && id !== null ? (
-                        <Td className="w-8">
-                          <span onClick={(event) => event.stopPropagation()}>
-                            <Checkbox
-                              aria-label={id}
-                              data-testid={`admin-select-${id}`}
-                              checked={selected.has(id)}
-                              onCheckedChange={() => toggleRow(id)}
-                            />
-                          </span>
-                        </Td>
-                      ) : bulkEnabled ? (
-                        <Td className="w-8" />
-                      ) : null}
-                      {config.columns.map((column) => (
-                        <Td key={column.label} className={column.className}>
-                          {column.render(row)}
-                        </Td>
-                      ))}
-                      {config.actions || !config.skipActions ? (
-                        <Td className="text-right">
-                          {config.actions ? (
-                            <div
-                              onClick={(event) => event.stopPropagation()}
-                              onKeyDown={(event) => event.stopPropagation()}
-                            >
-                              <RowActions
-                                testId={`admin-row-actions-${rowHrefKey(row, index).replaceAll(":", "-")}`}
-                                actions={config.actions(row, list.reload)}
-                                reload={list.reload}
+                    <>
+                      <tr
+                        key={rowHrefKey(row, index)}
+                        data-testid={testId}
+                        className={
+                          href
+                            ? "cursor-pointer transition-colors hover:bg-hover/50"
+                            : undefined
+                        }
+                        onClick={href ? () => void navigate(href) : undefined}
+                      >
+                        {bulkEnabled && id !== null ? (
+                          <Td className="w-8">
+                            <span onClick={(event) => event.stopPropagation()}>
+                              <Checkbox
+                                aria-label={id}
+                                data-testid={`admin-select-${id}`}
+                                checked={selected.has(id)}
+                                onCheckedChange={() => toggleRow(id)}
                               />
-                            </div>
-                          ) : null}
-                        </Td>
+                            </span>
+                          </Td>
+                        ) : bulkEnabled ? (
+                          <Td className="w-8" />
+                        ) : null}
+                        {expandable ? (
+                          <Td className="w-6">
+                            <button
+                              type="button"
+                              aria-label="expand"
+                              data-testid={`admin-expand-${id ?? index}`}
+                              className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-hover hover:text-foreground"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setExpanded((current) =>
+                                  current === id ? null : id,
+                                );
+                              }}
+                            >
+                              {expanded === id ? (
+                                <ChevronDown
+                                  className="h-3.5 w-3.5"
+                                  aria-hidden
+                                />
+                              ) : (
+                                <ChevronRight
+                                  className="h-3.5 w-3.5"
+                                  aria-hidden
+                                />
+                              )}
+                            </button>
+                          </Td>
+                        ) : null}
+                        {config.columns.map((column) => (
+                          <Td key={column.label} className={column.className}>
+                            {column.render(row)}
+                          </Td>
+                        ))}
+                        {config.actions || !config.skipActions ? (
+                          <Td className="text-right">
+                            {config.actions ? (
+                              <div
+                                onClick={(event) => event.stopPropagation()}
+                                onKeyDown={(event) => event.stopPropagation()}
+                              >
+                                <RowActions
+                                  testId={`admin-row-actions-${rowHrefKey(row, index).replaceAll(":", "-")}`}
+                                  actions={config.actions(row, list.reload)}
+                                  reload={list.reload}
+                                />
+                              </div>
+                            ) : null}
+                          </Td>
+                        ) : null}
+                      </tr>
+                      {expandable && expanded === id ? (
+                        <tr className="bg-hover/30">
+                          <td colSpan={columnCount} className="px-4 py-3">
+                            {config.renderExpanded?.(row)}
+                          </td>
+                        </tr>
                       ) : null}
-                    </tr>
+                    </>
                   );
                 })}
               </tbody>

@@ -109,6 +109,8 @@ const en = {
   "admin.announcements.column.author": "Author",
   "admin.announcements.action.activate": "Activate",
   "admin.announcements.action.deactivate": "Deactivate",
+  "admin.announcements.send": "Send announcement",
+  "admin.announcements.preview": "In-app preview — as users see it",
   "admin.nav.observability": "Observability",
 
   "admin.common.delete": "Delete",
@@ -241,6 +243,7 @@ const en = {
   "admin.comms.col.level": "Level",
   "admin.comms.col.audience": "Audience",
   "admin.comms.col.email": "Email",
+  "admin.comms.col.body": "Message",
   "admin.comms.col.created": "Created",
   "admin.comms.level.info": "Info",
   "admin.comms.level.warning": "Warning",
@@ -941,6 +944,9 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.announcements.column.author": "Автор",
   "admin.announcements.action.activate": "Включить",
   "admin.announcements.action.deactivate": "Отключить",
+  "admin.announcements.send": "Отправить объявление",
+  "admin.announcements.preview":
+    "Предпросмотр в приложении — как видят пользователи",
   "admin.nav.observability": "Наблюдаемость",
 
   "admin.common.delete": "Удалить",
@@ -1074,6 +1080,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.comms.col.level": "Уровень",
   "admin.comms.col.audience": "Кому",
   "admin.comms.col.email": "Email",
+  "admin.comms.col.body": "Сообщение",
   "admin.comms.col.created": "Создано",
   "admin.comms.level.info": "Инфо",
   "admin.comms.level.warning": "Предупреждение",

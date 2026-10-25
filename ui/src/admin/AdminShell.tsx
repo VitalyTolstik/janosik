@@ -28,6 +28,7 @@ import {
   Fingerprint,
   SlidersHorizontal,
   Megaphone,
+  Newspaper,
   ServerCog,
   ShieldAlert,
 } from "lucide-react";
@@ -183,7 +184,7 @@ const NAV_SECTIONS: Array<{
       {
         to: "/admin/announcements",
         labelKey: "admin.nav.announcements",
-        icon: Megaphone,
+        icon: Newspaper,
       },
       {
         to: "/admin/observability",
