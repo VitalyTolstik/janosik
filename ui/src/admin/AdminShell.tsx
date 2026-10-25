@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Activity,
   ArrowLeft,
@@ -176,7 +176,7 @@ function Brand({ collapsed }: { collapsed: boolean }) {
       end
       aria-label="Janosik"
       className={cn(
-        "flex items-center gap-2.5 py-4",
+        "flex h-16 items-center gap-2.5",
         collapsed ? "justify-center px-2" : "px-4",
       )}
     >
@@ -210,21 +210,24 @@ function NavItem({
   collapsed: boolean;
 }) {
   const t = useAdminT();
+  const { pathname } = useLocation();
   const label = t(item.labelKey);
+  // A plain string className on purpose: when collapsed the link is wrapped by
+  // Radix `TooltipTrigger asChild` (a Slot), and a Slot cannot resolve
+  // react-router's function `className` — it would stringify the callback and
+  // drop every style. Active state is computed here instead.
+  const active = item.end
+    ? pathname === item.to
+    : pathname === item.to || pathname.startsWith(`${item.to}/`);
+  const className = cn(
+    "flex h-7 items-center rounded-lg text-xs font-medium transition-colors",
+    collapsed ? "justify-center px-0" : "gap-2.5 px-2.5",
+    active
+      ? "bg-primary/15 text-foreground"
+      : "text-muted-foreground hover:bg-hover hover:text-foreground",
+  );
   const link = (
-    <NavLink
-      to={item.to}
-      end={item.end}
-      className={({ isActive }) =>
-        cn(
-          "flex items-center rounded-lg text-xs font-medium transition-colors",
-          collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-1.5",
-          isActive
-            ? "bg-primary/15 text-foreground"
-            : "text-muted-foreground hover:bg-hover hover:text-foreground",
-        )
-      }
-    >
+    <NavLink to={item.to} end={item.end} className={className}>
       <item.icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
       {!collapsed ? <span className="truncate">{label}</span> : null}
     </NavLink>
@@ -295,13 +298,21 @@ export function AdminShell() {
         <nav className="flex flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden px-2 pb-3">
           {NAV_SECTIONS.map((section) => (
             <div key={section.labelKey} className="space-y-0.5">
-              {collapsed ? (
-                <div className="mx-auto mb-1 h-px w-6 bg-border" aria-hidden />
-              ) : (
-                <p className="px-2.5 pb-0.5 text-[10px] uppercase tracking-widest text-muted-foreground/70">
-                  {t(section.labelKey)}
-                </p>
-              )}
+              {/* The header keeps the SAME height (h-5) in both states, so
+                  collapsing never nudges the item rows by a pixel — the label
+                  simply becomes a divider. */}
+              <div
+                className="flex h-5 items-center px-2.5"
+                aria-hidden={collapsed}
+              >
+                {collapsed ? (
+                  <span className="mx-auto block h-px w-6 bg-border" />
+                ) : (
+                  <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                    {t(section.labelKey)}
+                  </p>
+                )}
+              </div>
               {section.items
                 .filter((item) => item.ownerOnly !== true || isOwner)
                 .map((item) => (
