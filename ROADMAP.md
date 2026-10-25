@@ -1584,6 +1584,15 @@ TASK-36 и TASK-37.)*
 | 43 | TASK-63 `admin-data-compliance` ✅ | `feature/TASK-63-admin-data-compliance` | §7.10.3: **экспорт данных пользователя** (JSON/архив), GDPR-erase (после TASK-59), retention-политика в UI, инфо о бэкапах/снапшотах | данные юзера выгружаются; erase доступен и аудируется; retention настраивается; en+ru; гейты |
 | 44 | TASK-64 `admin-observability` ✅ | `feature/TASK-64-admin-observability` | §7.10.3: вьюер джоб/очередей (видео-транскод, число SSE/presence-сессий), версия/деплой, размер БД/индексы, детали health | в панели видно очереди/джобы, версию, размер БД; en+ru; гейты |
 | 45 | TASK-65 `admin-security` ✅ | `feature/TASK-65-admin-security` | §7.10.3: сессии с **IP/UA**, **2FA** (нет вообще), IP-allowlist, продвинутые фильтры аудита, алерты о подозрительной активности | видно откуда сессии; 2FA включается; allowlist работает; аудит фильтруется; алерты есть; en+ru; гейты |
+| 46 | TASK-66 `queue-transcode` | `feature/TASK-66-queue-transcode` | §7.11: перевести **видео-транскод** (TASK-50) с самописной in-process FIFO на **BullMQ** (очередь `transcode`). Сейчас `src/attachments/transcode.service.ts` держит очередь в памяти, «один кодек за раз», и восстанавливает `pending`-строки в `onModuleInit` — всё это BullMQ заменяет целиком: джобы переживают рестарт (очередь в Redis), ретраи `failed` с backoff, `attempts`, прогресс, дедлайн/таймаут джобы, масштабирование на N воркеров/нод (ffmpeg CPU-bound — реальное ускорение). Сохранить: `FFMPEG_PATH`/`ffmpeg-static`, атомарную подмену блоба (tmp+rename), статусы `Attachment.transcodeStatus` (none/pending/done/failed), SSE `attachment_updated`, идемпотентность (повторный `enqueue` по уже готовому — no-op). `enqueue` из `attachments.service` → `queue.add("transcode", {attachmentId}, {attempts, backoff, removeOnComplete})`. Воркер — не в request-скоупе. Observability расширить (pending/done/failed из счетчиков очереди). Миграций нет | видео перекодируются через Redis-очередь; рестарт в середине кодека не теряет задачу; падение кодека ретраится; прогресс/статусы видны; `FFMPEG_PATH` уважается; e2e: успешный кодек, гарбаж→failed с живым оригиналом, не-видео→none (перенести из `transcode.service.spec`/attachments e2e); гейты зелёные |
+| 47 | TASK-67 `queue-mail` | `feature/TASK-67-queue-mail` | §7.11: **транзакционные письма через очередь** (очередь `mail`), чтобы SMTP-сбой не валил запрос. Сейчас коды подтверждения/смены email и уведомления шлются синхронно внутри запроса, и при сбое транспорта наружу летит 503 (`AuthService`). Ввести `MailQueueService`: `enqueue({to, template|subject/text/html, locale})` → `queue.add("send", …, {attempts, backoff, removeOnFail})`; воркер отправляет через `MailerService`, ретраит transient-ошибки; permanent (5xx/550) — в dead-letter без ретраев. Сохранить log-mode/`outbox` (e2e читает коды из outbox) и «код из письма» — тесты не должны гоняться за таймингом: в `NODE_ENV=test` очередь резолвится сразу (in-process drain), не через Redis. Регистрация: остаётся best-effort; `resend`/`requestEmailChange` больше не отдают 503, а отдают `{queued:true}` и статус доставки виден в observability (sent/failed/dead). Опционально: `idempotencyKey` (Message-ID) для защиты от дублей при ретраях. Миграций нет | письмо-код ставится в очередь и уходит с ретраями; сбой SMTP не валит register/resend/change; в лог-режиме код в outbox как раньше; счётчики очереди в observability; e2e (register/resend/change) зелёные без Redis; гейты |
+| 48 | TASK-68 `queue-maintenance` | `feature/TASK-68-queue-maintenance` | §7.11: **регулярное обслуживание** через BullMQ **Job Scheduler** (cron) + кнопку «выполнить сейчас». Сейчас ничего не убирается автоматически: `purgeSoftDeleted` (TASK-63) крутится только по кнопке синхронно в запросе; просроченные `EmailVerificationCode`/`EmailChangeCode`, мёртвые `RefreshToken`/`AdminRefreshToken`, истёкшие `BoardShare` (expiresAt/revoked), просроченные pending-приглашения (`BoardMember.expiresAt`), осиротевшие блобы в `UPLOAD_DIR` — не убираются никогда. Ввести очередь `maintenance` и набор именованных джоб: `purge-soft-deleted` (retention-окно из `OpsSettings.retentionDays`), `sweep-codes`, `sweep-tokens`, `sweep-shares`, `sweep-invitations`, `sweep-orphan-blobs`; расписание (интервал) настраивается из панели (Ops), `upsertJobScheduler` вместо `repeat`; каждый прогон пишет аудит (`maintenance.run`) и счётчики. «Purge now» из панели ставит ту же джобу в очередь (вместо синхронного запроса), UI показывает прогресс/итог | уборки идут по расписанию без рестарта; истёкшее (коды/токены/шары/инвайты/блобы) реально удаляется; purge запускается из панели асинхронно с итогом; расписание меняется из панели; everything в аудите; e2e на каждую джобу (создать мусор → прогнать → 0 остатков); гейты |
+| 49 | TASK-69 `queue-demo` | `feature/TASK-69-queue-demo` | §7.11: **демо-раннер** (TASK-57) как джоба очереди `demo`: сейчас запуск роя агентов живёт в процессе запроса/таймерах (`DemoService`), `DemoRun.manifest` уже фиксирует все созданные id. Перевести на BullMQ-джобу с **прогрессом** (`job.updateProgress` — сколько карточек дошло до done), **cancel/timeout** (стоп → `job.remove`/abort-сигнал + `stop`-путь чистит по манифесту) и авто-стопом по таймауту; статус-эндпоинт читает прогресс из джобы/`DemoRun`. `start` возвращается сразу (сейчас уже асинхронный по сути). Никаких «сирот» (маркер `Демо · рой агентов` + манифест сохраняются). Миграций нет (у `DemoRun` уже есть status/manifest) | демо стартует как джоба, прогресс виден живьём; Cancel/Stop действительно прерывает и чистит по манифесту; таймаут сам останавливает; e2e демо-лайфсайкла зелёные; гейты |
+| 50 | TASK-70 `queue-media-derivatives` | `feature/TASK-70-queue-media-derivatives` | §7.11: **производные медиа** в фоне (очередь `media`): миниатюры для картинок (сейчас `AttachmentThumb` грузит **полный** блоб → трафик и лаги на больших PNG/JPEG) и **постер-кадр** для видео (первый кадр, как у топовых трекеров). Генерация джобой при загрузке (и ре-генерация при восстановлении); хранение — рядом с блобом (`thumbPath`/`posterPath` в `Attachment` или отдельные `storedName`-производные), отдача новым роутом `GET /attachments/:id/thumbnail` (и `/poster`) с кэш-заголовками; если производной нет — фолбэк на полный блоб. Добавить поля в `Attachment` (миграция) + статус derivative-джобы; не блокировать загрузку | в списках/карточках тянется миниатюра, а не оригинал; видео имеет постер; производные генерируются в фоне и переживают рестарт; фолбэк на оригинал при отсутствии; e2e генерации (image→thumb, video→poster) + ui-тест использования; гейты |
+| 51 | TASK-71 `queue-exports` | `feature/TASK-71-queue-exports` | §7.11: **экспорт данных юзера** (TASK-63) через очередь `exports` для крупных аккаунтов: сейчас `AdminService.exportUser` строит JSON синхронно в запросе и отдаёт файлом — на большом юзере это долгий запрос. Ставить джобу `export-user` → собрать бандл (JSON, опц. zip с вложениями) → сохранить артефакт → уведомить заявку (in-app/email) и отдать по ссылке с TTL; прогресс и статус в панели; аудит `data.exported`. Мелкие юзеры — быстрый путь без очереди (порог по объёму). Миграция под артефакт/статус (или переиспользовать файловое хранилище `UPLOAD_DIR`) | экспорт крупного юзера выполняется в фоне, не вешая запрос; статус/прогресс видны; артефакт скачивается и истекает; мелкие — как раньше; аудит; e2e (поставить → получить артефакт); гейты |
+| 52 | TASK-72 `queue-comms-scheduled` | `feature/TASK-72-queue-comms-scheduled` | §7.11: **коммуникации по расписанию** (cron + уже готовая `broadcast`-очередь): дайджесты (что изменилось на досках за период) и **напоминания по `Card.dueDate`** (за N часов/в день срока), опционально — «заброшенные» карточки. Движок: Job Scheduler ставит периодическую джобу `digest`/`due-reminders`, которая собирает получателей (участники с принятым членством, не disabled), рендерит шаблон (reuse TASK-62 редактора шаблонов) и вешает веер в `BroadcastQueueService`; частоты/вкл-выкл из панели Comms/Ops; `List-Unsubscribe` заголовок и учёт отписок (поле `User.notifyDigest`?) для доставляемости. Аудит `comms.digest_sent`/`comms.reminder_sent` | дайджест/напоминания уходят по расписанию, а не вручную; получатели уважают роли/статус/отписку; частоты настраиваются из панели; шаблоны редактируются; e2e: due-карточка → напоминание в outbox; гейты |
+| 53 | TASK-73 `bull-board` | `feature/TASK-73-bull-board` | §7.11: **панель очередей** — `@bull-board` (`@bull-board/api` + `@bull-board/nestjs` + `@bull-board/ui`) поверх BullMQ: страница `/admin/queues` со списком всех очередей (broadcast/mail/transcode/maintenance/media/exports/demo) — счётчики wait/active/completed/failed/delayed, разбор джоб, ретрай/удаление, очистка. Требование безопасности: дашборд **только за `AdminJwtAuthGuard`** (Bull Board отдаёт статику, cookie-авторизация иная — маунт внутри admin-контура, OWNER-only, `disconnectOnLogout`); nginx/CSP не ломать (дашборд грузит свои ассеты `@bull-board/ui`); не светить в проде по умолчанию — флаг `QUEUES_DASHBOARD=true`. Ссылка в сайдбаре Ops (как отдельный пункт или iframe внутри Observability). Пакеты добавить в deps backend, версии согласовать с `@nestjs/bullmq@12`/`bullmq@6` | в панели видно все очереди и их джобы; можно ретраить/чистить; открыт только OWNER-мастеру за admin-контуром, по умолчанию выключен; сборка/lint/size не ломаются; гейты |
+| 54 | TASK-74 `realtime-redis-fanout` | `feature/TASK-74-realtime-redis-fanout` | §7.11 (не Bull, но тот же Redis): **развязать realtime на несколько нод** — сейчас `RealtimeService` это in-process rxjs `Subject` с явным швом «Redis pub/sub» в доках; смоканный `broadcast`-контур уже требует Redis, поэтому перевести fan-out SSE на Redis pub/sub (`publish`/`subscribe`, канал на доску), сохранив `seq`-догон из лога и presence (presence остаётся per-node или тоже через Redis с TTL). Один инстанс → поведение не меняется | две ноды видят изменения друг друга по SSE; догон `?since=` не дублирует; presence не мигает; single-node путь без Redis не деградирует; гейты |
 
 > **TASK-59…65 выполнены (2026-10-25).** Backend: user support (verify/unverify,
 > resend, reset password, erase по FK-графу, promote/demote, impersonate токен),
@@ -1606,6 +1615,84 @@ TASK-36 и TASK-37.)*
 > shared 367, backend 138 unit + 228 e2e, ui 769, lint/build/size зелёные.
 > **Не покрыто тестами UI:** новые страницы (Ops/Comms/Observability/Security) —
 > добавлены без отдельного ui-набора; логика покрыта backend e2e/unit.
+
+---
+
+### 7.11. Очереди BullMQ: куда ещё прикрутить
+
+> **Контекст.** В TASK-62 рассылка уведомлений уже переведена на **BullMQ**
+> (`@nestjs/bullmq` + `bullmq` на Redis, очередь `broadcast`, воркер
+> `BroadcastProcessor`), `redis` добавлен в `backend/docker-compose.yml`,
+> подключение через env `REDIS_URL` (без него — фолбэк на in-process). Этот
+> раздел — что ещё в приложении логично отдать очередям, в каком порядке и
+> что для этого нужно. Задачи TASK-66…74.
+
+**Общая инфраструктура (для всех задач раздела).**
+- **Redis** уже есть (`REDIS_URL`, сервис `redis` в compose). Один `forRoot`,
+  по одному `BullModule.registerQueue({ name })` на очередь; воркеры
+  (`@Processor`/`WorkerHost`) — провайдеры, регистрируются только при
+  настроенном `REDIS_URL` (как сейчас), чтобы тесты/self-host без Redis жили.
+- **Очереди:** `broadcast` (есть), `mail`, `transcode`, `maintenance`, `demo`,
+  `media`, `exports`. Имена — константы, не строки по коду.
+- **Cron/расписания:** BullMQ **Job Scheduler** (`queue.upsertJobScheduler`),
+  НЕ опция `repeat` (её в BullMQ v6 в `Queue.add` нет).
+- **Надёжность:** `attempts` + `backoff` (transient) и dead-letter для
+  permanent-ошибок; где уместно — `idempotencyKey`/детерминированный `jobId`
+  (повторная постановка не дублирует).
+- **Тесты без Redis:** в `NODE_ENV=test` очередь резолвится синхронно
+  (in-process drain), e2e не должны требовать контейнер. Уже так сделано в
+  `BroadcastQueueService` — тот же паттерн переносим на новые очереди.
+- **Наблюдаемость:** `ObservabilityService` тянет счётчики каждой очереди
+  (`getJobCounts`) в карточку «Jobs».
+- **Миграции:** нужны только там, где появляются новые сущности/поля
+  (TASK-70 производные медиа; TASK-71 артефакт экспорта).
+
+**Порядок и суть задач**
+1. **TASK-66 `queue-transcode`** — самый крупный кастом-код под замену:
+   in-process FIFO `TranscodeService` → очередь `transcode` (рестарт-налог
+   recovery, ретраи, масштабирование воркеров). Не трогает контракты
+   `Attachment.transcodeStatus`/SSE.
+2. **TASK-67 `queue-mail`** — транзакционные письма (коды/уведомления) в
+   очередь `mail`, чтобы сбой SMTP не валил `register`/`resend`/смену email;
+   log-mode/`outbox` сохранить (e2e читает коды оттуда).
+3. **TASK-68 `queue-maintenance`** — регулярные уборки через Job Scheduler
+   (retention-purge, истёкшие коды/токены/шары/инвайты, осиротевшие блобы) +
+   «выполнить сейчас» из панели. Закрывает дыру «ничего не чистится само».
+4. **TASK-69 `queue-demo`** — демо-рой как джоба (прогресс, cancel, таймаут),
+   манифест уже есть.
+5. **TASK-70 `queue-media-derivatives`** — миниатюры картинок и постер-кадры
+   видео в фоне (сейчас UI тянет полный блоб); новые поля `Attachment` +
+   роуты отдачи с кэшем.
+6. **TASK-71 `queue-exports`** — экспорт данных крупных юзеров в фоне со
+   ссылкой/уведомлением.
+7. **TASK-72 `queue-comms-scheduled`** — дайджесты и напоминания по
+   `Card.dueDate` через Job Scheduler + `broadcast`.
+8. **TASK-74 `realtime-redis-fanout`** — (не Bull, но тот же Redis)
+   multi-node SSE через pub/sub.
+
+**TASK-73 `bull-board` — панель очередей (что надо).**
+- **Пакеты (backend deps):** `@bull-board/api`, `@bull-board/nestjs`,
+  `@bull-board/ui` (версии согласовать с `@nestjs/bullmq@12`/`bullmq@6`).
+  `@bull-board/ui` — статика дашборда, `@bull-board/api` — адаптер очередей,
+  `@bull-board/nestjs` — модуль Nest.
+- **Маунт:** отдельный модуль, поднятый **только при `QUEUES_DASHBOARD=true`**;
+  `BullBoardModule.forRoot({ route: "/api/v1/admin/queues", adapter })` +
+  `forFeature` на каждую очередь. Дашборд — **за `AdminJwtAuthGuard`**
+  (свой контур, OWNER-only), `disconnectOnLogout` включить; авторизация
+  Bull Board по cookie/Basic не совпадает с нашим admin-JWT, поэтому
+  маршрут монтируется внутри admin-контура и защищается нашим гардом.
+- **UI:** пункт «Queues» в секции Ops сайдбара (OWNER), либо вкладка внутри
+  Observability; открывать в новой вкладке (дашборд — своё SPA).
+- **nginx/CSP:** дашборд грузит собственные JS/CSS; либо отдавать с того же
+  origin (наш случай), либо ослабить CSP для этого пути. Не выставлять в
+  прод-по-умолчанию.
+- **DoD:** видны все очереди (wait/active/completed/failed/delayed), разбор
+  джобы, ретрай/удаление/очистка; доступ только OWNER-мастеру; по умолчанию
+  выключено; сборка/lint/size не ломаются.
+
+**DoD раздела:** каждая задача — отдельный тикет с описанием выше; общий
+контракт — «работает без Redis в тестах, включается наличием `REDIS_URL`»,
+счётчики в observability, аудит действий из панели, en+ru для UI-частей.
 
 Последовательность выстроена так, что **каждый шаг демонстрируем**: после
 TASK-29 приложение живёт с сервера, после TASK-35 на доску можно позвать
