@@ -39,6 +39,7 @@ import { useAdminT } from "./admin-i18n";
 import {
   ChangeUserEmailDialog,
   DeleteUserDialog,
+  PromoteUserDialog,
   ResetUserPasswordDialog,
 } from "./dialogs";
 import { exportUser, impersonateUser } from "./user-actions";
@@ -116,6 +117,7 @@ export function UserDetailPage() {
   const [emailDialog, setEmailDialog] = useState(false);
   const [resetDialog, setResetDialog] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState(false);
+  const [promoteDialog, setPromoteDialog] = useState(false);
 
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -337,12 +339,9 @@ export function UserDetailPage() {
                   {t("admin.userDetail.action.resetPassword")}
                 </DropdownMenuItem>
                 <DropdownMenuItem
+                  className="text-warning focus:text-warning"
                   data-testid="admin-user-promote"
-                  onSelect={() =>
-                    void run(t("admin.userDetail.action.promote"), () =>
-                      adminApi.promoteUser(user.id),
-                    )
-                  }
+                  onSelect={() => setPromoteDialog(true)}
                 >
                   <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
                   {t("admin.userDetail.action.promote")}
@@ -392,6 +391,12 @@ export function UserDetailPage() {
         onDone={() => {
           window.location.assign("/admin/users");
         }}
+      />
+
+      <PromoteUserDialog
+        user={promoteDialog ? { id: user.id, email: user.email } : null}
+        onClose={() => setPromoteDialog(false)}
+        onDone={reload}
       />
 
       <div className="flex flex-wrap items-center gap-2">

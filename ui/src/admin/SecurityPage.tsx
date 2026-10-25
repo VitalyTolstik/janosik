@@ -5,7 +5,14 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
-import { Badge, ErrorState, LoadingState, PageHeader, Panel } from "./ui";
+import {
+  Badge,
+  CharCount,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  Panel,
+} from "./ui";
 
 /**
  * Security (TASK-65): TOTP two-factor enrollment, the login IP allowlist and
@@ -189,10 +196,14 @@ export function SecurityPage() {
         </p>
         <Input
           value={allowlist}
+          maxLength={500}
           placeholder="203.0.113.7, 10.0.0.0/8"
           data-testid="admin-ip-allowlist"
           onChange={(event) => setAllowlist(event.target.value)}
         />
+        <div className="flex justify-end">
+          <CharCount value={allowlist} max={500} />
+        </div>
         <div className="mt-3 flex justify-end">
           <Button
             size="sm"

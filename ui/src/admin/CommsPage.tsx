@@ -15,7 +15,20 @@ import {
 import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
-import { Badge, ErrorState, LoadingState, PageHeader, Panel } from "./ui";
+import {
+  Badge,
+  CharCount,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  Panel,
+} from "./ui";
+
+/** Length caps mirroring the backend DTOs (AdminCreateAnnouncementDto / email). */
+const TITLE_MAX = 200;
+const BODY_MAX = 2000;
+const SUBJECT_MAX = 200;
+const BODY_HTML_MAX = 20000;
 
 /**
  * Communications (TASK-62): compose a broadcast (in-app banner, optional
@@ -204,9 +217,11 @@ export function CommsPage() {
             </span>
             <Input
               value={mailSubject}
+              maxLength={SUBJECT_MAX}
               data-testid="admin-email-subject"
               onChange={(event) => setMailSubject(event.target.value)}
             />
+            <CharCount value={mailSubject} max={SUBJECT_MAX} />
           </label>
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground">
@@ -214,9 +229,11 @@ export function CommsPage() {
             </span>
             <Textarea
               value={mailBody}
+              maxLength={BODY_HTML_MAX}
               data-testid="admin-email-body"
               onChange={(event) => setMailBody(event.target.value)}
             />
+            <CharCount value={mailBody} max={BODY_HTML_MAX} />
           </label>
         </div>
         <div className="mt-3 flex justify-end">
@@ -246,6 +263,7 @@ export function CommsPage() {
               </div>
               <Input
                 value={draft[template.key]?.subject ?? ""}
+                maxLength={SUBJECT_MAX}
                 placeholder={t("admin.comms.templates.subject")}
                 onChange={(event) =>
                   setDraft((current) => ({
@@ -257,8 +275,13 @@ export function CommsPage() {
                   }))
                 }
               />
+              <CharCount
+                value={draft[template.key]?.subject ?? ""}
+                max={SUBJECT_MAX}
+              />
               <Textarea
                 value={draft[template.key]?.bodyHtml ?? ""}
+                maxLength={BODY_HTML_MAX}
                 placeholder={t("admin.comms.templates.body")}
                 onChange={(event) =>
                   setDraft((current) => ({
@@ -305,9 +328,11 @@ export function CommsPage() {
               </span>
               <Input
                 value={title}
+                maxLength={TITLE_MAX}
                 data-testid="admin-announcement-title"
                 onChange={(event) => setTitle(event.target.value)}
               />
+              <CharCount value={title} max={TITLE_MAX} />
             </label>
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">
@@ -315,9 +340,11 @@ export function CommsPage() {
               </span>
               <Textarea
                 value={body}
+                maxLength={BODY_MAX}
                 data-testid="admin-announcement-body"
                 onChange={(event) => setBody(event.target.value)}
               />
+              <CharCount value={body} max={BODY_MAX} />
             </label>
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">

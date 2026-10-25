@@ -10,6 +10,7 @@ import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import {
+  CharCount,
   ConfirmDialog,
   ErrorState,
   LoadingState,
@@ -203,9 +204,11 @@ export function OpsPage() {
             </span>
             <Input
               value={message}
+              maxLength={500}
               data-testid="admin-ops-message"
               onChange={(event) => setMessage(event.target.value)}
             />
+            <CharCount value={message} max={500} />
           </label>
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground">

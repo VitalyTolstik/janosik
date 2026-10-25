@@ -501,3 +501,39 @@ export function Toggle({
     </button>
   );
 }
+
+/**
+ * Character counter for length-limited inputs (TASK-62): shows how many
+ * characters remain, warning as it runs low and red once over the limit —
+ * the same affordance the card dialog uses on the board.
+ */
+export function CharCount({
+  value,
+  max,
+  className,
+}: {
+  value: string;
+  max: number;
+  className?: string;
+}) {
+  const t = useAdminT();
+  const left = max - value.length;
+  return (
+    <span
+      data-testid="char-count"
+      className={cn(
+        "self-end text-[11px] tabular-nums",
+        left < 0
+          ? "text-danger"
+          : left <= Math.max(20, Math.round(max * 0.1))
+            ? "text-warning"
+            : "text-muted-foreground",
+        className,
+      )}
+    >
+      {left >= 0
+        ? t("admin.common.charsLeft", { count: left })
+        : t("admin.common.charsOver", { count: -left })}
+    </span>
+  );
+}
