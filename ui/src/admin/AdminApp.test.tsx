@@ -450,6 +450,34 @@ describe("AdminApp", () => {
     await login();
     expect(await screen.findByText(t("admin.login.locked"))).toBeTruthy();
   });
+
+  it("collapses the sidebar to an icon rail and remembers the choice", async () => {
+    localStorage.clear();
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin");
+
+    const aside = await screen.findByTestId("admin-sidebar");
+    expect(aside).toHaveAttribute("data-collapsed", "false");
+    expect(
+      within(screen.getByTestId("admin-sidebar")).getByText(
+        t("admin.nav.users"),
+      ),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("admin-sidebar-toggle"));
+    expect(screen.getByTestId("admin-sidebar")).toHaveAttribute(
+      "data-collapsed",
+      "true",
+    );
+    // Labels are gone from the rail (icon-only navigation).
+    expect(
+      within(screen.getByTestId("admin-sidebar")).queryByText(
+        t("admin.nav.users"),
+      ),
+    ).toBeNull();
+    expect(localStorage.getItem("janosik.admin.sidebar")).toBe("1");
+  });
 });
 
 describe("admin content and security pages", () => {

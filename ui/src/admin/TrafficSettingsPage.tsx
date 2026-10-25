@@ -106,7 +106,7 @@ export function TrafficSettingsPage() {
   const perSecond = traffic?.perSecond ?? new Array<number>(60).fill(0);
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-4 p-6">
+    <div className="w-full max-w-3xl space-y-4 p-4">
       <PageHeader
         title={t("admin.traffic.title")}
         subtitle={t("admin.traffic.subtitle")}

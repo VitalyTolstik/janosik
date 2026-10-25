@@ -244,7 +244,7 @@ export function EmailSettingsPage() {
     saving || (sandbox ? false : draft.from === "" || draft.username === "");
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-4 p-6">
+    <div className="w-full max-w-3xl space-y-4 p-4">
       <PageHeader
         title={t("admin.email.title")}
         subtitle={t("admin.email.subtitle")}

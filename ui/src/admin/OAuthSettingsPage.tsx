@@ -116,7 +116,7 @@ export function OAuthSettingsPage() {
   if (phase === "error") return <ErrorState onRetry={retry} />;
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-4 p-6">
+    <div className="w-full max-w-3xl space-y-4 p-4">
       <PageHeader
         title={t("admin.oauth.title")}
         subtitle={t("admin.oauth.subtitle")}

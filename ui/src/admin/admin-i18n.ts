@@ -35,6 +35,7 @@ const en = {
   "admin.nav.logout": "Sign out",
   "admin.nav.signedInAs": "Signed in as",
   "admin.nav.masterBadge": "Master",
+  "admin.nav.toggleSidebar": "Toggle sidebar (⌘B)",
 
   "admin.traffic.title": "Traffic & limits",
   "admin.traffic.subtitle": "Live API request rate and the global rate limit",
@@ -664,6 +665,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.nav.logout": "Выйти",
   "admin.nav.signedInAs": "Вы вошли как",
   "admin.nav.masterBadge": "Мастер",
+  "admin.nav.toggleSidebar": "Свернуть/развернуть панель (⌘B)",
 
   "admin.traffic.title": "Трафик и лимиты",
   "admin.traffic.subtitle":

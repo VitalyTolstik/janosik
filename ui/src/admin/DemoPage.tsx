@@ -152,7 +152,7 @@ export function DemoPage() {
   const shownBoard = demo?.boardId || selectedBoardId.trim();
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-4 p-6">
+    <div className="w-full max-w-3xl space-y-4 p-4">
       <PageHeader
         title={t("admin.demo.title")}
         subtitle={t("admin.demo.subtitle")}

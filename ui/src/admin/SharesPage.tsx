@@ -84,7 +84,7 @@ export function SharesPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-4 p-6">
+    <div className="w-full max-w-5xl space-y-4 p-4">
       <PageHeader
         title={t("admin.shares.title")}
         subtitle={t("admin.shares.subtitle")}
