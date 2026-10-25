@@ -302,6 +302,64 @@ export function JsonCell({
   );
 }
 
+/**
+ * A long-text cell that expands in place (like `JsonCell`): collapsed it
+ * truncates with a chevron, expanded it shows the whole value. Used for
+ * announcement titles/messages so a truncated or oversized value stays
+ * fully readable without leaving the table.
+ */
+export function TextExpandCell({
+  value,
+  maxWidth = "20rem",
+  className,
+  testId,
+}: {
+  value: string | null | undefined;
+  maxWidth?: string;
+  className?: string;
+  testId?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (value === null || value === undefined || value === "") {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  const Chevron = expanded ? ChevronDown : ChevronRight;
+  return (
+    <span className="block">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        data-testid={testId}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setExpanded((current) => !current);
+        }}
+        className="inline-flex max-w-full items-start gap-1 text-left transition-colors"
+      >
+        <Chevron
+          className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"
+          aria-hidden
+        />
+        {!expanded ? (
+          <span
+            className={cn("block truncate", className)}
+            style={{ maxWidth }}
+            title={value}
+          >
+            {value}
+          </span>
+        ) : null}
+      </button>
+      {expanded ? (
+        <pre className="mt-1 max-w-[36rem] whitespace-pre-wrap break-words rounded-md border border-border bg-muted/30 p-2 font-sans text-xs text-foreground">
+          {value}
+        </pre>
+      ) : null}
+    </span>
+  );
+}
+
 const MIME_ICONS: Array<[RegExp, typeof FileImage]> = [
   [/^video\//, FileVideo],
   [/^audio\//, FileAudio],

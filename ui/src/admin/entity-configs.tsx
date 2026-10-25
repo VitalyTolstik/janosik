@@ -36,6 +36,7 @@ import {
   SizeCell,
   StatusBadge,
   TextCell,
+  TextExpandCell,
   TranscodeBadge,
 } from "./cells";
 import type { EntityListConfig } from "./EntityPage";
@@ -1213,11 +1214,19 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
         columns: [
           {
             label: t("admin.comms.col.title"),
-            render: (row) => <span className="font-medium">{row.title}</span>,
+            render: (row) => (
+              <TextExpandCell
+                value={row.title}
+                maxWidth="20rem"
+                className="font-medium"
+              />
+            ),
           },
           {
             label: t("admin.comms.col.body"),
-            render: (row) => <TextCell value={row.body} maxWidth="28rem" />,
+            render: (row) => (
+              <TextExpandCell value={row.body} maxWidth="28rem" />
+            ),
           },
           {
             label: t("admin.comms.col.level"),
@@ -1288,26 +1297,6 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             run: () => adminApi.deleteAnnouncement(row.id),
           },
         ],
-        renderExpanded: (row) => (
-          <div className="space-y-2">
-            <div>
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                {t("admin.comms.col.title")}
-              </p>
-              <p className="whitespace-pre-wrap break-words text-sm font-medium">
-                {row.title}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                {t("admin.comms.col.body")}
-              </p>
-              <p className="whitespace-pre-wrap break-words text-sm">
-                {row.body}
-              </p>
-            </div>
-          </div>
-        ),
       };
       return config;
     }
