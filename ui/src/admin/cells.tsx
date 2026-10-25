@@ -44,21 +44,29 @@ export function TextCell({
   value,
   className,
   maxWidth = "20rem",
+  maxChars,
 }: {
   value: string | null | undefined;
   className?: string;
   maxWidth?: string;
+  /** Hard character cap: longer values are cut with an ellipsis (title keeps
+   * the full text). Width truncation still applies as a second guard. */
+  maxChars?: number;
 }) {
   if (value === null || value === undefined || value === "") {
     return <span className="text-muted-foreground">—</span>;
   }
+  const shown =
+    maxChars !== undefined && value.length > maxChars
+      ? `${value.slice(0, maxChars)}…`
+      : value;
   return (
     <span
       className={cn("block truncate", className)}
       style={{ maxWidth }}
       title={value}
     >
-      {value}
+      {shown}
     </span>
   );
 }

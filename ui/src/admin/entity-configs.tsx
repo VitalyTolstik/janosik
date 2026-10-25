@@ -60,6 +60,10 @@ const userHref = (id: string) => `/admin/users/${id}`;
 const boardHref = (id: string) => `/admin/boards/${id}`;
 const cardHref = (id: string) => `/admin/cards/${id}`;
 
+/** Cut a long title to `max` characters (the full text stays in `title`). */
+const truncate = (value: string, max = 30): string =>
+  value.length > max ? `${value.slice(0, max)}…` : value;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyConfig = EntityListConfig<any>;
 
@@ -435,7 +439,9 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.cards.column.title"),
             render: (card) => (
-              <EntityLink to={cardHref(card.id)}>{card.title}</EntityLink>
+              <EntityLink to={cardHref(card.id)}>
+                <span title={card.title}>{truncate(card.title)}</span>
+              </EntityLink>
             ),
           },
           {
@@ -546,7 +552,9 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             label: t("admin.cardLinks.column.from"),
             render: (link) => (
               <EntityLink to={cardHref(link.fromCardId)}>
-                {link.fromCardTitle}
+                <span title={link.fromCardTitle}>
+                  {truncate(link.fromCardTitle)}
+                </span>
               </EntityLink>
             ),
           },
@@ -562,7 +570,9 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             label: t("admin.cardLinks.column.to"),
             render: (link) => (
               <EntityLink to={cardHref(link.toCardId)}>
-                {link.toCardTitle}
+                <span title={link.toCardTitle}>
+                  {truncate(link.toCardTitle)}
+                </span>
               </EntityLink>
             ),
           },

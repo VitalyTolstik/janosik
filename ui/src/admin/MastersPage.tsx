@@ -33,6 +33,7 @@ import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
 import { useAdminList } from "./use-admin-list";
+import { TextCell } from "./cells";
 import {
   Badge,
   ConfirmDialog,
@@ -415,8 +416,8 @@ export function MastersPage() {
                 <Th>AdminUser.id</Th>
                 <Th>AdminUser.email</Th>
                 <Th>AdminUser.role</Th>
-                <Th>AdminUser.displayName</Th>
-                <Th className="text-right">AdminUser.failedLogins</Th>
+                <Th className="w-28">AdminUser.displayName</Th>
+                <Th className="w-12 text-right">AdminUser.failedLogins</Th>
                 <Th>AdminUser.lastLoginAt</Th>
                 <Th>AdminUser.lockedUntil</Th>
                 <Th>AdminUser.disabledAt</Th>
@@ -449,7 +450,7 @@ export function MastersPage() {
                     )}
                   </Td>
                   <Td className="text-muted-foreground">
-                    {master.displayName ?? "—"}
+                    <TextCell value={master.displayName} maxWidth="7rem" />
                   </Td>
                   <Td className="text-right tabular-nums">
                     {master.failedLogins}

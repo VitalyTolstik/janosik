@@ -231,6 +231,22 @@ export function OpsPage() {
               onChange={setPerUser}
             />
           </label>
+        </div>
+        <div className="mt-3 flex justify-end">
+          <Button
+            size="sm"
+            disabled={busy}
+            data-testid="admin-ops-save"
+            onClick={() => void saveOps()}
+          >
+            {t("admin.common.save")}
+          </Button>
+        </div>
+      </Panel>
+
+      <Panel className="p-4">
+        <h2 className="mb-1 text-sm font-medium">{t("admin.ops.retention")}</h2>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground">
               {t("admin.ops.retentionDays")}
@@ -250,21 +266,17 @@ export function OpsPage() {
             </span>
           </label>
         </div>
-        <div className="mt-3 flex justify-end">
+        <div className="mt-2 flex justify-end">
           <Button
             size="sm"
             disabled={busy}
-            data-testid="admin-ops-save"
+            data-testid="admin-ops-retention-save"
             onClick={() => void saveOps()}
           >
             {t("admin.common.save")}
           </Button>
         </div>
-      </Panel>
-
-      <Panel className="p-4">
-        <h2 className="mb-1 text-sm font-medium">{t("admin.ops.retention")}</h2>
-        <p className="text-xs text-muted-foreground">
+        <p className="mt-3 text-xs text-muted-foreground">
           {t("admin.ops.retention.olderThan", { days: effectiveDays })}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
