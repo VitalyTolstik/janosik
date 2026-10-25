@@ -110,7 +110,6 @@ const en = {
   "admin.announcements.action.activate": "Activate",
   "admin.announcements.action.deactivate": "Deactivate",
   "admin.announcements.send": "Send announcement",
-  "admin.announcements.preview": "In-app preview — as users see it",
   "admin.nav.observability": "Observability",
 
   "admin.common.delete": "Delete",
@@ -945,8 +944,6 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.announcements.action.activate": "Включить",
   "admin.announcements.action.deactivate": "Отключить",
   "admin.announcements.send": "Отправить объявление",
-  "admin.announcements.preview":
-    "Предпросмотр в приложении — как видят пользователи",
   "admin.nav.observability": "Наблюдаемость",
 
   "admin.common.delete": "Удалить",

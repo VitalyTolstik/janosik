@@ -270,9 +270,13 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
         rowTestId: (board) => `admin-board-row-${board.id}`,
         columns: [
           {
-            label: t("admin.boards.column.title"),
-            render: (board) => (
-              <EntityLink to={boardHref(board.id)}>{board.title}</EntityLink>
+            label: t("admin.comms.col.title"),
+            render: (row) => (
+              <TextCell
+                value={row.title}
+                maxWidth="20rem"
+                className="font-medium"
+              />
             ),
           },
           {
@@ -1285,22 +1289,23 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           },
         ],
         renderExpanded: (row) => (
-          <div className="space-y-1">
-            <div
-              className={
-                row.level === "danger"
-                  ? "rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                  : row.level === "warning"
-                    ? "rounded-md bg-warning/10 px-3 py-2 text-sm"
-                    : "rounded-md bg-primary/10 px-3 py-2 text-sm"
-              }
-            >
-              <p className="font-medium">{row.title}</p>
-              <p className="whitespace-pre-line opacity-90">{row.body}</p>
+          <div className="space-y-2">
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                {t("admin.comms.col.title")}
+              </p>
+              <p className="whitespace-pre-wrap break-words text-sm font-medium">
+                {row.title}
+              </p>
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              {t("admin.announcements.preview")}
-            </p>
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                {t("admin.comms.col.body")}
+              </p>
+              <p className="whitespace-pre-wrap break-words text-sm">
+                {row.body}
+              </p>
+            </div>
           </div>
         ),
       };
