@@ -190,6 +190,9 @@ const en = {
   "admin.userDetail.confirm.promote.title": "Promote {email} to master?",
   "admin.userDetail.confirm.promote.body":
     "Creates a master account with the same email and a new temporary password.",
+  "admin.userDetail.promote.prompt": "Type {email} to confirm promotion",
+  "admin.userDetail.promote.oneTime":
+    "Hand this temporary password to the new master now — it will not be shown again.",
   "admin.ops.maintenance": "Maintenance mode",
   "admin.ops.maintenance.hint":
     "Answers 503 to every user request; the panel and sign-in stay open.",
@@ -1025,6 +1028,10 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.userDetail.confirm.promote.title": "Сделать {email} мастером?",
   "admin.userDetail.confirm.promote.body":
     "Создаётся мастер-аккаунт с тем же email и новым временным паролем.",
+  "admin.userDetail.promote.prompt":
+    "Введите {email} для подтверждения повышения",
+  "admin.userDetail.promote.oneTime":
+    "Передайте этот временный пароль новому мастеру сейчас — он больше не будет показан.",
   "admin.ops.maintenance": "Режим обслуживания",
   "admin.ops.maintenance.hint":
     "Отвечает 503 на все пользовательские запросы; панель и вход остаются открыты.",

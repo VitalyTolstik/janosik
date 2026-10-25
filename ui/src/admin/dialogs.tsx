@@ -686,3 +686,149 @@ export function DeleteUserDialog({
     </Dialog>
   );
 }
+
+/**
+ * TASK-59 promote: creates an OPERATOR master from a user. A warning-styled,
+ * double-confirm dialog — the operator types the account's email (like the
+ * erase flow), then the generated temporary password is shown exactly once.
+ */
+export function PromoteUserDialog({
+  user,
+  onClose,
+  onDone,
+}: {
+  user: { id: string; email: string } | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const t = useAdminT();
+  const toast = useToast();
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [password, setPassword] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const close = () => {
+    setTyped("");
+    setPassword(null);
+    setCopied(false);
+    onClose();
+  };
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!user || typed.trim().toLowerCase() !== user.email.toLowerCase())
+      return;
+    setBusy(true);
+    try {
+      const result = await adminApi.promoteUser(user.id);
+      setPassword(result.temporaryPassword);
+      toast.success(t("admin.userDetail.promote.done"));
+      onDone();
+    } catch {
+      toast.error(t("admin.common.actionFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const mismatch =
+    typed.trim() !== "" &&
+    user !== null &&
+    typed.trim().toLowerCase() !== user.email.toLowerCase();
+
+  const copy = () => {
+    if (!password) return;
+    void navigator.clipboard
+      ?.writeText(password)
+      .then(() => setCopied(true))
+      .catch(() => undefined);
+  };
+
+  return (
+    <Dialog
+      open={user !== null}
+      onOpenChange={(next) => (next ? undefined : close())}
+    >
+      <DialogContent
+        className="max-w-sm"
+        data-testid="admin-promote-user-dialog"
+      >
+        <DialogHeader>
+          <DialogTitle>
+            {t("admin.userDetail.confirm.promote.title", {
+              email: user?.email ?? "",
+            })}
+          </DialogTitle>
+          <DialogDescription>
+            {t("admin.userDetail.confirm.promote.body")}
+          </DialogDescription>
+        </DialogHeader>
+        {password === null ? (
+          <form onSubmit={submit} className="space-y-3">
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">
+                {t("admin.userDetail.promote.prompt", {
+                  email: user?.email ?? "",
+                })}
+              </span>
+              <Input
+                value={typed}
+                data-testid="admin-promote-user-input"
+                onChange={(event) => setTyped(event.target.value)}
+              />
+            </label>
+            {mismatch ? (
+              <p role="alert" className="text-xs text-danger">
+                {t("admin.userDetail.delete.mismatch")}
+              </p>
+            ) : null}
+            <DialogFooter className="gap-2">
+              <Button size="sm" type="button" variant="ghost" onClick={close}>
+                {t("admin.common.cancel")}
+              </Button>
+              <Button
+                size="sm"
+                type="submit"
+                disabled={
+                  busy ||
+                  user === null ||
+                  typed.trim().toLowerCase() !== user.email.toLowerCase()
+                }
+                data-testid="admin-promote-user-submit"
+              >
+                {t("admin.userDetail.action.promote")}
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-[11px] text-muted-foreground">
+              {t("admin.userDetail.promote.oneTime")}
+            </p>
+            <div className="flex items-center gap-2">
+              <code
+                className="block flex-1 break-all rounded-md bg-hover p-2 font-mono text-sm"
+                data-testid="admin-promote-password"
+              >
+                {password}
+              </code>
+              <Button size="sm" variant="outline" type="button" onClick={copy}>
+                {copied ? (
+                  <Check className="h-3.5 w-3.5" aria-hidden />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" aria-hidden />
+                )}
+              </Button>
+            </div>
+            <DialogFooter>
+              <Button size="sm" type="button" onClick={close}>
+                {t("admin.common.close")}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}

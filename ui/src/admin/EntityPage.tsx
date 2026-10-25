@@ -45,6 +45,8 @@ import {
 export interface EntityAction {
   label: string;
   destructive?: boolean;
+  /** Render the menu item in the warning colour (e.g. promote). */
+  warning?: boolean;
   /** Pure navigation actions do not toast. */
   noToast?: boolean;
   /** Optional confirmation dialog copy. */
@@ -148,7 +150,11 @@ function RowActions({
             <DropdownMenuItem
               key={action.label}
               className={
-                action.destructive ? "text-danger focus:text-danger" : undefined
+                action.destructive
+                  ? "text-danger focus:text-danger"
+                  : action.warning
+                    ? "text-warning focus:text-warning"
+                    : undefined
               }
               onSelect={() => {
                 if (action.renderDialog) {

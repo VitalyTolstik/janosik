@@ -45,6 +45,7 @@ import {
   CreateBoardButton,
   CreateUserButton,
   DeleteUserDialog,
+  PromoteUserDialog,
   ResetUserPasswordDialog,
 } from "./dialogs";
 import { exportUser, impersonateUser } from "./user-actions";
@@ -223,11 +224,15 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           },
           {
             label: t("admin.userDetail.action.promote"),
-            confirmTitle: t("admin.userDetail.confirm.promote.title", {
-              email: user.email,
-            }),
-            confirmBody: t("admin.userDetail.confirm.promote.body"),
-            run: () => adminApi.promoteUser(user.id),
+            warning: true,
+            run: async () => undefined,
+            renderDialog: ({ close, reload }) => (
+              <PromoteUserDialog
+                user={{ id: user.id, email: user.email }}
+                onClose={close}
+                onDone={reload}
+              />
+            ),
           },
           {
             label: t("admin.userDetail.action.impersonate"),
