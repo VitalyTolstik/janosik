@@ -371,7 +371,7 @@ export function MastersPage() {
   };
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
       <PageHeader
         title={t("admin.masters.title")}
         subtitle={t("admin.masters.subtitle")}
@@ -387,7 +387,7 @@ export function MastersPage() {
         }
       />
 
-      <Panel>
+      <Panel className="flex min-h-0 flex-1 flex-col">
         {list.loading ? (
           <LoadingState />
         ) : list.error ? (
@@ -540,6 +540,6 @@ export function MastersPage() {
           ) : null}
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }

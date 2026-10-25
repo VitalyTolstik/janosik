@@ -139,7 +139,7 @@ export function DashboardPage() {
     return <ErrorState onRetry={load} />;
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
       <PageHeader title={t("admin.title")} subtitle={t("admin.subtitle")} />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -283,6 +283,6 @@ export function DashboardPage() {
           ))}
         </ul>
       </Panel>
-    </>
+    </div>
   );
 }
