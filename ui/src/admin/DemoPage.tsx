@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Copy, ExternalLink, PlayCircle, Trash2 } from "lucide-react";
+import { Check, Copy, ExternalLink, PlayCircle, Trash2 } from "lucide-react";
 import type { AdminDemoStatusDto } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +47,10 @@ export function DemoPage() {
   const [selectedBoardId, setSelectedBoardId] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // "Copy share link" feedback matches the app's inline pattern: the icon
+  // flips to a check for a moment instead of raising a toast.
+  const [copiedLink, setCopiedLink] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
 
   const load = useCallback(() => {
@@ -83,6 +87,7 @@ export function DemoPage() {
     const stopPolling = pollWhileFocused(tick, 2000);
     return () => {
       mounted.current = false;
+      if (copyTimer.current) clearTimeout(copyTimer.current);
       stopPolling();
     };
   }, []);
@@ -255,11 +260,22 @@ export function DemoPage() {
                   const url = `${window.location.origin}/s/${demo.shareToken}`;
                   void navigator.clipboard
                     ?.writeText(url)
-                    .then(() => toast.success(t("admin.demo.copied")))
+                    .then(() => {
+                      setCopiedLink(true);
+                      if (copyTimer.current) clearTimeout(copyTimer.current);
+                      copyTimer.current = setTimeout(
+                        () => setCopiedLink(false),
+                        1600,
+                      );
+                    })
                     .catch(() => undefined);
                 }}
               >
-                <Copy className="h-3.5 w-3.5" aria-hidden />
+                {copiedLink ? (
+                  <Check className="h-3.5 w-3.5 text-success" aria-hidden />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" aria-hidden />
+                )}
                 {t("admin.demo.copyLink")}
               </Button>
             ) : null}

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Copy, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Copy, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { AdminShareRowDto } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,23 @@ export function SharesPage() {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  // Inline "copied" feedback (icon flips to a check), like the app's copy
+  // chips — no toast for a copy.
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    [],
+  );
+
+  const markCopied = useCallback((id: string) => {
+    setCopiedId(id);
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopiedId(null), 1600);
+  }, []);
 
   const load = useCallback(() => {
     adminApi
@@ -174,11 +191,18 @@ export function SharesPage() {
                           const url = `${window.location.origin}/s/${row.token}`;
                           void navigator.clipboard
                             ?.writeText(url)
-                            .then(() => toast.success(t("admin.shares.copied")))
+                            .then(() => markCopied(row.id))
                             .catch(() => undefined);
                         }}
                       >
-                        <Copy className="h-3.5 w-3.5" aria-hidden />
+                        {copiedId === row.id ? (
+                          <Check
+                            className="h-3.5 w-3.5 text-success"
+                            aria-hidden
+                          />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" aria-hidden />
+                        )}
                         {t("admin.shares.copy")}
                       </Button>
                       <a
