@@ -185,7 +185,7 @@ export function SharesPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 gap-1.5 px-2 text-xs"
+                        className="h-7 w-16 gap-1.5 px-2 text-xs"
                         data-testid={`admin-share-copy-${row.id}`}
                         onClick={() => {
                           const url = `${window.location.origin}/s/${row.token}`;
@@ -209,20 +209,22 @@ export function SharesPage() {
                         href={`/s/${row.token}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-hover hover:text-foreground"
+                        className="inline-flex h-7 w-16 items-center justify-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-hover hover:text-foreground"
                       >
                         <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                         {t("admin.shares.open")}
                       </a>
                       {row.revokedAt !== null ? (
-                        <Badge variant="danger">
-                          {t("admin.shares.revokedLabel")}
-                        </Badge>
+                        <span className="inline-flex h-7 w-20 items-center justify-center">
+                          <Badge variant="danger">
+                            {t("admin.shares.revokedLabel")}
+                          </Badge>
+                        </span>
                       ) : (
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 gap-1.5 px-2 text-xs text-destructive"
+                          className="h-7 w-20 gap-1.5 px-2 text-xs text-destructive"
                           disabled={busy === row.id}
                           data-testid={`admin-share-revoke-${row.id}`}
                           onClick={() => void revoke(row.id)}
