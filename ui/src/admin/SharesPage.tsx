@@ -123,7 +123,9 @@ export function SharesPage() {
                 <th className="px-3 py-2">{t("admin.shares.col.flags")}</th>
                 <th className="px-3 py-2">{t("admin.shares.col.views")}</th>
                 <th className="px-3 py-2">{t("admin.shares.col.created")}</th>
-                <th className="px-3 py-2">{t("admin.shares.col.actions")}</th>
+                <th className="px-3 py-2 text-right">
+                  {t("admin.shares.col.actions")}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -178,12 +180,12 @@ export function SharesPage() {
                   <td className="px-3 py-2 text-xs text-muted-foreground">
                     {new Date(row.createdAt).toLocaleString()}
                   </td>
-                  <td className="px-3 py-2 align-top">
-                    <div className="flex w-28 flex-col items-stretch gap-1">
+                  <td className="px-3 py-2">
+                    <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 w-full justify-start gap-1.5 px-2 text-xs"
+                        className="h-7 gap-1.5 px-2 text-xs"
                         data-testid={`admin-share-copy-${row.id}`}
                         onClick={() => {
                           const url = `${window.location.origin}/s/${row.token}`;
@@ -207,22 +209,20 @@ export function SharesPage() {
                         href={`/s/${row.token}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex h-7 w-full items-center justify-start gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-hover hover:text-foreground"
+                        className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-hover hover:text-foreground"
                       >
                         <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                         {t("admin.shares.open")}
                       </a>
                       {row.revokedAt !== null ? (
-                        <span className="inline-flex h-7 items-center px-2">
-                          <Badge variant="danger">
-                            {t("admin.shares.revokedLabel")}
-                          </Badge>
-                        </span>
+                        <Badge variant="danger">
+                          {t("admin.shares.revokedLabel")}
+                        </Badge>
                       ) : (
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 w-full justify-start gap-1.5 px-2 text-xs text-destructive"
+                          className="h-7 gap-1.5 px-2 text-xs text-destructive"
                           disabled={busy === row.id}
                           data-testid={`admin-share-revoke-${row.id}`}
                           onClick={() => void revoke(row.id)}
