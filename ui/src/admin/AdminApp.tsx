@@ -110,6 +110,10 @@ function AdminGate() {
         <Route path="shares" element={<SharesPage />} />
         <Route path="ops" element={<OpsPage />} />
         <Route path="comms" element={<CommsPage />} />
+        <Route
+          path="announcements"
+          element={<EntityRoute entity="announcements" />}
+        />
         <Route path="observability" element={<ObservabilityPage />} />
         <Route path="security" element={<SecurityPage />} />
         <Route path="audit" element={<EntityRoute entity="audit" />} />

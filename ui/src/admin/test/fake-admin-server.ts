@@ -1253,6 +1253,7 @@ export class FakeAdminServer {
         commands: this.state.commands,
         audit: this.state.audit,
         activity: this.state.activity,
+        announcements: this.announcements,
       };
       return this.json(this.page(map[entity[1]] ?? [], url));
     }

@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import type {
-  AdminAnnouncementDto,
-  AdminEmailTemplateDto,
-  AdminUserRowDto,
-} from "@janosik/shared";
+import { Link } from "react-router-dom";
+import type { AdminEmailTemplateDto, AdminUserRowDto } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -18,32 +15,18 @@ import {
 import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
-import {
-  Badge,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  PageHeader,
-  Panel,
-  Table,
-  Td,
-  Th,
-  Toggle,
-} from "./ui";
+import { Badge, ErrorState, LoadingState, PageHeader, Panel } from "./ui";
 
 /**
- * Communications (TASK-62): broadcast announcements (in-app banner, optional
- * email) to everyone or hand-picked users, a one-off letter, and the editable
- * mail templates. Announcements are listed as a table so the history of what
- * was sent stays visible.
+ * Communications (TASK-62): compose a broadcast (in-app banner, optional
+ * email) to everyone or hand-picked users, send a one-off letter, edit the
+ * mail templates. The full announcement history is its own entity page
+ * (`/admin/announcements`) — this page just points there.
  */
 export function CommsPage() {
   const t = useAdminT();
   const toast = useToast();
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
-  const [announcements, setAnnouncements] = useState<AdminAnnouncementDto[]>(
-    [],
-  );
   const [templates, setTemplates] = useState<AdminEmailTemplateDto[]>([]);
 
   const [creating, setCreating] = useState(false);
@@ -64,9 +47,9 @@ export function CommsPage() {
   >({});
 
   const load = useCallback(() => {
-    Promise.all([adminApi.listAnnouncements(), adminApi.listEmailTemplates()])
-      .then(([nextAnnouncements, nextTemplates]) => {
-        setAnnouncements(nextAnnouncements);
+    adminApi
+      .listEmailTemplates()
+      .then((nextTemplates) => {
         setTemplates(nextTemplates);
         setDraft(
           Object.fromEntries(
@@ -115,37 +98,6 @@ export function CommsPage() {
       setBusy(false);
     }
   }, [title, body, level, audience, recipients, sendEmail, load, t, toast]);
-
-  const toggleActive = useCallback(
-    async (row: AdminAnnouncementDto, next: boolean) => {
-      try {
-        const updated = await adminApi.updateAnnouncement(row.id, {
-          active: next,
-        });
-        setAnnouncements((current) =>
-          current.map((entry) => (entry.id === row.id ? updated : entry)),
-        );
-      } catch {
-        toast.error(t("admin.common.actionFailed"));
-      }
-    },
-    [t, toast],
-  );
-
-  const remove = useCallback(
-    async (id: string) => {
-      try {
-        await adminApi.deleteAnnouncement(id);
-        setAnnouncements((current) =>
-          current.filter((entry) => entry.id !== id),
-        );
-        toast.success(t("admin.comms.deleted"));
-      } catch {
-        toast.error(t("admin.common.actionFailed"));
-      }
-    },
-    [t, toast],
-  );
 
   const send = useCallback(async () => {
     setSending(true);
@@ -206,90 +158,29 @@ export function CommsPage() {
         subtitle={t("admin.comms.subtitle")}
       />
 
-      <Panel className="flex flex-col p-0">
-        <div className="flex items-center justify-between px-3 pt-2.5">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+      <Panel className="flex items-center justify-between gap-3 p-4">
+        <div>
+          <h2 className="text-sm font-medium">
             {t("admin.comms.announcements")}
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            {t("admin.comms.announcements.hint")}
           </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" asChild>
+            <Link to="/admin/announcements">
+              {t("admin.announcements.title")}
+            </Link>
+          </Button>
           <Button
             size="sm"
-            variant="outline"
-            className="h-7 px-2 text-xs"
             data-testid="admin-announcement-new"
             onClick={() => setCreating(true)}
           >
             {t("admin.comms.new")}
           </Button>
         </div>
-        {announcements.length === 0 ? (
-          <EmptyState message={t("admin.comms.announcements.empty")} />
-        ) : (
-          <Table maxHeight="24rem">
-            <thead>
-              <tr>
-                <Th>{t("admin.comms.col.title")}</Th>
-                <Th>{t("admin.comms.col.level")}</Th>
-                <Th>{t("admin.comms.col.audience")}</Th>
-                <Th>{t("admin.comms.col.email")}</Th>
-                <Th>{t("admin.comms.col.created")}</Th>
-                <Th>{t("admin.comms.active")}</Th>
-                <Th>{t("admin.common.actions")}</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {announcements.map((row) => (
-                <tr key={row.id} data-testid={`admin-announcement-${row.id}`}>
-                  <Td>
-                    <p className="font-medium">{row.title}</p>
-                    <p className="max-w-md truncate text-xs text-muted-foreground">
-                      {row.body}
-                    </p>
-                  </Td>
-                  <Td>
-                    <Badge
-                      variant={row.level === "danger" ? "danger" : "neutral"}
-                    >
-                      {t(`admin.comms.level.${row.level}`)}
-                    </Badge>
-                  </Td>
-                  <Td className="text-xs text-muted-foreground">
-                    {row.audience === "all"
-                      ? t("admin.comms.audience.all")
-                      : (row.segment ?? t("admin.comms.audience.segment"))}
-                  </Td>
-                  <Td>
-                    {row.sendEmail ? (
-                      <Badge variant="primary">email</Badge>
-                    ) : (
-                      "—"
-                    )}
-                  </Td>
-                  <Td className="text-xs text-muted-foreground">
-                    {new Date(row.createdAt).toLocaleString()}
-                  </Td>
-                  <Td>
-                    <Toggle
-                      label={t("admin.comms.active")}
-                      checked={row.active}
-                      onChange={(next) => void toggleActive(row, next)}
-                    />
-                  </Td>
-                  <Td>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs text-destructive"
-                      data-testid={`admin-announcement-delete-${row.id}`}
-                      onClick={() => void remove(row.id)}
-                    >
-                      {t("admin.common.delete")}
-                    </Button>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        )}
       </Panel>
 
       <Panel className="p-4">

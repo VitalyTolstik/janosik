@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type {
   AdminActivityRowDto,
+  AdminAnnouncementDto,
   AdminAttachmentRowDto,
   AdminBoardDetailDto,
   AdminBoardMemberRowDto,
@@ -197,6 +198,10 @@ export class AdminEntitiesService {
         >;
       case "activity":
         return (await this.listActivity(query)) as AdminPage<
+          AdminEntityRowMap[E]
+        >;
+      case "announcements":
+        return (await this.listAnnouncements(query)) as AdminPage<
           AdminEntityRowMap[E]
         >;
       default:
@@ -789,6 +794,59 @@ export class AdminEntitiesService {
         actorEmail: entry.actor.email,
         details: (entry.details as Record<string, unknown> | null) ?? null,
         createdAt: entry.createdAt.getTime(),
+      })),
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  // ------------------------------------------------------- announcements
+
+  /** `GET /admin/entities/announcements` — the announcement/news history. */
+  async listAnnouncements(
+    query: AdminListQueryDto,
+  ): Promise<AdminPage<AdminAnnouncementDto>> {
+    const where: Prisma.AnnouncementWhereInput = {};
+    if (query.search) {
+      where.OR = [
+        { id: { contains: query.search } },
+        { title: like(query.search) },
+        { body: like(query.search) },
+        { createdBy: like(query.search) },
+      ];
+    }
+    if (query.status === "active") where.active = true;
+    if (query.status === "disabled" || query.status === "deleted") {
+      where.active = false;
+    }
+
+    const { limit, offset } = window(query);
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.announcement.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: offset,
+        take: limit,
+      }),
+      this.prisma.announcement.count({ where }),
+    ]);
+
+    return {
+      items: items.map((row) => ({
+        id: row.id,
+        title: row.title,
+        body: row.body,
+        level: row.level as AdminAnnouncementDto["level"],
+        audience: row.audience as AdminAnnouncementDto["audience"],
+        segment: row.segment,
+        active: row.active,
+        sendEmail: row.sendEmail,
+        startsAt: row.startsAt?.getTime() ?? null,
+        endsAt: row.endsAt?.getTime() ?? null,
+        createdBy: row.createdBy,
+        createdAt: row.createdAt.getTime(),
+        updatedAt: row.updatedAt.getTime(),
       })),
       total,
       limit,

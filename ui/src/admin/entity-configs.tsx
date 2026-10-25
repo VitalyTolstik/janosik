@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import type {
   AdminActivityRowDto,
+  AdminAnnouncementDto,
   AdminAttachmentRowDto,
   AdminBoardRowDto,
   AdminCardLabelRowDto,
@@ -19,7 +20,7 @@ import type {
   AdminAuditRowDto,
 } from "@janosik/shared";
 import { adminApi } from "./admin-client";
-import { useAdminT } from "./admin-i18n";
+import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import { Badge } from "./ui";
 import {
   AttachmentDownloadButton,
@@ -1189,6 +1190,103 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                 },
               ]
             : [],
+      };
+      return config;
+    }
+
+    case "announcements": {
+      const config: EntityListConfig<AdminAnnouncementDto> = {
+        entity,
+        title: t("admin.announcements.title"),
+        subtitle: t("admin.announcements.subtitle"),
+        statuses: [
+          { value: "active", label: statusLabels.active },
+          {
+            value: "disabled",
+            label: t("admin.announcements.status.inactive"),
+          },
+        ],
+        columns: [
+          {
+            label: t("admin.comms.col.title"),
+            render: (row) => (
+              <div className="flex flex-col">
+                <span className="font-medium">{row.title}</span>
+                <span className="max-w-md truncate text-[11px] text-muted-foreground">
+                  {row.body}
+                </span>
+              </div>
+            ),
+          },
+          {
+            label: t("admin.comms.col.level"),
+            render: (row) => (
+              <Badge
+                variant={
+                  row.level === "danger"
+                    ? "danger"
+                    : row.level === "warning"
+                      ? "warning"
+                      : "neutral"
+                }
+              >
+                {t(`admin.comms.level.${row.level}` as AdminMessageKey)}
+              </Badge>
+            ),
+          },
+          {
+            label: t("admin.comms.col.audience"),
+            render: (row) => (
+              <span className="text-xs text-muted-foreground">
+                {row.audience === "all"
+                  ? t("admin.comms.audience.all")
+                  : (row.segment ?? t("admin.comms.audience.segment"))}
+              </span>
+            ),
+          },
+          {
+            label: t("admin.comms.col.email"),
+            render: (row) =>
+              row.sendEmail ? <Badge variant="primary">email</Badge> : "—",
+          },
+          {
+            label: t("admin.comms.active"),
+            render: (row) =>
+              row.active ? (
+                <Badge variant="success">{t("admin.observability.on")}</Badge>
+              ) : (
+                <Badge variant="neutral">{t("admin.observability.off")}</Badge>
+              ),
+          },
+          {
+            label: t("admin.comms.col.created"),
+            render: (row) => <DateCell value={row.createdAt} />,
+          },
+          {
+            label: t("admin.announcements.column.author"),
+            render: (row) => (
+              <TextCell value={row.createdBy} maxWidth="16rem" />
+            ),
+          },
+        ],
+        actions: (row) => [
+          row.active
+            ? {
+                label: t("admin.announcements.action.deactivate"),
+                run: () =>
+                  adminApi.updateAnnouncement(row.id, { active: false }),
+              }
+            : {
+                label: t("admin.announcements.action.activate"),
+                run: () =>
+                  adminApi.updateAnnouncement(row.id, { active: true }),
+              },
+          {
+            label: t("admin.common.delete"),
+            destructive: true,
+            run: () => adminApi.deleteAnnouncement(row.id),
+          },
+        ],
       };
       return config;
     }

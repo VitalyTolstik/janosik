@@ -629,6 +629,7 @@ export const ADMIN_ENTITIES = [
   "tokens",
   "admins",
   "audit",
+  "announcements",
 ] as const;
 
 export type AdminEntity = (typeof ADMIN_ENTITIES)[number];
@@ -813,6 +814,7 @@ export interface AdminEntityRowMap {
   tokens: AdminTokenRowDto;
   admins: AdminMasterRowDto;
   audit: AdminAuditRowDto;
+  announcements: AdminAnnouncementDto;
 }
 
 /** Membership line of `GET /admin/users/:id`. */

@@ -101,6 +101,14 @@ const en = {
   "admin.nav.security": "Security",
   "admin.nav.ops": "Operations",
   "admin.nav.comms": "Communications",
+  "admin.nav.announcements": "Announcements",
+  "admin.announcements.title": "Announcements",
+  "admin.announcements.subtitle":
+    "{total} broadcasts — the full announcement history",
+  "admin.announcements.status.inactive": "Inactive",
+  "admin.announcements.column.author": "Author",
+  "admin.announcements.action.activate": "Activate",
+  "admin.announcements.action.deactivate": "Deactivate",
   "admin.nav.observability": "Observability",
 
   "admin.common.delete": "Delete",
@@ -204,6 +212,8 @@ const en = {
   "admin.comms.title": "Communications",
   "admin.comms.subtitle": "Announcements, mail and templates",
   "admin.comms.announcements": "Announcements",
+  "admin.comms.announcements.hint":
+    "Compose a broadcast; the full history is its own page.",
   "admin.comms.new": "New announcement",
   "admin.comms.active": "Active",
   "admin.comms.announcements.empty": "No announcements",
@@ -257,6 +267,8 @@ const en = {
   "admin.observability.table.size": "Size",
   "admin.observability.health": "Health",
   "admin.observability.news": "Announcements",
+  "admin.observability.news.hint":
+    "The full announcement history is a separate entity page.",
   "admin.observability.on": "on",
   "admin.observability.off": "off",
   "admin.observability.ok": "ok",
@@ -921,6 +933,14 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.nav.security": "Безопасность",
   "admin.nav.ops": "Эксплуатация",
   "admin.nav.comms": "Коммуникации",
+  "admin.nav.announcements": "Объявления",
+  "admin.announcements.title": "Объявления",
+  "admin.announcements.subtitle":
+    "{total} рассылок — полная история объявлений",
+  "admin.announcements.status.inactive": "Неактивно",
+  "admin.announcements.column.author": "Автор",
+  "admin.announcements.action.activate": "Включить",
+  "admin.announcements.action.deactivate": "Отключить",
   "admin.nav.observability": "Наблюдаемость",
 
   "admin.common.delete": "Удалить",
@@ -1025,6 +1045,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.comms.title": "Коммуникации",
   "admin.comms.subtitle": "Объявления, рассылка и шаблоны",
   "admin.comms.announcements": "Объявления",
+  "admin.comms.announcements.hint":
+    "Составьте рассылку; полная история — на отдельной странице.",
   "admin.comms.new": "Новое объявление",
   "admin.comms.active": "Активно",
   "admin.comms.announcements.empty": "Объявлений нет",
@@ -1079,6 +1101,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.observability.table.size": "Размер",
   "admin.observability.health": "Здоровье",
   "admin.observability.news": "Объявления",
+  "admin.observability.news.hint":
+    "Полная история объявлений — на отдельной странице-сущности.",
   "admin.observability.on": "вкл",
   "admin.observability.off": "выкл",
   "admin.observability.ok": "ок",

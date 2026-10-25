@@ -181,6 +181,11 @@ const NAV_SECTIONS: Array<{
         icon: Megaphone,
       },
       {
+        to: "/admin/announcements",
+        labelKey: "admin.nav.announcements",
+        icon: Megaphone,
+      },
+      {
         to: "/admin/observability",
         labelKey: "admin.nav.observability",
         icon: ServerCog,
