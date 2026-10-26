@@ -1,0 +1,36 @@
+---
+import { site } from "../config";
+import { useTranslations } from "../i18n/utils";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { withBase } from "../utils/url";
+
+// GitHub Pages serves this file for any missing path, so it cannot know the
+// visitor's language — it offers both home links.
+const t = useTranslations("en");
+const title = `${t("404.title")} — ${site.name}`;
+---
+
+<BaseLayout title={title} description={t("404.lead")} lang="en" noindex>
+  <section class="section">
+    <div class="container prose">
+      <h1>{t("404.title")}</h1>
+      <p>{t("404.lead")}</p>
+      <p>
+        <a class="btn btn-primary" href={withBase("/")}>
+          {t("404.home")}
+        </a>
+        <a class="btn btn-ghost" href={withBase("/ru/")}>
+          На главную
+        </a>
+      </p>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .prose p:last-child {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+</style>

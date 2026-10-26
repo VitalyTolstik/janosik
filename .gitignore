@@ -42,3 +42,9 @@ backend/data/
 
 # Playwright MCP browser artifacts
 .playwright-mcp/
+
+# Marketing site (Astro) — build output and assets generated from `brand/`
+site/dist/
+site/.astro/
+site/public/favicon.svg
+site/public/og.png

@@ -4,6 +4,7 @@ import type { Response } from "express";
 import type { AuthOAuthProvidersResponse } from "@janosik/shared";
 import { env } from "@/config/env";
 import { cookieSecure } from "@/config/security";
+import { appBasePrefix } from "@/common/ui-base";
 import { REFRESH_COOKIE } from "@/auth/auth.types";
 import { OAUTH_STATE_COOKIE } from "./oauth.types";
 import { RequestCookie } from "./request-cookie.decorator";
@@ -69,14 +70,17 @@ export class OAuthController {
         ...this.refreshCookieOptions(),
         maxAge: env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
       });
-      res.redirect(302, `${env.PUBLIC_ORIGIN.replace(/\/+$/, "")}/`);
+      res.redirect(
+        302,
+        `${env.PUBLIC_ORIGIN.replace(/\/+$/, "")}${appBasePrefix()}`,
+      );
     } catch (cause) {
       this.logger.warn(
         `OAuth callback (${provider}) failed: ${cause instanceof Error ? cause.message : String(cause)}`,
       );
       res.redirect(
         302,
-        `${env.PUBLIC_ORIGIN.replace(/\/+$/, "")}/?authError=oauth_failed`,
+        `${env.PUBLIC_ORIGIN.replace(/\/+$/, "")}${appBasePrefix()}?authError=oauth_failed`,
       );
     }
   }

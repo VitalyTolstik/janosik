@@ -112,6 +112,18 @@ describe("LoginPage", () => {
     expect(screen.queryByTestId("login-error")).toBeNull();
   });
 
+  it("opens on the register form when the URL asks for it (?mode=register)", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (pathOf(input).endsWith("/auth/oauth/providers")) {
+        return json({ providers: [] });
+      }
+      return json({ message: "Unauthorized" }, 401);
+    });
+
+    renderPage(["/?mode=register"]);
+    expect(screen.getByTestId("login-display-name")).toBeInTheDocument();
+  });
+
   it("hides the register form when the server closes sign-up (TASK-38a)", async () => {
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
       if (pathOf(input).endsWith("/auth/config")) {

@@ -1,0 +1,88 @@
+---
+import { appLink, site } from "../../config";
+import type { Lang, UIKey } from "../../i18n/ui";
+import { useTranslations } from "../../i18n/utils";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+
+const title = `${t("pricing.title")} — ${site.name}`;
+const description = t("pricing.lead");
+
+const plans: {
+  name: UIKey;
+  price: UIKey;
+  period: UIKey;
+  body: UIKey;
+  cta: UIKey;
+  href: string;
+  featured?: boolean;
+}[] = [
+  {
+    name: "pricing.free.name",
+    price: "pricing.free.price",
+    period: "pricing.free.period",
+    body: "pricing.free.body",
+    cta: "pricing.cta.free",
+    href: site.githubUrl,
+  },
+  {
+    name: "pricing.hosted.name",
+    price: "pricing.hosted.price",
+    period: "pricing.hosted.period",
+    body: "pricing.hosted.body",
+    cta: "pricing.cta.hosted",
+    href: appLink(lang),
+    featured: true,
+  },
+  {
+    name: "pricing.enterprise.name",
+    price: "pricing.enterprise.price",
+    period: "pricing.enterprise.period",
+    body: "pricing.enterprise.body",
+    cta: "pricing.cta.enterprise",
+    href: site.githubUrl,
+  },
+];
+---
+
+<BaseLayout {title} {description} {lang}>
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <h1>{t("pricing.title")}</h1>
+        <p class="lead">{t("pricing.lead")}</p>
+      </div>
+
+      <div class="plans">
+        {plans.map((plan) => (
+          <article class:list={["plan", plan.featured && "plan--featured"]}>
+            <h2>{t(plan.name)}</h2>
+            <p class="price">{t(plan.price)}</p>
+            {t(plan.period) && <p class="period">{t(plan.period)}</p>}
+            <p class="muted">{t(plan.body)}</p>
+            <a
+              class:list={["btn", plan.featured ? "btn-primary" : "btn-ghost"]}
+              href={plan.href}
+            >
+              {t(plan.cta)}
+            </a>
+          </article>
+        ))}
+      </div>
+
+      <p class="muted pricing-note">{t("pricing.note")}</p>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .pricing-note {
+    margin-top: 1.5rem;
+  }
+</style>

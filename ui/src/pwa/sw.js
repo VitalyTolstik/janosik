@@ -31,7 +31,13 @@
  */
 const CACHE_VERSION = "__CACHE_VERSION__";
 const CACHE_PREFIX = "janosik-";
-const APP_SHELL_URL = "/";
+/*
+ * The app's deploy base (`/app/` in the self-host image, `/` standalone),
+ * stamped by the build (vite/sw-plugin.ts). The worker is registered under
+ * this base, so its scope is exactly the app — never the marketing site.
+ */
+const BASE = "__BASE__";
+const APP_SHELL_URL = BASE;
 
 /*
  * The build stamps the hashed entry assets here (vite/sw-plugin.ts); it stays
@@ -49,11 +55,11 @@ function offlineResponse() {
 
 /** Shell files (beyond the entry) that are safe to cache at runtime. */
 const STATIC_SHELL_PATHS = new Set([
-  "/manifest.webmanifest",
-  "/icon.svg",
-  "/favicon.ico",
+  BASE + "manifest.webmanifest",
+  BASE + "icon.svg",
+  BASE + "favicon.ico",
 ]);
-const STATIC_SHELL_PREFIXES = ["/assets/", "/icons/"];
+const STATIC_SHELL_PREFIXES = [BASE + "assets/", BASE + "icons/"];
 
 /*
  * The API is same-origin, so it must never be intercepted: cache-first would

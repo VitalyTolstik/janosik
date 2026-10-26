@@ -1,0 +1,42 @@
+---
+import { appLink, nav, site } from "../config";
+import type { Lang } from "../i18n/ui";
+import { localizedUrl, useTranslations } from "../i18n/utils";
+import { withBase } from "../utils/url";
+import LangSwitcher from "./LangSwitcher.astro";
+import ThemeToggle from "./ThemeToggle.astro";
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const favicon = withBase("/favicon.svg");
+---
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href={localizedUrl("/", lang)}>
+      <img src={favicon} alt="" width="32" height="32" />
+      <span>{site.name}</span>
+    </a>
+
+    <nav class="site-nav" aria-label={t("nav.label")}>
+      {nav.map((item) => (
+        <a href={localizedUrl(item.href, lang)}>{t(item.key)}</a>
+      ))}
+    </nav>
+
+    <div class="header-actions">
+      <LangSwitcher lang={lang} />
+      <ThemeToggle label={t("theme.toggle")} />
+      <a class="btn btn-ghost" href={appLink(lang)}>
+        {t("cta.signin")}
+      </a>
+      <a class="btn btn-primary" href={appLink(lang, "register")}>
+        {t("cta.signup")}
+      </a>
+    </div>
+  </div>
+</header>

@@ -4,6 +4,7 @@ import { Check, Copy, Link2, RefreshCw, Trash2 } from "lucide-react";
 import type { BoardShareDto, BoardShareMode } from "@janosik/shared";
 import { SHARE_TTL_HOURS } from "@janosik/shared";
 import { api, ApiError, isApiEnabled } from "@/api/client";
+import { appShareUrl } from "@/utils/app-path";
 import { useToast } from "@/components/Toast";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -68,7 +69,7 @@ export function ShareDialog() {
 }
 
 function shareLink(token: string): string {
-  return `${window.location.origin}${routesShare(token)}`;
+  return appShareUrl(routesShare(token));
 }
 
 function routesShare(token: string): string {
@@ -76,7 +77,7 @@ function routesShare(token: string): string {
 }
 
 function buildEmbed(token: string): string {
-  return `<iframe src="${window.location.origin}/s/${token}?embed=1" width="100%" height="600" style="border:0" loading="lazy" title="Janosik board"></iframe>`;
+  return `<iframe src="${appShareUrl(`/s/${token}?embed=1`)}" width="100%" height="600" style="border:0" loading="lazy" title="Janosik board"></iframe>`;
 }
 
 function SharePanel({ boardId }: { boardId: string }) {

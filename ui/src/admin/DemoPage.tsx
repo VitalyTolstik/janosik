@@ -9,6 +9,7 @@ import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { pollWhileFocused } from "@/lib/visible-poll";
+import { appShareUrl } from "@/utils/app-path";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
@@ -257,7 +258,7 @@ export function DemoPage() {
                 className="h-7 gap-1.5 px-2 text-xs"
                 data-testid="admin-demo-copy-link"
                 onClick={() => {
-                  const url = `${window.location.origin}/s/${demo.shareToken}`;
+                  const url = appShareUrl(`/s/${demo.shareToken}`);
                   void navigator.clipboard
                     ?.writeText(url)
                     .then(() => {

@@ -13,6 +13,10 @@ import { serviceWorkerPlugin } from "./vite/sw-plugin.ts";
 // no group for MDXEditor: a manual chunk around its CJS deps breaks
 // rolldown's require interop across chunks (crash at <Lazy> in prod).
 export default defineConfig({
+  // The app can be served from a sub-path (e.g. `/app/` when the marketing
+  // site owns the root — see the Dockerfile). Defaults to the root so dev and
+  // standalone deployments are unchanged; the value must keep both slashes.
+  base: process.env.UI_BASE ?? "/",
   plugins: [react(), tailwindcss(), serviceWorkerPlugin()],
   // Same-origin API in dev (TASK-29): the UI calls `/api/v1`, Vite forwards
   // to the backend on :3000 — production nginx proxies the same path.

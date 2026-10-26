@@ -5,6 +5,7 @@ import type { AdminShareRowDto } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/Toast";
 import { formatDate, useHour12, useI18n } from "@/i18n";
+import { appPath, appShareUrl } from "@/utils/app-path";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminList } from "./use-admin-list";
@@ -178,7 +179,7 @@ export function SharesPage() {
                         title={t("admin.shares.copy")}
                         data-testid={`admin-share-copy-${row.id}`}
                         onClick={() => {
-                          const url = `${window.location.origin}/s/${row.token}`;
+                          const url = appShareUrl(`/s/${row.token}`);
                           void navigator.clipboard
                             ?.writeText(url)
                             .then(() => markCopied(row.id))
@@ -195,7 +196,7 @@ export function SharesPage() {
                         )}
                       </Button>
                       <a
-                        href={`/s/${row.token}`}
+                        href={appPath(`/s/${row.token}`)}
                         target="_blank"
                         rel="noreferrer"
                         aria-label={t("admin.shares.open")}

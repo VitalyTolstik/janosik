@@ -1,0 +1,55 @@
+---
+import "@fontsource/space-grotesk/400.css";
+import "@fontsource/space-grotesk/500.css";
+import "@fontsource/space-grotesk/700.css";
+import "../styles/global.css";
+
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import SEO from "../components/SEO.astro";
+import { defaultLang, type Lang } from "../i18n/ui";
+import { useTranslations } from "../i18n/utils";
+import { withBase } from "../utils/url";
+
+interface Props {
+  title: string;
+  description: string;
+  lang?: Lang;
+  image?: string;
+  noindex?: boolean;
+}
+
+const { title, description, lang = defaultLang, image, noindex } = Astro.props;
+const t = useTranslations(lang);
+---
+
+<!doctype html>
+<html lang={lang} data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <SEO {title} {description} {lang} {image} {noindex} />
+    <link rel="icon" type="image/svg+xml" href={withBase("/favicon.svg")} />
+    <script is:inline>
+      // Apply a stored theme before first paint. The key and attribute are
+      // shared with Starlight, so the choice carries into the docs.
+      try {
+        var stored = localStorage.getItem("starlight-theme");
+        if (stored === "light" || stored === "dark") {
+          document.documentElement.dataset.theme = stored;
+        }
+      } catch (error) {}
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">
+      {t("a11y.skip")}
+    </a>
+    <Header lang={lang} />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer lang={lang} />
+  </body>
+</html>

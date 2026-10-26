@@ -57,7 +57,11 @@ i18n
     },
     initAsync: false,
     detection: {
-      order: ["localStorage", "navigator", "htmlTag"],
+      // `?lng=` lets the marketing site hand the visitor's language to the
+      // app on the way in (`/app/?lng=ru`); it wins over the stored choice so
+      // the handoff feels continuous, then is cached like any other pick.
+      order: ["querystring", "localStorage", "navigator", "htmlTag"],
+      lookupQuerystring: "lng",
       lookupLocalStorage: STORAGE_KEY,
       caches: ["localStorage"],
     },

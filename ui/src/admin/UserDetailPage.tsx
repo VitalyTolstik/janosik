@@ -34,6 +34,7 @@ import {
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
+import { appPath } from "@/utils/app-path";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import {
@@ -389,7 +390,7 @@ export function UserDetailPage() {
         user={deleteDialog ? { id: user.id, email: user.email } : null}
         onClose={() => setDeleteDialog(false)}
         onDone={() => {
-          window.location.assign("/admin/users");
+          window.location.assign(appPath("/admin/users"));
         }}
       />
 

@@ -1,0 +1,31 @@
+---
+import { languages, type Lang } from "../i18n/ui";
+import { switchLangUrl } from "../i18n/utils";
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const other =
+  (Object.keys(languages) as Lang[]).find((code) => code !== lang) ?? lang;
+const href = switchLangUrl(Astro.url.pathname, other);
+---
+
+<a
+  class="icon-btn lang-btn"
+  href={href}
+  hreflang={other}
+  aria-label={languages[other]}
+  title={languages[other]}
+>
+  <span aria-hidden="true">{other.toUpperCase()}</span>
+</a>
+
+<style>
+  .lang-btn span {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+</style>

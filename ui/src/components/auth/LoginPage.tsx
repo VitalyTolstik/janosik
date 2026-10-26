@@ -39,7 +39,11 @@ export function LoginPage() {
   const { t } = useI18n();
   const { login, register } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [mode, setMode] = useState<Mode>("login");
+  // `?mode=register` opens the screen on the register form — the marketing
+  // site's "Create account" CTA links here.
+  const [mode, setMode] = useState<Mode>(
+    searchParams.get("mode") === "register" ? "register" : "login",
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -112,8 +116,14 @@ export function LoginPage() {
   };
 
   const toggleMode = () => {
-    setMode(isRegister ? "login" : "register");
+    const next: Mode = isRegister ? "login" : "register";
+    setMode(next);
     setError(null);
+    // Keep the URL in step so a reload lands on the same form.
+    const params = new URLSearchParams(searchParams);
+    if (next === "register") params.set("mode", "register");
+    else params.delete("mode");
+    setSearchParams(params, { replace: true });
   };
 
   return (

@@ -21,6 +21,7 @@ import { BoardProvider, useBoard } from "@/store/BoardContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { routes } from "@/routes";
 import { useI18n } from "@/i18n";
+import { APP_BASE } from "@/utils/app-path";
 
 /**
  * The master panel lives on its own route tree and its own chunk: regular
@@ -224,7 +225,7 @@ export default function App() {
             <ToastProvider>
               <ErrorBoundary>
                 <TooltipProvider delayDuration={150}>
-                  <BrowserRouter>
+                  <BrowserRouter basename={APP_BASE.replace(/\/$/, "") || "/"}>
                     <Suspense fallback={<RouteSplash />}>
                       <Routes>
                         <Route

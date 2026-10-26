@@ -10,3 +10,6 @@ shared/coverage
 shared/node_modules
 *.tsbuildinfo
 opencode.json
+.astro
+site/public/favicon.svg
+site/public/og.png

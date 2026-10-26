@@ -1,0 +1,67 @@
+---
+import { site } from "../config";
+import type { Lang } from "../i18n/ui";
+import { localizedUrl, useTranslations } from "../i18n/utils";
+import { withBase } from "../utils/url";
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const year = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <div class="container footer-grid">
+    <div class="footer-brand">
+      <a class="brand" href={localizedUrl("/", lang)}>
+        <img src={withBase("/favicon.svg")} alt="" width="32" height="32" />
+        <span>{site.name}</span>
+      </a>
+      <p>{t("footer.tagline")}</p>
+    </div>
+
+    <div class="footer-col">
+      <h4>{t("footer.product")}</h4>
+      <ul>
+        <li>
+          <a href={localizedUrl("/#features", lang)}>{t("nav.features")}</a>
+        </li>
+        <li>
+          <a href={localizedUrl("/pricing", lang)}>{t("nav.pricing")}</a>
+        </li>
+        <li>
+          <a href={localizedUrl("/docs", lang)}>{t("nav.docs")}</a>
+        </li>
+      </ul>
+    </div>
+
+    <div class="footer-col">
+      <h4>{t("footer.resources")}</h4>
+      <ul>
+        <li>
+          <a href={site.githubUrl}>{t("nav.github")}</a>
+        </li>
+        <li>
+          <a href={localizedUrl("/docs", lang)}>{t("footer.selfhost")}</a>
+        </li>
+        <li>
+          <a href={`${site.githubUrl}/blob/main/CHANGELOG.md`}>
+            {t("footer.changelog")}
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="container footer-bottom">
+    <span>
+      © {year} {t("footer.rights")} · {t("footer.license")} ({site.license})
+    </span>
+    <a href={`${site.githubUrl}/blob/main/SECURITY.md`}>
+      {t("footer.security")}
+    </a>
+  </div>
+</footer>

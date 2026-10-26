@@ -1,0 +1,82 @@
+---
+import { site } from "../config";
+import { languages, type Lang } from "../i18n/ui";
+import { localizePath, stripLocale } from "../i18n/utils";
+import { withBase } from "../utils/url";
+
+interface Props {
+  title: string;
+  description: string;
+  lang: Lang;
+  image?: string;
+  noindex?: boolean;
+  type?: "website" | "article";
+}
+
+const {
+  title,
+  description,
+  lang,
+  image = "/og.png",
+  noindex = false,
+  type = "website",
+} = Astro.props;
+
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const ogImage = new URL(withBase(image), Astro.site);
+
+// hreflang alternates — the same page in every language.
+const pagePath = stripLocale(Astro.url.pathname);
+const alternates = (Object.keys(languages) as Lang[]).map((code) => ({
+  code,
+  href: new URL(withBase(localizePath(pagePath, code)), Astro.site).href,
+}));
+
+const locale = lang === "ru" ? "ru_RU" : "en_US";
+
+const structuredData = [
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: site.name,
+    url: new URL(withBase("/"), Astro.site).href,
+    logo: ogImage.href,
+    sameAs: [site.githubUrl],
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: site.name,
+    applicationCategory: "BusinessApplication",
+    operatingSystem: "Web, self-hosted",
+    description: site.description,
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    license: "https://opensource.org/license/mit",
+    sameAs: [site.githubUrl],
+  },
+];
+---
+
+<title>{title}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={canonical.href} />
+{noindex && <meta name="robots" content="noindex, nofollow" />}
+{alternates.map((alternate) => (
+  <link rel="alternate" hreflang={alternate.code} href={alternate.href} />
+))}
+<link rel="alternate" hreflang="x-default" href={alternates[0]?.href} />
+
+<meta property="og:type" content={type} />
+<meta property="og:site_name" content={site.name} />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={canonical.href} />
+<meta property="og:image" content={ogImage.href} />
+<meta property="og:locale" content={locale} />
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={ogImage.href} />
+
+<script type="application/ld+json" set:html={JSON.stringify(structuredData)} />

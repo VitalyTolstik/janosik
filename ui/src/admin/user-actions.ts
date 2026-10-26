@@ -1,3 +1,5 @@
+import { appShareUrl } from "@/utils/app-path";
+
 import { adminApi } from "./admin-client";
 
 /**
@@ -12,9 +14,9 @@ import { adminApi } from "./admin-client";
  */
 export async function impersonateUser(userId: string): Promise<void> {
   const result = await adminApi.impersonateUser(userId);
-  const url = `${window.location.origin}/#impersonate=${encodeURIComponent(
-    result.accessToken,
-  )}`;
+  const url = appShareUrl(
+    `/#impersonate=${encodeURIComponent(result.accessToken)}`,
+  );
   window.open(url, "_blank", "noopener,noreferrer");
 }
 

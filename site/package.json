@@ -1,0 +1,36 @@
+{
+  "name": "@janosik/site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Janosik marketing site and documentation — Astro + Starlight, built on @janosik/brand tokens.",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "format:check": "prettier --check . --ignore-path ../.prettierignore",
+    "format": "prettier --write . --ignore-path ../.prettierignore"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.7.4",
+    "@astrojs/starlight": "^0.42.7",
+    "@fontsource/space-grotesk": "^5.3.0",
+    "@janosik/brand": "^0.1.0",
+    "astro": "^7.4.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.5",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "typescript": "~5.9.0",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.0.1"
+  }
+}

@@ -55,6 +55,17 @@ jobs:
       - name: Build (ui)
         run: npm run build -w ui
 
+      - name: Site tests
+        run: npm run test -w site
+
+      # `astro check` type-checks the `.astro` components (the marketing
+      # shell, layouts, SEO head); `astro build` alone does not.
+      - name: Site type-check (astro check)
+        run: npm run check -w site
+
+      - name: Build (site)
+        run: npm run build -w site
+
       - name: Prisma generate (backend)
         run: npm run prisma:generate -w backend
 

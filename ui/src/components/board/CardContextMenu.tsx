@@ -41,6 +41,7 @@ import {
 } from "@janosik/shared";
 
 import { api, isApiEnabled } from "@/api/client";
+import { appShareUrl } from "@/utils/app-path";
 import { useAuth } from "@/auth/AuthContext";
 import {
   COVER_COLOR_KEYS,
@@ -174,7 +175,7 @@ function CardContextMenuBody({
 
   const copyLink = useCallback(() => {
     if (!board) return;
-    const url = `${window.location.origin}${cardHref(board.id, cardId)}`;
+    const url = appShareUrl(cardHref(board.id, cardId));
     void navigator.clipboard
       ?.writeText(url)
       .then(() => toast.success(t("card.linkCopied")));
@@ -341,7 +342,7 @@ function CardContextMenuBody({
       <ContextMenuItem
         onClick={() =>
           window.open(
-            `${window.location.origin}${cardHref(boardId, cardId)}`,
+            appShareUrl(cardHref(boardId, cardId)),
             "_blank",
             "noopener,noreferrer",
           )

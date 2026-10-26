@@ -1,0 +1,171 @@
+---
+import { appLink, site } from "../../config";
+import type { UIKey } from "../../i18n/ui";
+import type { Lang } from "../../i18n/ui";
+import { useTranslations } from "../../i18n/utils";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+
+const title = `${site.name} — ${site.tagline}`;
+const description = site.description;
+
+// Icons are inline so they inherit `currentColor`; the `-icon` svg shells are
+// identical, only the geometry differs.
+const icon = (paths: string) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+
+const features: { icon: string; title: UIKey; body: UIKey }[] = [
+  {
+    icon: icon('<path d="M8 6l-4 4 4 4"/><path d="M16 6l4 4-4 4"/>'),
+    title: "home.features.dnd.title",
+    body: "home.features.dnd.body",
+  },
+  {
+    icon: icon(
+      '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+    ),
+    title: "home.features.views.title",
+    body: "home.features.views.body",
+  },
+  {
+    icon: icon('<path d="M13 2 3 14h7l-1 8 10-12h-7z"/>'),
+    title: "home.features.realtime.title",
+    body: "home.features.realtime.body",
+  },
+  {
+    icon: icon(
+      '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.5-3.5L9 20"/>',
+    ),
+    title: "home.features.media.title",
+    body: "home.features.media.body",
+  },
+  {
+    icon: icon(
+      '<path d="M12 20h.01"/><path d="M8.5 16.4a5 5 0 0 1 7 0"/><path d="M5 12.9a10 10 0 0 1 5.5-2.9"/><path d="M2 8.8A15 15 0 0 1 8 6.1"/><path d="m2 2 20 20"/>',
+    ),
+    title: "home.features.offline.title",
+    body: "home.features.offline.body",
+  },
+  {
+    icon: icon(
+      '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/>',
+    ),
+    title: "home.features.i18n.title",
+    body: "home.features.i18n.body",
+  },
+];
+
+const steps: { title: UIKey; body: UIKey }[] = [
+  { title: "home.how.step1.title", body: "home.how.step1.body" },
+  { title: "home.how.step2.title", body: "home.how.step2.body" },
+  { title: "home.how.step3.title", body: "home.how.step3.body" },
+];
+
+const faq: { q: UIKey; a: UIKey }[] = [
+  { q: "home.faq.q1", a: "home.faq.a1" },
+  { q: "home.faq.q2", a: "home.faq.a2" },
+  { q: "home.faq.q3", a: "home.faq.a3" },
+];
+---
+
+<BaseLayout {title} {description} {lang}>
+  <section class="hero">
+    <div class="container hero-inner">
+      <span class="eyebrow">{t("home.hero.eyebrow")}</span>
+      <h1 class="hero-title">{t("home.hero.title")}</h1>
+      <p class="lead hero-lead">{t("home.hero.lead")}</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary btn-lg" href={appLink(lang)}>
+          {t("cta.primary")}
+        </a>
+        <a class="btn btn-ghost btn-lg" href={site.githubUrl}>
+          {t("cta.secondary")}
+        </a>
+      </div>
+      <p class="hero-note">{t("home.hero.note")}</p>
+    </div>
+  </section>
+
+  <section class="section" id="features">
+    <div class="container">
+      <div class="section-head">
+        <h2>{t("home.features.title")}</h2>
+        <p class="lead">{t("home.features.lead")}</p>
+      </div>
+      <div class="grid">
+        {features.map((feature) => (
+          <article class="card">
+            <span class="card-icon" set:html={feature.icon} />
+            <h3>{t(feature.title)}</h3>
+            <p class="muted">{t(feature.body)}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Product showcase — a reserved media slot (video lands in TASK-128..130).
+       The fixed aspect ratio means the page never shifts when the media
+       arrives. -->
+  <section class="section">
+    <div class="container">
+      <div class="media-slot">{t("nav.features")}</div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <h2>{t("home.how.title")}</h2>
+        <p class="lead">{t("home.how.lead")}</p>
+      </div>
+      <ol class="steps">
+        {steps.map((step) => (
+          <li>
+            <h3>{t(step.title)}</h3>
+            <p class="muted">{t(step.body)}</p>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <h2>{t("home.faq.title")}</h2>
+      </div>
+      <div class="faq">
+        {faq.map((item) => (
+          <details>
+            <summary>{t(item.q)}</summary>
+            <p>{t(item.a)}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="cta-band">
+        <h2>{t("home.cta.title")}</h2>
+        <p class="lead">{t("home.cta.lead")}</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary btn-lg" href={appLink(lang)}>
+            {t("cta.primary")}
+          </a>
+          <a class="btn btn-ghost btn-lg" href={site.githubUrl}>
+            {t("cta.secondary")}
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

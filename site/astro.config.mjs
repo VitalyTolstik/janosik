@@ -1,0 +1,53 @@
+// @ts-check
+import starlight from "@astrojs/starlight";
+import sitemap from "@astrojs/sitemap";
+import { defineConfig } from "astro/config";
+
+import brandAssets from "./src/integrations/brand-assets.mjs";
+
+// The canonical origin and the path prefix the site is served under. The
+// site owns the root in the self-host image (the app lives under `/app/`), so
+// the base defaults to `/`; a deployment only overrides `SITE_URL`.
+const site = process.env.SITE_URL ?? "https://janosik.app";
+const base = process.env.SITE_BASE ?? "/";
+
+export default defineConfig({
+  site,
+  base,
+  // Directory format + trailing slashes: every page is `<route>/index.html`,
+  // which is exactly what GitHub Pages serves.
+  trailingSlash: "always",
+  integrations: [
+    // Starlight owns the `/docs` subtree: its content lives under the
+    // `docs/` folder of the docs collection, so every generated route is
+    // `/docs/...` while the marketing pages own the root.
+    starlight({
+      title: "Janosik",
+      description:
+        "Documentation for Janosik — a self-hosted, offline-first Kanban board.",
+      locales: {
+        root: { label: "English", lang: "en" },
+        ru: { label: "Русский", lang: "ru" },
+      },
+      customCss: ["./src/styles/starlight.css"],
+      // The marketing shell owns the 404 page (`src/pages/404.astro`).
+      disable404Route: true,
+      social: [
+        {
+          icon: "github",
+          label: "GitHub",
+          href: "https://github.com/VitalyTolstik/janosik",
+        },
+      ],
+      sidebar: [
+        {
+          label: "Documentation",
+          translations: { ru: "Документация" },
+          items: [{ autogenerate: { directory: "docs" } }],
+        },
+      ],
+    }),
+    sitemap(),
+    brandAssets(),
+  ],
+});

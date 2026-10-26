@@ -24,8 +24,11 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
-      # One origin for UI + API: the image serves both.
+      # One origin for the site, the app and the API: the image serves all
+      # three. The marketing site owns `/`, the app lives under `/app/`.
       STATIC_DIR: /app/public
+      SITE_DIR: /app/site
+      UI_BASE: /app/
       UPLOAD_DIR: /data/uploads
       DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
       REDIS_URL: redis://redis:6379
@@ -47,6 +50,19 @@ services:
       - "${PORT:-3000}:3000"
     volumes:
       - janosik-uploads:/data/uploads
+    # The image ships the same probe; declared here too so `docker compose ps`
+    # shows the app's health alongside postgres/redis. It checks the API
+    # readiness probe and the site root (the baked marketing site).
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "const p=process.env.PORT||3000;Promise.all(['/api/v1/health','/'].map(u=>fetch('http://127.0.0.1:'+p+u))).then(rs=>process.exit(rs.every(r=>r.ok)?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
 
   postgres:
     image: postgres:16-alpine

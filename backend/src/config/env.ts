@@ -146,6 +146,21 @@ export const env = cleanEnv(process.env, {
     default: "",
     example: "/app/public",
   }),
+  // Built marketing site + docs directory (TASK-123). Served at the site root
+  // (`/`) while the app lives under `UI_BASE`; empty = site not served.
+  SITE_DIR: str({
+    desc: "Directory with the built marketing site (index.html + _astro); empty = not served",
+    default: "",
+    example: "/app/site",
+  }),
+  // Sub-path the app is served from (TASK-123): `/app/` when the marketing
+  // site owns the root, `/` standalone. The built UI must use the same base
+  // (Vite `UI_BASE`); this value drives the post-login/OAuth redirect target.
+  UI_BASE: str({
+    desc: "Sub-path the app is served from; used for OAuth redirects",
+    default: "/",
+    example: "/app/",
+  }),
   // Public read-only board sharing (TASK-58, §7.9). On by default so a fresh
   // self-host can hand out a link; a private installation sets it to `false`
   // and the whole `/share/*` contour answers 404 (no share is readable).

@@ -19,6 +19,7 @@ import type { Plugin } from "vite";
  */
 const SW_SOURCE = path.resolve(import.meta.dirname, "../src/pwa/sw.js");
 const VERSION_PLACEHOLDER = "__CACHE_VERSION__";
+const BASE_PLACEHOLDER = "__BASE__";
 const PRECACHE_DECLARATION = "const PRECACHE_ASSETS = [];";
 
 /** The parts of a rolldown/vite bundle chunk this plugin reads. */
@@ -63,7 +64,7 @@ export function cacheVersionFrom(fileNames: string[]): string {
  * cache-first runtime strategy (a first offline boot degrades to fallback
  * fonts rather than eagerly downloading every unicode subset).
  */
-export function entryAssetNames(bundle: Bundle): string[] {
+export function entryAssetNames(bundle: Bundle, base = "/"): string[] {
   const names = new Set<string>();
 
   const visit = (fileName: string): void => {
@@ -79,7 +80,7 @@ export function entryAssetNames(bundle: Bundle): string[] {
     if (item.type === "chunk" && item.isEntry) visit(fileName);
   }
 
-  return [...names].sort().map((fileName) => `/${fileName}`);
+  return [...names].sort().map((fileName) => `${base}${fileName}`);
 }
 
 /**
@@ -91,9 +92,11 @@ export function stampServiceWorkerSource(
   source: string,
   version: string,
   precacheAssets: string[] = [],
+  base = "/",
 ): string {
   return source
     .replaceAll(VERSION_PLACEHOLDER, version)
+    .replaceAll(BASE_PLACEHOLDER, base)
     .replace(
       PRECACHE_DECLARATION,
       `const PRECACHE_ASSETS = ${JSON.stringify(precacheAssets)};`,
@@ -101,17 +104,21 @@ export function stampServiceWorkerSource(
 }
 
 export function serviceWorkerPlugin(): Plugin {
+  let base = "/";
   return {
     name: "janosik:service-worker",
     apply: "build",
+    configResolved(config) {
+      base = config.base;
+    },
     generateBundle(_options, bundle) {
       const source = readFileSync(SW_SOURCE, "utf8");
       const version = cacheVersionFrom(Object.keys(bundle));
-      const precacheAssets = entryAssetNames(bundle as Bundle);
+      const precacheAssets = entryAssetNames(bundle as Bundle, base);
       this.emitFile({
         type: "asset",
         fileName: "sw.js",
-        source: stampServiceWorkerSource(source, version, precacheAssets),
+        source: stampServiceWorkerSource(source, version, precacheAssets, base),
       });
     },
   };

@@ -6,15 +6,21 @@ import { env } from "@/config/env";
 import { assertBootSecurity } from "@/config/security";
 import { AppModule } from "@/app.module";
 import { setupApp } from "@/common/app-setup";
-import { serveSpa } from "@/common/serve-spa";
+import { serveFrontends } from "@/common/serve-frontends";
+import { appBasePrefix } from "@/common/ui-base";
 
 async function bootstrap(): Promise<void> {
   // TASK-38a: refuse a production boot that would silently break cookies.
   assertBootSecurity((message) => Logger.warn(message, "Bootstrap"));
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   setupApp(app);
-  // TASK-38b: one container serves the built UI too (no-op when unset).
-  serveSpa(app, env.STATIC_DIR);
+  // TASK-38b/123: one container serves the built frontends too — the
+  // marketing site at `/` and the app under `UI_BASE` (no-ops when unset).
+  serveFrontends(app, {
+    appDir: env.STATIC_DIR,
+    appBase: appBasePrefix(),
+    siteDir: env.SITE_DIR,
+  });
   app.enableShutdownHooks();
   await app.listen(env.PORT);
   console.log(`janosik API listening on http://localhost:${env.PORT}`);

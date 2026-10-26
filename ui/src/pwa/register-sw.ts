@@ -8,7 +8,9 @@ export function registerServiceWorker(): void {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
     return;
   }
-  navigator.serviceWorker.register("/sw.js").catch(() => {
-    /* registration failures (e.g. insecure context) must not break the app */
-  });
+  navigator.serviceWorker
+    .register(`${import.meta.env.BASE_URL}sw.js`)
+    .catch(() => {
+      /* registration failures (e.g. insecure context) must not break the app */
+    });
 }
