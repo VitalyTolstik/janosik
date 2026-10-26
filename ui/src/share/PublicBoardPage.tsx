@@ -11,6 +11,7 @@ import { useI18n } from "@/i18n";
 import { ShareBoardProvider } from "@/store/BoardContext";
 import { BoardRealtime } from "@/store/realtime";
 import { PublicCardDialog } from "@/share/PublicCardDialog";
+import { ShareUnavailable } from "@/share/ShareUnavailable";
 import {
   fetchPublicBoard,
   openPublicEvents,
@@ -37,8 +38,9 @@ export function PublicBoardPage() {
     "loading" | "ready" | "gone" | "missing" | "error"
   >("loading");
   const [openCardId, setOpenCardId] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  // Load the payload once per token.
+  // Load the payload once per token (and again on a manual retry).
   useEffect(() => {
     const controller = new AbortController();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset before the token's payload is fetched
@@ -54,7 +56,7 @@ export function PublicBoardPage() {
         setStatus(code === 410 ? "gone" : code === 404 ? "missing" : "error");
       });
     return () => controller.abort();
-  }, [token]);
+  }, [token, reloadKey]);
 
   // Sanitized roster in the shape the board components expect (email never
   // exists on the public contour — an empty string is never rendered).
@@ -133,15 +135,22 @@ export function PublicBoardPage() {
     return (
       <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
         {!embed ? <PublicHeaderChrome /> : null}
-        <main className="flex flex-1 items-center justify-center p-10 text-muted-foreground">
+        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {status === "loading" ? (
-            <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+            <div className="flex flex-1 items-center justify-center p-10 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+            </div>
           ) : (
-            <p className="text-sm" data-testid="share-unavailable">
-              {status === "gone"
-                ? t("share.public.gone")
-                : t("share.public.unavailable")}
-            </p>
+            <ShareUnavailable
+              variant={
+                status === "gone"
+                  ? "gone"
+                  : status === "missing"
+                    ? "missing"
+                    : "error"
+              }
+              onRetry={() => setReloadKey((key) => key + 1)}
+            />
           )}
         </main>
       </div>

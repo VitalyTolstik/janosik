@@ -92,7 +92,9 @@ const en = {
   "admin.shares.flag.attachments": "attachments",
   "admin.shares.boardGone": "board gone",
   "admin.shares.boardGone.hint":
-    "The board was deleted, so a live link no longer opens (410 Gone). Revoke it to clear the row.",
+    "The board was deleted, so a live link no longer opens. Deleting a board revokes its live links automatically.",
+  "admin.shares.boardGone.snapshotHint":
+    "The board was deleted, but a snapshot is a frozen copy and keeps opening.",
   "admin.shares.copy": "Copy",
   "admin.shares.copied": "Link copied",
   "admin.shares.open": "Open",
@@ -948,7 +950,9 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.shares.flag.attachments": "вложения",
   "admin.shares.boardGone": "доска удалена",
   "admin.shares.boardGone.hint":
-    "Доска удалена, поэтому живая ссылка больше не открывается (410 Gone). Отзовите её, чтобы убрать строку.",
+    "Доска удалена — живая ссылка больше не открывается. Удаление доски автоматически отзывает её живые ссылки.",
+  "admin.shares.boardGone.snapshotHint":
+    "Доска удалена, но снапшот — это замороженная копия, он продолжает открываться.",
   "admin.shares.copy": "Скопировать",
   "admin.shares.copied": "Ссылка скопирована",
   "admin.shares.open": "Открыть",

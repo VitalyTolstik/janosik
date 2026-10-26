@@ -549,6 +549,56 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * Public share dead-end (TASK-58): the card that floated off the board drifts
+ * gently, and a little puff of dust rises from the empty slot. Pure CSS.
+ * -------------------------------------------------------------------------- */
+.janosik-lost-float {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: janosik-lost-float 5s ease-in-out infinite;
+}
+
+@keyframes janosik-lost-float {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(-5deg);
+  }
+  50% {
+    transform: translate(5px, -9px) rotate(6deg);
+  }
+}
+
+.janosik-lost-poof {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: janosik-lost-poof 3.4s ease-in-out infinite;
+}
+
+@keyframes janosik-lost-poof {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.4);
+  }
+  35% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-12px) scale(1.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .janosik-lost-float,
+  .janosik-lost-poof {
+    animation: none;
+  }
+  .janosik-lost-poof {
+    opacity: 0.45;
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * MDXEditor — WYSIWYG card description editor (TASK-2).
  *
  * The `.janosik-mdx` companion class doubles selector specificity so these

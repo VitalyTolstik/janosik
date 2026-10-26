@@ -191,6 +191,14 @@ export class BoardsService {
         where: { boardId },
         data: { deletedAt: now },
       });
+      // A live share of a deleted board is dead by definition — revoke it so
+      // the master panel shows an explicit "revoked" instead of a link that
+      // silently answers 410. Snapshot shares deliberately survive the board
+      // (a frozen copy), so they are left untouched.
+      await tx.boardShare.updateMany({
+        where: { boardId, mode: "live", revokedAt: null },
+        data: { revokedAt: now },
+      });
       await tx.board.update({
         where: { id: boardId },
         data: { deletedAt: now },

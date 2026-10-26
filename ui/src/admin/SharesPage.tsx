@@ -108,14 +108,24 @@ export function SharesPage() {
                       {row.boardDeleted ? (
                         <span className="text-muted-foreground">
                           {row.boardTitle ?? row.boardId}
-                          <span
-                            className="ml-2 inline-flex"
-                            title={t("admin.shares.boardGone.hint")}
-                          >
-                            <Badge variant="danger">
-                              {t("admin.shares.boardGone")}
-                            </Badge>
-                          </span>
+                          {row.revokedAt === null ? (
+                            <span
+                              className="ml-2 inline-flex"
+                              title={
+                                row.mode === "live"
+                                  ? t("admin.shares.boardGone.hint")
+                                  : t("admin.shares.boardGone.snapshotHint")
+                              }
+                            >
+                              <Badge
+                                variant={
+                                  row.mode === "live" ? "danger" : "neutral"
+                                }
+                              >
+                                {t("admin.shares.boardGone")}
+                              </Badge>
+                            </span>
+                          ) : null}
                         </span>
                       ) : (
                         <Link

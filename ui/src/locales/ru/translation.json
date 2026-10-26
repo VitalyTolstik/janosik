@@ -770,5 +770,13 @@
   "share.public.description": "Доска Janosik, открытая по ссылке только для чтения.",
   "share.public.gone": "Доска больше не расшарена.",
   "share.public.unavailable": "Эта ссылка недоступна.",
+  "share.public.notFound.title": "Эта ссылка соскочила с доски",
+  "share.public.notFound.body": "Возможно, её отозвали, она истекла или в ней опечатка. Дергать тут нечего.",
+  "share.public.gone.title": "Доска собрала вещи и ушла",
+  "share.public.gone.body": "Доска, к которой вела эта ссылка, удалена — живой просмотр пропал. Попросите владельца о новой ссылке.",
+  "share.public.error.title": "Что-то покачнулось",
+  "share.public.error.body": "Не удалось загрузить доску. Попробуйте ещё раз.",
+  "share.public.retry": "Ещё раз",
+  "share.public.home": "На главную Janosik",
   "share.public.anonymous": "Кто-то"
 }

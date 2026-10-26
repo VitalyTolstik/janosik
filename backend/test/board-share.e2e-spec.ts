@@ -228,9 +228,10 @@ describe("Public board shares (e2e)", () => {
     expect(after.body.board.cards[cardId]).toBeDefined();
   });
 
-  it("live: reads the board, dies with it (410 after delete)", async () => {
+  it("live: reads the board and is revoked with it (deleting a board)", async () => {
     const { boardId, cardId } = await newBoard("Share live");
     const share = await createShare(boardId, { mode: "live" });
+    const snapshot = await createShare(boardId, { mode: "snapshot" });
 
     const payload = await server()
       .get(`/api/v1/share/${share.token}`)
@@ -242,6 +243,31 @@ describe("Public board shares (e2e)", () => {
     await server()
       .delete(`/api/v1/boards/${boardId}`)
       .set(auth(adminToken))
+      .expect(200);
+
+    // Deleting the board revokes its live links (the panel shows "revoked")
+    // instead of leaving a link that answers 410.
+    await server().get(`/api/v1/share/${share.token}`).expect(404);
+    const row = await prisma.boardShare.findUnique({
+      where: { id: share.id },
+    });
+    expect(row?.revokedAt).not.toBeNull();
+
+    // A snapshot is a frozen copy — it survives the board's deletion.
+    await server().get(`/api/v1/share/${snapshot.token}`).expect(200);
+  });
+
+  it("live: an archived board answers 410 Gone", async () => {
+    const { boardId } = await newBoard("Share archived");
+    const share = await createShare(boardId, { mode: "live" });
+
+    await server()
+      .post(`/api/v1/boards/${boardId}/commands`)
+      .set(auth(adminToken))
+      .send({
+        commandId: randomUUID(),
+        action: { boardId, at: Date.now(), type: "ARCHIVE_BOARD" },
+      })
       .expect(200);
 
     await server().get(`/api/v1/share/${share.token}`).expect(410);

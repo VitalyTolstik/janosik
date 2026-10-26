@@ -754,5 +754,13 @@
   "share.public.description": "A Janosik board shared as a read-only link.",
   "share.public.gone": "This board is no longer shared.",
   "share.public.unavailable": "This link is not available.",
+  "share.public.notFound.title": "This link slipped off the board",
+  "share.public.notFound.body": "It may have been revoked, expired or mistyped. Nothing to drag around here.",
+  "share.public.gone.title": "The board packed up and left",
+  "share.public.gone.body": "The board behind this link was deleted, so its live view is gone. Ask the owner for a fresh link.",
+  "share.public.error.title": "Something wobbled",
+  "share.public.error.body": "We couldn't load this board. Give it another go.",
+  "share.public.retry": "Try again",
+  "share.public.home": "Go to Janosik",
   "share.public.anonymous": "Someone"
 }
