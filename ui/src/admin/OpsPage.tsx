@@ -216,27 +216,47 @@ export function OpsPage() {
             />
             <CharCount value={message} max={500} />
           </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">
-              {t("admin.ops.perUserLimit")}
-            </span>
-            <NumberStepper
-              testId="admin-ops-peruser"
-              min={1}
-              max={100_000}
-              value={perUser}
-              ariaLabel={t("admin.ops.perUserLimit")}
-              increaseLabel={t("admin.common.increase")}
-              decreaseLabel={t("admin.common.decrease")}
-              onChange={setPerUser}
-            />
-          </label>
         </div>
         <div className="mt-3 flex justify-end">
           <Button
             size="sm"
             disabled={busy}
             data-testid="admin-ops-save"
+            onClick={() => void saveOps()}
+          >
+            {t("admin.common.save")}
+          </Button>
+        </div>
+      </Panel>
+
+      <Panel className="p-4">
+        <h2 className="mb-1 text-sm font-medium">{t("admin.ops.rateLimit")}</h2>
+        <p className="mb-3 text-xs text-muted-foreground">
+          {t("admin.ops.rateLimit.hint")}
+        </p>
+        <label className="flex max-w-xs flex-col gap-1 text-xs">
+          <span className="text-muted-foreground">
+            {t("admin.ops.perUserLimit")}
+          </span>
+          <NumberStepper
+            testId="admin-ops-peruser"
+            min={1}
+            max={100_000}
+            value={perUser}
+            ariaLabel={t("admin.ops.perUserLimit")}
+            increaseLabel={t("admin.common.increase")}
+            decreaseLabel={t("admin.common.decrease")}
+            onChange={setPerUser}
+          />
+          <span className="text-[11px] text-muted-foreground">
+            {t("admin.ops.perUserLimitHint")}
+          </span>
+        </label>
+        <div className="mt-3 flex justify-end">
+          <Button
+            size="sm"
+            disabled={busy}
+            data-testid="admin-ops-rate-limit-save"
             onClick={() => void saveOps()}
           >
             {t("admin.common.save")}

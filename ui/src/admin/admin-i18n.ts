@@ -171,7 +171,7 @@ const en = {
   "admin.boardDetail.member.roleDone": "Role updated",
 
   "admin.ops.title": "Operations",
-  "admin.ops.subtitle": "Flags, maintenance and data retention",
+  "admin.ops.subtitle": "Flags, maintenance, rate limits and data retention",
   "admin.ops.flags": "Feature flags",
   "admin.ops.flags.hint":
     "Behaviour switches applied at request time — no restart needed.",
@@ -199,7 +199,12 @@ const en = {
   "admin.ops.maintenance.on": "Maintenance mode on",
   "admin.ops.maintenance.off": "Maintenance mode off",
   "admin.ops.maintenanceMessage": "Maintenance message",
+  "admin.ops.rateLimit": "Rate limit",
+  "admin.ops.rateLimit.hint":
+    "A per-account budget in requests per minute. Empty = no per-user limit (only the global IP limit applies). Keep it well above normal UI activity.",
   "admin.ops.perUserLimit": "Per-user requests / min",
+  "admin.ops.perUserLimitHint":
+    "Applies to every account equally, each with its own counter. Leave empty to disable.",
   "admin.ops.retentionDays": "Delete soft-deleted data after (days)",
   "admin.ops.retentionDaysHint":
     "The grace window before Purge may remove it. Default 30 days.",
@@ -1014,7 +1019,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.boardDetail.member.roleDone": "Роль обновлена",
 
   "admin.ops.title": "Эксплуатация",
-  "admin.ops.subtitle": "Флаги, режим обслуживания и хранение данных",
+  "admin.ops.subtitle":
+    "Флаги, режим обслуживания, лимиты частоты и хранение данных",
   "admin.ops.flags": "Флаги функций",
   "admin.ops.flags.hint":
     "Переключатели поведения применяются в момент запроса — без рестарта.",
@@ -1044,7 +1050,12 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.ops.maintenance.on": "Режим обслуживания включён",
   "admin.ops.maintenance.off": "Режим обслуживания выключен",
   "admin.ops.maintenanceMessage": "Сообщение обслуживания",
+  "admin.ops.rateLimit": "Лимит частоты",
+  "admin.ops.rateLimit.hint":
+    "Бюджет запросов в минуту на каждый аккаунт. Пусто — персонального лимита нет (действует только глобальный по IP). Ставь заметно выше обычной активности UI.",
   "admin.ops.perUserLimit": "Запросов на пользователя в минуту",
+  "admin.ops.perUserLimitHint":
+    "Действует на все аккаунты одинаково, у каждого свой счётчик. Пусто — выключено.",
   "admin.ops.retentionDays": "Удалять soft-deleted данные через (дней)",
   "admin.ops.retentionDaysHint":
     "Срок «на передумать» до того, как очистка их удалит. По умолчанию 30 дней.",
