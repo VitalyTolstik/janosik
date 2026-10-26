@@ -152,6 +152,7 @@ export class AdminCreateAnnouncementDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(4000)
   segment?: string | null;
 
   @IsOptional()
@@ -196,11 +197,16 @@ export class AdminUpdateAnnouncementDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(4000)
   segment?: string | null;
 
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  sendEmail?: boolean;
 
   @IsOptional()
   @Type(() => Number)

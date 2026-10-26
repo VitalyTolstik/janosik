@@ -16,5 +16,5 @@ export class InviteMemberDto {
 
   @IsOptional()
   @IsISO8601()
-  expiresAt?: string;
+  expiresAt?: string | null;
 }

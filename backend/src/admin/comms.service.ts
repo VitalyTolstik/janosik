@@ -140,6 +140,7 @@ export class CommsService {
     if (dto.audience !== undefined) data.audience = dto.audience;
     if (dto.segment !== undefined) data.segment = dto.segment;
     if (dto.active !== undefined) data.active = dto.active;
+    if (dto.sendEmail !== undefined) data.sendEmail = dto.sendEmail;
     if (dto.startsAt !== undefined)
       data.startsAt = dto.startsAt ? new Date(dto.startsAt) : null;
     if (dto.endsAt !== undefined)

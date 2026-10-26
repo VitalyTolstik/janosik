@@ -4,6 +4,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  MaxLength,
   Min,
 } from "class-validator";
 
@@ -12,6 +13,7 @@ export class CreateCommandDto {
   /** Client-generated idempotency key — the `Command` primary key. */
   @IsString()
   @IsNotEmpty()
+  @MaxLength(64)
   commandId!: string;
 
   /** The reducer action; validated strictly by `validateBoardAction` (shared). */
