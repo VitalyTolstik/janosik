@@ -1,10 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import type { Comment, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { Comment } from "@prisma/client";
 import type { CommentDto, CommentPage } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
@@ -61,33 +63,65 @@ export class CommentsService {
       throw new NotFoundException("Card not found");
     }
     const boardId = card.column.boardId;
-    const created = await this.boardWrite.run(boardId, async (tx) => {
-      const comment = await tx.comment.create({
-        data: { cardId, authorId, text },
-      });
-      // The comment changes the card face as well (TASK-36 attribution):
-      // the commenter becomes `Card.lastActorId`, so a reload seeds the
-      // same face the live SSE stamp just showed. `updatedAt` follows
-      // automatically (`@updatedAt`).
-      await tx.card.update({
-        where: { id: cardId },
-        data: { lastActorId: authorId },
-      });
-      const activity = await tx.activity.create({
-        data: {
+
+    // Idempotency (TASK-99): the client key doubles as the comment id, so a
+    // retried POST finds the first row instead of appending a duplicate.
+    const id = dto.commandId;
+    if (id !== undefined) {
+      const existing = await this.prisma.comment.findUnique({ where: { id } });
+      if (existing) {
+        if (existing.cardId !== cardId) {
+          throw new ConflictException("commandId already used");
+        }
+        return toCommentDto(existing);
+      }
+    }
+
+    let created: { comment: Comment; activityId: string; boardId: string };
+    try {
+      created = await this.boardWrite.run(boardId, async (tx) => {
+        const comment = await tx.comment.create({
+          data: { ...(id !== undefined ? { id } : {}), cardId, authorId, text },
+        });
+        // The comment changes the card face as well (TASK-36 attribution):
+        // the commenter becomes `Card.lastActorId`, so a reload seeds the
+        // same face the live SSE stamp just showed. `updatedAt` follows
+        // automatically (`@updatedAt`).
+        await tx.card.update({
+          where: { id: cardId },
+          data: { lastActorId: authorId },
+        });
+        const activity = await tx.activity.create({
+          data: {
+            boardId,
+            cardId,
+            type: "comment_added",
+            actorId: authorId,
+            details: { commentId: comment.id, text },
+          },
+        });
+        return {
+          comment,
+          activityId: activity.id,
           boardId,
-          cardId,
-          type: "comment_added",
-          actorId: authorId,
-          details: { commentId: comment.id, text },
-        },
+        };
       });
-      return {
-        comment,
-        activityId: activity.id,
-        boardId,
-      };
-    });
+    } catch (error) {
+      // A concurrent retry won the insert race: return its row.
+      if (
+        id !== undefined &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        const existing = await this.prisma.comment.findUnique({
+          where: { id },
+        });
+        if (existing && existing.cardId === cardId) {
+          return toCommentDto(existing);
+        }
+      }
+      throw error;
+    }
     this.publishActivity(
       created.boardId,
       cardId,

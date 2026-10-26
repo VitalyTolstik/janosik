@@ -24,6 +24,7 @@ import type {
   UpdateShareRequest,
   UserTokenDto,
 } from "@janosik/shared";
+import { createId } from "@/utils/id";
 
 /**
  * Typed API client for the NestJS backend (§7.4, TASK-29).
@@ -570,10 +571,19 @@ export class ApiClient {
     );
   }
 
-  createComment(cardId: string, text: string): Promise<CommentDto> {
+  /**
+   * Post a comment. `commandId` is the idempotency key (TASK-99) — a retry
+   * with the same key returns the first comment; a fresh one is generated
+   * per call so an automatic retry never doubles the comment.
+   */
+  createComment(
+    cardId: string,
+    text: string,
+    commandId: string = createId(),
+  ): Promise<CommentDto> {
     return this.request<CommentDto>(
       `/cards/${encodeURIComponent(cardId)}/comments`,
-      { method: "POST", body: { text } },
+      { method: "POST", body: { text, commandId } },
     );
   }
 

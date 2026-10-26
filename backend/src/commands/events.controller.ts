@@ -110,15 +110,17 @@ export class EventsController {
 
       // Join after subscribing so this connection sees its own roster: the
       // first presence frame of a stream is "you are here, with N others".
-      if (user) {
-        this.presence.join(boardId, clientId, {
-          id: user.id,
-          displayName: user.displayName,
-          email: user.email,
-          avatarColor: user.avatarColor,
-          avatarPath: user.avatarPath,
-        });
-      }
+      // The returned token scopes the teardown to *this* connection so a
+      // reconnect is not undone by the previous stream's late leave.
+      const presenceToken = user
+        ? this.presence.join(boardId, clientId, {
+            id: user.id,
+            displayName: user.displayName,
+            email: user.email,
+            avatarColor: user.avatarColor,
+            avatarPath: user.avatarPath,
+          })
+        : null;
 
       void this.commands
         .listSince(boardId, since)
@@ -147,7 +149,9 @@ export class EventsController {
         live.unsubscribe();
         keepAlive.unsubscribe();
         releaseTracking();
-        if (user) this.presence.leave(boardId, clientId);
+        if (presenceToken !== null) {
+          this.presence.leave(boardId, clientId, presenceToken);
+        }
       };
     });
   }

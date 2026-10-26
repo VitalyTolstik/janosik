@@ -242,10 +242,77 @@ export class StorageService {
    * stream and taking the process down. A failure after the response is
    * already torn down is a client abort — nothing left to answer, so it is
    * swallowed rather than surfaced as a server error.
+   *
+   * When `req` carries a `Range` header the blob is streamed as a `206`
+   * partial response (TASK-107) so a video can be seeked/scrolled instead of
+   * downloaded whole; `Accept-Ranges`/`Content-Length` are always advertised.
    */
-  async send(absPath: string, res: Writable): Promise<void> {
+  async send(
+    absPath: string,
+    res: Writable & {
+      setHeader?: (name: string, value: string | number) => void;
+      statusCode?: number;
+      end?: () => void;
+    },
+    req?: { headers: Record<string, string | string[] | undefined> },
+  ): Promise<void> {
+    const rangeHeader = req?.headers["range"];
+    if (rangeHeader !== undefined) {
+      await this.sendRange(absPath, res, String(rangeHeader));
+      return;
+    }
     try {
       await pipeline(this.open(absPath), res);
+    } catch (err) {
+      if (!res.destroyed) throw err;
+    }
+  }
+
+  /** Single-range `206` (or `416`) response (TASK-107). */
+  private async sendRange(
+    absPath: string,
+    res: Writable & {
+      setHeader?: (name: string, value: string | number) => void;
+      statusCode?: number;
+      end?: () => void;
+    },
+    range: string,
+  ): Promise<void> {
+    let size: number;
+    try {
+      size = (await stat(absPath)).size;
+    } catch {
+      throw new NotFoundException();
+    }
+    res.setHeader?.("Accept-Ranges", "bytes");
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+    const first = match?.[1] ?? "";
+    const last = match?.[2] ?? "";
+    if (!match || (first === "" && last === "")) {
+      res.statusCode = 416;
+      res.setHeader?.("Content-Range", `bytes */${size}`);
+      res.end?.();
+      return;
+    }
+    const start = first === "" ? Math.max(0, size - Number(last)) : Number(first);
+    let end = first === "" || last === "" ? size - 1 : Number(last);
+    if (
+      Number.isNaN(start) ||
+      Number.isNaN(end) ||
+      start > end ||
+      start >= size
+    ) {
+      res.statusCode = 416;
+      res.setHeader?.("Content-Range", `bytes */${size}`);
+      res.end?.();
+      return;
+    }
+    end = Math.min(end, size - 1);
+    res.statusCode = 206;
+    res.setHeader?.("Content-Range", `bytes ${start}-${end}/${size}`);
+    res.setHeader?.("Content-Length", end - start + 1);
+    try {
+      await pipeline(createReadStream(absPath, { start, end }), res);
     } catch (err) {
       if (!res.destroyed) throw err;
     }

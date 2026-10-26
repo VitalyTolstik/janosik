@@ -586,11 +586,13 @@ export class AdminController {
   }
 
   @Get("users/:id/export")
-  exportUser(
+  async exportUser(
     @Param("id") id: string,
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminUserExportDto> {
-    return this.admin.exportUser(id, admin);
+    const bundle = await this.admin.exportUser(id, admin);
+    await this.admin.audit(admin, "data.exported", "user", id, {});
+    return bundle;
   }
 
   // --------------------------------------- background exports (TASK-71)
@@ -623,6 +625,7 @@ export class AdminController {
   ): Promise<void> {
     this.admin.assertOwner(admin);
     const { absPath, filename } = await this.exports.download(id);
+    await this.admin.audit(admin, "data.export_downloaded", "export", id, {});
     res.setHeader("Content-Type", "application/json");
     res.setHeader(
       "Content-Disposition",
@@ -910,6 +913,7 @@ export class AdminController {
       path: ADMIN_QUEUES_PATH,
       maxAge: 10 * 60 * 1000,
     });
+    await this.admin.audit(admin, "queue.ticket_issued", "queue", null, {});
     return { ok: true };
   }
 

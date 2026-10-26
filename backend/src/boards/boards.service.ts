@@ -56,16 +56,43 @@ export class BoardsService {
       orderBy: { createdAt: "desc" },
     });
 
+    // Card counts for every board in two constant-size queries (TASK-101):
+    // a per-board `count()` was N+1. `Card` has no `boardId`, so group the
+    // cards by column and fold each column into its board.
+    const boardIds = memberships.map((membership) => membership.boardId);
+    const cardCounts = new Map<string, number>();
+    if (boardIds.length > 0) {
+      const [groups, columns] = await Promise.all([
+        this.prisma.card.groupBy({
+          by: ["columnId"],
+          where: { column: { boardId: { in: boardIds } }, deletedAt: null },
+          _count: { _all: true },
+        }),
+        this.prisma.column.findMany({
+          where: { boardId: { in: boardIds } },
+          select: { id: true, boardId: true },
+        }),
+      ]);
+      const columnToBoard = new Map(
+        columns.map((column) => [column.id, column.boardId]),
+      );
+      for (const group of groups) {
+        const boardId = columnToBoard.get(group.columnId);
+        if (boardId === undefined) continue;
+        cardCounts.set(
+          boardId,
+          (cardCounts.get(boardId) ?? 0) + group._count._all,
+        );
+      }
+    }
+
     const summaries: BoardSummary[] = [];
     for (const membership of memberships) {
-      const cards = await this.prisma.card.count({
-        where: { column: { boardId: membership.boardId }, deletedAt: null },
-      });
       summaries.push(
         toBoardSummary(
           membership.board,
           {
-            cards,
+            cards: cardCounts.get(membership.boardId) ?? 0,
             columns: membership.board._count.columns,
           },
           membership.role,
@@ -239,45 +266,58 @@ export class BoardsService {
       throw new NotFoundException("No user with that email");
     }
 
-    const existing = await this.prisma.boardMember.findUnique({
-      where: { boardId_userId: { boardId, userId: user.id } },
-    });
-    if (existing) {
-      throw new ConflictException(
-        existing.acceptedAt === null
-          ? "User already has a pending invitation"
-          : "User is already a board member",
-      );
-    }
-
     const expiresAt = this.resolveExpiresAt(dto.role, dto.expiresAt, null);
-    const member = await this.boardWrite.run(boardId, async (tx) => {
-      const created = await tx.boardMember.create({
-        data: {
-          boardId,
-          userId: user.id,
-          role: dto.role,
-          expiresAt,
-          acceptedAt: null,
-          invitedById: actorId,
-        },
-        include: { user: true },
-      });
-      await tx.activity.create({
-        data: {
-          boardId,
-          type: "member_invited",
-          actorId,
-          details: {
+    // The duplicate check lives inside the board lock (TASK-100): two
+    // concurrent invites would otherwise both pass the read and one `create`
+    // would surface a raw P2002 as a 500. The lock serializes them, and the
+    // unique constraint is the final backstop.
+    const member = await this.boardWrite
+      .run(boardId, async (tx) => {
+        const existing = await tx.boardMember.findUnique({
+          where: { boardId_userId: { boardId, userId: user.id } },
+        });
+        if (existing) {
+          throw new ConflictException(
+            existing.acceptedAt === null
+              ? "User already has a pending invitation"
+              : "User is already a board member",
+          );
+        }
+        const created = await tx.boardMember.create({
+          data: {
+            boardId,
             userId: user.id,
-            email: user.email,
             role: dto.role,
-            expiresAt: expiresAt ? expiresAt.toISOString() : null,
+            expiresAt,
+            acceptedAt: null,
+            invitedById: actorId,
           },
-        },
+          include: { user: true },
+        });
+        await tx.activity.create({
+          data: {
+            boardId,
+            type: "member_invited",
+            actorId,
+            details: {
+              userId: user.id,
+              email: user.email,
+              role: dto.role,
+              expiresAt: expiresAt ? expiresAt.toISOString() : null,
+            },
+          },
+        });
+        return created;
+      })
+      .catch((error: unknown) => {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2002"
+        ) {
+          throw new ConflictException("User is already a board member");
+        }
+        throw error;
       });
-      return created;
-    });
     return toMemberDto(member);
   }
 
@@ -304,15 +344,10 @@ export class BoardsService {
     }
 
     const role = dto.role ?? member.role;
-    // A pending invitation is not a member yet — the last-ADMIN rule only
-    // guards accepted admins.
-    if (
+    const demoting =
       member.acceptedAt !== null &&
       member.role === Role.ADMIN &&
-      role !== Role.ADMIN
-    ) {
-      await this.assertNotLastAdmin(boardId, targetUserId, "demote");
-    }
+      role !== Role.ADMIN;
 
     const expiresAt = this.resolveExpiresAt(
       role,
@@ -324,6 +359,12 @@ export class BoardsService {
       (expiresAt?.getTime() ?? null) !== (member.expiresAt?.getTime() ?? null);
 
     const updated = await this.boardWrite.run(boardId, async (tx) => {
+      // Last-ADMIN guard runs inside the board lock (TASK-100): two
+      // concurrent demotes would otherwise both pass and leave the board
+      // adminless. A pending invitation is not a member yet.
+      if (demoting) {
+        await this.assertNotLastAdmin(tx, boardId, targetUserId, "demote");
+      }
       const row = await tx.boardMember.update({
         where: { id: member.id },
         data: { role, expiresAt },
@@ -378,11 +419,15 @@ export class BoardsService {
       throw new NotFoundException("Board member not found");
     }
     // Pending invitations are not members — deleting the row cancels the
-    // invitation and never trips the last-ADMIN guard.
-    if (member.acceptedAt !== null && member.role === Role.ADMIN) {
-      await this.assertNotLastAdmin(boardId, targetUserId, "remove");
-    }
+    // invitation and never trips the last-ADMIN guard. The guard runs inside
+    // the board lock (TASK-100) so a concurrent demote+remove cannot leave
+    // the board adminless.
+    const removingAdmin =
+      member.acceptedAt !== null && member.role === Role.ADMIN;
     await this.boardWrite.run(boardId, async (tx) => {
+      if (removingAdmin) {
+        await this.assertNotLastAdmin(tx, boardId, targetUserId, "remove");
+      }
       await tx.boardMember.delete({ where: { id: member.id } });
       await tx.activity.create({
         data: {
@@ -483,11 +528,12 @@ export class BoardsService {
   }
 
   private async assertNotLastAdmin(
+    tx: Prisma.TransactionClient,
     boardId: string,
     targetUserId: string,
     action: "demote" | "remove",
   ): Promise<void> {
-    const otherAdmins = await this.prisma.boardMember.count({
+    const otherAdmins = await tx.boardMember.count({
       where: {
         boardId,
         role: Role.ADMIN,

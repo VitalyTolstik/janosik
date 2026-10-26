@@ -103,6 +103,8 @@ export class AttachmentsService {
     });
     if (!card) throw new NotFoundException();
 
+    // Fast-fail before writing the blob; the authoritative check runs inside
+    // the board lock below (TASK-100/108).
     const live = await this.prisma.attachment.count({
       where: { cardId, deletedAt: null },
     });
@@ -141,6 +143,18 @@ export class AttachmentsService {
     const created = await this.boardWrite.run(
       card.column.boardId,
       async (tx) => {
+        // Authoritative cap under the board lock (TASK-100): two concurrent
+        // uploads would otherwise both pass the pre-check. Counts inline too,
+        // so pasted media cannot bypass the per-card budget (TASK-108).
+        const concurrent = await tx.attachment.count({
+          where: { cardId, deletedAt: null },
+        });
+        if (concurrent >= LIMITS.attachmentsPerCard) {
+          throw new BadRequestException({
+            message: `Card must hold at most ${LIMITS.attachmentsPerCard} attachments`,
+            field: "file",
+          });
+        }
         const row = await tx.attachment.create({
           data: {
             id: randomUUID(),
@@ -227,6 +241,7 @@ export class AttachmentsService {
         cardId: true,
         boardId: true,
         uploadedById: true,
+        isInline: true,
         card: { select: { deletedAt: true } },
       },
     });
@@ -252,10 +267,14 @@ export class AttachmentsService {
         data: { deletedAt: new Date() },
       });
       if (updated.count === 0) return null;
-      await tx.card.update({
-        where: { id: row.cardId },
-        data: { attachmentCount: { decrement: 1 } },
-      });
+      // TASK-108: inline media never incremented the counter, so they must
+      // not decrement it either — that drift went negative over time.
+      if (!row.isInline) {
+        await tx.card.update({
+          where: { id: row.cardId },
+          data: { attachmentCount: { decrement: 1 } },
+        });
+      }
       const activity = await tx.activity.create({
         data: {
           boardId: row.boardId,

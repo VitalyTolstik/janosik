@@ -1,4 +1,10 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+} from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import type { PresenceUser, UserAvatarColor } from "@janosik/shared";
 import { RealtimeService } from "./realtime.service";
 
@@ -30,6 +36,12 @@ interface PresenceSession extends PresenceIdentity {
   order: number;
   /** Last heartbeat (join or ping) — what the TTL sweeps on. */
   seenAt: number;
+  /**
+   * Per-connection token (TASK-102). A stream teardown only removes the
+   * session it opened, so a reconnect that already replaced the row is not
+   * dropped by the old stream's late `leave`.
+   */
+  token: string;
 }
 
 /**
@@ -78,25 +90,40 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
 
   /** Register a connection and broadcast the roster. Always published, so
    * the fresh connection receives the current roster as its first frame —
-   * duplicate roster frames are cheap, a missing one is a bug. */
-  join(boardId: string, clientId: string, user: PresenceIdentity): void {
+   * duplicate roster frames are cheap, a missing one is a bug. Returns the
+   * connection token the teardown must present to `leave`.
+   *
+   * A `clientId` already held by *another* user is refused (TASK-102): the
+   * id comes from the query string, so without this check anyone could claim
+   * (and evict) someone else's presence slot. */
+  join(boardId: string, clientId: string, user: PresenceIdentity): string {
     const sessions = this.sessions(boardId);
     const previous = sessions.get(clientId);
-    const at = Date.now();
+    if (previous && previous.id !== user.id) {
+      throw new ForbiddenException("clientId belongs to another session");
+    }
+    const token = randomUUID();
     sessions.set(clientId, {
       ...user,
       order: previous?.order ?? this.nextOrder++,
-      seenAt: at,
+      seenAt: Date.now(),
+      token,
     });
     this.broadcast(boardId);
+    return token;
   }
 
-  /** Drop a connection; the roster is re-broadcast when a user left it. */
-  leave(boardId: string, clientId: string): void {
+  /** Drop a connection; the roster is re-broadcast when a user left it. The
+   *  `token` guards the reconnect race (TASK-102): a stale teardown whose
+   *  token no longer matches the live session is ignored. */
+  leave(boardId: string, clientId: string, token?: string): void {
     const sessions = this.boards.get(boardId);
     if (!sessions) return;
+    const current = sessions.get(clientId);
+    if (!current) return;
+    if (token !== undefined && current.token !== token) return;
     const before = this.userIds(sessions);
-    if (!sessions.delete(clientId)) return;
+    sessions.delete(clientId);
     if (!sameUsers(before, this.userIds(sessions))) this.broadcast(boardId);
     if (sessions.size === 0) this.boards.delete(boardId);
   }
@@ -140,10 +167,12 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Refresh a session's TTL. Returns whether it is still connected. */
-  touch(boardId: string, clientId: string): boolean {
+  /** Refresh a session's TTL. Returns whether it is still connected. A ping
+   *  whose `userId` does not own the session is ignored (TASK-102). */
+  touch(boardId: string, clientId: string, userId?: string): boolean {
     const session = this.boards.get(boardId)?.get(clientId);
     if (!session) return false;
+    if (userId !== undefined && session.id !== userId) return false;
     session.seenAt = Date.now();
     return true;
   }

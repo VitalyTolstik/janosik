@@ -7,6 +7,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { MembershipGuard } from "@/common/membership.guard";
+import { CurrentUser } from "@/auth/current-user.decorator";
+import type { AuthUser } from "@/auth/auth.types";
 import { PresenceService } from "@/realtime/presence.service";
 import { PresencePingDto } from "./dto/presence-ping.dto";
 
@@ -25,7 +27,12 @@ export class PresenceController {
   @UseGuards(MembershipGuard)
   @Post()
   @HttpCode(204)
-  ping(@Param("id") id: string, @Body() dto: PresencePingDto): void {
-    this.presence.touch(id, dto.clientId);
+  ping(
+    @Param("id") id: string,
+    @Body() dto: PresencePingDto,
+    @CurrentUser() user: AuthUser,
+  ): void {
+    // A ping only refreshes a session this user actually owns (TASK-102).
+    this.presence.touch(id, dto.clientId, user.id);
   }
 }

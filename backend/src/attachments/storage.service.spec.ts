@@ -82,6 +82,57 @@ describe("StorageService.send", () => {
     await expect(storage.send(absPath, res)).resolves.toBeUndefined();
     expect(res.destroyed).toBe(true);
   });
+
+  /** TASK-107: a `Range` request streams a 206 slice so video can seek. */
+  it("serves a single byte range as 206", async () => {
+    const absPath = path.join(root, "clip.bin");
+    await writeFile(absPath, "abcdefghij");
+    const headers: Record<string, string | number> = {};
+    const chunks: Buffer[] = [];
+    const res = new Writable({
+      write(chunk: Buffer, _enc, done) {
+        chunks.push(chunk);
+        done();
+      },
+    }) as Writable & {
+      setHeader: (name: string, value: string | number) => void;
+      statusCode: number;
+    };
+    res.setHeader = (name, value) => {
+      headers[name] = value;
+    };
+    res.statusCode = 200;
+
+    await storage.send(absPath, res, { headers: { range: "bytes=2-5" } });
+
+    expect(res.statusCode).toBe(206);
+    expect(headers["Content-Range"]).toBe("bytes 2-5/10");
+    expect(headers["Accept-Ranges"]).toBe("bytes");
+    expect(Buffer.concat(chunks).toString()).toBe("cdef");
+  });
+
+  it("answers an unsatisfiable range with 416", async () => {
+    const absPath = path.join(root, "clip.bin");
+    await writeFile(absPath, "abc");
+    const headers: Record<string, string | number> = {};
+    const res = new Writable({
+      write(_c, _e, done) {
+        done();
+      },
+    }) as Writable & {
+      setHeader: (name: string, value: string | number) => void;
+      statusCode: number;
+    };
+    res.setHeader = (name, value) => {
+      headers[name] = value;
+    };
+    res.statusCode = 200;
+
+    await storage.send(absPath, res, { headers: { range: "bytes=99-200" } });
+
+    expect(res.statusCode).toBe(416);
+    expect(headers["Content-Range"]).toBe("bytes */3");
+  });
 });
 
 /** TASK-76: the server type comes from the bytes, never the client header. */

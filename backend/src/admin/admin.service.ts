@@ -1832,7 +1832,7 @@ export class AdminService {
     if (!user) throw new NotFoundException("User not found");
     const blobs = await this.prisma.attachment.findMany({
       where: { uploadedById: userId },
-      select: { storedName: true },
+      select: { storedName: true, thumbnailName: true, posterName: true },
     });
     await this.prisma.$transaction(async (tx) => {
       await tx.emailVerificationCode.deleteMany({ where: { userId } });
@@ -1855,9 +1855,19 @@ export class AdminService {
       await tx.user.delete({ where: { id: userId } });
     });
     for (const blob of blobs) {
-      await this.storage
-        .remove(this.storage.attachmentPath(blob.storedName))
-        .catch(() => undefined);
+      // TASK-107: the derivatives are separate blobs — erase them too, or a
+      // user wipe leaves orphaned thumbnails/posters on disk.
+      for (const name of [
+        blob.storedName,
+        blob.thumbnailName,
+        blob.posterName,
+      ]) {
+        if (name) {
+          await this.storage
+            .remove(this.storage.attachmentPath(name))
+            .catch(() => undefined);
+        }
+      }
     }
     await this.audit(admin, "user.delete", "user", userId, {
       email: user.email,

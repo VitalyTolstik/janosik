@@ -153,11 +153,34 @@ export class MediaService implements OnModuleInit {
         boardId: true,
         storedName: true,
         mimeType: true,
+        derivativeStatus: true,
+        thumbnailName: true,
+        posterName: true,
       },
     });
     if (!row) return;
 
     const isImage = row.mimeType.startsWith("image/");
+
+    // Idempotency (TASK-107): a re-run must not mint a second derivative and
+    // orphan the first. If the work is already done and the blob is present,
+    // leave it alone.
+    if (row.derivativeStatus === "done") {
+      const existing =
+        isImage && row.thumbnailName
+          ? row.thumbnailName
+          : !isImage && row.posterName
+            ? row.posterName
+            : null;
+      if (existing) {
+        try {
+          await stat(this.storage.attachmentPath(existing));
+          return;
+        } catch {
+          // The derivative went missing — regenerate it below.
+        }
+      }
+    }
     const isVideo = row.mimeType.startsWith("video/");
     if (!isImage && !isVideo) {
       await this.prisma.attachment.updateMany({
@@ -234,6 +257,9 @@ export class MediaService implements OnModuleInit {
       );
       const timer = setTimeout(() => {
         child.kill("SIGKILL");
+        // TASK-107: don't leak the partial `.tmp-` file when ffmpeg hangs —
+        // the `close` handler may not fire after a SIGKILL.
+        void rm(output, { force: true });
         reject(new Error(`derive timed out after ${DERIVE_TIMEOUT_MS} ms`));
       }, DERIVE_TIMEOUT_MS);
       child.on("error", (error: Error) => {

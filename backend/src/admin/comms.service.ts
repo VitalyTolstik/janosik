@@ -91,6 +91,8 @@ export class CommsService {
     if (row.sendEmail && this.mailer.enabled) {
       const emails = await this.recipientEmails(row.audience, row.segment);
       void this.broadcasts.enqueue({
+        // Deterministic per-recipient job ids keyed on the announcement.
+        id: row.id,
         emails,
         subject: row.title,
         text: row.body,

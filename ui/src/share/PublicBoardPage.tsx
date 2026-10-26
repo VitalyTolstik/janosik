@@ -92,6 +92,14 @@ export function PublicBoardPage() {
         });
       },
       getSince: () => baselineRef.current,
+      // TASK-104: a revoked/deleted live share must not leave the page
+      // silently frozen — drop to the same "unavailable" state as a failed
+      // initial load.
+      onFatal: (_boardId, status) => {
+        setStatus(
+          status === 410 ? "gone" : status === 404 ? "missing" : "error",
+        );
+      },
     });
     connection.watch(dto.board.id);
     return () => connection.stop();

@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { Prisma, Role } from "@prisma/client";
 import type { BoardShare } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 import type {
@@ -367,7 +367,13 @@ export class ShareService {
     boardId: string,
   ): Promise<PublicBoardMemberDto[]> {
     const members = await this.prisma.boardMember.findMany({
-      where: { boardId, acceptedAt: { not: null } },
+      where: {
+        boardId,
+        acceptedAt: { not: null },
+        // TASK-104: an expired VIEWER is no longer a member — never list
+        // them on a public roster.
+        NOT: { role: Role.VIEWER, expiresAt: { lt: new Date() } },
+      },
       include: { user: true },
     });
     return members.map((member) => ({
@@ -392,7 +398,13 @@ export class ShareService {
   /** A card belongs to the shared board only if its column's board matches. */
   private async cardOnBoard(share: ShareRow, cardId: string): Promise<boolean> {
     const card = await this.prisma.card.findFirst({
-      where: { id: cardId, column: { boardId: share.boardId } },
+      // TASK-104: a soft-deleted card's comments/attachments must not leak
+      // through a share (snapshot or live).
+      where: {
+        id: cardId,
+        deletedAt: null,
+        column: { boardId: share.boardId },
+      },
       select: { id: true },
     });
     return card !== null;

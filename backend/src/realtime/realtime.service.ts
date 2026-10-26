@@ -5,7 +5,7 @@ import {
   type OnModuleInit,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { Subject, type Observable } from "rxjs";
+import { Observable, Subject } from "rxjs";
 import Redis from "ioredis";
 import type { BoardSseEvent } from "@janosik/shared";
 import { env } from "@/config/env";
@@ -25,6 +25,9 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RealtimeService.name);
   private readonly channels = new Map<string, Subject<BoardSseEvent>>();
   private readonly subscribed = new Set<string>();
+  /** Live subscriber count per board (TASK-102): at zero the channel and its
+   *  Redis subscription are torn down, so neither leaks with board count. */
+  private readonly refCounts = new Map<string, number>();
   private subscribers = 0;
   private publisher: Redis | null = null;
   private subscriber: Redis | null = null;
@@ -49,7 +52,7 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
           };
           // Skip our own echo: `publish` already delivered it locally.
           if (envelope.origin === this.nodeId) return;
-          this.channel(boardId).next(envelope.event);
+          this.channels.get(boardId)?.next(envelope.event);
         } catch {
           /* ignore malformed frames */
         }
@@ -74,7 +77,9 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   /** Push one committed event to every subscriber of the board (all nodes). */
   publish(boardId: string, event: BoardSseEvent): void {
     // Local first (this node's subscribers), then Redis for the others.
-    this.channel(boardId).next(event);
+    // `get` (not `channel`) — publishing to a board nobody listens to must
+    // not resurrect a channel that was just released (TASK-102).
+    this.channels.get(boardId)?.next(event);
     this.publisher
       ?.publish(
         CHANNEL_PREFIX + boardId,
@@ -83,10 +88,45 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
       .catch(() => undefined);
   }
 
-  /** Events committed from now on; catch-up from the log is the caller's. */
+  /**
+   * Events committed from now on; catch-up from the log is the caller's.
+   *
+   * Ref-counted (TASK-102): the Subject and the Redis subscription live only
+   * while at least one subscriber holds the returned Observable, so a
+   * long-lived process does not accumulate one channel per board ever seen.
+   */
   watch(boardId: string): Observable<BoardSseEvent> {
-    this.ensureSubscribed(boardId);
-    return this.channel(boardId).asObservable();
+    return new Observable<BoardSseEvent>((subscriber) => {
+      this.ensureSubscribed(boardId);
+      const channel = this.channel(boardId);
+      this.refCounts.set(boardId, (this.refCounts.get(boardId) ?? 0) + 1);
+      const inner = channel.subscribe(subscriber);
+      return () => {
+        inner.unsubscribe();
+        const remaining = (this.refCounts.get(boardId) ?? 1) - 1;
+        if (remaining > 0) {
+          this.refCounts.set(boardId, remaining);
+          return;
+        }
+        this.refCounts.delete(boardId);
+        this.releaseChannel(boardId);
+      };
+    });
+  }
+
+  /** Drop a board's Subject + Redis subscription once nobody watches it. */
+  private releaseChannel(boardId: string): void {
+    const channel = this.channels.get(boardId);
+    if (channel) {
+      channel.complete();
+      this.channels.delete(boardId);
+    }
+    if (this.subscribed.has(boardId) && this.subscriber !== null) {
+      this.subscribed.delete(boardId);
+      void this.subscriber
+        .unsubscribe(CHANNEL_PREFIX + boardId)
+        .catch(() => undefined);
+    }
   }
 
   /** Boards with a live channel (TASK-64 observability). */

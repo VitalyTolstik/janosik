@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { stat, writeFile } from "node:fs/promises";
 
 import {
+  GoneException,
   Injectable,
   Logger,
   NotFoundException,
@@ -32,8 +33,12 @@ export const EXPORTS_JOB = "export-user";
 
 /** Artifact lifetime; the sweep deletes expired exports. */
 const EXPORT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-/** Below this many authored rows the bundle is built inline. */
-const SMALL_THRESHOLD = 5_000;
+/**
+ * Below this many authored rows the bundle is built inline. Deliberately
+ * small (TASK-111): a synchronous build blocks the request, so anything but
+ * a genuinely tiny account goes to the queue.
+ */
+const SMALL_THRESHOLD = 1_000;
 
 export interface ExportsJob {
   exportId: string;
@@ -179,6 +184,11 @@ export class ExportsService {
     });
     if (!row || row.status !== "ready" || !row.storedName) {
       throw new NotFoundException("Export is not ready");
+    }
+    // TASK-109: the TTL is enforced at download too, not only by the sweep —
+    // a stale link must not keep serving a GDPR bundle.
+    if (row.expiresAt.getTime() < Date.now()) {
+      throw new GoneException("Export has expired");
     }
     return {
       absPath: this.storage.attachmentPath(row.storedName),

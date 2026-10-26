@@ -542,6 +542,29 @@ describe("Activity & comments API (e2e)", () => {
       );
     });
 
+    it("is idempotent on a repeated commandId (TASK-99)", async () => {
+      const { cardId } = await boardWithCard("Idempotent comments", "idem");
+      const commandId = randomUUID();
+
+      const first = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(memberToken))
+        .send({ text: "Only once", commandId })
+        .expect(201);
+      const retry = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(memberToken))
+        .send({ text: "Only once", commandId })
+        .expect(201);
+      expect(retry.body.id).toBe(first.body.id);
+
+      const page = await server()
+        .get(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect((page.body as CommentPage).items).toHaveLength(1);
+    });
+
     it("lets only the author delete and only writers comment", async () => {
       const { cardId } = await boardWithCard("Comment roles board", "cr");
       const created = await server()

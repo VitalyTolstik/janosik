@@ -403,6 +403,8 @@ export const ADMIN_AUDIT_ACTIONS = [
   "comms.digest_sent",
   "comms.reminder_sent",
   "data.export_queued",
+  "data.export_downloaded",
+  "queue.ticket_issued",
 ] as const;
 
 export type AdminAuditAction = (typeof ADMIN_AUDIT_ACTIONS)[number];

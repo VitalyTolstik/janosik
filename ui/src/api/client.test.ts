@@ -282,7 +282,7 @@ describe("ApiClient", () => {
     });
 
     await client.listComments("c-1", "50:abc", 20);
-    await client.createComment("c-1", "hi");
+    await client.createComment("c-1", "hi", "idem-key");
     await client.deleteComment("comment-1");
     await client.cardActivity("c-1", "at:c:7");
     expect(calls).toEqual([
@@ -294,7 +294,8 @@ describe("ApiClient", () => {
       {
         method: "POST",
         url: "/api/v1/cards/c-1/comments",
-        body: { text: "hi" },
+        // TASK-99: the comment carries an idempotency key.
+        body: { text: "hi", commandId: "idem-key" },
       },
       { method: "DELETE", url: "/api/v1/comments/comment-1", body: undefined },
       {

@@ -156,6 +156,30 @@ describe("PresenceService", () => {
     expect(presence.roster("b1")).toEqual([]);
   });
 
+  it("refuses a clientId already held by another user (TASK-102)", () => {
+    presence.join("b1", "shared", alice);
+    expect(() => presence.join("b1", "shared", bob)).toThrow();
+    // The rightful owner keeps the slot.
+    expect(presence.roster("b1")).toEqual([
+      { id: "u-alice", displayName: "Alice", avatarColor: "blue" },
+    ]);
+  });
+
+  it("ignores a stale teardown after a reconnect (TASK-102)", () => {
+    const first = presence.join("b1", "a1", alice);
+    const second = presence.join("b1", "a1", alice);
+    presence.leave("b1", "a1", first);
+    expect(presence.roster("b1")).toHaveLength(1);
+    presence.leave("b1", "a1", second);
+    expect(presence.roster("b1")).toHaveLength(0);
+  });
+
+  it("only the owning user may refresh a ping (TASK-102)", () => {
+    presence.join("b1", "a1", alice);
+    expect(presence.touch("b1", "a1", "u-bob")).toBe(false);
+    expect(presence.touch("b1", "a1", "u-alice")).toBe(true);
+  });
+
   it("heartbeat re-broadcasts only boards with fresh connections", () => {
     const seen = collector(realtime);
     const other = collector(realtime, "b2");

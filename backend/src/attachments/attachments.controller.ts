@@ -8,13 +8,14 @@ import {
   Param,
   Post,
   Query,
+  Req,
   Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import type { AttachmentDto } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 
@@ -79,6 +80,7 @@ export class AttachmentsController {
   @Get("attachments/:attachmentId/content")
   async content(
     @Param("attachmentId") attachmentId: string,
+    @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
     const { meta, storedName } = await this.attachments.content(attachmentId);
@@ -87,7 +89,8 @@ export class AttachmentsController {
       "Content-Disposition",
       `attachment; filename*=UTF-8''${encodeURIComponent(meta.fileName)}`,
     );
-    await this.storage.send(this.storage.attachmentPath(storedName), res);
+    // Range-aware (TASK-107): video/audio players can seek.
+    await this.storage.send(this.storage.attachmentPath(storedName), res, req);
   }
 
   /**
