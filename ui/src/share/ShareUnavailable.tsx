@@ -2,7 +2,6 @@ import { Link } from "react-router-dom";
 import { Home, RotateCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { BrandMark } from "@/components/BrandMark";
 import { useI18n } from "@/i18n";
 import { routes } from "@/routes";
 
@@ -13,8 +12,10 @@ export type ShareUnavailableVariant = "missing" | "gone" | "error";
  *
  * Three flavours, one look: `missing` (404 — revoked/expired/unknown token),
  * `gone` (410 — the board behind a live link was deleted) and `error` (a
- * transient load failure, with a retry). The art is a kanban column whose
- * card has floated off the board — a playful nod to "the card is not here".
+ * transient load failure, with a retry). The card mirrors the app's own
+ * fallback base (ErrorBoundary): the same display font, type scale and
+ * buttons — plus a playful kanban illustration whose card has floated off
+ * the board.
  */
 export function ShareUnavailable({
   variant,
@@ -32,59 +33,36 @@ export function ShareUnavailable({
 
   return (
     <div
-      className="relative flex flex-1 items-center justify-center overflow-hidden px-4 py-10"
+      className="flex min-h-full items-center justify-center p-6 text-foreground"
       data-testid="share-unavailable"
     >
-      {/* Ambient brand glow — pure CSS, no assets. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -top-32 left-1/2 h-80 w-[36rem] -translate-x-1/2 rounded-full bg-primary/15 blur-3xl"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -bottom-40 right-[-8rem] h-80 w-[28rem] rounded-full bg-secondary/10 blur-3xl"
-      />
-
-      <div className="relative flex w-full max-w-md flex-col items-center gap-5 rounded-2xl border border-border bg-card/70 p-8 text-center shadow-xl shadow-black/20 backdrop-blur">
-        <div className="group flex items-center gap-2">
-          <BrandMark />
-          <span className="font-display text-sm font-semibold tracking-tight">
-            Janosik
-          </span>
-        </div>
-
+      <div className="w-full max-w-sm space-y-5 rounded-2xl border border-border/70 bg-card p-7 text-center shadow-xl">
         <LostBoardArt ghost={variant === "gone"} />
 
         <span
-          className="inline-flex items-center rounded-full border border-border bg-hover/60 px-3 py-1 font-mono text-xs font-medium tabular-nums text-muted-foreground"
+          className="mx-auto inline-flex items-center rounded-full border border-border bg-hover/60 px-3 py-1 font-mono text-xs font-medium tabular-nums text-muted-foreground"
           data-testid="share-unavailable-code"
         >
           {code}
         </span>
 
         <div className="space-y-1.5">
-          <h1 className="text-lg font-semibold tracking-tight text-foreground">
+          <h1 className="font-display text-lg font-semibold tracking-tight">
             {title}
           </h1>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {body}
-          </p>
+          <p className="text-sm text-muted-foreground">{body}</p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex justify-center gap-2">
           {variant === "error" && onRetry ? (
-            <Button size="sm" onClick={onRetry}>
-              <RotateCw className="h-3.5 w-3.5" aria-hidden />
+            <Button onClick={onRetry}>
+              <RotateCw className="h-4 w-4" aria-hidden />
               {t("share.public.retry")}
             </Button>
           ) : null}
-          <Button
-            asChild
-            size="sm"
-            variant={variant === "error" ? "outline" : "default"}
-          >
+          <Button asChild variant={variant === "error" ? "outline" : "default"}>
             <Link to={routes.home}>
-              <Home className="h-3.5 w-3.5" aria-hidden />
+              <Home className="h-4 w-4" aria-hidden />
               {t("share.public.home")}
             </Link>
           </Button>
@@ -102,12 +80,12 @@ export function ShareUnavailable({
 function LostBoardArt({ ghost }: { ghost: boolean }) {
   return (
     <svg
-      width="240"
-      height="150"
+      width="200"
+      height="126"
       viewBox="0 0 260 170"
       role="img"
       aria-hidden
-      className="max-w-full"
+      className="mx-auto max-w-full"
     >
       <defs>
         <linearGradient id="janosik-lost-grad" x1="0" y1="1" x2="1" y2="0">
