@@ -49,3 +49,9 @@ site/.astro/
 site/public/favicon.svg
 site/public/og.png
 site/public/og-*.png
+
+# Video workspace (Remotion) — assets copied from `brand/` at render time.
+# The rendered clips in `site/public/media/` ARE committed (they are the
+# landing page's assets), so they are not ignored here.
+video/public/fonts/
+video/public/logo.svg

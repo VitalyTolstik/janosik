@@ -3,6 +3,7 @@ import { appLink, site } from "../../config";
 import type { Lang, UIKey } from "../../i18n/ui";
 import { localizedUrl, useTranslations } from "../../i18n/utils";
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import { withBase } from "../../utils/url";
 import MediaSlot, { type MediaVariant } from "../MediaSlot.astro";
 
 interface Props {
@@ -14,6 +15,26 @@ const t = useTranslations(lang);
 
 const title = t("seo.home.title");
 const description = t("seo.home.description");
+
+// Feature clips rendered by the `video/` workspace into `site/public/media`.
+// Each slot variant maps to one clip; the poster doubles as its still.
+const clipSlug: Record<MediaVariant, string> = {
+  swarm: "hero-swarm",
+  board: "feature-board",
+  realtime: "feature-realtime",
+  cards: "feature-cards",
+  sharing: "feature-sharing",
+  selfhost: "feature-selfhost",
+};
+
+const clip = (variant: MediaVariant) => {
+  const slug = clipSlug[variant];
+  return {
+    mp4: withBase(`/media/${slug}.mp4`),
+    webm: withBase(`/media/${slug}.webm`),
+    poster: withBase(`/media/${slug}.jpg`),
+  };
+};
 
 // Icons are inline so they inherit `currentColor`; the `-icon` svg shells are
 // identical, only the geometry differs.
@@ -206,6 +227,7 @@ const faqSchema = {
         class="hero-slot"
         variant="swarm"
         label={t("home.slot.swarm")}
+        {...clip("swarm")}
       />
     </div>
   </section>
@@ -275,6 +297,7 @@ const faqSchema = {
               class="feature-row-slot"
               variant={row.variant}
               label={t(row.slot)}
+              {...clip(row.variant)}
             />
           </article>
         ))}
@@ -340,6 +363,7 @@ const faqSchema = {
           class="oss-slot"
           variant="selfhost"
           label={t("home.slot.selfhost")}
+          {...clip("selfhost")}
         />
       </div>
     </div>

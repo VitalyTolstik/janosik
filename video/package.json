@@ -1,0 +1,36 @@
+{
+  "name": "@janosik/video",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Janosik feature clips — Remotion compositions rendered into the marketing site's media slots.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "assets": "node scripts/copy-assets.mjs",
+    "studio": "npm run assets && remotion studio",
+    "render": "npm run assets && node scripts/render.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@janosik/brand": "*",
+    "@remotion/bundler": "4.0.539",
+    "@remotion/cli": "4.0.539",
+    "@remotion/fonts": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "4.0.539"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@fontsource/space-grotesk": "^5.3.0",
+    "@types/node": "^26.4.1",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "typescript": "~5.9.0",
+    "typescript-eslint": "^8.72.1"
+  }
+}

@@ -71,5 +71,33 @@ const t = useTranslations(lang);
       <slot />
     </main>
     <Footer lang={lang} />
+    <script>
+      // Feature clips use `preload="none"`: play them only once they scroll
+      // into view, and leave the poster in place for reduced-motion users (the
+      // poster also covers the no-JS case). Bundled once by Astro.
+      const reduce = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+      if (!reduce && "IntersectionObserver" in window) {
+        const observer = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (!entry.isIntersecting) continue;
+              const video = entry.target;
+              if (video instanceof HTMLVideoElement) {
+                video.play().catch(() => {});
+              }
+              observer.unobserve(video);
+            }
+          },
+          { rootMargin: "200px 0px" },
+        );
+        for (const video of document.querySelectorAll(
+          "video[data-lazy-video]",
+        )) {
+          observer.observe(video);
+        }
+      }
+    </script>
   </body>
 </html>

@@ -1,34 +1,37 @@
 ---
 /**
- * A reserved media slot for the landing page.
+ * A media-ready frame for the landing page.
  *
- * Until the feature clips land (TASK-128+), the slot renders a lightweight,
- * on-brand board mockup drawn in the DOM — no image, no layout shift. When the
- * real media arrives, pass `src` (and `video` for a clip): the frame keeps its
- * aspect ratio and the mockup is swapped out, so nothing else moves.
+ * Every slot reserves a 16:10 frame (the clips render at 1280×800), so a clip
+ * drops in with no layout shift. Pass `mp4`/`webm`/`poster` to show a feature
+ * clip; without them the slot draws a lightweight, on-brand board mockup.
+ *
+ * Clips are lazy: `preload="none"` keeps them off the wire until they scroll
+ * into view (`BaseLayout` plays them via IntersectionObserver), and the poster
+ * is the fallback for `prefers-reduced-motion` and no-JS.
  */
 export type MediaVariant =
   "board" | "realtime" | "cards" | "sharing" | "selfhost" | "swarm";
 
 interface Props {
-  /** Which mockup to draw when there is no media yet. */
+  /** Which mockup to draw when there is no media. */
   variant?: MediaVariant;
-  /** Accessible description of what the slot shows (or will show). */
+  /** Accessible description of what the slot shows. */
   label: string;
-  /** Future media: an image URL, or a video URL when `video` is set. */
-  src?: string;
-  /** Poster frame for a future `<video>`. */
+  /** Feature clip sources, relative to the deploy base. */
+  mp4?: string;
+  webm?: string;
+  /** Poster frame — also the reduced-motion / no-JS fallback. */
   poster?: string;
-  video?: boolean;
   class?: string;
 }
 
 const {
   variant = "board",
   label,
-  src,
+  mp4,
+  webm,
   poster,
-  video = false,
   class: className,
 } = Astro.props;
 
@@ -40,20 +43,20 @@ const swarmColumns = [2, 3, 2, 1];
 
 <figure class:list={["slot", `slot--${variant}`, className]} data-slot="media">
   <div class="slot-frame" role="img" aria-label={label}>
-    {src ? (
-      video ? (
-        <video
-          class="slot-media"
-          src={src}
-          poster={poster}
-          muted
-          loop
-          playsinline
-          aria-hidden="true"
-        />
-      ) : (
-        <img class="slot-media" src={src} alt="" />
-      )
+    {mp4 || webm ? (
+      <video
+        class="slot-media"
+        poster={poster}
+        muted
+        loop
+        playsinline
+        preload="none"
+        aria-hidden="true"
+        data-lazy-video
+      >
+        {webm && <source src={webm} type="video/webm" />}
+        {mp4 && <source src={mp4} type="video/mp4" />}
+      </video>
     ) : (
       <>
         <div class="slot-top">

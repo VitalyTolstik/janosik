@@ -657,9 +657,9 @@ p {
 }
 
 /* ---------------------------------------------------------------------------
- * Media slot — a reserved, media-ready frame. Until the feature clips land
- * (TASK-128+) it draws a lightweight board mockup; the aspect ratio means a
- * real image/video drops in with no layout shift.
+ * Media slot — a reserved, media-ready frame. It holds a feature clip (TASK-129)
+ * when one is passed, otherwise a lightweight board mockup. The 16:10 aspect
+ * ratio matches the clips, so nothing shifts when a video drops in.
  * ------------------------------------------------------------------------- */
 
 .slot {
@@ -684,6 +684,8 @@ p {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* Shows behind the poster and during the brief decode of the first frame. */
+  background: var(--surface);
 }
 
 .slot-top {

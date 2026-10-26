@@ -1,0 +1,43 @@
+/* ---------------------------------------------------------------------------
+ * Video theme layer.
+ *
+ * `tokens.css` (dark by default, `.light` variant) and `site-tokens.css`
+ * (light site palette as `:root`) are imported by `src/index.ts` before this
+ * file, so the default here is the light site palette. Clips opt into the app's
+ * deep-navy dark theme with the `.dark` class — the same override the marketing
+ * site uses, kept in sync with `site/src/styles/global.css`.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #0b1220;
+  --card: #121a2e;
+  --surface: #172033;
+  --hover: #1e2a44;
+  --foreground: #e6edf7;
+  --muted-foreground: #93a4bd;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --secondary: #38bdf8;
+  --secondary-foreground: #06283d;
+  --border: #24324a;
+  --input: #24324a;
+  --ring: #3b82f6;
+  --janosik-brand-accent: #2563eb;
+}
+
+.stage,
+.stage * {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+.stage {
+  font-family: var(--janosik-font-display);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}

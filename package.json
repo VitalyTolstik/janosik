@@ -28,7 +28,8 @@
     "shared",
     "brand",
     "site",
-    "backend"
+    "backend",
+    "video"
   ],
   "scripts": {
     "dev": "npm run dev -w ui",
@@ -41,7 +42,7 @@
     "test": "npm run test -w ui && npm run test -w shared && npm run test -w brand && npm run test -w site",
     "test:backend": "npm run test -w backend",
     "test:coverage": "npm run test:coverage -w ui && npm run test:coverage -w shared && npm run test:coverage -w brand",
-    "lint": "npm run lint -w ui && npm run lint -w shared && npm run lint -w brand && npm run lint -w site && npm run lint -w backend",
+    "lint": "npm run lint -w ui && npm run lint -w shared && npm run lint -w brand && npm run lint -w site && npm run lint -w backend && npm run lint -w video",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
     "size": "npm run size -w ui",
