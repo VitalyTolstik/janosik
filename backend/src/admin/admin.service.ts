@@ -1902,9 +1902,10 @@ export class AdminService {
       }
     }
     await this.prisma.$transaction([
-      this.prisma.adminRefreshToken.updateMany({
-        where: { adminId: masterId, revokedAt: null },
-        data: { revokedAt: new Date() },
+      // The account is going away, so its refresh tokens must go too — a
+      // revoke-only left rows that blocked the FK-bound delete (500).
+      this.prisma.adminRefreshToken.deleteMany({
+        where: { adminId: masterId },
       }),
       this.prisma.adminUser.delete({ where: { id: masterId } }),
     ]);

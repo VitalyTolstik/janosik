@@ -817,6 +817,29 @@ describe("Admin API (e2e)", () => {
       expect(audit).toBeNull();
     });
 
+    it("lets only owners edit the IP allowlist (TASK-65)", async () => {
+      await server()
+        .put("/api/v1/admin/security")
+        .set("Authorization", `Bearer ${operatorToken}`)
+        .send({ ipAllowlist: "10.0.0.0/8" })
+        .expect(403);
+
+      const saved = await server()
+        .put("/api/v1/admin/security")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ ipAllowlist: "10.0.0.0/8" })
+        .expect(200);
+      expect(saved.body.ipAllowlist).toBe("10.0.0.0/8");
+
+      // Clear it again so the owner's own sign-in is not gated for later tests.
+      const cleared = await server()
+        .put("/api/v1/admin/security")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ ipAllowlist: null })
+        .expect(200);
+      expect(cleared.body.ipAllowlist).toBeNull();
+    });
+
     it("lists masters for an owner", async () => {
       const res = await server()
         .get("/api/v1/admin/admins")
@@ -889,6 +912,24 @@ describe("Admin API (e2e)", () => {
         .send({ disabled: false })
         .expect(200);
       expect(enabled.body.disabledAt).toBeNull();
+    });
+
+    it("removes a master that has signed in (refresh tokens do not block it)", async () => {
+      // The operator logged in earlier, so it owns refresh tokens; deleting
+      // the master must clear them first or the FK-bound delete answers 500.
+      await server()
+        .delete(`/api/v1/admin/admins/${operatorId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+
+      expect(
+        await prisma.adminUser.findUnique({ where: { id: operatorId } }),
+      ).toBeNull();
+      expect(
+        await prisma.adminRefreshToken.count({
+          where: { adminId: operatorId },
+        }),
+      ).toBe(0);
     });
   });
 

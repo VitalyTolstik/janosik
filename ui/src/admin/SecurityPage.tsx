@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
+import { useAdminAuth } from "./AdminAuthContext";
 import {
   Badge,
   CharCount,
@@ -21,6 +22,8 @@ import {
 export function SecurityPage() {
   const t = useAdminT();
   const toast = useToast();
+  const { admin } = useAdminAuth();
+  const isOwner = admin?.role === "OWNER";
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [security, setSecurity] = useState<AdminSecurityDto | null>(null);
   const [setup, setSetup] = useState<AdminTotpSetupDto | null>(null);
@@ -197,7 +200,12 @@ export function SecurityPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="text-sm font-medium">{t("admin.security.ip")}</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-medium">{t("admin.security.ip")}</h2>
+          {!isOwner ? (
+            <Badge variant="neutral">{t("admin.security.ip.readonly")}</Badge>
+          ) : null}
+        </div>
         <p className="mb-2 text-xs text-muted-foreground">
           {t("admin.security.ip.hint")}
         </p>
@@ -205,22 +213,32 @@ export function SecurityPage() {
           value={allowlist}
           maxLength={500}
           placeholder="203.0.113.7, 10.0.0.0/8"
+          disabled={!isOwner}
           data-testid="admin-ip-allowlist"
           onChange={(event) => setAllowlist(event.target.value)}
         />
         <div className="flex justify-end">
           <CharCount value={allowlist} max={500} />
         </div>
-        <div className="mt-3 flex justify-end">
-          <Button
-            size="sm"
-            disabled={busy}
-            data-testid="admin-ip-save"
-            onClick={() => void saveAllowlist()}
+        {!isOwner ? (
+          <p
+            className="mt-2 text-[11px] text-muted-foreground"
+            data-testid="admin-ip-readonly"
           >
-            {t("admin.common.save")}
-          </Button>
-        </div>
+            {t("admin.security.ip.ownerOnly")}
+          </p>
+        ) : (
+          <div className="mt-3 flex justify-end">
+            <Button
+              size="sm"
+              disabled={busy}
+              data-testid="admin-ip-save"
+              onClick={() => void saveAllowlist()}
+            >
+              {t("admin.common.save")}
+            </Button>
+          </div>
+        )}
       </Panel>
 
       <Panel className="p-4">

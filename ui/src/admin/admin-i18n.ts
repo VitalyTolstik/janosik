@@ -310,6 +310,9 @@ const en = {
   "admin.security.ip": "IP allowlist",
   "admin.security.ip.hint":
     "CSV of IPs/CIDRs allowed to sign in. Empty = any address.",
+  "admin.security.ip.readonly": "Owner only",
+  "admin.security.ip.ownerOnly":
+    "Only an owner can change the IP allowlist — operators cannot restrict their own sign-in origin.",
   "admin.security.alerts": "Suspicious activity",
   "admin.security.alerts.empty": "No recent sign-in failures",
   "admin.security.alert.failed": "failed sign-in",
@@ -1172,6 +1175,9 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.security.ip": "IP-allowlist",
   "admin.security.ip.hint":
     "CSV из IP/CIDR, с которых разрешён вход. Пусто — любой адрес.",
+  "admin.security.ip.readonly": "Только владелец",
+  "admin.security.ip.ownerOnly":
+    "Менять IP-allowlist может только владелец — оператор не может ограничить себе адрес входа.",
   "admin.security.alerts": "Подозрительная активность",
   "admin.security.alerts.empty": "Недавних ошибок входа нет",
   "admin.security.alert.failed": "ошибка входа",

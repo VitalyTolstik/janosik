@@ -13,6 +13,7 @@ import {
 import type { AdminMasterRowDto } from "@janosik/shared";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -228,23 +229,27 @@ function CreateMasterDialog({
                 className="h-8 w-full rounded-lg border border-input bg-background/70 px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </label>
-            <label className="flex items-start gap-2 rounded-lg border border-border bg-background/40 px-3 py-2">
-              <input
-                type="checkbox"
+            <div className="flex items-start gap-2 rounded-lg border border-border bg-background/40 px-3 py-2">
+              <Checkbox
                 checked={owner}
-                onChange={(event) => setOwner(event.target.checked)}
+                onCheckedChange={setOwner}
+                aria-label={t("admin.masters.create.owner")}
                 data-testid="admin-master-owner"
-                className="mt-0.5 h-3.5 w-3.5 accent-[var(--primary)]"
+                className="mt-0.5"
               />
-              <span className="space-y-0.5">
+              <button
+                type="button"
+                onClick={() => setOwner(!owner)}
+                className="space-y-0.5 text-left"
+              >
                 <span className="block text-xs font-medium text-foreground">
                   {t("admin.masters.create.owner")}
                 </span>
                 <span className="block text-[11px] text-muted-foreground">
                   {t("admin.masters.create.ownerHint")}
                 </span>
-              </span>
-            </label>
+              </button>
+            </div>
             {error ? (
               <p role="alert" className="text-xs text-danger">
                 {error}

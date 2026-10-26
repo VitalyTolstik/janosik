@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -188,6 +189,11 @@ export class SecurityService {
     dto: AdminUpdateSecurityRequest,
   ): Promise<AdminSecurityDto> {
     if (dto.ipAllowlist !== undefined) {
+      // The IP allowlist is an OWNER-only control (TASK-65 addendum): an
+      // operator must not be able to widen (or lock) their own sign-in origin.
+      if (admin.role !== "OWNER") {
+        throw new ForbiddenException("Owner rights are required");
+      }
       await this.prisma.adminUser.update({
         where: { id: admin.id },
         data: { ipAllowlist: normalizeAllowlist(dto.ipAllowlist) },

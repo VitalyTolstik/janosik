@@ -724,4 +724,15 @@ describe("admin content and security pages", () => {
       t("admin.security.scope"),
     );
   });
+
+  it("makes the IP allowlist read-only for operators (TASK-65)", async () => {
+    const server = serverWith();
+    server.sessionRole = "OPERATOR";
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/security");
+
+    expect(await screen.findByTestId("admin-ip-allowlist")).toBeDisabled();
+    expect(await screen.findByTestId("admin-ip-readonly")).toBeTruthy();
+    expect(screen.queryByTestId("admin-ip-save")).toBeNull();
+  });
 });
