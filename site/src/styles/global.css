@@ -573,6 +573,90 @@ p {
 }
 
 /* ---------------------------------------------------------------------------
+ * Swarm section — three steps to point agents at the board, next to the API
+ * request they send.
+ * ------------------------------------------------------------------------- */
+
+.swarm {
+  display: grid;
+  gap: clamp(2rem, 5vw, 3.5rem);
+  align-items: start;
+  /* `minmax(0, 1fr)` lets the columns shrink below the code block's intrinsic
+   * width, so the `<pre>` scrolls instead of pushing the page wide. */
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 900px) {
+  .swarm {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.swarm-steps {
+  counter-reset: swarm;
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 1.75rem;
+}
+
+.swarm-steps li {
+  counter-increment: swarm;
+  position: relative;
+  padding-left: 3.25rem;
+}
+
+.swarm-steps li::before {
+  content: counter(swarm);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.6rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 700;
+}
+
+.swarm-steps h3 {
+  font-size: var(--janosik-type-h3-size);
+  margin-bottom: 0.35rem;
+}
+
+.swarm-aside {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.swarm-aside .oss-points {
+  margin-top: 0;
+}
+
+.swarm-code {
+  margin: 0;
+  min-width: 0;
+}
+
+.code {
+  margin: 0;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+  color: var(--foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--janosik-type-small-size);
+  line-height: 1.6;
+  overflow-x: auto;
+  tab-size: 2;
+}
+
+/* ---------------------------------------------------------------------------
  * Media slot — a reserved, media-ready frame. Until the feature clips land
  * (TASK-128+) it draws a lightweight board mockup; the aspect ratio means a
  * real image/video drops in with no layout shift.
@@ -809,6 +893,97 @@ p {
   flex: none;
   width: 0.9rem;
   height: 0.9rem;
+}
+
+/* ---------------------------------------------------------------------------
+ * Swarm mockup — a board several agents work at once (the hero visual).
+ * ------------------------------------------------------------------------- */
+
+.slot-canvas--swarm {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.slot-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.slot-agent {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  flex: none;
+}
+
+.slot-agent--a {
+  background: var(--primary);
+}
+
+.slot-agent--b {
+  background: var(--secondary);
+}
+
+.slot-agent--c {
+  background: var(--success);
+}
+
+.slot-agent--d {
+  background: var(--warning);
+}
+
+/* The card an agent is working right now: a soft, breathing ring. */
+.slot-card--active {
+  border-color: color-mix(in oklab, var(--primary) 55%, var(--border));
+  animation: slot-work 1.8s var(--janosik-ease-in-out) infinite;
+}
+
+@keyframes slot-work {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 34%, transparent);
+  }
+
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary) 16%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slot-card--active {
+    animation: none;
+  }
+}
+
+.slot-avatar--d {
+  background: var(--warning);
+}
+
+.slot-presence--roster .slot-avatar + .slot-avatar {
+  margin-inline-start: -0.45rem;
+}
+
+/* A comment an agent just left on the board. */
+.slot-bubble {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--card);
+  box-shadow: 0 18px 40px -28px
+    color-mix(in oklab, var(--foreground) 60%, transparent);
+}
+
+.slot-bubble-lines {
+  display: grid;
+  gap: 0.35rem;
+  width: 3.5rem;
 }
 
 .slot--cards .slot-canvas,

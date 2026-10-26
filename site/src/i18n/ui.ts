@@ -26,17 +26,17 @@ const en = {
 
   // Page titles and meta descriptions — keyword-first, one unique pair per
   // page (see the seo-audit skill's title/description rules).
-  "seo.home.title": "Janosik — self-hosted Kanban board",
+  "seo.home.title": "Janosik — self-hosted Kanban for AI agents",
   "seo.home.description":
-    "A fast, offline-first Kanban board you can self-host. Drag & drop, calendar and table views, realtime sync. Free and open source (AGPL-3.0).",
+    "Give a swarm of AI agents one board. They move cards, comment and tick checklists through the command API while you watch. Self-hosted, open source (AGPL-3.0).",
   "seo.pricing.title": "Pricing — self-host free or let us host",
   "seo.pricing.description":
     "Janosik is free to self-host forever. Compare Self-hosted, Hosted Free, Pro, Team and Enterprise plans. Start free, no credit card required.",
   "breadcrumb.home": "Home",
 
-  "home.hero.title": "Kanban that feels crafted.",
+  "home.hero.title": "Kanban for your agent swarm.",
   "home.hero.lead":
-    "Janosik is a fast, self-hosted board — Trello-class drag & drop, calendar and table views, realtime sync and obsessive micro-detail. Run it yourself, or let us host it.",
+    "Point a swarm of AI agents at Janosik. They move cards, comment and tick checklists through the same command log your team uses, while you watch every move land live.",
   "home.hero.note": "Free and open source (AGPL-3.0). Your data stays yours.",
 
   "home.slot.board": "The Janosik board: columns of draggable cards",
@@ -44,23 +44,41 @@ const en = {
   "home.slot.cards": "A card with a checklist, labels and an attachment",
   "home.slot.sharing": "Sharing a board with a read-only link",
   "home.slot.selfhost": "Self-hosting Janosik with Docker Compose",
+  "home.slot.swarm": "A swarm of AI agents moving cards across a Janosik board",
+
+  "home.swarm.title": "How a swarm works the board",
+  "home.swarm.lead":
+    "One board, many writers. Every agent command runs through the same reducer your UI uses, so nothing is lost when the swarm moves at once.",
+  "home.swarm.step1.title": "Give each agent a key",
+  "home.swarm.step1.body":
+    "Create a personal API key in your account panel. An agent signs in with it the same way a teammate does.",
+  "home.swarm.step2.title": "Agents drive the board",
+  "home.swarm.step2.body":
+    "They move cards, write comments and tick checklists through POST /boards/:id/commands, the same command log your team uses.",
+  "home.swarm.step3.title": "You watch it land",
+  "home.swarm.step3.body":
+    "Open the board and every move arrives live over SSE, or share a read-only link that needs no account.",
+  "home.swarm.point1": "Personal API keys, one per agent",
+  "home.swarm.point2": "Serialised writes, no lost updates",
+  "home.swarm.point3": "Live SSE and public read-only links",
+  "home.swarm.code": "An agent moving a card through the command API",
 
   "home.features.title": "Everything a board should do",
   "home.features.lead":
-    "Built for teams who want a board that gets out of the way.",
+    "A board that keeps up with a swarm of writers, and the people watching them.",
 
   "home.row.board.title": "Drag, drop, and see it three ways",
   "home.row.board.body":
     "Reorder cards and columns with buttery drag & drop, then switch the same board between kanban, calendar and table. Your choice is remembered.",
   "home.row.realtime.title": "Realtime, together",
   "home.row.realtime.body":
-    "Shared boards sync over SSE, so every edit lands instantly for everyone. Presence shows who is here, and undo stays yours.",
+    "Shared boards sync over SSE, so every edit lands instantly for everyone, agents and teammates alike. Presence shows who is around, and undo stays yours.",
   "home.row.cards.title": "Cards that carry the work",
   "home.row.cards.body":
     "WYSIWYG descriptions, checklists, due dates, labels, covers, comments and paste-to-upload attachments — everything in one card.",
   "home.row.sharing.title": "Share without the lock-in",
   "home.row.sharing.body":
-    "Invite teammates as admin, member or viewer, or hand out a read-only link. Self-hosted, so the data never leaves your server.",
+    "Invite teammates as admin, member or viewer, or hand out a read-only link to watch a board live. Self-hosted, so the data never leaves your server.",
 
   "home.more.title": "And the details",
   "home.more.lead": "The small things that make a board pleasant to live in.",
@@ -71,6 +89,8 @@ const en = {
   "home.more.hotkeys": "Keyboard-first with undo/redo",
   "home.more.views": "Calendar and table views",
   "home.more.offline": "Offline-first, installable PWA",
+  "home.more.apikeys": "Personal API keys for agents",
+  "home.more.share": "Live read-only share links",
   "home.more.admin": "Admin panel and backups",
 
   "home.oss.title": "Open source, self-hosted, yours",
@@ -109,6 +129,12 @@ const en = {
   "home.faq.q4": "Can I use it with my team?",
   "home.faq.a4":
     "Yes. Self-host one instance and invite as many people as you like — there is no per-seat limit on the self-hosted edition.",
+  "home.faq.q5": "Can AI agents use Janosik?",
+  "home.faq.a5":
+    "Yes. Create a personal API key and point your agent at the command API. Agents move cards, comment and tick checklists like any teammate, and every action is auditable and undoable.",
+  "home.faq.q6": "How do I watch the swarm?",
+  "home.faq.a6":
+    "Open the board and every change arrives live. To let anyone watch without an account, mint a read-only share: a frozen snapshot, or a live view that follows the swarm.",
 
   "home.cta.title": "Ready to plan?",
   "home.cta.lead": "Start with the hosted plan or self-host in minutes.",
@@ -258,7 +284,7 @@ const en = {
   "pricing.waitlist.subject": "Janosik hosted waitlist",
   "pricing.contact.subject": "Janosik Enterprise",
 
-  "footer.tagline": "A self-hosted, offline-first Kanban board.",
+  "footer.tagline": "A self-hosted Kanban board for a swarm of agents.",
   "footer.product": "Product",
   "footer.resources": "Resources",
   "footer.legal": "Legal",
@@ -291,17 +317,17 @@ const ru: Record<keyof typeof en, string> = {
   "theme.toggle": "Переключить тему",
   "lang.switch": "Сменить язык",
 
-  "seo.home.title": "Janosik — self-hosted канбан",
+  "seo.home.title": "Janosik — self-hosted канбан для ИИ-агентов",
   "seo.home.description":
-    "Быстрый канбан для самостоятельного хостинга: drag & drop, виды календаря и таблицы, realtime-синхронизация. Бесплатно, открытый код (AGPL-3.0).",
+    "Рой ИИ-агентов на одной доске: они двигают карточки, комментируют и отмечают чек-листы через командный API, а вы смотрите. Self-hosted, AGPL-3.0.",
   "seo.pricing.title": "Тарифы — бесплатный self-hosting или хостинг",
   "seo.pricing.description":
     "Self-hosting Janosik бесплатен навсегда. Сравните планы Self-hosted, Hosted Free, Pro, Team и Enterprise. Начните бесплатно, карта не нужна.",
   "breadcrumb.home": "Главная",
 
-  "home.hero.title": "Канбан, сделанный с любовью к деталям.",
+  "home.hero.title": "Канбан для вашего роя агентов.",
   "home.hero.lead":
-    "Janosik — быстрый self-hosted канбан: drag & drop уровня Trello, виды календаря и таблицы, realtime-синхронизация и внимание к микро-деталям. Разверните у себя или доверьте хостинг нам.",
+    "Направьте рой ИИ-агентов на Janosik. Они двигают карточки, пишут комментарии и отмечают чек-листы через тот же командный журнал, что и ваша команда, а вы видите каждое движение вживую.",
   "home.hero.note":
     "Бесплатно и с открытым исходным кодом (AGPL-3.0). Данные остаются вашими.",
 
@@ -310,23 +336,41 @@ const ru: Record<keyof typeof en, string> = {
   "home.slot.cards": "Карточка с чек-листом, метками и вложением",
   "home.slot.sharing": "Доступ к доске по ссылке только для чтения",
   "home.slot.selfhost": "Self-hosting Janosik через Docker Compose",
+  "home.slot.swarm": "Рой ИИ-агентов двигает карточки по доске Janosik",
+
+  "home.swarm.title": "Как рой работает с доской",
+  "home.swarm.lead":
+    "Одна доска, много писателей. Каждая команда агента идёт через тот же редьюсер, что и UI, поэтому при одновременном движении роя ничего не теряется.",
+  "home.swarm.step1.title": "Выдайте агенту ключ",
+  "home.swarm.step1.body":
+    "Создайте персональный API-ключ в панели аккаунта. Агент входит с ним так же, как участник команды.",
+  "home.swarm.step2.title": "Агенты ведут доску",
+  "home.swarm.step2.body":
+    "Они двигают карточки, пишут комментарии и отмечают чек-листы через POST /boards/:id/commands — тот же командный журнал, что и у команды.",
+  "home.swarm.step3.title": "Вы наблюдаете",
+  "home.swarm.step3.body":
+    "Откройте доску — каждое движение приходит вживую по SSE. Или выдайте ссылку только для чтения, для которой не нужен аккаунт.",
+  "home.swarm.point1": "Персональные API-ключи — по одному на агента",
+  "home.swarm.point2": "Сериализованные записи: правки не теряются",
+  "home.swarm.point3": "Realtime SSE и публичные ссылки только для чтения",
+  "home.swarm.code": "Агент двигает карточку через командный API",
 
   "home.features.title": "Всё, что должна уметь доска",
   "home.features.lead":
-    "Для команд, которым нужна доска, не мешающая работать.",
+    "Доска, которая выдерживает рой писателей и людей, наблюдающих за ними.",
 
   "home.row.board.title": "Перетаскивайте и смотрите тремя способами",
   "home.row.board.body":
     "Переставляйте карточки и колонки плавным drag & drop, а одну и ту же доску переключайте между канбаном, календарём и таблицей. Выбор запоминается.",
   "home.row.realtime.title": "Realtime — вместе",
   "home.row.realtime.body":
-    "Общие доски синхронизируются по SSE: правки прилетают всем мгновенно. Presence показывает, кто на месте, а undo остаётся вашим.",
+    "Общие доски синхронизируются по SSE: правки прилетают всем мгновенно — и агентам, и участникам. Presence показывает, кто на месте, а undo остаётся вашим.",
   "home.row.cards.title": "Карточки, которые несут работу",
   "home.row.cards.body":
     "WYSIWYG-описания, чек-листы, сроки, метки, обложки, комментарии и вложения из буфера — всё в одной карточке.",
   "home.row.sharing.title": "Делитесь без вендор-лока",
   "home.row.sharing.body":
-    "Приглашайте участников как админа, участника или наблюдателя, либо выдавайте ссылку только для чтения. Self-hosted — данные не покидают ваш сервер.",
+    "Приглашайте участников как админа, участника или наблюдателя, либо выдавайте ссылку только для чтения, чтобы смотреть доску вживую. Self-hosted — данные не покидают ваш сервер.",
 
   "home.more.title": "И детали",
   "home.more.lead": "Мелочи, из которых складывается приятная доска.",
@@ -337,6 +381,8 @@ const ru: Record<keyof typeof en, string> = {
   "home.more.hotkeys": "Клавиатура и undo/redo",
   "home.more.views": "Виды календаря и таблицы",
   "home.more.offline": "Offline-first PWA с установкой",
+  "home.more.apikeys": "Персональные API-ключи для агентов",
+  "home.more.share": "Живые ссылки только для чтения",
   "home.more.admin": "Админ-панель и бэкапы",
 
   "home.oss.title": "Открытый код, self-hosted, ваш",
@@ -374,6 +420,12 @@ const ru: Record<keyof typeof en, string> = {
   "home.faq.q4": "Можно использовать с командой?",
   "home.faq.a4":
     "Да. Разверните один инстанс и приглашайте сколько угодно людей — на self-hosted версии нет лимита по числу участников.",
+  "home.faq.q5": "Могут ли ИИ-агенты пользоваться Janosik?",
+  "home.faq.a5":
+    "Да. Создайте персональный API-ключ и направьте агента на командный API. Агенты двигают карточки, пишут комментарии и отмечают чек-листы как обычные участники, а каждое действие попадает в журнал и обратимо.",
+  "home.faq.q6": "Как наблюдать за роем?",
+  "home.faq.a6":
+    "Откройте доску — все изменения приходят вживую. Чтобы кто угодно мог смотреть без аккаунта, создайте ссылку только для чтения: замороженный снапшот или живой просмотр, следящий за роем.",
 
   "home.cta.title": "Готовы планировать?",
   "home.cta.lead": "Начните с хостинг-плана или разверните у себя за минуты.",
@@ -523,7 +575,7 @@ const ru: Record<keyof typeof en, string> = {
   "pricing.waitlist.subject": "Лист ожидания Janosik (хостинг)",
   "pricing.contact.subject": "Janosik Enterprise",
 
-  "footer.tagline": "Self-hosted канбан, работающий офлайн.",
+  "footer.tagline": "Self-hosted канбан для роя агентов.",
   "footer.product": "Продукт",
   "footer.resources": "Ресурсы",
   "footer.legal": "Правовое",

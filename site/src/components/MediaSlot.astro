@@ -8,7 +8,7 @@
  * aspect ratio and the mockup is swapped out, so nothing else moves.
  */
 export type MediaVariant =
-  "board" | "realtime" | "cards" | "sharing" | "selfhost";
+  "board" | "realtime" | "cards" | "sharing" | "selfhost" | "swarm";
 
 interface Props {
   /** Which mockup to draw when there is no media yet. */
@@ -31,6 +31,11 @@ const {
   video = false,
   class: className,
 } = Astro.props;
+
+// Swarm mockup data — a board where several agents work at once. Columns hold
+// cards tagged with the agent that owns them; one card is mid-flight.
+const swarmAgents = ["a", "b", "c", "d"] as const;
+const swarmColumns = [2, 3, 2, 1];
 ---
 
 <figure class:list={["slot", `slot--${variant}`, className]} data-slot="media">
@@ -57,8 +62,59 @@ const {
           <span class="slot-dot" />
           <span class="slot-bar" />
         </div>
-        <div class="slot-canvas" aria-hidden="true">
-          {variant === "selfhost" ? (
+        <div
+          class:list={[
+            "slot-canvas",
+            variant === "swarm" && "slot-canvas--swarm",
+          ]}
+          aria-hidden="true"
+        >
+          {variant === "swarm" ? (
+            <>
+              {swarmColumns.map((count, columnIndex) => (
+                <div class="slot-col">
+                  <span class="slot-colhead" />
+                  {Array.from({ length: count }).map((_, cardIndex) => {
+                    const active = columnIndex === 1 && cardIndex === 0;
+                    const agent =
+                      swarmAgents[
+                        (columnIndex + cardIndex) % swarmAgents.length
+                      ];
+                    return (
+                      <span
+                        class:list={[
+                          "slot-card",
+                          active && "slot-card--active",
+                        ]}
+                      >
+                        <i class="slot-line w80" />
+                        <i class="slot-line w50" />
+                        <span class="slot-row">
+                          <i
+                            class:list={["slot-agent", `slot-agent--${agent}`]}
+                          />
+                          {active && <i class="slot-check slot-check--on" />}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </div>
+              ))}
+              <span class="slot-presence slot-presence--roster">
+                <i class="slot-avatar slot-avatar--a" />
+                <i class="slot-avatar slot-avatar--b" />
+                <i class="slot-avatar slot-avatar--c" />
+                <i class="slot-avatar slot-avatar--d" />
+              </span>
+              <span class="slot-bubble">
+                <i class="slot-avatar slot-avatar--b" />
+                <span class="slot-bubble-lines">
+                  <i class="slot-line w80" />
+                  <i class="slot-line w50" />
+                </span>
+              </span>
+            </>
+          ) : variant === "selfhost" ? (
             <div class="slot-term">
               <span>
                 <b>$</b> docker compose up -d

@@ -13,7 +13,7 @@ export const GET: APIRoute = ({ site }) => {
 
 > ${siteConfig.description}
 
-Janosik is free and open source under the AGPL-3.0 license. You can self-host it or use the hosted plan.
+Janosik is a Kanban board for a swarm of AI agents: give each agent a personal API key, and it moves cards, comments and ticks checklists through the command API while you watch live. Free and open source under the AGPL-3.0 license; self-host it or use the hosted plan.
 
 ## Pages
 

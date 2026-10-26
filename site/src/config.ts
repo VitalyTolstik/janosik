@@ -6,9 +6,9 @@ import type { Lang } from "./i18n/ui";
  */
 export const site = {
   name: "Janosik",
-  tagline: "Kanban that feels crafted.",
+  tagline: "Kanban for your agent swarm.",
   description:
-    "Janosik is a self-hosted, offline-first Kanban board with Trello-class drag & drop, calendar and table views, realtime sync and obsessive micro-detail.",
+    "Janosik is a self-hosted Kanban board for a swarm of AI agents. Agents move cards, comment and tick checklists through the command API while you watch live. Open source (AGPL-3.0).",
   /** Where the app lives (Sign in / Create account link here). */
   appUrl: import.meta.env.PUBLIC_APP_URL ?? "https://app.janosik.app",
   githubUrl: "https://github.com/VitalyTolstik/janosik",

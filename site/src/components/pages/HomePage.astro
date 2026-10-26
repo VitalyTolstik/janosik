@@ -99,10 +99,49 @@ const more: { icon: string; key: UIKey }[] = [
     key: "home.more.offline",
   },
   {
+    icon: icon(
+      '<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>',
+    ),
+    key: "home.more.apikeys",
+  },
+  {
+    icon: icon(
+      '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>',
+    ),
+    key: "home.more.share",
+  },
+  {
     icon: icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'),
     key: "home.more.admin",
   },
 ];
+
+// The swarm section: how agents drive the board and how you watch them.
+const swarmSteps: { title: UIKey; body: UIKey }[] = [
+  { title: "home.swarm.step1.title", body: "home.swarm.step1.body" },
+  { title: "home.swarm.step2.title", body: "home.swarm.step2.body" },
+  { title: "home.swarm.step3.title", body: "home.swarm.step3.body" },
+];
+
+const swarmPoints: UIKey[] = [
+  "home.swarm.point1",
+  "home.swarm.point2",
+  "home.swarm.point3",
+];
+
+// A real request/response from the command API (the same one the UI uses).
+const codeSample = `POST /api/v1/boards/:id/commands
+{
+  "commandId": "cmd_7f3a91",
+  "action": {
+    "type": "MOVE_CARD",
+    "cardId": "card_demo07",
+    "toColumnId": "col_review"
+  }
+}
+
+200 OK
+{ "seq": 412, "versions": { "card_demo07": 8 } }`;
 
 const ossPoints: UIKey[] = [
   "home.oss.point1",
@@ -122,6 +161,8 @@ const faq: { q: UIKey; a: UIKey }[] = [
   { q: "home.faq.q2", a: "home.faq.a2" },
   { q: "home.faq.q3", a: "home.faq.a3" },
   { q: "home.faq.q4", a: "home.faq.a4" },
+  { q: "home.faq.q5", a: "home.faq.a5" },
+  { q: "home.faq.q6", a: "home.faq.a6" },
 ];
 
 // Semantic FAQ markup. Google retired FAQ rich results, so this exists to help
@@ -163,9 +204,54 @@ const faqSchema = {
       </div>
       <MediaSlot
         class="hero-slot"
-        variant="board"
-        label={t("home.slot.board")}
+        variant="swarm"
+        label={t("home.slot.swarm")}
       />
+    </div>
+  </section>
+
+  <section class="section" id="swarm">
+    <div class="container">
+      <div class="section-head">
+        <h2>{t("home.swarm.title")}</h2>
+        <p class="lead">{t("home.swarm.lead")}</p>
+      </div>
+
+      <div class="swarm">
+        <ol class="swarm-steps">
+          {swarmSteps.map((step) => (
+            <li>
+              <h3>{t(step.title)}</h3>
+              <p class="muted">{t(step.body)}</p>
+            </li>
+          ))}
+        </ol>
+
+        <div class="swarm-aside">
+          <figure class="swarm-code">
+            <pre class="code"><code>{codeSample}</code></pre>
+            <figcaption class="sr-only">{t("home.swarm.code")}</figcaption>
+          </figure>
+          <ul class="oss-points">
+            {swarmPoints.map((point) => (
+              <li>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+                <span>{t(point)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
     </div>
   </section>
 
