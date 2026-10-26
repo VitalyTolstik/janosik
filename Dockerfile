@@ -57,6 +57,9 @@ RUN npm prune --omit=dev
 
 COPY --from=build /app/backend/dist ./backend/dist
 COPY --from=build /app/backend/prisma ./backend/prisma
+# The master-account CLI (create/list/re-key an admin) — the only way to make
+# a master, run in the container: `docker compose exec app node backend/scripts/admin-cli.cjs …`.
+COPY --from=build /app/backend/scripts ./backend/scripts
 COPY --from=build /app/ui/dist ./public
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh

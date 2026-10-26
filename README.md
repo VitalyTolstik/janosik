@@ -190,6 +190,16 @@ docker compose up -d
 #    account, then set ALLOW_REGISTRATION=false in .env and `docker compose up -d`
 ```
 
+Create a **master (platform admin)** account for the `/admin` panel — the CLI
+is the only door, there is deliberately no HTTP endpoint for it:
+
+```bash
+docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
+# (hidden password prompt; the first master becomes OWNER)
+docker compose exec app node backend/scripts/admin-cli.cjs list
+# then sign in at PUBLIC_ORIGIN/admin
+```
+
 Upgrade and back up:
 
 ```bash
