@@ -29,6 +29,9 @@ starts the API.
 ## Prerequisites
 
 - A host with **Docker Engine 24+** and the **Docker Compose v2** plugin.
+  (Installing Docker on your own macOS / Windows 11 / Linux machine —
+  including WSL2 on Windows — is covered in
+  [INSTALL-BY-OS.md](./INSTALL-BY-OS.md).)
 - Port **3000** reachable (for the LAN trial), or **80/443** if you put a
   reverse proxy in front (recommended for production).
 - A domain name for HTTPS (optional for a trial, required for real use).

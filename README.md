@@ -56,6 +56,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 ├─ .env.example                 # annotated environment for docker compose
 ├─ SECURITY.md / CHANGELOG.md   # disclosure policy, release history
 ├─ docs/SELF-HOSTING.md         # full self-hosting guide (TLS, backups, ops)
+├─ docs/INSTALL-BY-OS.md        # running it on macOS / Windows 11 / Linux
 ├─ ROADMAP.md                   # plan, architecture assessment, §7 backend spec
 ├─ ROADMAP-DONE.md              # archive of closed tasks
 └─ AGENT.md                     # working agreement for AI agents/contributors
@@ -112,6 +113,8 @@ janosik/                        # npm workspaces root (one package-lock.json)
 ## Quick start
 
 **Prerequisites:** Node.js **22.17+** (enforced by the backend `engines` field; Vite 8 alone would accept 20.19+/22.12+), npm. Docker only if you want server mode (PostgreSQL).
+
+> Per-OS walkthroughs (macOS, Windows 11, Linux) — both Docker and from-source, with the OS-specific gotchas — live in **[docs/INSTALL-BY-OS.md](./docs/INSTALL-BY-OS.md)**.
 
 ### Local-only mode (no backend needed)
 
