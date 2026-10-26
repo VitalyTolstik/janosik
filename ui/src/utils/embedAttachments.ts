@@ -63,14 +63,28 @@ export function embedMarkdown(file: File, attachmentId: string): string {
  * no longer be loaded (deleted file, expired session, 404). MDXEditor's own
  * broken-image fallback is a harsh red-dashed box with a ⚠️ glyph — this
  * replaces it with a quiet dotted panel and a muted picture glyph that
- * reads as "intentionally empty" rather than "error". Theme-neutral: the
- * slate tone sits softly on both the light and the dark surface.
+ * reads as "intentionally empty" rather than "error".
+ *
+ * TASK-115: the tone comes from the theme's `--muted-foreground` token
+ * (read once per call, with a slate fallback for environments that cannot
+ * resolve CSS variables), so the placeholder follows the light/dark theme
+ * and high-contrast modes instead of a hardcoded hex.
  */
-const IMAGE_UNAVAILABLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="240" viewBox="0 0 420 240" role="img" aria-label="image unavailable"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b8fa3" stop-opacity="0.14"/><stop offset="1" stop-color="#8b8fa3" stop-opacity="0.05"/></linearGradient></defs><rect x="1" y="1" width="418" height="238" rx="14" fill="url(#bg)" stroke="#8b8fa3" stroke-opacity="0.4" stroke-width="1.5" stroke-dasharray="1 7" stroke-linecap="round"/><g transform="translate(186 96)" fill="none" stroke="#8b8fa3" stroke-opacity="0.6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="0" y="0" width="48" height="48" rx="10"/><circle cx="16" cy="16" r="4.2"/><path d="M44 34 L31 21 L9 43"/></g></svg>`;
+function imageUnavailableTone(): string {
+  if (typeof window === "undefined" || !window.getComputedStyle)
+    return "#8b8fa3";
+  const value = window
+    .getComputedStyle(document.documentElement)
+    .getPropertyValue("--muted-foreground")
+    .trim();
+  return value || "#8b8fa3";
+}
 
-const imageUnavailableUrl = `data:image/svg+xml,${encodeURIComponent(
-  IMAGE_UNAVAILABLE_SVG,
-)}`;
+function imageUnavailableUrl(): string {
+  const tone = imageUnavailableTone();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="240" viewBox="0 0 420 240" role="img" aria-label="image unavailable"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${tone}" stop-opacity="0.14"/><stop offset="1" stop-color="${tone}" stop-opacity="0.05"/></linearGradient></defs><rect x="1" y="1" width="418" height="238" rx="14" fill="url(#bg)" stroke="${tone}" stroke-opacity="0.4" stroke-width="1.5" stroke-dasharray="1 7" stroke-linecap="round"/><g transform="translate(186 96)" fill="none" stroke="${tone}" stroke-opacity="0.6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="0" y="0" width="48" height="48" rx="10"/><circle cx="16" cy="16" r="4.2"/><path d="M44 34 L31 21 L9 43"/></g></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
 
 /**
  * MDXEditor `imagePreviewHandler`: an `<img>` fetch cannot carry the
@@ -82,25 +96,61 @@ const imageUnavailableUrl = `data:image/svg+xml,${encodeURIComponent(
 const previewCache = new Map<string, Promise<string>>();
 const blobUrlOwners = new Map<string, string>();
 
+/**
+ * TASK-106: cap the preview cache so a long editing session cannot leak an
+ * unbounded number of blob URLs. Evicting the oldest entry revokes its
+ * object URL (freeing the blob) and drops the reverse-map entry — the
+ * affected `<img>` simply re-fetches on its next render.
+ */
+const PREVIEW_CACHE_MAX = 100;
+
+function evictPreviews(): void {
+  while (previewCache.size > PREVIEW_CACHE_MAX) {
+    const oldest = previewCache.keys().next();
+    if (oldest.done) return;
+    const id = oldest.value;
+    const pending = previewCache.get(id);
+    previewCache.delete(id);
+    void pending
+      ?.then((url) => {
+        if (url.startsWith("blob:")) {
+          URL.revokeObjectURL(url);
+          blobUrlOwners.delete(url);
+        }
+      })
+      .catch(() => undefined);
+  }
+}
+
+/** Cache a resolved preview, marking it most-recently-used. */
+function cachePreview(id: string, promise: Promise<string>): void {
+  // Re-insert at the tail so the Map stays in least→most-recent order.
+  previewCache.delete(id);
+  previewCache.set(id, promise);
+  evictPreviews();
+}
+
 export function attachmentImagePreviewHandler(src: string): Promise<string> {
   const id = attachmentIdFromUrl(src);
   if (!id) return Promise.resolve(src);
-  let cached = previewCache.get(id);
-  if (!cached) {
-    cached = api
-      .fetchAttachment(id)
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        blobUrlOwners.set(url, id);
-        return url;
-      })
-      // The raw src would keep failing as an <img> (no auth header) and
-      // surface MDXEditor's red broken-image box — show the calm
-      // placeholder instead.
-      .catch(() => imageUnavailableUrl);
-    previewCache.set(id, cached);
+  const cached = previewCache.get(id);
+  if (cached) {
+    cachePreview(id, cached);
+    return cached;
   }
-  return cached;
+  const pending = api
+    .fetchAttachment(id)
+    .then((blob) => {
+      const url = URL.createObjectURL(blob);
+      blobUrlOwners.set(url, id);
+      return url;
+    })
+    // The raw src would keep failing as an <img> (no auth header) and
+    // surface MDXEditor's red broken-image box — show the calm
+    // placeholder instead.
+    .catch(() => imageUnavailableUrl());
+  cachePreview(id, pending);
+  return pending;
 }
 
 /**
@@ -140,8 +190,12 @@ export function openImageLightbox(src: string): void {
   // Radix modal dialogs disable pointer events on <body> while open — the
   // overlay must opt back in, otherwise clicks fall through it into the
   // layers underneath (closing the card dialog instead of the viewer).
+  // TASK-115: colors come from theme tokens (see index.css) so a
+  // high-contrast theme can retune the scrim; the fallbacks keep the
+  // viewer dark if the tokens are missing.
   overlay.style.cssText =
-    "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.82);" +
+    "position:fixed;inset:0;z-index:9999;" +
+    "background:var(--overlay, rgb(0 0 0 / 0.82));" +
     "display:flex;align-items:center;justify-content:center;padding:2rem;" +
     "cursor:zoom-out;pointer-events:auto";
   const img = document.createElement("img");
@@ -149,7 +203,7 @@ export function openImageLightbox(src: string): void {
   img.alt = "";
   img.style.cssText =
     "max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;" +
-    "box-shadow:0 12px 48px rgba(0,0,0,0.55)";
+    "box-shadow:var(--overlay-shadow, 0 12px 48px rgb(0 0 0 / 0.55))";
   overlay.appendChild(img);
 
   const close = () => {
@@ -182,8 +236,11 @@ export function openImageLightbox(src: string): void {
   closeButton.textContent = "×";
   closeButton.style.cssText =
     "position:absolute;top:1rem;right:1.25rem;width:2.25rem;height:2.25rem;" +
-    "border-radius:9999px;border:1px solid rgba(255,255,255,0.25);" +
-    "background:rgba(255,255,255,0.12);color:#fff;font-size:1.4rem;line-height:1;" +
+    "border-radius:9999px;" +
+    "border:1px solid var(--overlay-border, rgb(255 255 255 / 0.25));" +
+    "background:var(--overlay-button, rgb(255 255 255 / 0.12));" +
+    "color:var(--overlay-foreground, #fff);" +
+    "font-size:1.4rem;line-height:1;" +
     "cursor:pointer;display:flex;align-items:center;justify-content:center;" +
     "padding:0";
   closeButton.addEventListener("click", (event) => {

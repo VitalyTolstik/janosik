@@ -79,9 +79,11 @@ export class ApiError extends Error {
   }
 
   /** `409` conflict category, when the server named one. */
-  get conflict(): "version" | "wip" | undefined {
+  get conflict(): "version" | "wip" | "id" | undefined {
     const body = this.body as { conflict?: unknown } | null;
-    return body?.conflict === "version" || body?.conflict === "wip"
+    return body?.conflict === "version" ||
+      body?.conflict === "wip" ||
+      body?.conflict === "id"
       ? body.conflict
       : undefined;
   }

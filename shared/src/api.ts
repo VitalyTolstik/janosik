@@ -43,8 +43,15 @@ export interface CommandResponse {
   versions: EntityVersions;
 }
 
-/** Conflict categories the reducer guards can raise (§7.4). */
-export type CommandConflict = "version" | "wip";
+/**
+ * Conflict categories a command can be refused with (§7.4):
+ * - `version` — a precondition (`ifMatch`/`ifMatchVersions`) is stale;
+ * - `wip` — the command would break a collection/WIP limit;
+ * - `id` — the command names an entity id that already belongs to another
+ *   board (the writers upsert by global id, so applying it would rewrite
+ *   that board's row).
+ */
+export type CommandConflict = "version" | "wip" | "id";
 
 /** `409` body of `POST /boards/:id/commands`. */
 export interface ConflictError {

@@ -19,6 +19,16 @@ import {
 } from "react";
 
 import { CardContextMenu } from "@/components/board/CardContextMenu";
+import {
+  OPTIONAL_COLUMNS,
+  SortHeader,
+  checklistProgress,
+  readStoredColumns,
+  writeStoredColumns,
+  type OptionalColumn,
+  type SortKey,
+  type SortState,
+} from "@/components/board/table-parts";
 import { DueBadge } from "@/components/board/DueBadge";
 import { PriorityBadge } from "@/components/board/PriorityBadge";
 import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
@@ -69,11 +79,6 @@ import {
 /** Stable empty list, so the label resolver survives a board-less render. */
 const NO_LABELS: Label[] = [];
 
-function checklistProgress(card: Card) {
-  const items = (card.checklists ?? []).flatMap((c) => c.items);
-  return { done: items.filter((i) => i.done).length, total: items.length };
-}
-
 interface TableViewProps {
   /** Per-column card ids with a filter applied — overrides the stored
    *  order while the filter is active. */
@@ -86,48 +91,6 @@ interface TableViewProps {
   onCardClick: (cardId: string) => void;
   /** VIEWER mode (TASK-35): inline editors and destructive actions off. */
   readOnly?: boolean;
-}
-
-/** Sortable headers (TASK-14.1 item 7). */
-type SortKey =
-  "title" | "column" | "due" | "priority" | "assignee" | "createdAt";
-
-interface SortState {
-  key: SortKey;
-  dir: 1 | -1;
-}
-
-/** Optional columns beyond the four base ones (TASK-14.1 item 11). */
-const OPTIONAL_COLUMNS = [
-  "priority",
-  "assignee",
-  "checklists",
-  "description",
-  "createdAt",
-  "updatedAt",
-  "activity",
-] as const;
-type OptionalColumn = (typeof OPTIONAL_COLUMNS)[number];
-
-const COLUMNS_STORAGE_KEY = "janosik-table-columns";
-
-function readStoredColumns(): OptionalColumn[] {
-  try {
-    const stored = localStorage.getItem(COLUMNS_STORAGE_KEY);
-    if (stored) {
-      const parsed: unknown = JSON.parse(stored);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((c): c is OptionalColumn =>
-          (OPTIONAL_COLUMNS as readonly string[]).includes(c as string),
-        );
-      }
-    }
-  } catch {
-    /* storage unavailable — the defaults apply */
-  }
-  // Default set (owner's call): the assignee column is always on until
-  // the user builds their own column set.
-  return ["assignee"];
 }
 
 /**
@@ -240,11 +203,7 @@ export function TableView({
 
   // Persist the column choice next to the view/scale choices.
   useEffect(() => {
-    try {
-      localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(visibleColumns));
-    } catch {
-      /* storage unavailable — the choice only lasts the session */
-    }
+    writeStoredColumns(visibleColumns);
   }, [visibleColumns]);
 
   // TASK-117: rebuilding the rows/sort on every keystroke was O(n log n) per
@@ -988,46 +947,6 @@ function AssigneeCell({
 }
 
 /** Table header cell with the asc → desc → reset click cycle. */
-function SortHeader({
-  label,
-  sortKey,
-  sort,
-  onCycle,
-  className,
-}: {
-  label: string;
-  sortKey: SortKey;
-  sort: SortState | null;
-  onCycle: (key: SortKey) => void;
-  className?: string;
-}) {
-  const isSorted = sort?.key === sortKey;
-  return (
-    <th scope="col" className={cn("px-3 py-2 text-left", className)}>
-      <button
-        type="button"
-        data-testid={`table-sort-${sortKey}`}
-        aria-sort={
-          isSorted ? (sort?.dir === 1 ? "ascending" : "descending") : "none"
-        }
-        title={label}
-        onClick={() => onCycle(sortKey)}
-        className={cn(
-          "inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide transition-colors hover:text-foreground",
-          isSorted ? "text-foreground" : "text-muted-foreground",
-        )}
-      >
-        {label}
-        {/* A neutral icon hints the header is sortable; it turns into the
-            direction arrow once sorted. */}
-        <span aria-hidden className="text-[10px]">
-          {isSorted ? (sort?.dir === 1 ? "▲" : "▼") : "↕"}
-        </span>
-      </button>
-    </th>
-  );
-}
-
 /** "+ card" composer body: title, column chooser and label chips (TASK-14.1 item 10). */
 function TableCardComposer({
   columns,

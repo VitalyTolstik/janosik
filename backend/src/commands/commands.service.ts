@@ -53,52 +53,73 @@ import type { CreateCommandDto } from "./dto/create-command.dto";
  * and are still recorded (a replay returns the stored no-op result): the
  * API mirrors the reducer instead of second-guessing it (§7.4.1).
  */
-const SUPPORTED_ACTIONS = new Set<string>([
-  "RENAME_BOARD",
-  "ARCHIVE_BOARD",
-  "UNARCHIVE_BOARD",
-  "ADD_COLUMN",
-  "RENAME_COLUMN",
-  "DELETE_COLUMN",
-  "DUPLICATE_COLUMN",
-  "MOVE_COLUMN",
-  "SORT_COLUMN",
-  "SET_COLUMN_WIP_LIMIT",
-  "SET_COLUMN_CARD_ORDER",
-  "ADD_CARD",
-  "UPDATE_CARD",
-  "TOUCH_CARD",
-  "DELETE_CARD",
-  "ARCHIVE_CARD",
-  "UNARCHIVE_CARD",
-  "ARCHIVE_COLUMN_CARDS",
-  "SET_CARD_DUE_DATE",
-  "SET_CARD_PRIORITY",
-  "SET_CARD_ASSIGN",
-  "ADD_CARD_LINK",
-  "REMOVE_CARD_LINK",
-  "SET_CARD_COVER",
-  "MOVE_CARD",
-  "DUPLICATE_CARD",
-  "SET_CARD_LABEL",
-  "ADD_LABEL",
-  "RENAME_LABEL",
-  "SET_LABEL_COLOR",
-  "DELETE_LABEL",
-  "ADD_CHECKLIST",
-  "RENAME_CHECKLIST",
-  "DELETE_CHECKLIST",
-  "ADD_CHECKLIST_ITEM",
-  "SET_CHECKLIST_ITEM_DONE",
-  "RENAME_CHECKLIST_ITEM",
-  "DELETE_CHECKLIST_ITEM",
-  "RESTORE_CARD",
-  "RESTORE_COLUMN",
-  "RESTORE_COLUMN_CARDS",
-  "RESTORE_LABEL",
-  "RESTORE_CHECKLIST",
-  "RESTORE_CHECKLIST_ITEM",
-]);
+/**
+ * Every action type the command endpoint understands: the reducer's
+ * board-scoped surface plus the two board-management commands. The four
+ * aggregate-level actions (`RESTORE_BOARD`, `IMPORT_BOARDS`, `ADD_BOARD`,
+ * `REMOVE_BOARD`) are board create/import/delete and are rejected here.
+ */
+type CommandActionType = Exclude<
+  BoardAction["type"],
+  "RESTORE_BOARD" | "IMPORT_BOARDS" | "ADD_BOARD" | "REMOVE_BOARD"
+>;
+
+/**
+ * TASK-96: the registry is a `Record` keyed by every command type, so a new
+ * `BoardAction` is a *compile* error here until it is classified — the
+ * endpoint can no longer silently reject it. The `Set` is derived from the
+ * registry so the two can never drift.
+ */
+const SUPPORTED_ACTION_REGISTRY: Record<CommandActionType, true> = {
+  RENAME_BOARD: true,
+  ARCHIVE_BOARD: true,
+  UNARCHIVE_BOARD: true,
+  ADD_COLUMN: true,
+  RENAME_COLUMN: true,
+  DELETE_COLUMN: true,
+  DUPLICATE_COLUMN: true,
+  MOVE_COLUMN: true,
+  SORT_COLUMN: true,
+  SET_COLUMN_WIP_LIMIT: true,
+  SET_COLUMN_CARD_ORDER: true,
+  ADD_CARD: true,
+  UPDATE_CARD: true,
+  TOUCH_CARD: true,
+  DELETE_CARD: true,
+  ARCHIVE_CARD: true,
+  UNARCHIVE_CARD: true,
+  ARCHIVE_COLUMN_CARDS: true,
+  SET_CARD_DUE_DATE: true,
+  SET_CARD_PRIORITY: true,
+  SET_CARD_ASSIGN: true,
+  ADD_CARD_LINK: true,
+  REMOVE_CARD_LINK: true,
+  SET_CARD_COVER: true,
+  MOVE_CARD: true,
+  DUPLICATE_CARD: true,
+  SET_CARD_LABEL: true,
+  ADD_LABEL: true,
+  RENAME_LABEL: true,
+  SET_LABEL_COLOR: true,
+  DELETE_LABEL: true,
+  ADD_CHECKLIST: true,
+  RENAME_CHECKLIST: true,
+  DELETE_CHECKLIST: true,
+  ADD_CHECKLIST_ITEM: true,
+  SET_CHECKLIST_ITEM_DONE: true,
+  RENAME_CHECKLIST_ITEM: true,
+  DELETE_CHECKLIST_ITEM: true,
+  RESTORE_CARD: true,
+  RESTORE_COLUMN: true,
+  RESTORE_COLUMN_CARDS: true,
+  RESTORE_LABEL: true,
+  RESTORE_CHECKLIST: true,
+  RESTORE_CHECKLIST_ITEM: true,
+};
+
+const SUPPORTED_ACTIONS = new Set<string>(
+  Object.keys(SUPPORTED_ACTION_REGISTRY),
+);
 
 /**
  * TASK-80: the only actions allowed to skip the collection/WIP guards. They
@@ -426,10 +447,15 @@ export class CommandsService {
     ];
     const offender = offenders.find((entry) => entry.row !== null);
     if (offender?.row) {
+      // TASK-112: answer with the `ConflictError` shape the client knows
+      // (`conflict` + `currentVersion`), while keeping the `field`/`message`
+      // envelope the command endpoint uses for its other 4xx bodies.
       throw new ConflictException({
+        conflict: "id",
+        currentVersion: await this.currentSeq(tx, boardId),
         message: `Entity id already used on another board: ${offender.table}:${offender.row.id}`,
         field: "action",
-      });
+      } satisfies ConflictError & { message: string; field: string });
     }
   }
 

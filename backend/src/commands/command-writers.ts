@@ -48,6 +48,28 @@ export interface WriteContext {
   actorId: string;
 }
 
+/**
+ * TASK-96: the card-shaped command surface `writeCardAction` handles. It is
+ * the narrowed set `writeAction` routes to it; typing the helper's input
+ * with it makes the inner switch exhaustive (a new card-shaped command has
+ * to be added here or the build fails).
+ */
+type CardAction = Extract<
+  BoardAction,
+  {
+    type:
+      | "UPDATE_CARD"
+      | "SET_CARD_DUE_DATE"
+      | "SET_CARD_PRIORITY"
+      | "SET_CARD_ASSIGN"
+      | "SET_CARD_COVER"
+      | "ARCHIVE_CARD"
+      | "UNARCHIVE_CARD"
+      | "MOVE_CARD"
+      | "DUPLICATE_CARD";
+  }
+>;
+
 /** `Command.touches` label for an entity type + id (§7.3). */
 export const touch = {
   board: (id: string) => `board:${id}`,
@@ -507,10 +529,11 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
 
     case "SORT_COLUMN":
     case "SET_COLUMN_CARD_ORDER": {
-      const cardIds =
-        action.type === "SORT_COLUMN"
-          ? cardIdsOf(after, action.columnId)
-          : action.cardIds;
+      // TASK-97: always mirror the aggregate's order — an inverse
+      // `SET_COLUMN_CARD_ORDER` may differ from `action.cardIds` (it keeps
+      // the remembered order and appends cards added since), and the contract
+      // e2e requires `GET /boards/:id` to deep-equal `boardReducer`.
+      const cardIds = cardIdsOf(after, action.columnId);
       await writeCardPositions(tx, action.columnId, cardIds);
       return [
         boardTouch,
@@ -559,7 +582,8 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     case "UNARCHIVE_CARD":
     case "MOVE_CARD":
     case "DUPLICATE_CARD": {
-      return writeCardAction(tx, ctx);
+      // `action` is narrowed to `CardAction` by the grouped cases above.
+      return writeCardAction(tx, { ...ctx, action });
     }
 
     case "DELETE_CARD": {
@@ -1031,13 +1055,30 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       ];
     }
 
-    default:
+    default: {
+      // TASK-96: only the aggregate-level actions (board create/import/delete)
+      // can reach here — the command endpoint never routes them. If a new
+      // board-scoped action is added to `BoardAction` and left unhandled
+      // above, `action` stops fitting this `Extract` and the build fails,
+      // instead of the writer silently mirroring nothing.
+      const aggregateOnly: Extract<
+        BoardAction,
+        {
+          type:
+            "RESTORE_BOARD" | "IMPORT_BOARDS" | "ADD_BOARD" | "REMOVE_BOARD";
+        }
+      > = action;
+      void aggregateOnly;
       return [boardTouch];
+    }
   }
 }
 
 /** Card-shaped actions: create/update/archive/move/duplicate. */
-async function writeCardAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
+async function writeCardAction(
+  tx: Tx,
+  ctx: WriteContext & { action: CardAction },
+): Promise<string[]> {
   const { action, after, boardId, before, actorId } = ctx;
   const boardTouch = touch.board(boardId);
   const cardId = "cardId" in action ? action.cardId : undefined;
@@ -1160,8 +1201,13 @@ async function writeCardAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       ];
     }
 
-    default:
+    default: {
+      // TASK-96: every action routed to `writeCardAction` is handled above;
+      // a new card-shaped command makes this fail to compile.
+      const exhaustive: never = action;
+      void exhaustive;
       return [boardTouch];
+    }
   }
 }
 

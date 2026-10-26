@@ -2116,6 +2116,44 @@ describe("boardReducer — explicit card order (TASK-21.7b)", () => {
       ).toBe(board);
     }
   });
+
+  it("TASK-97: an inverse applies even when the column changed since", () => {
+    const seed = freshBoard();
+    // The undone command remembered ["card-6", "card-1", "card-2"]; since
+    // then a card joined the column, so the strict permutation no longer
+    // holds. The inverse must still apply: the remembered order for the
+    // cards that remain, the newcomer appended.
+    const board = reduceBoard(seed, {
+      type: "ADD_CARD",
+      newCardId: "card-x",
+      columnId: "col-backlog",
+      title: "Newcomer",
+    });
+    const next = reduceBoard(board, {
+      type: "SET_COLUMN_CARD_ORDER",
+      columnId: "col-backlog",
+      cardIds: ["card-6", "card-1", "card-2"],
+      inverse: true,
+    });
+    expect(next.columns[0].cardIds).toEqual([
+      "card-6",
+      "card-1",
+      "card-2",
+      "card-x",
+    ]);
+  });
+
+  it("TASK-97: an inverse never drops or duplicates a card", () => {
+    const seed = freshBoard();
+    const next = reduceBoard(seed, {
+      type: "SET_COLUMN_CARD_ORDER",
+      columnId: "col-backlog",
+      cardIds: ["card-1", "card-1", "card-foreign"],
+      inverse: true,
+    });
+    // The duplicate and the unknown id are ignored; the column is untouched.
+    expect(next.columns[0].cardIds).toEqual(seed.columns[0].cardIds);
+  });
 });
 
 describe("boardReducer — restore commands (TASK-21.7c)", () => {

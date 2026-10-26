@@ -13,7 +13,37 @@ import {
   MaxLength,
   Min,
   MinLength,
+  registerDecorator,
+  type ValidationOptions,
 } from "class-validator";
+
+/**
+ * TASK-112: `Record<string, boolean> | null`. `@IsObject()` alone would let
+ * a `{ "user-1": "yes" }` through; the flag service reads the values as
+ * booleans, so the shape is validated here.
+ */
+function IsBooleanRecord(validationOptions?: ValidationOptions) {
+  return function (object: object, propertyName: string): void {
+    registerDecorator({
+      name: "isBooleanRecord",
+      target: object.constructor,
+      propertyName,
+      options: validationOptions,
+      validator: {
+        validate(value: unknown): boolean {
+          if (value === null) return true;
+          if (typeof value !== "object" || Array.isArray(value)) return false;
+          return Object.values(value as Record<string, unknown>).every(
+            (entry) => typeof entry === "boolean",
+          );
+        },
+        defaultMessage(): string {
+          return "$property must be an object of boolean values";
+        },
+      },
+    });
+  };
+}
 
 /** TASK-59…65 request bodies for the master panel. */
 
@@ -71,6 +101,7 @@ export class AdminUpdateFeatureFlagDto {
   enabled?: boolean;
 
   @IsOptional()
+  @IsBooleanRecord()
   perUser?: Record<string, boolean> | null;
 }
 

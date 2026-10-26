@@ -653,22 +653,24 @@ lightbox `utils/embedAttachments.ts:69,144,152,185` — `rgba/#fff/#8b8fa3`.
 - `50d5217` — TASK-112.
 - `ce123ba` — TASK-118.
 
-### Закрыто частично (остаток вынесен отдельно)
+### Вторая волна (2026-10-26) — доведено до конца
 
-- **TASK-96** — `never`-эксхоустивность добавлена в `boardReducer`; `satisfies`-реестры
-  для `SUPPORTED_ACTIONS`/`DIRECT_KEYS`/`textEntityKey` и единый `Record<type,…>` —
-  не сделаны (объёмный рефактор без изменения поведения).
-- **TASK-97** — `labelIds`-фильтр, удаление `description`, валидация `priority`/
-  `assigneeId`/`activity` в снапшоте сделаны; пункт (3) `SET_COLUMN_CARD_ORDER`/
-  `inverse` оставлен как есть: permutation-гвард намеренный (защита от подмены набора
-  карточек), обычный undo его проходит.
-- **TASK-106** — аватары (дедуп/revoke/негативный кэш/сброс при logout) и отложенный
-  revoke при скачивании сделаны; эвикция кэша превью в `embedAttachments.ts` — нет.
-- **TASK-112** — `sendEmail`, `segment`/`commandId` `@MaxLength`, `expiresAt: null`
-  выровнены; тип id-коллизии 409 (`{message,field}`) в `shared` и
-  `EXPORT_SCHEMA_VERSION` — нет.
-- **TASK-115** — приоритеты переведены на токены темы; rgba/hex в lightbox
-  `embedAttachments.ts` оставлены (попап намеренно тёмный, не зависит от темы).
-- **TASK-118** — из `BoardContext` вынесен модуль персистентности
-  (`store/board-persistence.ts`); расслоение `CalendarView`/`TableView`/
-  `CardContextMenu` — не сделано.
+Все ранее отложенные пункты закрыты отдельным коммитом `review: finish the P2 backlog`:
+
+- **TASK-96** — `SUPPORTED_ACTIONS` стал `Record<CommandActionType, true>` (забытая
+  команда — ошибка компиляции); `writeAction`/`writeCardAction` получили типовые
+  guard'ы (`Extract<…>`/`never`), `command-details`/`validate`/`commands.service`
+  оставлены с осмысленным `default` (частичные switch с явным отказом).
+- **TASK-97** — пункт (3): `SET_COLUMN_CARD_ORDER` при `inverse` больше не отказывает —
+  помнит порядок для живых карточек и дописывает появившиеся в конец (никогда не
+  теряет/не дублирует); writer зеркалит `after`-порядок. Юнит-тесты добавлены.
+- **TASK-106** — эвикция кэша превью в `embedAttachments.ts` (LRU-кап, revoke
+  object-URL при вытеснении).
+- **TASK-112** — id-коллизия отвечает формой `ConflictError` (`conflict: "id"` +
+  `currentVersion`, поле/сообщение сохранены); `perUser` валидируется `IsBooleanRecord`;
+  `EXPORT_SCHEMA_VERSION` уже содержателен (проверяется на импорте).
+- **TASK-115** — lightbox переведён на токены `--overlay*`; плейсхолдер битого
+  изображения берёт тон из `--muted-foreground`.
+- **TASK-118** — вынесены `store/board-persistence.ts`, `board/calendar-parts.tsx`,
+  `board/table-parts.tsx`: `CalendarView` 1163→1016, `TableView` 1164→1083,
+  `BoardContext` 1864→1764. Дальнейшее расслоение `CardContextMenu` — опционально.

@@ -68,6 +68,14 @@
   /* Selection accent for the board-background picker — the brand label
    * violet, tuned per theme: deeper in dark, lighter in light. */
   --janosik-brand-accent: #6d28d9;
+  /* Fullscreen attachment lightbox (TASK-115). Intentionally dark in both
+   * themes so the image reads against a neutral scrim; kept as tokens so a
+   * high-contrast theme can retune them. */
+  --overlay: rgb(0 0 0 / 0.82);
+  --overlay-foreground: #ffffff;
+  --overlay-border: rgb(255 255 255 / 0.25);
+  --overlay-button: rgb(255 255 255 / 0.12);
+  --overlay-shadow: 0 12px 48px rgb(0 0 0 / 0.55);
 }
 
 .light {

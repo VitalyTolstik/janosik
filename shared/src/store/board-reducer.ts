@@ -1851,9 +1851,15 @@ function sortColumn(board: Board, action: SortColumnAction): Board {
 }
 
 /**
- * Rewrite a column's card order outright. Accepts only a permutation of
- * what the column already holds, so a hand-edited command (or a stale
- * inverse) cannot drop, duplicate or smuggle in a card.
+ * Rewrite a column's card order outright.
+ *
+ * A *fresh* command accepts only a permutation of what the column already
+ * holds, so a hand-edited command cannot drop, duplicate or smuggle in a
+ * card. TASK-97: an *inverse* (undo of a reorder/sort) is never refused —
+ * the doctrine is that an inverse adds nothing, so it must apply even when
+ * the column gained or lost cards since. It keeps the remembered relative
+ * order for the cards that still exist and appends the rest where they are,
+ * which still never drops or duplicates a card.
  */
 function setColumnCardOrder(
   board: Board,
@@ -1862,15 +1868,34 @@ function setColumnCardOrder(
   const column = board.columns.find((c) => c.id === action.columnId);
   if (!column) return board;
   const { cardIds } = action;
-  if (cardIds.length !== column.cardIds.length) return board;
-  if (new Set(cardIds).size !== cardIds.length) return board;
   const current = new Set(column.cardIds);
-  if (!cardIds.every((id) => current.has(id))) return board;
-  if (cardIds.every((id, i) => id === column.cardIds[i])) return board;
+  let nextOrder: string[];
+  if (guarded(action)) {
+    if (cardIds.length !== column.cardIds.length) return board;
+    if (new Set(cardIds).size !== cardIds.length) return board;
+    if (!cardIds.every((id) => current.has(id))) return board;
+    nextOrder = [...cardIds];
+  } else {
+    const seen = new Set<string>();
+    nextOrder = [];
+    for (const id of cardIds) {
+      if (!current.has(id) || seen.has(id)) continue;
+      seen.add(id);
+      nextOrder.push(id);
+    }
+    // Cards the column gained since the undone command keep their place at
+    // the end — the undo only rewinds the cards it remembers.
+    for (const id of column.cardIds) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      nextOrder.push(id);
+    }
+  }
+  if (nextOrder.every((id, i) => id === column.cardIds[i])) return board;
   return {
     ...board,
     columns: board.columns.map((c) =>
-      c.id === column.id ? { ...c, cardIds: [...cardIds] } : c,
+      c.id === column.id ? { ...c, cardIds: nextOrder } : c,
     ),
   };
 }
