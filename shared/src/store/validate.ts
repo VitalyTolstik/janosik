@@ -192,6 +192,32 @@ function validateCard(value: unknown, field: string): void {
   readNumber(card, "updatedAt", `${field}.updatedAt`);
   readOptionalNumber(card, "dueDate", `${field}.dueDate`);
   readOptionalNumber(card, "archivedAt", `${field}.archivedAt`);
+  // TASK-97: a RESTORE_* snapshot must validate the fields the create/edit
+  // commands constrain — priority, assignee and the activity feed.
+  if (card.priority !== undefined && card.priority !== null) {
+    if (
+      typeof card.priority !== "string" ||
+      !(CARD_PRIORITIES as readonly string[]).includes(card.priority)
+    ) {
+      fail(`${field}.priority`, "must be a known priority");
+    }
+  }
+  readOptionalString(card, "assigneeId", `${field}.assigneeId`, {
+    nonBlank: true,
+  });
+  const activity = card.activity;
+  if (activity !== undefined && activity !== null) {
+    if (!Array.isArray(activity)) {
+      fail(`${field}.activity`, "must be an array");
+    }
+    activity.forEach((event, index) => {
+      const entry = asRecord(event, `${field}.activity[${index}]`);
+      readNumber(entry, "at", `${field}.activity[${index}].at`);
+      readString(entry, "kind", `${field}.activity[${index}].kind`, {
+        nonBlank: true,
+      });
+    });
+  }
   if (card.cover !== undefined && card.cover !== null) {
     validateCover(card.cover, `${field}.cover`);
   }

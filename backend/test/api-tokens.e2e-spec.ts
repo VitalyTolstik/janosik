@@ -51,7 +51,7 @@ describe("API tokens gate (e2e)", () => {
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
   /** Representative protected surface: session-routes, member-routes, admin. */
-  const protectedRoutes: Array<[string, string]> = [
+  const protectedRoutes: Array<["get" | "post" | "patch", string]> = [
     ["get", "/api/v1/auth/me"],
     ["patch", "/api/v1/users/me"],
     ["get", "/api/v1/boards"],

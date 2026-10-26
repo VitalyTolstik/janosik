@@ -801,7 +801,12 @@ function addCard(
   const newCard: Card = {
     id: action.newCardId,
     title: clampText(action.title.trim(), LIMITS.cardTitle),
-    labelIds: action.labelIds ?? [],
+    // TASK-97: only labels that exist on the board — the server creates
+    // CardLabel rows for known labels only, so an arbitrary id would make
+    // the reducer's board diverge from the aggregate.
+    labelIds: (action.labelIds ?? []).filter((id) =>
+      board.labels.some((label) => label.id === id),
+    ),
     createdAt: at,
     updatedAt: at,
   };
@@ -856,9 +861,12 @@ function updateCard(
   let nextCard: Card = {
     ...target,
     title,
-    description,
     updatedAt: action.quiet ? target.updatedAt : cardStamp(action),
   };
+  // TASK-97: an empty description must *remove* the key, not leave it as
+  // `undefined` (which would still satisfy `"description" in card`).
+  if (description === undefined) delete nextCard.description;
+  else nextCard.description = description;
   if (title !== target.title) {
     nextCard = appendActivity(nextCard, "renamed", action, 0, options);
   }
@@ -2277,7 +2285,12 @@ export function boardReducer(
       return committed(restoreChecklistItem(board, action, options));
     case "RESTORE_COLUMN_CARDS":
       return committed(restoreColumnCards(board, action));
-    default:
+    default: {
+      // TASK-96: a new board-scoped action that reaches here is a compile
+      // error, not a silent no-op.
+      const exhaustive: never = action;
+      void exhaustive;
       return state;
+    }
   }
 }

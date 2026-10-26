@@ -57,6 +57,11 @@ jobs:
       - name: Prisma generate (backend)
         run: npm run prisma:generate -w backend
 
+      # Type-checks the backend including `*.spec.ts` and `test/` (TASK-95),
+      # which `tsconfig.build.json` excludes from the build.
+      - name: Backend typecheck (with tests)
+        run: npm run typecheck -w backend
+
       - name: Backend tests (unit + e2e against the postgres service)
         run: npm run test:ci -w backend
         env:

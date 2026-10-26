@@ -15,7 +15,7 @@ const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
 describe("Attachments (TASK-47)", () => {
   async function register(
-    server: request.SuperTest<request.Test>,
+    server: ReturnType<typeof request>,
     email: string,
     displayName: string,
   ): Promise<{ token: string; id: string }> {
@@ -28,7 +28,7 @@ describe("Attachments (TASK-47)", () => {
 
   let app: INestApplication;
   let db: PrismaService;
-  let server: () => request.SuperTest<request.Test>;
+  let server: () => ReturnType<typeof request>;
   let admin: { token: string; id: string };
   let member: { token: string; id: string };
   let viewer: { token: string; id: string };

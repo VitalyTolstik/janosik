@@ -74,7 +74,11 @@ const emailTemplatesMock = {
   emailChangedNotice: jest.fn((email: string, locale: "en" | "ru") =>
     Promise.resolve(emailChangedNoticeEmail(email, locale)),
   ),
-} as unknown as EmailTemplateService;
+} as unknown as EmailTemplateService & {
+  verificationEmail: jest.Mock;
+  emailChangeEmail: jest.Mock;
+  emailChangedNotice: jest.Mock;
+};
 
 const flagsMock = {
   assertEnabled: jest.fn(async () => undefined),
@@ -90,6 +94,7 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   avatarPath: null,
   disabledAt: null,
   emailVerifiedAt: null,
+  notifyDigest: true,
   createdAt: new Date("2026-09-01T00:00:00Z"),
   ...overrides,
 });

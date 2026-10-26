@@ -20,7 +20,7 @@ const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 describe("Video transcode (TASK-50)", () => {
   let app: INestApplication;
   let db: PrismaService;
-  let server: () => request.SuperTest<request.Test>;
+  let server: () => ReturnType<typeof request>;
   let token: string;
   let boardId: string;
   let cardId: string;
@@ -140,7 +140,7 @@ describe("Video transcode (TASK-50)", () => {
     expect(original.body.transcodeStatus).toBe("pending");
 
     const row = await waitStatus(original.body.id, "done");
-    expect((row as { mimeType: string }).mimeType).toBe("video/mp4");
+    expect((row as unknown as { mimeType: string }).mimeType).toBe("video/mp4");
 
     const content = await server()
       .get(`/api/v1/attachments/${original.body.id}/content`)

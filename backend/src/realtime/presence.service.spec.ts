@@ -7,12 +7,14 @@ const alice = {
   displayName: "Alice",
   email: "alice@x.io",
   avatarColor: "blue" as const,
+  avatarPath: null,
 };
 const bob = {
   id: "u-bob",
   displayName: null,
   email: "bob@x.io",
   avatarColor: null,
+  avatarPath: null,
 };
 
 /** Presence frames published to one board, in order. */
@@ -46,7 +48,14 @@ describe("PresenceService", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]).toEqual({
       type: "presence",
-      users: [{ id: "u-alice", displayName: "Alice", avatarColor: "blue" }],
+      users: [
+        {
+          id: "u-alice",
+          displayName: "Alice",
+          avatarColor: "blue",
+          avatarPath: null,
+        },
+      ],
     });
 
     // A second tab broadcasts again — the fresh connection needs the
@@ -54,14 +63,29 @@ describe("PresenceService", () => {
     presence.join("b1", "client-alice-2", alice);
     expect(seen).toHaveLength(2);
     expect(seen[1].users).toEqual([
-      { id: "u-alice", displayName: "Alice", avatarColor: "blue" },
+      {
+        id: "u-alice",
+        displayName: "Alice",
+        avatarColor: "blue",
+        avatarPath: null,
+      },
     ]);
 
     presence.join("b1", "client-bob-1", bob);
     expect(seen).toHaveLength(3);
     expect(seen[2].users).toEqual([
-      { id: "u-alice", displayName: "Alice", avatarColor: "blue" },
-      { id: "u-bob", displayName: "bob@x.io", avatarColor: null },
+      {
+        id: "u-alice",
+        displayName: "Alice",
+        avatarColor: "blue",
+        avatarPath: null,
+      },
+      {
+        id: "u-bob",
+        displayName: "bob@x.io",
+        avatarColor: null,
+        avatarPath: null,
+      },
     ]);
   });
 
@@ -74,7 +98,12 @@ describe("PresenceService", () => {
     presence.leave("b1", "a1");
     expect(seen).toHaveLength(0);
     expect(presence.roster("b1")).toEqual([
-      { id: "u-alice", displayName: "Alice", avatarColor: "blue" },
+      {
+        id: "u-alice",
+        displayName: "Alice",
+        avatarColor: "blue",
+        avatarPath: null,
+      },
     ]);
 
     presence.leave("b1", "a2");
@@ -90,8 +119,18 @@ describe("PresenceService", () => {
     presence.join("b1", "b1", { ...bob, displayName: "Bobby" });
 
     expect(presence.roster("b1")).toEqual([
-      { id: "u-bob", displayName: "Bobby", avatarColor: null },
-      { id: "u-alice", displayName: "Alice", avatarColor: "blue" },
+      {
+        id: "u-bob",
+        displayName: "Bobby",
+        avatarColor: null,
+        avatarPath: null,
+      },
+      {
+        id: "u-alice",
+        displayName: "Alice",
+        avatarColor: "blue",
+        avatarPath: null,
+      },
     ]);
   });
 
@@ -110,12 +149,27 @@ describe("PresenceService", () => {
     });
     expect(b1).toHaveLength(1);
     expect(b1[0].users).toEqual([
-      { id: "u-alice", displayName: "Alicia", avatarColor: "pink" },
-      { id: "u-bob", displayName: "bob@x.io", avatarColor: null },
+      {
+        id: "u-alice",
+        displayName: "Alicia",
+        avatarColor: "pink",
+        avatarPath: null,
+      },
+      {
+        id: "u-bob",
+        displayName: "bob@x.io",
+        avatarColor: null,
+        avatarPath: null,
+      },
     ]);
     expect(b2).toHaveLength(1);
     expect(b2[0].users).toEqual([
-      { id: "u-alice", displayName: "Alicia", avatarColor: "pink" },
+      {
+        id: "u-alice",
+        displayName: "Alicia",
+        avatarColor: "pink",
+        avatarPath: null,
+      },
     ]);
 
     // A user with no sessions and an unchanged patch stay silent.
@@ -147,7 +201,12 @@ describe("PresenceService", () => {
     presence.sweep(t0 + PRESENCE_TTL_MS + 1);
     expect(seen).toHaveLength(1);
     expect(seen[0].users).toEqual([
-      { id: "u-alice", displayName: "Alice", avatarColor: "blue" },
+      {
+        id: "u-alice",
+        displayName: "Alice",
+        avatarColor: "blue",
+        avatarPath: null,
+      },
     ]);
 
     presence.sweep(t0 + PRESENCE_TTL_MS * 3);
@@ -161,7 +220,12 @@ describe("PresenceService", () => {
     expect(() => presence.join("b1", "shared", bob)).toThrow();
     // The rightful owner keeps the slot.
     expect(presence.roster("b1")).toEqual([
-      { id: "u-alice", displayName: "Alice", avatarColor: "blue" },
+      {
+        id: "u-alice",
+        displayName: "Alice",
+        avatarColor: "blue",
+        avatarPath: null,
+      },
     ]);
   });
 
@@ -189,7 +253,12 @@ describe("PresenceService", () => {
     presence.heartbeat();
     expect(seen).toHaveLength(1);
     expect(seen[0].users).toEqual([
-      { id: "u-alice", displayName: "Alice", avatarColor: "blue" },
+      {
+        id: "u-alice",
+        displayName: "Alice",
+        avatarColor: "blue",
+        avatarPath: null,
+      },
     ]);
     expect(other).toHaveLength(0);
 

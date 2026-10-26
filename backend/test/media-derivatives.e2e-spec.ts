@@ -20,7 +20,7 @@ const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 describe("Media derivatives (TASK-70)", () => {
   let app: INestApplication;
   let db: PrismaService;
-  let server: () => request.SuperTest<request.Test>;
+  let server: () => ReturnType<typeof request>;
   let token: string;
   let boardId: string;
   const suffix = Date.now();

@@ -30,7 +30,7 @@ describe("OAuth (e2e)", () => {
 
   /** Two-hop stub: token exchange, then userinfo. */
   const stubProvider = (userinfo: Record<string, unknown>) => {
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
+    globalThis.fetch = (async (input: string | URL) => {
       const url = String(input);
       if (url.includes("/token")) {
         return json(200, { access_token: "provider-access-token" });
@@ -49,7 +49,7 @@ describe("OAuth (e2e)", () => {
       json: async () => body,
     }) as unknown as Response;
 
-  const setStateCookie = (res: Response): string => {
+  const setStateCookie = (res: request.Response): string => {
     const raw = res.headers["set-cookie"] as unknown as string[];
     const row = raw.find((cookie) => cookie.startsWith("oauth_state="));
     if (!row) throw new Error("no oauth_state cookie set");

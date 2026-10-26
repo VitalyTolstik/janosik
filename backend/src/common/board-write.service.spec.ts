@@ -66,7 +66,7 @@ describe("BoardWriteService", () => {
     tx.$executeRaw = jest.fn(async () => {
       order.push("lock");
       return 1;
-    });
+    }) as unknown as typeof tx.$executeRaw;
 
     await service(prisma).run("board-1", async () => {
       order.push("body");
@@ -106,7 +106,7 @@ describe("BoardWriteService", () => {
     prisma.$transaction = jest.fn(async () => {
       calls += 1;
       throw Object.assign(new Error("deadlock"), { code: "P2034" });
-    });
+    }) as unknown as typeof prisma.$transaction;
 
     await expect(
       service(prisma).run("board-1", async () => "x"),
@@ -120,7 +120,7 @@ describe("BoardWriteService", () => {
     prisma.$transaction = jest.fn(async () => {
       calls += 1;
       throw Object.assign(new Error("bad input"), { code: "P2002" });
-    });
+    }) as unknown as typeof prisma.$transaction;
 
     await expect(
       service(prisma).run("board-1", async () => "x"),

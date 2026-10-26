@@ -2,6 +2,7 @@ import type { User } from "@prisma/client";
 import type { PrismaService } from "@/common/prisma/prisma.service";
 import type { PresenceService } from "@/realtime/presence.service";
 import type { RealtimeService } from "@/realtime/realtime.service";
+import type { StorageService } from "@/attachments/storage.service";
 import { UsersService } from "./users.service";
 
 const prismaMock = {
@@ -24,6 +25,8 @@ const realtimeMock = {
   publish: jest.fn(),
 } as unknown as RealtimeService & { publish: jest.Mock };
 
+const storageMock = {} as unknown as StorageService;
+
 const makeUser = (overrides: Partial<User> = {}): User => ({
   id: "user-1",
   email: "user@example.com",
@@ -33,6 +36,7 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   avatarPath: null,
   disabledAt: null,
   emailVerifiedAt: null,
+  notifyDigest: true,
   createdAt: new Date("2026-09-01T00:00:00Z"),
   ...overrides,
 });
@@ -43,7 +47,12 @@ describe("UsersService", () => {
   beforeEach(() => {
     jest.resetAllMocks();
     prismaMock.boardMember.findMany.mockResolvedValue([]);
-    service = new UsersService(prismaMock, presenceMock, realtimeMock);
+    service = new UsersService(
+      prismaMock,
+      presenceMock,
+      realtimeMock,
+      storageMock,
+    );
   });
 
   describe("updateProfile", () => {
