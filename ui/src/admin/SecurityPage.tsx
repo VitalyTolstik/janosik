@@ -3,6 +3,7 @@ import type { AdminSecurityDto, AdminTotpSetupDto } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/Toast";
+import { formatDate, useHour12, useI18n } from "@/i18n";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
@@ -21,6 +22,8 @@ import {
  */
 export function SecurityPage() {
   const t = useAdminT();
+  const { lang } = useI18n();
+  const hour12 = useHour12();
   const toast = useToast();
   const { admin } = useAdminAuth();
   const isOwner = admin?.role === "OWNER";
@@ -274,7 +277,7 @@ export function SecurityPage() {
                   {alert.ip ?? "—"}
                 </span>
                 <span className="ml-auto text-xs text-muted-foreground">
-                  {new Date(alert.createdAt).toLocaleString()}
+                  {formatDate(alert.createdAt, lang, hour12)}
                 </span>
               </div>
             ))}

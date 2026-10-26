@@ -92,7 +92,7 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
       }
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
-        setError("Email is already registered");
+        setError(t("admin.users.changeEmail.taken"));
       } else if (cause instanceof ApiError && cause.messageText) {
         setError(cause.messageText);
       } else {

@@ -205,6 +205,7 @@ export function EntityPage<E extends AdminEntity>({
   );
   const toast = useToast();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkPending, setBulkPending] = useState(false);
   const bulkEnabled = config.bulk === true;
   const visibleIds = list.items
     .map((row) => rowId(row))
@@ -238,6 +239,7 @@ export function EntityPage<E extends AdminEntity>({
     action: "delete" | "restore",
     label: string,
   ): Promise<void> => {
+    setBulkPending(false);
     const ids = visibleIds.filter((id) => selected.has(id));
     if (ids.length === 0) return;
     try {
@@ -315,7 +317,7 @@ export function EntityPage<E extends AdminEntity>({
                   variant="ghost"
                   className="h-7 px-2 text-xs text-destructive"
                   data-testid="admin-bulk-delete"
-                  onClick={() => void runBulk("delete", t("admin.bulk.delete"))}
+                  onClick={() => setBulkPending(true)}
                 >
                   {t("admin.bulk.delete")}
                 </Button>
@@ -436,6 +438,17 @@ export function EntityPage<E extends AdminEntity>({
           </>
         )}
       </Panel>
+      {bulkPending ? (
+        <ConfirmDialog
+          open
+          title={t("admin.bulk.confirm.title", { count: selected.size })}
+          body={t("admin.bulk.confirm.body")}
+          confirmLabel={t("admin.bulk.delete")}
+          destructive
+          onConfirm={() => void runBulk("delete", t("admin.bulk.delete"))}
+          onClose={() => setBulkPending(false)}
+        />
+      ) : null}
     </div>
   );
 }

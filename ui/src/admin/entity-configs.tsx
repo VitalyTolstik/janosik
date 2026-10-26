@@ -138,7 +138,9 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             ? {
                 label: t("admin.users.action.disable"),
                 destructive: true,
-                confirmTitle: t("admin.users.confirm.disable.title"),
+                confirmTitle: t("admin.users.confirm.disable.title", {
+                  email: user.email,
+                }),
                 confirmBody: t("admin.users.confirm.disable.body", {
                   email: user.email,
                 }),
@@ -149,7 +151,9 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
               }
             : {
                 label: t("admin.users.action.enable"),
-                confirmTitle: t("admin.users.confirm.enable.title"),
+                confirmTitle: t("admin.users.confirm.enable.title", {
+                  email: user.email,
+                }),
                 confirmBody: t("admin.users.confirm.enable.body", {
                   email: user.email,
                 }),
@@ -172,7 +176,9 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.users.action.revokeSessions"),
             destructive: true,
-            confirmTitle: t("admin.users.confirm.sessions.title"),
+            confirmTitle: t("admin.users.confirm.sessions.title", {
+              email: user.email,
+            }),
             confirmBody: t("admin.users.confirm.sessions.body", {
               email: user.email,
             }),
@@ -181,7 +187,9 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.users.action.revokeTokens"),
             destructive: true,
-            confirmTitle: t("admin.users.confirm.tokens.title"),
+            confirmTitle: t("admin.users.confirm.tokens.title", {
+              email: user.email,
+            }),
             confirmBody: t("admin.users.confirm.tokens.body", {
               email: user.email,
             }),
@@ -512,7 +520,9 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           card.archivedAt === null
             ? {
                 label: t("admin.cards.action.archive"),
-                confirmTitle: t("admin.cards.confirm.archive.title"),
+                confirmTitle: t("admin.cards.confirm.archive.title", {
+                  title: card.title,
+                }),
                 confirmBody: t("admin.cards.confirm.archive.body", {
                   title: card.title,
                 }),

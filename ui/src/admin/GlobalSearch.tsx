@@ -249,7 +249,11 @@ export function GlobalSearchDialog({
                 <Badge
                   variant={line.badge === "deleted" ? "danger" : "warning"}
                 >
-                  {line.badge}
+                  {line.badge === "deleted"
+                    ? t("admin.status.deleted")
+                    : line.badge === "archived"
+                      ? t("admin.status.archived")
+                      : t("admin.status.disabled")}
                 </Badge>
               ) : null}
             </button>

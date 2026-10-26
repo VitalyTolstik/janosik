@@ -32,6 +32,7 @@ import {
 } from "./cells";
 import {
   Badge,
+  ConfirmDialog,
   ErrorState,
   Field,
   LoadingState,
@@ -96,6 +97,7 @@ export function BoardDetailPage() {
   });
 
   const [reloadKey, setReloadKey] = useState(0);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const load = () => {
     setError(false);
@@ -216,11 +218,7 @@ export function BoardDetailPage() {
                   )}
                   <DropdownMenuItem
                     className="text-danger focus:text-danger"
-                    onSelect={() =>
-                      void run(t("admin.boards.action.delete"), () =>
-                        adminApi.deleteBoard(board.id),
-                      )
-                    }
+                    onSelect={() => setConfirmDelete(true)}
                   >
                     {t("admin.boards.action.delete")}
                   </DropdownMenuItem>
@@ -527,6 +525,20 @@ export function BoardDetailPage() {
           ))}
         </Panel>
       ) : null}
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title={t("admin.boards.confirm.delete.title", { title: board.title })}
+        body={t("admin.boards.confirm.delete.body", { title: board.title })}
+        confirmLabel={t("admin.boards.action.delete")}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          void run(t("admin.boards.action.delete"), () =>
+            adminApi.deleteBoard(board.id),
+          );
+        }}
+        onClose={() => setConfirmDelete(false)}
+      />
     </div>
   );
 }

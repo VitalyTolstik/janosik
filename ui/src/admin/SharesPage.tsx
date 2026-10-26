@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import type { AdminShareRowDto } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/Toast";
+import { formatDate, useHour12, useI18n } from "@/i18n";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminList } from "./use-admin-list";
@@ -27,6 +28,8 @@ import {
  */
 export function SharesPage() {
   const t = useAdminT();
+  const { lang } = useI18n();
+  const hour12 = useHour12();
   const toast = useToast();
   const list = useAdminList<AdminShareRowDto>(
     (params) => adminApi.listShares({ ...params, limit: 100 }),
@@ -163,7 +166,7 @@ export function SharesPage() {
                     {row.views}
                   </td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">
-                    {new Date(row.createdAt).toLocaleString()}
+                    {formatDate(row.createdAt, lang, hour12)}
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-1">

@@ -182,7 +182,7 @@ function CreateMasterDialog({
       });
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
-        setError("Master account already exists");
+        setError(t("admin.masters.exists"));
       } else if (cause instanceof ApiError && cause.status === 403) {
         setError(t("admin.masters.forbidden"));
       } else {
@@ -444,14 +444,16 @@ export function MastersPage() {
           <Table>
             <thead>
               <tr>
-                <Th>AdminUser.id</Th>
-                <Th>AdminUser.email</Th>
-                <Th>AdminUser.role</Th>
-                <Th className="w-28">AdminUser.displayName</Th>
-                <Th className="w-12 text-right">AdminUser.failedLogins</Th>
-                <Th>AdminUser.lastLoginAt</Th>
-                <Th>AdminUser.lockedUntil</Th>
-                <Th>AdminUser.disabledAt</Th>
+                <Th>{t("admin.masters.column.id")}</Th>
+                <Th>{t("admin.masters.column.email")}</Th>
+                <Th>{t("admin.masters.column.role")}</Th>
+                <Th className="w-28">{t("admin.masters.column.name")}</Th>
+                <Th className="w-12 text-right">
+                  {t("admin.masters.column.failed")}
+                </Th>
+                <Th>{t("admin.masters.column.lastLogin")}</Th>
+                <Th>{t("admin.masters.column.locked")}</Th>
+                <Th>{t("admin.masters.column.status")}</Th>
                 <Th className="w-10" />
               </tr>
             </thead>

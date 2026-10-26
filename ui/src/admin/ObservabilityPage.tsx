@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { AdminObservabilityDto } from "@janosik/shared";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
+import { formatDate, useHour12, useI18n } from "@/i18n";
 import {
   Badge,
   ErrorState,
@@ -21,10 +22,15 @@ import {
  */
 export function ObservabilityPage() {
   const t = useAdminT();
+  const { lang } = useI18n();
+  const hour12 = useHour12();
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [data, setData] = useState<AdminObservabilityDto | null>(null);
 
-  useEffect(() => {
+  // TASK-94: a retry must re-fetch, not just flip the phase back to loading
+  // (which left a permanent spinner).
+  const load = useCallback(() => {
+    setPhase("loading");
     adminApi
       .getObservability()
       .then((snapshot) => {
@@ -34,15 +40,13 @@ export function ObservabilityPage() {
       .catch(() => setPhase("error"));
   }, []);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
   if (phase === "loading") return <LoadingState />;
   if (phase === "error" || !data) {
-    return (
-      <ErrorState
-        onRetry={() => {
-          setPhase("loading");
-        }}
-      />
-    );
+    return <ErrorState onRetry={load} />;
   }
 
   return (
@@ -65,7 +69,7 @@ export function ObservabilityPage() {
           />
           <Field
             label={t("admin.observability.started")}
-            value={new Date(data.deploy.startedAt).toLocaleString()}
+            value={formatDate(data.deploy.startedAt, lang, hour12)}
           />
           <Field
             label={t("admin.observability.dbSize")}
