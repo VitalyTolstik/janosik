@@ -2444,6 +2444,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 #### TASK-122 — `brand-system` · Бренд-система и токены
 
+- **Скилы:** `leonxlnx/taste-skill@brandkit` (опц.), `emilkowalski/skills@emil-design-eng`
 - **Зачем:** сейчас цвета/шрифты живут только в `ui/src/index.css`; сайт и видео
   добавят третий-четвёртый набор. Нужен один источник истины.
 - **Что:**
@@ -2461,6 +2462,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 #### TASK-123 — `marketing-site-scaffold` · Каркас маркетинг-сайта
 
+- **Скилы:** `vercel-labs/agent-skills@vercel-composition-patterns`
 - **Зачем:** нужен воркспейс под лендинг и доки.
 - **Что:** новый воркспейс `site/` (Astro + Starlight-заготовка), базовый шелл
   (шапка/футер/навигация), маршруты (`/`, `/pricing`, `/docs`), i18n en/ru,
@@ -2477,6 +2479,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 #### TASK-124 — `landing-hero-features` · Лендинг: герой и фичи
 
+- **Скилы:** `anthropics/skills@frontend-design`, `vercel-labs/agent-skills@web-design-guidelines`
 - **Зачем:** витрина «как у Miro» — показать продукт.
 - **Что:** герой (оффер + CTA + медиа-слот), секции фич (drag&drop, realtime,
   комментарии, вложения/видео, шаринг доски, календарь/таблица, PWA/оффлайн,
@@ -2491,6 +2494,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 #### TASK-125 — `landing-pricing` · Тарифы и подписка
 
+- **Скилы:** `coreyhaines31/marketingskills@pricing-strategy`
 - **Зачем:** монетизация hosted-варианта.
 - **Что:** страница `/pricing`: планы (Self-hosted free / Hosted free / Pro /
   Team / Enterprise), таблица сравнения, лимиты per-plan, CTA (начать/связаться),
@@ -2503,6 +2507,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 #### TASK-126 — `site-copy-cro-seo` · Текст, конверсия и SEO
 
+- **Скилы:** `coreyhaines31/marketingskills@{copywriting,page-cro,seo-audit,ai-seo,schema-markup,analytics-tracking}`
 - **Зачем:** сайт должен находиться в поиске и конвертировать.
 - **Что:** копирайт всех страниц (заголовки/офферы/CTA), CRO-проход по лендингу и
   тарифам, SEO (title/description по страницам, семантика, внутренние ссылки),
@@ -2516,6 +2521,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 #### TASK-127 — `site-a11y-perf-audit` · Аудит доступности и перфа
 
+- **Скилы:** `vercel-labs/agent-skills@web-design-guidelines`, `pbakaus/impeccable`
 - **Зачем:** «не тупой сайт» = доступный, быстрый, без визуального мусора.
 - **Что:** аудит по Web Interface Guidelines (spacing/typography/interaction/
   a11y), проход `impeccable` по визуальным проблемам, контраст, фокус/клавиатура,
@@ -2528,6 +2534,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 #### TASK-128 — `video-scaffold` · Каркас видео-пайплайна
 
+- **Скилы:** `remotion-dev/skills@remotion-best-practices`
 - **Зачем:** клипы фич должны собираться повторяемо и лежать как ассеты.
 - **Что:** воркспейс `video/` (Remotion) на общих бренд-токенах; структура
   композиций; скрипт рендера (mp4 + webm + постер-кадр) в `site/public/media`;
@@ -2540,6 +2547,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 #### TASK-129 — `video-feature-clips` · Клипы ключевых фич
 
+- **Скилы:** `remotion-dev/skills@remotion-best-practices` (+ опц. `heygen-com/hyperframes@product-launch-video`)
 - **Зачем:** «фичи как у Miro» — показать движением.
 - **Что:** сценарии и рендер клипов по фичам (drag&drop, realtime-прилёт,
   комментарии/упоминания, paste-медиа/видео-вложения, шаринг доски read-only,
@@ -2553,6 +2561,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 #### TASK-130 — `site-media-integration` · Встраивание медиа в сайт
 
+- **Скилы:** `coreyhaines31/marketingskills@image` (опц.)
 - **Зачем:** соединить лендинг (слоты) и видео (ассеты).
 - **Что:** подстановка клипов/скринов в секции, `<video autoplay muted loop
   playsinline poster preload="none">` + ленивая загрузка, no-CLS, фолбэк на
@@ -2565,6 +2574,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 #### TASK-131 — `billing-subscription` · Подписка и оплата (hosted)
 
+- **Скилы:** — (специализированных скилов нет; сначала решить провайдера оплаты)
 - **Зачем:** продажа hosted-варианта по подписке.
 - **Что:** выбрать провайдера (Stripe/Paddle/ЮKassa/CloudPayments — решение
   владельца, влияет на налоги/регион), планы и лимиты per-plan в backend
@@ -2579,6 +2589,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 #### TASK-132 — `docs-site` · Доковый сайт (Starlight)
 
+- **Скилы:** `anthropics/skills@doc-coauthoring`
 - **Зачем:** сейчас доки — разрозненные markdown-файлы.
 - **Что:** Starlight на `/docs` в `site/`: структура (Начало / Self-hosting /
   Пользовательский гайд / API / FAQ / Changelog), поиск, версии, i18n en/ru,
@@ -2592,6 +2603,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 #### TASK-133 — `docs-user-guide` · Пользовательская документация
 
+- **Скилы:** `riekelt/technical-writer@technical-writing`, `anthropics/skills@doc-coauthoring`
 - **Зачем:** help center по фичам (не только self-hosting).
 - **Что:** гайды по фичам (доски/колонки/карточки, drag&drop, комментарии,
   вложения/видео, метки/чек-листы/приоритеты, календарь/таблица, шаринг,
@@ -2604,6 +2616,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 #### TASK-134 — `docs-api-reference` · API-reference и runbooks
 
+- **Скилы:** `addyosmani/agent-skills@documentation-and-adrs`, `riekelt/technical-writer@{writing-design-docs,writing-runbooks}`
 - **Зачем:** self-hosters/интеграторы.
 - **Что:** API-reference (из `shared/src/api.ts` DTO / OpenAPI), примеры curl,
   self-hosting runbooks (бэкап/восстановление/апгрейд/мониторинг/troubleshooting),
