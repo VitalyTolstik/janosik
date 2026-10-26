@@ -332,6 +332,7 @@
   "card.links.badgeTooltip_other": "{{count}} links",
   "card.links.blockedBadge": "Blocked",
   "card.links.blockedTooltip": "Blocked by a linked card",
+  "card.links.cap": "A card can have at most {{count}} links",
   "card.links.cycle": "This link would create a circular dependency",
   "card.links.deletedCard": "Deleted card",
   "card.links.empty": "No linked cards yet — pick a relation and search above.",

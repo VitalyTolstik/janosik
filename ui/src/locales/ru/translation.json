@@ -622,6 +622,7 @@
   "presence.people_few": "{{count}} человека на доске",
   "presence.people_many": "{{count}} человек на доске",
   "presence.people_one": "{{count}} человек на доске",
+  "presence.people_other": "{{count}} человека на доске",
   "presence.title": "Сейчас на доске",
   "presence.you": "вы",
   "priority.blocker": "Блокер",

@@ -46,6 +46,13 @@ import { createId } from "@/utils/id";
  * (relative `/api/v1`, proxied by nginx in production and by Vite in dev).
  */
 
+/**
+ * Browser keepalive bodies cap out around 64 KB; stay well under it so a
+ * large command is sent without `keepalive` instead of being rejected
+ * synchronously (TASK-86).
+ */
+const KEEPALIVE_MAX_BYTES = 32 * 1024;
+
 /** Error thrown for any non-2xx answer, a transport failure, or bad JSON. */
 export class ApiError extends Error {
   constructor(
@@ -54,6 +61,13 @@ export class ApiError extends Error {
     /** Parsed error body (NestJS envelope, `{conflict, currentVersion}`, …). */
     readonly body: unknown,
     message?: string,
+    /**
+     * The request never left the client (a synchronous construction error,
+     * e.g. a keepalive body over the browser's size cap) — distinct from a
+     * transport failure, so the sync layer does not mislabel it "offline"
+     * (TASK-86).
+     */
+    readonly clientSide = false,
   ) {
     super(message ?? ApiError.describe(status, body));
     this.name = "ApiError";
@@ -61,7 +75,7 @@ export class ApiError extends Error {
 
   /** True when the request failed before any HTTP answer (offline). */
   get offline(): boolean {
-    return this.status === 0;
+    return this.status === 0 && !this.clientSide;
   }
 
   /** `409` conflict category, when the server named one. */
@@ -170,6 +184,13 @@ export class ApiClient {
    * and bounce the user back to the login screen.
    */
   private sessionEpoch = 0;
+  /**
+   * True while a master "view as" session is active (TASK-85). A refresh
+   * would send the *master's* httpOnly cookie and silently upgrade the tab
+   * to the master session, so refresh is refused and a 401 ends the view-as
+   * session instead.
+   */
+  private impersonating = false;
   /** Called once when a session cannot be restored — the app shows login. */
   onAuthLost: (() => void) | null = null;
 
@@ -177,6 +198,15 @@ export class ApiClient {
 
   getAccessToken(): string | null {
     return this.accessToken;
+  }
+
+  /** Mark this client as a view-as session (TASK-85). */
+  setImpersonating(value: boolean): void {
+    this.impersonating = value;
+  }
+
+  isImpersonating(): boolean {
+    return this.impersonating;
   }
 
   clearAccessToken(): void {
@@ -389,6 +419,8 @@ export class ApiClient {
   }
 
   private async runRefresh(): Promise<AuthResponseDto | null> {
+    // A view-as tab must never rotate into the master session (TASK-85).
+    if (this.impersonating) return null;
     const epoch = this.sessionEpoch;
     try {
       const response = await withRefreshLock(() =>
@@ -502,11 +534,14 @@ export class ApiClient {
     boardId: string,
     request: CommandRequest,
   ): Promise<CommandResponse> {
+    // `keepalive` survives a reload mid-flight, but the browser caps a
+    // keepalive body at ~64 KB (TASK-86): a big RESTORE_* command must be
+    // sent without it rather than rejected by a synchronous TypeError.
+    const bytes = new TextEncoder().encode(JSON.stringify(request)).length;
     return this.request<CommandResponse>(`/boards/${boardId}/commands`, {
       method: "POST",
       body: request,
-      // Survives a reload in the middle of the request (see RequestInitLike).
-      keepalive: true,
+      keepalive: bytes <= KEEPALIVE_MAX_BYTES,
     });
   }
 
@@ -717,6 +752,10 @@ export class ApiClient {
     try {
       const response = await send();
       if (response.status === 401 && this.accessToken !== null) {
+        if (this.impersonating) {
+          this.onAuthLost?.();
+          throw new ApiError(401, null);
+        }
         const restored = await this.refreshSession();
         if (restored !== null || this.accessToken !== null) {
           return send();
@@ -744,6 +783,12 @@ export class ApiClient {
         error.status === 401 &&
         init.auth !== false
       ) {
+        // TASK-85: a dead view-as token must not be refreshed against the
+        // master cookie — hand it to the provider, which leaves view-as.
+        if (this.impersonating) {
+          this.onAuthLost?.();
+          throw error;
+        }
         const restored = await this.refreshSession();
         // `null` with a token present means the refresh was superseded by a
         // login/register (see `sessionEpoch`) — retry with that token.
@@ -770,9 +815,13 @@ export class ApiClient {
     }
 
     const fetchImpl = this.options.fetchImpl ?? fetch;
-    let response: Response;
+    // A synchronous throw here is a construction error (bad argument, e.g. a
+    // keepalive body past the browser's ~64 KB cap); a rejection is a
+    // transport failure. Keeping them apart stops the sync layer from
+    // treating the former as "offline" (TASK-86).
+    let pending: Promise<Response>;
     try {
-      response = await fetchImpl(`${base}${path}`, {
+      pending = fetchImpl(`${base}${path}`, {
         method: init.method ?? "GET",
         headers,
         body:
@@ -781,6 +830,17 @@ export class ApiClient {
         credentials: "include",
         keepalive: init.keepalive === true,
       });
+    } catch (error) {
+      throw new ApiError(
+        0,
+        null,
+        error instanceof Error ? error.message : "Request could not be sent",
+        true,
+      );
+    }
+    let response: Response;
+    try {
+      response = await pending;
     } catch {
       throw new ApiError(0, null);
     }

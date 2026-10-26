@@ -23,6 +23,7 @@ import { useToast } from "@/components/Toast";
 import { formatDateOnly, useI18n } from "@/i18n";
 import { useAuth } from "@/auth/AuthContext";
 import { useBoardLive, useBoardMember } from "@/store/board-live";
+import { downloadBlob } from "@/utils/download";
 
 /** Total attachments counted across all sizes for a compact badge. */
 function formatSize(bytes: number): string {
@@ -203,12 +204,8 @@ export function CardAttachments({
   const onDownload = async (attachment: AttachmentDto) => {
     try {
       const blob = await api.fetchAttachment(attachment.id);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = attachment.fileName;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      // Delayed revoke so the download is not cancelled (TASK-106).
+      downloadBlob(attachment.fileName, blob);
     } catch {
       toast.error(t("card.attachments.downloadError"));
     }

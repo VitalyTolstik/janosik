@@ -13,7 +13,16 @@ export function downloadTextFile(
   text: string,
   type = "application/json",
 ): void {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+  downloadBlob(filename, new Blob([text], { type }));
+}
+
+/**
+ * Download a binary blob (attachment fetch, TASK-47/106). Same anchor rules
+ * as the text variant: in the document, `rel=noopener`, and a delayed revoke
+ * so Firefox/Safari are not cut off mid-download.
+ */
+export function downloadBlob(filename: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;

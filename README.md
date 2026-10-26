@@ -1,6 +1,6 @@
 # Janosik
 
-A premium, offline-first **Kanban board** — Trello-class drag & drop with a Space Grotesk wordmark and obsessive attention to micro-detail.
+A premium **Kanban board** — Trello-class drag & drop with a Space Grotesk wordmark and obsessive attention to micro-detail. It runs **local-first** (everything in `localStorage`, fully usable offline) or **server-backed** (accounts, shared boards, realtime sync).
 
 [![React](https://img.shields.io/badge/React-18-61dafb?logo=react&logoColor=white)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -10,7 +10,7 @@ A premium, offline-first **Kanban board** — Trello-class drag & drop with a Sp
 [![Tests](https://img.shields.io/badge/tests-932%20passing-brightgreen)](#)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
-> **Janosik** is an offline-first board that installs as a **PWA** — and, since the backend phase landed, it also runs **server-backed**: accounts, shared boards and a command-log sync (`POST /boards/:id/commands`) on top of the very same reducer, with optimistic updates and undo. Point the UI at the API (`VITE_API_URL`, `/api/v1` by default) for server mode; without it the app keeps the original client-side mode (all data in `localStorage`, JSON export/import, automatic `IndexedDB` backups). Members UI and **realtime SSE** (everyone sees each other's edits without a reload, dropped streams catch up from `?since=`) have landed; presence and the comments UI are next — see [ROADMAP.md §7](./ROADMAP.md).
+> **Janosik** installs as a **PWA** and runs either **local-first** (no backend — everything in `localStorage`, works fully offline) or **server-backed**: accounts, shared boards and a command-log sync (`POST /boards/:id/commands`) on top of the very same reducer, with optimistic updates and undo. Point the UI at the API (`VITE_API_URL`, `/api/v1` by default) for server mode; without it the app keeps the original client-side mode (all data in `localStorage`, JSON export/import, automatic `IndexedDB` backups). Members UI and **realtime SSE** (everyone sees each other's edits without a reload, dropped streams catch up from `?since=`) have landed; presence and the comments UI are next — see [ROADMAP.md §7](./ROADMAP.md).
 
 ---
 
@@ -69,7 +69,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 - **Activity feed** — per-card event history (10 event types) with relative timestamps.
 - **Keyboard-first** — shortcut palette (`?`), `j/k` cursor navigation, `n`/`c` composers, `e`/`Enter` edit.
 - **Undo / redo** — 50-step history with coalescing, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`, `Ctrl+Y`, header buttons.
-- **PWA / offline** — installable (manifest + icons), service worker caches the app shell and all hashed chunks; the board keeps working with the network fully cut.
+- **PWA** — installable (manifest + icons), service worker caches the app shell and all hashed chunks, so it opens with the network cut. **Local mode** then works fully offline; **server mode** needs the network for writes (optimistic edits roll back with a toast if the API is unreachable — there is no persistent outbox yet, so a reload drops unsynced changes).
 - **Server mode** — sign in, and boards live in PostgreSQL: every edit travels the command log (`POST /boards/:id/commands`) through the same `boardReducer`, optimistic first, with rollback + toast on refusal; typed text is protected by per-entity version preconditions so undo never clobbers another member's edit. Sign-out is always visible in the board header, and HTTP keepalive delivers a command that was already in flight if the tab reloads. The local-only mode stays as the no-API fallback.
 - **Realtime** — a `GET /boards/:id/events` SSE stream carries every committed command (`{type, seq, action, actorId}`) and the client replays foreign actions through the very same reducer. Edits appear in other browsers with no reload; a dropped stream resumes exactly where it stopped (`?since=`) and window focus remains the fallback. Your own commands are never applied twice, and a stale undo still refuses to clobber someone else's text.
 - **Shared boards** — a **Members (N)** dialog in the header: admins invite by email, switch roles (`ADMIN`/`MEMBER`/`VIEWER`), bound a viewer's access with an expiry date ("access expired" badge) and remove members — the last admin can never be demoted or removed. Invitations are **opt-in**: the invitee gets a badge on the header bell and accepts or declines there; nothing is shared until they accept. Everyone else sees the same member list read-only, and a `VIEWER` gets a genuinely read-only board: no drag, no composers, no menus, no inline editors, a read-only card dialog — while the server independently answers 403 to every mutation.
@@ -121,7 +121,7 @@ npm run dev
 # http://localhost:5173/
 ```
 
-On first launch the app shows a seeded **"Product Launch"** demo board. Everything you change is persisted locally. In production the app is installable (PWA) and keeps working offline.
+On first launch the app shows a seeded **"Product Launch"** demo board. Everything you change is persisted locally, so the local (no-API) build keeps working fully offline. The PWA installs in either mode; in server mode it opens offline but writes need the network.
 
 ### Server mode (accounts + PostgreSQL)
 

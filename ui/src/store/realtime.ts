@@ -456,8 +456,12 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
     onFatal: (boardId, status) => {
       // A 403 from the stream is the membership check: the account is no
       // longer on the board (a reconnect after removal, or a direct URL).
-      // 401/404 are session/board-level and have their own paths.
       if (status === 403) host.onAccessRevoked(boardId);
+      // TASK-103: a fatal 401 means the session is gone — tell the auth
+      // layer so the app drops to login instead of following a dead stream
+      // forever (the refresh already failed inside `openBoardEvents`).
+      else if (status === 401) api.onAuthLost?.();
+      // 404 is board-level and has its own path.
     },
     getSince: () => {
       const active = host.getActiveBoardId();

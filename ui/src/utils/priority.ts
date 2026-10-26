@@ -28,46 +28,48 @@ export const PRIORITY_META: Record<
     label: Record<"en" | "ru", string>;
   }
 > = {
+  // TASK-115: theme tokens (not raw Tailwind colors) so light/dark and
+  // high-contrast themes restyle the ladder; opacity keeps each rung distinct.
   blocker: {
     rank: 0,
     icon: Ban,
-    dotClass: "bg-red-600",
-    iconClass: "text-red-600",
+    dotClass: "bg-danger",
+    iconClass: "text-danger",
     label: { en: "Blocker", ru: "Блокер" },
   },
   highest: {
     rank: 1,
     icon: ChevronsUp,
-    dotClass: "bg-red-500",
-    iconClass: "text-red-500",
+    dotClass: "bg-danger/80",
+    iconClass: "text-danger/80",
     label: { en: "Highest", ru: "Наивысший" },
   },
   high: {
     rank: 2,
     icon: ChevronUp,
-    dotClass: "bg-orange-500",
-    iconClass: "text-orange-500",
+    dotClass: "bg-warning",
+    iconClass: "text-warning",
     label: { en: "High", ru: "Высокий" },
   },
   medium: {
     rank: 3,
     icon: Equal,
-    dotClass: "bg-amber-400",
-    iconClass: "text-amber-500",
+    dotClass: "bg-warning/70",
+    iconClass: "text-warning/70",
     label: { en: "Medium", ru: "Средний" },
   },
   low: {
     rank: 4,
     icon: ChevronDown,
-    dotClass: "bg-sky-500",
-    iconClass: "text-sky-500",
+    dotClass: "bg-primary",
+    iconClass: "text-primary",
     label: { en: "Low", ru: "Низкий" },
   },
   lowest: {
     rank: 5,
     icon: ChevronsDown,
-    dotClass: "bg-sky-400",
-    iconClass: "text-sky-400",
+    dotClass: "bg-primary/70",
+    iconClass: "text-primary/70",
     label: { en: "Lowest", ru: "Наименьший" },
   },
 };

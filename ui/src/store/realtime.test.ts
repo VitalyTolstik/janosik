@@ -255,6 +255,25 @@ describe("presence bridge", () => {
     };
   }
 
+  /** TASK-103: a fatal SSE 401 drops the app to login. */
+  it("reports a fatal stream 401 through api.onAuthLost", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 401 })),
+    );
+    const lost = vi.fn();
+    api.onAuthLost = lost;
+    api.setAccessToken("stale");
+
+    const bridge = createRealtimeBridge(host());
+    bridge.watch("b-1");
+
+    await vi.waitFor(() => expect(lost).toHaveBeenCalledTimes(1));
+    bridge.dispose();
+    api.onAuthLost = null;
+    api.clearAccessToken();
+  });
+
   it("routes rosters, flags foreign changes and heartbeats the tab", async () => {
     const pings: { clientId: string }[] = [];
     vi.stubGlobal(

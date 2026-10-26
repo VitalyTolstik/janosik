@@ -58,7 +58,10 @@ function SortableCardView({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: card.id, data: { type: "card" } });
+    // TASK-116: a VIEWER cannot drag — disabling the sensor drops the
+    // `role="button"`/`tabIndex` dnd-kit adds, so cards are not announced as
+    // buttons and the keyboard can reach the card's own controls.
+  } = useSortable({ id: card.id, data: { type: "card" }, disabled: readOnly });
 
   return (
     <div

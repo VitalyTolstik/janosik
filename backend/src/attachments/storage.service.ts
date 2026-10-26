@@ -294,7 +294,8 @@ export class StorageService {
       res.end?.();
       return;
     }
-    const start = first === "" ? Math.max(0, size - Number(last)) : Number(first);
+    const start =
+      first === "" ? Math.max(0, size - Number(last)) : Number(first);
     let end = first === "" || last === "" ? size - 1 : Number(last);
     if (
       Number.isNaN(start) ||

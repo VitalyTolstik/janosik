@@ -305,4 +305,71 @@ describe("ApiClient", () => {
       },
     ]);
   });
+
+  /** TASK-86: keepalive is dropped for a body over the browser's cap. */
+  it("sends a large command without keepalive and not as offline", async () => {
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (_input, init) => {
+        if (init?.keepalive === true) {
+          throw new TypeError("keepalive request size exceeded");
+        }
+        return json({ seq: 1, versions: {} });
+      },
+    });
+    client.setAccessToken("t");
+    const big = {
+      commandId: "c-1",
+      action: {
+        type: "ADD_CARD",
+        boardId: "b",
+        at: 1,
+        newCardId: "x",
+        columnId: "y",
+        title: "A".repeat(40_000),
+      },
+    };
+
+    await expect(client.sendCommand("b", big as never)).resolves.toEqual({
+      seq: 1,
+      versions: {},
+    });
+  });
+
+  it("classifies a synchronous construction error as client-side, not offline", async () => {
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: () => {
+        throw new TypeError("bad request");
+      },
+    });
+
+    await expect(client.listBoards()).rejects.toMatchObject({
+      status: 0,
+      offline: false,
+    });
+  });
+
+  /** TASK-85: a view-as tab never refreshes into the master session. */
+  it("refuses to refresh while impersonating and ends view-as on 401", async () => {
+    let refreshes = 0;
+    const lost = vi.fn();
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (input) => {
+        if (pathOf(input).endsWith("/auth/refresh")) {
+          refreshes += 1;
+          return json({ accessToken: "master", user });
+        }
+        return json({ message: "Unauthorized" }, 401);
+      },
+    });
+    client.onAuthLost = lost;
+    client.setAccessToken("view-as");
+    client.setImpersonating(true);
+
+    await expect(client.me()).rejects.toBeInstanceOf(ApiError);
+    expect(refreshes).toBe(0);
+    expect(lost).toHaveBeenCalledTimes(1);
+  });
 });

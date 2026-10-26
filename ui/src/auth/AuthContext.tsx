@@ -10,6 +10,7 @@ import {
 
 import type { AuthResponseDto, AuthUserDto } from "@janosik/shared";
 import { api, isApiEnabled } from "@/api/client";
+import { clearAvatarCache } from "@/hooks/use-avatar-object-url";
 import {
   clearImpersonation,
   consumeImpersonationHash,
@@ -82,11 +83,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!serverMode) return;
     let cancelled = false;
-    api.onAuthLost = () => {
+    // A dead view-as session (TASK-85) must not be refreshed into the master
+    // session: clear it and reload into the master's own session instead.
+    const onLost = (): void => {
       if (cancelled) return;
+      if (api.isImpersonating()) {
+        clearImpersonation();
+        window.location.reload();
+        return;
+      }
       setUser(null);
       setStatus("anonymous");
     };
+    api.onAuthLost = onLost;
     // A support "view as" session (TASK-59) wins over the refresh cookie:
     // the impersonation token is adopted for this tab, then `/auth/me`
     // resolves the profile it belongs to.
@@ -94,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       getImpersonationToken() ?? consumeImpersonationHash();
     if (impersonationToken !== null) {
       api.setAccessToken(impersonationToken);
+      api.setImpersonating(true);
       setImpersonating(true);
       void api
         .me()
@@ -105,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .catch(() => {
           if (cancelled) return;
           clearImpersonation();
+          api.setImpersonating(false);
           setImpersonating(false);
           void api.refreshSession().then((session) => {
             if (cancelled) return;
@@ -164,6 +175,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       /* the local session ends whether or not the revoke call landed */
     }
+    // TASK-106: drop cached avatar object URLs so a shared browser never
+    // keeps the previous account's images.
+    clearAvatarCache();
     setUser(null);
     setStatus("anonymous");
   }, []);
@@ -174,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const exitImpersonation = useCallback(() => {
     clearImpersonation();
+    api.setImpersonating(false);
     setImpersonating(false);
     // Reloading re-boots the app on the master's own refresh cookie — the
     // cleanest way back, with no half-torn session left in memory.

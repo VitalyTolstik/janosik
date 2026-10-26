@@ -247,19 +247,22 @@ export function TableView({
     }
   }, [visibleColumns]);
 
-  if (!board) return null;
-
-  const rows = board.columns.flatMap((column) => {
-    const ids = filteredCardIds?.[column.id] ?? column.cardIds;
-    return ids
-      .map((id) => board.cards[id])
-      .filter((card) => card !== undefined)
-      .map((card) => ({ card, column }));
-  });
+  // TASK-117: rebuilding the rows/sort on every keystroke was O(n log n) per
+  // render; memoize both so a card edit does not recompute the whole table.
+  const rows = useMemo(() => {
+    if (!board) return [];
+    return board.columns.flatMap((column) => {
+      const ids = filteredCardIds?.[column.id] ?? column.cardIds;
+      return ids
+        .map((id) => board.cards[id])
+        .filter((card) => card !== undefined)
+        .map((card) => ({ card, column }));
+    });
+  }, [board, filteredCardIds]);
 
   // Sort a copy — the stored board order is never touched (visual only).
-  const sortedRows = (() => {
-    if (!sort) return rows;
+  const sortedRows = useMemo(() => {
+    if (!board || !sort) return rows;
     const columnIndex = new Map(
       board.columns.map((col, index) => [col.id, index]),
     );
@@ -309,7 +312,9 @@ export function TableView({
       }
     };
     return [...rows].sort(cmp);
-  })();
+  }, [board, rows, sort, lang, assigneeNameById]);
+
+  if (!board) return null;
 
   const cycleSort = (key: SortKey) => {
     setSort((prev) => {
