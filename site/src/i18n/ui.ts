@@ -24,38 +24,56 @@ const en = {
   "theme.toggle": "Toggle colour theme",
   "lang.switch": "Switch language",
 
-  "home.hero.eyebrow": "Self-hosted · Offline-first · Open source",
   "home.hero.title": "Kanban that feels crafted.",
   "home.hero.lead":
-    "Janosik is a fast, self-hosted Kanban board — Trello-class drag & drop, calendar and table views, realtime sync and obsessive micro-detail. Run it yourself or let us host it.",
+    "Janosik is a fast, self-hosted board — Trello-class drag & drop, calendar and table views, realtime sync and obsessive micro-detail. Run it yourself, or let us host it.",
   "home.hero.note":
     "Free and open source (MIT). No lock-in — your data stays yours.",
+
+  "home.slot.board": "The Janosik board: columns of draggable cards",
+  "home.slot.realtime": "Two teammates editing the same board at once",
+  "home.slot.cards": "A card with a checklist, labels and an attachment",
+  "home.slot.sharing": "Sharing a board with a read-only link",
+  "home.slot.selfhost": "Self-hosting Janosik with Docker Compose",
 
   "home.features.title": "Everything a board should do",
   "home.features.lead":
     "Built for teams who want a board that gets out of the way.",
-  "home.features.dnd.title": "Drag & drop, undo/redo",
-  "home.features.dnd.body":
-    "Reorder cards and columns with buttery drag & drop, WIP limits and a full undo/redo history.",
-  "home.features.views.title": "Board, calendar, table",
-  "home.features.views.body":
-    "Three views of the same data — plan by board, by date, or in a dense table.",
-  "home.features.realtime.title": "Realtime collaboration",
-  "home.features.realtime.body":
-    "Shared boards sync over SSE: everyone sees edits instantly, with an offline-first fallback.",
-  "home.features.media.title": "Rich cards",
-  "home.features.media.body":
-    "Markdown descriptions, checklists, labels, attachments and paste-to-upload media.",
-  "home.features.offline.title": "Offline-first PWA",
-  "home.features.offline.body":
-    "Installable, works offline, and backs itself up to IndexedDB automatically.",
-  "home.features.i18n.title": "i18n & theming",
-  "home.features.i18n.body":
-    "English and Russian out of the box, light/dark themes and full keyboard support.",
+
+  "home.row.board.title": "Drag, drop, and see it three ways",
+  "home.row.board.body":
+    "Reorder cards and columns with buttery drag & drop, then switch the same board between kanban, calendar and table — your choice is remembered.",
+  "home.row.realtime.title": "Realtime, together",
+  "home.row.realtime.body":
+    "Shared boards sync over SSE, so every edit lands instantly for everyone. Presence shows who is here, and undo stays yours.",
+  "home.row.cards.title": "Cards that carry the work",
+  "home.row.cards.body":
+    "WYSIWYG descriptions, checklists, due dates, labels, covers, comments and paste-to-upload attachments — everything in one card.",
+  "home.row.sharing.title": "Share without the lock-in",
+  "home.row.sharing.body":
+    "Invite teammates as admin, member or viewer, or hand out a read-only link. Self-hosted, so the data never leaves your server.",
+
+  "home.more.title": "And the details",
+  "home.more.lead": "The small things that make a board pleasant to live in.",
+  "home.more.wysiwyg": "WYSIWYG card descriptions",
+  "home.more.checklists": "Checklists, due dates and covers",
+  "home.more.labels": "Labels, WIP limits and card archive",
+  "home.more.filter": "Filters and global search",
+  "home.more.hotkeys": "Keyboard-first with undo/redo",
+  "home.more.views": "Calendar and table views",
+  "home.more.offline": "Offline-first, installable PWA",
+  "home.more.admin": "Admin panel and backups",
+
+  "home.oss.title": "Open source, self-hosted, yours",
+  "home.oss.body":
+    "Janosik ships as a single container under the MIT license. Point it at your database and it is yours to run, fork and audit.",
+  "home.oss.point1": "MIT licensed — no lock-in",
+  "home.oss.point2": "One Docker image, your database",
+  "home.oss.point3": "No telemetry, ever",
 
   "home.how.title": "Running in minutes",
   "home.how.lead":
-    "One container, your own database. No SaaS account required.",
+    "One container and your own database. No SaaS account required.",
   "home.how.step1.title": "Pull the image",
   "home.how.step1.body":
     "Ship the self-host image from GitHub Container Registry.",
@@ -65,6 +83,9 @@ const en = {
   "home.how.step3.title": "Create your account",
   "home.how.step3.body":
     "Open the app, register the first user and start planning.",
+  "home.how.step4.title": "Invite your team",
+  "home.how.step4.body":
+    "Add teammates and share boards — or hand out a read-only link.",
 
   "home.faq.title": "Questions",
   "home.faq.q1": "Is Janosik free?",
@@ -76,6 +97,9 @@ const en = {
   "home.faq.q3": "Where is my data stored?",
   "home.faq.a3":
     "In your own database when self-hosting, or in your browser's storage in local-first mode. There is no telemetry.",
+  "home.faq.q4": "Can I use it with my team?",
+  "home.faq.a4":
+    "Yes. Self-host one instance and invite as many people as you like — there is no per-seat limit on the self-hosted edition.",
 
   "home.cta.title": "Ready to plan?",
   "home.cta.lead": "Start with the hosted plan or self-host in minutes.",
@@ -134,34 +158,52 @@ const ru: Record<keyof typeof en, string> = {
   "theme.toggle": "Переключить тему",
   "lang.switch": "Сменить язык",
 
-  "home.hero.eyebrow": "Self-hosted · Offline-first · Open source",
   "home.hero.title": "Канбан, сделанный с любовью к деталям.",
   "home.hero.lead":
     "Janosik — быстрый self-hosted канбан: drag & drop уровня Trello, виды календаря и таблицы, realtime-синхронизация и внимание к микро-деталям. Разверните у себя или доверьте хостинг нам.",
   "home.hero.note":
     "Бесплатно и с открытым исходным кодом (MIT). Без вендор-лока — данные ваши.",
 
+  "home.slot.board": "Доска Janosik: колонки с перетаскиваемыми карточками",
+  "home.slot.realtime": "Два человека одновременно правят одну доску",
+  "home.slot.cards": "Карточка с чек-листом, метками и вложением",
+  "home.slot.sharing": "Доступ к доске по ссылке только для чтения",
+  "home.slot.selfhost": "Self-hosting Janosik через Docker Compose",
+
   "home.features.title": "Всё, что должна уметь доска",
   "home.features.lead":
     "Для команд, которым нужна доска, не мешающая работать.",
-  "home.features.dnd.title": "Drag & drop, undo/redo",
-  "home.features.dnd.body":
-    "Перетаскивайте карточки и колонки, ставьте WIP-лимиты и откатывайте любые изменения.",
-  "home.features.views.title": "Доска, календарь, таблица",
-  "home.features.views.body":
-    "Три представления одних данных — планируйте по доске, по датам или в плотной таблице.",
-  "home.features.realtime.title": "Realtime-совместная работа",
-  "home.features.realtime.body":
-    "Общие доски синхронизируются по SSE: все видят правки мгновенно, с offline-first фолбэком.",
-  "home.features.media.title": "Богатые карточки",
-  "home.features.media.body":
-    "Markdown-описания, чек-листы, метки, вложения и вставка медиа из буфера.",
-  "home.features.offline.title": "Offline-first PWA",
-  "home.features.offline.body":
-    "Устанавливается, работает офлайн и автоматически бэкапится в IndexedDB.",
-  "home.features.i18n.title": "i18n и темы",
-  "home.features.i18n.body":
-    "Английский и русский из коробки, светлая и тёмная темы, полная поддержка клавиатуры.",
+
+  "home.row.board.title": "Перетаскивайте и смотрите тремя способами",
+  "home.row.board.body":
+    "Переставляйте карточки и колонки плавным drag & drop, а одну и ту же доску переключайте между канбаном, календарём и таблицей — выбор запоминается.",
+  "home.row.realtime.title": "Realtime — вместе",
+  "home.row.realtime.body":
+    "Общие доски синхронизируются по SSE: правки прилетают всем мгновенно. Presence показывает, кто на месте, а undo остаётся вашим.",
+  "home.row.cards.title": "Карточки, которые несут работу",
+  "home.row.cards.body":
+    "WYSIWYG-описания, чек-листы, сроки, метки, обложки, комментарии и вложения из буфера — всё в одной карточке.",
+  "home.row.sharing.title": "Делитесь без вендор-лока",
+  "home.row.sharing.body":
+    "Приглашайте участников как админа, участника или наблюдателя, либо выдавайте ссылку только для чтения. Self-hosted — данные не покидают ваш сервер.",
+
+  "home.more.title": "И детали",
+  "home.more.lead": "Мелочи, из которых складывается приятная доска.",
+  "home.more.wysiwyg": "WYSIWYG-описания карточек",
+  "home.more.checklists": "Чек-листы, сроки и обложки",
+  "home.more.labels": "Метки, WIP-лимиты и архив карточек",
+  "home.more.filter": "Фильтры и глобальный поиск",
+  "home.more.hotkeys": "Клавиатура и undo/redo",
+  "home.more.views": "Виды календаря и таблицы",
+  "home.more.offline": "Offline-first PWA с установкой",
+  "home.more.admin": "Админ-панель и бэкапы",
+
+  "home.oss.title": "Открытый код, self-hosted, ваш",
+  "home.oss.body":
+    "Janosik — один контейнер под лицензией MIT. Подключите свою базу — и им можно управлять, форкать и проверять.",
+  "home.oss.point1": "Лицензия MIT — без вендор-лока",
+  "home.oss.point2": "Один Docker-образ, ваша база",
+  "home.oss.point3": "Никакой телеметрии",
 
   "home.how.title": "Запуск за минуты",
   "home.how.lead": "Один контейнер и ваша база данных. Аккаунт SaaS не нужен.",
@@ -174,6 +216,9 @@ const ru: Record<keyof typeof en, string> = {
   "home.how.step3.title": "Создайте аккаунт",
   "home.how.step3.body":
     "Откройте приложение, зарегистрируйте первого пользователя и планируйте.",
+  "home.how.step4.title": "Пригласите команду",
+  "home.how.step4.body":
+    "Добавьте коллег и откройте им доски — или выдайте ссылку только для чтения.",
 
   "home.faq.title": "Вопросы",
   "home.faq.q1": "Janosik бесплатный?",
@@ -185,6 +230,9 @@ const ru: Record<keyof typeof en, string> = {
   "home.faq.q3": "Где хранятся мои данные?",
   "home.faq.a3":
     "В вашей базе данных при self-hosting или в хранилище браузера в локальном режиме. Телеметрии нет.",
+  "home.faq.q4": "Можно использовать с командой?",
+  "home.faq.a4":
+    "Да. Разверните один инстанс и приглашайте сколько угодно людей — на self-hosted версии нет лимита по числу участников.",
 
   "home.cta.title": "Готовы планировать?",
   "home.cta.lead": "Начните с хостинг-плана или разверните у себя за минуты.",

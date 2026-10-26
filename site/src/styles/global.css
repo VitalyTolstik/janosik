@@ -303,6 +303,13 @@ h3 {
   display: none;
 }
 
+/* On mobile there is no nav to crowd out, so keep a sign-in entry reachable. */
+@media (max-width: 719px) {
+  .header-actions .btn-ghost {
+    display: inline-flex;
+  }
+}
+
 @media (min-width: 720px) {
   .site-nav {
     display: flex;
@@ -360,37 +367,29 @@ h3 {
 
 .hero {
   position: relative;
-  padding-block: clamp(3.5rem, 9vw, 7rem);
+  padding-block: clamp(3rem, 8vw, 6.5rem);
   overflow: hidden;
 }
 
-.hero::before {
-  content: "";
-  position: absolute;
-  inset: -20% 0 auto 0;
-  height: 60%;
-  z-index: -1;
-  background:
-    radial-gradient(
-      50% 60% at 80% 0%,
-      color-mix(in oklab, var(--secondary) 22%, transparent),
-      transparent 70%
-    ),
-    radial-gradient(
-      40% 50% at 10% 10%,
-      color-mix(in oklab, var(--primary) 16%, transparent),
-      transparent 70%
-    );
+.hero-grid {
+  display: grid;
+  gap: clamp(2.5rem, 6vw, 4.5rem);
+  align-items: center;
 }
 
-.hero-inner {
-  max-width: 46rem;
+@media (min-width: 960px) {
+  .hero-grid {
+    grid-template-columns: 1fr 1.1fr;
+  }
+}
+
+.hero-copy {
+  max-width: 34rem;
 }
 
 .hero-title {
-  margin-top: 1rem;
-  font-size: clamp(2.5rem, 6vw, 4.25rem);
-  line-height: 1.03;
+  font-size: clamp(2.5rem, 5.5vw, 4rem);
+  line-height: 1.04;
   letter-spacing: -0.03em;
 }
 
@@ -413,67 +412,448 @@ h3 {
 }
 
 /* ---------------------------------------------------------------------------
- * Cards & grids
+ * Feature rows — alternating copy + media slot
  * ------------------------------------------------------------------------- */
 
-.grid {
+.feature-rows {
   display: grid;
-  gap: 1.25rem;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: clamp(3rem, 7vw, 5rem);
 }
 
-.card {
-  border: 1px solid var(--border);
-  border-radius: 0.875rem;
-  background: var(--card);
-  padding: 1.5rem;
-  transition:
-    border-color var(--janosik-duration-fast) var(--janosik-ease-out),
-    transform var(--janosik-duration-fast) var(--janosik-ease-out);
+.feature-row {
+  display: grid;
+  gap: clamp(1.5rem, 4vw, 3.5rem);
+  align-items: center;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .card:hover {
-    border-color: color-mix(in oklab, var(--primary) 40%, var(--border));
-    transform: translateY(-2px);
+@media (min-width: 900px) {
+  .feature-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .feature-row--flip .feature-row-copy {
+    order: 2;
   }
 }
 
-.card h3 {
-  font-size: var(--janosik-type-h3-size);
-  margin-bottom: 0.5rem;
+.feature-row-copy {
+  max-width: 30rem;
 }
 
-.card-icon {
+.feature-row-copy h3 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  line-height: 1.2;
+}
+
+.feature-row-copy p {
+  margin-top: 0.85rem;
+  font-size: var(--janosik-type-lead-size);
+  line-height: var(--janosik-type-lead-line);
+}
+
+/* ---------------------------------------------------------------------------
+ * "And the details" list
+ * ------------------------------------------------------------------------- */
+
+.section--tight {
+  padding-block: clamp(2rem, 5vw, 3.5rem);
+}
+
+.more-grid {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 1.1rem 2.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
+
+.more-item {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  font-size: var(--janosik-type-body-size);
+}
+
+.more-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  margin-bottom: 1rem;
-  border-radius: 0.7rem;
-  background: color-mix(in oklab, var(--primary) 14%, transparent);
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.6rem;
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
   color: var(--primary);
 }
 
-.card-icon svg {
-  width: 1.25rem;
-  height: 1.25rem;
+.more-icon svg {
+  width: 1.2rem;
+  height: 1.2rem;
 }
 
-/* Media slot: reserved space so a future video/screenshot causes no CLS. */
-.media-slot {
-  aspect-ratio: 16 / 10;
-  margin-bottom: 1.25rem;
-  border: 1px dashed var(--border);
-  border-radius: 0.75rem;
-  background: var(--surface);
+/* ---------------------------------------------------------------------------
+ * Open-source band
+ * ------------------------------------------------------------------------- */
+
+.oss {
   display: grid;
-  place-items: center;
+  gap: clamp(2rem, 5vw, 3.5rem);
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  background: var(--surface);
+  padding: clamp(1.75rem, 5vw, 3.5rem);
+}
+
+@media (min-width: 900px) {
+  .oss {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.oss-copy {
+  max-width: 30rem;
+}
+
+.oss-copy h2 {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+}
+
+.oss-copy > p {
+  margin-top: 0.85rem;
+  font-size: var(--janosik-type-lead-size);
+  line-height: var(--janosik-type-lead-line);
+}
+
+.oss-points {
+  list-style: none;
+  padding: 0;
+  margin-top: 1.5rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.oss-points li {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: var(--janosik-type-small-size);
+}
+
+.oss-points svg {
+  flex: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--success);
+}
+
+.oss-copy .hero-actions {
+  margin-top: 2rem;
+}
+
+/* ---------------------------------------------------------------------------
+ * Media slot — a reserved, media-ready frame. Until the feature clips land
+ * (TASK-128+) it draws a lightweight board mockup; the aspect ratio means a
+ * real image/video drops in with no layout shift.
+ * ------------------------------------------------------------------------- */
+
+.slot {
+  margin: 0;
+  min-width: 0;
+}
+
+.slot-frame {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--background);
+  box-shadow: 0 30px 60px -40px
+    color-mix(in oklab, var(--foreground) 55%, transparent);
+}
+
+.slot-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.slot-top {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+
+.slot-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.slot-bar {
+  width: 30%;
+  height: 0.4rem;
+  margin-inline-start: 0.5rem;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.slot-canvas {
+  position: relative;
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+  padding: 0.85rem;
+}
+
+.slot-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 0.55rem;
+  background: var(--surface);
+}
+
+.slot-colhead {
+  height: 0.45rem;
+  width: 55%;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.slot-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--card);
+}
+
+.slot-card--accent {
+  border-color: color-mix(in oklab, var(--primary) 50%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 16%, transparent);
+}
+
+.slot-line {
+  display: block;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--muted-foreground) 35%, transparent);
+}
+
+.w40 {
+  width: 40%;
+}
+
+.w50 {
+  width: 50%;
+}
+
+.w60 {
+  width: 60%;
+}
+
+.w70 {
+  width: 70%;
+}
+
+.w80 {
+  width: 80%;
+}
+
+.w90 {
+  width: 90%;
+}
+
+.slot-pills {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.slot-pills i {
+  width: 1.2rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.slot-check {
+  display: block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 0.2rem;
+  border: 1.5px solid
+    color-mix(in oklab, var(--muted-foreground) 45%, transparent);
+}
+
+.slot-check--on {
+  border-color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 30%, transparent);
+}
+
+.slot-avatar {
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  border: 2px solid var(--card);
+}
+
+.slot-avatar--a {
+  background: var(--primary);
+}
+
+.slot-avatar--b {
+  background: var(--secondary);
+}
+
+.slot-avatar--c {
+  background: var(--success);
+}
+
+.slot-presence {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  display: flex;
+}
+
+.slot-presence .slot-avatar + .slot-avatar {
+  margin-inline-start: -0.5rem;
+}
+
+.slot-cursor {
+  position: absolute;
+  left: 40%;
+  top: 46%;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.1rem;
+  color: var(--primary);
+}
+
+.slot-cursor svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.slot-cursor b {
+  width: 1.6rem;
+  height: 0.5rem;
+  margin-top: 0.55rem;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.slot-share {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--card);
+  box-shadow: 0 18px 40px -28px
+    color-mix(in oklab, var(--foreground) 60%, transparent);
+}
+
+.slot-avatars {
+  display: flex;
+}
+
+.slot-avatars .slot-avatar + .slot-avatar {
+  margin-inline-start: -0.5rem;
+}
+
+.slot-link {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   color: var(--muted-foreground);
-  font-size: var(--janosik-type-caption-size);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+}
+
+.slot-link svg {
+  flex: none;
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.slot--cards .slot-canvas,
+.slot--selfhost .slot-canvas {
+  grid-template-columns: 1fr;
+}
+
+.slot-detail {
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+  padding: 0.5rem;
+}
+
+.slot-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.slot-attach {
+  display: block;
+  height: 2.5rem;
+  border-radius: 0.4rem;
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+}
+
+.slot-term {
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+  padding: 0.5rem 0.35rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--janosik-type-small-size);
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+
+.slot-term b {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.slot-term .slot-ok {
+  color: var(--success);
+}
+
+.slot-caret {
+  display: inline-block;
+  width: 0.5rem;
+  height: 1rem;
+  vertical-align: -0.15rem;
+  background: var(--primary);
+  animation: slot-blink 1.2s steps(2, start) infinite;
+}
+
+@keyframes slot-blink {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slot-caret {
+    animation: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -484,7 +864,7 @@ h3 {
   counter-reset: step;
   display: grid;
   gap: 1.5rem;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
   list-style: none;
   padding: 0;
 }

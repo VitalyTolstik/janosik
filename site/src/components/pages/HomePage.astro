@@ -1,9 +1,9 @@
 ---
 import { appLink, site } from "../../config";
-import type { UIKey } from "../../i18n/ui";
-import type { Lang } from "../../i18n/ui";
+import type { Lang, UIKey } from "../../i18n/ui";
 import { useTranslations } from "../../i18n/utils";
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import MediaSlot, { type MediaVariant } from "../MediaSlot.astro";
 
 interface Props {
   lang: Lang;
@@ -20,75 +20,132 @@ const description = site.description;
 const icon = (paths: string) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 
-const features: { icon: string; title: UIKey; body: UIKey }[] = [
+// The big features get their own row with a media slot, alternating sides.
+const rows: {
+  title: UIKey;
+  body: UIKey;
+  variant: MediaVariant;
+  slot: UIKey;
+  flip?: boolean;
+}[] = [
   {
-    icon: icon('<path d="M8 6l-4 4 4 4"/><path d="M16 6l4 4-4 4"/>'),
-    title: "home.features.dnd.title",
-    body: "home.features.dnd.body",
+    title: "home.row.board.title",
+    body: "home.row.board.body",
+    variant: "board",
+    slot: "home.slot.board",
+  },
+  {
+    title: "home.row.realtime.title",
+    body: "home.row.realtime.body",
+    variant: "realtime",
+    slot: "home.slot.realtime",
+    flip: true,
+  },
+  {
+    title: "home.row.cards.title",
+    body: "home.row.cards.body",
+    variant: "cards",
+    slot: "home.slot.cards",
+  },
+  {
+    title: "home.row.sharing.title",
+    body: "home.row.sharing.body",
+    variant: "sharing",
+    slot: "home.slot.sharing",
+    flip: true,
+  },
+];
+
+// The rest of the board's craft, as a light two-column list.
+const more: { icon: string; key: UIKey }[] = [
+  {
+    icon: icon(
+      '<path d="M4 7V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2"/><path d="M9 20h6"/><path d="M12 3v17"/>',
+    ),
+    key: "home.more.wysiwyg",
   },
   {
     icon: icon(
-      '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+      '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
     ),
-    title: "home.features.views.title",
-    body: "home.features.views.body",
-  },
-  {
-    icon: icon('<path d="M13 2 3 14h7l-1 8 10-12h-7z"/>'),
-    title: "home.features.realtime.title",
-    body: "home.features.realtime.body",
+    key: "home.more.checklists",
   },
   {
     icon: icon(
-      '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.5-3.5L9 20"/>',
+      '<path d="M20.6 13.4 12 22l-8.6-8.6a2 2 0 0 1 0-2.8l6-6a2 2 0 0 1 2.8 0l8.4 8.4a2 2 0 0 1 0 2.4z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
     ),
-    title: "home.features.media.title",
-    body: "home.features.media.body",
+    key: "home.more.labels",
+  },
+  {
+    icon: icon('<path d="M3 5h18"/><path d="M6 12h12"/><path d="M10 19h4"/>'),
+    key: "home.more.filter",
+  },
+  {
+    icon: icon(
+      '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M10 14h.01M14 14h.01M18 14h.01"/>',
+    ),
+    key: "home.more.hotkeys",
+  },
+  {
+    icon: icon(
+      '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/><path d="M8 2v4M16 2v4"/>',
+    ),
+    key: "home.more.views",
   },
   {
     icon: icon(
       '<path d="M12 20h.01"/><path d="M8.5 16.4a5 5 0 0 1 7 0"/><path d="M5 12.9a10 10 0 0 1 5.5-2.9"/><path d="M2 8.8A15 15 0 0 1 8 6.1"/><path d="m2 2 20 20"/>',
     ),
-    title: "home.features.offline.title",
-    body: "home.features.offline.body",
+    key: "home.more.offline",
   },
   {
-    icon: icon(
-      '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/>',
-    ),
-    title: "home.features.i18n.title",
-    body: "home.features.i18n.body",
+    icon: icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'),
+    key: "home.more.admin",
   },
+];
+
+const ossPoints: UIKey[] = [
+  "home.oss.point1",
+  "home.oss.point2",
+  "home.oss.point3",
 ];
 
 const steps: { title: UIKey; body: UIKey }[] = [
   { title: "home.how.step1.title", body: "home.how.step1.body" },
   { title: "home.how.step2.title", body: "home.how.step2.body" },
   { title: "home.how.step3.title", body: "home.how.step3.body" },
+  { title: "home.how.step4.title", body: "home.how.step4.body" },
 ];
 
 const faq: { q: UIKey; a: UIKey }[] = [
   { q: "home.faq.q1", a: "home.faq.a1" },
   { q: "home.faq.q2", a: "home.faq.a2" },
   { q: "home.faq.q3", a: "home.faq.a3" },
+  { q: "home.faq.q4", a: "home.faq.a4" },
 ];
 ---
 
 <BaseLayout {title} {description} {lang}>
   <section class="hero">
-    <div class="container hero-inner">
-      <span class="eyebrow">{t("home.hero.eyebrow")}</span>
-      <h1 class="hero-title">{t("home.hero.title")}</h1>
-      <p class="lead hero-lead">{t("home.hero.lead")}</p>
-      <div class="hero-actions">
-        <a class="btn btn-primary btn-lg" href={appLink(lang)}>
-          {t("cta.primary")}
-        </a>
-        <a class="btn btn-ghost btn-lg" href={site.githubUrl}>
-          {t("cta.secondary")}
-        </a>
+    <div class="container hero-grid">
+      <div class="hero-copy">
+        <h1 class="hero-title">{t("home.hero.title")}</h1>
+        <p class="lead hero-lead">{t("home.hero.lead")}</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary btn-lg" href={appLink(lang, "register")}>
+            {t("cta.primary")}
+          </a>
+          <a class="btn btn-ghost btn-lg" href={site.githubUrl}>
+            {t("cta.secondary")}
+          </a>
+        </div>
+        <p class="hero-note">{t("home.hero.note")}</p>
       </div>
-      <p class="hero-note">{t("home.hero.note")}</p>
+      <MediaSlot
+        class="hero-slot"
+        variant="board"
+        label={t("home.slot.board")}
+      />
     </div>
   </section>
 
@@ -98,24 +155,83 @@ const faq: { q: UIKey; a: UIKey }[] = [
         <h2>{t("home.features.title")}</h2>
         <p class="lead">{t("home.features.lead")}</p>
       </div>
-      <div class="grid">
-        {features.map((feature) => (
-          <article class="card">
-            <span class="card-icon" set:html={feature.icon} />
-            <h3>{t(feature.title)}</h3>
-            <p class="muted">{t(feature.body)}</p>
+
+      <div class="feature-rows">
+        {rows.map((row) => (
+          <article
+            class:list={["feature-row", row.flip && "feature-row--flip"]}
+          >
+            <div class="feature-row-copy">
+              <h3>{t(row.title)}</h3>
+              <p class="muted">{t(row.body)}</p>
+            </div>
+            <MediaSlot
+              class="feature-row-slot"
+              variant={row.variant}
+              label={t(row.slot)}
+            />
           </article>
         ))}
       </div>
     </div>
   </section>
 
-  <!-- Product showcase — a reserved media slot (video lands in TASK-128..130).
-       The fixed aspect ratio means the page never shifts when the media
-       arrives. -->
+  <section class="section section--tight">
+    <div class="container">
+      <div class="section-head">
+        <h2>{t("home.more.title")}</h2>
+        <p class="lead">{t("home.more.lead")}</p>
+      </div>
+      <ul class="more-grid">
+        {more.map((item) => (
+          <li class="more-item">
+            <span class="more-icon" set:html={item.icon} />
+            <span>{t(item.key)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
   <section class="section">
     <div class="container">
-      <div class="media-slot">{t("nav.features")}</div>
+      <div class="oss">
+        <div class="oss-copy">
+          <h2>{t("home.oss.title")}</h2>
+          <p class="muted">{t("home.oss.body")}</p>
+          <ul class="oss-points">
+            {ossPoints.map((point) => (
+              <li>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+                <span>{t(point)}</span>
+              </li>
+            ))}
+          </ul>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href={site.githubUrl}>
+              {t("cta.secondary")}
+            </a>
+            <a class="btn btn-ghost" href={appLink(lang)}>
+              {t("cta.signin")}
+            </a>
+          </div>
+        </div>
+        <MediaSlot
+          class="oss-slot"
+          variant="selfhost"
+          label={t("home.slot.selfhost")}
+        />
+      </div>
     </div>
   </section>
 
@@ -158,7 +274,7 @@ const faq: { q: UIKey; a: UIKey }[] = [
         <h2>{t("home.cta.title")}</h2>
         <p class="lead">{t("home.cta.lead")}</p>
         <div class="hero-actions">
-          <a class="btn btn-primary btn-lg" href={appLink(lang)}>
+          <a class="btn btn-primary btn-lg" href={appLink(lang, "register")}>
             {t("cta.primary")}
           </a>
           <a class="btn btn-ghost btn-lg" href={site.githubUrl}>

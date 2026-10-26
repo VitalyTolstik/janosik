@@ -1,0 +1,181 @@
+---
+/**
+ * A reserved media slot for the landing page.
+ *
+ * Until the feature clips land (TASK-128+), the slot renders a lightweight,
+ * on-brand board mockup drawn in the DOM — no image, no layout shift. When the
+ * real media arrives, pass `src` (and `video` for a clip): the frame keeps its
+ * aspect ratio and the mockup is swapped out, so nothing else moves.
+ */
+export type MediaVariant =
+  "board" | "realtime" | "cards" | "sharing" | "selfhost";
+
+interface Props {
+  /** Which mockup to draw when there is no media yet. */
+  variant?: MediaVariant;
+  /** Accessible description of what the slot shows (or will show). */
+  label: string;
+  /** Future media: an image URL, or a video URL when `video` is set. */
+  src?: string;
+  /** Poster frame for a future `<video>`. */
+  poster?: string;
+  video?: boolean;
+  class?: string;
+}
+
+const {
+  variant = "board",
+  label,
+  src,
+  poster,
+  video = false,
+  class: className,
+} = Astro.props;
+---
+
+<figure class:list={["slot", `slot--${variant}`, className]} data-slot="media">
+  <div class="slot-frame" role="img" aria-label={label}>
+    {src ? (
+      video ? (
+        <video
+          class="slot-media"
+          src={src}
+          poster={poster}
+          muted
+          loop
+          playsinline
+          aria-hidden="true"
+        />
+      ) : (
+        <img class="slot-media" src={src} alt="" />
+      )
+    ) : (
+      <>
+        <div class="slot-top">
+          <span class="slot-dot" />
+          <span class="slot-dot" />
+          <span class="slot-dot" />
+          <span class="slot-bar" />
+        </div>
+        <div class="slot-canvas" aria-hidden="true">
+          {variant === "selfhost" ? (
+            <div class="slot-term">
+              <span>
+                <b>$</b> docker compose up -d
+              </span>
+              <span class="slot-ok">✓ postgres ready</span>
+              <span class="slot-ok">✓ janosik ready on :3000</span>
+              <span>
+                <b>$</b> <i class="slot-caret" />
+              </span>
+            </div>
+          ) : variant === "cards" ? (
+            <div class="slot-detail">
+              <span class="slot-line w70" />
+              <span class="slot-detail-row">
+                <i class="slot-check slot-check--on" />
+                <span class="slot-line w60" />
+              </span>
+              <span class="slot-detail-row">
+                <i class="slot-check slot-check--on" />
+                <span class="slot-line w40" />
+              </span>
+              <span class="slot-detail-row">
+                <i class="slot-check" />
+                <span class="slot-line w50" />
+              </span>
+              <span class="slot-pills">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span class="slot-attach" />
+            </div>
+          ) : (
+            <>
+              <div class="slot-col">
+                <span class="slot-colhead" />
+                <span class="slot-card">
+                  <i class="slot-line w80" />
+                  <i class="slot-line w50" />
+                </span>
+                <span class="slot-card slot-card--accent">
+                  <i class="slot-line w70" />
+                  <span class="slot-pills">
+                    <i />
+                    <i />
+                  </span>
+                </span>
+                <span class="slot-card">
+                  <i class="slot-line w60" />
+                </span>
+              </div>
+              <div class="slot-col">
+                <span class="slot-colhead" />
+                <span class="slot-card">
+                  <i class="slot-line w70" />
+                  <i class="slot-check" />
+                </span>
+                <span class="slot-card">
+                  <i class="slot-line w90" />
+                  <i class="slot-line w40" />
+                </span>
+              </div>
+              <div class="slot-col">
+                <span class="slot-colhead" />
+                <span class="slot-card">
+                  <i class="slot-line w60" />
+                </span>
+                <span class="slot-card">
+                  <i class="slot-line w50" />
+                </span>
+              </div>
+            </>
+          )}
+
+          {variant === "realtime" && (
+            <>
+              <span class="slot-presence">
+                <i class="slot-avatar slot-avatar--a" />
+                <i class="slot-avatar slot-avatar--b" />
+              </span>
+              <span class="slot-cursor">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 2l7 18 2.4-6.6L20 11z"
+                    fill="currentColor"
+                    stroke="var(--card)"
+                    stroke-width="1.5"
+                  />
+                </svg>
+                <b />
+              </span>
+            </>
+          )}
+
+          {variant === "sharing" && (
+            <span class="slot-share">
+              <span class="slot-avatars">
+                <i class="slot-avatar slot-avatar--a" />
+                <i class="slot-avatar slot-avatar--b" />
+                <i class="slot-avatar slot-avatar--c" />
+              </span>
+              <span class="slot-link">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                <i class="slot-line w80" />
+              </span>
+            </span>
+          )}
+        </div>
+      </>
+    )}
+  </div>
+</figure>
