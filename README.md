@@ -49,7 +49,12 @@ janosik/                        # npm workspaces root (one package-lock.json)
 │  ├─ scripts/                  # admin-cli.cjs, migrate-test-db.cjs
 │  ├─ docker-compose.yml        # dev PostgreSQL 16 (janosik + janosik_test)
 │  └─ .env.example
-├─ deploy/nginx.conf            # SPA fallback + /api proxy for self-hosting
+├─ deploy/nginx.conf            # optional SPA fallback + /api proxy (single-image serving is built in)
+├─ Dockerfile                   # multi-stage: builds UI + API into one self-host image
+├─ docker-compose.yml           # self-host stack: app + postgres + redis
+├─ docker-entrypoint.sh         # runs `prisma migrate deploy`, then the API
+├─ .env.example                 # annotated environment for docker compose
+├─ SECURITY.md / CHANGELOG.md   # disclosure policy, release history
 ├─ ROADMAP.md                   # plan, architecture assessment, §7 backend spec
 ├─ ROADMAP-DONE.md              # archive of closed tasks
 └─ AGENT.md                     # working agreement for AI agents/contributors
@@ -162,6 +167,53 @@ To actually send mail, open **`/admin` → Email service** (owner only), pick a 
 docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit
 # open http://localhost:8025, or click "Open the inbox" in the panel
 ```
+
+### Self-hosting with Docker (production)
+
+The fastest way to run Janosik is the prebuilt image: one container serves the
+**whole app** (API under `/api/v1` + the built SPA), next to PostgreSQL and
+Redis. No separate web server or proxy config — SSE and cookies work on a
+single origin.
+
+```bash
+# 1. Grab the compose file and the env template
+curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
+
+# 2. Edit .env — at minimum JWT_SECRET and PUBLIC_ORIGIN:
+#    JWT_SECRET=$(openssl rand -hex 32)
+
+# 3. Bring it up (migrations run automatically on boot)
+docker compose up -d
+
+# 4. Open PUBLIC_ORIGIN (default http://localhost:3000), create the first
+#    account, then set ALLOW_REGISTRATION=false in .env and `docker compose up -d`
+```
+
+Upgrade and back up:
+
+```bash
+docker compose pull && docker compose up -d          # new image, schema migrated on boot
+docker compose exec postgres pg_dump -U janosik janosik > backup.sql
+# restore: docker compose exec -T postgres psql -U janosik janosik < backup.sql
+```
+
+Environment variables (see `.env.example` for the full annotated list):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `JWT_SECRET` | — (required) | Access-token signing secret; `openssl rand -hex 32` |
+| `PUBLIC_ORIGIN` | `http://localhost:3000` | Public URL users open; builds OAuth callbacks |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `janosik` / — / `janosik` | Database credentials |
+| `COOKIE_SECURE` | `false` (example) | `Secure` cookie flag. **Set `true` behind HTTPS** — the API refuses to boot on HTTP in production unless this is explicitly `false`. |
+| `ALLOW_REGISTRATION` | `true` | Open sign-up; turn off after creating your account |
+| `TRUST_PROXY` | `0` | Reverse-proxy hops (set `1` behind nginx/Caddy/Traefik) |
+| `SMTP_*` | unset | Outgoing email; unset = log mode (codes go to the server log) |
+| `PURGE_AFTER_DAYS` | `30` | Retention for the hourly soft-delete sweep |
+
+To build the image from a checkout instead of pulling, uncomment `build: .`
+in `docker-compose.yml`. For a TLS-terminating proxy in front, keep
+`PUBLIC_ORIGIN=https://…`, set `COOKIE_SECURE=true` and `TRUST_PROXY=1`.
 
 ---
 

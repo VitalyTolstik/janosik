@@ -1,0 +1,80 @@
+# Janosik — self-host stack (TASK-38b).
+#
+# Quick start:
+#   curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
+#   curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
+#   # edit .env: set JWT_SECRET (openssl rand -hex 32) and PUBLIC_ORIGIN
+#   docker compose up -d
+#   # → open PUBLIC_ORIGIN, create the first account, then close registration
+#
+# Upgrade:  docker compose pull && docker compose up -d   (migrations run on boot)
+# Backup:   docker compose exec postgres pg_dump -U janosik janosik > backup.sql
+
+services:
+  app:
+    image: ghcr.io/vitalytolstik/janosik:${JANOSIK_TAG:-latest}
+    # Uncomment to build the image from this checkout instead of pulling:
+    # build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      # One origin for UI + API: the image serves both.
+      STATIC_DIR: /app/public
+      UPLOAD_DIR: /data/uploads
+      DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (openssl rand -hex 32)}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
+      # 'false' ships in .env.example so the plain-HTTP quickstart boots; set
+      # it to true (or remove the line) once you serve over HTTPS. The API
+      # refuses to start on HTTP when this is left unset in production.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+      # 0 = no proxy in front (the port is published directly). Set to 1 when
+      # you put nginx/Caddy/Traefik in front, so rate limits and the audit log
+      # see the real client IP.
+      TRUST_PROXY: ${TRUST_PROXY:-0}
+      # Optional: Redis-backed queues are on via REDIS_URL above; the dashboard
+      # is OWNER-only and off unless enabled.
+      QUEUES_DASHBOARD: ${QUEUES_DASHBOARD:-false}
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - janosik-uploads:/data/uploads
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - janosik-pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - janosik-redisdata:/data
+
+volumes:
+  janosik-pgdata:
+  janosik-redisdata:
+  janosik-uploads:

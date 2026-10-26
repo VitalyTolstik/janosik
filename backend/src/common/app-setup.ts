@@ -18,7 +18,28 @@ export function setupApp(app: INestApplication): void {
   if (env.TRUST_PROXY > 0) {
     (app as NestExpressApplication).set("trust proxy", env.TRUST_PROXY);
   }
-  app.use(helmet());
+  // CSP tuned for the app shell (TASK-38b serves the SPA from this process):
+  // the theme preflight in index.html is an inline script/style, avatars and
+  // attachments load as blob:, the service worker is same-origin, and
+  // `upgrade-insecure-requests` is dropped so a plain-HTTP self-host works
+  // (helmet would otherwise rewrite every subresource to https).
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          "script-src": ["'self'", "'unsafe-inline'"],
+          "style-src": ["'self'", "'unsafe-inline'"],
+          "img-src": ["'self'", "data:", "blob:"],
+          "media-src": ["'self'", "blob:"],
+          "connect-src": ["'self'"],
+          "worker-src": ["'self'", "blob:"],
+          "font-src": ["'self'", "data:"],
+          "upgrade-insecure-requests": null,
+        },
+      },
+    }),
+  );
   app.use(cookieParser());
   // Explicit json limit instead of Express's implicit 100 KB (TASK-30.2):
   // import envelopes may legitimately reach MAX_IMPORT_BYTES, and a large

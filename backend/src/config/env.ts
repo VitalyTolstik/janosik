@@ -138,6 +138,14 @@ export const env = cleanEnv(process.env, {
     default: "",
     example: "/var/lib/janosik/uploads",
   }),
+  // Built SPA directory (TASK-38b). When set, the API also serves the static
+  // frontend and falls back to `index.html` for client-side routes, so one
+  // container serves the whole app. Empty = API only (dev, e2e, nginx setups).
+  STATIC_DIR: str({
+    desc: "Directory with the built UI (index.html + assets); empty = API only",
+    default: "",
+    example: "/app/public",
+  }),
   // Public read-only board sharing (TASK-58, §7.9). On by default so a fresh
   // self-host can hand out a link; a private installation sets it to `false`
   // and the whole `/share/*` contour answers 404 (no share is readable).
