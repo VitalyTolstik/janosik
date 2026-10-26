@@ -1,8 +1,18 @@
 ---
-import { appLink, site } from "../../config";
+import { appLink, contactLink, site } from "../../config";
 import type { Lang, UIKey } from "../../i18n/ui";
 import { useTranslations } from "../../i18n/utils";
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import {
+  cardPlanIds,
+  columnIds,
+  comparison,
+  currency,
+  planById,
+  planKey,
+  type Plan,
+  type Value,
+} from "../../pricing";
 
 interface Props {
   lang: Lang;
@@ -14,75 +24,256 @@ const t = useTranslations(lang);
 const title = `${t("pricing.title")} — ${site.name}`;
 const description = t("pricing.lead");
 
-const plans: {
-  name: UIKey;
-  price: UIKey;
-  period: UIKey;
-  body: UIKey;
-  cta: UIKey;
-  href: string;
-  featured?: boolean;
-}[] = [
-  {
-    name: "pricing.free.name",
-    price: "pricing.free.price",
-    period: "pricing.free.period",
-    body: "pricing.free.body",
-    cta: "pricing.cta.free",
-    href: site.githubUrl,
-  },
-  {
-    name: "pricing.hosted.name",
-    price: "pricing.hosted.price",
-    period: "pricing.hosted.period",
-    body: "pricing.hosted.body",
-    cta: "pricing.cta.hosted",
-    href: appLink(lang),
-    featured: true,
-  },
-  {
-    name: "pricing.enterprise.name",
-    price: "pricing.enterprise.price",
-    period: "pricing.enterprise.period",
-    body: "pricing.enterprise.body",
-    cta: "pricing.cta.enterprise",
-    href: site.githubUrl,
-  },
+// All plan data lives in `pricing.ts`; here we only turn it into markup. The
+// CTAs resolve to a URL until billing arrives (TASK-131).
+const linkUrl: Record<Plan["link"], string> = {
+  github: site.githubUrl,
+  waitlist: contactLink(t("pricing.waitlist.subject")),
+  contact: contactLink(t("pricing.contact.subject")),
+};
+
+// One check glyph, reused everywhere; `currentColor` lets it pick up its context.
+const check =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+// A `Value` is a bare number or an i18n key; prices get the currency prefix.
+const renderValue = (value: Value) =>
+  typeof value === "number" ? String(value) : t(value);
+const renderPrice = (value: Value) =>
+  typeof value === "number" ? `${currency}${value}` : t(value);
+
+const cards = cardPlanIds.map((id) => planById[id]);
+const enterprise = planById.enterprise;
+
+const limitFields: { labelKey: UIKey; field: keyof Plan["limits"] }[] = [
+  { labelKey: "pricing.limit.boards", field: "boards" },
+  { labelKey: "pricing.limit.members", field: "members" },
+  { labelKey: "pricing.limit.storage", field: "storage" },
+];
+
+const limitLine = (plan: Plan) =>
+  limitFields
+    .map(
+      ({ labelKey, field }) =>
+        `${t(labelKey)}: ${renderValue(plan.limits[field])}`,
+    )
+    .join(" · ");
+
+const faq: { q: UIKey; a: UIKey }[] = [
+  { q: "pricing.faq.q1", a: "pricing.faq.a1" },
+  { q: "pricing.faq.q2", a: "pricing.faq.a2" },
+  { q: "pricing.faq.q3", a: "pricing.faq.a3" },
+  { q: "pricing.faq.q4", a: "pricing.faq.a4" },
+  { q: "pricing.faq.q5", a: "pricing.faq.a5" },
+  { q: "pricing.faq.q6", a: "pricing.faq.a6" },
+  { q: "pricing.faq.q7", a: "pricing.faq.a7" },
+];
+
+const enterprisePoints: UIKey[] = [
+  "pricing.enterprise.point1",
+  "pricing.enterprise.point2",
+  "pricing.enterprise.point3",
 ];
 ---
 
 <BaseLayout {title} {description} {lang}>
-  <section class="section">
-    <div class="container">
-      <div class="section-head">
-        <h1>{t("pricing.title")}</h1>
-        <p class="lead">{t("pricing.lead")}</p>
-      </div>
+  <div class="pricing-page">
+    <section class="section">
+      <div class="container">
+        <div class="section-head">
+          <h1>{t("pricing.title")}</h1>
+          <p class="lead">{t("pricing.lead")}</p>
 
-      <div class="plans">
-        {plans.map((plan) => (
-          <article class:list={["plan", plan.featured && "plan--featured"]}>
-            <h2>{t(plan.name)}</h2>
-            <p class="price">{t(plan.price)}</p>
-            {t(plan.period) && <p class="period">{t(plan.period)}</p>}
-            <p class="muted">{t(plan.body)}</p>
-            <a
-              class:list={["btn", plan.featured ? "btn-primary" : "btn-ghost"]}
-              href={plan.href}
-            >
-              {t(plan.cta)}
+          <div
+            class="billing"
+            role="group"
+            aria-label={t("pricing.billing.aria")}
+          >
+            <label class="billing-opt">
+              <input type="radio" name="billing" value="monthly" checked />
+              <span>{t("pricing.billing.monthly")}</span>
+            </label>
+            <label class="billing-opt">
+              <input type="radio" name="billing" value="annual" />
+              <span>{t("pricing.billing.annual")}</span>
+              <em>{t("pricing.billing.save")}</em>
+            </label>
+          </div>
+        </div>
+
+        <div class="plans">
+          {cards.map((plan) => (
+            <article class:list={["plan", plan.featured && "plan--featured"]}>
+              {plan.featured && (
+                <span class="badge">{t("pricing.pro.badge")}</span>
+              )}
+              <h2 class="plan-name">{t(planKey(plan.id, "name"))}</h2>
+              <p class="plan-for">{t(planKey(plan.id, "for"))}</p>
+
+              <p class="plan-price">
+                <span class="price-num">
+                  <span class="price--m">
+                    {renderPrice(plan.price.monthly)}
+                  </span>
+                  <span class="price--y">{renderPrice(plan.price.annual)}</span>
+                </span>
+                <span class="price-period">
+                  <span class="price--m">{t(plan.period.monthly)}</span>
+                  <span class="price--y">{t(plan.period.annual)}</span>
+                </span>
+              </p>
+
+              <p class="plan-limits">{limitLine(plan)}</p>
+
+              <ul class="plan-features">
+                {plan.highlights.map((key) => (
+                  <li>
+                    <span class="plan-check" set:html={check} />
+                    <span>{t(key)}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <a
+                class:list={[
+                  "btn",
+                  plan.featured ? "btn-primary" : "btn-ghost",
+                ]}
+                href={linkUrl[plan.link]}
+              >
+                {t(planKey(plan.id, "cta"))}
+              </a>
+            </article>
+          ))}
+        </div>
+
+        <p class="muted pricing-note">{t("pricing.note")}</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-head">
+          <h2>{t("pricing.compare.title")}</h2>
+          <p class="lead">{t("pricing.compare.lead")}</p>
+        </div>
+
+        <div
+          class="compare"
+          role="region"
+          aria-label={t("pricing.compare.aria")}
+          tabindex="0"
+        >
+          <table class="compare-table">
+            <thead>
+              <tr>
+                <th scope="col">{t("pricing.compare.feature")}</th>
+                {columnIds.map((id) => (
+                  <th scope="col">{t(planKey(id, "name"))}</th>
+                ))}
+              </tr>
+            </thead>
+            {comparison.map((category) => (
+              <tbody>
+                <tr>
+                  <th scope="colgroup" colspan="6">
+                    {t(category.titleKey)}
+                  </th>
+                </tr>
+                {category.rows.map((row) => (
+                  <tr>
+                    <th scope="row">{t(row.labelKey)}</th>
+                    {row.cells.map((cell) =>
+                      typeof cell === "boolean" ? (
+                        cell ? (
+                          <td>
+                            <span class="cell-yes">
+                              <Fragment set:html={check} />
+                              <span class="sr-only">
+                                {t("pricing.compare.yes")}
+                              </span>
+                            </span>
+                          </td>
+                        ) : (
+                          <td>
+                            <span class="cell-no">
+                              <span class="sr-only">
+                                {t("pricing.compare.no")}
+                              </span>
+                              <span aria-hidden="true">—</span>
+                            </span>
+                          </td>
+                        )
+                      ) : (
+                        <td>{renderValue(cell)}</td>
+                      ),
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            ))}
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="enterprise">
+          <div class="enterprise-copy">
+            <h2>{t("pricing.enterprise.title")}</h2>
+            <p class="muted">{t("pricing.enterprise.body")}</p>
+            <ul class="oss-points">
+              {enterprisePoints.map((point) => (
+                <li>
+                  <Fragment set:html={check} />
+                  <span>{t(point)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div class="enterprise-cta">
+            <p class="price-num">{renderPrice(enterprise.price.monthly)}</p>
+            <p class="price-period">{t(enterprise.period.monthly)}</p>
+            <a class="btn btn-primary" href={linkUrl[enterprise.link]}>
+              {t(planKey("enterprise", "cta"))}
             </a>
-          </article>
-        ))}
+          </div>
+        </div>
       </div>
+    </section>
 
-      <p class="muted pricing-note">{t("pricing.note")}</p>
-    </div>
-  </section>
+    <section class="section">
+      <div class="container">
+        <div class="section-head">
+          <h2>{t("pricing.faq.title")}</h2>
+        </div>
+        <div class="faq">
+          {faq.map((item) => (
+            <details>
+              <summary>{t(item.q)}</summary>
+              <p>{t(item.a)}</p>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="cta-band">
+          <h2>{t("pricing.cta.title")}</h2>
+          <p class="lead">{t("pricing.cta.lead")}</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary btn-lg" href={appLink(lang, "register")}>
+              {t("cta.signup")}
+            </a>
+            <a class="btn btn-ghost btn-lg" href={site.githubUrl}>
+              {t("cta.secondary")}
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
 </BaseLayout>
-
-<style>
-  .pricing-note {
-    margin-top: 1.5rem;
-  }
-</style>

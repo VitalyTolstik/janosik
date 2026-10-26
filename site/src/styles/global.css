@@ -136,6 +136,20 @@ button {
   gap: 0.75rem;
 }
 
+/* Visually hidden, still read by assistive tech. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---------------------------------------------------------------------------
  * Typography
  * ------------------------------------------------------------------------- */
@@ -974,14 +988,86 @@ h3 {
  * Pricing
  * ------------------------------------------------------------------------- */
 
+/* Monthly/annual switch — a CSS-only segmented control (no JS). The checked
+ * radio swaps `.price--m`/`.price--y` inside the plan cards via `:has()`. */
+.billing {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 1.5rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.billing-opt {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  font-size: var(--janosik-type-small-size);
+  font-weight: 600;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    background-color var(--janosik-duration-fast) var(--janosik-ease-out),
+    color var(--janosik-duration-fast) var(--janosik-ease-out);
+}
+
+.billing-opt input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.billing-opt:has(input:checked) {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+
+.billing-opt:has(input:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.billing-opt em {
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--primary) 14%, transparent);
+  color: var(--primary);
+  font-size: var(--janosik-type-caption-size);
+  font-style: normal;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.price--y {
+  display: none;
+}
+
+.pricing-page:has(.billing input[value="annual"]:checked) .price--m {
+  display: none;
+}
+
+.pricing-page:has(.billing input[value="annual"]:checked) .price--y {
+  display: inline;
+}
+
 .plans {
   display: grid;
   gap: 1.25rem;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
-  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  align-items: stretch;
 }
 
 .plan {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -996,23 +1082,76 @@ h3 {
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 30%, transparent);
 }
 
-.plan .price {
-  font-size: 2.25rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+.plan-name {
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
 }
 
-.plan .period {
+.plan-for {
   font-size: var(--janosik-type-small-size);
   color: var(--muted-foreground);
 }
 
-.plan .btn {
+.plan-price {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-top: 0.75rem;
+}
+
+.price-num {
+  font-size: 2.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.price-period {
+  font-size: var(--janosik-type-small-size);
+  color: var(--muted-foreground);
+}
+
+.plan-limits {
   margin-top: 1rem;
+  font-size: var(--janosik-type-small-size);
+  color: var(--muted-foreground);
+}
+
+.plan-features {
+  list-style: none;
+  padding: 0;
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.plan-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-size: var(--janosik-type-small-size);
+}
+
+.plan-check {
+  display: inline-flex;
+  flex: none;
+  margin-top: 0.1rem;
+  color: var(--success);
+}
+
+.plan-check svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.plan .btn {
+  margin-top: auto;
 }
 
 .badge {
-  align-self: flex-start;
+  position: absolute;
+  top: 1.4rem;
+  right: 1.4rem;
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
   background: color-mix(in oklab, var(--primary) 14%, transparent);
@@ -1021,6 +1160,138 @@ h3 {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.pricing-note {
+  margin-top: 1.5rem;
+  max-width: 46rem;
+}
+
+/* ---------------------------------------------------------------------------
+ * Pricing — comparison table
+ * ------------------------------------------------------------------------- */
+
+.compare {
+  position: relative;
+  margin-top: 2rem;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--card);
+}
+
+.compare-table {
+  width: 100%;
+  min-width: 44rem;
+  border-collapse: collapse;
+  font-size: var(--janosik-type-small-size);
+}
+
+.compare-table th,
+.compare-table td {
+  padding: 0.8rem 1rem;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.compare-table thead th {
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.compare-table tbody th[scope="colgroup"] {
+  text-align: left;
+  background: var(--surface);
+  color: var(--muted-foreground);
+  font-size: var(--janosik-type-caption-size);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.compare-table th[scope="row"] {
+  text-align: left;
+  font-weight: 500;
+}
+
+.compare-table thead th:first-child,
+.compare-table tbody th[scope="row"] {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--card);
+}
+
+.compare-table thead th:first-child {
+  background: var(--surface);
+}
+
+.compare-table tbody tr:last-child th,
+.compare-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.cell-yes {
+  display: inline-flex;
+  justify-content: center;
+  color: var(--success);
+}
+
+.cell-yes svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.cell-no {
+  color: color-mix(in oklab, var(--muted-foreground) 55%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Pricing — enterprise band
+ * ------------------------------------------------------------------------- */
+
+.enterprise {
+  display: grid;
+  gap: clamp(2rem, 5vw, 3.5rem);
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  background: var(--surface);
+  padding: clamp(1.75rem, 5vw, 3.5rem);
+}
+
+@media (min-width: 900px) {
+  .enterprise {
+    grid-template-columns: 1.4fr 1fr;
+  }
+}
+
+.enterprise-copy h2 {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+}
+
+.enterprise-copy > p {
+  margin-top: 0.85rem;
+  font-size: var(--janosik-type-lead-size);
+  line-height: var(--janosik-type-lead-line);
+}
+
+.enterprise-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.enterprise-cta .btn {
+  margin-top: 1rem;
+}
+
+@media (min-width: 900px) {
+  .enterprise-cta {
+    align-items: flex-end;
+    text-align: right;
+  }
 }
 
 /* ---------------------------------------------------------------------------

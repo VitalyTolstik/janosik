@@ -12,7 +12,9 @@ export const site = {
   /** Where the app lives (Sign in / Create account link here). */
   appUrl: import.meta.env.PUBLIC_APP_URL ?? "https://app.janosik.app",
   githubUrl: "https://github.com/VitalyTolstik/janosik",
-  license: "MIT",
+  license: "AGPL-3.0",
+  /** Where the waitlist / contact CTAs write until billing lands (TASK-131). */
+  contactEmail: import.meta.env.PUBLIC_CONTACT_EMAIL ?? "hello@janosik.app",
 } as const;
 
 /** Primary navigation. `key` is an i18n key; `href` is a base-less path. */
@@ -32,4 +34,13 @@ export function appLink(lang: Lang, mode?: "register"): string {
   if (mode === "register") params.set("mode", "register");
   const base = site.appUrl.replace(/\/+$/, "");
   return `${base}/?${params.toString()}`;
+}
+
+/**
+ * A `mailto:` link for the waitlist / contact CTAs. Real checkout and a contact
+ * form arrive with billing (TASK-131); until then these open a prefilled email
+ * so a prospect can actually reach us. `subject` is the localised mail subject.
+ */
+export function contactLink(subject: string): string {
+  return `mailto:${site.contactEmail}?subject=${encodeURIComponent(subject)}`;
 }

@@ -1,7 +1,7 @@
 ---
 import { appLink, site } from "../../config";
 import type { Lang, UIKey } from "../../i18n/ui";
-import { useTranslations } from "../../i18n/utils";
+import { localizedUrl, useTranslations } from "../../i18n/utils";
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import MediaSlot, { type MediaVariant } from "../MediaSlot.astro";
 
@@ -264,6 +264,23 @@ const faq: { q: UIKey; a: UIKey }[] = [
             <p>{t(item.a)}</p>
           </details>
         ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section section--tight">
+    <div class="container">
+      <div class="cta-band">
+        <h2>{t("home.pricing.title")}</h2>
+        <p class="lead">{t("home.pricing.lead")}</p>
+        <div class="hero-actions">
+          <a
+            class="btn btn-primary btn-lg"
+            href={localizedUrl("/pricing", lang)}
+          >
+            {t("home.pricing.cta")}
+          </a>
+        </div>
       </div>
     </div>
   </section>
