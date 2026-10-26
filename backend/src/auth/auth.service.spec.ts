@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
@@ -11,6 +10,7 @@ import argon2 from "argon2";
 import { createHash } from "node:crypto";
 import type { PrismaService } from "@/common/prisma/prisma.service";
 import type { MailerService } from "@/mailer/mailer.service";
+import type { MailQueueService } from "@/mailer/mail-queue.service";
 import {
   emailChangeCodeEmail,
   emailChangedNoticeEmail,
@@ -55,6 +55,12 @@ const jwtMock = { signAsync: jest.fn() } as unknown as JwtService & {
 const mailerMock = {
   send: jest.fn(),
 } as unknown as MailerService & { send: jest.Mock };
+
+/** TASK-67: enqueue delegates to the mailer; a transport failure is swallowed
+ * (best-effort), exactly like the in-process drain. */
+const mailQueueMock = {
+  enqueue: jest.fn(),
+} as unknown as MailQueueService & { enqueue: jest.Mock };
 
 const emailTemplatesMock = {
   verificationEmail: jest.fn(
@@ -108,10 +114,18 @@ describe("AuthService", () => {
       (email: string, locale: "en" | "ru") =>
         Promise.resolve(emailChangedNoticeEmail(email, locale)),
     );
+    mailQueueMock.enqueue.mockImplementation(async (job: { to: string }) => {
+      try {
+        await mailerMock.send(job);
+      } catch {
+        /* best-effort, like the in-process drain */
+      }
+    });
     service = new AuthService(
       prismaMock,
       jwtMock,
       mailerMock,
+      mailQueueMock,
       emailTemplatesMock,
       flagsMock,
     );
@@ -580,7 +594,7 @@ describe("AuthService", () => {
         expect(prismaMock.emailChangeCode.create).not.toHaveBeenCalled();
       });
 
-      it("maps a mailer failure to 503 and keeps no code", async () => {
+      it("queues the code even when the transport fails (no 503, TASK-67)", async () => {
         prismaMock.user.findUnique
           .mockResolvedValueOnce(
             makeUser({ passwordHash: await passwordHashOf() }),
@@ -589,13 +603,13 @@ describe("AuthService", () => {
         prismaMock.emailChangeCode.create.mockResolvedValue({});
         mailerMock.send.mockRejectedValue(new Error("smtp down"));
 
-        await expect(
-          service.requestEmailChange(
-            "user-1",
-            { newEmail: "new@example.com", currentPassword },
-            "en",
-          ),
-        ).rejects.toBeInstanceOf(ServiceUnavailableException);
+        const result = await service.requestEmailChange(
+          "user-1",
+          { newEmail: "new@example.com", currentPassword },
+          "en",
+        );
+        expect(result.queued).toBe(true);
+        expect(prismaMock.emailChangeCode.create).toHaveBeenCalled();
       });
     });
 

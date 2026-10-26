@@ -35,8 +35,13 @@ export function OpsPage() {
   const [message, setMessage] = useState("");
   const [perUser, setPerUser] = useState("");
   const [retentionDays, setRetentionDays] = useState("");
+  const [maintInterval, setMaintInterval] = useState("0");
+  const [digestHours, setDigestHours] = useState("0");
+  const [reminderLead, setReminderLead] = useState("0");
   const [busy, setBusy] = useState(false);
   const [purging, setPurging] = useState(false);
+  const [sweeping, setSweeping] = useState(false);
+  const [openingQueues, setOpeningQueues] = useState(false);
 
   const load = useCallback(() => {
     Promise.all([
@@ -52,6 +57,9 @@ export function OpsPage() {
         setPerUser(nextOps.perUserRateLimit?.toString() ?? "");
         // Default retention window: 30 days (mirrors the backend default).
         setRetentionDays(String(nextOps.retentionDays ?? 30));
+        setMaintInterval(String(nextOps.maintenanceIntervalMinutes ?? 0));
+        setDigestHours(String(nextOps.digestIntervalHours ?? 0));
+        setReminderLead(String(nextOps.reminderLeadHours ?? 0));
         setPhase("ready");
       })
       .catch(() => setPhase("error"));
@@ -90,6 +98,9 @@ export function OpsPage() {
         perUserRateLimit: perUser.trim() === "" ? null : Number(perUser),
         retentionDays:
           retentionDays.trim() === "" ? null : Number(retentionDays),
+        maintenanceIntervalMinutes: Number(maintInterval) || 0,
+        digestIntervalHours: Number(digestHours) || 0,
+        reminderLeadHours: Number(reminderLead) || 0,
       });
       setOps(updated);
       toast.success(t("admin.ops.saved"));
@@ -98,7 +109,53 @@ export function OpsPage() {
     } finally {
       setBusy(false);
     }
-  }, [message, perUser, retentionDays, t, toast]);
+  }, [
+    message,
+    perUser,
+    retentionDays,
+    maintInterval,
+    digestHours,
+    reminderLead,
+    t,
+    toast,
+  ]);
+
+  const runSweeps = useCallback(async () => {
+    setSweeping(true);
+    try {
+      const result = await adminApi.runMaintenance("all");
+      if (result.queued) {
+        toast.success(t("admin.ops.runNow.queued"));
+      } else {
+        const removed = result.results.reduce(
+          (sum, entry) => sum + entry.removed,
+          0,
+        );
+        toast.success(t("admin.ops.runNow.done", { count: removed }));
+      }
+      load();
+    } catch {
+      toast.error(t("admin.common.actionFailed"));
+    } finally {
+      setSweeping(false);
+    }
+  }, [load, t, toast]);
+
+  const openQueues = useCallback(async () => {
+    setOpeningQueues(true);
+    try {
+      await adminApi.requestQueueTicket();
+      window.open(
+        `${window.location.origin}/api/v1/admin/queues`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+    } catch {
+      toast.error(t("admin.common.actionFailed"));
+    } finally {
+      setOpeningQueues(false);
+    }
+  }, [t, toast]);
 
   const toggleMaintenance = useCallback(
     async (next: boolean) => {
@@ -326,6 +383,121 @@ export function OpsPage() {
           </Button>
         </div>
       </Panel>
+
+      <Panel className="p-4">
+        <h2 className="mb-1 text-sm font-medium">{t("admin.ops.schedule")}</h2>
+        <p className="mb-3 text-xs text-muted-foreground">
+          {t("admin.ops.schedule.hint")}
+        </p>
+        <label className="flex max-w-xs flex-col gap-1 text-xs">
+          <span className="text-muted-foreground">
+            {t("admin.ops.maintenanceInterval")}
+          </span>
+          <NumberStepper
+            testId="admin-ops-maintenance-interval"
+            min={0}
+            max={10_080}
+            value={maintInterval}
+            ariaLabel={t("admin.ops.maintenanceInterval")}
+            increaseLabel={t("admin.common.increase")}
+            decreaseLabel={t("admin.common.decrease")}
+            onChange={setMaintInterval}
+          />
+          <span className="text-[11px] text-muted-foreground">
+            {t("admin.ops.maintenanceIntervalHint")}
+          </span>
+        </label>
+        <div className="mt-3 flex justify-end gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={sweeping}
+            data-testid="admin-ops-run-sweeps"
+            onClick={() => void runSweeps()}
+          >
+            {t("admin.ops.runNow")}
+          </Button>
+          <Button
+            size="sm"
+            disabled={busy}
+            data-testid="admin-ops-schedule-save"
+            onClick={() => void saveOps()}
+          >
+            {t("admin.common.save")}
+          </Button>
+        </div>
+      </Panel>
+
+      <Panel className="p-4">
+        <h2 className="mb-1 text-sm font-medium">{t("admin.ops.comms")}</h2>
+        <p className="mb-3 text-xs text-muted-foreground">
+          {t("admin.ops.comms.hint")}
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">
+              {t("admin.ops.digestInterval")}
+            </span>
+            <NumberStepper
+              testId="admin-ops-digest-interval"
+              min={0}
+              max={720}
+              value={digestHours}
+              ariaLabel={t("admin.ops.digestInterval")}
+              increaseLabel={t("admin.common.increase")}
+              decreaseLabel={t("admin.common.decrease")}
+              onChange={setDigestHours}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">
+              {t("admin.ops.reminderLead")}
+            </span>
+            <NumberStepper
+              testId="admin-ops-reminder-lead"
+              min={0}
+              max={720}
+              value={reminderLead}
+              ariaLabel={t("admin.ops.reminderLead")}
+              increaseLabel={t("admin.common.increase")}
+              decreaseLabel={t("admin.common.decrease")}
+              onChange={setReminderLead}
+            />
+          </label>
+        </div>
+        <div className="mt-3 flex justify-end">
+          <Button
+            size="sm"
+            disabled={busy}
+            data-testid="admin-ops-comms-save"
+            onClick={() => void saveOps()}
+          >
+            {t("admin.common.save")}
+          </Button>
+        </div>
+      </Panel>
+
+      {ops?.queuesDashboard ? (
+        <Panel className="p-4">
+          <h2 className="mb-1 text-sm font-medium">{t("admin.ops.queues")}</h2>
+          <p className="mb-3 text-xs text-muted-foreground">
+            {t("admin.ops.queues.hint")}
+          </p>
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={openingQueues}
+              data-testid="admin-ops-open-queues"
+              onClick={() => void openQueues()}
+            >
+              {openingQueues
+                ? t("admin.ops.queues.opening")
+                : t("admin.ops.queues.open")}
+            </Button>
+          </div>
+        </Panel>
+      ) : null}
 
       <ConfirmDialog
         open={purging}

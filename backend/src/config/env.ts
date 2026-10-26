@@ -60,6 +60,14 @@ if (process.env.NODE_ENV === "test") {
   process.env.SMTP_FROM = "";
 }
 
+// Tests are hermetic here too: a developer machine's REDIS_URL (backend/.env)
+// must not make the suite depend on a Redis container. Every queue drains
+// in-process, exactly like a self-host without Redis (ROADMAP §7.11).
+if (process.env.NODE_ENV === "test") {
+  process.env.REDIS_URL = "";
+  process.env.QUEUES_DASHBOARD = "false";
+}
+
 // envalid 8 has no per-var validate option — a custom validator gives
 // JWT_SECRET a clean fail-fast instead of a passport stack trace later.
 const jwtSecret = makeValidator((v) => {
@@ -164,6 +172,12 @@ export const env = cleanEnv(process.env, {
     desc: "Redis connection URL for BullMQ queues; unset = in-process queue",
     default: "",
     example: "redis://localhost:6379",
+  }),
+  // Queue dashboard (TASK-73). Off by default: the Bull Board SPA is mounted
+  // at /api/v1/admin/queues only when this is true (and Redis is configured).
+  QUEUES_DASHBOARD: bool({
+    desc: "Mount the Bull Board queue dashboard at /admin/queues (OWNER-only)",
+    default: false,
   }),
   // Master-panel mail settings (TASK-52): SMTP credentials saved from the
   // admin UI are encrypted at rest with this key. When unset the key is

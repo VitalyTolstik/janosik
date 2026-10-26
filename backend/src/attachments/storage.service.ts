@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
-import { mkdir, unlink } from "node:fs/promises";
+import { mkdir, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
@@ -112,5 +112,34 @@ export class StorageService {
   /** Delete a blob best-effort — a missing file is not an error here. */
   async remove(absPath: string): Promise<void> {
     await unlink(absPath).catch(() => undefined);
+  }
+
+  /**
+   * Every stored blob name (TASK-68 orphan sweep): files in the root plus
+   * avatars in their subfolder. Best-effort — a missing tree yields none.
+   */
+  async listBlobs(): Promise<
+    Array<{ name: string; avatar: boolean; absPath: string }>
+  > {
+    const out: Array<{ name: string; avatar: boolean; absPath: string }> = [];
+    const scan = async (dir: string, avatar: boolean): Promise<void> => {
+      let entries: import("node:fs").Dirent[] = [];
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (!entry.isFile() || entry.name.startsWith(".tmp-")) continue;
+        out.push({
+          name: entry.name,
+          avatar,
+          absPath: path.join(dir, entry.name),
+        });
+      }
+    };
+    await scan(this.root, false);
+    await scan(this.avatarRoot, true);
+    return out;
   }
 }

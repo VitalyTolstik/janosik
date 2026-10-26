@@ -100,6 +100,36 @@ export function ObservabilityPage() {
             }
           />
         </div>
+        {data.jobs.queues.length > 0 ? (
+          <div className="mt-4">
+            <p className="mb-2 text-xs text-muted-foreground">
+              {t("admin.observability.queues")}
+            </p>
+            <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+              {data.jobs.queues.map((queue) => (
+                <div
+                  key={queue.name}
+                  className="rounded border border-border p-2"
+                  data-testid={`admin-queue-${queue.name}`}
+                >
+                  <p className="font-medium">{queue.name}</p>
+                  <p className="text-muted-foreground">
+                    {t("admin.observability.queue.counts", {
+                      pending: queue.pending,
+                      done: queue.processed,
+                      failed: queue.failed,
+                    })}
+                  </p>
+                  <Badge
+                    variant={queue.backend === "redis" ? "success" : "neutral"}
+                  >
+                    {queue.backend}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </Panel>
 
       <Panel className="p-0">

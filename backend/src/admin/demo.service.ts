@@ -15,6 +15,7 @@ import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
 import { CommentsService } from "@/comments/comments.service";
 import { ShareService } from "@/share/share.service";
+import { DemoQueueService } from "./demo-queue.service";
 
 const COLS = ["Новые", "В работе", "На ревью", "Тестирование", "Готово"];
 const LABELS: Array<{ name: string; color: string }> = [
@@ -59,6 +60,10 @@ interface DemoManifest {
   columnIds: string[];
   labelIds: string[];
   cardIds: string[];
+  // TASK-69: the data the queued job needs to rebuild the swarm without the
+  // in-memory run (column title → id, and the card/worker pairing).
+  columns?: Record<string, string>;
+  specs?: Array<{ cardId: string; worker: string }>;
 }
 
 interface ActiveRun {
@@ -97,6 +102,7 @@ export class DemoService implements OnModuleDestroy {
     private readonly commands: CommandsService,
     private readonly comments: CommentsService,
     private readonly shares: ShareService,
+    private readonly demoQueue: DemoQueueService,
   ) {}
 
   onModuleDestroy(): void {
@@ -122,7 +128,7 @@ export class DemoService implements OnModuleDestroy {
       };
     }
     const pending = await this.prisma.demoRun.findFirst({
-      where: { status: "running" },
+      where: { status: { in: ["running", "stopping", "finished"] } },
       orderBy: { startedAt: "desc" },
     });
     if (pending === null) {
@@ -148,7 +154,7 @@ export class DemoService implements OnModuleDestroy {
       columns: manifest.columnIds.length,
       labels: manifest.labelIds.length,
       cards: manifest.cardIds.length,
-      cardsDone: 0,
+      cardsDone: pending.progress,
       cleanupPending: true,
       shareToken: manifest.shareToken ?? null,
     };
@@ -331,7 +337,15 @@ export class DemoService implements OnModuleDestroy {
       specs.push({ cardId, summary, worker });
     }
 
-    await this.prisma.demoRun.create({
+    // TASK-69: the manifest also carries what a queued job needs to rebuild
+    // the swarm (columns map + card/worker pairing).
+    manifest.columns = columns;
+    manifest.specs = specs.map((spec) => ({
+      cardId: spec.cardId,
+      worker: spec.worker,
+    }));
+
+    const created = await this.prisma.demoRun.create({
       data: {
         boardId,
         status: "running",
@@ -350,7 +364,10 @@ export class DemoService implements OnModuleDestroy {
     };
     this.active = run;
     if (input.run !== false) {
-      this.launch(run, specs);
+      // Prefer the Redis-backed job (progress/cancel survive restarts); fall
+      // back to the in-process launcher when there is no Redis.
+      const queued = await this.demoQueue.enqueue(created.id);
+      if (!queued) this.launch(run, specs);
     }
     this.logger.log(
       `Demo started on board ${boardId}: ${agents} agents, ${manifest.cardIds.length} cards`,
@@ -365,12 +382,23 @@ export class DemoService implements OnModuleDestroy {
       this.active = null;
     }
     this.lastRun = null;
-    const pending = await this.prisma.demoRun.count({
-      where: { status: "running" },
+    const runs = await this.prisma.demoRun.findMany({
+      where: { status: { in: ["running", "stopping", "finished"] } },
+      select: { id: true },
     });
+    // TASK-69: a queued run is cancelled by removing its job; the worker also
+    // sees the `stopping` status and stops between acts.
+    for (const run of runs) {
+      await this.demoQueue.cancel(run.id).catch(() => undefined);
+    }
+    const pending = runs.length;
     if (pending === 0) {
       throw new ConflictException("No demo to stop");
     }
+    await this.prisma.demoRun.updateMany({
+      where: { status: { in: ["running", "stopping"] } },
+      data: { status: "stopping" },
+    });
     const { users, cards } = await this.purgeAllRecorded();
     this.logger.log(
       `Demo stopped (by ${stoppedBy}): ${users} users, ${cards} cards removed`,
@@ -405,10 +433,104 @@ export class DemoService implements OnModuleDestroy {
       }
     }
     await this.prisma.demoRun.updateMany({
-      where: { status: "running" },
+      where: { status: { in: ["running", "stopping", "finished"] } },
       data: { status: "stopped", stoppedAt: new Date() },
     });
     return { users, cards };
+  }
+
+  /**
+   * TASK-69: drive one `DemoRun` from the DB manifest. Used by the `demo`
+   * queue worker (and by the in-process fallback indirectly). Progress is
+   * written to `DemoRun.progress` and reported through `onProgress`, and the
+   * run stops between acts once its status leaves `running` (a stop request).
+   */
+  async executeRun(
+    runId: string,
+    onProgress?: (done: number, total: number) => Promise<void> | void,
+  ): Promise<void> {
+    const entry = await this.prisma.demoRun.findUnique({
+      where: { id: runId },
+    });
+    if (!entry) return;
+    const manifest = entry.manifest as unknown as DemoManifest;
+    const columns = manifest.columns ?? {};
+    const specs = manifest.specs ?? [];
+    const boardId = manifest.boardId;
+    const total = specs.length;
+    let done = 0;
+
+    const stillRunning = async (): Promise<boolean> => {
+      const row = await this.prisma.demoRun.findUnique({
+        where: { id: runId },
+        select: { status: true },
+      });
+      return row?.status === "running";
+    };
+
+    await Promise.all(
+      specs.map(async (spec) => {
+        try {
+          if (await stillRunning()) {
+            await this.processCardFromSpec(
+              boardId,
+              columns,
+              spec,
+              stillRunning,
+            );
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Demo card ${spec.cardId} failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+        done += 1;
+        await this.prisma.demoRun
+          .update({ where: { id: runId }, data: { progress: done } })
+          .catch(() => undefined);
+        await onProgress?.(done, total);
+      }),
+    );
+
+    // The swarm settled: mark the run finished (still cleanup-pending) unless
+    // a stop already moved it past that.
+    await this.prisma.demoRun
+      .updateMany({
+        where: { id: runId, status: "running" },
+        data: { status: "finished" },
+      })
+      .catch(() => undefined);
+  }
+
+  /** `processCard` with the run/stop lookups abstracted (TASK-69 job path). */
+  private async processCardFromSpec(
+    boardId: string,
+    columns: Record<string, string>,
+    spec: { cardId: string; worker: string },
+    live: () => Promise<boolean>,
+  ): Promise<void> {
+    const run: ActiveRun = {
+      manifest: { boardId } as DemoManifest,
+      columns,
+      startedAt: new Date().toISOString(),
+      done: 0,
+      stop: false,
+      tasks: [],
+    };
+    // Mirror the DB stop flag into a cheap sync flag processCard can poll.
+    let stopped = false;
+    const poll = setInterval(() => {
+      void live().then((ok) => {
+        if (!ok) stopped = true;
+      });
+    }, 1_000);
+    try {
+      await this.processCard(run, spec, () => !stopped);
+    } finally {
+      clearInterval(poll);
+    }
   }
 
   /**
@@ -537,11 +659,12 @@ export class DemoService implements OnModuleDestroy {
 
   private async processCard(
     run: ActiveRun,
-    spec: { cardId: string; summary: string; worker: string },
+    spec: { cardId: string; summary?: string; worker: string },
+    liveOverride?: () => boolean,
   ): Promise<void> {
     const { cardId, worker } = spec;
     const boardId = run.manifest.boardId;
-    const live = () => !run.stop;
+    const live = liveOverride ?? (() => !run.stop);
     const move = (from: string, to: string) =>
       this.send(boardId, worker, {
         type: "MOVE_CARD",

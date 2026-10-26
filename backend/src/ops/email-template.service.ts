@@ -3,18 +3,23 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import type { MailLocale } from "@/mailer/mail.types";
 import {
   EMAIL_TEMPLATE_DEFAULTS,
+  digestEmail,
+  dueReminderEmail,
   emailChangeCodeEmail,
   emailChangedNoticeEmail,
+  escapeHtml,
   fillTemplate,
   htmlToText,
   verificationCodeEmail,
 } from "@/mailer/templates";
 
-/** Editable mail templates (TASK-62). */
+/** Editable mail templates (TASK-62; digest/reminder added in TASK-72). */
 export const EMAIL_TEMPLATE_KEYS = [
   { key: "verification_code", label: "Email verification code" },
   { key: "email_change_code", label: "Email change code" },
   { key: "email_changed_notice", label: "Email changed notice" },
+  { key: "digest", label: "Board digest" },
+  { key: "due_reminder", label: "Due-date reminder" },
 ] as const;
 
 export type EmailTemplateKey = (typeof EMAIL_TEMPLATE_KEYS)[number]["key"];
@@ -140,5 +145,38 @@ export class EmailTemplateService {
       return { subject, text: htmlToText(html), html };
     }
     return emailChangedNoticeEmail(newEmail, locale);
+  }
+
+  /** TASK-72 board digest, honouring an override when one is saved. */
+  async digestEmail(
+    board: string,
+    count: number,
+    hours: number,
+    locale: MailLocale,
+  ): Promise<RenderedEmail> {
+    const row = await this.row("digest");
+    if (row) {
+      const vars = { board: escapeHtml(board), count, hours };
+      const subject = fillTemplate(row.subject, vars);
+      const html = fillTemplate(row.bodyHtml, vars);
+      return { subject, text: htmlToText(html), html };
+    }
+    return digestEmail(board, count, hours, locale);
+  }
+
+  /** TASK-72 due-date reminder, honouring an override when one is saved. */
+  async dueReminderEmail(
+    count: number,
+    tasksHtml: string,
+    locale: MailLocale,
+  ): Promise<RenderedEmail> {
+    const row = await this.row("due_reminder");
+    if (row) {
+      const vars = { count, tasks: tasksHtml };
+      const subject = fillTemplate(row.subject, vars);
+      const html = fillTemplate(row.bodyHtml, vars);
+      return { subject, text: htmlToText(html), html };
+    }
+    return dueReminderEmail(count, tasksHtml, locale);
   }
 }

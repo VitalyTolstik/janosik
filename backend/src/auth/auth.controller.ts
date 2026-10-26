@@ -121,7 +121,7 @@ export class AuthController {
     @CurrentUser() user: AuthUser,
     @Body() dto: RequestEmailChangeDto,
     @Headers("accept-language") acceptLanguage: string | undefined,
-  ): Promise<{ expiresAt: number }> {
+  ): Promise<{ expiresAt: number; queued: boolean }> {
     return this.auth.requestEmailChange(
       user.id,
       dto,
@@ -184,7 +184,7 @@ export class AuthController {
   async resendEmailVerification(
     @CurrentUser() user: AuthUser,
     @Headers("accept-language") acceptLanguage: string | undefined,
-  ): Promise<{ expiresAt: number }> {
+  ): Promise<{ expiresAt: number; queued: boolean }> {
     return this.auth.resendEmailVerification(
       user.id,
       pickLocale(acceptLanguage),

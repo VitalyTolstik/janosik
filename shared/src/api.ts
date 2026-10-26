@@ -311,6 +311,10 @@ export interface AttachmentDto {
   createdAt: number;
   /** TASK-50 video transcode state; `none` for non-video files. */
   transcodeStatus: AttachmentTranscodeStatus;
+  /** TASK-70: an ffmpeg-made image thumbnail is available. */
+  hasThumbnail: boolean;
+  /** TASK-70: a video poster frame is available. */
+  hasPoster: boolean;
 }
 
 /**

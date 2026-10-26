@@ -36,6 +36,8 @@ import type {
   AdminBulkResultDto,
   AdminCreateAnnouncementRequest,
   AdminEmailTemplateDto,
+  AdminExportRowDto,
+  AdminMaintenanceRunResponse,
   AdminFeatureFlagDto,
   AdminImpersonationDto,
   AdminObservabilityDto,
@@ -750,6 +752,53 @@ export class AdminApiClient {
 
   purgeSoftDeleted(): Promise<AdminBulkResultDto> {
     return this.request<AdminBulkResultDto>("/admin/retention/purge", {
+      method: "POST",
+      body: {},
+    });
+  }
+
+  // --------------------------------------------- maintenance (TASK-68)
+
+  runMaintenance(job: string): Promise<AdminMaintenanceRunResponse> {
+    return this.request<AdminMaintenanceRunResponse>("/admin/maintenance/run", {
+      method: "POST",
+      body: { job },
+    });
+  }
+
+  // ---------------------------------------------- exports (TASK-71)
+
+  requestExport(id: string): Promise<AdminExportRowDto> {
+    return this.request<AdminExportRowDto>(
+      `/admin/users/${encodeURIComponent(id)}/export`,
+      { method: "POST", body: {} },
+    );
+  }
+
+  listExports(): Promise<AdminExportRowDto[]> {
+    return this.request<AdminExportRowDto[]>("/admin/exports");
+  }
+
+  /** Download a ready export artifact (admin guard, so a blob fetch). */
+  async downloadExport(id: string): Promise<Blob> {
+    const base = this.options.baseUrl ?? apiBaseUrl();
+    const headers: Record<string, string> = {};
+    if (this.accessToken !== null) {
+      headers.Authorization = `Bearer ${this.accessToken}`;
+    }
+    const fetchImpl = this.options.fetchImpl ?? fetch;
+    const response = await fetchImpl(
+      `${base}/admin/exports/${encodeURIComponent(id)}/download`,
+      { headers, credentials: "include" },
+    );
+    if (!response.ok) throw new ApiError(response.status, null);
+    return response.blob();
+  }
+
+  // ------------------------------------------------ queues (TASK-73)
+
+  async requestQueueTicket(): Promise<void> {
+    await this.request<{ ok: true }>("/admin/queue-ticket", {
       method: "POST",
       body: {},
     });

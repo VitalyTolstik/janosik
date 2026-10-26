@@ -4,7 +4,16 @@ import { createRequire } from "node:module";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { PresenceService } from "@/realtime/presence.service";
+import { TranscodeService } from "@/attachments/transcode.service";
+import { MediaService } from "@/attachments/media.service";
+import { MailQueueService } from "@/mailer/mail-queue.service";
+import { BroadcastQueueService } from "@/ops/broadcast-queue.service";
+import { MaintenanceQueueService } from "@/ops/maintenance-queue.service";
+import { CommsSchedulerService } from "@/ops/comms-scheduler.service";
 import { DemoService } from "./demo.service";
+import type { QueueStats } from "@/ops/queue-core";
+import { DemoQueueService } from "./demo-queue.service";
+import { ExportsService } from "./exports.service";
 
 const BACKEND_VERSION: string = (() => {
   try {
@@ -48,15 +57,24 @@ export class ObservabilityService {
     private readonly realtime: RealtimeService,
     private readonly presence: PresenceService,
     private readonly demo: DemoService,
+    private readonly demoQueue: DemoQueueService,
+    private readonly exports: ExportsService,
+    private readonly transcode: TranscodeService,
+    private readonly media: MediaService,
+    private readonly mail: MailQueueService,
+    private readonly broadcast: BroadcastQueueService,
+    private readonly maintenance: MaintenanceQueueService,
+    private readonly comms: CommsSchedulerService,
   ) {}
 
   async snapshot(): Promise<AdminObservabilityDto> {
-    const [size, tables, transcode, demo, health] = await Promise.all([
+    const [size, tables, transcode, demo, health, queues] = await Promise.all([
       this.databaseSize(),
       this.tableStats(),
       this.transcodeCounts(),
       this.demo.status(),
       this.healthChecks(),
+      this.queueCounters(),
     ]);
 
     return {
@@ -80,9 +98,47 @@ export class ObservabilityService {
           clients:
             this.realtime.subscriberCount + this.presence.totalSessions(),
         },
+        queues,
       },
       health,
     };
+  }
+
+  /** Per-queue counters for every BullMQ/in-process queue (TASK-66…73). */
+  private async queueCounters(): Promise<
+    Array<{
+      name: string;
+      pending: number;
+      processed: number;
+      failed: number;
+      backend: "redis" | "memory";
+    }>
+  > {
+    const entries: Array<[string, { stats: () => Promise<QueueStats> }]> = [
+      ["broadcast", this.broadcast],
+      ["mail", this.mail],
+      ["transcode", this.transcode],
+      ["media", this.media],
+      ["maintenance", this.maintenance],
+      ["demo", this.demoQueue],
+      ["exports", this.exports],
+      ["comms", this.comms],
+    ];
+    return Promise.all(
+      entries.map(async ([name, service]) => {
+        try {
+          return { name, ...(await service.stats()) };
+        } catch {
+          return {
+            name,
+            pending: 0,
+            processed: 0,
+            failed: 0,
+            backend: "memory" as const,
+          };
+        }
+      }),
+    );
   }
 
   private async databaseSize(): Promise<number> {

@@ -95,6 +95,40 @@ export class AdminUpdateOpsDto {
   @Min(1)
   @Max(3_650)
   retentionDays?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10_080)
+  maintenanceIntervalMinutes?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(720)
+  digestIntervalHours?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(720)
+  reminderLeadHours?: number | null;
+}
+
+const MAINTENANCE_JOBS = [
+  "all",
+  "purge-soft-deleted",
+  "sweep-codes",
+  "sweep-tokens",
+  "sweep-shares",
+  "sweep-invitations",
+  "sweep-exports",
+  "sweep-orphan-blobs",
+] as const;
+
+export class AdminMaintenanceRunDto {
+  @IsIn(MAINTENANCE_JOBS)
+  job!: (typeof MAINTENANCE_JOBS)[number];
 }
 
 export class AdminCreateAnnouncementDto {

@@ -104,6 +104,27 @@ export function attachmentImagePreviewHandler(src: string): Promise<string> {
 }
 
 /**
+ * TASK-70: resolve a video's poster frame to an authenticated object URL.
+ * Returns `null` (rather than a placeholder) when there is none, so the
+ * player simply shows its default first frame.
+ */
+export async function attachmentPosterPreviewHandler(
+  src: string,
+): Promise<string | null> {
+  const id = attachmentIdFromUrl(src);
+  if (!id) return null;
+  try {
+    const blob = await api.fetchAttachmentDerivative(id, "poster");
+    if (blob.size === 0) return null;
+    const url = URL.createObjectURL(blob);
+    blobUrlOwners.set(url, id);
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fullscreen viewer for embedded images (Jira's lightbox): an imperative
  * overlay above every dialog — a single click anywhere, the ✕ button or
  * Escape closes it.

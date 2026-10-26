@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Param,
   Post,
   Query,
@@ -23,6 +24,7 @@ import { CurrentUser } from "@/auth/current-user.decorator";
 import type { AuthUser } from "@/auth/auth.types";
 import { AttachmentsService } from "./attachments.service";
 import type { UploadedBlob } from "./attachments.service";
+import { MediaService } from "./media.service";
 import { StorageService } from "./storage.service";
 
 /**
@@ -36,6 +38,7 @@ export class AttachmentsController {
   constructor(
     private readonly attachments: AttachmentsService,
     private readonly storage: StorageService,
+    private readonly media: MediaService,
   ) {}
 
   /** Upload one file (multipart field `file`); ≤ `LIMITS.attachmentSize`.
@@ -85,6 +88,46 @@ export class AttachmentsController {
       `attachment; filename*=UTF-8''${encodeURIComponent(meta.fileName)}`,
     );
     this.storage.open(this.storage.attachmentPath(storedName)).pipe(res);
+  }
+
+  /**
+   * TASK-70 thumbnail: the ffmpeg-made preview when ready, otherwise the
+   * original blob for images (the UI always has *something* to show). Videos
+   * have no thumbnail — the poster route covers them.
+   */
+  @Get("attachments/:attachmentId/thumbnail")
+  async thumbnail(
+    @Param("attachmentId") attachmentId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const derivative = await this.media.derivativePath(
+      attachmentId,
+      "thumbnail",
+    );
+    if (derivative !== null) {
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      this.storage.open(derivative).pipe(res);
+      return;
+    }
+    const { meta, storedName } = await this.attachments.content(attachmentId);
+    if (!meta.mimeType.startsWith("image/")) throw new NotFoundException();
+    res.setHeader("Content-Type", meta.mimeType);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    this.storage.open(this.storage.attachmentPath(storedName)).pipe(res);
+  }
+
+  /** TASK-70 poster: the first meaningful frame of a video, if generated. */
+  @Get("attachments/:attachmentId/poster")
+  async poster(
+    @Param("attachmentId") attachmentId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const derivative = await this.media.derivativePath(attachmentId, "poster");
+    if (derivative === null) throw new NotFoundException();
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "private, max-age=86400");
+    this.storage.open(derivative).pipe(res);
   }
 
   @Delete("attachments/:attachmentId")

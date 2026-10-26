@@ -59,7 +59,7 @@ function AttachmentPreview({ attachment }: { attachment: AttachmentDto }) {
     let alive = true;
     let created: string | null = null;
     api
-      .fetchAttachment(attachment.id)
+      .fetchAttachmentDerivative(attachment.id, "thumbnail")
       .then((blob) => {
         if (!alive) return;
         created = URL.createObjectURL(blob);

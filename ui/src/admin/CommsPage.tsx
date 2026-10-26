@@ -41,6 +41,11 @@ const PREVIEW_SAMPLES: Record<string, string> = {
   code: "482913",
   minutes: "10",
   email: "you@example.com",
+  board: "Product board",
+  count: "7",
+  hours: "24",
+  tasks:
+    "<li><strong>Fix the mobile layout</strong> (Product board) — due 2026-11-01</li><li><strong>Add a label filter</strong> (Product board) — due 2026-11-02</li>",
 };
 
 /** Fill `{{name}}` placeholders with the preview samples. */

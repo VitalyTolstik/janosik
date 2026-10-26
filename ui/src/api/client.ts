@@ -304,11 +304,14 @@ export class ApiClient {
    * `POST /auth/verify-email/resend` (TASK-53) — a fresh code goes to the
    * registered address.
    */
-  resendEmailVerification(): Promise<{ expiresAt: number }> {
-    return this.request<{ expiresAt: number }>("/auth/verify-email/resend", {
-      method: "POST",
-      body: {},
-    });
+  resendEmailVerification(): Promise<{ expiresAt: number; queued: boolean }> {
+    return this.request<{ expiresAt: number; queued: boolean }>(
+      "/auth/verify-email/resend",
+      {
+        method: "POST",
+        body: {},
+      },
+    );
   }
 
   /**
@@ -319,11 +322,14 @@ export class ApiClient {
   requestEmailChange(
     newEmail: string,
     currentPassword: string,
-  ): Promise<{ expiresAt: number }> {
-    return this.request<{ expiresAt: number }>("/auth/email/change/request", {
-      method: "POST",
-      body: { newEmail, currentPassword },
-    });
+  ): Promise<{ expiresAt: number; queued: boolean }> {
+    return this.request<{ expiresAt: number; queued: boolean }>(
+      "/auth/email/change/request",
+      {
+        method: "POST",
+        body: { newEmail, currentPassword },
+      },
+    );
   }
 
   /**
@@ -621,6 +627,24 @@ export class ApiClient {
       `/attachments/${encodeURIComponent(attachmentId)}/content`,
     );
     return response.blob();
+  }
+
+  /**
+   * Fetch a media derivative (TASK-70): the image thumbnail or the video
+   * poster. Falls back to the full blob when the server has no derivative.
+   */
+  async fetchAttachmentDerivative(
+    attachmentId: string,
+    kind: "thumbnail" | "poster",
+  ): Promise<Blob> {
+    try {
+      const response = await this.requestRaw(
+        `/attachments/${encodeURIComponent(attachmentId)}/${kind}`,
+      );
+      return await response.blob();
+    } catch {
+      return this.fetchAttachment(attachmentId);
+    }
   }
 
   /** Upload the profile avatar image (TASK-47). */

@@ -16,6 +16,7 @@ import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import { ATTACHMENT_MIME_ALLOWLIST, StorageService } from "./storage.service";
+import { MediaService } from "./media.service";
 import { TranscodeService } from "./transcode.service";
 
 /** Express multer file shape used by the controller. */
@@ -40,6 +41,7 @@ export class AttachmentsService {
     private readonly storage: StorageService,
     private readonly realtime: RealtimeService,
     private readonly transcode: TranscodeService,
+    private readonly media: MediaService,
     private readonly flags: FeatureFlagsService,
   ) {}
 
@@ -98,6 +100,13 @@ export class AttachmentsService {
         ? "pending"
         : "none";
 
+    // TASK-70: images get a thumbnail, videos a poster — generated in the
+    // background (queue `media`), never blocking the upload.
+    const derivativeStatus =
+      file.mimetype.startsWith("image/") || file.mimetype.startsWith("video/")
+        ? "pending"
+        : "none";
+
     const now = new Date();
     // Inline media (pasted into the description/comment body) skip the
     // card-face counter, the activity row and the SSE frame: nothing in
@@ -117,6 +126,7 @@ export class AttachmentsService {
             uploadedById: user.id,
             isInline,
             transcodeStatus,
+            derivativeStatus,
             createdAt: now,
           },
         });
@@ -142,10 +152,12 @@ export class AttachmentsService {
 
     if (created.activityId === null) {
       if (transcodeStatus === "pending") this.transcode.enqueue(created.row.id);
+      if (derivativeStatus === "pending") this.media.enqueue(created.row.id);
       return toAttachmentDto(created.row);
     }
 
     if (transcodeStatus === "pending") this.transcode.enqueue(created.row.id);
+    if (derivativeStatus === "pending") this.media.enqueue(created.row.id);
     this.publish(
       card.column.boardId,
       cardId,
@@ -188,6 +200,8 @@ export class AttachmentsService {
         cardId: true,
         boardId: true,
         storedName: true,
+        thumbnailName: true,
+        posterName: true,
         uploadedById: true,
         card: { select: { deletedAt: true } },
       },
@@ -232,6 +246,9 @@ export class AttachmentsService {
     if (!removed) return;
 
     await this.storage.remove(this.storage.attachmentPath(row.storedName));
+    for (const name of [row.thumbnailName, row.posterName]) {
+      if (name) await this.storage.remove(this.storage.attachmentPath(name));
+    }
     this.publish(
       row.boardId,
       row.cardId,
@@ -271,6 +288,8 @@ function toAttachmentDto(row: {
   sizeBytes: number;
   uploadedById: string;
   transcodeStatus: string;
+  thumbnailName?: string | null;
+  posterName?: string | null;
   createdAt: Date;
 }): AttachmentDto {
   return {
@@ -281,6 +300,8 @@ function toAttachmentDto(row: {
     sizeBytes: row.sizeBytes,
     uploadedById: row.uploadedById,
     transcodeStatus: row.transcodeStatus as AttachmentDto["transcodeStatus"],
+    hasThumbnail: Boolean(row.thumbnailName),
+    hasPoster: Boolean(row.posterName),
     createdAt: row.createdAt.getTime(),
   };
 }

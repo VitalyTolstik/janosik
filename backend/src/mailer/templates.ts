@@ -179,7 +179,67 @@ export function emailChangedNoticeEmail(
   };
 }
 
-function escapeHtml(value: string): string {
+/**
+ * Periodic board digest (TASK-72): what changed on a board in the window.
+ * `{{board}}`, `{{count}}`, `{{hours}}` are editable placeholders.
+ */
+export function digestEmail(
+  board: string,
+  count: string | number,
+  hours: string | number,
+  locale: MailLocale,
+): { subject: string; text: string; html: string } {
+  if (locale === "ru") {
+    return {
+      subject: `${BRAND}: ${board} — изменений: ${count}`,
+      text: `В доске «${board}» за последние ${hours} ч было ${count} изменений.`,
+      html: shell(
+        "Изменения на доске",
+        `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">В доске <b>${escapeHtml(String(board))}</b> за последние <b>${hours}</b> ч было <b>${count}</b> изменений.</p>`,
+      ),
+    };
+  }
+  return {
+    subject: `${BRAND}: ${board} — ${count} change(s)`,
+    text: `In "${board}" there were ${count} change(s) in the last ${hours} h.`,
+    html: shell(
+      "Board activity",
+      `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">In <b>${escapeHtml(String(board))}</b> there were <b>${count}</b> change(s) in the last <b>${hours}</b> h.</p>`,
+    ),
+  };
+}
+
+/**
+ * Due-date reminder (TASK-72): one letter per assignee listing their cards
+ * due within the lead window. `{{count}}` and `{{tasks}}` (a pre-rendered
+ * `<li>` list) are editable placeholders.
+ */
+export function dueReminderEmail(
+  count: string | number,
+  tasksHtml: string,
+  locale: MailLocale,
+): { subject: string; text: string; html: string } {
+  if (locale === "ru") {
+    return {
+      subject: `${BRAND}: скоро срок у ${count} задач`,
+      text: `Задачи с приближающимся сроком:\n${htmlToText(tasksHtml)}`,
+      html: shell(
+        "Скоро срок",
+        `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Задачи с приближающимся сроком:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
+      ),
+    };
+  }
+  return {
+    subject: `${BRAND}: ${count} task(s) due soon`,
+    text: `Tasks due soon:\n${htmlToText(tasksHtml)}`,
+    html: shell(
+      "Tasks due soon",
+      `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Tasks with an approaching due date:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
+    ),
+  };
+}
+
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -202,6 +262,8 @@ const verificationDefault = verificationCodeEmail(
 );
 const changeCodeDefault = emailChangeCodeEmail("{{code}}", "{{minutes}}", "en");
 const changedNoticeDefault = emailChangedNoticeEmail("{{email}}", "en");
+const digestDefault = digestEmail("{{board}}", "{{count}}", "{{hours}}", "en");
+const dueReminderDefault = dueReminderEmail("{{count}}", "{{tasks}}", "en");
 
 /** The built-in letters as editable templates, keyed by template key. */
 export const EMAIL_TEMPLATE_DEFAULTS: Record<string, EmailTemplateDefault> = {
@@ -219,6 +281,16 @@ export const EMAIL_TEMPLATE_DEFAULTS: Record<string, EmailTemplateDefault> = {
     subject: changedNoticeDefault.subject,
     bodyHtml: changedNoticeDefault.html,
     placeholders: ["email"],
+  },
+  digest: {
+    subject: digestDefault.subject,
+    bodyHtml: digestDefault.html,
+    placeholders: ["board", "count", "hours"],
+  },
+  due_reminder: {
+    subject: dueReminderDefault.subject,
+    bodyHtml: dueReminderDefault.html,
+    placeholders: ["count", "tasks"],
   },
 };
 

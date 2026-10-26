@@ -4,6 +4,7 @@ import type {
   AdminUpdateOpsSettingsRequest,
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { env } from "@/config/env";
 
 const SINGLETON = "singleton";
 
@@ -27,6 +28,10 @@ export class OpsSettingsService {
       maintenanceMessage: row?.maintenanceMessage ?? null,
       perUserRateLimit: row?.perUserRateLimit ?? null,
       retentionDays: row?.retentionDays ?? null,
+      maintenanceIntervalMinutes: row?.maintenanceIntervalMinutes ?? null,
+      digestIntervalHours: row?.digestIntervalHours ?? null,
+      reminderLeadHours: row?.reminderLeadHours ?? null,
+      queuesDashboard: env.QUEUES_DASHBOARD,
       updatedBy: row?.updatedBy ?? null,
       updatedAt: row?.updatedAt.getTime() ?? null,
     };
@@ -45,6 +50,18 @@ export class OpsSettingsService {
     return (await this.row())?.retentionDays ?? null;
   }
 
+  async maintenanceIntervalMinutes(): Promise<number | null> {
+    return (await this.row())?.maintenanceIntervalMinutes ?? null;
+  }
+
+  async digestIntervalHours(): Promise<number | null> {
+    return (await this.row())?.digestIntervalHours ?? null;
+  }
+
+  async reminderLeadHours(): Promise<number | null> {
+    return (await this.row())?.reminderLeadHours ?? null;
+  }
+
   async perUserRateLimit(): Promise<number | null> {
     return (await this.row())?.perUserRateLimit ?? null;
   }
@@ -61,6 +78,13 @@ export class OpsSettingsService {
     if (dto.perUserRateLimit !== undefined)
       data.perUserRateLimit = dto.perUserRateLimit;
     if (dto.retentionDays !== undefined) data.retentionDays = dto.retentionDays;
+    if (dto.maintenanceIntervalMinutes !== undefined) {
+      data.maintenanceIntervalMinutes = dto.maintenanceIntervalMinutes;
+    }
+    if (dto.digestIntervalHours !== undefined)
+      data.digestIntervalHours = dto.digestIntervalHours;
+    if (dto.reminderLeadHours !== undefined)
+      data.reminderLeadHours = dto.reminderLeadHours;
 
     await this.prisma.opsSettings.upsert({
       where: { id: SINGLETON },
@@ -70,6 +94,9 @@ export class OpsSettingsService {
         maintenanceMessage: dto.maintenanceMessage ?? null,
         perUserRateLimit: dto.perUserRateLimit ?? null,
         retentionDays: dto.retentionDays ?? null,
+        maintenanceIntervalMinutes: dto.maintenanceIntervalMinutes ?? null,
+        digestIntervalHours: dto.digestIntervalHours ?? null,
+        reminderLeadHours: dto.reminderLeadHours ?? null,
         updatedBy,
       },
       update: data,

@@ -4,7 +4,10 @@ import type {
   DirectiveEditorProps,
 } from "@mdxeditor/editor";
 
-import { attachmentImagePreviewHandler } from "@/utils/embedAttachments";
+import {
+  attachmentImagePreviewHandler,
+  attachmentPosterPreviewHandler,
+} from "@/utils/embedAttachments";
 
 /**
  * Embedded media directives (TASK-48): `::video{src="…"}` and `::audio{src="…"}`
@@ -32,6 +35,7 @@ function MediaDirectivePlayer({
       ? mdastNode.attributes.src
       : "";
   const [url, setUrl] = useState<string | null>(null);
+  const [poster, setPoster] = useState<string | null>(null);
 
   useEffect(() => {
     if (!src) return;
@@ -45,6 +49,24 @@ function MediaDirectivePlayer({
       alive = false;
     };
   }, [src]);
+
+  useEffect(() => {
+    if (!src || kind !== "video") return;
+    let alive = true;
+    let created: string | null = null;
+    // TASK-70: the poster frame, if the server generated one.
+    void attachmentPosterPreviewHandler(src)
+      .then((resolved) => {
+        if (!alive || resolved === null) return;
+        created = resolved;
+        setPoster(resolved);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+      if (created !== null) URL.revokeObjectURL(created);
+    };
+  }, [src, kind]);
 
   if (url === null) {
     return (
@@ -61,6 +83,7 @@ function MediaDirectivePlayer({
         controls
         preload="metadata"
         src={url}
+        poster={poster ?? undefined}
       />
     );
   }

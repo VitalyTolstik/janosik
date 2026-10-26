@@ -225,6 +225,25 @@ const en = {
   "admin.ops.retention.purged": "Purged {count} rows",
   "admin.ops.backups.configured": "Backups: {location}",
   "admin.ops.backups.none": "No backup location configured",
+  "admin.ops.schedule": "Scheduled housekeeping",
+  "admin.ops.schedule.hint":
+    "Background sweeps (expired codes/tokens/shares/invitations, orphaned files). 0 disables the schedule.",
+  "admin.ops.maintenanceInterval": "Sweep interval (minutes)",
+  "admin.ops.maintenanceIntervalHint":
+    "How often the sweeps run automatically; 0 turns the schedule off.",
+  "admin.ops.runNow": "Run sweeps now",
+  "admin.ops.runNow.done": "Removed {count} row(s)",
+  "admin.ops.runNow.queued": "Sweeps queued",
+  "admin.ops.comms": "Scheduled email",
+  "admin.ops.comms.hint":
+    "Recurring board digest and due-date reminders; 0 disables either. Recipients can opt out.",
+  "admin.ops.digestInterval": "Digest interval (hours)",
+  "admin.ops.reminderLead": "Due reminder lead (hours)",
+  "admin.ops.queues": "Queue dashboard",
+  "admin.ops.queues.hint":
+    "Inspect and retry background jobs (Bull Board). Opens in a new tab.",
+  "admin.ops.queues.open": "Open queue dashboard",
+  "admin.ops.queues.opening": "Opening…",
 
   "admin.comms.title": "Communications",
   "admin.comms.subtitle": "Announcements, mail and templates",
@@ -296,6 +315,9 @@ const en = {
   "admin.observability.news.hint":
     "The full announcement history is a separate entity page.",
   "admin.observability.on": "on",
+  "admin.observability.queues": "Queues",
+  "admin.observability.queue.counts":
+    "{pending} pending · {done} done · {failed} failed",
   "admin.observability.off": "off",
   "admin.observability.ok": "ok",
   "admin.observability.fail": "fail",
@@ -1107,6 +1129,25 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.ops.retention.purged": "Очищено строк: {count}",
   "admin.ops.backups.configured": "Бэкапы: {location}",
   "admin.ops.backups.none": "Каталог бэкапов не задан",
+  "admin.ops.schedule": "Регулярная уборка",
+  "admin.ops.schedule.hint":
+    "Фоновые уборки (истёкшие коды/токены/шары/инвайты, осиротевшие файлы). 0 отключает расписание.",
+  "admin.ops.maintenanceInterval": "Интервал уборки (минут)",
+  "admin.ops.maintenanceIntervalHint":
+    "Как часто запускать уборки автоматически; 0 выключает расписание.",
+  "admin.ops.runNow": "Запустить уборку сейчас",
+  "admin.ops.runNow.done": "Удалено строк: {count}",
+  "admin.ops.runNow.queued": "Уборка поставлена в очередь",
+  "admin.ops.comms": "Письма по расписанию",
+  "admin.ops.comms.hint":
+    "Регулярный дайджест по доскам и напоминания о сроках; 0 отключает. Получатели могут отказаться.",
+  "admin.ops.digestInterval": "Интервал дайджеста (часов)",
+  "admin.ops.reminderLead": "Напоминать о сроке за (часов)",
+  "admin.ops.queues": "Панель очередей",
+  "admin.ops.queues.hint":
+    "Просмотр и повтор фоновых задач (Bull Board). Открывается в новой вкладке.",
+  "admin.ops.queues.open": "Открыть панель очередей",
+  "admin.ops.queues.opening": "Открытие…",
 
   "admin.comms.title": "Коммуникации",
   "admin.comms.subtitle": "Объявления, рассылка и шаблоны",
@@ -1179,6 +1220,9 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.observability.news.hint":
     "Полная история объявлений — на отдельной странице-сущности.",
   "admin.observability.on": "вкл",
+  "admin.observability.queues": "Очереди",
+  "admin.observability.queue.counts":
+    "{pending} в очереди · {done} готово · {failed} ошибок",
   "admin.observability.off": "выкл",
   "admin.observability.ok": "ок",
   "admin.observability.fail": "сбой",

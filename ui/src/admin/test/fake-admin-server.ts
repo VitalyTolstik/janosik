@@ -363,6 +363,10 @@ export class FakeAdminServer {
     maintenanceMessage: null,
     perUserRateLimit: null,
     retentionDays: null,
+    maintenanceIntervalMinutes: 0,
+    digestIntervalHours: 0,
+    reminderLeadHours: 0,
+    queuesDashboard: false,
     updatedBy: null,
     updatedAt: null,
   };
@@ -409,6 +413,15 @@ export class FakeAdminServer {
       transcode: { pending: 0, done: 0, failed: 0 },
       demo: { running: false, boardId: null },
       realtime: { boards: 0, clients: 0 },
+      queues: [
+        {
+          name: "broadcast",
+          pending: 0,
+          processed: 0,
+          failed: 0,
+          backend: "memory" as const,
+        },
+      ],
     },
     health: [{ name: "database", ok: true, detail: "ok" }],
   };
@@ -1049,6 +1062,24 @@ export class FakeAdminServer {
         data: { user },
       });
     }
+    if (exportUser && method === "POST") {
+      const user = userById(exportUser[1] ?? "");
+      if (!user) return this.json({ message: "User not found" }, 404);
+      return this.json(
+        {
+          id: "export-1",
+          userId: user.id,
+          userEmail: user.email,
+          status: "ready",
+          filename: `janosik-user-${user.id}.json`,
+          sizeBytes: 128,
+          error: null,
+          createdAt: now,
+          expiresAt: now + 86_400_000,
+        },
+        201,
+      );
+    }
 
     const deleteUser = path.match(/^\/admin\/users\/([^/]+)$/);
     if (deleteUser && method === "DELETE") {
@@ -1232,6 +1263,23 @@ export class FakeAdminServer {
     }
     if (path === "/admin/retention/purge" && method === "POST") {
       return this.json({ affected: 3 }, 201);
+    }
+    if (path === "/admin/maintenance/run" && method === "POST") {
+      const job = (jsonBody as { job?: string } | null)?.job ?? "all";
+      return this.json({
+        queued: false,
+        results: [{ job, removed: 2 }],
+      });
+    }
+    if (path === "/admin/queue-ticket" && method === "POST") {
+      return this.json({ ok: true });
+    }
+    if (path === "/admin/exports" && method === "GET") {
+      return this.json([]);
+    }
+    const exportDownload = path.match(/^\/admin\/exports\/([^/]+)\/download$/);
+    if (exportDownload && method === "GET") {
+      return this.json({ export: exportDownload[1] });
     }
 
     // ---------------------------------------------- observability (TASK-64)

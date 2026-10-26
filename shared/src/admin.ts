@@ -399,6 +399,10 @@ export const ADMIN_AUDIT_ACTIONS = [
   "share.created",
   "share.refreshed",
   "share.revoked",
+  "maintenance.run",
+  "comms.digest_sent",
+  "comms.reminder_sent",
+  "data.export_queued",
 ] as const;
 
 export type AdminAuditAction = (typeof ADMIN_AUDIT_ACTIONS)[number];
@@ -1215,8 +1219,23 @@ export interface AdminOpsSettingsDto {
   maintenanceMessage: string | null;
   perUserRateLimit: number | null;
   retentionDays: number | null;
+  /** TASK-68: maintenance sweep cadence in minutes; null = default, 0 = off. */
+  maintenanceIntervalMinutes: number | null;
+  /** TASK-72: digest cadence in hours; null/0 = off. */
+  digestIntervalHours: number | null;
+  /** TASK-72: due-reminder lead window in hours; null/0 = off. */
+  reminderLeadHours: number | null;
+  /** TASK-73: whether the Bull Board dashboard is mounted (read-only). */
+  queuesDashboard: boolean;
   updatedBy: string | null;
   updatedAt: number | null;
+}
+
+/** TASK-68: result of a "run maintenance now" request. */
+export interface AdminMaintenanceRunResponse {
+  /** True when the sweep was enqueued (Redis backend) rather than run inline. */
+  queued: boolean;
+  results: Array<{ job: string; removed: number }>;
 }
 
 /** `PUT /admin/ops`. `null` resets a field to the env default. */
@@ -1225,6 +1244,9 @@ export interface AdminUpdateOpsSettingsRequest {
   maintenanceMessage?: string | null;
   perUserRateLimit?: number | null;
   retentionDays?: number | null;
+  maintenanceIntervalMinutes?: number | null;
+  digestIntervalHours?: number | null;
+  reminderLeadHours?: number | null;
 }
 
 // --- TASK-62: comms --------------------------------------------------------
@@ -1316,6 +1338,21 @@ export interface AdminUserExportDto {
   data: Record<string, unknown>;
 }
 
+/** TASK-71: one background data-export row (`GET /admin/exports`). */
+export interface AdminExportRowDto {
+  id: string;
+  userId: string;
+  userEmail: string;
+  status: "pending" | "ready" | "failed";
+  filename: string;
+  sizeBytes: number | null;
+  error: string | null;
+  /** Unix ms. */
+  createdAt: number;
+  /** Unix ms the artifact is deleted at. */
+  expiresAt: number;
+}
+
 /** `GET /admin/retention` — retention policy + what a purge would remove. */
 export interface AdminRetentionDto {
   retentionDays: number | null;
@@ -1345,6 +1382,14 @@ export interface AdminObservabilityDto {
     transcode: { pending: number; done: number; failed: number };
     demo: { running: boolean; boardId: string | null };
     realtime: { boards: number; clients: number };
+    /** TASK-66…73: per-queue BullMQ counters (backend = redis | memory). */
+    queues: Array<{
+      name: string;
+      pending: number;
+      processed: number;
+      failed: number;
+      backend: "redis" | "memory";
+    }>;
   };
   health: Array<{ name: string; ok: boolean; detail: string }>;
 }

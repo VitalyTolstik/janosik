@@ -2,9 +2,12 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Headers,
   HttpCode,
+  HttpStatus,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -13,7 +16,15 @@ import {
   Res,
   UseGuards,
 } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
 import type { Response } from "express";
+import { env } from "@/config/env";
+import {
+  ADMIN_QUEUES_COOKIE,
+  ADMIN_QUEUES_PATH,
+  ADMIN_QUEUES_TICKET_TTL,
+} from "@/queues/queues.module";
+import { ADMIN_JWT_AUDIENCE, ADMIN_TOKEN_TYPE } from "./admin.types";
 import type {
   AdminBoardCommandRequest,
   AdminBoardDetailDto,
@@ -49,6 +60,8 @@ import type {
   AdminImpersonationDto,
   AdminObservabilityDto,
   AdminOpsSettingsDto,
+  AdminExportRowDto,
+  AdminMaintenanceRunResponse,
   AdminPromoteUserResponse,
   AdminResendVerificationResponse,
   AdminResetUserPasswordResponse,
@@ -68,6 +81,10 @@ import { SecurityService } from "./security.service";
 import { ObservabilityService } from "./observability.service";
 import { OpsSettingsService } from "@/ops/ops-settings.service";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
+import { MaintenanceQueueService } from "@/ops/maintenance-queue.service";
+import type { MaintenanceJobName } from "@/ops/maintenance.service";
+import { CommsSchedulerService } from "@/ops/comms-scheduler.service";
+import { ExportsService } from "./exports.service";
 import { AttachmentsService } from "@/attachments/attachments.service";
 import { StorageService } from "@/attachments/storage.service";
 import { CurrentAdmin } from "./current-admin.decorator";
@@ -92,6 +109,7 @@ import {
   AdminTransferOwnerDto,
   AdminUpdateAnnouncementDto,
   AdminUpdateBoardMemberDto,
+  AdminMaintenanceRunDto,
   AdminUpdateEmailTemplateDto,
   AdminUpdateFeatureFlagDto,
   AdminUpdateOpsDto,
@@ -118,6 +136,10 @@ export class AdminController {
     private readonly observabilityService: ObservabilityService,
     private readonly ops: OpsSettingsService,
     private readonly flags: FeatureFlagsService,
+    private readonly maintenanceQueue: MaintenanceQueueService,
+    private readonly commsScheduler: CommsSchedulerService,
+    private readonly exports: ExportsService,
+    private readonly jwt: JwtService,
   ) {}
 
   /**
@@ -568,6 +590,41 @@ export class AdminController {
     return this.admin.exportUser(id, admin);
   }
 
+  // --------------------------------------- background exports (TASK-71)
+
+  /** Queues a data export (small accounts build inline and return `ready`). */
+  @Post("users/:id/export")
+  async requestExport(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminExportRowDto> {
+    const row = await this.exports.request(id, admin.email);
+    await this.admin.audit(admin, "data.export_queued", "user", id, {
+      exportId: row.id,
+      status: row.status,
+    });
+    return row;
+  }
+
+  @Get("exports")
+  listExports(): Promise<AdminExportRowDto[]> {
+    return this.exports.list();
+  }
+
+  @Get("exports/:id/download")
+  async downloadExport(
+    @Param("id") id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { absPath, filename } = await this.exports.download(id);
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    );
+    this.storage.open(absPath).pipe(res);
+  }
+
   // ------------------------------------------ membership (TASK-60)
 
   @Post("boards/:id/members")
@@ -667,6 +724,16 @@ export class AdminController {
     await this.admin.audit(admin, "ops.settings_changed", "ops", null, {
       ...dto,
     });
+    // Re-install the recurring jobs when their cadence changed.
+    if (dto.maintenanceIntervalMinutes !== undefined && this.maintenanceQueue) {
+      await this.maintenanceQueue.applySchedule().catch(() => undefined);
+    }
+    if (
+      dto.digestIntervalHours !== undefined ||
+      dto.reminderLeadHours !== undefined
+    ) {
+      await this.commsScheduler.applySchedule().catch(() => undefined);
+    }
     return settings;
   }
 
@@ -791,6 +858,64 @@ export class AdminController {
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminBulkResultDto> {
     return this.admin.purgeSoftDeleted(admin);
+  }
+
+  // ------------------------------------------------ queues (TASK-73)
+
+  /**
+   * Mints the short-lived httpOnly ticket the queue dashboard reads (a browser
+   * navigation cannot carry the Authorization header). OWNER only; 404 when
+   * the dashboard is disabled.
+   */
+  @Post("queue-ticket")
+  @HttpCode(HttpStatus.OK)
+  async queueTicket(
+    @CurrentAdmin() admin: AdminPrincipal,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ ok: true }> {
+    if (!env.QUEUES_DASHBOARD) {
+      throw new NotFoundException();
+    }
+    if (admin.role !== "OWNER") {
+      throw new ForbiddenException(
+        "Only the owner may open the queue dashboard",
+      );
+    }
+    const ticket = await this.jwt.signAsync(
+      { sub: admin.id, typ: ADMIN_TOKEN_TYPE },
+      {
+        secret: env.JWT_SECRET,
+        audience: ADMIN_JWT_AUDIENCE,
+        expiresIn: ADMIN_QUEUES_TICKET_TTL,
+      },
+    );
+    res.cookie(ADMIN_QUEUES_COOKIE, ticket, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: env.NODE_ENV === "production",
+      path: ADMIN_QUEUES_PATH,
+      maxAge: 10 * 60 * 1000,
+    });
+    return { ok: true };
+  }
+
+  // --------------------------------------------- maintenance (TASK-68)
+
+  /** Runs one housekeeping sweep now (or enqueues it when Redis is on). */
+  @Post("maintenance/run")
+  @HttpCode(HttpStatus.OK)
+  async runMaintenance(
+    @Body() dto: AdminMaintenanceRunDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminMaintenanceRunResponse> {
+    const result = await this.maintenanceQueue.runNow(
+      dto.job as MaintenanceJobName,
+    );
+    await this.admin.audit(admin, "maintenance.run", "maintenance", dto.job, {
+      queued: result.queued,
+      results: result.results,
+    });
+    return result;
   }
 
   // --------------------------------------------- observability (TASK-64)

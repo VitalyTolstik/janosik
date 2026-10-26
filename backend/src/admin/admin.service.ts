@@ -75,6 +75,7 @@ import { USER_JWT_AUDIENCE } from "@/auth/auth.types";
 import { JwtService } from "@nestjs/jwt";
 import { StorageService } from "@/attachments/storage.service";
 import { OpsSettingsService } from "@/ops/ops-settings.service";
+import { MaintenanceService } from "@/ops/maintenance.service";
 import type { AdminPrincipal } from "./admin.types";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
 import type { AdminUpdateEmailSettingsDto } from "./dto/admin-update-email-settings.dto";
@@ -130,6 +131,7 @@ export class AdminService {
     private readonly jwt: JwtService,
     private readonly storage: StorageService,
     private readonly ops: OpsSettingsService,
+    private readonly maintenance: MaintenanceService,
   ) {}
 
   // ---------------------------------------------------------------- metrics
@@ -2240,6 +2242,27 @@ export class AdminService {
     userId: string,
     admin: AdminPrincipal,
   ): Promise<AdminUserExportDto> {
+    const bundle = await this.buildUserBundle(userId);
+    await this.audit(admin, "data.exported", "user", userId, {
+      email: bundle.email,
+    });
+    return {
+      generatedAt: bundle.generatedAt,
+      filename: bundle.filename,
+      data: bundle.data,
+    };
+  }
+
+  /**
+   * TASK-63/71: the raw GDPR bundle for one user. Shared by the synchronous
+   * export (small users) and the `exports` queue (large users, TASK-71).
+   */
+  async buildUserBundle(userId: string): Promise<{
+    email: string;
+    generatedAt: number;
+    filename: string;
+    data: Record<string, unknown>;
+  }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -2306,10 +2329,8 @@ export class AdminService {
     ]);
 
     const generatedAt = Date.now();
-    await this.audit(admin, "data.exported", "user", userId, {
-      email: user.email,
-    });
     return {
+      email: user.email,
       generatedAt,
       filename: `janosik-user-${user.id}-${generatedAt}.json`,
       data: {
@@ -2378,59 +2399,13 @@ export class AdminService {
     return new Date(Date.now() - days * DAY_MS);
   }
 
-  /** Hard-deletes soft-deleted rows past the retention window (TASK-38a/63). */
+  /** Hard-deletes soft-deleted rows past the retention window (TASK-38a/63).
+   * TASK-68: the sweep itself lives in `MaintenanceService` so the scheduled
+   * job and this button run the exact same code. */
   async purgeSoftDeleted(admin: AdminPrincipal): Promise<AdminBulkResultDto> {
-    const cutoff = await this.retentionCutoff();
-    const stale = { deletedAt: { not: null, lte: cutoff } } as const;
-    const blobs = await this.prisma.attachment.findMany({
-      where: stale,
-      select: { storedName: true },
-    });
-    const affected = await this.prisma.$transaction(async (tx) => {
-      let count = 0;
-      count += (await tx.attachment.deleteMany({ where: stale })).count;
-      count += (await tx.comment.deleteMany({ where: stale })).count;
-      count += (await tx.checklistItem.deleteMany({ where: stale })).count;
-      count += (await tx.checklist.deleteMany({ where: stale })).count;
-      count += (await tx.cardLink.deleteMany({ where: stale })).count;
-      count += (
-        await tx.column.deleteMany({
-          where: { ...stale, cards: { none: {} } },
-        })
-      ).count;
-      count += (
-        await tx.label.deleteMany({
-          where: { ...stale, cards: { none: {} } },
-        })
-      ).count;
-      const cards = await tx.card.findMany({
-        where: stale,
-        select: { id: true },
-      });
-      for (const card of cards) {
-        await tx.checklistItem.deleteMany({
-          where: { checklist: { cardId: card.id } },
-        });
-        await tx.checklist.deleteMany({ where: { cardId: card.id } });
-        await tx.cardLabel.deleteMany({ where: { cardId: card.id } });
-        await tx.cardLink.deleteMany({
-          where: { OR: [{ fromCardId: card.id }, { toCardId: card.id }] },
-        });
-        await tx.comment.deleteMany({ where: { cardId: card.id } });
-        await tx.attachment.deleteMany({ where: { cardId: card.id } });
-        await tx.card.delete({ where: { id: card.id } });
-        count += 1;
-      }
-      return count;
-    });
-    for (const blob of blobs) {
-      await this.storage
-        .remove(this.storage.attachmentPath(blob.storedName))
-        .catch(() => undefined);
-    }
+    const affected = await this.maintenance.purgeSoftDeleted();
     await this.audit(admin, "retention.changed", "retention", null, {
       purged: affected,
-      cutoff: cutoff.toISOString(),
     });
     return { affected };
   }

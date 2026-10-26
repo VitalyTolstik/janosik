@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
-  ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
@@ -22,6 +21,7 @@ import { EmailTemplateService } from "@/ops/email-template.service";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import type { MailLocale } from "@/mailer/mail.types";
 import { MailerService } from "@/mailer/mailer.service";
+import { MailQueueService } from "@/mailer/mail-queue.service";
 import { toAuthUser } from "./auth-user.mapper";
 import { USER_JWT_AUDIENCE } from "./auth.types";
 import type { AuthResult, AuthUser } from "./auth.types";
@@ -67,6 +67,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly mailer: MailerService,
+    private readonly mailQueue: MailQueueService,
     private readonly emailTemplates: EmailTemplateService,
     private readonly flags: FeatureFlagsService,
   ) {}
@@ -258,7 +259,7 @@ export class AuthService {
     userId: string,
     dto: RequestEmailChangeDto,
     locale: MailLocale,
-  ): Promise<{ expiresAt: number }> {
+  ): Promise<{ expiresAt: number; queued: boolean }> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new UnauthorizedException();
@@ -300,14 +301,10 @@ export class AuthService {
       EMAIL_CHANGE_TTL_MS / 60_000,
       locale,
     );
-    try {
-      await this.mailer.send({ to: dto.newEmail, ...message });
-    } catch {
-      throw new ServiceUnavailableException(
-        "Failed to send the verification email",
-      );
-    }
-    return { expiresAt: expiresAt.getTime() };
+    // TASK-67: queued, not sent inline — a slow/failing transport no longer
+    // fails the request. The code is live either way; the caller can retry.
+    await this.mailQueue.enqueue({ to: dto.newEmail, ...message });
+    return { expiresAt: expiresAt.getTime(), queued: true };
   }
 
   /**
@@ -393,8 +390,8 @@ export class AuthService {
       updated.email,
       locale,
     );
-    await this.mailer
-      .send({ to: user.email, ...notice })
+    await this.mailQueue
+      .enqueue({ to: user.email, ...notice })
       .catch(() => undefined);
     return this.startSession(updated);
   }
@@ -408,7 +405,7 @@ export class AuthService {
   async resendEmailVerification(
     userId: string,
     locale: MailLocale,
-  ): Promise<{ expiresAt: number }> {
+  ): Promise<{ expiresAt: number; queued: boolean }> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new UnauthorizedException();
@@ -417,7 +414,7 @@ export class AuthService {
       throw new BadRequestException("Email is already verified");
     }
     const { expiresAt } = await this.issueEmailVerificationCode(user, locale);
-    return { expiresAt: expiresAt.getTime() };
+    return { expiresAt: expiresAt.getTime(), queued: true };
   }
 
   /**
@@ -506,7 +503,8 @@ export class AuthService {
       EMAIL_VERIFY_TTL_MS / 60_000,
       locale,
     );
-    await this.mailer.send({ to: user.email, ...message });
+    // TASK-67: queued, not sent inline (best-effort from the caller's view).
+    await this.mailQueue.enqueue({ to: user.email, ...message });
     return { code, expiresAt };
   }
 

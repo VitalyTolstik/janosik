@@ -155,6 +155,8 @@ describe("CardDialog description editor", () => {
       sizeBytes: 4,
       uploadedById: "user-1",
       transcodeStatus: "none",
+      hasThumbnail: false,
+      hasPoster: false,
       createdAt: 0,
     });
     const dialog = await openCardDialog("Design the new onboarding flow");
@@ -192,6 +194,8 @@ describe("CardDialog description editor", () => {
       sizeBytes: 4,
       uploadedById: "user-1",
       transcodeStatus: "none",
+      hasThumbnail: false,
+      hasPoster: false,
       createdAt: 0,
     });
     await openCardDialog("Design the new onboarding flow");

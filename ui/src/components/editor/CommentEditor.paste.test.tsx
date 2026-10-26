@@ -88,6 +88,8 @@ function attachment(id: string, fileName: string, mimeType: string) {
     sizeBytes: 4,
     uploadedById: "user-1",
     transcodeStatus: "none" as const,
+    hasThumbnail: false,
+    hasPoster: false,
     createdAt: 0,
   };
 }

@@ -30,6 +30,8 @@ model User {
   avatarPath String? // TASK-47 stored avatar image name; null → initials
   disabledAt DateTime? // master block (TASK-36); login/refresh → 403
   emailVerifiedAt DateTime? // TASK-53; null → the address is not confirmed yet
+  // TASK-72: opt-out for scheduled digests/reminders (default on).
+  notifyDigest Boolean @default(true)
   createdAt DateTime @default(now())
   memberships     BoardMember[]
   invitedMembers  BoardMember[] @relation("BoardMemberInviter")
@@ -145,8 +147,10 @@ model ThrottleSettings {
 model DemoRun {
   id        String    @id @default(cuid())
   boardId   String
-  status    String    @default("running") // running | stopped
+  status    String    @default("running") // running | stopping | finished | stopped
   manifest  Json
+  // TASK-69: cards that reached the last column, updated by the demo job.
+  progress  Int       @default(0)
   startedBy String // master email (snapshot)
   startedAt DateTime  @default(now())
   stoppedAt DateTime?
@@ -463,6 +467,13 @@ model Attachment {
   // running, `done` — `storedName` now points at the MP4, `failed` —
   // the original stays and plays as-is.
   transcodeStatus String  @default("none")
+  // TASK-70 media derivatives: an ffmpeg thumbnail for images / poster frame
+  // for videos, generated in the background (`media` queue) and served by
+  // `/attachments/:id/thumbnail|poster`. `derivativeStatus` mirrors the
+  // transcode states (none/pending/done/failed).
+  thumbnailName    String?
+  posterName       String?
+  derivativeStatus String  @default("none")
   deletedAt    DateTime? // soft-delete (§7.0)
   createdAt    DateTime  @default(now())
 
@@ -479,6 +490,25 @@ model Attachment {
 // path and its own refresh-token table, so a stolen user session cannot
 // reach a single `/admin` route and vice versa.
 // ---------------------------------------------------------------------------
+// Background data export (TASK-71): a large user's GDPR bundle is built by
+// the `exports` queue, stored as a file under UPLOAD_DIR and handed out by a
+// TTL'd link instead of blocking the request.
+model DataExport {
+  id         String    @id @default(cuid())
+  userId     String
+  userEmail  String
+  status     String    @default("pending") // pending | ready | failed
+  filename   String
+  storedName String?
+  sizeBytes  Int?
+  error      String?
+  createdBy  String // master email (snapshot)
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+
+  @@index([userId])
+}
+
 model AdminUser {
   id           String    @id @default(cuid())
   email        String    @unique
@@ -562,6 +592,12 @@ model OpsSettings {
   maintenanceMessage   String?
   perUserRateLimit     Int?
   retentionDays        Int?
+  // TASK-68: cadence of the maintenance sweeps in minutes; null = default,
+  // 0 = disabled. Applied to the BullMQ Job Scheduler (or the fallback timer).
+  maintenanceIntervalMinutes Int?
+  // TASK-72: scheduled comms. Interval in hours; null/0 = disabled.
+  digestIntervalHours  Int?
+  reminderLeadHours    Int?
   updatedBy            String?
   updatedAt            DateTime @updatedAt
 }

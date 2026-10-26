@@ -46,6 +46,8 @@ function attachment(overrides: Partial<AttachmentDto> = {}): AttachmentDto {
     sizeBytes: 2048,
     uploadedById: "user-1",
     transcodeStatus: "none",
+    hasThumbnail: false,
+    hasPoster: false,
     createdAt: Date.UTC(2026, 8, 20, 10, 0),
     ...overrides,
   };

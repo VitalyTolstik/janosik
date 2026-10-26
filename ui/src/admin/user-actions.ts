@@ -18,16 +18,34 @@ export async function impersonateUser(userId: string): Promise<void> {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
-/** Downloads the JSON export bundle as a file. */
+/**
+ * Downloads a data export as a file (TASK-71). A small account is built
+ * inline (`ready` at once); a large one is queued, so this polls until the
+ * artifact is ready (or gives up after ~60 s).
+ */
 export async function exportUser(userId: string): Promise<void> {
-  const result = await adminApi.exportUser(userId);
-  const blob = new Blob([JSON.stringify(result.data, null, 2)], {
-    type: "application/json",
-  });
+  const created = await adminApi.requestExport(userId);
+  let status = created.status;
+  let id = created.id;
+  let filename = created.filename;
+  for (let attempt = 0; status === "pending" && attempt < 30; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    const rows = await adminApi.listExports();
+    const row = rows.find((entry) => entry.id === id);
+    if (row) {
+      status = row.status;
+      id = row.id;
+      filename = row.filename;
+    }
+  }
+  if (status !== "ready") {
+    throw new Error("Export is not ready yet");
+  }
+  const blob = await adminApi.downloadExport(id);
   const href = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = href;
-  anchor.download = result.filename;
+  anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(href);
 }

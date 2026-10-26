@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
+import { BullModule } from "@nestjs/bullmq";
 import type { StringValue } from "ms";
+import { queuesEnabled } from "@/ops/queue-core";
 import { AttachmentsModule } from "@/attachments/attachments.module";
 import { AuthModule } from "@/auth/auth.module";
 import { BoardsModule } from "@/boards/boards.module";
@@ -20,6 +22,10 @@ import { AdminService } from "./admin.service";
 import { AnnouncementsController } from "./announcements.controller";
 import { CommsService } from "./comms.service";
 import { DemoService } from "./demo.service";
+import { DemoQueueService, DEMO_QUEUE } from "./demo-queue.service";
+import { DemoProcessor } from "./demo.processor";
+import { ExportsService, EXPORTS_QUEUE } from "./exports.service";
+import { ExportsProcessor } from "./exports.processor";
 import { ObservabilityService } from "./observability.service";
 import { SecurityService } from "./security.service";
 import { ThrottleSettingsService } from "./throttle-settings.service";
@@ -46,6 +52,12 @@ import { ThrottleSettingsService } from "./throttle-settings.service";
     OAuthModule,
     ShareModule,
     RealtimeModule,
+    ...(queuesEnabled
+      ? [
+          BullModule.registerQueue({ name: DEMO_QUEUE }),
+          BullModule.registerQueue({ name: EXPORTS_QUEUE }),
+        ]
+      : []),
   ],
   controllers: [AdminAuthController, AdminController, AnnouncementsController],
   providers: [
@@ -56,6 +68,9 @@ import { ThrottleSettingsService } from "./throttle-settings.service";
     AdminService,
     ThrottleSettingsService,
     DemoService,
+    DemoQueueService,
+    ExportsService,
+    ...(queuesEnabled ? [DemoProcessor, ExportsProcessor] : []),
     CommsService,
     SecurityService,
     ObservabilityService,

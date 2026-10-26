@@ -21,6 +21,7 @@ import { OAuthModule } from "@/oauth/oauth.module";
 import { ShareModule } from "@/share/share.module";
 import { AdminModule } from "@/admin/admin.module";
 import { OpsModule } from "@/ops/ops.module";
+import { QueuesModule } from "@/queues/queues.module";
 import { MaintenanceGuard } from "@/ops/maintenance.guard";
 import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.interceptor";
 
@@ -53,6 +54,7 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
     ShareModule,
     AdminModule,
     OpsModule,
+    QueuesModule,
     // BullMQ root config (TASK-62) — only when a Redis URL is configured;
     // `OpsModule` then registers the broadcast queue and its worker.
     ...(env.REDIS_URL.trim().length > 0
