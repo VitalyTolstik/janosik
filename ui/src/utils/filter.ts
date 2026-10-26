@@ -353,6 +353,11 @@ export function searchBoards(boards: Board[], query: string): SearchHit[] {
         boardArchived: board.archivedAt !== undefined,
       });
     }
+    // Precompute label-id → lowercased name once per board, so matching a
+    // card's labels is a Map lookup instead of scanning `board.labels`.
+    const labelName = new Map(
+      board.labels.map((label) => [label.id, label.name.toLowerCase()]),
+    );
     const hitFor = (card: Card, columnTitle?: string): CardSearchHit | null => {
       const matched = MATCH_FIELD_ORDER.find((field) => {
         switch (field) {
@@ -361,11 +366,8 @@ export function searchBoards(boards: Board[], query: string): SearchHit[] {
           case "description":
             return card.description?.toLowerCase().includes(needle) ?? false;
           case "label":
-            return card.labelIds.some((id) =>
-              board.labels.some(
-                (label) =>
-                  label.id === id && label.name.toLowerCase().includes(needle),
-              ),
+            return card.labelIds.some(
+              (id) => labelName.get(id)?.includes(needle) ?? false,
             );
         }
       });

@@ -180,6 +180,20 @@ const EMOTICONS: [string, string][] = [
 
 const SHORTCODE_RE = /:([a-z0-9_+-]+):/gi;
 
+/**
+ * Emoticon matchers compiled once at module load instead of rebuilt on every
+ * `emojify()` call (which runs on each markdown render). `String.replace`
+ * resets a global regex's `lastIndex`, so sharing these across calls is safe.
+ */
+const EMOTICON_RES: { re: RegExp; emoji: string }[] = EMOTICONS.map(
+  ([face, emoji]) => {
+    const escaped = face.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Lookbehind for a boundary; `xD`/`XD` are the only case-sensitive ones.
+    const flags = face === "xD" || face === "XD" ? "gu" : "giu";
+    return { re: new RegExp(`(?<![\\p{L}\\p{N}])${escaped}`, flags), emoji };
+  },
+);
+
 /** Replace `:shortcode:` tokens; unknown names stay untouched. */
 function emojifyShortcodes(text: string): string {
   return text.replace(SHORTCODE_RE, (whole, name: string) => {
@@ -191,14 +205,8 @@ function emojifyShortcodes(text: string): string {
 /** Replace emoticons that start at a boundary (line start or whitespace). */
 function emojifyEmoticons(text: string): string {
   let result = text;
-  for (const [face, emoji] of EMOTICONS) {
-    const escaped = face.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // Lookbehind for a boundary; `xD`/`XD` are the only case-sensitive ones.
-    const flags = face === "xD" || face === "XD" ? "gu" : "giu";
-    result = result.replace(
-      new RegExp(`(?<![\\p{L}\\p{N}])${escaped}`, flags),
-      emoji,
-    );
+  for (const { re, emoji } of EMOTICON_RES) {
+    result = result.replace(re, emoji);
   }
   return result;
 }
