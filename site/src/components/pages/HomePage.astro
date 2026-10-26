@@ -12,8 +12,8 @@ interface Props {
 const { lang } = Astro.props;
 const t = useTranslations(lang);
 
-const title = `${site.name} — ${site.tagline}`;
-const description = site.description;
+const title = t("seo.home.title");
+const description = t("seo.home.description");
 
 // Icons are inline so they inherit `currentColor`; the `-icon` svg shells are
 // identical, only the geometry differs.
@@ -123,19 +123,39 @@ const faq: { q: UIKey; a: UIKey }[] = [
   { q: "home.faq.q3", a: "home.faq.a3" },
   { q: "home.faq.q4", a: "home.faq.a4" },
 ];
+
+// Semantic FAQ markup. Google retired FAQ rich results, so this exists to help
+// AI engines and other consumers parse the answers, not to win a snippet.
+const faqSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faq.map((item) => ({
+    "@type": "Question",
+    name: t(item.q),
+    acceptedAnswer: { "@type": "Answer", text: t(item.a) },
+  })),
+};
 ---
 
-<BaseLayout {title} {description} {lang}>
+<BaseLayout {title} {description} {lang} schema={faqSchema}>
   <section class="hero">
     <div class="container hero-grid">
       <div class="hero-copy">
         <h1 class="hero-title">{t("home.hero.title")}</h1>
         <p class="lead hero-lead">{t("home.hero.lead")}</p>
         <div class="hero-actions">
-          <a class="btn btn-primary btn-lg" href={appLink(lang, "register")}>
+          <a
+            class="btn btn-primary btn-lg"
+            href={appLink(lang, "register")}
+            data-cta="hero-signup"
+          >
             {t("cta.primary")}
           </a>
-          <a class="btn btn-ghost btn-lg" href={site.githubUrl}>
+          <a
+            class="btn btn-ghost btn-lg"
+            href={site.githubUrl}
+            data-cta="hero-github"
+          >
             {t("cta.secondary")}
           </a>
         </div>
@@ -218,10 +238,14 @@ const faq: { q: UIKey; a: UIKey }[] = [
             ))}
           </ul>
           <div class="hero-actions">
-            <a class="btn btn-primary" href={site.githubUrl}>
+            <a
+              class="btn btn-primary"
+              href={site.githubUrl}
+              data-cta="oss-github"
+            >
               {t("cta.secondary")}
             </a>
-            <a class="btn btn-ghost" href={appLink(lang)}>
+            <a class="btn btn-ghost" href={appLink(lang)} data-cta="oss-signin">
               {t("cta.signin")}
             </a>
           </div>
@@ -277,6 +301,7 @@ const faq: { q: UIKey; a: UIKey }[] = [
           <a
             class="btn btn-primary btn-lg"
             href={localizedUrl("/pricing", lang)}
+            data-cta="home-pricing"
           >
             {t("home.pricing.cta")}
           </a>
@@ -291,10 +316,18 @@ const faq: { q: UIKey; a: UIKey }[] = [
         <h2>{t("home.cta.title")}</h2>
         <p class="lead">{t("home.cta.lead")}</p>
         <div class="hero-actions">
-          <a class="btn btn-primary btn-lg" href={appLink(lang, "register")}>
+          <a
+            class="btn btn-primary btn-lg"
+            href={appLink(lang, "register")}
+            data-cta="footer-signup"
+          >
             {t("cta.primary")}
           </a>
-          <a class="btn btn-ghost btn-lg" href={site.githubUrl}>
+          <a
+            class="btn btn-ghost btn-lg"
+            href={site.githubUrl}
+            data-cta="footer-github"
+          >
             {t("cta.secondary")}
           </a>
         </div>

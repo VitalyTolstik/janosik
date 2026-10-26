@@ -2,6 +2,7 @@
 import { site } from "../config";
 import { languages, type Lang } from "../i18n/ui";
 import { localizePath, stripLocale } from "../i18n/utils";
+import { plans } from "../pricing";
 import { withBase } from "../utils/url";
 
 interface Props {
@@ -11,6 +12,10 @@ interface Props {
   image?: string;
   noindex?: boolean;
   type?: "website" | "article";
+  /** Extra JSON-LD nodes (FAQPage, Product, …) merged into the graph. */
+  schema?: Record<string, unknown> | Record<string, unknown>[];
+  /** Breadcrumb trail; rendered as a BreadcrumbList. */
+  breadcrumbs?: { name: string; path: string }[];
 }
 
 const {
@@ -20,28 +25,53 @@ const {
   image = "/og.png",
   noindex = false,
   type = "website",
+  schema,
+  breadcrumbs,
 } = Astro.props;
 
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const ogImage = new URL(withBase(image), Astro.site);
+const absolute = (path: string) => new URL(withBase(path), Astro.site).href;
 
 // hreflang alternates — the same page in every language.
 const pagePath = stripLocale(Astro.url.pathname);
 const alternates = (Object.keys(languages) as Lang[]).map((code) => ({
   code,
-  href: new URL(withBase(localizePath(pagePath, code)), Astro.site).href,
+  href: absolute(localizePath(pagePath, code)),
 }));
 
 const locale = lang === "ru" ? "ru_RU" : "en_US";
 
-const structuredData = [
+// Prices come from `pricing.ts`, so the structured data can never drift from
+// the pricing page. Non-numeric tiers (Enterprise) are left out of `offers`.
+const offers = plans
+  .filter((plan) => typeof plan.price.monthly === "number")
+  .map((plan) => ({
+    "@type": "Offer",
+    name: plan.id,
+    price: String(plan.price.monthly),
+    priceCurrency: "USD",
+  }));
+
+const homeUrl = absolute("/");
+
+const baseSchema: Record<string, unknown>[] = [
   {
     "@context": "https://schema.org",
     "@type": "Organization",
     name: site.name,
-    url: new URL(withBase("/"), Astro.site).href,
+    url: homeUrl,
     logo: ogImage.href,
+    description: site.description,
     sameAs: [site.githubUrl],
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: site.name,
+    url: homeUrl,
+    inLanguage: lang,
+    license: "https://www.gnu.org/licenses/agpl-3.0.html",
   },
   {
     "@context": "https://schema.org",
@@ -50,10 +80,35 @@ const structuredData = [
     applicationCategory: "BusinessApplication",
     operatingSystem: "Web, self-hosted",
     description: site.description,
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    url: homeUrl,
     license: "https://www.gnu.org/licenses/agpl-3.0.html",
     sameAs: [site.githubUrl],
+    offers,
   },
+];
+
+// BreadcrumbList keeps the pricing page's hierarchy machine-readable. Note:
+// FAQPage and Product markup are kept for semantic clarity and AI engines —
+// Google retired FAQ rich results in 2026, so these are not a route to a
+// search appearance.
+const breadcrumbSchema = breadcrumbs
+  ? {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: breadcrumbs.map((crumb, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        name: crumb.name,
+        item: absolute(crumb.path),
+      })),
+    }
+  : undefined;
+
+const extra = schema ? (Array.isArray(schema) ? schema : [schema]) : [];
+const structuredData = [
+  ...baseSchema,
+  ...(breadcrumbSchema ? [breadcrumbSchema] : []),
+  ...extra,
 ];
 ---
 

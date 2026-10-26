@@ -8,7 +8,7 @@ export const site = {
   name: "Janosik",
   tagline: "Kanban that feels crafted.",
   description:
-    "Janosik is a self-hosted, offline-first Kanban board — Trello-class drag & drop, calendar and table views, realtime sync and obsessive micro-detail. Run it yourself or use the hosted plan.",
+    "Janosik is a self-hosted, offline-first Kanban board with Trello-class drag & drop, calendar and table views, realtime sync and obsessive micro-detail.",
   /** Where the app lives (Sign in / Create account link here). */
   appUrl: import.meta.env.PUBLIC_APP_URL ?? "https://app.janosik.app",
   githubUrl: "https://github.com/VitalyTolstik/janosik",

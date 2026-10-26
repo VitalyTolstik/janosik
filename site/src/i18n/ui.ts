@@ -18,17 +18,26 @@ const en = {
 
   "cta.signin": "Sign in",
   "cta.signup": "Create account",
-  "cta.primary": "Get started",
+  "cta.primary": "Start your first board",
   "cta.secondary": "View on GitHub",
 
   "theme.toggle": "Toggle colour theme",
   "lang.switch": "Switch language",
 
+  // Page titles and meta descriptions — keyword-first, one unique pair per
+  // page (see the seo-audit skill's title/description rules).
+  "seo.home.title": "Janosik — self-hosted Kanban board",
+  "seo.home.description":
+    "A fast, offline-first Kanban board you can self-host. Drag & drop, calendar and table views, realtime sync. Free and open source (AGPL-3.0).",
+  "seo.pricing.title": "Pricing — self-host free or let us host",
+  "seo.pricing.description":
+    "Janosik is free to self-host forever. Compare Self-hosted, Hosted Free, Pro, Team and Enterprise plans. Start free, no credit card required.",
+  "breadcrumb.home": "Home",
+
   "home.hero.title": "Kanban that feels crafted.",
   "home.hero.lead":
     "Janosik is a fast, self-hosted board — Trello-class drag & drop, calendar and table views, realtime sync and obsessive micro-detail. Run it yourself, or let us host it.",
-  "home.hero.note":
-    "Free and open source (AGPL-3.0). No lock-in — your data stays yours.",
+  "home.hero.note": "Free and open source (AGPL-3.0). Your data stays yours.",
 
   "home.slot.board": "The Janosik board: columns of draggable cards",
   "home.slot.realtime": "Two teammates editing the same board at once",
@@ -42,7 +51,7 @@ const en = {
 
   "home.row.board.title": "Drag, drop, and see it three ways",
   "home.row.board.body":
-    "Reorder cards and columns with buttery drag & drop, then switch the same board between kanban, calendar and table — your choice is remembered.",
+    "Reorder cards and columns with buttery drag & drop, then switch the same board between kanban, calendar and table. Your choice is remembered.",
   "home.row.realtime.title": "Realtime, together",
   "home.row.realtime.body":
     "Shared boards sync over SSE, so every edit lands instantly for everyone. Presence shows who is here, and undo stays yours.",
@@ -111,9 +120,9 @@ const en = {
 
   "pricing.title": "Simple, honest pricing",
   "pricing.lead":
-    "Free to self-host, forever. Pay only if you'd rather we run it — and start free either way.",
+    "Free to self-host, forever. Pay only if you would rather we run it, and start free either way.",
   "pricing.note":
-    "Hosted plans are launching soon. Prices shown are indicative and may change before launch — join the waitlist to lock in early-access pricing.",
+    "Hosted plans are launching soon. Prices shown are indicative and may change before launch. Join the waitlist to lock in early-access pricing.",
 
   "pricing.billing.aria": "Billing period",
   "pricing.billing.monthly": "Monthly",
@@ -122,7 +131,7 @@ const en = {
 
   "pricing.compare.title": "Compare plans",
   "pricing.compare.lead":
-    "The board is the same everywhere — the limits, controls and support differ.",
+    "The board is the same on every plan. The limits, controls and support differ.",
   "pricing.compare.aria": "Plan comparison",
   "pricing.compare.feature": "Feature",
   "pricing.compare.yes": "Included",
@@ -212,7 +221,7 @@ const en = {
   "pricing.enterprise.name": "Enterprise",
   "pricing.enterprise.title": "Running at scale?",
   "pricing.enterprise.body":
-    "Deploy on your own terms — on-prem, air-gapped or fully managed — with SAML SSO, an audit trail, an uptime SLA and a named engineer.",
+    "Deploy on your own terms, whether on-prem, air-gapped or fully managed, with SAML SSO, an audit trail, an uptime SLA and a named engineer.",
   "pricing.enterprise.periodM": "Let's talk",
   "pricing.enterprise.periodY": "Let's talk",
   "pricing.enterprise.cta": "Contact us",
@@ -226,13 +235,13 @@ const en = {
     "Yes. It is free and open source under the AGPL-3.0 license, with every feature and no seat limit. You only pay for the infrastructure you run it on.",
   "pricing.faq.q2": "What is the difference between self-hosted and hosted?",
   "pricing.faq.a2":
-    "It is the same board. Self-hosted runs on your server with your database; hosted runs on ours, so there is nothing for you to install, update or back up.",
+    "It is the same board. Self-hosted runs on your server with your database; hosted runs on ours, so we handle the installs, updates and backups.",
   "pricing.faq.q3": "How does per-user pricing work?",
   "pricing.faq.a3":
     "Paid hosted plans are billed per active member, monthly or annually. Read-only viewers and share links are free, and you can add or remove members at any time.",
   "pricing.faq.q4": "Is there a free trial?",
   "pricing.faq.a4":
-    "The hosted Free plan is the trial — no credit card, no time limit. Upgrade to Pro or Team only when you outgrow its limits.",
+    "The hosted Free plan is the trial. Sign up with an email and use it for as long as you like, then move up to Pro or Team only when you outgrow its limits.",
   "pricing.faq.q5": "Can I change or cancel my plan?",
   "pricing.faq.a5":
     "Yes, at any time. Downgrades and cancellations take effect at the end of the billing period, and you can export all of your data first.",
@@ -245,7 +254,7 @@ const en = {
 
   "pricing.cta.title": "Start free today",
   "pricing.cta.lead":
-    "Self-host in minutes, or join the hosted waitlist — either way you start at no cost.",
+    "Self-host in minutes, or join the hosted waitlist. Either way, you start free.",
   "pricing.waitlist.subject": "Janosik hosted waitlist",
   "pricing.contact.subject": "Janosik Enterprise",
 
@@ -276,17 +285,25 @@ const ru: Record<keyof typeof en, string> = {
 
   "cta.signin": "Войти",
   "cta.signup": "Создать аккаунт",
-  "cta.primary": "Начать",
+  "cta.primary": "Создать первую доску",
   "cta.secondary": "Открыть на GitHub",
 
   "theme.toggle": "Переключить тему",
   "lang.switch": "Сменить язык",
 
+  "seo.home.title": "Janosik — self-hosted канбан",
+  "seo.home.description":
+    "Быстрый канбан для самостоятельного хостинга: drag & drop, виды календаря и таблицы, realtime-синхронизация. Бесплатно, открытый код (AGPL-3.0).",
+  "seo.pricing.title": "Тарифы — бесплатный self-hosting или хостинг",
+  "seo.pricing.description":
+    "Self-hosting Janosik бесплатен навсегда. Сравните планы Self-hosted, Hosted Free, Pro, Team и Enterprise. Начните бесплатно, карта не нужна.",
+  "breadcrumb.home": "Главная",
+
   "home.hero.title": "Канбан, сделанный с любовью к деталям.",
   "home.hero.lead":
     "Janosik — быстрый self-hosted канбан: drag & drop уровня Trello, виды календаря и таблицы, realtime-синхронизация и внимание к микро-деталям. Разверните у себя или доверьте хостинг нам.",
   "home.hero.note":
-    "Бесплатно и с открытым исходным кодом (AGPL-3.0). Без вендор-лока — данные ваши.",
+    "Бесплатно и с открытым исходным кодом (AGPL-3.0). Данные остаются вашими.",
 
   "home.slot.board": "Доска Janosik: колонки с перетаскиваемыми карточками",
   "home.slot.realtime": "Два человека одновременно правят одну доску",
@@ -300,7 +317,7 @@ const ru: Record<keyof typeof en, string> = {
 
   "home.row.board.title": "Перетаскивайте и смотрите тремя способами",
   "home.row.board.body":
-    "Переставляйте карточки и колонки плавным drag & drop, а одну и ту же доску переключайте между канбаном, календарём и таблицей — выбор запоминается.",
+    "Переставляйте карточки и колонки плавным drag & drop, а одну и ту же доску переключайте между канбаном, календарём и таблицей. Выбор запоминается.",
   "home.row.realtime.title": "Realtime — вместе",
   "home.row.realtime.body":
     "Общие доски синхронизируются по SSE: правки прилетают всем мгновенно. Presence показывает, кто на месте, а undo остаётся вашим.",
@@ -368,9 +385,9 @@ const ru: Record<keyof typeof en, string> = {
 
   "pricing.title": "Простые и честные тарифы",
   "pricing.lead":
-    "Self-hosting бесплатен навсегда. Платите только за наш хостинг — и начните бесплатно в любом случае.",
+    "Self-hosting бесплатен навсегда. Платите только за наш хостинг. Старт бесплатный в любом случае.",
   "pricing.note":
-    "Хостинг-планы скоро запустятся. Указанные цены ориентировочные и могут измениться до запуска — запишитесь в лист ожидания, чтобы зафиксировать цены раннего доступа.",
+    "Хостинг-планы скоро запустятся. Указанные цены ориентировочные и могут измениться до запуска. Запишитесь в лист ожидания, чтобы зафиксировать цены раннего доступа.",
 
   "pricing.billing.aria": "Период оплаты",
   "pricing.billing.monthly": "Ежемесячно",
@@ -379,7 +396,7 @@ const ru: Record<keyof typeof en, string> = {
 
   "pricing.compare.title": "Сравнение планов",
   "pricing.compare.lead":
-    "Доска везде одинаковая — различаются лимиты, управление и поддержка.",
+    "Доска одинаковая на всех планах. Различаются лимиты, управление и поддержка.",
   "pricing.compare.aria": "Сравнение тарифов",
   "pricing.compare.feature": "Возможность",
   "pricing.compare.yes": "Есть",
@@ -469,7 +486,7 @@ const ru: Record<keyof typeof en, string> = {
   "pricing.enterprise.name": "Enterprise",
   "pricing.enterprise.title": "Масштаб крупной компании?",
   "pricing.enterprise.body":
-    "Разворачивайте на своих условиях — on-prem, air-gapped или под нашим управлением — с SAML SSO, журналом аудита, SLA по доступности и выделенным инженером.",
+    "Разворачивайте на своих условиях: on-prem, air-gapped или под нашим управлением. SAML SSO, журнал аудита, SLA по доступности и выделенный инженер.",
   "pricing.enterprise.periodM": "Обсудим",
   "pricing.enterprise.periodY": "Обсудим",
   "pricing.enterprise.cta": "Связаться",
@@ -483,13 +500,13 @@ const ru: Record<keyof typeof en, string> = {
     "Да. Она бесплатна и открыта по лицензии AGPL-3.0, со всеми возможностями и без лимита мест. Вы платите только за инфраструктуру, на которой её запускаете.",
   "pricing.faq.q2": "Чем отличается self-hosted от hosted?",
   "pricing.faq.a2":
-    "Доска одна и та же. Self-hosted работает на вашем сервере с вашей базой; hosted — на нашем, так что вам не нужно ничего ставить, обновлять и бэкапить.",
+    "Доска одна и та же. Self-hosted работает на вашем сервере с вашей базой; hosted — на нашем, так что установка, обновления и бэкапы на нас.",
   "pricing.faq.q3": "Как работает оплата за участника?",
   "pricing.faq.a3":
     "Платные хостинг-планы оплачиваются за активного участника — ежемесячно или ежегодно. Наблюдатели и ссылки только для чтения бесплатны, а участников можно добавлять и убирать в любой момент.",
   "pricing.faq.q4": "Есть бесплатный пробный период?",
   "pricing.faq.a4":
-    "Бесплатный hosted-план и есть пробный период — без карты и без ограничения по времени. Переходите на Pro или Team, только когда упрётесь в его лимиты.",
+    "Бесплатный hosted-план и есть пробный период. Зарегистрируйтесь по почте и пользуйтесь сколько угодно, а на Pro или Team переходите, только когда упрётесь в его лимиты.",
   "pricing.faq.q5": "Можно сменить или отменить план?",
   "pricing.faq.a5":
     "Да, в любой момент. Понижение и отмена вступают в силу в конце расчётного периода, а данные можно сначала выгрузить.",
@@ -502,7 +519,7 @@ const ru: Record<keyof typeof en, string> = {
 
   "pricing.cta.title": "Начните бесплатно",
   "pricing.cta.lead":
-    "Разверните у себя за минуты или запишитесь в лист ожидания хостинга — в любом случае старт бесплатный.",
+    "Разверните у себя за минуты или запишитесь в лист ожидания хостинга. В любом случае старт бесплатный.",
   "pricing.waitlist.subject": "Лист ожидания Janosik (хостинг)",
   "pricing.contact.subject": "Janosik Enterprise",
 

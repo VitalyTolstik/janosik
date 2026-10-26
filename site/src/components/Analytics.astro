@@ -1,0 +1,18 @@
+---
+// No provider is configured by default, so the site loads no third-party
+// script at all. Set `PUBLIC_ANALYTICS_DOMAIN` (and optionally
+// `PUBLIC_ANALYTICS_SRC`) to switch on a privacy-friendly, cookieless script
+// such as Plausible or Umami.
+const domain = import.meta.env.PUBLIC_ANALYTICS_DOMAIN;
+const src =
+  import.meta.env.PUBLIC_ANALYTICS_SRC ??
+  (domain ? "https://plausible.io/js/script.js" : undefined);
+---
+
+{domain && src && <script is:inline defer data-domain={domain} src={src} />}
+
+<script>
+  import { initCtaTracking } from "../lib/analytics";
+
+  initCtaTracking();
+</script>

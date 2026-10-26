@@ -10,6 +10,7 @@ import {
   currency,
   planById,
   planKey,
+  plans,
   type Plan,
   type Value,
 } from "../../pricing";
@@ -21,8 +22,8 @@ interface Props {
 const { lang } = Astro.props;
 const t = useTranslations(lang);
 
-const title = `${t("pricing.title")} — ${site.name}`;
-const description = t("pricing.lead");
+const title = t("seo.pricing.title");
+const description = t("seo.pricing.description");
 
 // All plan data lives in `pricing.ts`; here we only turn it into markup. The
 // CTAs resolve to a URL until billing arrives (TASK-131).
@@ -74,9 +75,53 @@ const enterprisePoints: UIKey[] = [
   "pricing.enterprise.point2",
   "pricing.enterprise.point3",
 ];
+
+// Structured data. FAQ + Product are semantic (Google retired FAQ rich
+// results); the offer range is derived from `pricing.ts` so it cannot drift.
+const numericPrices = plans
+  .map((plan) => plan.price.monthly)
+  .filter((price): price is number => typeof price === "number");
+
+const faqSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faq.map((item) => ({
+    "@type": "Question",
+    name: t(item.q),
+    acceptedAnswer: { "@type": "Answer", text: t(item.a) },
+  })),
+};
+
+const productSchema = {
+  "@context": "https://schema.org",
+  "@type": "Product",
+  name: site.name,
+  description: description,
+  brand: { "@type": "Brand", name: site.name },
+  category: "BusinessApplication",
+  offers: {
+    "@type": "AggregateOffer",
+    priceCurrency: "USD",
+    lowPrice: String(Math.min(...numericPrices)),
+    highPrice: String(Math.max(...numericPrices)),
+    offerCount: numericPrices.length,
+  },
+};
+
+const breadcrumbs = [
+  { name: t("breadcrumb.home"), path: "/" },
+  { name: t("pricing.title"), path: "/pricing" },
+];
 ---
 
-<BaseLayout {title} {description} {lang}>
+<BaseLayout
+  {title}
+  {description}
+  {lang}
+  image="/og-pricing.png"
+  schema={[faqSchema, productSchema]}
+  {breadcrumbs}
+>
   <div class="pricing-page">
     <section class="section">
       <div class="container">
@@ -140,6 +185,7 @@ const enterprisePoints: UIKey[] = [
                   plan.featured ? "btn-primary" : "btn-ghost",
                 ]}
                 href={linkUrl[plan.link]}
+                data-cta={`plan-${plan.id}`}
               >
                 {t(planKey(plan.id, "cta"))}
               </a>
@@ -235,7 +281,11 @@ const enterprisePoints: UIKey[] = [
           <div class="enterprise-cta">
             <p class="price-num">{renderPrice(enterprise.price.monthly)}</p>
             <p class="price-period">{t(enterprise.period.monthly)}</p>
-            <a class="btn btn-primary" href={linkUrl[enterprise.link]}>
+            <a
+              class="btn btn-primary"
+              href={linkUrl[enterprise.link]}
+              data-cta="plan-enterprise"
+            >
               {t(planKey("enterprise", "cta"))}
             </a>
           </div>
@@ -265,10 +315,18 @@ const enterprisePoints: UIKey[] = [
           <h2>{t("pricing.cta.title")}</h2>
           <p class="lead">{t("pricing.cta.lead")}</p>
           <div class="hero-actions">
-            <a class="btn btn-primary btn-lg" href={appLink(lang, "register")}>
+            <a
+              class="btn btn-primary btn-lg"
+              href={appLink(lang, "register")}
+              data-cta="pricing-signup"
+            >
               {t("cta.signup")}
             </a>
-            <a class="btn btn-ghost btn-lg" href={site.githubUrl}>
+            <a
+              class="btn btn-ghost btn-lg"
+              href={site.githubUrl}
+              data-cta="pricing-github"
+            >
               {t("cta.secondary")}
             </a>
           </div>

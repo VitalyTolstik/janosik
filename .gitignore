@@ -48,3 +48,4 @@ site/dist/
 site/.astro/
 site/public/favicon.svg
 site/public/og.png
+site/public/og-*.png

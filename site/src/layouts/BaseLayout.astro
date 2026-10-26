@@ -4,6 +4,7 @@ import "@fontsource/space-grotesk/500.css";
 import "@fontsource/space-grotesk/700.css";
 import "../styles/global.css";
 
+import Analytics from "../components/Analytics.astro";
 import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
 import SEO from "../components/SEO.astro";
@@ -17,9 +18,19 @@ interface Props {
   lang?: Lang;
   image?: string;
   noindex?: boolean;
+  schema?: Record<string, unknown> | Record<string, unknown>[];
+  breadcrumbs?: { name: string; path: string }[];
 }
 
-const { title, description, lang = defaultLang, image, noindex } = Astro.props;
+const {
+  title,
+  description,
+  lang = defaultLang,
+  image,
+  noindex,
+  schema,
+  breadcrumbs,
+} = Astro.props;
 const t = useTranslations(lang);
 ---
 
@@ -29,7 +40,15 @@ const t = useTranslations(lang);
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="generator" content={Astro.generator} />
-    <SEO {title} {description} {lang} {image} {noindex} />
+    <SEO
+      {title}
+      {description}
+      {lang}
+      {image}
+      {noindex}
+      {schema}
+      {breadcrumbs}
+    />
     <link rel="icon" type="image/svg+xml" href={withBase("/favicon.svg")} />
     <script is:inline>
       // Apply a stored theme before first paint. The key and attribute are
@@ -41,6 +60,7 @@ const t = useTranslations(lang);
         }
       } catch (error) {}
     </script>
+    <Analytics />
   </head>
   <body>
     <a class="skip-link" href="#main">

@@ -31,10 +31,14 @@ const favicon = withBase("/favicon.svg");
     <div class="header-actions">
       <LangSwitcher lang={lang} />
       <ThemeToggle label={t("theme.toggle")} />
-      <a class="btn btn-ghost" href={appLink(lang)}>
+      <a class="btn btn-ghost" href={appLink(lang)} data-cta="header-signin">
         {t("cta.signin")}
       </a>
-      <a class="btn btn-primary" href={appLink(lang, "register")}>
+      <a
+        class="btn btn-primary"
+        href={appLink(lang, "register")}
+        data-cta="header-signup"
+      >
         {t("cta.signup")}
       </a>
     </div>
