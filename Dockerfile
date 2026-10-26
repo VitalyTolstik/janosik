@@ -38,6 +38,9 @@ COPY . .
 # at build time). Override both with `--build-arg` when needed.
 ARG SITE_URL=http://localhost:3000
 ARG PUBLIC_APP_URL=/app/
+# The commit the image was built from — stamped into the app's `version.json`
+# and reported by the master panel. Pass with `--build-arg GIT_COMMIT=$(git rev-parse HEAD)`.
+ARG GIT_COMMIT=
 ENV SITE_URL=${SITE_URL} PUBLIC_APP_URL=${PUBLIC_APP_URL}
 
 # `npm run build -w backend` runs `prisma generate` (prebuild) and compiles the
@@ -85,6 +88,10 @@ ENV STATIC_DIR=/app/public
 ENV SITE_DIR=/app/site
 ENV UI_BASE=/app/
 ENV UPLOAD_DIR=/data/uploads
+
+# The build commit, surfaced by the observability panel (deploy.commit).
+ARG GIT_COMMIT=
+ENV GIT_COMMIT=${GIT_COMMIT}
 
 # Liveness: the API readiness probe plus the site root (the baked marketing
 # site), so a container that lost its static assets is reported unhealthy.

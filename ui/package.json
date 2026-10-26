@@ -48,7 +48,7 @@
       "path": [
         "dist/assets/index-*.css"
       ],
-      "limit": "18 KB",
+      "limit": "19 KB",
       "gzip": true,
       "running": false
     },
@@ -57,7 +57,7 @@
       "path": [
         "dist/assets/AdminApp-*.js"
       ],
-      "limit": "65 KB",
+      "limit": "66 KB",
       "gzip": true
     },
     {

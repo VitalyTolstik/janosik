@@ -18,9 +18,12 @@ import type { Plugin } from "vite";
  * (`registerServiceWorker`), so the dev server has nothing to serve.
  */
 const SW_SOURCE = path.resolve(import.meta.dirname, "../src/pwa/sw.js");
+const PACKAGE_JSON = path.resolve(import.meta.dirname, "../package.json");
 const VERSION_PLACEHOLDER = "__CACHE_VERSION__";
 const BASE_PLACEHOLDER = "__BASE__";
 const PRECACHE_DECLARATION = "const PRECACHE_ASSETS = [];";
+/** Emitted alongside `sw.js`; read at runtime by the admin panel. */
+const VERSION_FILE = "version.json";
 
 /** The parts of a rolldown/vite bundle chunk this plugin reads. */
 interface BundleChunk {
@@ -54,6 +57,35 @@ export function cacheVersionFrom(fileNames: string[]): string {
     }
   }
   return `janosik-${hash.toString(16).padStart(8, "0")}`;
+}
+
+/** The app's package version, stamped into the emitted `version.json`. */
+export function readAppVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(PACKAGE_JSON, "utf8")) as {
+      version?: string;
+    };
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+/** The build manifest the master panel reads to describe the running UI. */
+export interface AppVersionManifest {
+  /** The UI package version. */
+  version: string;
+  /** Short commit the image was built from (`GIT_COMMIT`), when known. */
+  commit: string | null;
+  /** The build hash — the same string the service worker caches under. */
+  build: string;
+}
+
+export function appVersionManifest(
+  build: string,
+  commit: string | null = process.env.GIT_COMMIT ?? null,
+): AppVersionManifest {
+  return { version: readAppVersion(), commit: commit || null, build };
 }
 
 /**
@@ -113,12 +145,19 @@ export function serviceWorkerPlugin(): Plugin {
     },
     generateBundle(_options, bundle) {
       const source = readFileSync(SW_SOURCE, "utf8");
+      // The version is hashed from the bundle's file names BEFORE `version.json`
+      // is added, so emitting the manifest never changes the cache version.
       const version = cacheVersionFrom(Object.keys(bundle));
       const precacheAssets = entryAssetNames(bundle as Bundle, base);
       this.emitFile({
         type: "asset",
         fileName: "sw.js",
         source: stampServiceWorkerSource(source, version, precacheAssets, base),
+      });
+      this.emitFile({
+        type: "asset",
+        fileName: VERSION_FILE,
+        source: `${JSON.stringify(appVersionManifest(version), null, 2)}\n`,
       });
     },
   };

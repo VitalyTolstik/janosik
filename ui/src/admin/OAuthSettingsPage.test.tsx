@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { I18nProvider } from "@/i18n";
 import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "@/hooks/use-theme";
 import { adminApi } from "./admin-client";
 import AdminApp from "./AdminApp";
 import { adminMessage } from "./admin-i18n";
@@ -23,17 +24,19 @@ const t = (
 
 function renderOauthSettings() {
   return render(
-    <I18nProvider>
-      <ToastProvider>
-        <TooltipProvider>
-          <MemoryRouter initialEntries={["/admin/oauth"]}>
-            <Routes>
-              <Route path="/admin/*" element={<AdminApp />} />
-            </Routes>
-          </MemoryRouter>
-        </TooltipProvider>
-      </ToastProvider>
-    </I18nProvider>,
+    <ThemeProvider>
+      <I18nProvider>
+        <ToastProvider>
+          <TooltipProvider>
+            <MemoryRouter initialEntries={["/admin/oauth"]}>
+              <Routes>
+                <Route path="/admin/*" element={<AdminApp />} />
+              </Routes>
+            </MemoryRouter>
+          </TooltipProvider>
+        </ToastProvider>
+      </I18nProvider>
+    </ThemeProvider>,
   );
 }
 

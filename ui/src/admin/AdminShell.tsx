@@ -13,6 +13,7 @@ import {
   LogOut,
   Mail,
   MessageSquare,
+  Moon,
   PanelLeftClose,
   PanelLeftOpen,
   Paperclip,
@@ -31,9 +32,11 @@ import {
   Newspaper,
   ServerCog,
   ShieldAlert,
+  Sun,
 } from "lucide-react";
 
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { useTheme } from "@/hooks/use-theme";
 import {
   Tooltip,
   TooltipContent,
@@ -274,6 +277,7 @@ function NavItem({
 export function AdminShell() {
   const t = useAdminT();
   const { admin, logout } = useAdminAuth();
+  const { theme, setTheme } = useTheme();
   const isOwner = admin?.role === "OWNER";
   const [searchOpen, setSearchOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
@@ -441,6 +445,25 @@ export function AdminShell() {
                 ⌘K
               </kbd>
             </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  data-testid="admin-theme-toggle"
+                  aria-label={t("admin.nav.toggleTheme")}
+                  aria-pressed={theme === "dark"}
+                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+                >
+                  {theme === "dark" ? (
+                    <Sun className="h-3.5 w-3.5" aria-hidden />
+                  ) : (
+                    <Moon className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{t("admin.nav.toggleTheme")}</TooltipContent>
+            </Tooltip>
             <button
               type="button"
               onClick={() => void logout()}

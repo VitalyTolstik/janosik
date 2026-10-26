@@ -11,6 +11,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { I18nProvider } from "@/i18n";
 import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "@/hooks/use-theme";
 import { adminApi } from "./admin-client";
 import AdminApp from "./AdminApp";
 import { adminMessage } from "./admin-i18n";
@@ -39,18 +40,22 @@ const t = (
 ) => adminMessage(key, "en", params);
 
 function renderAdmin(initialPath = "/admin") {
+  // Mirrors the real tree in `App.tsx`: the master panel lives inside the
+  // app-wide `ThemeProvider`, so the top-bar theme toggle works here too.
   return render(
-    <I18nProvider>
-      <ToastProvider>
-        <TooltipProvider>
-          <MemoryRouter initialEntries={[initialPath]}>
-            <Routes>
-              <Route path="/admin/*" element={<AdminApp />} />
-            </Routes>
-          </MemoryRouter>
-        </TooltipProvider>
-      </ToastProvider>
-    </I18nProvider>,
+    <ThemeProvider>
+      <I18nProvider>
+        <ToastProvider>
+          <TooltipProvider>
+            <MemoryRouter initialEntries={[initialPath]}>
+              <Routes>
+                <Route path="/admin/*" element={<AdminApp />} />
+              </Routes>
+            </MemoryRouter>
+          </TooltipProvider>
+        </ToastProvider>
+      </I18nProvider>
+    </ThemeProvider>,
   );
 }
 
@@ -592,6 +597,24 @@ describe("AdminApp", () => {
       ),
     ).toBeNull();
     expect(localStorage.getItem("janosik.admin.sidebar")).toBe("1");
+  });
+
+  it("toggles the light / dark theme from the top bar", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin");
+
+    const toggle = await screen.findByTestId("admin-theme-toggle");
+    const startedDark = document.documentElement.classList.contains("dark");
+    expect(toggle).toHaveAttribute("aria-pressed", String(startedDark));
+
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains("dark")).toBe(
+        !startedDark,
+      );
+    });
+    expect(toggle).toHaveAttribute("aria-pressed", String(!startedDark));
   });
 });
 

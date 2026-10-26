@@ -128,6 +128,8 @@ jobs:
           context: .
           # Native images for both server (amd64) and Apple Silicon / ARM hosts.
           platforms: linux/amd64,linux/arm64
+          # Stamped into the app's `version.json` and the panel's deploy.commit.
+          build-args: GIT_COMMIT=${{ github.sha }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
