@@ -34,6 +34,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   queues (mail, transcode, maintenance, media, exports, comms, demo), OAuth
   login (Google / Yandex), email flows (verification, change, templates),
   Redis fan-out for multi-node realtime.
+- **Documentation site** at `/docs` (Astro Starlight): a getting-started
+  guide, self-hosting with the full environment reference and operations
+  runbooks, a complete user guide, an admin-panel guide, an HTTP API reference
+  with the command catalog, architecture decision records, an FAQ and a
+  security policy, in English and Russian with full-text search and a
+  light/dark theme.
 
 ## [0.1.0] - 2026-10-26
 

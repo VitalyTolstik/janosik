@@ -1,8 +1,40 @@
 ---
 title: Documentation
-description: Guides for self-hosting and using Janosik.
+description: Guides for self-hosting, using and administering Janosik.
 ---
 
-The full documentation site ships in a later release. For now, see the
-[README](https://github.com/VitalyTolstik/janosik#readme) and the self-hosting
-guide.
+Janosik is a self-hosted Kanban app. A board is columns of cards, and every
+change is recorded as a command so a board can be replayed, undone and shared.
+It runs either as a local-only PWA in the browser or against a NestJS backend
+with accounts, realtime updates and public share links.
+
+This documentation has four parts.
+
+## Start here
+
+- [Getting started](/docs/getting-started/) runs Janosik for the first time,
+  either with Docker or from source.
+- [Self-hosting](/docs/self-hosting/) covers the compose stack, HTTPS and the
+  full environment reference.
+- [Operations runbooks](/docs/runbooks/) covers backup, restore, upgrade,
+  monitoring and troubleshooting.
+
+## Use the app
+
+- [User guide](/docs/user-guide/) covers boards, columns, cards, views,
+  collaboration, sharing, search, accounts and offline use.
+
+## Administer the platform
+
+- [Admin panel](/docs/admin/) covers the master panel: users, boards, content,
+  email, security and operations.
+
+## Build on it
+
+- [API reference](/docs/api/) documents the HTTP API, including the
+  [Command API](/docs/api/commands/) that agents and integrations drive.
+- [Architecture decisions](/docs/decisions/) records why the system is built
+  the way it is.
+
+Looking for a quick answer? The [FAQ](/docs/faq/) and the
+[security policy](/docs/security/) sit at the end.

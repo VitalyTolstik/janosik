@@ -1,0 +1,139 @@
+---
+title: Account, keys and preferences
+description: Sign in, verify your email, manage your profile, password and API keys, set preferences, and back up your data.
+---
+
+Accounts exist only in server mode. In local mode the app opens straight to
+your boards with no sign-in, and the account button is hidden.
+
+## Signing in and registering
+
+The sign-in screen has one form with two modes. `Sign in` asks for your
+`Email` and `Password`. `Create account` adds an optional `Name` and creates
+the account, because one account keeps boards in sync across devices. The
+link at the bottom switches between the two modes.
+
+If the operator has enabled external sign-in, buttons such as `Continue with
+<provider>` appear below the form. An operator can also close registration;
+when it is closed, only the sign-in form is shown.
+
+## Confirming your email
+
+After registering, the app asks you to `Confirm your email`. It sends a
+6-digit code to your address; type it in and press `Confirm`. If the code
+does not arrive, use `Resend code`. You can also `Sign out` from this screen.
+A code is valid for 15 minutes.
+
+## Invitations
+
+Board invitations arrive in the bell in the header. See
+[Collaboration, sharing and search](collaboration/) for how to accept or
+decline them.
+
+## The account panel
+
+The account button in the header opens a panel with an identity band on top
+and a section list on the left. The sections are `Profile`, `Security`,
+`API keys` and `Preferences`. `Sign out` sits at the bottom of the list,
+behind a confirmation.
+
+### Profile
+
+- `Profile photo`: upload a PNG, JPEG, GIF or WebP image up to 2 MB. The
+  uploaded photo replaces the initials.
+- `Avatar color`: pick a color for your initials, or leave it on automatic.
+- `Display name`: up to 50 characters. It shows on cards, in the feed and in
+  the presence stack.
+- `Email`: your sign-in address, shown read-only. Use `Change` to start the
+  change flow.
+
+### Changing your email
+
+The change is a double opt-in. Enter the new address and your current
+password, and the app sends a 6-digit code to the new address. Type the code
+to confirm. The code expires in 15 minutes, and other devices are signed out
+after the change.
+
+### Changing your password
+
+The `Password` section asks for your current password and a new one, entered
+twice. The new password must be at least 8 characters. After a change, other
+devices are signed out, but your API keys keep working.
+
+### API keys
+
+API keys are personal tokens for scripts and integrations. A token acts as
+you, so keep it secret.
+
+Use `Create key`, give it a `Name` (up to 50 characters), and choose when it
+expires: `Never`, `In 30 days`, `In 90 days` or `In a year`. The key itself
+is shown once, with a `jnk_` prefix; copy it then and store it in a password
+manager. The list shows each key's name, status (`Active`, `Expired` or
+`Revoked`), when it was created, when it was last used and when it expires.
+`Revoke` stops a key immediately and cannot be undone.
+
+### Preferences
+
+Preferences are personal and apply to this browser:
+
+- `Language`: English or Русский.
+- `Time format`: `Auto` (follows the language), `12-hour (AM/PM)` or
+  `24-hour`.
+- `Theme`: `Light` or `Dark`.
+- `Board background`: `Solid`, `Paper`, `Dots` or `Grid`.
+
+Column transparency and blur are set on the board itself, from the column
+appearance menu in the board view.
+
+## Offline use and installing the app
+
+Janosik is installable as a web app. It ships a manifest that requests a
+standalone window and a service worker that caches the app shell and its
+hashed files, so the app opens with the network cut. Use your browser's own
+install option to add it; the app has no separate install button.
+
+In local mode the app works fully offline, because everything is in your
+browser. In server mode the app still opens offline, but saving changes needs
+the network: an edit made while offline is not stored.
+
+## Data and backups
+
+The data menu in the header manages your data.
+
+- `Export JSON` downloads all your boards as `janosik-boards.json`.
+- `Import JSON` reads a Janosik export. The file may be up to 5 MB; a larger
+  file is refused with `File is too large` and the 5 MB limit. In local mode
+  importing replaces your current data set; in server mode it adds the
+  imported boards.
+- `Save a copy now` writes a backup copy straight away.
+- `Automatic backups` opens the list of copies the app kept on its own while
+  you worked. From there you can restore a copy or delete it. Restoring takes
+  a safety copy of the current state first.
+- `Card archive` opens the active board's archived cards, where you can
+  restore or delete them.
+
+Automatic backups run in local mode. In server mode your boards live in the
+database, and board data is not mirrored into the browser.
+
+### The data-safety banner
+
+When local storage is at risk, a banner appears above the header.
+
+- `Data is not being saved`: storage refused the last write. The banner
+  cannot be dismissed; its action downloads a backup of what is still in
+  memory. It clears when a write succeeds again.
+- `Storage is almost full`: saving still works, but the data is near the
+  storage limit. Download a backup and delete boards you no longer need.
+- `Saved data was damaged`: the stored data could not be read. You can
+  download the damaged copy or restore an automatic backup.
+
+## Account limits
+
+| Item | Limit |
+| --- | --- |
+| Display name | 50 characters |
+| Profile photo | 2 MB |
+| API key name | 50 characters |
+| Password | at least 8 characters |
+| Email verification code | 6 digits, valid 15 minutes |
+| Import file | 5 MB |

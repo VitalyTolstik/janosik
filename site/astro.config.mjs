@@ -59,9 +59,63 @@ export default defineConfig({
       ],
       sidebar: [
         {
-          label: "Documentation",
-          translations: { ru: "Документация" },
-          items: [{ autogenerate: { directory: "docs" } }],
+          label: "Start",
+          translations: { ru: "Начало" },
+          items: [
+            { slug: "docs/getting-started" },
+            { slug: "docs/self-hosting" },
+            { slug: "docs/runbooks" },
+          ],
+        },
+        {
+          label: "User guide",
+          translations: { ru: "Руководство пользователя" },
+          items: [
+            { slug: "docs/user-guide" },
+            { slug: "docs/user-guide/boards" },
+            { slug: "docs/user-guide/cards" },
+            { slug: "docs/user-guide/collaboration" },
+            { slug: "docs/user-guide/account" },
+          ],
+        },
+        {
+          label: "Admin panel",
+          translations: { ru: "Админ-панель" },
+          items: [
+            { slug: "docs/admin" },
+            { slug: "docs/admin/monitoring" },
+            { slug: "docs/admin/people" },
+            { slug: "docs/admin/content" },
+            { slug: "docs/admin/settings" },
+          ],
+        },
+        {
+          label: "API",
+          translations: { ru: "API" },
+          items: [
+            { slug: "docs/api" },
+            { slug: "docs/api/commands" },
+            { slug: "docs/api/rest" },
+          ],
+        },
+        {
+          label: "Architecture decisions",
+          translations: { ru: "Архитектурные решения" },
+          items: [
+            { slug: "docs/decisions" },
+            { slug: "docs/decisions/adr-001-command-log" },
+            { slug: "docs/decisions/adr-002-single-image-deploy" },
+            { slug: "docs/decisions/adr-003-agpl-trademark" },
+          ],
+        },
+        {
+          label: "Reference",
+          translations: { ru: "Справка" },
+          items: [
+            { slug: "docs/faq" },
+            { slug: "docs/security" },
+            { slug: "docs/changelog" },
+          ],
         },
       ],
     }),
