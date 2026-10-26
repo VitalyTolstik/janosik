@@ -10,16 +10,17 @@ const { lang } = Astro.props;
 const other =
   (Object.keys(languages) as Lang[]).find((code) => code !== lang) ?? lang;
 const href = switchLangUrl(Astro.url.pathname, other);
+const code = other.toUpperCase();
 ---
 
 <a
   class="icon-btn lang-btn"
   href={href}
   hreflang={other}
-  aria-label={languages[other]}
+  aria-label={`${code} — ${languages[other]}`}
   title={languages[other]}
 >
-  <span aria-hidden="true">{other.toUpperCase()}</span>
+  <span aria-hidden="true">{code}</span>
 </a>
 
 <style>

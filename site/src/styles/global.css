@@ -160,6 +160,13 @@ h3 {
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: -0.02em;
+  /* Even out headline wraps so the last line never strands a single word. */
+  text-wrap: balance;
+}
+
+p {
+  /* Pull a lone last word down beside its sentence instead of leaving a hole. */
+  text-wrap: pretty;
 }
 
 .eyebrow {
@@ -846,7 +853,9 @@ h3 {
 }
 
 .slot-term .slot-ok {
-  color: var(--success);
+  /* Success as *text*: nudge it toward the foreground so it clears AA on the
+   * slot's surface in both themes (the raw accent is tuned for icon weight). */
+  color: color-mix(in oklab, var(--success) 75%, var(--foreground));
 }
 
 .slot-caret {
@@ -980,6 +989,12 @@ h3 {
   font-size: clamp(1.75rem, 4vw, 2.5rem);
 }
 
+/* The band's decorative tint would otherwise drop secondary text just under
+ * AA; tint it toward the foreground so it reads on the coloured surface. */
+.cta-band .lead {
+  color: color-mix(in oklab, var(--muted-foreground) 78%, var(--foreground));
+}
+
 .cta-band .hero-actions {
   justify-content: center;
 }
@@ -1040,7 +1055,8 @@ h3 {
   padding: 0.05rem 0.45rem;
   border-radius: 999px;
   background: color-mix(in oklab, var(--primary) 14%, transparent);
-  color: var(--primary);
+  /* Accent text on an accent tint: deepen toward the foreground for AA. */
+  color: color-mix(in oklab, var(--primary) 80%, var(--foreground));
   font-size: var(--janosik-type-caption-size);
   font-style: normal;
   font-weight: 600;
@@ -1104,6 +1120,7 @@ h3 {
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .price-period {
@@ -1155,7 +1172,8 @@ h3 {
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
   background: color-mix(in oklab, var(--primary) 14%, transparent);
-  color: var(--primary);
+  /* Accent text on an accent tint: deepen toward the foreground for AA. */
+  color: color-mix(in oklab, var(--primary) 80%, var(--foreground));
   font-size: var(--janosik-type-caption-size);
   font-weight: 600;
   text-transform: uppercase;
@@ -1185,6 +1203,7 @@ h3 {
   min-width: 44rem;
   border-collapse: collapse;
   font-size: var(--janosik-type-small-size);
+  font-variant-numeric: tabular-nums;
 }
 
 .compare-table th,
@@ -1324,7 +1343,7 @@ h3 {
   font-size: var(--janosik-type-small-size);
 }
 
-.footer-col h4 {
+.footer-col h2 {
   font-size: var(--janosik-type-caption-size);
   text-transform: uppercase;
   letter-spacing: 0.06em;
