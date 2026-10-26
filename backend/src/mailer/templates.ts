@@ -3,7 +3,7 @@ import type { MailLocale } from "./mail.types";
 /**
  * Email templates (TASK-51). Table-based HTML — mail clients (Outlook,
  * Gmail) strip modern CSS — plus a plain-text alternative. Palette mirrors
- * the app (indigo accent on white).
+ * the app (blue accent on white).
  *
  * `EMAIL_TEMPLATE_DEFAULTS` exposes the very same letters with `{{code}}` /
  * `{{minutes}}` / `{{email}}` placeholders instead of concrete values, so the
@@ -21,7 +21,7 @@ function shell(title: string, bodyHtml: string): string {
     <tr><td align="center">
       <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:12px;border:1px solid #e4e4e7;">
         <tr><td style="padding:28px 32px 0 32px;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">
-          <span style="font-size:18px;font-weight:700;color:#4f46e5;">${BRAND}</span>
+          <span style="font-size:18px;font-weight:700;color:#2563eb;">${BRAND}</span>
         </td></tr>
         <tr><td style="padding:12px 32px 0 32px;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">
           <h1 style="margin:0 0 16px 0;font-size:20px;line-height:1.3;color:#18181b;">${title}</h1>
@@ -37,7 +37,7 @@ function shell(title: string, bodyHtml: string): string {
 }
 
 const CODE_STYLES =
-  "display:inline-block;margin:8px 0 16px 0;padding:14px 24px;border-radius:10px;background:#eef2ff;border:1px solid #c7d2fe;font-size:30px;letter-spacing:8px;font-weight:700;color:#3730a3;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;";
+  "display:inline-block;margin:8px 0 16px 0;padding:14px 24px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe;font-size:30px;letter-spacing:8px;font-weight:700;color:#1e40af;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;";
 
 /**
  * The registration confirmation email (TASK-53) — the 6-digit code that

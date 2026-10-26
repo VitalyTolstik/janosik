@@ -1,0 +1,27 @@
+{
+  "name": "@janosik/brand",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Janosik brand system — design tokens (CSS + TS) and logo assets.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens.css": "./src/tokens.css",
+    "./site-tokens.css": "./src/site-tokens.css",
+    "./assets/*": "./assets/*"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^5.0.1",
+    "typescript": "~5.9.0",
+    "vitest": "^5.0.0"
+  }
+}

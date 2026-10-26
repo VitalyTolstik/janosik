@@ -1,0 +1,39 @@
+/* ---------------------------------------------------------------------------
+ * Janosik marketing-site theme — light, airy white/blue (no violet, no pink).
+ * Mirrored in `src/tokens.ts` (`siteTheme`); `src/tokens.test.ts` fails if the
+ * two drift apart.
+ *
+ * The site imports this AFTER `tokens.css` (which provides the shared
+ * shape/type/motion tokens and the app's dark defaults): this file overrides
+ * the colour roles with the light site palette.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  --background: #ffffff;
+  --card: #ffffff;
+  --surface: #f8fafc;
+  --hover: #eff6ff;
+  --foreground: #0f172a;
+  --muted-foreground: #64748b;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #38bdf8;
+  --secondary-foreground: #082f49;
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
+  /* Label roles (carried over from the light app theme; unused on the site). */
+  --blue: #2563eb;
+  --indigo: #4f46e5;
+  --pink: #db2777;
+  --teal: #0d9488;
+  --orange: #ea580c;
+  --slate: #475569;
+  --yellow: #eab308;
+  --fuchsia: #c026d3;
+  --brown: #78350f;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #2563eb;
+  --janosik-brand-accent: #38bdf8;
+}

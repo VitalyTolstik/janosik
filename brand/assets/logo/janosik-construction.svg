@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 432 432" width="432" height="432" role="img" aria-label="Janosik mark — construction and clear space">
+  <defs>
+    <pattern id="janosik-grid" width="12" height="12" patternUnits="userSpaceOnUse" x="72" y="72">
+      <path d="M12 0 H0 V12" fill="none" stroke="#dbeafe" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="432" height="432" fill="#ffffff"/>
+
+  <!-- 24 × 24 construction grid -->
+  <rect x="72" y="72" width="288" height="288" fill="url(#janosik-grid)"/>
+
+  <!-- the mark, drawn on the grid -->
+  <g transform="translate(72 72) scale(12)" fill="none">
+    <path d="M14.086 18.412A2 2 0 0112.67 19H5v-7.672a2 2 0 01.586-1.414L11.75 3.75a6 6 0 118.49 8.49z" fill="#0f172a"/>
+    <path d="M16 8 2 22" stroke="#0f172a" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="M16.5 15H9" stroke="#0f172a" stroke-width="1.1" stroke-linecap="round" opacity="0.6"/>
+  </g>
+
+  <!-- head radius (6 units) construction -->
+  <circle cx="264" cy="168" r="72" fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="5 5"/>
+
+  <!-- icon tile -->
+  <rect x="72" y="72" width="288" height="288" fill="none" stroke="#93c5fd" stroke-width="1.5" stroke-dasharray="6 6"/>
+  <!-- clear space = 3 units (36 px) on every side -->
+  <rect x="36" y="36" width="360" height="360" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="2 6"/>
+
+  <g font-family="'Space Grotesk', ui-sans-serif, system-ui, sans-serif" font-size="13" fill="#64748b">
+    <text x="72" y="392">24 × 24 grid</text>
+    <text x="72" y="412">clear space = 3 units (¼ tile)</text>
+    <text x="264" y="168" text-anchor="middle" dy="-80" fill="#38bdf8">6u radius</text>
+  </g>
+</svg>

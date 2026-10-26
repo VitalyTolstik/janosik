@@ -23,6 +23,7 @@ RUN apt-get update \
 # Manifests first, so the dependency layer is cached across source edits.
 COPY package.json package-lock.json ./
 COPY shared/package.json shared/package.json
+COPY brand/package.json brand/package.json
 COPY ui/package.json ui/package.json
 COPY backend/package.json backend/package.json
 RUN npm ci
@@ -48,6 +49,7 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 COPY shared/package.json shared/package.json
+COPY brand/package.json brand/package.json
 COPY ui/package.json ui/package.json
 COPY backend/package.json backend/package.json
 COPY --from=build /app/node_modules ./node_modules

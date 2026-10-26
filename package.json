@@ -26,6 +26,7 @@
   "workspaces": [
     "ui",
     "shared",
+    "brand",
     "backend"
   ],
   "scripts": {
@@ -33,10 +34,10 @@
     "build": "npm run build -w ui",
     "build:backend": "npm run build -w backend",
     "preview": "npm run preview -w ui",
-    "test": "npm run test -w ui && npm run test -w shared",
+    "test": "npm run test -w ui && npm run test -w shared && npm run test -w brand",
     "test:backend": "npm run test -w backend",
-    "test:coverage": "npm run test:coverage -w ui && npm run test:coverage -w shared",
-    "lint": "npm run lint -w ui && npm run lint -w shared && npm run lint -w backend",
+    "test:coverage": "npm run test:coverage -w ui && npm run test:coverage -w shared && npm run test:coverage -w brand",
+    "lint": "npm run lint -w ui && npm run lint -w shared && npm run lint -w brand && npm run lint -w backend",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
     "size": "npm run size -w ui",

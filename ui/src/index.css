@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* Brand tokens (colour / shape / type / motion) — single source of truth in
+   the `brand/` workspace, mirrored in `brand/src/tokens.ts`. */
+@import "../../brand/src/tokens.css";
 
 /* `shared/` lives outside this Vite root, so Tailwind's automatic content
    detection never sees it — and the label color maps (LABEL_COLOR_CHIP /
@@ -7,12 +10,6 @@
    not repeated in ui/ (23 utilities: text-pink, bg-success/15, …). */
 @source "../../shared/src";
 
-/* ---------------------------------------------------------------------------
- * Design tokens — dark theme is the :root default, light theme is activated
- * via the `.light` class on <html> (or `.dark` override block below).
- * Every token maps to the palette defined in AGENT.md via CSS variables.
- * ------------------------------------------------------------------------- */
-
 @custom-variant dark (&:is(.dark *));
 
 /* Touch (no hover): the card's hover-revealed quick actions are hidden
@@ -20,114 +17,9 @@
    duplicate/archive actions live in the card dialog. */
 @custom-variant no-hover (@media (hover: none));
 
-:root {
-  /* Column glass defaults (overridden at runtime by BoardGlassProvider,
-     see use-board-glass.tsx): transparency 0-100 (100 = no fill),
-     blur = backdrop blur radius in px. */
-  --janosik-glass-transparency: 100;
-  --janosik-glass-blur: 5px;
-
-  /* App background (dark theme = brand background) */
-  --background: #0a0a0f;
-  /* Cards / columns surface */
-  --card: #14141e;
-  /* Elevated surfaces, menus, dialogs */
-  --surface: #1a1a26;
-  /* Hover accents */
-  --hover: #1e1e2e;
-  /* Primary text */
-  --foreground: #e8e8f0;
-  /* Secondary text */
-  --muted-foreground: #8888a0;
-  /* Brand accent */
-  --primary: #7c3aed;
-  --primary-foreground: #ffffff;
-  /* Secondary accent */
-  --secondary: #06b6d4;
-  --secondary-foreground: #06121a;
-  /* Success / Done */
-  --success: #10b981;
-  /* Warning / In progress */
-  --warning: #f59e0b;
-  /* Danger / High */
-  --danger: #ef4444;
-  /* Extended label palette — matching premium shades in dark mode */
-  --blue: #4f8df0;
-  --indigo: #818cf8;
-  --pink: #f472b6;
-  --teal: #2dd4bf;
-  --orange: #fb923c;
-  --slate: #94a3b8;
-  --yellow: #eab308;
-  --fuchsia: #d946ef;
-  --brown: #92400e;
-  /* Borders & dividers */
-  --border: #2a2a3a;
-  --input: #2a2a3a;
-  --ring: #7c3aed;
-  /* Selection accent for the board-background picker — the brand label
-   * violet, tuned per theme: deeper in dark, lighter in light. */
-  --janosik-brand-accent: #6d28d9;
-  /* Fullscreen attachment lightbox (TASK-115). Intentionally dark in both
-   * themes so the image reads against a neutral scrim; kept as tokens so a
-   * high-contrast theme can retune them. */
-  --overlay: rgb(0 0 0 / 0.82);
-  --overlay-foreground: #ffffff;
-  --overlay-border: rgb(255 255 255 / 0.25);
-  --overlay-button: rgb(255 255 255 / 0.12);
-  --overlay-shadow: 0 12px 48px rgb(0 0 0 / 0.55);
-}
-
-.light {
-  --background: #f4f5f6;
-  --card: #ffffff;
-  --surface: #fbfbfc;
-  --hover: #eaecee;
-  --foreground: #1a1a24;
-  --muted-foreground: #5c5c70;
-  --primary: #6d28d9;
-  --primary-foreground: #ffffff;
-  --secondary: #0891b2;
-  --secondary-foreground: #ffffff;
-  --success: #059669;
-  --warning: #d97706;
-  --danger: #dc2626;
-  /* Extended label palette — in light mode */
-  --blue: #2563eb;
-  --indigo: #4f46e5;
-  --pink: #db2777;
-  --teal: #0d9488;
-  --orange: #ea580c;
-  --slate: #475569;
-  --yellow: #eab308;
-  --fuchsia: #c026d3;
-  --brown: #78350f;
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #6d28d9;
-  --janosik-brand-accent: #8b5cf6;
-}
-
-/* Rarely-used shadcn aliases, resolved from the tokens above. */
-:root {
-  --popover: var(--surface);
-  --popover-foreground: var(--foreground);
-  --muted: var(--hover);
-  --accent: var(--hover);
-  --accent-foreground: var(--foreground);
-  --destructive: var(--danger);
-  --destructive-foreground: #ffffff;
-  --card-foreground: var(--foreground);
-  --primary-foreground-alt: #ffffff;
-  --radius: 0.625rem;
-}
-
 @theme inline {
-  /* Wordmark display font (self-hosted via Fontsource) — Space Grotesk
-   * gives the brand name its distinctive premium face. */
-  --font-display:
-    "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-    Roboto, sans-serif;
+  /* Wordmark display font — the family stack comes from the brand tokens. */
+  --font-display: var(--janosik-font-display);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -166,7 +58,8 @@
   --radius-sm: calc(var(--radius) - 4px);
 
   /* Entry animation for cards (subtle rise + fade). */
-  --animate-card-in: card-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-card-in: card-in var(--janosik-duration-base)
+    var(--janosik-ease-out);
 
   @keyframes card-in {
     from {
@@ -189,9 +82,9 @@
     @apply border-border;
     /* Smooth color transitions when switching theme */
     transition:
-      background-color 150ms ease,
-      border-color 150ms ease,
-      color 150ms ease;
+      background-color var(--janosik-duration-fast) var(--janosik-ease-out),
+      border-color var(--janosik-duration-fast) var(--janosik-ease-out),
+      color var(--janosik-duration-fast) var(--janosik-ease-out);
   }
 
   html {
@@ -229,6 +122,21 @@
     background: color-mix(in oklab, var(--primary) 30%, transparent);
   }
 
+  /* Tactile press feedback on every pressable control — a subtle scale-down
+     confirms the interface heard the press (design-engineering rule). */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    transition:
+      background-color var(--janosik-duration-fast) var(--janosik-ease-out),
+      border-color var(--janosik-duration-fast) var(--janosik-ease-out),
+      color var(--janosik-duration-fast) var(--janosik-ease-out),
+      transform var(--janosik-duration-press) var(--janosik-ease-out);
+  }
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active {
+    transform: scale(0.97);
+  }
+
   /* Utility: hide scrollbars for horizontal column strips (keep scrollable). */
   .no-scrollbar {
     scrollbar-width: none;
@@ -243,7 +151,7 @@
    * CSS tile so columns stay readable; dark/light variants follow the theme.
    * ------------------------------------------------------------------------ */
   .janosik-bg-flat {
-    background-color: #0d0d16;
+    background-color: #0c1526;
   }
   .light .janosik-bg-flat {
     background-color: #eef0f3;
@@ -251,7 +159,7 @@
   /* Warm paper: cream in light theme, dark kraft in dark theme, with a
    * fine noise grain (SVG turbulence) so it reads as real paper. */
   .janosik-bg-paper {
-    background-color: #1b1b24;
+    background-color: #182338;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
     background-blend-mode: overlay;
   }
@@ -261,7 +169,7 @@
     background-blend-mode: multiply;
   }
   .janosik-bg-dots {
-    background-color: #0d0d16;
+    background-color: #0c1526;
     background-image: radial-gradient(
       circle,
       rgb(255 255 255 / 0.09) 1.2px,
@@ -279,7 +187,7 @@
     );
   }
   .janosik-bg-grid {
-    background-color: #0d0d16;
+    background-color: #0c1526;
     background-image:
       linear-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px),
       linear-gradient(90deg, rgb(255 255 255 / 0.05) 1px, transparent 1px);
@@ -303,6 +211,16 @@
   }
 }
 
+/* The logo tile — brand-blue gradient, independent of the app's violet accent
+ * so the mark reads blue everywhere (app and marketing site alike). */
+.janosik-brand-tile {
+  background-image: linear-gradient(
+    to bottom right,
+    var(--janosik-logo-from),
+    var(--janosik-logo-to)
+  );
+}
+
 /* ---------------------------------------------------------------------------
  * App logo — the Janosik feather. Idle: a faint breeze drift. On hover (the
  * brand area carries Tailwind's `group` class): a wider, gentler sway plus a
@@ -317,11 +235,15 @@
   opacity: 0;
   transform: scale(0.3) rotate(0deg);
 }
-.group:hover .janosik-feather {
-  animation: janosik-feather-sway 2.2s ease-in-out infinite;
-}
-.group:hover .janosik-sparkle {
-  animation: janosik-sparkle-twinkle 1.8s ease-in-out infinite;
+/* Hover-only: gate behind a real pointer so a tap on touch does not trigger
+   the hover animation. */
+@media (hover: hover) and (pointer: fine) {
+  .group:hover .janosik-feather {
+    animation: janosik-feather-sway 2.2s ease-in-out infinite;
+  }
+  .group:hover .janosik-sparkle {
+    animation: janosik-sparkle-twinkle 1.8s ease-in-out infinite;
+  }
 }
 @keyframes janosik-feather-idle {
   0%,
@@ -385,14 +307,15 @@
   html.__janosik-ready *::before,
   html.__janosik-ready *::after {
     transition:
-      background-color 150ms ease,
-      border-color 150ms ease,
-      color 150ms ease;
+      background-color var(--janosik-duration-fast) var(--janosik-ease-out),
+      border-color var(--janosik-duration-fast) var(--janosik-ease-out),
+      color var(--janosik-duration-fast) var(--janosik-ease-out);
   }
 }
 /* Toast entrance — slides in from the bottom-right with a soft scale. */
 .janosik-toast {
-  animation: janosik-toast-in 0.3s cubic-bezier(0.21, 1.02, 0.73, 1) both;
+  animation: janosik-toast-in var(--janosik-duration-slow)
+    var(--janosik-ease-out) both;
 }
 
 @keyframes janosik-toast-in {
@@ -420,7 +343,8 @@
  * table row for a steady tint instead of the fade.
  * -------------------------------------------------------------------------- */
 .janosik-presence-in {
-  animation: janosik-presence-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: janosik-presence-in var(--janosik-duration-base)
+    var(--janosik-ease-out) both;
 }
 
 @keyframes janosik-presence-in {
@@ -836,8 +760,8 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
   border-radius: var(--radius);
   background: var(--surface);
   transition:
-    border-color 150ms ease,
-    box-shadow 150ms ease;
+    border-color var(--janosik-duration-fast) var(--janosik-ease-out),
+    box-shadow var(--janosik-duration-fast) var(--janosik-ease-out);
 }
 .mdxeditor.janosik-mdx.janosik-mdx-edit:focus-within {
   border-color: color-mix(in oklab, var(--primary) 55%, var(--border));

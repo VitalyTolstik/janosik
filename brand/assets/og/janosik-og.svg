@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="Janosik — Kanban that feels crafted">
+  <defs>
+    <linearGradient id="janosik-og-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eff6ff"/>
+    </linearGradient>
+    <radialGradient id="janosik-og-glow" cx="0.82" cy="0.14" r="0.75">
+      <stop offset="0" stop-color="#38bdf8" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#38bdf8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="janosik-og-mark" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#janosik-og-bg)"/>
+  <rect width="1200" height="630" fill="url(#janosik-og-glow)"/>
+  <rect x="0" y="0" width="1200" height="8" fill="url(#janosik-og-mark)"/>
+
+  <rect x="96" y="196" width="112" height="112" rx="26" fill="url(#janosik-og-mark)"/>
+  <g transform="translate(118 218) scale(1.9)" fill="#ffffff">
+    <path d="M14.086 18.412A2 2 0 0112.67 19H5v-7.672a2 2 0 01.586-1.414L11.75 3.75a6 6 0 118.49 8.49z"/>
+    <path d="M16 8 2 22" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round" fill="none" opacity="0.9"/>
+    <path d="M16.5 15H9" stroke="#ffffff" stroke-width="1.1" stroke-linecap="round" fill="none" opacity="0.65"/>
+  </g>
+
+  <text x="96" y="410" font-family="'Space Grotesk', ui-sans-serif, system-ui, sans-serif" font-size="104" font-weight="700" fill="#2563eb">Janosik</text>
+  <text x="98" y="466" font-family="'Space Grotesk', ui-sans-serif, system-ui, sans-serif" font-size="40" font-weight="500" fill="#3b82f6">Kanban that feels crafted.</text>
+</svg>

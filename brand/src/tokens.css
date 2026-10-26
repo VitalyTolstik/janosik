@@ -1,0 +1,164 @@
+/* ---------------------------------------------------------------------------
+ * Janosik brand tokens — the single source of truth for colour, shape, type
+ * and motion. Mirrored in `src/tokens.ts`; `src/tokens.test.ts` fails if the
+ * two drift apart.
+ *
+ * Dark theme is the `:root` default; the light theme is activated with the
+ * `.light` class on <html>. Imported by `ui/src/index.css` (which maps these
+ * to Tailwind utilities via `@theme inline`) and usable as-is by the marketing
+ * site and the video project.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  /* Column glass defaults (overridden at runtime by BoardGlassProvider). */
+  --janosik-glass-transparency: 100;
+  --janosik-glass-blur: 5px;
+
+  /* App background (dark theme = deep navy, tied to the blue brand) */
+  --background: #0b1220;
+  /* Cards / columns surface */
+  --card: #121a2e;
+  /* Elevated surfaces, menus, dialogs */
+  --surface: #172033;
+  /* Hover accents */
+  --hover: #1e2a44;
+  /* Primary text */
+  --foreground: #e6edf7;
+  /* Secondary text */
+  --muted-foreground: #93a4bd;
+  /* Brand accent */
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  /* Secondary accent */
+  --secondary: #38bdf8;
+  --secondary-foreground: #06283d;
+  /* Success / Done */
+  --success: #10b981;
+  /* Warning / In progress */
+  --warning: #f59e0b;
+  /* Danger / High */
+  --danger: #ef4444;
+  /* Extended label palette — matching premium shades in dark mode */
+  --blue: #4f8df0;
+  --indigo: #818cf8;
+  --pink: #f472b6;
+  --teal: #2dd4bf;
+  --orange: #fb923c;
+  --slate: #94a3b8;
+  --yellow: #eab308;
+  --fuchsia: #d946ef;
+  --brown: #92400e;
+  /* Borders & dividers */
+  --border: #24324a;
+  --input: #24324a;
+  --ring: #3b82f6;
+  /* Selection accent for the board-background picker — the brand blue,
+   * tuned per theme: deeper in dark, lighter in light. */
+  --janosik-brand-accent: #2563eb;
+
+  /* Fullscreen attachment lightbox. Intentionally dark in both themes so the
+   * image reads against a neutral scrim; kept as tokens so a high-contrast
+   * theme can retune them. */
+  --overlay: rgb(0 0 0 / 0.82);
+  --overlay-foreground: #ffffff;
+  --overlay-border: rgb(255 255 255 / 0.25);
+  --overlay-button: rgb(255 255 255 / 0.12);
+  --overlay-shadow: 0 12px 48px rgb(0 0 0 / 0.55);
+
+  /* Logo tile gradient — brand blue, independent of the app's violet accent. */
+  --janosik-logo-from: #2563eb;
+  --janosik-logo-to: #38bdf8;
+
+  /* Wordmark / display font (self-hosted via Fontsource). */
+  --janosik-font-display:
+    "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+
+  /* Motion — custom easing curves, UI durations under 300ms. */
+  --janosik-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --janosik-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --janosik-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --janosik-duration-press: 160ms;
+  --janosik-duration-fast: 150ms;
+  --janosik-duration-base: 200ms;
+  --janosik-duration-slow: 300ms;
+
+  /* Type scale — a role-based ramp shared by the site, docs and video (the
+   * app keeps Tailwind's own text utilities). */
+  --janosik-type-display-size: 4.5rem;
+  --janosik-type-display-line: 1.02;
+  --janosik-type-display-weight: 700;
+  --janosik-type-display-tracking: -0.03em;
+  --janosik-type-h1-size: 3rem;
+  --janosik-type-h1-line: 1.1;
+  --janosik-type-h1-weight: 700;
+  --janosik-type-h1-tracking: -0.03em;
+  --janosik-type-h2-size: 2rem;
+  --janosik-type-h2-line: 1.2;
+  --janosik-type-h2-weight: 700;
+  --janosik-type-h2-tracking: -0.02em;
+  --janosik-type-h3-size: 1.5rem;
+  --janosik-type-h3-line: 1.3;
+  --janosik-type-h3-weight: 700;
+  --janosik-type-h3-tracking: -0.01em;
+  --janosik-type-lead-size: 1.25rem;
+  --janosik-type-lead-line: 1.6;
+  --janosik-type-lead-weight: 500;
+  --janosik-type-lead-tracking: 0;
+  --janosik-type-body-size: 1rem;
+  --janosik-type-body-line: 1.6;
+  --janosik-type-body-weight: 400;
+  --janosik-type-body-tracking: 0;
+  --janosik-type-small-size: 0.875rem;
+  --janosik-type-small-line: 1.5;
+  --janosik-type-small-weight: 500;
+  --janosik-type-small-tracking: 0;
+  --janosik-type-caption-size: 0.75rem;
+  --janosik-type-caption-line: 1.4;
+  --janosik-type-caption-weight: 500;
+  --janosik-type-caption-tracking: 0.02em;
+}
+
+.light {
+  --background: #f4f5f6;
+  --card: #ffffff;
+  --surface: #fbfbfc;
+  --hover: #eaecee;
+  --foreground: #1a1a24;
+  --muted-foreground: #5c5c70;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #0369a1;
+  --secondary-foreground: #ffffff;
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
+  /* Extended label palette — in light mode */
+  --blue: #2563eb;
+  --indigo: #4f46e5;
+  --pink: #db2777;
+  --teal: #0d9488;
+  --orange: #ea580c;
+  --slate: #475569;
+  --yellow: #eab308;
+  --fuchsia: #c026d3;
+  --brown: #78350f;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #2563eb;
+  --janosik-brand-accent: #3b82f6;
+}
+
+/* Rarely-used shadcn aliases, resolved from the tokens above. */
+:root {
+  --popover: var(--surface);
+  --popover-foreground: var(--foreground);
+  --muted: var(--hover);
+  --accent: var(--hover);
+  --accent-foreground: var(--foreground);
+  --destructive: var(--danger);
+  --destructive-foreground: #ffffff;
+  --card-foreground: var(--foreground);
+  --primary-foreground-alt: #ffffff;
+  --radius: 0.625rem;
+}

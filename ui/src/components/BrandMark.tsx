@@ -7,7 +7,7 @@
  */
 export function BrandMark() {
   return (
-    <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-secondary text-primary-foreground shadow-sm">
+    <div className="janosik-brand-tile relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-primary-foreground shadow-sm">
       <svg
         className="janosik-feather"
         width="20"
@@ -33,7 +33,7 @@ export function BrandMark() {
           strokeLinecap="round"
         />
         <path
-          d="M17.488 15H9"
+          d="M16.5 15H9"
           stroke="currentColor"
           strokeWidth="1.1"
           strokeLinecap="round"

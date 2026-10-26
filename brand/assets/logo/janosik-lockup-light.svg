@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 236 48" role="img" aria-label="Janosik">
+  <defs>
+    <linearGradient id="janosik-lockup-gradient-light" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="4" width="40" height="40" rx="10" fill="url(#janosik-lockup-gradient-light)"/>
+  <g transform="translate(8 12) scale(0.67)" fill="#ffffff">
+    <path d="M14.086 18.412A2 2 0 0112.67 19H5v-7.672a2 2 0 01.586-1.414L11.75 3.75a6 6 0 118.49 8.49z"/>
+    <path d="M16 8 2 22" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round" fill="none" opacity="0.9"/>
+    <path d="M16.5 15H9" stroke="#ffffff" stroke-width="1.1" stroke-linecap="round" fill="none" opacity="0.65"/>
+  </g>
+  <text x="56" y="33" font-family="'Space Grotesk', ui-sans-serif, system-ui, sans-serif" font-size="28" font-weight="700" fill="#ffffff">Janosik</text>
+</svg>
