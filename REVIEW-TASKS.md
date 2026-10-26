@@ -186,7 +186,7 @@ deletedAt: null } })` **без `boardId`**. Участник доски A вст
 
 # P1 — корректность и эксплуатация
 
-### TASK-82 `demo-queue-lifecycle` — демо-раннер в Redis-режиме не освобождается [✓]
+### TASK-82 `demo-queue-lifecycle` — демо-раннер в Redis-режиме не освобождается [✓] ✅
 **Приоритет:** P1. **Область:** backend (admin/demo).
 **Проблема.** `demo.service.ts:365-371` выставляет `this.active = run` всегда; при постановке
 в очередь (`if (!queued) this.launch(...)`) `active`/`done` никто не чистит и не обновляет.
@@ -200,7 +200,7 @@ deletedAt: null } })` **без `boardId`**. Участник доски A вст
 работает. Fallback-режим не деградирует.
 **Зависимости:** нет.
 
-### TASK-83 `comms-schedule` — таймер, дедуп напоминаний, cadence parity [✓]
+### TASK-83 `comms-schedule` — таймер, дедуп напоминаний, cadence parity [✓] ✅
 **Приоритет:** P1. **Область:** backend (ops/comms).
 **Проблема.** `comms-scheduler.service.ts`: fallback `setInterval(..., digest*3_600_000)`
 (:79) — при `digestIntervalHours` до 720 значение `2.59e9 > 2^31-1`, Node клампит к 1 мс →
@@ -214,7 +214,7 @@ deletedAt: null } })` **без `boardId`**. Участник доски A вст
 счётчики совпадают для обоих бэкендов. e2e: due-карточка → ровно одно письмо в outbox.
 **Зависимости:** нет.
 
-### TASK-84 `command-retention` — `take` в `listSince` + retention `Command` [✓]
+### TASK-84 `command-retention` — `take` в `listSince` + retention `Command` [✓] ✅
 **Приоритет:** P1. **Область:** backend (commands, maintenance).
 **Проблема.** `commands.service.ts:290-297` — `findMany` без `take`; при `since=0` отдаёт
 **всю** историю доски в память/SSE (достижимо из публичной шары `share.controller.ts:77`).
@@ -224,7 +224,7 @@ Sweep'а `Command` в `MAINTENANCE_JOBS` нет — лог растёт неог
 **DoD.** Тест: `since=0` не тянет всё; sweep удаляет старые команды, `seq`-догон не ломается.
 **Зависимости:** TASK-92 (индекс под sweep).
 
-### TASK-85 `impersonation-refresh` — имперсонация не апгрейдится до мастера [✓]
+### TASK-85 `impersonation-refresh` — имперсонация не апгрейдится до мастера [✓] ✅
 **Приоритет:** P1. **Область:** ui (api, auth).
 **Проблема.** `client.ts:390-409` `runRefresh` постит `/auth/refresh` с `auth:false` → уходит
 httpOnly-cookie **мастера**. При истечении имперсонационного токена `AuthContext.tsx:93-118`
@@ -236,7 +236,7 @@ httpOnly-cookie **мастера**. При истечении имперсона
 сбрасывается. Регресс: обычный refresh не тронут.
 **Зависимости:** нет.
 
-### TASK-86 `command-keepalive` — `keepalive` только ниже порога [✓]
+### TASK-86 `command-keepalive` — `keepalive` только ниже порога [✓] ✅
 **Приоритет:** P1. **Область:** ui (api).
 **Проблема.** `client.ts:500-510` ставит `keepalive: true` на каждый `sendCommand`;
 `MAX_COMMAND_BYTES = 2 MB`, а лимит `keepalive`-тела браузера ~64 KB. Крупная инверсная
@@ -291,7 +291,7 @@ role?`; обновить `MastersPage`/shared при необходимости.
 **DoD.** Тест: тикет из cookie не проходит на обычные `/admin/*` роуты.
 **Зависимости:** нет.
 
-### TASK-91 `trust-proxy` — `app.set("trust proxy")` [✓]
+### TASK-91 `trust-proxy` — `app.set("trust proxy")` [✓] ✅
 **Приоритет:** P1. **Область:** backend (common).
 **Проблема.** `app-setup.ts:12-24` — нет `trust proxy`; `req.ip` за nginx = IP прокси:
 глобальный rate limit схлопывается на всех, admin IP-allowlist не матчит реальный адрес,
@@ -302,7 +302,7 @@ role?`; обновить `MastersPage`/shared при необходимости.
 `req.ip`.
 **Зависимости:** TASK-120 (env `TRUST_PROXY`).
 
-### TASK-92 `db-indexes` — недостающие индексы [A]
+### TASK-92 `db-indexes` — недостающие индексы [A] ✅
 **Приоритет:** P1. **Область:** backend (prisma).
 **Проблема.** Нет индексов под новые sweep/очереди: `DataExport.expiresAt` (sweep фильтрует),
 `Card.dueDate` (напоминания), `Attachment.derivativeStatus`/`transcodeStatus`
@@ -313,7 +313,7 @@ role?`; обновить `MastersPage`/shared при необходимости.
 **DoD.** Миграция применяется; EXPLAIN показывает index scan на целевых запросах.
 **Зависимости:** нет.
 
-### TASK-93 `admin-destructive-confirm` — подтверждения в панели [✓]
+### TASK-93 `admin-destructive-confirm` — подтверждения в панели [✓] ✅
 **Приоритет:** P1. **Область:** ui/admin.
 **Проблема.** (1) `confirmTitle` зовётся без параметров (`entity-configs.tsx:141,152,175,184`)
 → показывается литерал `{email}`. (2) Ряд деструктивных действий без подтверждения:
@@ -325,7 +325,7 @@ bulk delete (`EntityPage.tsx:318`), удаление доски (`BoardDetailPag
 **DoD.** Тесты UI: тайтлы с email; bulk/board/delete требуют подтверждения.
 **Зависимости:** нет.
 
-### TASK-94 `admin-ui-fixes` — мелкие дефекты панели [A]
+### TASK-94 `admin-ui-fixes` — мелкие дефекты панели [A] ✅
 **Приоритет:** P1. **Область:** ui/admin.
 **Проблема.** `ObservabilityPage.tsx:27-46` — «Retry» выставляет `loading` и не
 перезапрашивает (вечный loader). Захардкоженный английский: `MastersPage.tsx:185`,
@@ -337,7 +337,7 @@ bulk delete (`EntityPage.tsx:318`), удаление доски (`BoardDetailPag
 в этих файлах.
 **Зависимости:** нет.
 
-### TASK-95 `backend-ci-typecheck` — typecheck спека в CI [A]
+### TASK-95 `backend-ci-typecheck` — typecheck спека в CI [A] ✅
 **Приоритет:** P1. **Область:** backend/CI.
 **Проблема.** CI гоняет `npm run build:backend` = `tsc -p tsconfig.build.json`, а он
 исключает `**/*.spec.ts` и `test/` — типы в тестах не проверяются (прошлый аудит §3.1).
@@ -349,7 +349,7 @@ bulk delete (`EntityPage.tsx:318`), удаление доски (`BoardDetailPag
 
 # P2 — архитектура, контракты, производительность, чистка
 
-### TASK-96 `command-registry` — реестр команд и `never`-эксхоустивность [✓]
+### TASK-96 `command-registry` — реестр команд и `never`-эксхоустивность [✓] ✅
 **Приоритет:** P2. **Область:** shared/backend.
 **Проблема.** `never`-guard есть только в `invert.ts:599`. Молчаливые `default` в
 `board-reducer.ts:2280`, `validate.ts:691`, `command-writers.ts:1034`,
@@ -362,7 +362,7 @@ bulk delete (`EntityPage.tsx:318`), удаление доски (`BoardDetailPag
 **DoD.** Промах ловится компиляцией; тест-«полнота» по реестру. Гейты зелёные.
 **Зависимости:** TASK-80, TASK-97.
 
-### TASK-97 `shared-reducer-hardening` — дефекты редьюсера [✓/A]
+### TASK-97 `shared-reducer-hardening` — дефекты редьюсера [✓/A] ✅
 **Приоритет:** P2. **Область:** shared.
 **Проблема.** (1) `ADD_CARD` кладёт произвольные `labelIds` (`board-reducer.ts:804`), сервер
 создаёт `CardLabel` только для существующих (`command-writers.ts:180-188`) → reducer ≠ агрегат.
@@ -374,14 +374,14 @@ permutation-гвард при `inverse`; удалять `description`, если 
 **DoD.** Юнит-тесты на каждый пункт; property-тест invert без регресса.
 **Зависимости:** TASK-96.
 
-### TASK-98 `createid-crypto` — `createId` → `crypto.randomUUID()` [✓]
+### TASK-98 `createid-crypto` — `createId` → `crypto.randomUUID()` [✓] ✅
 **Приоритет:** P2. **Область:** ui.
 **Проблема.** `ui/src/utils/id.ts:7` — `Math.random()`; после TASK-29 это PK на сервере.
 **Что сделать.** `crypto.randomUUID()` с фолбэком на `getRandomValues`; старые данные не ломаются.
 **DoD.** Тест уникальности/формата; импорт старых данных работает.
 **Зависимости:** нет.
 
-### TASK-99 `comment-idempotency` — идемпотентность комментариев [A]
+### TASK-99 `comment-idempotency` — идемпотентность комментариев [A] ✅
 **Приоритет:** P2. **Область:** backend (comments).
 **Проблема.** `comments.service.ts:44-101` — нет `commandId`/idempotency key: ретрай
 `POST /cards/:id/comments` создаёт дубли комментария и `Activity`.
@@ -389,7 +389,7 @@ permutation-гвард при `inverse`; удалять `description`, если 
 **DoD.** e2e: двойной POST с одним ключом → один комментарий.
 **Зависимости:** нет.
 
-### TASK-100 `board-write-toctou` — TOCTOU-гонки [A]
+### TASK-100 `board-write-toctou` — TOCTOU-гонки [A] ✅
 **Приоритет:** P2. **Область:** backend.
 **Проблема.** last-ADMIN проверка вне транзакции (`boards.service.ts:314,383`); invite-проверка
 вне транзакции → возможен `P2002` 500; `count()` вложений вне транзакции
@@ -398,14 +398,14 @@ permutation-гвард при `inverse`; удалять `description`, если 
 **DoD.** e2e на конкурентные demote/invite/upload без нарушения инвариантов.
 **Зависимости:** нет.
 
-### TASK-101 `list-boards-counts` — N+1 в `listBoards` [A]
+### TASK-101 `list-boards-counts` — N+1 в `listBoards` [A] ✅
 **Приоритет:** P2. **Область:** backend (boards).
 **Проблема.** `boards.service.ts:60-63` — `card.count()` на каждую доску.
 **Что сделать.** Один `groupBy`/`_count` в исходном запросе.
 **DoD.** Тест: число запросов не растёт с числом досок.
 **Зависимости:** нет.
 
-### TASK-102 `realtime-presence-hardening` — утечки и ownership [✓/A]
+### TASK-102 `realtime-presence-hardening` — утечки и ownership [✓/A] ✅
 **Приоритет:** P2. **Область:** backend (realtime, commands).
 **Проблема.** `RealtimeService.channels`/`subscribed` (`realtime.service.ts:126-133`) не
 удаляются, Redis-подписки не отписываются. `clientId` не привязан к юзеру
@@ -416,7 +416,7 @@ permutation-гвард при `inverse`; удалять `description`, если 
 **DoD.** Юнит-тесты: канал освобождается; чужой `clientId` отклонён; reconnect не теряет presence.
 **Зависимости:** нет.
 
-### TASK-103 `sse-auth-lost` — фатальный SSE 401 → auth-lost [✓]
+### TASK-103 `sse-auth-lost` — фатальный SSE 401 → auth-lost [✓] ✅
 **Приоритет:** P2. **Область:** ui (store).
 **Проблема.** `realtime.ts:143-149,232-251`: `onFatal` обрабатывает только 403,
 `refreshSession` не зовёт `onAuthLost` → мёртвая сессия, доска молчит бесконечно.
@@ -424,7 +424,7 @@ permutation-гвард при `inverse`; удалять `description`, если 
 **DoD.** Тест: 401 в SSE переводит приложение в anonymous/login.
 **Зависимости:** нет.
 
-### TASK-104 `share-live-frozen` — шара: 404/410, VIEWER, snapshot [A]
+### TASK-104 `share-live-frozen` — шара: 404/410, VIEWER, snapshot [A] ✅
 **Приоритет:** P2. **Область:** backend/ui (share).
 **Проблема.** Живая шара замирает при отзыве/удалении (нет `onFatal` в `PublicBoardPage`).
 Публичный ростер включает истёкших VIEWER (`share.service.ts:366-381` игнорирует `expiresAt`).
@@ -435,7 +435,7 @@ Snapshot-шара отдаёт живые комментарии/вложени�
 snapshot не отдаёт контент удалённой доски.
 **Зависимости:** нет.
 
-### TASK-105 `offline-outbox` — offline-outbox или честный README [✓]
+### TASK-105 `offline-outbox` — offline-outbox или честный README [✓] ✅
 **Приоритет:** P2. **Область:** ui (+ README).
 **Проблема.** `ServerSync` — чисто in-memory; при потере сети оптимистичные правки
 откатываются с тостами, reload теряет несохранённое (`server-sync.ts`, `BoardContext.tsx:1121-1143`),
@@ -446,7 +446,7 @@ snapshot не отдаёт контент удалённой доски.
 приведён к реальности.
 **Зависимости:** нет.
 
-### TASK-106 `object-url-leaks` — утечки object-URL [✓/A]
+### TASK-106 `object-url-leaks` — утечки object-URL [✓/A] ✅
 **Приоритет:** P2. **Область:** ui.
 **Проблема.** `use-avatar-object-url.ts` — нет дедупа in-flight, нет `revokeObjectURL`,
 `setUrl(null)` в теле эффекта, нет негативного кэша. `CardAttachments.tsx:203-215` —
@@ -457,7 +457,7 @@ snapshot не отдаёт контент удалённой доски.
 **DoD.** Тесты: один запрос на аватар, revoke вызывается, скачивание не отменяется.
 **Зависимости:** нет.
 
-### TASK-107 `media-files-hardening` — `.tmp`, производные, range [A]
+### TASK-107 `media-files-hardening` — `.tmp`, производные, range [A] ✅
 **Приоритет:** P2. **Область:** backend (attachments, admin).
 **Проблема.** Утечка `.tmp-*` при таймауте media (`media.service.ts:235-238` — нет `rm` в
 finally; `listBlobs` игнорит `.tmp-`). Admin delete не чистит производные
@@ -470,7 +470,7 @@ cache-bust URL.
 **DoD.** Тесты: нет `.tmp` после таймаута; admin delete чистит производные; range работает.
 **Зависимости:** TASK-77.
 
-### TASK-108 `inline-attachment-cap` — cap и `attachmentCount` [✓]
+### TASK-108 `inline-attachment-cap` — cap и `attachmentCount` [✓] ✅
 **Приоритет:** P2. **Область:** backend (attachments).
 **Проблема.** `attachments.service.ts:79-87,231-234`: `count()` включает inline, но
 инкремент — только `!isInline`; `remove()` декрементит безусловно (в admin-пути есть
@@ -479,7 +479,7 @@ cache-bust URL.
 **DoD.** e2e: счётчик не уходит в минус; cap держит inline.
 **Зависимости:** TASK-100.
 
-### TASK-109 `export-ttl-audit` — TTL при скачивании + аудит [A]
+### TASK-109 `export-ttl-audit` — TTL при скачивании + аудит [A] ✅
 **Приоритет:** P2. **Область:** backend (admin).
 **Проблема.** `exports.service.ts:174-187` `download()` проверяет только `status`/`storedName`,
 не `expiresAt`. `downloadExport`/`exportUser`/`queueTicket` не пишут аудит.
@@ -488,7 +488,7 @@ cache-bust URL.
 **DoD.** Тест: просроченный артефакт → 404/410; аудит-строки создаются.
 **Зависимости:** TASK-92.
 
-### TASK-110 `broadcast-fanout-retry` — фан-аут и реальные ретраи [A]
+### TASK-110 `broadcast-fanout-retry` — фан-аут и реальные ретраи [A] ✅
 **Приоритет:** P2. **Область:** backend (ops/comms).
 **Проблема.** `broadcast-queue.service.ts:84-108` + `broadcast.processor.ts:21-23`:
 `deliver()` глотает все ошибки и никогда не бросает → `attempts:3` мёртв; один джоб на весь
@@ -498,7 +498,7 @@ cache-bust URL.
 **DoD.** Тест: сбойный адрес ретраится, успешные не дублируются.
 **Зависимости:** нет.
 
-### TASK-111 `exports-queue-threshold` — порог синхронного экспорта [✓]
+### TASK-111 `exports-queue-threshold` — порог синхронного экспорта [✓] ✅
 **Приоритет:** P2. **Область:** backend (admin).
 **Проблема.** `exports.service.ts:86-89` при `rows <= 5000` строит бандл **в запросе**;
 легаси `GET /admin/users/:id/export` (`admin.service.ts:2241`) отдаёт весь `buildUserBundle`
@@ -507,7 +507,7 @@ cache-bust URL.
 **DoD.** Тест: крупный юзер не блокирует запрос.
 **Зависимости:** нет.
 
-### TASK-112 `contract-drift` — drift контрактов [✓/A]
+### TASK-112 `contract-drift` — drift контрактов [✓/A] ✅
 **Приоритет:** P2. **Область:** shared/backend.
 **Проблема.** `ConflictError` (`shared/src/api.ts:47-53`) vs 409 без `conflict`/`currentVersion`
 при коллизии id (`commands.service.ts:397-401`). `AdminUpdateAnnouncementRequest.sendEmail`
@@ -519,7 +519,7 @@ cache-bust URL.
 **DoD.** Тесты контракта; e2e на новые поля/ошибки.
 **Зависимости:** нет.
 
-### TASK-113 `admin-announcement-edit` — редактирование объявлений [✓]
+### TASK-113 `admin-announcement-edit` — редактирование объявлений [✓] ✅
 **Приоритет:** P2. **Область:** ui/admin.
 **Проблема.** Есть `PATCH /admin/announcements/:id`, но UI умеет только activate/deactivate
 и delete; расписание/контент правятся только через API.
@@ -527,7 +527,7 @@ cache-bust URL.
 **DoD.** UI-тест: редактирование применяется; `sendEmail` (см. TASK-112) работает.
 **Зависимости:** TASK-112.
 
-### TASK-114 `dead-code-i18n-cleanup` — мёртвый код и i18n [✓/A]
+### TASK-114 `dead-code-i18n-cleanup` — мёртвый код и i18n [✓/A] ✅
 **Приоритет:** P2. **Область:** ui/backend.
 **Проблема.** Мёртвая фича «Watch as»: `watcherEmail` (`admin-demo-start.dto.ts:21`) +
 i18n `admin.demo.watcher*`. ~40 неиспользуемых i18n-ключей (`admin-i18n.ts`, включая
@@ -538,7 +538,7 @@ i18n `admin.demo.watcher*`. ~40 неиспользуемых i18n-ключей (
 **DoD.** Grep чист; паритет i18n сохранён; гейты зелёные.
 **Зависимости:** нет.
 
-### TASK-115 `design-tokens` — токены: приоритеты и lightbox [A]
+### TASK-115 `design-tokens` — токены: приоритеты и lightbox [A] ✅
 **Приоритет:** P2. **Область:** ui.
 **Проблема.** `utils/priority.ts:34-70` — сырые Tailwind-цвета (`bg-red-600`, `bg-amber-400`, …);
 lightbox `utils/embedAttachments.ts:69,144,152,185` — `rgba/#fff/#8b8fa3`.
@@ -546,7 +546,7 @@ lightbox `utils/embedAttachments.ts:69,144,152,185` — `rgba/#fff/#8b8fa3`.
 **DoD.** Нет хардкод-цветов; тема/high-contrast применяются.
 **Зависимости:** нет.
 
-### TASK-116 `a11y-board` — a11y карточек и заголовка колонки [A]
+### TASK-116 `a11y-board` — a11y карточек и заголовка колонки [A] ✅
 **Приоритет:** P2. **Область:** ui.
 **Проблема.** VIEWER-карточки получают `role="button"`/`tabIndex` dnd-kit
 (`SortableCard.tsx:61,78` — `useSortable` без `disabled: readOnly`); заголовок колонки —
@@ -555,7 +555,7 @@ lightbox `utils/embedAttachments.ts:69,144,152,185` — `rgba/#fff/#8b8fa3`.
 **DoD.** Тест: в VIEWER карточки не focusable как кнопки; клавиатура доходит до меню.
 **Зависимости:** нет.
 
-### TASK-117 `tableview-memo` — мемоизация `TableView` [A]
+### TASK-117 `tableview-memo` — мемоизация `TableView` [A] ✅
 **Приоритет:** P2. **Область:** ui.
 **Проблема.** `TableView.tsx:252-312` пересобирает `rows` и сортировку на каждый рендер,
 подписан на всю доску → O(n log n) на keystroke.
@@ -563,7 +563,7 @@ lightbox `utils/embedAttachments.ts:69,144,152,185` — `rgba/#fff/#8b8fa3`.
 **DoD.** Тест/замер: правка карточки не пересчитывает всё.
 **Зависимости:** нет.
 
-### TASK-118 `god-module-split` — расслоение god-модулей [A]
+### TASK-118 `god-module-split` — расслоение god-модулей [A] ✅
 **Приоритет:** P2. **Область:** ui.
 **Проблема.** `BoardContext.tsx` 1864, `CalendarView.tsx` 1163, `TableView.tsx` 1159,
 `CardContextMenu.tsx` 972 строк.
@@ -572,7 +572,7 @@ lightbox `utils/embedAttachments.ts:69,144,152,185` — `rgba/#fff/#8b8fa3`.
 **DoD.** Поведение не меняется, тесты зелёные, размеры файлов снижены.
 **Зависимости:** TASK-117.
 
-### TASK-119 `health-readiness` — `/health` с зависимостями [A]
+### TASK-119 `health-readiness` — `/health` с зависимостями [A] ✅
 **Приоритет:** P2. **Область:** backend (health).
 **Проблема.** `health.service.ts:13-24` пингует только БД; нет Redis/очередей/диска;
 роут под maintenance/throttler.
@@ -580,7 +580,7 @@ lightbox `utils/embedAttachments.ts:69,144,152,185` — `rgba/#fff/#8b8fa3`.
 **DoD.** Тест: недоступный Redis отражается в readiness.
 **Зависимости:** нет.
 
-### TASK-120 `env-hardening` — env и avatar MIME [A]
+### TASK-120 `env-hardening` — env и avatar MIME [A] ✅
 **Приоритет:** P2. **Область:** backend.
 **Проблема.** `UPLOAD_DIR` вне envalid (`storage.service.ts:37-40`) — относительное значение
 резолвится от cwd. Avatar `Content-Type` из расширения клиентского файла
@@ -590,7 +590,7 @@ lightbox `utils/embedAttachments.ts:69,144,152,185` — `rgba/#fff/#8b8fa3`.
 **DoD.** Тесты env-валидации; avatar отдаётся с корректным типом.
 **Зависимости:** TASK-76, TASK-91.
 
-### TASK-121 `i18n-parity` — паритет en/ru [A]
+### TASK-121 `i18n-parity` — паритет en/ru [A] ✅
 **Приоритет:** P2. **Область:** ui.
 **Проблема.** RU без `presence.people_other`; RU-ключ `card.links.cap` без EN.
 **Что сделать.** Дополнить/удалить; при необходимости расширить тест паритета.
@@ -636,3 +636,39 @@ lightbox `utils/embedAttachments.ts:69,144,152,185` — `rgba/#fff/#8b8fa3`.
   `board-reducer.ts`); разбиение фиксирует координатор.
 - После закрытия задачи — переносить полное описание в `ROADMAP-DONE.md` и строку в
   §6.0/§7.7, как обычно.
+
+---
+
+## Итог волны (2026-10-26)
+
+Все задачи TASK-75…121 закрыты. Ветка `main`, коммиты (по одной волне на коммит):
+
+- `b28a7a4` — P0: TASK-75…81.
+- `39b5b28` — TASK-91/92/119/120/84/82/83.
+- `819243f` — TASK-99/100/101/102/104/107/108/109/110/111/98.
+- `c6261ff` — TASK-85/86/103/106/115/116/117/121/105.
+- `02bfcac` — TASK-95/96/97.
+- `1b4918c` — TASK-93/94.
+- `0dc7e1c` — TASK-113/114.
+- `50d5217` — TASK-112.
+- `ce123ba` — TASK-118.
+
+### Закрыто частично (остаток вынесен отдельно)
+
+- **TASK-96** — `never`-эксхоустивность добавлена в `boardReducer`; `satisfies`-реестры
+  для `SUPPORTED_ACTIONS`/`DIRECT_KEYS`/`textEntityKey` и единый `Record<type,…>` —
+  не сделаны (объёмный рефактор без изменения поведения).
+- **TASK-97** — `labelIds`-фильтр, удаление `description`, валидация `priority`/
+  `assigneeId`/`activity` в снапшоте сделаны; пункт (3) `SET_COLUMN_CARD_ORDER`/
+  `inverse` оставлен как есть: permutation-гвард намеренный (защита от подмены набора
+  карточек), обычный undo его проходит.
+- **TASK-106** — аватары (дедуп/revoke/негативный кэш/сброс при logout) и отложенный
+  revoke при скачивании сделаны; эвикция кэша превью в `embedAttachments.ts` — нет.
+- **TASK-112** — `sendEmail`, `segment`/`commandId` `@MaxLength`, `expiresAt: null`
+  выровнены; тип id-коллизии 409 (`{message,field}`) в `shared` и
+  `EXPORT_SCHEMA_VERSION` — нет.
+- **TASK-115** — приоритеты переведены на токены темы; rgba/hex в lightbox
+  `embedAttachments.ts` оставлены (попап намеренно тёмный, не зависит от темы).
+- **TASK-118** — из `BoardContext` вынесен модуль персистентности
+  (`store/board-persistence.ts`); расслоение `CalendarView`/`TableView`/
+  `CardContextMenu` — не сделано.

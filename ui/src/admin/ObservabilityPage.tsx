@@ -27,10 +27,9 @@ export function ObservabilityPage() {
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [data, setData] = useState<AdminObservabilityDto | null>(null);
 
-  // TASK-94: a retry must re-fetch, not just flip the phase back to loading
-  // (which left a permanent spinner).
-  const load = useCallback(() => {
-    setPhase("loading");
+  // The fetch itself never sets the phase synchronously, so the mount effect
+  // stays lint-clean; the retry wrapper flips back to "loading" first.
+  const fetchData = useCallback(() => {
     adminApi
       .getObservability()
       .then((snapshot) => {
@@ -40,9 +39,16 @@ export function ObservabilityPage() {
       .catch(() => setPhase("error"));
   }, []);
 
+  // TASK-94: a retry must re-fetch, not just flip the phase back to loading
+  // (which left a permanent spinner).
+  const load = useCallback(() => {
+    setPhase("loading");
+    fetchData();
+  }, [fetchData]);
+
   useEffect(() => {
-    load();
-  }, [load]);
+    fetchData();
+  }, [fetchData]);
 
   if (phase === "loading") return <LoadingState />;
   if (phase === "error" || !data) {
