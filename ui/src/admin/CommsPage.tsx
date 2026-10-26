@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { Eye } from "lucide-react";
 import type { AdminEmailTemplateDto, AdminUserRowDto } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -31,6 +32,26 @@ const SUBJECT_MAX = 200;
 const BODY_HTML_MAX = 20000;
 
 /**
+ * Sample values used to render a template preview (TASK-62): the placeholders
+ * an operator can use, filled with plausible content so the letter reads like
+ * a real one. Unknown placeholders are left intact.
+ */
+const PREVIEW_SAMPLES: Record<string, string> = {
+  code: "482913",
+  minutes: "10",
+  email: "you@example.com",
+};
+
+/** Fill `{{name}}` placeholders with the preview samples. */
+function renderPreview(template: string): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, name: string) =>
+    Object.prototype.hasOwnProperty.call(PREVIEW_SAMPLES, name)
+      ? PREVIEW_SAMPLES[name]
+      : match,
+  );
+}
+
+/**
  * Communications (TASK-62): compose a broadcast (in-app banner, optional
  * email) to everyone or hand-picked users, send a one-off letter, edit the
  * mail templates. The full announcement history is its own entity page
@@ -58,6 +79,11 @@ export function CommsPage() {
   const [draft, setDraft] = useState<
     Record<string, { subject: string; bodyHtml: string }>
   >({});
+  const [preview, setPreview] = useState<{
+    label: string;
+    subject: string;
+    html: string;
+  } | null>(null);
 
   const load = useCallback(() => {
     adminApi
@@ -327,6 +353,23 @@ export function CommsPage() {
                 }
               />
               <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  data-testid={`admin-template-preview-${template.key}`}
+                  onClick={() =>
+                    setPreview({
+                      label: template.label,
+                      subject: renderPreview(
+                        draft[template.key]?.subject ?? "",
+                      ),
+                      html: renderPreview(draft[template.key]?.bodyHtml ?? ""),
+                    })
+                  }
+                >
+                  <Eye className="h-3.5 w-3.5" aria-hidden />
+                  {t("admin.comms.templates.preview")}
+                </Button>
                 {template.custom ? (
                   <Button
                     variant="ghost"
@@ -350,6 +393,49 @@ export function CommsPage() {
           ))}
         </div>
       </Panel>
+
+      <Dialog
+        open={preview !== null}
+        onOpenChange={(next) => (next ? undefined : setPreview(null))}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-sm">
+              {t("admin.comms.templates.previewTitle")}
+              {preview ? ` — ${preview.label}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {preview ? (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-border bg-hover/40 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  {t("admin.comms.templates.subject")}
+                </p>
+                <p className="text-sm text-foreground">{preview.subject}</p>
+              </div>
+              <iframe
+                title={t("admin.comms.templates.previewTitle")}
+                srcDoc={preview.html}
+                sandbox=""
+                data-testid="admin-template-preview-frame"
+                className="h-[60vh] w-full rounded-lg border border-border bg-white"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                {t("admin.comms.templates.previewNote")}
+              </p>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setPreview(null)}
+            >
+              {t("admin.common.close")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={creating}

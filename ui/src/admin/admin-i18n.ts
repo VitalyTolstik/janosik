@@ -248,6 +248,10 @@ const en = {
   "admin.comms.custom": "custom",
   "admin.comms.default": "default",
   "admin.comms.templates.placeholders": "Placeholders: {list}",
+  "admin.comms.templates.preview": "Preview",
+  "admin.comms.templates.previewTitle": "Email preview",
+  "admin.comms.templates.previewNote":
+    "Placeholders show sample values — the real letter uses the recipient's data. Rendered exactly as an email client sees it.",
   "admin.comms.templates.reset": "Reset to default",
   "admin.comms.templates.resetDone": "Template reset to the built-in letter",
   "admin.comms.saved": "Template saved",
@@ -1121,6 +1125,10 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.comms.custom": "изменён",
   "admin.comms.default": "стандартный",
   "admin.comms.templates.placeholders": "Плейсхолдеры: {list}",
+  "admin.comms.templates.preview": "Просмотр",
+  "admin.comms.templates.previewTitle": "Предпросмотр письма",
+  "admin.comms.templates.previewNote":
+    "Плейсхолдеры показаны с примерными значениями — в реальном письме подставятся данные получателя. Отрендерено ровно так, как увидит почтовый клиент.",
   "admin.comms.templates.reset": "Сбросить к стандартному",
   "admin.comms.templates.resetDone": "Шаблон сброшен к встроенному",
   "admin.comms.saved": "Шаблон сохранён",

@@ -439,6 +439,20 @@ describe("AdminApp", () => {
     ).not.toBeNull();
   });
 
+  it("previews a mail template with sample placeholder values", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/comms");
+
+    fireEvent.click(
+      await screen.findByTestId("admin-template-preview-verification_code"),
+    );
+    const frame = await screen.findByTestId("admin-template-preview-frame");
+    // The draft's placeholders are filled with the sample values.
+    expect(frame.getAttribute("srcdoc")).toContain("482913");
+    expect(frame.getAttribute("srcdoc")).toContain("10 min");
+  });
+
   it("shows the built-in email template by default and can reset an override", async () => {
     const server = serverWith();
     vi.stubGlobal("fetch", server.fetchImpl);
