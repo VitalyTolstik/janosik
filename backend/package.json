@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Janosik API — NestJS + Prisma + PostgreSQL (see ROADMAP §7).",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "type": "commonjs",
   "engines": {
     "node": ">=22.17"

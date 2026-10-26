@@ -2,7 +2,7 @@
   "name": "janosik",
   "version": "0.1.0",
   "description": "Self-hosted Kanban board — offline-first PWA with drag & drop, calendar and table views, undo/redo, WIP limits and i18n.",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "author": "Vitali Toustsik",
   "homepage": "https://github.com/VitalyTolstik/janosik#readme",
   "repository": {

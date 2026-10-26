@@ -8,7 +8,7 @@ A premium **Kanban board** — Trello-class drag & drop with a Space Grotesk wor
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38bdf8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![NestJS](https://img.shields.io/badge/NestJS-11-e0234e?logo=nestjs&logoColor=white)](https://nestjs.com)
 [![Tests](https://img.shields.io/badge/tests-932%20passing-brightgreen)](#)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 
 > **Janosik** installs as a **PWA** and runs either **local-first** (no backend — everything in `localStorage`, works fully offline) or **server-backed**: accounts, shared boards and a command-log sync (`POST /boards/:id/commands`) on top of the very same reducer, with optimistic updates and undo. Point the UI at the API (`VITE_API_URL`, `/api/v1` by default) for server mode; without it the app keeps the original client-side mode (all data in `localStorage`, JSON export/import, automatic `IndexedDB` backups). Members UI and **realtime SSE** (everyone sees each other's edits without a reload, dropped streams catch up from `?since=`) have landed; presence and the comments UI are next — see [ROADMAP.md §7](./ROADMAP.md).
 
@@ -55,6 +55,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 ├─ docker-entrypoint.sh         # runs `prisma migrate deploy`, then the API
 ├─ .env.example                 # annotated environment for docker compose
 ├─ SECURITY.md / CHANGELOG.md   # disclosure policy, release history
+├─ LICENSE / TRADEMARK.md       # AGPL-3.0 terms + brand/trademark policy
 ├─ docs/SELF-HOSTING.md         # full self-hosting guide (TLS, backups, ops)
 ├─ docs/INSTALL-BY-OS.md        # running it on macOS / Windows 11 / Linux
 ├─ ROADMAP.md                   # plan, architecture assessment, §7 backend spec
@@ -378,14 +379,20 @@ See [ROADMAP.md](./ROADMAP.md) for the full architecture assessment, competitor 
 4. New UI strings land in both `src/locales/en` and `src/locales/ru` synchronously; colors come only from the design tokens in `src/index.css`.
 5. Change the data model, a board operation, validation or an API contract in `@janosik/shared` first — both `ui` and `backend` compile against it.
 6. The backend follows the fixed stack in `ROADMAP.md` §7 (NestJS/Prisma/PostgreSQL/JWT) and its iteration order.
-7. By submitting a pull request you agree that your contribution is licensed under the [MIT License](./LICENSE), the same terms as the rest of the project.
+7. By submitting a pull request you agree that your contribution is licensed under the [AGPL-3.0 License](./LICENSE), the same terms as the rest of the project.
 
 ---
 
 ## License
 
-[MIT](./LICENSE) © 2026 Vitali Toustsik
+[AGPL-3.0](./LICENSE) © 2026 Vitali Toustsik
 
-Use it, fork it, run it, build on it — commercially too. The only condition is
-that the copyright notice and the license text travel with the copies. The
-software comes with no warranty.
+Use it, self-host it, fork it, modify it — commercially too. The one condition
+AGPL-3.0 adds over a permissive licence: if you run a modified version as a
+network service, you must offer its source to the people who use it. That keeps
+the hosted edition honest — nobody can quietly run a closed fork as a SaaS.
+
+**Trademarks.** The licence covers the code, not the name. "Janosik" and the
+feather mark identify this project; forks are welcome but must not present
+themselves as the official Janosik or its hosted service — see
+[TRADEMARK.md](./TRADEMARK.md).
