@@ -3,25 +3,36 @@ import { Check, Copy, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { AdminShareRowDto } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
-import { Badge, ErrorState, LoadingState, PageHeader, Panel } from "./ui";
+import { useAdminList } from "./use-admin-list";
+import {
+  Badge,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  Panel,
+  SearchInput,
+} from "./ui";
 
 /**
  * Public shares (TASK-58) — every read-only link minted against any board,
  * with its mode/flags/views and a one-click revoke. The token is shown so an
  * operator can re-copy a link for support; a link whose board is gone is
  * flagged (a live share of a deleted board no longer resolves).
+ *
+ * Search mirrors the rest of the panel: the shared `useAdminList` debounce
+ * plus `SearchInput`, not a separate button.
  */
 export function SharesPage() {
   const t = useAdminT();
   const toast = useToast();
-  const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
-  const [rows, setRows] = useState<AdminShareRowDto[]>([]);
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
+  const list = useAdminList<AdminShareRowDto>(
+    (params) => adminApi.listShares({ ...params, limit: 100 }),
+    { limit: 100 },
+  );
+  const { items: rows, reload } = list;
   const [busy, setBusy] = useState<string | null>(null);
   // Inline "copied" feedback (icon flips to a check), like the app's copy
   // chips — no toast for a copy.
@@ -41,46 +52,25 @@ export function SharesPage() {
     copyTimer.current = setTimeout(() => setCopiedId(null), 1600);
   }, []);
 
-  const load = useCallback(() => {
-    adminApi
-      .listShares({ search: query || undefined, limit: 100 })
-      .then((page) => {
-        setRows(page.items);
-        setPhase("ready");
-      })
-      .catch(() => setPhase("error"));
-  }, [query]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
   const revoke = useCallback(
     async (id: string) => {
       setBusy(id);
       try {
         await adminApi.revokeShare(id);
         toast.success(t("admin.shares.revoked"));
-        load();
+        reload();
       } catch {
         toast.error(t("admin.common.error"));
       } finally {
         setBusy(null);
       }
     },
-    [load, t, toast],
+    [reload, t, toast],
   );
 
-  if (phase === "loading") return <LoadingState />;
-  if (phase === "error") {
-    return (
-      <ErrorState
-        onRetry={() => {
-          setPhase("loading");
-          load();
-        }}
-      />
-    );
+  if (list.loading && rows.length === 0) return <LoadingState />;
+  if (list.error) {
+    return <ErrorState onRetry={reload} />;
   }
 
   return (
@@ -88,26 +78,8 @@ export function SharesPage() {
       <PageHeader
         title={t("admin.shares.title")}
         subtitle={t("admin.shares.subtitle")}
+        actions={<SearchInput value={list.search} onChange={list.setSearch} />}
       />
-
-      <div className="flex items-center gap-2">
-        <Input
-          value={search}
-          placeholder={t("admin.shares.search")}
-          data-testid="admin-shares-search"
-          onChange={(event) => setSearch(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") setQuery(search.trim());
-          }}
-        />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setQuery(search.trim())}
-        >
-          {t("admin.common.search")}
-        </Button>
-      </div>
 
       <Panel className="p-0">
         {rows.length === 0 ? (
@@ -136,7 +108,10 @@ export function SharesPage() {
                       {row.boardDeleted ? (
                         <span className="text-muted-foreground">
                           {row.boardTitle ?? row.boardId}
-                          <span className="ml-2 inline-flex">
+                          <span
+                            className="ml-2 inline-flex"
+                            title={t("admin.shares.boardGone.hint")}
+                          >
                             <Badge variant="danger">
                               {t("admin.shares.boardGone")}
                             </Badge>

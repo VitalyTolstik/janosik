@@ -91,6 +91,8 @@ const en = {
   "admin.shares.flag.comments": "comments",
   "admin.shares.flag.attachments": "attachments",
   "admin.shares.boardGone": "board gone",
+  "admin.shares.boardGone.hint":
+    "The board was deleted, so a live link no longer opens (410 Gone). Revoke it to clear the row.",
   "admin.shares.copy": "Copy",
   "admin.shares.copied": "Link copied",
   "admin.shares.open": "Open",
@@ -945,6 +947,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.shares.flag.comments": "комментарии",
   "admin.shares.flag.attachments": "вложения",
   "admin.shares.boardGone": "доска удалена",
+  "admin.shares.boardGone.hint":
+    "Доска удалена, поэтому живая ссылка больше не открывается (410 Gone). Отзовите её, чтобы убрать строку.",
   "admin.shares.copy": "Скопировать",
   "admin.shares.copied": "Ссылка скопирована",
   "admin.shares.open": "Открыть",
