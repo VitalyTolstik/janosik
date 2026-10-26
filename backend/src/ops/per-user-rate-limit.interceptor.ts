@@ -39,6 +39,10 @@ export class PerUserRateLimitInterceptor implements NestInterceptor {
     const request = context
       .switchToHttp()
       .getRequest<Request & { user?: { id: string } }>();
+    // Never throttle the operator contour — otherwise a low per-user budget
+    // would lock the master panel out of its own settings (503/429 loop).
+    const url = request.originalUrl.split("?")[0];
+    if (/(^|\/)(admin|auth|health)(\/|$)/.test(url)) return next.handle();
     const userId = request.user?.id;
     if (userId) {
       const limit = await this.limit();
