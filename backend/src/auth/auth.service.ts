@@ -72,6 +72,23 @@ export class AuthService {
     private readonly flags: FeatureFlagsService,
   ) {}
 
+  /**
+   * Public runtime config for the sign-in screen (TASK-38a): whether sign-up
+   * is open and whether public share links are enabled. Unauthenticated —
+   * the UI needs it before a session exists to decide which controls to
+   * render. Reads the same feature flags the server enforces, so the UI and
+   * the backend never disagree.
+   */
+  async publicConfig(): Promise<{
+    allowRegistration: boolean;
+    allowPublicShares: boolean;
+  }> {
+    return {
+      allowRegistration: await this.flags.isEnabled("registration_open"),
+      allowPublicShares: await this.flags.isEnabled("public_shares"),
+    };
+  }
+
   async register(
     dto: RegisterDto,
     locale: MailLocale = "en",

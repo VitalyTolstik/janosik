@@ -330,6 +330,9 @@ describe("Board events SSE (e2e)", () => {
     const response = await openStream(memberToken, baseline);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/event-stream");
+    // TASK-38a: the stream tells nginx not to buffer, so realtime works
+    // behind a default proxy (a buffered stream would freeze silently).
+    expect(response.headers.get("x-accel-buffering")).toBe("no");
 
     // Commands committed after the stream opened — live delivery.
     await command(

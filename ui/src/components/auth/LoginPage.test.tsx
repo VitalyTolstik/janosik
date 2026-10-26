@@ -112,6 +112,21 @@ describe("LoginPage", () => {
     expect(screen.queryByTestId("login-error")).toBeNull();
   });
 
+  it("hides the register form when the server closes sign-up (TASK-38a)", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (pathOf(input).endsWith("/auth/config")) {
+        return json({ allowRegistration: false, allowPublicShares: true });
+      }
+      return json({ providers: [] });
+    });
+
+    renderPage();
+    await waitFor(() =>
+      expect(screen.queryByTestId("login-toggle")).toBeNull(),
+    );
+    expect(screen.queryByTestId("login-display-name")).toBeNull();
+  });
+
   it("renders a start link for every enabled OAuth provider (TASK-54)", async () => {
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
       if (pathOf(input).endsWith("/auth/refresh")) {

@@ -13,6 +13,7 @@ import { Throttle } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 import type { AdminAuthResponseDto } from "@janosik/shared";
 import { env } from "@/config/env";
+import { cookieSecure } from "@/config/security";
 import { AdminLoginDto } from "@/auth/dto/login.dto";
 import { RefreshToken } from "@/auth/refresh-token.decorator";
 import { AdminAuthService } from "./admin-auth.service";
@@ -109,7 +110,7 @@ export class AdminAuthController {
       httpOnly: true,
       sameSite: "strict",
       path: ADMIN_REFRESH_COOKIE_PATH,
-      secure: env.NODE_ENV === "production",
+      secure: cookieSecure(),
     };
   }
 }

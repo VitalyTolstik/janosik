@@ -23,7 +23,7 @@ export class FeatureFlagsService {
   /** The fallback value when no row exists for a key. */
   envDefaults(): Record<FeatureFlagKey, boolean> {
     return {
-      registration_open: true,
+      registration_open: env.ALLOW_REGISTRATION,
       public_shares: env.ALLOW_PUBLIC_SHARES,
       video_transcode: true,
       realtime_sse: true,

@@ -46,6 +46,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [oauthProviders, setOauthProviders] = useState<OAuthProviderDto[]>([]);
+  const [allowRegistration, setAllowRegistration] = useState(true);
 
   const isRegister = mode === "register";
 
@@ -67,6 +68,23 @@ export function LoginPage() {
       .listOAuthProviders()
       .then((response) => {
         if (!cancelled) setOauthProviders(response.providers);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Public runtime config (TASK-38a): when the operator closed sign-up, the
+  // register form is hidden (the server refuses it anyway — 403).
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .authConfig()
+      .then((config) => {
+        if (cancelled) return;
+        setAllowRegistration(config.allowRegistration);
+        if (!config.allowRegistration) setMode("login");
       })
       .catch(() => undefined);
     return () => {
@@ -224,14 +242,18 @@ export function LoginPage() {
             </>
           ) : null}
 
-          <button
-            type="button"
-            data-testid="login-toggle"
-            onClick={toggleMode}
-            className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
-          >
-            {isRegister ? t("auth.switchToLogin") : t("auth.switchToRegister")}
-          </button>
+          {allowRegistration ? (
+            <button
+              type="button"
+              data-testid="login-toggle"
+              onClick={toggleMode}
+              className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+            >
+              {isRegister
+                ? t("auth.switchToLogin")
+                : t("auth.switchToRegister")}
+            </button>
+          ) : null}
         </form>
       </div>
     </main>

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { StorageService } from "@/attachments/storage.service";
 import { OpsSettingsService } from "./ops-settings.service";
@@ -88,9 +89,18 @@ export class MaintenanceService {
     }
   }
 
+  /**
+   * Retention window in days: the master-panel setting when present, else the
+   * `PURGE_AFTER_DAYS` env (TASK-38a), else 30 — so a bare self-host with no
+   * panel changes still has a sane window.
+   */
+  private async retentionDays(): Promise<number> {
+    return (await this.ops.retentionDays()) ?? env.PURGE_AFTER_DAYS;
+  }
+
   /** Hard-deletes soft-deleted rows past the retention window (TASK-38a/63). */
   async purgeSoftDeleted(): Promise<number> {
-    const days = (await this.ops.retentionDays()) ?? 30;
+    const days = await this.retentionDays();
     const cutoff = new Date(Date.now() - days * 86_400_000);
     const stale = { deletedAt: { not: null, lte: cutoff } } as const;
     const blobs = await this.prisma.attachment.findMany({
@@ -241,7 +251,7 @@ export class MaintenanceService {
    * (same knob as the soft-delete purge), default 30 days.
    */
   async sweepCommands(): Promise<number> {
-    const days = (await this.ops.retentionDays()) ?? 30;
+    const days = await this.retentionDays();
     const cutoff = new Date(Date.now() - days * 86_400_000);
     const result = await this.prisma.command.deleteMany({
       where: { createdAt: { lt: cutoff } },
@@ -255,7 +265,7 @@ export class MaintenanceService {
    * reminded again, so its marker can go.
    */
   async sweepReminders(): Promise<number> {
-    const days = (await this.ops.retentionDays()) ?? 30;
+    const days = await this.retentionDays();
     const cutoff = new Date(Date.now() - days * 86_400_000);
     const result = await this.prisma.reminderSent.deleteMany({
       where: { dueDate: { lt: cutoff } },

@@ -3,6 +3,7 @@ import { Throttle } from "@nestjs/throttler";
 import type { Response } from "express";
 import type { AuthOAuthProvidersResponse } from "@janosik/shared";
 import { env } from "@/config/env";
+import { cookieSecure } from "@/config/security";
 import { REFRESH_COOKIE } from "@/auth/auth.types";
 import { OAUTH_STATE_COOKIE } from "./oauth.types";
 import { RequestCookie } from "./request-cookie.decorator";
@@ -41,7 +42,7 @@ export class OAuthController {
       // `strict` would drop it, `lax` is the correct CSRF posture here.
       sameSite: "lax",
       path: "/api/v1/auth/oauth",
-      secure: env.NODE_ENV === "production",
+      secure: cookieSecure(),
       maxAge: maxAgeMs,
     });
     res.redirect(302, redirectUrl);
@@ -91,7 +92,7 @@ export class OAuthController {
       httpOnly: true,
       sameSite: "strict",
       path: "/api/v1/auth",
-      secure: env.NODE_ENV === "production",
+      secure: cookieSecure(),
     };
   }
 }

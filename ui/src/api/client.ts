@@ -2,6 +2,7 @@ import type {
   ActivityFeedPage,
   AnnouncementDto,
   AttachmentDto,
+  AuthConfigResponse,
   AuthOAuthProvidersResponse,
   AuthResponseDto,
   AuthUserDto,
@@ -296,6 +297,26 @@ export class ApiClient {
   /** Full-page navigation target that starts the OAuth round trip. */
   oauthStartUrl(provider: string): string {
     return `${apiBaseUrl()}/auth/oauth/${provider}/start`;
+  }
+
+  /**
+   * `GET /auth/config` (TASK-38a) — public runtime flags for the sign-in
+   * screen. A failure keeps registration visible: password/registration
+   * login must never depend on this call, and the server still enforces the
+   * flag, so a false positive only shows a form that would then 403.
+   */
+  async authConfig(): Promise<AuthConfigResponse> {
+    try {
+      const body = await this.request<AuthConfigResponse>("/auth/config", {
+        auth: false,
+      });
+      return {
+        allowRegistration: body?.allowRegistration !== false,
+        allowPublicShares: body?.allowPublicShares !== false,
+      };
+    } catch {
+      return { allowRegistration: true, allowPublicShares: true };
+    }
   }
 
   /** `PATCH /users/me` — display name / avatar color (TASK-36.1). */

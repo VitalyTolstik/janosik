@@ -380,6 +380,17 @@ export interface AuthOAuthProvidersResponse {
   providers: OAuthProviderDto[];
 }
 
+/**
+ * Body of `GET /auth/config` (TASK-38a) — the sign-in screen reads it before
+ * a session exists, to decide whether to offer registration.
+ */
+export interface AuthConfigResponse {
+  /** False when the operator closed sign-up (env or the master panel). */
+  allowRegistration: boolean;
+  /** False when public read-only board links are disabled. */
+  allowPublicShares: boolean;
+}
+
 /** Body of `PATCH /users/me` (TASK-36.1): only changed fields are sent. */
 export interface UpdateProfileRequest {
   /** `null` clears the name (the UI then falls back to the email). */

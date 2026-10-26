@@ -145,6 +145,33 @@ export const env = cleanEnv(process.env, {
     desc: "Master switch for public read-only board share links",
     default: true,
   }),
+  // Open sign-up (TASK-38a, §7.8). On by default so the very first run can
+  // create its admin account; a public instance should set it to `false`
+  // after that, otherwise anyone can register. Drives the `registration_open`
+  // feature flag default and is surfaced to the UI via `GET /auth/config`.
+  ALLOW_REGISTRATION: bool({
+    desc: "Allow anyone to create an account; off = sign-up is refused",
+    default: true,
+  }),
+  // Cookie `Secure` attribute (TASK-38a, §7.8). Empty = derived: `true` in
+  // production, `false` elsewhere, so dev/e2e keep working over plain HTTP.
+  // A production install served over HTTP must set this to `false`
+  // explicitly — the API otherwise refuses to start rather than silently
+  // drop the refresh cookie (see `assertBootSecurity`).
+  COOKIE_SECURE: str({
+    desc: "Force the Secure cookie attribute; empty = auto (on in production)",
+    default: "",
+    choices: ["", "true", "false"],
+    example: "false",
+  }),
+  // Soft-delete purge window in days (TASK-38a, §7.8) — the fallback when the
+  // master panel has no retention setting. The maintenance sweep deletes
+  // entities soft-deleted longer ago than this.
+  PURGE_AFTER_DAYS: num({
+    desc: "Delete soft-deleted rows older than this many days (fallback)",
+    default: 30,
+    example: "30",
+  }),
   // Per-token budget of the public share contour (requests/min). Keys by the
   // share token, not the IP, so one hammered link is bounded regardless of
   // how many readers hit it. The OG preview is heavier, hence a tighter one.

@@ -19,6 +19,7 @@ import {
 import { JwtService } from "@nestjs/jwt";
 import type { Response } from "express";
 import { env } from "@/config/env";
+import { cookieSecure } from "@/config/security";
 import {
   ADMIN_QUEUES_COOKIE,
   ADMIN_QUEUES_PATH,
@@ -909,7 +910,7 @@ export class AdminController {
     res.cookie(ADMIN_QUEUES_COOKIE, ticket, {
       httpOnly: true,
       sameSite: "lax",
-      secure: env.NODE_ENV === "production",
+      secure: cookieSecure(),
       path: ADMIN_QUEUES_PATH,
       maxAge: 10 * 60 * 1000,
     });

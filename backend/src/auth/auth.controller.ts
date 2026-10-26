@@ -13,6 +13,7 @@ import {
 import { Throttle } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 import { env } from "@/config/env";
+import { cookieSecure } from "@/config/security";
 import { pickLocale } from "@/mailer/mail.types";
 import { REFRESH_COOKIE } from "./auth.types";
 import type { AuthResult, AuthResponse, AuthUser } from "./auth.types";
@@ -84,6 +85,19 @@ export class AuthController {
     // Path must match the set cookie or the browser keeps the old one.
     res.clearCookie(REFRESH_COOKIE, this.cookieOptions());
     return { status: "ok" };
+  }
+
+  /**
+   * Public runtime config (TASK-38a): the sign-in screen reads it before a
+   * session exists to hide the register form when sign-up is closed. No
+   * guard — it exposes only two booleans.
+   */
+  @Get("config")
+  config(): Promise<{
+    allowRegistration: boolean;
+    allowPublicShares: boolean;
+  }> {
+    return this.auth.publicConfig();
   }
 
   @UseGuards(JwtAuthGuard)
@@ -216,7 +230,7 @@ export class AuthController {
       httpOnly: true,
       sameSite: "strict",
       path: "/api/v1/auth",
-      secure: env.NODE_ENV === "production",
+      secure: cookieSecure(),
     };
   }
 }
