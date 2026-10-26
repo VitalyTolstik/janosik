@@ -7,6 +7,7 @@ import { ApiError } from "@/api/client";
 import { routes } from "@/routes";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
+import { fieldError } from "./validation";
 
 /**
  * Master login (TASK-36) — deliberately a different screen from the user
@@ -22,6 +23,12 @@ export function AdminLoginPage() {
   const [totpRequired, setTotpRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const emailError = fieldError(t, email, { required: true, email: true });
+  const canSubmit =
+    emailError === null &&
+    password !== "" &&
+    (!totpRequired || code.length === 6);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -135,7 +142,15 @@ export function AdminLoginPage() {
             </label>
           ) : null}
 
-          {error ? (
+          {email.trim() !== "" && emailError !== null ? (
+            <p
+              role="alert"
+              data-testid="admin-login-error"
+              className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
+            >
+              {emailError}
+            </p>
+          ) : error ? (
             <p
               role="alert"
               data-testid="admin-login-error"
@@ -147,7 +162,7 @@ export function AdminLoginPage() {
 
           <Button
             type="submit"
-            disabled={busy}
+            disabled={busy || !canSubmit}
             data-testid="admin-login-submit"
             className="w-full"
           >

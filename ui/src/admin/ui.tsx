@@ -124,6 +124,7 @@ export function SearchInput({
       />
       <input
         value={value}
+        maxLength={200}
         onChange={(event) => onChange(event.target.value)}
         placeholder={t("admin.common.search")}
         aria-label={t("admin.common.search")}
@@ -501,6 +502,55 @@ export function Toggle({
         )}
       />
     </button>
+  );
+}
+
+/**
+ * A labelled form field with a consistent error/counter footer (TASK-66
+ * audit). Every admin input sits in one of these, so a validation message
+ * and a character counter always look and sit the same way.
+ */
+export function Field({
+  label,
+  htmlFor,
+  error,
+  hint,
+  counter,
+  children,
+}: {
+  label?: ReactNode;
+  htmlFor?: string;
+  /** Localised message, or `null`/`undefined` when the field is valid. */
+  error?: string | null;
+  hint?: ReactNode;
+  counter?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      {label ? (
+        <label htmlFor={htmlFor} className="text-muted-foreground">
+          {label}
+        </label>
+      ) : null}
+      {children}
+      {error || counter ? (
+        <div className="flex items-start justify-between gap-2">
+          <span
+            role={error ? "alert" : undefined}
+            className="text-[11px] text-danger"
+          >
+            {error}
+          </span>
+          {counter}
+        </div>
+      ) : null}
+      {hint ? (
+        <span className="text-[11px] leading-4 text-muted-foreground">
+          {hint}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

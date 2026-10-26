@@ -36,11 +36,15 @@ import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
 import { useAdminList } from "./use-admin-list";
 import { TextCell } from "./cells";
+import { fieldError, isValid } from "./validation";
+import { Input } from "@/components/ui/input";
 import {
   Badge,
+  CharCount,
   ConfirmDialog,
   EmptyState,
   ErrorState,
+  Field,
   IdChip,
   LoadingState,
   PageHeader,
@@ -144,6 +148,12 @@ function CreateMasterDialog({
     password: string;
   } | null>(null);
 
+  const emailError = fieldError(t, email, { required: true, email: true });
+  const nameError = fieldError(t, displayName, { max: 50 });
+  const valid =
+    isValid(t, email, { required: true, email: true }) &&
+    isValid(t, displayName, { max: 50 });
+
   const reset = () => {
     setEmail("");
     setDisplayName("");
@@ -208,29 +218,31 @@ function CreateMasterDialog({
                 {t("admin.masters.create.title")}
               </DialogTitle>
             </DialogHeader>
-            <label className="block space-y-1">
-              <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                {t("admin.masters.create.email")}
-              </span>
-              <input
+            <Field
+              label={t("admin.masters.create.email")}
+              error={email.trim() === "" ? null : emailError}
+            >
+              <Input
                 type="email"
-                required
+                autoComplete="email"
                 value={email}
+                invalid={email.trim() !== "" && emailError !== null}
                 onChange={(event) => setEmail(event.target.value)}
                 data-testid="admin-master-email"
-                className="h-8 w-full rounded-lg border border-input bg-background/70 px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                {t("admin.masters.create.name")}
-              </span>
-              <input
+            </Field>
+            <Field
+              label={t("admin.masters.create.name")}
+              error={displayName.trim() === "" ? null : nameError}
+              counter={<CharCount value={displayName} max={50} />}
+            >
+              <Input
                 value={displayName}
+                maxLength={50}
+                invalid={nameError !== null}
                 onChange={(event) => setDisplayName(event.target.value)}
-                className="h-8 w-full rounded-lg border border-input bg-background/70 px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
-            </label>
+            </Field>
             <div className="flex items-start gap-2 rounded-lg border border-border bg-background/40 px-3 py-2">
               <Checkbox
                 checked={owner}
@@ -269,7 +281,7 @@ function CreateMasterDialog({
               <Button
                 size="sm"
                 type="submit"
-                disabled={busy}
+                disabled={busy || !valid}
                 data-testid="admin-master-submit"
               >
                 {t("admin.masters.create.submit")}

@@ -15,7 +15,15 @@ import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
-import { ErrorState, LoadingState, PageHeader, Panel } from "./ui";
+import {
+  CharCount,
+  ErrorState,
+  Field,
+  LoadingState,
+  PageHeader,
+  Panel,
+} from "./ui";
+import { fieldError } from "./validation";
 
 /**
  * Email service (TASK-52) — owner-only settings page for the outgoing mail
@@ -239,9 +247,30 @@ export function EmailSettingsPage() {
   const custom = draft.provider === "custom";
   const sandbox = draft.provider === "mailpit";
   const passwordStored = settings.hasPassword;
+  const hostError = custom
+    ? fieldError(t, draft.host, { required: true, max: 255 })
+    : null;
+  const portInvalid = custom && (draft.port < 1 || draft.port > 65535);
+  // The sandbox fills a default From server-side, so it is not required there.
+  const fromError = fieldError(t, draft.from, {
+    required: !sandbox,
+    max: 255,
+  });
+  const usernameError = sandbox
+    ? null
+    : fieldError(t, draft.username, { required: true, max: 255 });
+  const passwordError = fieldError(t, draft.password, { max: 1024 });
+  const testToError = fieldError(t, testTo, { required: true, email: true });
   // The sandbox needs nothing from the user — Mailpit takes no credentials.
   const saveDisabled =
-    saving || (sandbox ? false : draft.from === "" || draft.username === "");
+    saving ||
+    portInvalid ||
+    (sandbox
+      ? fromError !== null
+      : fromError !== null ||
+        usernameError !== null ||
+        passwordError !== null ||
+        hostError !== null);
 
   return (
     <div className="w-full max-w-3xl space-y-4 p-4">
@@ -328,27 +357,41 @@ export function EmailSettingsPage() {
 
         {custom ? (
           <div className="grid grid-cols-2 gap-3">
-            <label className="space-y-1 text-xs text-muted-foreground">
-              <span>{t("admin.email.host")}</span>
+            <Field
+              label={t("admin.email.host")}
+              error={hostError}
+              counter={<CharCount value={draft.host} max={255} />}
+            >
               <Input
                 value={draft.host}
+                maxLength={255}
+                invalid={hostError !== null}
                 disabled={!isOwner}
                 data-testid="admin-email-host"
                 onChange={(event) => patch({ host: event.target.value })}
               />
-            </label>
-            <label className="space-y-1 text-xs text-muted-foreground">
-              <span>{t("admin.email.port")}</span>
+            </Field>
+            <Field
+              label={t("admin.email.port")}
+              error={
+                portInvalid
+                  ? t("admin.validation.range", { min: 1, max: 65535 })
+                  : null
+              }
+            >
               <Input
                 type="number"
+                min={1}
+                max={65535}
                 value={draft.port}
+                invalid={portInvalid}
                 disabled={!isOwner}
                 data-testid="admin-email-port"
                 onChange={(event) =>
                   patch({ port: Number(event.target.value) || 0 })
                 }
               />
-            </label>
+            </Field>
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <Checkbox
                 checked={draft.secure}
@@ -360,16 +403,21 @@ export function EmailSettingsPage() {
           </div>
         ) : null}
 
-        <label className="block space-y-1 text-xs text-muted-foreground">
-          <span>{t("admin.email.from")}</span>
+        <Field
+          label={t("admin.email.from")}
+          error={fromError}
+          counter={<CharCount value={draft.from} max={255} />}
+        >
           <Input
             value={draft.from}
+            maxLength={255}
+            invalid={fromError !== null}
             disabled={!isOwner}
             placeholder="Janosik <no-reply@example.com>"
             data-testid="admin-email-from"
             onChange={(event) => patch({ from: event.target.value })}
           />
-        </label>
+        </Field>
 
         {sandbox ? (
           <p className="text-[11px] text-muted-foreground">
@@ -378,21 +426,31 @@ export function EmailSettingsPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="block space-y-1 text-xs text-muted-foreground">
-                <span>{t("admin.email.username")}</span>
+              <Field
+                label={t("admin.email.username")}
+                error={usernameError}
+                counter={<CharCount value={draft.username} max={255} />}
+              >
                 <Input
                   value={draft.username}
+                  maxLength={255}
+                  invalid={usernameError !== null}
                   disabled={!isOwner}
                   placeholder={preset?.usernameHint ?? ""}
                   data-testid="admin-email-username"
                   onChange={(event) => patch({ username: event.target.value })}
                 />
-              </label>
-              <label className="block space-y-1 text-xs text-muted-foreground">
-                <span>{t("admin.email.password")}</span>
+              </Field>
+              <Field
+                label={t("admin.email.password")}
+                error={passwordError}
+                counter={<CharCount value={draft.password} max={1024} />}
+              >
                 <Input
                   type="password"
                   value={draft.password}
+                  maxLength={1024}
+                  invalid={passwordError !== null}
                   disabled={!isOwner}
                   autoComplete="new-password"
                   placeholder={
@@ -401,7 +459,7 @@ export function EmailSettingsPage() {
                   data-testid="admin-email-password"
                   onChange={(event) => patch({ password: event.target.value })}
                 />
-              </label>
+              </Field>
             </div>
             <p className="text-[11px] text-muted-foreground">
               {t("admin.email.password.hint")}{" "}
@@ -450,19 +508,28 @@ export function EmailSettingsPage() {
             {t("admin.email.test.logHint")}
           </p>
         ) : null}
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            value={testTo}
-            disabled={!isOwner}
-            placeholder="you@example.com"
-            className="max-w-xs"
-            data-testid="admin-email-test-to"
-            onChange={(event) => setTestTo(event.target.value)}
-          />
+        <div className="flex flex-wrap items-start gap-2">
+          <div className="flex flex-col gap-1">
+            <Input
+              type="email"
+              value={testTo}
+              disabled={!isOwner}
+              placeholder="you@example.com"
+              className="max-w-xs"
+              invalid={testTo.trim() !== "" && testToError !== null}
+              data-testid="admin-email-test-to"
+              onChange={(event) => setTestTo(event.target.value)}
+            />
+            {testTo.trim() !== "" && testToError !== null ? (
+              <span role="alert" className="text-[11px] text-danger">
+                {testToError}
+              </span>
+            ) : null}
+          </div>
           <Button
             size="sm"
             variant="outline"
-            disabled={!isOwner || testTo === "" || testing}
+            disabled={!isOwner || testToError !== null || testing}
             onClick={() => void sendTest()}
             data-testid="admin-email-test-send"
           >

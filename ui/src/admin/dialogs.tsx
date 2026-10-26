@@ -14,6 +14,13 @@ import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
+import {
+  ADMIN_PASSWORD_MAX,
+  ADMIN_PASSWORD_MIN,
+  LIMITS,
+} from "@janosik/shared";
+import { CharCount, Field } from "./ui";
+import { fieldError, isValid } from "./validation";
 
 /**
  * Creation dialogs for the generic entity pages (TASK-48): users (with the
@@ -35,6 +42,21 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
     password: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const emailError = fieldError(t, email, { required: true, email: true });
+  const nameError = fieldError(t, displayName, { max: 50 });
+  const passwordError = fieldError(t, password, {
+    min: ADMIN_PASSWORD_MIN,
+    max: ADMIN_PASSWORD_MAX,
+  });
+  const valid =
+    isValid(t, email, { required: true, email: true }) &&
+    isValid(t, displayName, { max: 50 }) &&
+    (password === "" ||
+      isValid(t, password, {
+        min: ADMIN_PASSWORD_MIN,
+        max: ADMIN_PASSWORD_MAX,
+      }));
 
   const reset = () => {
     setEmail("");
@@ -157,45 +179,45 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
                   {t("admin.users.create.title")}
                 </DialogTitle>
               </DialogHeader>
-              <label className="block space-y-1">
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                  {t("admin.users.create.email")}
-                </span>
-                <input
+              <Field
+                label={t("admin.users.create.email")}
+                error={email.trim() === "" ? null : emailError}
+              >
+                <Input
                   type="email"
-                  required
+                  autoComplete="email"
                   value={email}
+                  invalid={email.trim() !== "" && emailError !== null}
                   onChange={(event) => setEmail(event.target.value)}
                   data-testid="admin-user-email"
-                  className="h-8 w-full rounded-lg border border-input bg-background/70 px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
-              </label>
-              <label className="block space-y-1">
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                  {t("admin.users.create.name")}
-                </span>
-                <input
+              </Field>
+              <Field
+                label={t("admin.users.create.name")}
+                error={displayName.trim() === "" ? null : nameError}
+                counter={<CharCount value={displayName} max={50} />}
+              >
+                <Input
                   value={displayName}
+                  maxLength={50}
+                  invalid={nameError !== null}
                   onChange={(event) => setDisplayName(event.target.value)}
-                  className="h-8 w-full rounded-lg border border-input bg-background/70 px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
-              </label>
-              <label className="block space-y-1">
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                  {t("admin.users.create.password")}
-                </span>
-                <input
+              </Field>
+              <Field
+                label={t("admin.users.create.password")}
+                error={password === "" ? null : passwordError}
+                hint={t("admin.users.create.passwordHint")}
+              >
+                <Input
                   type="password"
                   autoComplete="new-password"
                   value={password}
+                  invalid={password !== "" && passwordError !== null}
                   onChange={(event) => setPassword(event.target.value)}
                   data-testid="admin-user-password"
-                  className="h-8 w-full rounded-lg border border-input bg-background/70 px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
-                <span className="block text-[11px] text-muted-foreground">
-                  {t("admin.users.create.passwordHint")}
-                </span>
-              </label>
+              </Field>
               {error ? (
                 <p role="alert" className="text-xs text-danger">
                   {error}
@@ -214,7 +236,7 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
                 <Button
                   size="sm"
                   type="submit"
-                  disabled={busy}
+                  disabled={busy || !valid}
                   data-testid="admin-user-submit"
                 >
                   {t("admin.users.create.submit")}
@@ -236,6 +258,18 @@ export function CreateBoardButton({ reload }: { reload: () => void }) {
   const [ownerEmail, setOwnerEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const titleError = fieldError(t, title, {
+    required: true,
+    max: LIMITS.boardTitle,
+  });
+  const ownerError = fieldError(t, ownerEmail, {
+    required: true,
+    email: true,
+  });
+  const valid =
+    isValid(t, title, { required: true, max: LIMITS.boardTitle }) &&
+    isValid(t, ownerEmail, { required: true, email: true });
 
   const reset = () => {
     setTitle("");
@@ -290,31 +324,32 @@ export function CreateBoardButton({ reload }: { reload: () => void }) {
                 {t("admin.boards.create.title")}
               </DialogTitle>
             </DialogHeader>
-            <label className="block space-y-1">
-              <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                {t("admin.boards.create.titleField")}
-              </span>
-              <input
-                required
+            <Field
+              label={t("admin.boards.create.titleField")}
+              error={title.trim() === "" ? null : titleError}
+              counter={<CharCount value={title} max={LIMITS.boardTitle} />}
+            >
+              <Input
                 value={title}
+                maxLength={LIMITS.boardTitle}
+                invalid={titleError !== null}
                 onChange={(event) => setTitle(event.target.value)}
                 data-testid="admin-board-title"
-                className="h-8 w-full rounded-lg border border-input bg-background/70 px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                {t("admin.boards.create.owner")}
-              </span>
-              <input
+            </Field>
+            <Field
+              label={t("admin.boards.create.owner")}
+              error={ownerEmail.trim() === "" ? null : ownerError}
+              hint={t("admin.boards.create.ownerHint")}
+            >
+              <Input
                 type="email"
-                required
                 value={ownerEmail}
+                invalid={ownerEmail.trim() !== "" && ownerError !== null}
                 onChange={(event) => setOwnerEmail(event.target.value)}
                 data-testid="admin-board-owner"
-                className="h-8 w-full rounded-lg border border-input bg-background/70 px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
-            </label>
+            </Field>
             {error ? (
               <p role="alert" className="text-xs text-danger">
                 {error}
@@ -333,7 +368,7 @@ export function CreateBoardButton({ reload }: { reload: () => void }) {
               <Button
                 size="sm"
                 type="submit"
-                disabled={busy}
+                disabled={busy || !valid}
                 data-testid="admin-board-submit"
               >
                 {t("admin.boards.create.submit")}
@@ -366,6 +401,8 @@ export function ChangeUserEmailDialog({
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const emailError = fieldError(t, email, { required: true, email: true });
 
   /** Closing always resets, so reopening starts from a clean form. */
   const close = () => {
@@ -422,23 +459,22 @@ export function ChangeUserEmailDialog({
           ) : null}
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
-          <div className="space-y-1.5">
-            <label
-              htmlFor="admin-change-email"
-              className="text-xs font-medium text-muted-foreground"
-            >
-              {t("admin.users.changeEmail.newLabel")}
-            </label>
+          <Field
+            htmlFor="admin-change-email"
+            label={t("admin.users.changeEmail.newLabel")}
+            error={email.trim() === "" ? null : emailError}
+          >
             <Input
               id="admin-change-email"
               data-testid="admin-change-email-input"
               type="email"
               autoComplete="email"
               value={email}
+              invalid={email.trim() !== "" && emailError !== null}
               onChange={(event) => setEmail(event.target.value)}
               required
             />
-          </div>
+          </Field>
           <p className="text-[11px] text-muted-foreground">
             {t("admin.users.changeEmail.warning")}
           </p>
@@ -646,23 +682,19 @@ export function DeleteUserDialog({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">
-              {t("admin.userDetail.delete.prompt", {
-                email: user?.email ?? "",
-              })}
-            </span>
+          <Field
+            label={t("admin.userDetail.delete.prompt", {
+              email: user?.email ?? "",
+            })}
+            error={mismatch ? t("admin.userDetail.delete.mismatch") : null}
+          >
             <Input
               value={typed}
+              invalid={mismatch}
               data-testid="admin-delete-user-input"
               onChange={(event) => setTyped(event.target.value)}
             />
-          </label>
-          {mismatch ? (
-            <p role="alert" className="text-xs text-danger">
-              {t("admin.userDetail.delete.mismatch")}
-            </p>
-          ) : null}
+          </Field>
           <DialogFooter className="gap-2">
             <Button size="sm" type="button" variant="ghost" onClick={close}>
               {t("admin.common.cancel")}
@@ -766,23 +798,19 @@ export function PromoteUserDialog({
         </DialogHeader>
         {password === null ? (
           <form onSubmit={submit} className="space-y-3">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">
-                {t("admin.userDetail.promote.prompt", {
-                  email: user?.email ?? "",
-                })}
-              </span>
+            <Field
+              label={t("admin.userDetail.promote.prompt", {
+                email: user?.email ?? "",
+              })}
+              error={mismatch ? t("admin.userDetail.delete.mismatch") : null}
+            >
               <Input
                 value={typed}
+                invalid={mismatch}
                 data-testid="admin-promote-user-input"
                 onChange={(event) => setTyped(event.target.value)}
               />
-            </label>
-            {mismatch ? (
-              <p role="alert" className="text-xs text-danger">
-                {t("admin.userDetail.delete.mismatch")}
-              </p>
-            ) : null}
+            </Field>
             <DialogFooter className="gap-2">
               <Button size="sm" type="button" variant="ghost" onClick={close}>
                 {t("admin.common.cancel")}

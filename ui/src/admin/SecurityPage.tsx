@@ -142,13 +142,17 @@ export function SecurityPage() {
               <Input
                 value={code}
                 inputMode="numeric"
+                maxLength={6}
                 data-testid="admin-totp-code"
-                onChange={(event) => setCode(event.target.value)}
+                onChange={(event) =>
+                  setCode(event.target.value.replace(/\D/g, ""))
+                }
               />
             </label>
             <Button
               variant="destructive"
               size="sm"
+              disabled={code.length !== 6}
               data-testid="admin-totp-disable"
               onClick={() => void disable()}
             >
@@ -173,13 +177,16 @@ export function SecurityPage() {
               <Input
                 value={code}
                 inputMode="numeric"
+                maxLength={6}
                 data-testid="admin-totp-code"
-                onChange={(event) => setCode(event.target.value)}
+                onChange={(event) =>
+                  setCode(event.target.value.replace(/\D/g, ""))
+                }
               />
             </label>
             <Button
               size="sm"
-              disabled={busy}
+              disabled={busy || code.length !== 6}
               data-testid="admin-totp-confirm"
               onClick={() => void confirm()}
             >

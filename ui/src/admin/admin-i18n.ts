@@ -356,6 +356,11 @@ const en = {
   "admin.common.save": "Save",
   "admin.common.charsLeft": "{count} characters left",
   "admin.common.charsOver": "{count} characters over the limit",
+  "admin.validation.required": "Required",
+  "admin.validation.email": "Enter a valid email",
+  "admin.validation.tooShort": "At least {min} characters",
+  "admin.validation.tooLong": "Too long — max {max} characters",
+  "admin.validation.range": "Enter a number between {min} and {max}",
   "admin.common.increase": "Increase",
   "admin.common.decrease": "Decrease",
   "admin.common.copy": "Copy",
@@ -1234,6 +1239,11 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.common.save": "Сохранить",
   "admin.common.charsLeft": "{count} символов осталось",
   "admin.common.charsOver": "{count} символов сверх лимита",
+  "admin.validation.required": "Обязательное поле",
+  "admin.validation.email": "Введите корректный email",
+  "admin.validation.tooShort": "Минимум {min} символов",
+  "admin.validation.tooLong": "Слишком длинно — максимум {max} символов",
+  "admin.validation.range": "Введите число от {min} до {max}",
   "admin.common.increase": "Увеличить",
   "admin.common.decrease": "Уменьшить",
   "admin.common.copy": "Скопировать",
@@ -1765,10 +1775,13 @@ const DICTIONARIES = { en, ru } as const;
  * Admin translation hook — `t("admin.users.title")` plus `{param}`
  * interpolation, falling back to English for any missing Russian key.
  */
-export function useAdminT(): (
+/** The admin translator signature (both `useAdminT` and `adminMessage`). */
+export type AdminT = (
   key: AdminMessageKey,
   params?: Record<string, string | number>,
-) => string {
+) => string;
+
+export function useAdminT(): AdminT {
   const { lang } = useI18n();
   return useCallback(
     (key, params = {}) => {

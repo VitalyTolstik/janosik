@@ -1,5 +1,7 @@
 import { Transform, Type } from "class-transformer";
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsEmail,
@@ -7,7 +9,9 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from "class-validator";
 
@@ -51,6 +55,8 @@ export class AdminTransferOwnerDto {
 }
 
 export class AdminBulkDto {
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
   @IsArray()
   @IsString({ each: true })
   ids!: string[];
@@ -80,10 +86,14 @@ export class AdminUpdateOpsDto {
 
   @IsOptional()
   @IsInt()
+  @Min(1)
+  @Max(100_000)
   perUserRateLimit?: number | null;
 
   @IsOptional()
   @IsInt()
+  @Min(1)
+  @Max(3_650)
   retentionDays?: number | null;
 }
 
@@ -132,11 +142,13 @@ export class AdminCreateAnnouncementDto {
 export class AdminUpdateAnnouncementDto {
   @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(200)
   title?: string;
 
   @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(2000)
   body?: string;
 
@@ -187,10 +199,12 @@ export class AdminSendEmailDto {
 
 export class AdminUpdateEmailTemplateDto {
   @IsString()
+  @MinLength(1)
   @MaxLength(200)
   subject!: string;
 
   @IsString()
+  @MinLength(1)
   @MaxLength(20000)
   bodyHtml!: string;
 }
@@ -214,6 +228,7 @@ export class AdminUpdateSecurityDto {
 
   @IsOptional()
   @IsString()
+  @MinLength(6)
   @MaxLength(6)
   totpCode?: string;
 }

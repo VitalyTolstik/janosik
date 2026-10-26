@@ -13,6 +13,7 @@ export class AdminUpdateOAuthProviderDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(255)
   clientSecret?: string | null;
 
   @IsBoolean()

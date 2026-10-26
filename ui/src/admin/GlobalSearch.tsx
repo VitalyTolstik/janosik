@@ -185,6 +185,7 @@ export function GlobalSearchDialog({
           <input
             autoFocus
             value={query}
+            maxLength={200}
             data-testid="admin-global-search-input"
             placeholder={t("admin.search.placeholder")}
             onChange={(event) => {

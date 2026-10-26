@@ -9,7 +9,15 @@ import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
-import { ErrorState, LoadingState, PageHeader, Panel } from "./ui";
+import {
+  CharCount,
+  ErrorState,
+  Field,
+  LoadingState,
+  PageHeader,
+  Panel,
+} from "./ui";
+import { fieldError } from "./validation";
 
 /**
  * OAuth login (TASK-54) — owner-only settings page for the external
@@ -135,6 +143,13 @@ export function OAuthSettingsPage() {
         const draft = drafts[provider];
         if (settings === undefined || draft === undefined) return null;
         const label = t(LABEL_KEYS[provider]);
+        const clientIdError = fieldError(t, draft.clientId, {
+          required: true,
+          max: 255,
+        });
+        const clientSecretError = fieldError(t, draft.clientSecret, {
+          max: 255,
+        });
         return (
           <Panel key={provider} className="space-y-3 p-4">
             <div className="flex items-center justify-between">
@@ -149,35 +164,37 @@ export function OAuthSettingsPage() {
               </span>
             </div>
 
-            <div className="space-y-1">
-              <label
-                className="text-xs font-medium text-foreground"
-                htmlFor={`admin-oauth-client-id-${provider}`}
-              >
-                {t("admin.oauth.clientId")}
-              </label>
+            <Field
+              htmlFor={`admin-oauth-client-id-${provider}`}
+              label={t("admin.oauth.clientId")}
+              error={draft.clientId === "" ? null : clientIdError}
+              counter={<CharCount value={draft.clientId} max={255} />}
+            >
               <Input
                 id={`admin-oauth-client-id-${provider}`}
                 data-testid={`admin-oauth-client-id-${provider}`}
                 value={draft.clientId}
+                maxLength={255}
+                invalid={clientIdError !== null}
                 disabled={!isOwner}
                 autoComplete="off"
                 onChange={(e) => patch(provider, { clientId: e.target.value })}
               />
-            </div>
+            </Field>
 
-            <div className="space-y-1">
-              <label
-                className="text-xs font-medium text-foreground"
-                htmlFor={`admin-oauth-secret-${provider}`}
-              >
-                {t("admin.oauth.clientSecret")}
-              </label>
+            <Field
+              htmlFor={`admin-oauth-secret-${provider}`}
+              label={t("admin.oauth.clientSecret")}
+              error={draft.clientSecret === "" ? null : clientSecretError}
+              counter={<CharCount value={draft.clientSecret} max={255} />}
+            >
               <Input
                 id={`admin-oauth-secret-${provider}`}
                 data-testid={`admin-oauth-secret-${provider}`}
                 type="password"
                 value={draft.clientSecret}
+                maxLength={255}
+                invalid={clientSecretError !== null}
                 disabled={!isOwner}
                 placeholder={
                   settings.hasSecret ? t("admin.oauth.secretStored") : ""
@@ -187,7 +204,7 @@ export function OAuthSettingsPage() {
                   patch(provider, { clientSecret: e.target.value })
                 }
               />
-            </div>
+            </Field>
 
             <div className="space-y-1">
               <p className="text-xs font-medium text-foreground">
@@ -221,7 +238,11 @@ export function OAuthSettingsPage() {
                 <Button
                   size="sm"
                   data-testid={`admin-oauth-save-${provider}`}
-                  disabled={savingId === provider || draft.clientId === ""}
+                  disabled={
+                    savingId === provider ||
+                    clientIdError !== null ||
+                    clientSecretError !== null
+                  }
                   onClick={() => void save(provider)}
                 >
                   {savingId === provider

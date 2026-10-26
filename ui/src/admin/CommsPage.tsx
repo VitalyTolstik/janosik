@@ -24,6 +24,7 @@ import {
   PageHeader,
   Panel,
 } from "./ui";
+import { fieldError } from "./validation";
 
 /** Length caps mirroring the backend DTOs (AdminCreateAnnouncementDto / email). */
 const TITLE_MAX = 200;
@@ -84,6 +85,8 @@ export function CommsPage() {
     subject: string;
     html: string;
   } | null>(null);
+
+  const toError = fieldError(t, mailTo, { required: true, email: true });
 
   const load = useCallback(() => {
     adminApi
@@ -254,10 +257,17 @@ export function CommsPage() {
               {t("admin.comms.email.to")}
             </span>
             <Input
+              type="email"
               value={mailTo}
+              invalid={mailTo.trim() !== "" && toError !== null}
               data-testid="admin-email-to"
               onChange={(event) => setMailTo(event.target.value)}
             />
+            {mailTo.trim() !== "" && toError !== null ? (
+              <span role="alert" className="text-[11px] text-danger">
+                {toError}
+              </span>
+            ) : null}
           </label>
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground">
@@ -287,7 +297,13 @@ export function CommsPage() {
         <div className="mt-3 flex justify-end">
           <Button
             size="sm"
-            disabled={sending}
+            disabled={
+              sending ||
+              mailTo.trim() === "" ||
+              toError !== null ||
+              mailSubject.trim() === "" ||
+              mailBody.trim() === ""
+            }
             data-testid="admin-email-send"
             onClick={() => void send()}
           >
@@ -622,6 +638,7 @@ function RecipientPicker({
       ) : null}
       <Input
         value={query}
+        maxLength={200}
         placeholder={t("admin.comms.recipients.placeholder")}
         data-testid="admin-announcement-recipients"
         onChange={(event) => setQuery(event.target.value)}

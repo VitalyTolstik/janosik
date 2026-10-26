@@ -297,6 +297,7 @@ export function DemoPage() {
                 id="admin-demo-board-input"
                 data-testid="admin-demo-board-input"
                 value={boardId}
+                maxLength={64}
                 disabled={running || busy}
                 autoComplete="off"
                 placeholder={t("admin.demo.boardPlaceholder")}

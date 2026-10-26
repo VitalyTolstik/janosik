@@ -159,6 +159,27 @@ describe("EmailSettingsPage", () => {
     expect(probe?.body).toEqual({ to: "owner@example.com" });
   });
 
+  it("blocks the probe until the address is a valid email", async () => {
+    const server = new FakeAdminServer();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderEmailSettings();
+
+    await screen.findByText(t("admin.email.status.log"));
+    const send = screen.getByTestId("admin-email-test-send");
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByTestId("admin-email-test-to"), {
+      target: { value: "nope" },
+    });
+    expect(await screen.findByText(t("admin.validation.email"))).toBeTruthy();
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByTestId("admin-email-test-to"), {
+      target: { value: "ok@example.com" },
+    });
+    expect((send as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("operators see the page read-only", async () => {
     const server = new FakeAdminServer();
     server.sessionRole = "OPERATOR";

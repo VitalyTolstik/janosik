@@ -33,6 +33,7 @@ import {
 import {
   Badge,
   ErrorState,
+  Field,
   LoadingState,
   PageHeader,
   Panel,
@@ -40,6 +41,7 @@ import {
   Td,
   Th,
 } from "./ui";
+import { fieldError } from "./validation";
 
 /**
  * Board detail (TASK-48) — meta, live counters, the member roster, columns
@@ -87,6 +89,11 @@ export function BoardDetailPage() {
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState("MEMBER");
   const [adding, setAdding] = useState(false);
+
+  const memberEmailError = fieldError(t, newEmail, {
+    required: true,
+    email: true,
+  });
 
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -426,16 +433,18 @@ export function BoardDetailPage() {
             <DialogTitle>{t("admin.boardDetail.member.add")}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">
-                {t("admin.boardDetail.member.email")}
-              </span>
+            <Field
+              label={t("admin.boardDetail.member.email")}
+              error={newEmail.trim() === "" ? null : memberEmailError}
+            >
               <Input
+                type="email"
                 value={newEmail}
+                invalid={newEmail.trim() !== "" && memberEmailError !== null}
                 data-testid="admin-add-member-email"
                 onChange={(event) => setNewEmail(event.target.value)}
               />
-            </label>
+            </Field>
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">
                 {t("admin.userDetail.col.role")}
@@ -458,7 +467,7 @@ export function BoardDetailPage() {
             </Button>
             <Button
               size="sm"
-              disabled={adding || newEmail.trim() === ""}
+              disabled={adding || memberEmailError !== null}
               data-testid="admin-add-member-submit"
               onClick={() => void addMember()}
             >

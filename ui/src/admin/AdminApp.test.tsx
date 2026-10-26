@@ -317,6 +317,19 @@ describe("AdminApp", () => {
     expect(await screen.findByText("new@example.com")).toBeTruthy();
   });
 
+  it("validates the create-user email before submitting", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users");
+
+    fireEvent.click(await screen.findByTestId("admin-create-user"));
+    fireEvent.change(screen.getByTestId("admin-user-email"), {
+      target: { value: "not-an-email" },
+    });
+    expect(await screen.findByText(t("admin.validation.email"))).toBeTruthy();
+    expect(screen.getByTestId("admin-user-submit")).toBeDisabled();
+  });
+
   it("surfaces a list failure and retries on demand", async () => {
     const server = serverWith();
     server.failNext = ["/admin/entities/users"];

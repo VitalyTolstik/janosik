@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import type { BoardAggregate } from "@janosik/shared";
+import { LIMITS } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
@@ -223,6 +224,7 @@ export function BoardContentPage() {
                       <input
                         autoFocus
                         value={renaming.value}
+                        maxLength={LIMITS.columnTitle}
                         onChange={(event) =>
                           setRenaming({
                             id: column.id,
@@ -301,6 +303,7 @@ export function BoardContentPage() {
           <div className="flex items-center gap-1.5 border-t border-border p-2">
             <input
               value={newColumn}
+              maxLength={LIMITS.columnTitle}
               onChange={(event) => setNewColumn(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") addColumn();
@@ -353,6 +356,7 @@ export function BoardContentPage() {
                         <input
                           autoFocus
                           value={renaming.value}
+                          maxLength={LIMITS.cardTitle}
                           onChange={(event) =>
                             setRenaming({
                               id: card.id,
@@ -423,6 +427,7 @@ export function BoardContentPage() {
               <div className="flex items-center gap-1.5 border-t border-border p-2">
                 <input
                   value={newCard}
+                  maxLength={LIMITS.cardTitle}
                   onChange={(event) => setNewCard(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") addCard();
