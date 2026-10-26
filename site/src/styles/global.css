@@ -681,11 +681,26 @@ p {
 }
 
 .slot-media {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   /* Shows behind the poster and during the brief decode of the first frame. */
   background: var(--surface);
+}
+
+/* Clips are baked per theme: show the one that matches `data-theme`. */
+.slot-media--dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .slot-media--light {
+  display: none;
+}
+
+:root[data-theme="dark"] .slot-media--dark {
+  display: block;
 }
 
 .slot-top {

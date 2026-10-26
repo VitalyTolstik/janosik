@@ -20,9 +20,10 @@ npm run typecheck -w video
 npm run lint -w video
 ```
 
-`render` writes, per clip, an `mp4` (H.264), a `webm` (VP8) and a `jpg` poster
-into `site/public/media/`. Those files **are committed** — they are the landing
-page's assets — so the site build never needs Remotion.
+`render` writes, per clip and per theme, an `mp4` (H.264), a `webm` (VP8) and a
+`jpg` poster into `site/public/media/` — `<slug>.*` for light, `<slug>-dark.*`
+for dark. Those files **are committed** — they are the landing page's assets —
+so the site build never needs Remotion.
 
 ## Structure
 
@@ -60,8 +61,9 @@ and loops seamlessly (its last frame returns to the first).
 ## Theme
 
 Clips take a `theme` prop (`"light"` default, `"dark"` for the app palette).
-Flip it in the Studio or per composition in `Root.tsx`. The site renders the
-light clips.
+Flip it in the Studio or per composition in `Root.tsx`. Because a clip is baked
+video, it cannot follow CSS variables at runtime — so `render` writes both
+variants and `MediaSlot` shows the one matching the page's `data-theme`.
 
 ## Adding or changing a clip
 

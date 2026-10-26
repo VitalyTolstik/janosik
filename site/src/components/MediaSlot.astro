@@ -3,12 +3,14 @@
  * A media-ready frame for the landing page.
  *
  * Every slot reserves a 16:10 frame (the clips render at 1280×800), so a clip
- * drops in with no layout shift. Pass `mp4`/`webm`/`poster` to show a feature
- * clip; without them the slot draws a lightweight, on-brand board mockup.
+ * drops in with no layout shift. Pass `mp4`/`webm`/`poster` (and the `*Dark`
+ * pair) to show a feature clip; without them the slot draws a lightweight,
+ * on-brand board mockup.
  *
- * Clips are lazy: `preload="none"` keeps them off the wire until they scroll
- * into view (`BaseLayout` plays them via IntersectionObserver), and the poster
- * is the fallback for `prefers-reduced-motion` and no-JS.
+ * Clips are baked per theme, so both variants are rendered and CSS shows the
+ * one matching `data-theme`. They are lazy: `preload="none"` keeps them off the
+ * wire until they scroll into view (`BaseLayout` plays the visible one), and
+ * the poster is the fallback for `prefers-reduced-motion` and no-JS.
  */
 export type MediaVariant =
   "board" | "realtime" | "cards" | "sharing" | "selfhost" | "swarm";
@@ -18,11 +20,15 @@ interface Props {
   variant?: MediaVariant;
   /** Accessible description of what the slot shows. */
   label: string;
-  /** Feature clip sources, relative to the deploy base. */
+  /** Light-theme clip sources, relative to the deploy base. */
   mp4?: string;
   webm?: string;
-  /** Poster frame — also the reduced-motion / no-JS fallback. */
+  /** Light-theme poster — also the reduced-motion / no-JS fallback. */
   poster?: string;
+  /** Dark-theme clip sources. */
+  mp4Dark?: string;
+  webmDark?: string;
+  posterDark?: string;
   class?: string;
 }
 
@@ -32,6 +38,9 @@ const {
   mp4,
   webm,
   poster,
+  mp4Dark,
+  webmDark,
+  posterDark,
   class: className,
 } = Astro.props;
 
@@ -44,19 +53,34 @@ const swarmColumns = [2, 3, 2, 1];
 <figure class:list={["slot", `slot--${variant}`, className]} data-slot="media">
   <div class="slot-frame" role="img" aria-label={label}>
     {mp4 || webm ? (
-      <video
-        class="slot-media"
-        poster={poster}
-        muted
-        loop
-        playsinline
-        preload="none"
-        aria-hidden="true"
-        data-lazy-video
-      >
-        {webm && <source src={webm} type="video/webm" />}
-        {mp4 && <source src={mp4} type="video/mp4" />}
-      </video>
+      <>
+        <video
+          class="slot-media slot-media--light"
+          poster={poster}
+          muted
+          loop
+          playsinline
+          preload="none"
+          aria-hidden="true"
+          data-lazy-video
+        >
+          {webm && <source src={webm} type="video/webm" />}
+          {mp4 && <source src={mp4} type="video/mp4" />}
+        </video>
+        <video
+          class="slot-media slot-media--dark"
+          poster={posterDark}
+          muted
+          loop
+          playsinline
+          preload="none"
+          aria-hidden="true"
+          data-lazy-video
+        >
+          {webmDark && <source src={webmDark} type="video/webm" />}
+          {mp4Dark && <source src={mp4Dark} type="video/mp4" />}
+        </video>
+      </>
     ) : (
       <>
         <div class="slot-top">

@@ -72,31 +72,50 @@ const t = useTranslations(lang);
     </main>
     <Footer lang={lang} />
     <script>
-      // Feature clips use `preload="none"`: play them only once they scroll
-      // into view, and leave the poster in place for reduced-motion users (the
-      // poster also covers the no-JS case). Bundled once by Astro.
+      // Feature clips ship in both themes (they are baked, so they cannot read
+      // CSS variables at runtime). Play only the variant matching the current
+      // theme, and only once it scrolls into view; leave the poster for
+      // reduced-motion / no-JS. Bundled once by Astro.
       const reduce = window.matchMedia(
         "(prefers-reduced-motion: reduce)",
       ).matches;
-      if (!reduce && "IntersectionObserver" in window) {
-        const observer = new IntersectionObserver(
-          (entries) => {
-            for (const entry of entries) {
-              if (!entry.isIntersecting) continue;
-              const video = entry.target;
-              if (video instanceof HTMLVideoElement) {
-                video.play().catch(() => {});
-              }
-              observer.unobserve(video);
+      const clips = Array.from(
+        document.querySelectorAll("video[data-lazy-video]"),
+      ).filter((el): el is HTMLVideoElement => el instanceof HTMLVideoElement);
+      if (!reduce && clips.length > 0) {
+        const inView = new WeakSet<HTMLVideoElement>();
+        const sync = () => {
+          for (const video of clips) {
+            const shown = video.offsetParent !== null;
+            if (shown && inView.has(video)) {
+              video.play().catch(() => {});
+            } else {
+              video.pause();
             }
-          },
-          { rootMargin: "200px 0px" },
-        );
-        for (const video of document.querySelectorAll(
-          "video[data-lazy-video]",
-        )) {
-          observer.observe(video);
+          }
+        };
+        if ("IntersectionObserver" in window) {
+          const observer = new IntersectionObserver(
+            (entries) => {
+              for (const entry of entries) {
+                const el = entry.target;
+                if (!(el instanceof HTMLVideoElement)) continue;
+                if (entry.isIntersecting) inView.add(el);
+                else inView.delete(el);
+              }
+              sync();
+            },
+            { rootMargin: "200px 0px" },
+          );
+          for (const video of clips) {
+            observer.observe(video);
+          }
         }
+        // The theme toggle rewrites `data-theme`; swap which clip plays.
+        new MutationObserver(sync).observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ["data-theme"],
+        });
       }
     </script>
   </body>
