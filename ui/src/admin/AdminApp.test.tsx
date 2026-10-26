@@ -141,6 +141,41 @@ describe("AdminApp", () => {
     expect(await screen.findByTestId("admin-login-form")).toBeTruthy();
   });
 
+  it("asks for the two-factor code when the master has 2FA on (TASK-65)", async () => {
+    const server = serverWith();
+    server.sessionAlive = false;
+    server.loginTotpCode = "123456";
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin();
+
+    await screen.findByTestId("admin-login-form");
+    await login();
+
+    // The password alone is refused; the one-time-code field appears.
+    const totp = await screen.findByTestId("admin-login-totp");
+    expect(screen.queryByText(t("admin.dashboard.activity"))).toBeNull();
+
+    fireEvent.change(totp, { target: { value: "123456" } });
+    fireEvent.click(screen.getByTestId("admin-login-submit"));
+    expect(await screen.findByText(t("admin.dashboard.activity"))).toBeTruthy();
+  });
+
+  it("shows an invalid two-factor code error", async () => {
+    const server = serverWith();
+    server.sessionAlive = false;
+    server.loginTotpCode = "123456";
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin();
+
+    await screen.findByTestId("admin-login-form");
+    await login();
+    const totp = await screen.findByTestId("admin-login-totp");
+    fireEvent.change(totp, { target: { value: "000000" } });
+    fireEvent.click(screen.getByTestId("admin-login-submit"));
+
+    expect(await screen.findByText(t("admin.login.totpInvalid"))).toBeTruthy();
+  });
+
   it("lists users, blocks one and keeps the action recorded", async () => {
     const state = serverWith().state;
     state.users = [adminUser()];
@@ -678,5 +713,15 @@ describe("admin content and security pages", () => {
     expect(await screen.findByText("0.1.0-test")).toBeTruthy();
     expect(screen.getByText("0m 42s")).toBeTruthy();
     expect(screen.getByText("test")).toBeTruthy();
+  });
+
+  it("states the security page is scoped to the master account", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/security");
+
+    expect(await screen.findByTestId("admin-security-scope")).toHaveTextContent(
+      t("admin.security.scope"),
+    );
   });
 });

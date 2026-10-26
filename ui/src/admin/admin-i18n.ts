@@ -289,7 +289,10 @@ const en = {
   "admin.observability.fail": "fail",
 
   "admin.security.title": "Security",
-  "admin.security.subtitle": "Two-factor, IP allowlist and alerts",
+  "admin.security.subtitle":
+    "Your master account — two-factor, IP allowlist and sign-in alerts",
+  "admin.security.scope":
+    "These settings apply only to your own master account. Regular users are not affected — a master signs in with the same credentials everywhere, but 2FA and the IP allowlist gate the master panel.",
   "admin.security.totp": "Two-factor authentication",
   "admin.security.totp.enable": "Enable 2FA",
   "admin.security.totp.disable": "Disable 2FA",
@@ -317,6 +320,9 @@ const en = {
   "admin.login.subtitle": "Restricted area — platform operators only",
   "admin.login.email": "Email",
   "admin.login.password": "Password",
+  "admin.login.totpCode": "Two-factor code",
+  "admin.login.totpHint": "Enter the 6-digit code from your authenticator app.",
+  "admin.login.totpInvalid": "Invalid two-factor code",
   "admin.login.submit": "Sign in",
   "admin.login.submitting": "Signing in…",
   "admin.login.error": "Invalid credentials",
@@ -1141,7 +1147,10 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.observability.fail": "сбой",
 
   "admin.security.title": "Безопасность",
-  "admin.security.subtitle": "Двухфакторка, IP-allowlist и алерты",
+  "admin.security.subtitle":
+    "Ваш мастер-аккаунт — 2FA, IP-allowlist и алерты о входах",
+  "admin.security.scope":
+    "Эти настройки действуют только на ваш мастер-аккаунт. Обычных пользователей они не касаются: мастер входит одними данными везде, но 2FA и IP-allowlist защищают вход в мастер-панель.",
   "admin.security.totp": "Двухфакторная аутентификация",
   "admin.security.totp.enable": "Включить 2FA",
   "admin.security.totp.disable": "Отключить 2FA",
@@ -1169,6 +1178,10 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.login.subtitle": "Закрытая зона — только операторы платформы",
   "admin.login.email": "Email",
   "admin.login.password": "Пароль",
+  "admin.login.totpCode": "Код двухфакторной аутентификации",
+  "admin.login.totpHint":
+    "Введите 6-значный код из приложения-аутентификатора.",
+  "admin.login.totpInvalid": "Неверный код двухфакторной аутентификации",
   "admin.login.submit": "Войти",
   "admin.login.submitting": "Входим…",
   "admin.login.error": "Неверные данные",

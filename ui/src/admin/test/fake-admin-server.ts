@@ -274,6 +274,11 @@ export class FakeAdminServer {
   /** When set, the refresh endpoint answers as if no cookie existed. */
   sessionAlive = true;
   /**
+   * TASK-65: when set, `/admin/auth/login` requires this exact `totpCode`
+   * (and rejects a missing/wrong one with `code: "totp_required"`).
+   */
+  loginTotpCode: string | null = null;
+  /**
    * Role of the session the fake serves. `listMasters`-style endpoints
    * answer 403 unless it is OWNER, mirroring the server guard.
    */
@@ -476,6 +481,20 @@ export class FakeAdminServer {
     if (path === "/admin/auth/login") {
       if (jsonBody?.password !== "secret pass") {
         return this.json({ message: "Invalid credentials" }, 401);
+      }
+      // TASK-65: when a code is required, the password alone is not enough —
+      // mirrors the backend's `code: "totp_required"` signal.
+      if (
+        this.loginTotpCode !== null &&
+        jsonBody?.totpCode !== this.loginTotpCode
+      ) {
+        return this.json(
+          {
+            message: "A valid two-factor code is required",
+            code: "totp_required",
+          },
+          401,
+        );
       }
       return this.json({ accessToken: "token-1", admin });
     }

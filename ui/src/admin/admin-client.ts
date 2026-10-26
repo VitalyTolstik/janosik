@@ -118,10 +118,18 @@ export class AdminApiClient {
     this.accessToken = null;
   }
 
-  async login(email: string, password: string): Promise<AdminAuthResponseDto> {
+  async login(
+    email: string,
+    password: string,
+    totpCode?: string,
+  ): Promise<AdminAuthResponseDto> {
     const response = await this.request<AdminAuthResponseDto>(
       "/admin/auth/login",
-      { method: "POST", body: { email, password }, auth: false },
+      {
+        method: "POST",
+        body: { email, password, totpCode },
+        auth: false,
+      },
     );
     this.accessToken = response.accessToken;
     return response;

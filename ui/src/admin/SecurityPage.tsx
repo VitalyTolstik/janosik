@@ -114,6 +114,13 @@ export function SecurityPage() {
         subtitle={t("admin.security.subtitle")}
       />
 
+      <p
+        className="rounded-lg border border-border bg-hover/60 px-3 py-2 text-xs text-muted-foreground"
+        data-testid="admin-security-scope"
+      >
+        {t("admin.security.scope")}
+      </p>
+
       <Panel className="p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium">{t("admin.security.totp")}</h2>

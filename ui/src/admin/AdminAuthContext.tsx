@@ -23,7 +23,7 @@ export type AdminAuthStatus = "boot" | "anonymous" | "authenticated";
 export interface AdminAuthValue {
   status: AdminAuthStatus;
   admin: AdminUserDto | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, totpCode?: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -61,8 +61,8 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (email: string, password: string) => {
-      applySession(await adminApi.login(email, password));
+    async (email: string, password: string, totpCode?: string) => {
+      applySession(await adminApi.login(email, password, totpCode));
     },
     [applySession],
   );

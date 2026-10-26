@@ -18,6 +18,8 @@ export function AdminLoginPage() {
   const { login } = useAdminAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [totpRequired, setTotpRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -26,13 +28,25 @@ export function AdminLoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await login(email.trim(), password);
+      await login(
+        email.trim(),
+        password,
+        totpRequired ? code.trim() : undefined,
+      );
     } catch (cause) {
-      if (cause instanceof ApiError && cause.status === 429) {
-        setError(t("admin.login.locked"));
-      } else {
-        setError(t("admin.login.error"));
+      if (cause instanceof ApiError) {
+        const body = cause.body as { code?: unknown } | null;
+        if (body?.code === "totp_required") {
+          setTotpRequired(true);
+          setError(code.trim() === "" ? null : t("admin.login.totpInvalid"));
+          return;
+        }
+        if (cause.status === 429) {
+          setError(t("admin.login.locked"));
+          return;
+        }
       }
+      setError(t("admin.login.error"));
     } finally {
       setBusy(false);
     }
@@ -96,6 +110,30 @@ export function AdminLoginPage() {
               className="h-9 w-full rounded-lg border border-input bg-background/70 px-3 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
             />
           </label>
+
+          {totpRequired ? (
+            <label className="block space-y-1">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t("admin.login.totpCode")}
+              </span>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+                maxLength={6}
+                value={code}
+                onChange={(event) =>
+                  setCode(event.target.value.replace(/\D/g, ""))
+                }
+                data-testid="admin-login-totp"
+                className="h-9 w-full rounded-lg border border-input bg-background/70 px-3 text-center font-mono text-lg tracking-[0.3em] text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <span className="block text-[11px] leading-4 text-muted-foreground">
+                {t("admin.login.totpHint")}
+              </span>
+            </label>
+          ) : null}
 
           {error ? (
             <p

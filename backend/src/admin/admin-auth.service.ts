@@ -108,6 +108,8 @@ export class AdminAuthService {
     }
 
     // Two-factor (TASK-65): when enabled, the password alone is not enough.
+    // `code: "totp_required"` lets the login screen know it must reveal the
+    // one-time-code field (as opposed to a plain wrong-password 401).
     const totpSecret = await this.security.requiredSecret(admin.id);
     if (totpSecret) {
       if (
@@ -115,7 +117,10 @@ export class AdminAuthService {
         !this.security.verifyCode(totpSecret, dto.totpCode)
       ) {
         await this.auditLoginFailed(dto.email, admin.id, "2fa required");
-        throw new UnauthorizedException("A valid two-factor code is required");
+        throw new UnauthorizedException({
+          message: "A valid two-factor code is required",
+          code: "totp_required",
+        });
       }
     }
 
