@@ -1593,6 +1593,19 @@ TASK-36 и TASK-37.)*
 | 52 | TASK-72 `queue-comms-scheduled` ✅ | `feature/TASK-72-queue-comms-scheduled` | §7.11: **коммуникации по расписанию** (cron + уже готовая `broadcast`-очередь): дайджесты (что изменилось на досках за период) и **напоминания по `Card.dueDate`** (за N часов/в день срока), опционально — «заброшенные» карточки. Движок: Job Scheduler ставит периодическую джобу `digest`/`due-reminders`, которая собирает получателей (участники с принятым членством, не disabled), рендерит шаблон (reuse TASK-62 редактора шаблонов) и вешает веер в `BroadcastQueueService`; частоты/вкл-выкл из панели Comms/Ops; `List-Unsubscribe` заголовок и учёт отписок (поле `User.notifyDigest`?) для доставляемости. Аудит `comms.digest_sent`/`comms.reminder_sent` | дайджест/напоминания уходят по расписанию, а не вручную; получатели уважают роли/статус/отписку; частоты настраиваются из панели; шаблоны редактируются; e2e: due-карточка → напоминание в outbox; гейты |
 | 53 | TASK-73 `bull-board` ✅ | `feature/TASK-73-bull-board` | §7.11: **панель очередей** — `@bull-board` (`@bull-board/api` + `@bull-board/nestjs` + `@bull-board/ui`) поверх BullMQ: страница `/admin/queues` со списком всех очередей (broadcast/mail/transcode/maintenance/media/exports/demo) — счётчики wait/active/completed/failed/delayed, разбор джоб, ретрай/удаление, очистка. Требование безопасности: дашборд **только за `AdminJwtAuthGuard`** (Bull Board отдаёт статику, cookie-авторизация иная — маунт внутри admin-контура, OWNER-only, `disconnectOnLogout`); nginx/CSP не ломать (дашборд грузит свои ассеты `@bull-board/ui`); не светить в проде по умолчанию — флаг `QUEUES_DASHBOARD=true`. Ссылка в сайдбаре Ops (как отдельный пункт или iframe внутри Observability). Пакеты добавить в deps backend, версии согласовать с `@nestjs/bullmq@12`/`bullmq@6` | в панели видно все очереди и их джобы; можно ретраить/чистить; открыт только OWNER-мастеру за admin-контуром, по умолчанию выключен; сборка/lint/size не ломаются; гейты |
 | 54 | TASK-74 `realtime-redis-fanout` ✅ | `feature/TASK-74-realtime-redis-fanout` | §7.11 (не Bull, но тот же Redis): **развязать realtime на несколько нод** — сейчас `RealtimeService` это in-process rxjs `Subject` с явным швом «Redis pub/sub» в доках; смоканный `broadcast`-контур уже требует Redis, поэтому перевести fan-out SSE на Redis pub/sub (`publish`/`subscribe`, канал на доску), сохранив `seq`-догон из лога и presence (presence остаётся per-node или тоже через Redis с TTL). Один инстанс → поведение не меняется | две ноды видят изменения друг друга по SSE; догон `?since=` не дублирует; presence не мигает; single-node путь без Redis не деградирует; гейты |
+| 55 | TASK-122 `brand-system` | `feature/TASK-122-brand-system` | §7.12: единый источник бренда — лого, палитра, типографика, tone-of-voice/позиционирование; пакет `brand/` (токены + ассеты) потребляют `site`, `video` и `ui` | сайт и видео собираются на общих токенах; в `ui` нет расхождения палитры/шрифтов; бренд-гайд в `docs/` |
+| 56 | TASK-123 `marketing-site-scaffold` | `feature/TASK-123-marketing-site-scaffold` | §7.12: новый воркспейс `site/` (Astro + заготовка Starlight), шелл (шапка/футер/навигация), маршруты `/`,`/pricing`,`/docs`, i18n en/ru, темы, SEO-база (meta/OG/sitemap/robots/canonical), CI-деплой статики | `npm run build -w site` зелёный; пустой сайт деплоится по CI; en/ru и тема работают; Lighthouse ≥95; CTA ведут в приложение |
+| 57 | TASK-124 `landing-hero-features` | `feature/TASK-124-landing-hero-features` | §7.12: маркетинг-лендинг «как у Miro» — герой+CTA, секции всех ключевых фич со **слотами под медиа** (плейсхолдеры до Ф2), «как это работает», соц-пруф/GitHub, FAQ, финальный CTA, футер | покрыты все ключевые фичи; слоты под медиа готовы; неавторизованный видит лендинг и уходит в логин/регистрацию; мобилка без гор. скролла; en+ru |
+| 58 | TASK-125 `landing-pricing` | `feature/TASK-125-landing-pricing` | §7.12: страница `/pricing` — планы (Self-hosted/Hosted/Pro/Team/Enterprise), таблица сравнения, лимиты per-plan, CTA, FAQ по оплате/лицензии; связь с TASK-131 | тарифы с понятной сеткой и CTA; тексты en+ru; согласовано с лицензией self-hosted; якорь с лендинга |
+| 59 | TASK-126 `site-copy-cro-seo` | `feature/TASK-126-site-copy-cro-seo` | §7.12: копирайт всех страниц, CRO-проход, SEO (title/description/семантика), AI-SEO, `schema-markup` (Organization/SoftwareApplication/FAQ/Product), privacy-friendly аналитика и трекинг событий, OG-картинки | тексты финализированы en+ru; SEO-чеклист пройден; structured-data валиден; ключевые CTA покрыты событиями; Lighthouse SEO ≥95 |
+| 60 | TASK-127 `site-a11y-perf-audit` | `feature/TASK-127-site-a11y-perf-audit` | §7.12: аудит по Web Interface Guidelines (spacing/typography/interaction/a11y) + визуальный QA (`impeccable`) — контраст, фокус/клавиатура, мобильные таргеты, перф-бюджеты (LCP/CLS), reduced-motion | нет критичных a11y-проблем; Lighthouse a11y/perf ≥95 на лендинге и тарифах; мобилка вылизана; чеклист-отчёт в PR |
+| 61 | TASK-128 `video-scaffold` | `feature/TASK-128-video-scaffold` | §7.12: воркспейс `video/` (Remotion) на общих бренд-токенах; композиции, скрипт рендера mp4+webm+poster в `site/public/media`, параметризация (тема/размер/fps), CI-рендер | `npm run render -w video` кладёт mp4/webm+poster в `site/public/media`; образец-композиция на токенах; Remotion не тянется в бандл `site` |
+| 62 | TASK-129 `video-feature-clips` | `feature/TASK-129-video-feature-clips` | §7.12: сценарии и рендер клипов фич на реальных состояниях UI (drag&drop, realtime, комментарии, paste-медиа, шаринг, календарь/таблица, оффлайн/PWA, админка), единый бренд-стиль, 5–15 c, луп-friendly, гифки-превью | клипы покрывают все секции лендинга; визуально консистентны; корректны в лупе; reduced-motion → статичный постер |
+| 63 | TASK-130 `site-media-integration` | `feature/TASK-130-site-media-integration` | §7.12: подстановка клипов/скринов в секции — `<video autoplay muted loop playsinline poster preload="none">`, ленивая загрузка, no-CLS, фолбэк на постер/reduced-motion, OG/превью, оптимизация размеров | лендинг показывает реальные клипы; видео не грузятся до вьюпорта; нет CLS; reduced-motion → постеры; вес страницы в бюджете |
+| 64 | TASK-131 `billing-subscription` | `feature/TASK-131-billing-subscription` | §7.12: подписка hosted-варианта — выбор провайдера (Stripe/Paddle/ЮKassa/CloudPayments), планы и лимиты per-plan в backend, checkout, идемпотентные вебхуки, статус в UI/админке, self-hosted-лицензия | подписку можно оформить/отменить; лимиты плана реально применяются; вебхуки идемпотентны; статус виден; аудит; e2e на жизненный цикл |
+| 65 | TASK-132 `docs-site` | `feature/TASK-132-docs-site` | §7.12: Starlight на `/docs` в `site/` — структура (Начало/Self-hosting/User guide/API/FAQ/Changelog), поиск, версии, i18n en/ru, тема; миграция `README`, `docs/*`, `SECURITY.md`, `CHANGELOG.md` | доки доступны на `/docs`; старые файлы мигрированы без битых ссылок; поиск работает; en+ru; сборка/деплой в CI |
+| 66 | TASK-133 `docs-user-guide` | `feature/TASK-133-docs-user-guide` | §7.12: пользовательская документация — гайды по всем фичам, гифки/скрины из `video/`, «первые шаги», FAQ/troubleshooting, навигация и поиск | покрыты все пользовательские фичи; есть скринкасты/гифки; навигация/поиск работают; en+ru |
+| 67 | TASK-134 `docs-api-reference` | `feature/TASK-134-docs-api-reference` | §7.12: API-reference (из `shared/src/api.ts` DTO / OpenAPI) с примерами curl, self-hosting runbooks (бэкап/восстановление/апгрейд/мониторинг/troubleshooting), ADR-раздел, ссылка на security-гайд | reference покрывает публичные роуты; примеры рабочие; runbooks проверены на чистой машине; ADR-структура заведена |
 
 > **TASK-38a/38b выполнены (2026-10-26).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -2359,6 +2372,246 @@ OWNER-only на сервере (`assertOwner`, `admin/admin.service.ts` + гей
 
 UI (`OpsPage`, `CommsPage`) при `admin.role !== "OWNER"` показывает состояние
 read-only и дисейблит контролы; сервер — единственный источник истины.
+
+---
+
+### 7.12. Сайт, документация и видео о продукте (TASK-122…134)
+
+> **Зачем.** У проекта нет ни маркетинг-сайта, ни сайта документации — есть только
+> `README.md` и три markdown-гайда в `docs/`. Продукт продаётся двумя способами
+> (self-hosted open-source и hosted-подписка), поэтому нужен витринный сайт «как у
+> Miro» с показом фич (видео/скрины) и отдельный доковый сайт.
+>
+> **Решения (зафиксировать в §7.0 при старте первой задачи волны).**
+> - **Стек сайта и доков — Astro** (`site/`): маркетинг-страницы + Astro Starlight
+>   на `/docs` в одном проекте. Причины: статика/SEO из коробки, MDX-контент,
+>   React-острова переиспользуют наш UI-код, Starlight даёт доки/поиск/версии без
+>   велосипеда, один toolchain (Vitest) на `site`+docs. Альтернатива (расширять
+>   `ui/` Vite) отклонена: маркетинг и приложение — разные ритмы и бандлы.
+> - **Видео — Remotion** (`video/`): React → mp4/webm, детерминированно, без
+>   внешних сервисов; рендер кладётся в `site/public/media`.
+> - **Единый источник бренда** — `brand/` (токены) → `site`, `video`, `ui`.
+> - **Медиа не в JS-бандл** — только `<video>`/`<img>` со `poster`, lazy.
+> - **Связь с TASK-32 `landing-intro`:** TASK-32 (презентационная страница
+>   неавторизованным внутри приложения) остаётся точкой входа приложения; TASK-124
+>   — внешний маркетинг-лендинг. Общий бренд и, где можно, общие тексты. Открытый
+>   вопрос: не заменяет ли `site/` страницу TASK-32 — решить в TASK-123.
+
+**Раскладка репозитория**
+
+```
+brand/    токены бренда (палитра/шрифты/лого) — единственный источник
+site/     Astro: маркетинг-лендинг + Starlight-доки (/docs) + public/media
+video/    Remotion-проект: сценарии клипов фич, рендер → site/public/media
+```
+
+`site` и `video` — новые npm-воркспейсы; `brand` — пакет токенов, который
+импортируют `site`, `video` и (частично) `ui`.
+
+**Фазы**
+
+| Фаза | TASK | Итог фазы |
+| --- | --- | --- |
+| Ф0 Бренд | 122 | Единые токены и тон; сайт/приложение/видео наследуют |
+| Ф1 Сайт | 123–127 | Лендинг с секциями фич, тарифы, a11y/перф, SEO |
+| Ф2 Видео | 128–130 | Клипы фич отрендерены и встроены в лендинг |
+| Ф3 Подписка | 131 | Hosted-оплата и планы (после решения владельца) |
+| Ф4 Доки | 132–134 | Доковый сайт: self-host, user guide, API |
+
+**Порядок и зависимости:** 122 → 123 → 124 → {125, 126, 127}; 128 → 129 → 130
+(129 требует стабильного UI приложения); 131 — независимо, ждёт решения о
+провайдере; 132 — можно начинать сразу после 122 (токены), 133/134 — после 132.
+Скилы ставятся **по фазам** (не все сразу).
+
+**Карта скилов → задачи**
+
+| Задача | Скил(ы) |
+| --- | --- |
+| 122 | `leonxlnx/taste-skill@brandkit` (опц.), `emilkowalski/skills@emil-design-eng` |
+| 123 | `vercel-labs/agent-skills@vercel-composition-patterns` |
+| 124 | `anthropics/skills@frontend-design`, `vercel-labs/agent-skills@web-design-guidelines` |
+| 125 | `coreyhaines31/marketingskills@pricing-strategy` |
+| 126 | `coreyhaines31/marketingskills@{copywriting,page-cro,seo-audit,ai-seo,schema-markup,analytics-tracking}` |
+| 127 | `vercel-labs/agent-skills@web-design-guidelines`, `pbakaus/impeccable` |
+| 128–129 | `remotion-dev/skills@remotion-best-practices` (+ опц. `heygen-com/hyperframes@product-launch-video`) |
+| 130 | `coreyhaines31/marketingskills@image` (опц.) |
+| 131 | — (решить провайдера) |
+| 132 | `anthropics/skills@doc-coauthoring` |
+| 133 | `riekelt/technical-writer@technical-writing`, `anthropics/skills@doc-coauthoring` |
+| 134 | `addyosmani/agent-skills@documentation-and-adrs`, `riekelt/technical-writer@{writing-design-docs,writing-runbooks}` |
+
+---
+
+#### TASK-122 — `brand-system` · Бренд-система и токены
+
+- **Зачем:** сейчас цвета/шрифты живут только в `ui/src/index.css`; сайт и видео
+  добавят третий-четвёртый набор. Нужен один источник истины.
+- **Что:**
+  - лого (svg, светлая/тёмная, favicon/apple-touch, OG-вариант), палитра, шкала
+    типографики, радиусы, тени, motion-токены;
+  - тон голоса и позиционирование (что за продукт, для кого, чем отличается) —
+    короткий бренд-гайд;
+  - `brand/` — токены (CSS custom properties + TS-объект) и ассеты; `site` и
+    `video` импортируют, `ui` подтягивает палитру/шрифты **без редизайна**.
+- **Трогаем:** новый `brand/`, `ui/src/index.css` (подтянуть токены), корневой
+  `package.json` (workspaces).
+- **DoD:** единый файл токенов; `site` и `video` собираются на нём; в `ui` нет
+  расхождения по палитре/шрифтам; лого во всех форматах; бренд-гайд в `docs/`.
+- **Зависимости:** нет (первая задача волны).
+
+#### TASK-123 — `marketing-site-scaffold` · Каркас маркетинг-сайта
+
+- **Зачем:** нужен воркспейс под лендинг и доки.
+- **Что:** новый воркспейс `site/` (Astro + Starlight-заготовка), базовый шелл
+  (шапка/футер/навигация), маршруты (`/`, `/pricing`, `/docs`), i18n en/ru,
+  светлая/тёмная тема, SEO-база (`<head>`-компонент: title/description/OG/twitter,
+  `sitemap.xml`, `robots.txt`, canonical, базовая structured-data), 404; CI-job
+  сборки/деплоя статики (gh-pages/Cloudflare Pages/Vercel — решить); dev-порт и
+  скрипты в корневом `package.json` (workspaces).
+- **Трогаем:** новый `site/`, корневой `package.json`, CI workflow.
+- **DoD:** `npm run build -w site` зелёный; пустой сайт деплоится по CI;
+  переключение en/ru и темы работает; Lighthouse ≥95 по перф/SEO/a11y на пустом
+  каркасе; ссылки «Войти»/«Создать аккаунт» ведут на приложение; решён вопрос с
+  TASK-32.
+- **Зависимости:** 122.
+
+#### TASK-124 — `landing-hero-features` · Лендинг: герой и фичи
+
+- **Зачем:** витрина «как у Miro» — показать продукт.
+- **Что:** герой (оффер + CTA + медиа-слот), секции фич (drag&drop, realtime,
+  комментарии, вложения/видео, шаринг доски, календарь/таблица, PWA/оффлайн,
+  админка) — каждая со **слотом под медиа** (плейсхолдер-постер до Ф2), «как это
+  работает» (3–4 шага), соц-пруф/логотипы (или «open source на GitHub»), FAQ,
+  финальный CTA, футер; полностью адаптивно, `prefers-reduced-motion`.
+- **Трогаем:** `site/`.
+- **DoD:** лендинг покрывает все ключевые фичи; слоты под медиа готовы к
+  подстановке; неавторизованный видит лендинг и уходит в логин/регистрацию;
+  deep-links не сломаны; мобилка без горизонтального скролла; en+ru.
+- **Зависимости:** 123.
+
+#### TASK-125 — `landing-pricing` · Тарифы и подписка
+
+- **Зачем:** монетизация hosted-варианта.
+- **Что:** страница `/pricing`: планы (Self-hosted free / Hosted free / Pro /
+  Team / Enterprise), таблица сравнения, лимиты per-plan, CTA (начать/связаться),
+  FAQ по оплате и лицензии; связь с billing (TASK-131) — до него CTA ведут в
+  «свяжитесь/лист ожидания».
+- **Трогаем:** `site/`.
+- **DoD:** страница тарифов с понятной сеткой и CTA; тексты en+ru; якорь на
+  лендинге; согласовано с лицензией/self-hosted (что бесплатно, что платно).
+- **Зависимости:** 123, 124; согласование с TASK-131.
+
+#### TASK-126 — `site-copy-cro-seo` · Текст, конверсия и SEO
+
+- **Зачем:** сайт должен находиться в поиске и конвертировать.
+- **Что:** копирайт всех страниц (заголовки/офферы/CTA), CRO-проход по лендингу и
+  тарифам, SEO (title/description по страницам, семантика, внутренние ссылки),
+  AI-SEO (структура под AI-выдачу), `schema-markup` (Organization/
+  SoftwareApplication/FAQ/Product), аналитика и событийный трекинг
+  (privacy-friendly), OG-картинки страниц.
+- **Трогаем:** `site/`.
+- **DoD:** тексты финализированы en+ru; SEO-чеклист пройден; structured-data
+  валиден; события трекинга покрывают ключевые CTA; Lighthouse SEO ≥95.
+- **Зависимости:** 124, 125.
+
+#### TASK-127 — `site-a11y-perf-audit` · Аудит доступности и перфа
+
+- **Зачем:** «не тупой сайт» = доступный, быстрый, без визуального мусора.
+- **Что:** аудит по Web Interface Guidelines (spacing/typography/interaction/
+  a11y), проход `impeccable` по визуальным проблемам, контраст, фокус/клавиатура,
+  мобильные таргеты, перф-бюджеты (LCP/CLS/размер), `prefers-reduced-motion`,
+  исправления.
+- **Трогаем:** `site/`.
+- **DoD:** нет критичных a11y-проблем (axe/ручной прогон); Lighthouse a11y/perf
+  ≥95 на лендинге и тарифах; мобильная версия вылизана; отчёт-чеклист в PR.
+- **Зависимости:** 124, 125.
+
+#### TASK-128 — `video-scaffold` · Каркас видео-пайплайна
+
+- **Зачем:** клипы фич должны собираться повторяемо и лежать как ассеты.
+- **Что:** воркспейс `video/` (Remotion) на общих бренд-токенах; структура
+  композиций; скрипт рендера (mp4 + webm + постер-кадр) в `site/public/media`;
+  параметризация (тема, размер, fps); CI-job ручного/тегового рендера;
+  документация по запуску.
+- **Трогаем:** новый `video/`, CI workflow.
+- **DoD:** `npm run render -w video` даёт mp4/webm+poster в `site/public/media`;
+  композиция-образец на бренд-токенах; сборка не тянет Remotion в бандл `site`.
+- **Зависимости:** 122.
+
+#### TASK-129 — `video-feature-clips` · Клипы ключевых фич
+
+- **Зачем:** «фичи как у Miro» — показать движением.
+- **Что:** сценарии и рендер клипов по фичам (drag&drop, realtime-прилёт,
+  комментарии/упоминания, paste-медиа/видео-вложения, шаринг доски read-only,
+  календарь/таблица, оффлайн/PWA, админка/очереди) на реальных состояниях UI
+  (фикстуры/демо-данные); единый стиль (бренд), длительность 5–15 c, луп-friendly;
+  гифки-превью для доков.
+- **Трогаем:** `video/`.
+- **DoD:** набор клипов покрывает все секции лендинга; визуально консистентны;
+  корректно смотрятся в лупе; `prefers-reduced-motion` даёт статичный постер.
+- **Зависимости:** 128; стабильный UI приложения.
+
+#### TASK-130 — `site-media-integration` · Встраивание медиа в сайт
+
+- **Зачем:** соединить лендинг (слоты) и видео (ассеты).
+- **Что:** подстановка клипов/скринов в секции, `<video autoplay muted loop
+  playsinline poster preload="none">` + ленивая загрузка, no-CLS, фолбэк на
+  постер/`prefers-reduced-motion`, OG/превью-картинки страниц, оптимизация
+  размеров (webm/mp4, responsive).
+- **Трогаем:** `site/`.
+- **DoD:** лендинг показывает реальные клипы; видео не грузятся до вьюпорта;
+  нет CLS; на reduced-motion — статичные постеры; вес страницы в бюджете.
+- **Зависимости:** 124, 129.
+
+#### TASK-131 — `billing-subscription` · Подписка и оплата (hosted)
+
+- **Зачем:** продажа hosted-варианта по подписке.
+- **Что:** выбрать провайдера (Stripe/Paddle/ЮKassa/CloudPayments — решение
+  владельца, влияет на налоги/регион), планы и лимиты per-plan в backend
+  (таблица `Subscription`/`Plan`, enforcement лимитов), checkout, вебхуки,
+  статус подписки в UI/админке, self-hosted-лицензия (что бесплатно, что под
+  ключом), аудит. Отдельно — «за подписку на моём сервере» (managed hosting):
+  как выдавать доступ/инстансы.
+- **Трогаем:** `backend/`, `shared/`, `ui/` (статус/лимиты), `site/` (CTA).
+- **DoD:** можно оформить/отменить подписку; лимиты плана реально применяются;
+  вебхуки идемпотентны; статус виден; аудит; e2e на жизненный цикл подписки.
+- **Зависимости:** решение владельца о провайдере/модели; 125.
+
+#### TASK-132 — `docs-site` · Доковый сайт (Starlight)
+
+- **Зачем:** сейчас доки — разрозненные markdown-файлы.
+- **Что:** Starlight на `/docs` в `site/`: структура (Начало / Self-hosting /
+  Пользовательский гайд / API / FAQ / Changelog), поиск, версии, i18n en/ru,
+  тёмная тема; миграция `README.md`, `docs/SELF-HOSTING.md`,
+  `docs/INSTALL-BY-OS.md`, `SECURITY.md`, `CHANGELOG.md` (с сохранением ссылок);
+  связь из приложения (пункт «Помощь/Документация»).
+- **Трогаем:** `site/`, `ui/` (ссылка на доки), `README.md`/`docs/*`.
+- **DoD:** доки доступны на `/docs`; старые файлы мигрированы, ссылки не битые;
+  поиск работает; en+ru; сборка/деплой в CI.
+- **Зависимости:** 122 (токены), 123.
+
+#### TASK-133 — `docs-user-guide` · Пользовательская документация
+
+- **Зачем:** help center по фичам (не только self-hosting).
+- **Что:** гайды по фичам (доски/колонки/карточки, drag&drop, комментарии,
+  вложения/видео, метки/чек-листы/приоритеты, календарь/таблица, шаринг,
+  hotkeys, аккаунт/2FA, админка), гифки/скрины из `video/`, FAQ/troubleshooting,
+  «первые шаги» для нового юзера.
+- **Трогаем:** `site/` (контент доков), `video/` (гифки).
+- **DoD:** покрыты все пользовательские фичи; есть скринкасты/гифки; навигация и
+  поиск по разделам; en+ru.
+- **Зависимости:** 132, 129 (гифки).
+
+#### TASK-134 — `docs-api-reference` · API-reference и runbooks
+
+- **Зачем:** self-hosters/интеграторы.
+- **Что:** API-reference (из `shared/src/api.ts` DTO / OpenAPI), примеры curl,
+  self-hosting runbooks (бэкап/восстановление/апгрейд/мониторинг/troubleshooting),
+  ADR-раздел, security-гайд (ссылка на `SECURITY.md`).
+- **Трогаем:** `site/` (контент доков), возможно генератор из `shared/`.
+- **DoD:** reference покрывает публичные роуты; примеры рабочие; runbooks
+  проверены на чистой машине; ADR-структура заведена.
+- **Зависимости:** 132.
 
 ---
 
