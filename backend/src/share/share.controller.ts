@@ -188,11 +188,15 @@ export class ShareController {
       attachmentId,
     );
     res.setHeader("Content-Type", meta.mimeType);
+    // TASK-76: never render a shared blob inline on the public contour — the
+    // server type is sniffed, but `attachment` + `nosniff` is the belt to
+    // that suspender (helmet already sets nosniff globally).
+    res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader(
       "Content-Disposition",
-      `inline; filename*=UTF-8''${encodeURIComponent(meta.fileName)}`,
+      `attachment; filename*=UTF-8''${encodeURIComponent(meta.fileName)}`,
     );
-    this.storage.open(this.storage.attachmentPath(storedName)).pipe(res);
+    await this.storage.send(this.storage.attachmentPath(storedName), res);
   }
 
   // ------------------------------------------------------- structural 405

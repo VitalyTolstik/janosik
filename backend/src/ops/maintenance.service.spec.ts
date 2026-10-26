@@ -49,6 +49,9 @@ const opsMock = {
   retentionDays: jest.fn().mockResolvedValue(30),
 } as unknown as OpsSettingsService;
 
+/** Epoch mtime — unambiguously older than any grace window. */
+const LONG_AGO = 0;
+
 describe("MaintenanceService", () => {
   beforeEach(() => {
     jest.resetAllMocks();
@@ -82,12 +85,38 @@ describe("MaintenanceService", () => {
       { storedName: "keep.bin", thumbnailName: null, posterName: null },
     ]);
     (storageMock.listBlobs as jest.Mock).mockResolvedValue([
-      { name: "keep.bin", avatar: false, absPath: "/blobs/keep.bin" },
-      { name: "orphan.bin", avatar: false, absPath: "/blobs/orphan.bin" },
+      {
+        name: "keep.bin",
+        avatar: false,
+        absPath: "/blobs/keep.bin",
+        mtimeMs: LONG_AGO,
+      },
+      {
+        name: "orphan.bin",
+        avatar: false,
+        absPath: "/blobs/orphan.bin",
+        mtimeMs: LONG_AGO,
+      },
     ]);
     const service = new MaintenanceService(prisma, storageMock, opsMock);
     const removed = await service.sweepOrphanBlobs();
     expect(removed).toBe(1);
     expect(storageMock.remove).toHaveBeenCalledWith("/blobs/orphan.bin");
+  });
+
+  it("spares unreferenced blobs written inside the grace window (TASK-77)", async () => {
+    const prisma = makePrisma();
+    (storageMock.listBlobs as jest.Mock).mockResolvedValue([
+      {
+        name: "in-flight.bin",
+        avatar: false,
+        absPath: "/blobs/in-flight.bin",
+        mtimeMs: Date.now(),
+      },
+    ]);
+    const service = new MaintenanceService(prisma, storageMock, opsMock);
+    const removed = await service.sweepOrphanBlobs();
+    expect(removed).toBe(0);
+    expect(storageMock.remove).not.toHaveBeenCalled();
   });
 });

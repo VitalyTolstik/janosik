@@ -23,6 +23,14 @@ export const MAINTENANCE_JOBS = [
 
 export type MaintenanceJobName = (typeof MAINTENANCE_JOBS)[number] | "all";
 
+/**
+ * TASK-77: how long a blob must sit unreferenced before the orphan sweep may
+ * delete it. Blobs are written *before* their DB row commits (upload, media
+ * rename, export), so without this window a sweep racing an in-flight write
+ * would delete a live file.
+ */
+const ORPHAN_GRACE_MS = 3_600_000;
+
 export interface MaintenanceRunResult {
   job: MaintenanceJobName;
   removed: number;
@@ -219,7 +227,10 @@ export class MaintenanceService {
     return stale.length;
   }
 
-  /** Blobs no row points at anymore (failed uploads, missed deletes). */
+  /**
+   * Blobs no row points at anymore (failed uploads, missed deletes), older
+   * than the grace window (TASK-77).
+   */
   async sweepOrphanBlobs(): Promise<number> {
     const [attachments, users, exports] = await Promise.all([
       this.prisma.attachment.findMany({
@@ -247,9 +258,13 @@ export class MaintenanceService {
       if (row.storedName) referenced.add(row.storedName);
     }
     const blobs = await this.storage.listBlobs();
+    // Spare anything written inside the grace window: its row may still be
+    // in flight (blobs land before the DB commit — TASK-77).
+    const cutoff = Date.now() - ORPHAN_GRACE_MS;
     let removed = 0;
     for (const blob of blobs) {
       if (referenced.has(blob.name)) continue;
+      if (blob.mtimeMs > cutoff) continue;
       await this.storage.remove(blob.absPath);
       removed += 1;
     }

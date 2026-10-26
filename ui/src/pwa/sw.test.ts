@@ -15,7 +15,9 @@ import {
  * (`self`, `caches`, `fetch`), and the registered listeners are driven with
  * fake events. That covers exactly what TASK-21.3 fixed — an error response
  * must never be cached as the app shell, and `activate` must drop the
- * previous deploy's cache — plus the off-nominal branches of K-4/K-5/T-7.
+ * previous deploy's cache — plus the off-nominal branches of K-4/K-5/T-7,
+ * and TASK-75: the API, authenticated and streaming requests stay out of the
+ * cache while the shell's static files keep their cache-first behaviour.
  */
 
 const SW_SOURCE = path.resolve(import.meta.dirname, "./sw.js");
@@ -93,10 +95,27 @@ function createCaches(seed: Record<string, Record<string, FakeResponse>> = {}) {
 
 type Listener = (event: FakeEvent) => void;
 
+interface FakeHeaders {
+  get: (name: string) => string | null;
+}
+
 interface FakeEvent {
-  request?: { url: string; method: string; mode?: string };
+  request?: {
+    url: string;
+    method: string;
+    mode?: string;
+    headers?: FakeHeaders;
+  };
   respondWith: (value: Promise<FakeResponse>) => void;
   waitUntil: (value: Promise<unknown>) => void;
+}
+
+/** Case-insensitive stand-in for a `Headers` instance. */
+function headers(entries: Record<string, string>): FakeHeaders {
+  const lower = new Map(
+    Object.entries(entries).map(([key, value]) => [key.toLowerCase(), value]),
+  );
+  return { get: (name: string) => lower.get(name.toLowerCase()) ?? null };
 }
 
 function loadWorker(
@@ -247,6 +266,83 @@ describe("service worker", () => {
 
     expect(result).toBeUndefined();
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("never intercepts API requests", async () => {
+    const fetchImpl = vi.fn();
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", {
+      url: `${ORIGIN}/api/v1/boards/abc`,
+      method: "GET",
+    });
+
+    expect(result).toBeUndefined();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(
+      caches.store.get(VERSION)?.has(`${ORIGIN}/api/v1/boards/abc`) ?? false,
+    ).toBe(false);
+  });
+
+  it("never intercepts requests carrying Authorization", async () => {
+    const fetchImpl = vi.fn();
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    // An asset URL would normally be cached; the header keeps it out.
+    const result = await dispatch("fetch", {
+      url: `${ORIGIN}/assets/index-abc123.js`,
+      method: "GET",
+      headers: headers({ Authorization: "Bearer token" }),
+    });
+
+    expect(result).toBeUndefined();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(
+      caches.store.get(VERSION)?.has(`${ORIGIN}/assets/index-abc123.js`) ??
+        false,
+    ).toBe(false);
+  });
+
+  it("never buffers the event stream", async () => {
+    const fetchImpl = vi.fn();
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", {
+      url: `${ORIGIN}/events`,
+      method: "GET",
+      headers: headers({ Accept: "text/event-stream" }),
+    });
+
+    expect(result).toBeUndefined();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("does not cache same-origin requests outside the shell", async () => {
+    const fetchImpl = vi.fn();
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", {
+      url: `${ORIGIN}/share/xyz`,
+      method: "GET",
+    });
+
+    expect(result).toBeUndefined();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("still caches the shell's static files", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(response("manifest"));
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", {
+      url: `${ORIGIN}/manifest.webmanifest`,
+      method: "GET",
+    });
+
+    expect(result).toMatchObject({ body: "manifest" });
+    expect(
+      caches.store.get(VERSION)?.has(`${ORIGIN}/manifest.webmanifest`),
+    ).toBe(true);
   });
 
   it("serves assets cache-first and only caches successful ones", async () => {

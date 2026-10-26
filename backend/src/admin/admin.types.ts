@@ -18,6 +18,15 @@ export const ADMIN_JWT_AUDIENCE = "janosik-admin";
 /** `typ` claim carried by every admin access token. */
 export const ADMIN_TOKEN_TYPE = "admin";
 
+/**
+ * TASK-90: the queue dashboard ticket is a *separate* token — its own
+ * audience and `typ` — so it can never be replayed as a normal admin access
+ * token on `/admin/*` (it would otherwise be signed with the same secret and
+ * the same audience `AdminJwtStrategy` accepts).
+ */
+export const ADMIN_QUEUES_JWT_AUDIENCE = "janosik-admin-queues";
+export const ADMIN_QUEUES_TOKEN_TYPE = "admin-queues";
+
 /** Failed logins before the account is temporarily locked. */
 export const ADMIN_MAX_FAILED_LOGINS = 5;
 

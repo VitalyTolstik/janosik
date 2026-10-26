@@ -17,7 +17,13 @@
  *  - other hashed build output (/assets/*): cache-first — filenames are
  *    content-hashed, so a cached response is immutable and lazy chunks
  *    (editor, calendar) land in the cache the first time they load;
- *  - everything else same-origin (manifest, icons): cache-first.
+ *  - the shell's other static files (manifest, icons): cache-first.
+ *
+ * The API shares the origin, so it is never intercepted: caching it
+ * cache-first would freeze boards on stale data, replay one account's
+ * responses into another session in the same profile and buffer the
+ * infinite SSE stream. Requests under `/api/`, carrying `Authorization` or
+ * asking for `text/event-stream` go straight to the network, uncached.
  *
  * Only successful responses are cached: a 500 from a half-deployed server
  * or a 404 behind a captive portal would otherwise be pinned as the app
@@ -39,6 +45,38 @@ function offlineResponse() {
     status: 503,
     headers: { "Content-Type": "text/plain" },
   });
+}
+
+/** Shell files (beyond the entry) that are safe to cache at runtime. */
+const STATIC_SHELL_PATHS = new Set([
+  "/manifest.webmanifest",
+  "/icon.svg",
+  "/favicon.ico",
+]);
+const STATIC_SHELL_PREFIXES = ["/assets/", "/icons/"];
+
+/*
+ * The API is same-origin, so it must never be intercepted: cache-first would
+ * pin stale board data, replay one session's responses into another and
+ * buffer the SSE stream. Authenticated and streaming requests are equally
+ * off-limits.
+ */
+function isApiOrStream(request, url) {
+  if (url.pathname.startsWith("/api/")) return true;
+  const headers = request.headers;
+  if (headers && headers.get("Authorization")) return true;
+  if (headers && (headers.get("Accept") || "").includes("text/event-stream")) {
+    return true;
+  }
+  return false;
+}
+
+/** True for the shell's static files: hashed build output, manifest, icons. */
+function isStaticShellAsset(url) {
+  return (
+    STATIC_SHELL_PATHS.has(url.pathname) ||
+    STATIC_SHELL_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))
+  );
 }
 
 self.addEventListener("install", (event) => {
@@ -82,6 +120,7 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  if (isApiOrStream(request, url)) return;
 
   if (request.mode === "navigate") {
     event.respondWith(
@@ -107,6 +146,8 @@ self.addEventListener("fetch", (event) => {
     );
     return;
   }
+
+  if (!isStaticShellAsset(url)) return;
 
   event.respondWith(
     caches.open(CACHE_VERSION).then((cache) =>

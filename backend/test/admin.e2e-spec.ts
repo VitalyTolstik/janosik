@@ -1,13 +1,18 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { JwtService } from "@nestjs/jwt";
 import { argon2id, hash as argonHash } from "argon2";
 import { writeFile } from "node:fs/promises";
 import request from "supertest";
 import { AppModule } from "@/app.module";
-import "@/config/env";
+import { env } from "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { StorageService } from "@/attachments/storage.service";
+import {
+  ADMIN_QUEUES_JWT_AUDIENCE,
+  ADMIN_QUEUES_TOKEN_TYPE,
+} from "@/admin/admin.types";
 import {
   ADMIN_REFRESH_COOKIE,
   cookieValue,
@@ -150,6 +155,29 @@ describe("Admin API (e2e)", () => {
       .get("/api/v1/admin/metrics")
       .set("Authorization", `Bearer ${userToken}`)
       .expect(401);
+  });
+
+  it("rejects a queue-dashboard ticket on normal admin routes (TASK-90)", async () => {
+    // The ticket the dashboard reads is signed with its own audience/typ, so
+    // it is not a general admin access token.
+    const jwt = app.get(JwtService);
+    const ticket = await jwt.signAsync(
+      { sub: adminId, typ: ADMIN_QUEUES_TOKEN_TYPE },
+      {
+        secret: env.JWT_SECRET,
+        audience: ADMIN_QUEUES_JWT_AUDIENCE,
+        expiresIn: "5m",
+      },
+    );
+
+    await server()
+      .get("/api/v1/admin/metrics")
+      .set("Authorization", `Bearer ${ticket}`)
+      .expect(401);
+    await server()
+      .get("/api/v1/admin/metrics")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
   });
 
   it("answers the same generic 401 for an unknown email and logs the attempt", async () => {
@@ -562,6 +590,46 @@ describe("Admin API (e2e)", () => {
         .expect(401);
     });
 
+    it("restores a soft-deleted attachment and keeps its blob (TASK-88)", async () => {
+      const storage = app.get(StorageService);
+      await storage.ensureDirs();
+      const storedName = "admin-restore-probe.bin";
+      await writeFile(storage.attachmentPath(storedName), "restore-bytes");
+      const attachment = await prisma.attachment.create({
+        data: {
+          cardId,
+          boardId,
+          uploadedById: userId,
+          fileName: "restore.txt",
+          mimeType: "text/plain",
+          sizeBytes: 13,
+          storedName,
+        },
+      });
+
+      await server()
+        .delete(`/api/v1/admin/attachments/${attachment.id}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      // Soft-deleted: the download route 404s on the missing row…
+      await server()
+        .get(`/api/v1/admin/attachments/${attachment.id}/download`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(404);
+
+      await server()
+        .post(`/api/v1/admin/entities/attachments/${attachment.id}/restore`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+
+      // …and the blob is still there, so restore brings it back.
+      const res = await server()
+        .get(`/api/v1/admin/attachments/${attachment.id}/download`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(res.text).toBe("restore-bytes");
+    });
+
     it("finds rows by their foreign keys, not by titles", async () => {
       // Board titles are not unique; every listing must be reachable by
       // the ids that actually link the rows.
@@ -795,6 +863,21 @@ describe("Admin API (e2e)", () => {
       expect(login.body.admin.role).toBe("OPERATOR");
     });
 
+    it("mints an OWNER when asked, not always an OPERATOR (TASK-89)", async () => {
+      const res = await server()
+        .post("/api/v1/admin/admins")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ email: "second-owner@example.com", role: "OWNER" })
+        .expect(201);
+      expect(res.body.admin.role).toBe("OWNER");
+
+      // Clean up so the master count asserted later stays stable.
+      await server()
+        .delete(`/api/v1/admin/admins/${res.body.admin.id as string}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+    });
+
     it("gives operators full data access but no master management", async () => {
       await server()
         .get("/api/v1/admin/metrics")
@@ -815,6 +898,66 @@ describe("Admin API (e2e)", () => {
         where: { action: "admin.create", adminEmail: "operator@example.com" },
       });
       expect(audit).toBeNull();
+    });
+
+    it("keeps global ops, flags, comms and maintenance owner-only (TASK-79)", async () => {
+      const operator = () => ({ Authorization: `Bearer ${operatorToken}` });
+
+      // An operator must not be able to flip global state…
+      await server()
+        .put("/api/v1/admin/ops")
+        .set(operator())
+        .send({ maintenanceMode: true })
+        .expect(403);
+      await server()
+        .patch("/api/v1/admin/flags/registration_open")
+        .set(operator())
+        .send({ enabled: false })
+        .expect(403);
+
+      // …rewrite or blast comms…
+      await server()
+        .post("/api/v1/admin/announcements")
+        .set(operator())
+        .send({ title: "Maintenance", body: "We are down" })
+        .expect(403);
+      await server()
+        .post("/api/v1/admin/email/send")
+        .set(operator())
+        .send({ to: "all@example.com", subject: "Hi", body: "Hello" })
+        .expect(403);
+      await server()
+        .put("/api/v1/admin/email-templates/verification_code")
+        .set(operator())
+        .send({ subject: "Hi {{code}}", bodyHtml: "<p>{{code}}</p>" })
+        .expect(403);
+      await server()
+        .delete("/api/v1/admin/email-templates/verification_code")
+        .set(operator())
+        .expect(403);
+
+      // …run a destructive sweep or reach the user-action escape hatches.
+      await server()
+        .post("/api/v1/admin/maintenance/run")
+        .set(operator())
+        .send({ job: "purge-soft-deleted" })
+        .expect(403);
+      await server()
+        .post(`/api/v1/admin/users/${userId}/password/reset`)
+        .set(operator())
+        .expect(403);
+      await server()
+        .post(`/api/v1/admin/users/${userId}/promote`)
+        .set(operator())
+        .expect(403);
+      await server()
+        .post(`/api/v1/admin/users/${userId}/impersonate`)
+        .set(operator())
+        .expect(403);
+      await server()
+        .get(`/api/v1/admin/users/${userId}/export`)
+        .set(operator())
+        .expect(403);
     });
 
     it("lets only owners edit the IP allowlist (TASK-65)", async () => {

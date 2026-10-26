@@ -24,7 +24,10 @@ import {
   ADMIN_QUEUES_PATH,
   ADMIN_QUEUES_TICKET_TTL,
 } from "@/queues/queues.module";
-import { ADMIN_JWT_AUDIENCE, ADMIN_TOKEN_TYPE } from "./admin.types";
+import {
+  ADMIN_QUEUES_JWT_AUDIENCE,
+  ADMIN_QUEUES_TOKEN_TYPE,
+} from "./admin.types";
 import type {
   AdminBoardCommandRequest,
   AdminBoardDetailDto,
@@ -158,7 +161,7 @@ export class AdminController {
       "Content-Disposition",
       `attachment; filename*=UTF-8''${encodeURIComponent(meta.fileName)}`,
     );
-    this.storage.open(this.storage.attachmentPath(storedName)).pipe(res);
+    await this.storage.send(this.storage.attachmentPath(storedName), res);
   }
 
   @Get("metrics")
@@ -598,6 +601,7 @@ export class AdminController {
     @Param("id") id: string,
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminExportRowDto> {
+    this.admin.assertOwner(admin);
     const row = await this.exports.request(id, admin.email);
     await this.admin.audit(admin, "data.export_queued", "user", id, {
       exportId: row.id,
@@ -614,15 +618,17 @@ export class AdminController {
   @Get("exports/:id/download")
   async downloadExport(
     @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
     @Res() res: Response,
   ): Promise<void> {
+    this.admin.assertOwner(admin);
     const { absPath, filename } = await this.exports.download(id);
     res.setHeader("Content-Type", "application/json");
     res.setHeader(
       "Content-Disposition",
       `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
     );
-    this.storage.open(absPath).pipe(res);
+    await this.storage.send(absPath, res);
   }
 
   // ------------------------------------------ membership (TASK-60)
@@ -703,6 +709,7 @@ export class AdminController {
     @Body() dto: AdminUpdateFeatureFlagDto,
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminFeatureFlagDto> {
+    this.admin.assertOwner(admin);
     const flag = await this.flags.update(key, dto, admin.email);
     await this.admin.audit(admin, "flag.changed", "flag", key, {
       ...dto,
@@ -720,6 +727,7 @@ export class AdminController {
     @Body() dto: AdminUpdateOpsDto,
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminOpsSettingsDto> {
+    this.admin.assertOwner(admin);
     const settings = await this.ops.update(dto, admin.email);
     await this.admin.audit(admin, "ops.settings_changed", "ops", null, {
       ...dto,
@@ -749,6 +757,7 @@ export class AdminController {
     @Body() dto: AdminCreateAnnouncementDto,
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminAnnouncementDto> {
+    this.admin.assertOwner(admin);
     const created = await this.comms.createAnnouncement(dto, admin.email);
     await this.admin.audit(
       admin,
@@ -768,6 +777,7 @@ export class AdminController {
     @Body() dto: AdminUpdateAnnouncementDto,
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminAnnouncementDto> {
+    this.admin.assertOwner(admin);
     const updated = await this.comms.updateAnnouncement(id, dto);
     await this.admin.audit(
       admin,
@@ -784,6 +794,7 @@ export class AdminController {
     @Param("id") id: string,
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<{ status: "ok" }> {
+    this.admin.assertOwner(admin);
     await this.comms.deleteAnnouncement(id);
     await this.admin.audit(
       admin,
@@ -800,6 +811,7 @@ export class AdminController {
     @Body() dto: AdminSendEmailDto,
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminSendEmailResponse> {
+    this.admin.assertOwner(admin);
     const result = await this.comms.sendEmail(dto.to, dto.subject, dto.body);
     await this.admin.audit(admin, "email.sent", "email", null, {
       to: dto.to,
@@ -819,6 +831,7 @@ export class AdminController {
     @Body() dto: AdminUpdateEmailTemplateDto,
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminEmailTemplateDto> {
+    this.admin.assertOwner(admin);
     const template = await this.comms.updateTemplate(key, dto, admin.email);
     await this.admin.audit(
       admin,
@@ -835,6 +848,7 @@ export class AdminController {
     @Param("key") key: string,
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminEmailTemplateDto> {
+    this.admin.assertOwner(admin);
     const template = await this.comms.resetTemplate(key);
     await this.admin.audit(
       admin,
@@ -882,10 +896,10 @@ export class AdminController {
       );
     }
     const ticket = await this.jwt.signAsync(
-      { sub: admin.id, typ: ADMIN_TOKEN_TYPE },
+      { sub: admin.id, typ: ADMIN_QUEUES_TOKEN_TYPE },
       {
         secret: env.JWT_SECRET,
-        audience: ADMIN_JWT_AUDIENCE,
+        audience: ADMIN_QUEUES_JWT_AUDIENCE,
         expiresIn: ADMIN_QUEUES_TICKET_TTL,
       },
     );
@@ -908,6 +922,7 @@ export class AdminController {
     @Body() dto: AdminMaintenanceRunDto,
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminMaintenanceRunResponse> {
+    this.admin.assertOwner(admin);
     const result = await this.maintenanceQueue.runNow(
       dto.job as MaintenanceJobName,
     );

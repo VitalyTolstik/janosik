@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { NumberStepper } from "@/components/ui/number-stepper";
 import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
+import { useAdminAuth } from "./AdminAuthContext";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import {
   CharCount,
@@ -28,6 +29,10 @@ import {
 export function OpsPage() {
   const t = useAdminT();
   const toast = useToast();
+  // TASK-79: global ops/flags/maintenance are owner-only server-side; the
+  // panel mirrors that so an operator sees the state but cannot change it.
+  const { admin } = useAdminAuth();
+  const isOwner = admin?.role === "OWNER";
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [flags, setFlags] = useState<AdminFeatureFlagDto[]>([]);
   const [ops, setOps] = useState<AdminOpsSettingsDto | null>(null);
@@ -237,6 +242,7 @@ export function OpsPage() {
               <Toggle
                 label={flag.label}
                 checked={flag.enabled}
+                disabled={!isOwner}
                 onChange={(next) => void toggleFlag(flag, next)}
               />
             </div>
@@ -257,6 +263,7 @@ export function OpsPage() {
           <Toggle
             label={t("admin.ops.maintenance")}
             checked={ops?.maintenanceMode ?? false}
+            disabled={!isOwner}
             onChange={(next) => void toggleMaintenance(next)}
           />
         </div>
@@ -269,6 +276,7 @@ export function OpsPage() {
               value={message}
               maxLength={500}
               data-testid="admin-ops-message"
+              disabled={!isOwner}
               onChange={(event) => setMessage(event.target.value)}
             />
             <CharCount value={message} max={500} />
@@ -277,7 +285,7 @@ export function OpsPage() {
         <div className="mt-3 flex justify-end">
           <Button
             size="sm"
-            disabled={busy}
+            disabled={busy || !isOwner}
             data-testid="admin-ops-save"
             onClick={() => void saveOps()}
           >
@@ -303,6 +311,7 @@ export function OpsPage() {
             ariaLabel={t("admin.ops.perUserLimit")}
             increaseLabel={t("admin.common.increase")}
             decreaseLabel={t("admin.common.decrease")}
+            disabled={!isOwner}
             onChange={setPerUser}
           />
           <span className="text-[11px] text-muted-foreground">
@@ -312,7 +321,7 @@ export function OpsPage() {
         <div className="mt-3 flex justify-end">
           <Button
             size="sm"
-            disabled={busy}
+            disabled={busy || !isOwner}
             data-testid="admin-ops-rate-limit-save"
             onClick={() => void saveOps()}
           >
@@ -336,6 +345,7 @@ export function OpsPage() {
               ariaLabel={t("admin.ops.retentionDays")}
               increaseLabel={t("admin.common.increase")}
               decreaseLabel={t("admin.common.decrease")}
+              disabled={!isOwner}
               onChange={setRetentionDays}
             />
             <span className="text-[11px] text-muted-foreground">
@@ -346,7 +356,7 @@ export function OpsPage() {
         <div className="mt-2 flex justify-end">
           <Button
             size="sm"
-            disabled={busy}
+            disabled={busy || !isOwner}
             data-testid="admin-ops-retention-save"
             onClick={() => void saveOps()}
           >
@@ -375,7 +385,7 @@ export function OpsPage() {
           <Button
             variant="destructive"
             size="sm"
-            disabled={!daysValid}
+            disabled={!daysValid || !isOwner}
             data-testid="admin-ops-purge"
             onClick={() => setPurging(true)}
           >
@@ -401,6 +411,7 @@ export function OpsPage() {
             ariaLabel={t("admin.ops.maintenanceInterval")}
             increaseLabel={t("admin.common.increase")}
             decreaseLabel={t("admin.common.decrease")}
+            disabled={!isOwner}
             onChange={setMaintInterval}
           />
           <span className="text-[11px] text-muted-foreground">
@@ -411,7 +422,7 @@ export function OpsPage() {
           <Button
             size="sm"
             variant="outline"
-            disabled={sweeping}
+            disabled={sweeping || !isOwner}
             data-testid="admin-ops-run-sweeps"
             onClick={() => void runSweeps()}
           >
@@ -419,7 +430,7 @@ export function OpsPage() {
           </Button>
           <Button
             size="sm"
-            disabled={busy}
+            disabled={busy || !isOwner}
             data-testid="admin-ops-schedule-save"
             onClick={() => void saveOps()}
           >
@@ -446,6 +457,7 @@ export function OpsPage() {
               ariaLabel={t("admin.ops.digestInterval")}
               increaseLabel={t("admin.common.increase")}
               decreaseLabel={t("admin.common.decrease")}
+              disabled={!isOwner}
               onChange={setDigestHours}
             />
           </label>
@@ -461,6 +473,7 @@ export function OpsPage() {
               ariaLabel={t("admin.ops.reminderLead")}
               increaseLabel={t("admin.common.increase")}
               decreaseLabel={t("admin.common.decrease")}
+              disabled={!isOwner}
               onChange={setReminderLead}
             />
           </label>
@@ -468,7 +481,7 @@ export function OpsPage() {
         <div className="mt-3 flex justify-end">
           <Button
             size="sm"
-            disabled={busy}
+            disabled={busy || !isOwner}
             data-testid="admin-ops-comms-save"
             onClick={() => void saveOps()}
           >
@@ -487,7 +500,7 @@ export function OpsPage() {
             <Button
               size="sm"
               variant="outline"
-              disabled={openingQueues}
+              disabled={openingQueues || !isOwner}
               data-testid="admin-ops-open-queues"
               onClick={() => void openQueues()}
             >

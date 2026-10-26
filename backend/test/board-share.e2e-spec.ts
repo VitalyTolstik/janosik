@@ -8,7 +8,9 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { StorageService } from "@/attachments/storage.service";
 import { ShareService } from "@/share/share.service";
+import { writeFile } from "node:fs/promises";
 
 const ADMIN_EMAIL = "share-admin@example.com";
 const ADMIN_PASSWORD = "share admin correct horse";
@@ -338,6 +340,40 @@ describe("Public board shares (e2e)", () => {
       .expect(200);
     expect(page.body.items).toHaveLength(1);
     expect(page.body.items[0].text).toBe("public comment");
+  });
+
+  it("serves a shared attachment as a download, never inline (TASK-76)", async () => {
+    const { boardId, cardId } = await newBoard("Share attachment");
+    const share = await createShare(boardId, {
+      mode: "live",
+      includeAttachments: true,
+    });
+    const storage = app.get(StorageService);
+    await storage.ensureDirs();
+    const storedName = `share-probe-${randomUUID()}.png`;
+    const png = Buffer.from(
+      "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63fcffff3f0300050201009a61d11b0000000049454e44ae426082",
+      "hex",
+    );
+    await writeFile(storage.attachmentPath(storedName), png);
+    const attachment = await prisma.attachment.create({
+      data: {
+        cardId,
+        boardId,
+        uploadedById: adminId,
+        fileName: "pixel.png",
+        mimeType: "image/png",
+        sizeBytes: png.length,
+        storedName,
+      },
+    });
+
+    const res = await server()
+      .get(`/api/v1/share/${share.token}/attachments/${attachment.id}/content`)
+      .expect(200);
+    expect(res.headers["content-disposition"]).toContain("attachment");
+    expect(res.headers["content-disposition"]).not.toContain("inline");
+    expect(res.headers["x-content-type-options"]).toBe("nosniff");
   });
 
   it("serves an OG preview image", async () => {

@@ -243,6 +243,36 @@ describe("Attachments (TASK-47)", () => {
       .expect(413);
   });
 
+  it("refuses content whose bytes contradict the declared type (TASK-76)", async () => {
+    // HTML dressed as a PNG: the bytes carry no PNG signature, so the server
+    // rejects it instead of storing a `image/png` it would then serve.
+    await server()
+      .post(`/api/v1/cards/${cardId}/attachments`)
+      .set(auth(member.token))
+      .attach("file", Buffer.from("<html><script>alert(1)</script></html>"), {
+        filename: "evil.png",
+        contentType: "image/png",
+      })
+      .expect(400);
+  });
+
+  it("stores the detected type, not the declared one (TASK-76)", async () => {
+    const res = await server()
+      .post(`/api/v1/cards/${cardId}/attachments`)
+      .set(auth(member.token))
+      .attach("file", png, {
+        filename: "actually-a-png.pdf",
+        contentType: "application/pdf",
+      })
+      .expect(201);
+    // The bytes win: a real PNG is stored (and served) as `image/png`.
+    expect(res.body.mimeType).toBe("image/png");
+    await server()
+      .delete(`/api/v1/attachments/${res.body.id as string}`)
+      .set(auth(member.token))
+      .expect(200);
+  });
+
   it("keeps the card-face count in the aggregate and the activity feed", async () => {
     const snapshot = await server()
       .get(`/api/v1/boards/${boardId}`)
@@ -325,6 +355,70 @@ describe("Attachments (TASK-47)", () => {
         .set(auth(admin.token))
         .expect(200);
       expect(snapshot.body.cards[cardId].attachmentCount).toBe(1);
+    });
+
+    it("does not delete another board's inline media (TASK-81)", async () => {
+      // The outsider owns a separate board with its own inline attachment.
+      const otherBoard = await server()
+        .post("/api/v1/boards")
+        .set(auth(outsider.token))
+        .send({ title: "Other board" })
+        .expect(201);
+      const otherBoardId = otherBoard.body.id as string;
+      await server()
+        .post(`/api/v1/boards/${otherBoardId}/commands`)
+        .set(auth(outsider.token))
+        .send({
+          commandId: randomUUID(),
+          action: {
+            type: "ADD_COLUMN",
+            newColumnId: "col-b",
+            title: "C",
+            at: 0,
+          },
+        })
+        .expect(200);
+      await server()
+        .post(`/api/v1/boards/${otherBoardId}/commands`)
+        .set(auth(outsider.token))
+        .send({
+          commandId: randomUUID(),
+          action: {
+            type: "ADD_CARD",
+            newCardId: "card-b",
+            columnId: "col-b",
+            title: "Card",
+            at: 0,
+          },
+        })
+        .expect(200);
+      const foreign = await server()
+        .post("/api/v1/cards/card-b/attachments?inline=1")
+        .set(auth(outsider.token))
+        .attach("file", png, {
+          filename: "foreign.png",
+          contentType: "image/png",
+        })
+        .expect(201);
+      const foreignId = foreign.body.id as string;
+
+      // A member of *this* board pastes the foreign id and deletes the
+      // comment — the soft-delete must stay scoped to this board.
+      const comment = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(member.token))
+        .send({ text: `see /api/v1/attachments/${foreignId}/content` })
+        .expect(201);
+      await server()
+        .delete(`/api/v1/comments/${comment.body.id as string}`)
+        .set(auth(member.token))
+        .expect(200);
+
+      const still = await server()
+        .get(`/api/v1/attachments/${foreignId}/content`)
+        .set(auth(outsider.token))
+        .expect(200);
+      expect(still.body).toEqual(png);
     });
 
     it("soft-deletes inline media referenced by a deleted comment", async () => {
@@ -410,6 +504,16 @@ describe("Attachments (TASK-47)", () => {
         .attach("file", Buffer.from("hello"), {
           filename: "note.txt",
           contentType: "text/plain",
+        })
+        .expect(400);
+
+      // HTML dressed as an image is refused by the magic-byte check (TASK-76).
+      await server()
+        .patch("/api/v1/users/me/avatar")
+        .set(auth(member.token))
+        .attach("file", Buffer.from("<html><script>alert(1)</script></html>"), {
+          filename: "evil.png",
+          contentType: "image/png",
         })
         .expect(400);
 

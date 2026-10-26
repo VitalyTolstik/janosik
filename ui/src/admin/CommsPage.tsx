@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
+import { useAdminAuth } from "./AdminAuthContext";
 import { useAdminT } from "./admin-i18n";
 import {
   Badge,
@@ -66,6 +67,10 @@ function renderPreview(template: string): string {
 export function CommsPage() {
   const t = useAdminT();
   const toast = useToast();
+  // TASK-79: comms writes (announcements, one-off mail, templates) are
+  // owner-only server-side; an operator sees the letters but edits nothing.
+  const { admin } = useAdminAuth();
+  const isOwner = admin?.role === "OWNER";
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [templates, setTemplates] = useState<AdminEmailTemplateDto[]>([]);
 
@@ -244,6 +249,7 @@ export function CommsPage() {
           </Button>
           <Button
             size="sm"
+            disabled={!isOwner}
             data-testid="admin-announcement-new"
             onClick={() => setCreating(true)}
           >
@@ -266,6 +272,7 @@ export function CommsPage() {
               value={mailTo}
               invalid={mailTo.trim() !== "" && toError !== null}
               data-testid="admin-email-to"
+              disabled={!isOwner}
               onChange={(event) => setMailTo(event.target.value)}
             />
             {mailTo.trim() !== "" && toError !== null ? (
@@ -282,6 +289,7 @@ export function CommsPage() {
               value={mailSubject}
               maxLength={SUBJECT_MAX}
               data-testid="admin-email-subject"
+              disabled={!isOwner}
               onChange={(event) => setMailSubject(event.target.value)}
             />
             <CharCount value={mailSubject} max={SUBJECT_MAX} />
@@ -294,6 +302,7 @@ export function CommsPage() {
               value={mailBody}
               maxLength={BODY_HTML_MAX}
               data-testid="admin-email-body"
+              disabled={!isOwner}
               onChange={(event) => setMailBody(event.target.value)}
             />
             <CharCount value={mailBody} max={BODY_HTML_MAX} />
@@ -303,6 +312,7 @@ export function CommsPage() {
           <Button
             size="sm"
             disabled={
+              !isOwner ||
               sending ||
               mailTo.trim() === "" ||
               toError !== null ||
@@ -345,6 +355,7 @@ export function CommsPage() {
                 value={draft[template.key]?.subject ?? ""}
                 maxLength={SUBJECT_MAX}
                 placeholder={t("admin.comms.templates.subject")}
+                disabled={!isOwner}
                 onChange={(event) =>
                   setDraft((current) => ({
                     ...current,
@@ -363,6 +374,7 @@ export function CommsPage() {
                 value={draft[template.key]?.bodyHtml ?? ""}
                 maxLength={BODY_HTML_MAX}
                 placeholder={t("admin.comms.templates.body")}
+                disabled={!isOwner}
                 onChange={(event) =>
                   setDraft((current) => ({
                     ...current,
@@ -396,6 +408,7 @@ export function CommsPage() {
                     variant="ghost"
                     size="sm"
                     data-testid={`admin-template-reset-${template.key}`}
+                    disabled={!isOwner}
                     onClick={() => void resetTemplate(template.key)}
                   >
                     {t("admin.comms.templates.reset")}
@@ -405,6 +418,7 @@ export function CommsPage() {
                   variant="outline"
                   size="sm"
                   data-testid={`admin-template-save-${template.key}`}
+                  disabled={!isOwner}
                   onClick={() => void saveTemplate(template.key)}
                 >
                   {t("admin.common.save")}
@@ -564,7 +578,9 @@ export function CommsPage() {
             </Button>
             <Button
               size="sm"
-              disabled={busy || title.trim() === "" || body.trim() === ""}
+              disabled={
+                !isOwner || busy || title.trim() === "" || body.trim() === ""
+              }
               data-testid="admin-announcement-submit"
               onClick={() => void create()}
             >

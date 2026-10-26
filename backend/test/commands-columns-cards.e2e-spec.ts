@@ -843,6 +843,67 @@ describe("Commands API (e2e)", () => {
       expect(move.body.conflict).toBe("wip");
     });
 
+    it("ignores a forged inverse flag on a WIP-limited add (TASK-80)", async () => {
+      const boardId = await createBoard("WIP inverse board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-w",
+          title: "W",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "SET_COLUMN_WIP_LIMIT",
+          columnId: "col-w",
+          wipLimit: 1,
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-w1",
+          columnId: "col-w",
+          title: "W1",
+        }),
+      );
+
+      // A client cannot skip the WIP guard by claiming the add is an undo.
+      const res = await post(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-w2",
+          columnId: "col-w",
+          title: "W2",
+          inverse: true,
+        }),
+      ).expect(409);
+      expect(res.body.conflict).toBe("wip");
+
+      // A genuine RESTORE_* undo still bypasses the guard: delete the only
+      // card (freeing the slot) and restore it with `inverse: true`.
+      const snapshot = (await getAggregate(boardId)).cards["card-w1"];
+      await apply(
+        boardId,
+        scoped(boardId, { type: "DELETE_CARD", cardId: "card-w1" }),
+      );
+      const restored = await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_CARD",
+          card: snapshot,
+          columnId: "col-w",
+          index: 0,
+          inverse: true,
+        }),
+      );
+      expect(restored.columns[0].cardIds).toContain("card-w1");
+    });
+
     it("409s a stale ifMatch with conflict 'version' and currentVersion", async () => {
       const boardId = await createBoard("ifMatch board");
       const first = await apply(

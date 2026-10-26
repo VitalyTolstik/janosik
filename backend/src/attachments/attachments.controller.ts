@@ -87,7 +87,7 @@ export class AttachmentsController {
       "Content-Disposition",
       `attachment; filename*=UTF-8''${encodeURIComponent(meta.fileName)}`,
     );
-    this.storage.open(this.storage.attachmentPath(storedName)).pipe(res);
+    await this.storage.send(this.storage.attachmentPath(storedName), res);
   }
 
   /**
@@ -107,14 +107,21 @@ export class AttachmentsController {
     if (derivative !== null) {
       res.setHeader("Content-Type", "image/jpeg");
       res.setHeader("Cache-Control", "private, max-age=86400");
-      this.storage.open(derivative).pipe(res);
+      await this.storage.send(derivative, res);
       return;
     }
     const { meta, storedName } = await this.attachments.content(attachmentId);
     if (!meta.mimeType.startsWith("image/")) throw new NotFoundException();
     res.setHeader("Content-Type", meta.mimeType);
+    // TASK-76: the fallback serves the raw original (server-sniffed type);
+    // `attachment` + `nosniff` keeps a mislabeled blob from ever rendering.
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename*=UTF-8''${encodeURIComponent(meta.fileName)}`,
+    );
     res.setHeader("Cache-Control", "private, max-age=3600");
-    this.storage.open(this.storage.attachmentPath(storedName)).pipe(res);
+    await this.storage.send(this.storage.attachmentPath(storedName), res);
   }
 
   /** TASK-70 poster: the first meaningful frame of a video, if generated. */
@@ -127,7 +134,7 @@ export class AttachmentsController {
     if (derivative === null) throw new NotFoundException();
     res.setHeader("Content-Type", "image/jpeg");
     res.setHeader("Cache-Control", "private, max-age=86400");
-    this.storage.open(derivative).pipe(res);
+    await this.storage.send(derivative, res);
   }
 
   @Delete("attachments/:attachmentId")

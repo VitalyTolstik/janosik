@@ -20,7 +20,10 @@ export class TranscodeProcessor extends WorkerHost {
   }
 
   async process(job: Job<TranscodeJob>): Promise<unknown> {
-    await this.transcode.process(job.data.attachmentId);
+    await this.transcode.process(job.data.attachmentId, {
+      attemptsMade: job.attemptsMade,
+      attempts: job.opts.attempts ?? 1,
+    });
     return { attachmentId: job.data.attachmentId };
   }
 }

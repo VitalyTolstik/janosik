@@ -679,7 +679,11 @@ export class AdminService {
     return { revoked: revoked.count };
   }
 
-  private assertOwner(admin: AdminPrincipal): void {
+  /**
+   * Owner-only guard (TASK-36/79). Shared with the controller so the
+   * global ops/flags/comms/maintenance routes are gated in one place.
+   */
+  assertOwner(admin: AdminPrincipal): void {
     if (admin.role !== "OWNER") {
       throw new ForbiddenException("Owner rights are required");
     }
@@ -1794,6 +1798,7 @@ export class AdminService {
     userId: string,
     admin: AdminPrincipal,
   ): Promise<AdminResetUserPasswordResponse> {
+    this.assertOwner(admin);
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException("User not found");
     const password = randomBytes(12).toString("base64url");
@@ -1865,6 +1870,7 @@ export class AdminService {
     userId: string,
     admin: AdminPrincipal,
   ): Promise<AdminPromoteUserResponse> {
+    this.assertOwner(admin);
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException("User not found");
     const clash = await this.prisma.adminUser.findUnique({
@@ -1935,6 +1941,7 @@ export class AdminService {
     userId: string,
     admin: AdminPrincipal,
   ): Promise<AdminImpersonationDto> {
+    this.assertOwner(admin);
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException("User not found");
     if (user.disabledAt !== null) {
@@ -2102,9 +2109,8 @@ export class AdminService {
         });
       }
     });
-    await this.storage
-      .remove(this.storage.attachmentPath(row.storedName))
-      .catch(() => undefined);
+    // TASK-88: keep the blob — a soft-deleted attachment can be restored
+    // (`restoreEntity`) and must stream again; the purge sweep reclaims it.
     await this.audit(admin, "attachment.delete", "attachment", attachmentId, {
       fileName: row.fileName,
       boardId: row.boardId,
@@ -2242,6 +2248,7 @@ export class AdminService {
     userId: string,
     admin: AdminPrincipal,
   ): Promise<AdminUserExportDto> {
+    this.assertOwner(admin);
     const bundle = await this.buildUserBundle(userId);
     await this.audit(admin, "data.exported", "user", userId, {
       email: bundle.email,

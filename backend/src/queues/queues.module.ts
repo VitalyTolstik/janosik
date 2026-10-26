@@ -10,7 +10,12 @@ import { ExpressAdapter } from "@bull-board/express";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
 import { QUEUE_NAMES, queuesEnabled } from "@/ops/queue-core";
-import { ADMIN_JWT_AUDIENCE, ADMIN_TOKEN_TYPE } from "@/admin/admin.types";
+import {
+  ADMIN_JWT_AUDIENCE,
+  ADMIN_QUEUES_JWT_AUDIENCE,
+  ADMIN_QUEUES_TOKEN_TYPE,
+  ADMIN_TOKEN_TYPE,
+} from "@/admin/admin.types";
 
 /** httpOnly cookie the panel sets before opening the dashboard tab. */
 export const ADMIN_QUEUES_COOKIE = "admin_queues";
@@ -83,19 +88,26 @@ export class QueuesBoardService implements OnModuleInit {
     const bearer = req.headers.authorization?.startsWith("Bearer ")
       ? req.headers.authorization.slice(7)
       : undefined;
-    const token = ticket ?? bearer;
-    if (!token) {
+    if (!ticket && !bearer) {
       res
         .status(401)
         .json({ message: "Queue dashboard requires an admin ticket" });
       return;
     }
     try {
-      const payload = await this.jwt.verifyAsync<{ sub: string; typ?: string }>(
-        token,
-        { secret: env.JWT_SECRET, audience: ADMIN_JWT_AUDIENCE },
-      );
-      if (payload.typ !== ADMIN_TOKEN_TYPE) throw new Error("wrong token type");
+      // TASK-90: a cookie ticket carries the queues-only audience/typ and is
+      // useless on `/admin/*`; a Bearer token is a real admin access token.
+      const payload = ticket
+        ? await this.jwt.verifyAsync<{ sub: string; typ?: string }>(ticket, {
+            secret: env.JWT_SECRET,
+            audience: ADMIN_QUEUES_JWT_AUDIENCE,
+          })
+        : await this.jwt.verifyAsync<{ sub: string; typ?: string }>(bearer!, {
+            secret: env.JWT_SECRET,
+            audience: ADMIN_JWT_AUDIENCE,
+          });
+      const expectedTyp = ticket ? ADMIN_QUEUES_TOKEN_TYPE : ADMIN_TOKEN_TYPE;
+      if (payload.typ !== expectedTyp) throw new Error("wrong token type");
       const admin = await this.prisma.adminUser.findUnique({
         where: { id: payload.sub },
       });

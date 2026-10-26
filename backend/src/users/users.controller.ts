@@ -78,7 +78,7 @@ export class UsersController {
       ext === "jpg" ? "image/jpeg" : `image/${ext === "jpeg" ? "jpeg" : ext}`;
     res.setHeader("Content-Type", mime);
     res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
-    this.storage.open(this.storage.avatarPath(storedName)).pipe(res);
+    await this.storage.send(this.storage.avatarPath(storedName), res);
   }
 
   @Get("me/tokens")

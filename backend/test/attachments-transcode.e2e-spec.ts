@@ -158,11 +158,14 @@ describe("Video transcode (TASK-50)", () => {
   }, 120_000);
 
   it("keeps the original playable when ffmpeg cannot decode the file", async () => {
-    const garbage = await upload(
-      "broken.mp4",
-      "video/mp4",
-      Buffer.from("not a video"),
-    );
+    // A real MP4 container header (so the magic-byte check accepts it —
+    // TASK-76) followed by bytes ffmpeg cannot decode.
+    const broken = Buffer.concat([
+      Buffer.from([0x00, 0x00, 0x00, 0x20]),
+      Buffer.from("ftypisom", "latin1"),
+      Buffer.from("not a decodable video"),
+    ]);
+    const garbage = await upload("broken.mp4", "video/mp4", broken);
     expect(garbage.body.transcodeStatus).toBe("pending");
 
     await waitStatus(garbage.body.id, "failed");
@@ -170,7 +173,7 @@ describe("Video transcode (TASK-50)", () => {
       .get(`/api/v1/attachments/${garbage.body.id}/content`)
       .set(auth(token))
       .expect(200);
-    expect(content.body.toString()).toBe("not a video");
+    expect(Buffer.from(content.body).equals(broken)).toBe(true);
   }, 120_000);
 
   it("leaves non-video files at transcodeStatus none", async () => {

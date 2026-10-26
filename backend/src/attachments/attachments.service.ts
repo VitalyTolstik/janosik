@@ -15,7 +15,12 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
-import { ATTACHMENT_MIME_ALLOWLIST, StorageService } from "./storage.service";
+import {
+  ATTACHMENT_MIME_ALLOWLIST,
+  SIGNATURE_REQUIRED_MIME,
+  sniffMime,
+  StorageService,
+} from "./storage.service";
 import { MediaService } from "./media.service";
 import { TranscodeService } from "./transcode.service";
 
@@ -69,6 +74,28 @@ export class AttachmentsService {
         field: "file",
       });
     }
+    // The declared multipart type is a hint, never the truth (TASK-76):
+    // detect the real family from the bytes and store *that*. A client that
+    // declares an image/video/archive but uploads unrecognizable bytes (HTML
+    // dressed as a PNG) is refused.
+    const sniffed = sniffMime(file.buffer);
+    let mimeType: string;
+    if (sniffed !== null) {
+      if (!ATTACHMENT_MIME_ALLOWLIST.test(sniffed)) {
+        throw new BadRequestException({
+          message: "File type is not allowed",
+          field: "file",
+        });
+      }
+      mimeType = sniffed;
+    } else if (SIGNATURE_REQUIRED_MIME.test(file.mimetype)) {
+      throw new BadRequestException({
+        message: "File contents do not match the declared type",
+        field: "file",
+      });
+    } else {
+      mimeType = file.mimetype;
+    }
 
     const card = await this.prisma.card.findFirst({
       where: { id: cardId, deletedAt: null },
@@ -95,7 +122,7 @@ export class AttachmentsService {
     // immediately; the background job swaps the blob for a compact MP4.
     // The `video_transcode` flag (TASK-61) can switch it off per-user/globally.
     const transcodeStatus =
-      file.mimetype.startsWith("video/") &&
+      mimeType.startsWith("video/") &&
       (await this.flags.isEnabled("video_transcode", user.id))
         ? "pending"
         : "none";
@@ -103,7 +130,7 @@ export class AttachmentsService {
     // TASK-70: images get a thumbnail, videos a poster — generated in the
     // background (queue `media`), never blocking the upload.
     const derivativeStatus =
-      file.mimetype.startsWith("image/") || file.mimetype.startsWith("video/")
+      mimeType.startsWith("image/") || mimeType.startsWith("video/")
         ? "pending"
         : "none";
 
@@ -121,7 +148,7 @@ export class AttachmentsService {
             boardId: card.column.boardId,
             fileName,
             storedName,
-            mimeType: file.mimetype,
+            mimeType,
             sizeBytes: file.size,
             uploadedById: user.id,
             isInline,
@@ -199,9 +226,6 @@ export class AttachmentsService {
         id: true,
         cardId: true,
         boardId: true,
-        storedName: true,
-        thumbnailName: true,
-        posterName: true,
         uploadedById: true,
         card: { select: { deletedAt: true } },
       },
@@ -245,10 +269,10 @@ export class AttachmentsService {
     });
     if (!removed) return;
 
-    await this.storage.remove(this.storage.attachmentPath(row.storedName));
-    for (const name of [row.thumbnailName, row.posterName]) {
-      if (name) await this.storage.remove(this.storage.attachmentPath(name));
-    }
+    // TASK-88: the blob and its derivatives stay on disk — soft-delete is
+    // reversible (`POST /admin/entities/attachments/:id/restore`), so a
+    // restored attachment must still stream. The purge sweep reclaims the
+    // files once the retention window passes.
     this.publish(
       row.boardId,
       row.cardId,

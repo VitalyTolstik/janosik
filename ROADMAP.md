@@ -2320,6 +2320,29 @@ en+ru; гейты зелёные.
 - **Не трогает:** публичный и командный контуры бордов — erase идёт по FK-графу
   User, как `DemoService.purge`.
 
+#### 7.10.6. OWNER vs OPERATOR (TASK-79)
+
+Панель различает две роли мастер-аккаунта. **OPERATOR** — «полный доступ к данным,
+никакого управления контуром»: он видит метрики, сущности, сессии, аудит, письма,
+шаблоны, ops-настройки (read), но **не меняет** глобальное состояние. **OWNER**
+может всё.
+
+OWNER-only на сервере (`assertOwner`, `admin/admin.service.ts` + гейт в
+`admin/admin.controller.ts`):
+
+- глобальные ops/flags: `PUT /admin/ops`, `PATCH /admin/flags/:key`;
+- comms: создание/правка/удаление объявлений, `POST /admin/email/send`,
+  `PUT|DELETE /admin/email-templates/:key`;
+- housekeeping: `POST /admin/maintenance/run`, `POST /admin/retention/purge`;
+- опасные действия над пользователем: `promote`, `impersonate`,
+  `reset password`, экспорт данных (`GET /admin/users/:id/export`,
+  `POST /admin/users/:id/export`, `GET /admin/exports/:id/download`);
+- управление мастерами (`admins`), email/OAuth-настройки, IP-allowlist
+  (было и раньше).
+
+UI (`OpsPage`, `CommsPage`) при `admin.role !== "OWNER"` показывает состояние
+read-only и дисейблит контролы; сервер — единственный источник истины.
+
 ---
 
 ## 8. Definition of Done (для каждой задачи)

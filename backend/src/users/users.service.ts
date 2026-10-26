@@ -13,6 +13,8 @@ import { PresenceService } from "@/realtime/presence.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import {
   AVATAR_MIME_ALLOWLIST,
+  extensionForMime,
+  sniffMime,
   StorageService,
 } from "@/attachments/storage.service";
 import type { UploadedBlob } from "@/attachments/attachments.service";
@@ -66,7 +68,10 @@ export class UsersService {
         field: "file",
       });
     }
-    if (!AVATAR_MIME_ALLOWLIST.test(file.mimetype)) {
+    // TASK-76: trust the bytes, not the multipart header. A real PNG/JPEG/
+    // GIF/WebP passes; HTML or text dressed as an image does not.
+    const sniffed = sniffMime(file.buffer);
+    if (sniffed === null || !AVATAR_MIME_ALLOWLIST.test(sniffed)) {
       throw new BadRequestException({
         message: "Avatar must be a PNG, JPEG, GIF or WebP image",
         field: "file",
@@ -80,7 +85,10 @@ export class UsersService {
     if (!previous) throw new NotFoundException();
 
     await this.storage.ensureDirs();
-    const storedName = this.storage.storedName(file.originalname);
+    // Name the blob after the *detected* type so the served Content-Type
+    // (derived from the extension) matches the real bytes.
+    const ext = extensionForMime(sniffed) ?? ".png";
+    const storedName = this.storage.storedName(`avatar${ext}`);
     await writeFile(this.storage.avatarPath(storedName), file.buffer);
 
     const user = await this.prisma.user.update({

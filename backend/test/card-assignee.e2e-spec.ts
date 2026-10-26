@@ -18,8 +18,8 @@ const PASSWORD = "correct horse battery";
  * The assignee gate (TASK-49): a `SET_CARD_ASSIGN` command may only name a
  * user who is an active board member — a row that has accepted its
  * invitation and is not an expired VIEWER. Unassigning (`null`) needs no
- * member, and inverse (undo) commands are exempt so a historical state can
- * be restored even when the member has since left.
+ * member. TASK-80: the gate is unconditional — a forged `inverse: true`
+ * does not exempt it.
  */
 describe("Card assignee gate (e2e)", () => {
   let app: INestApplication;
@@ -171,6 +171,23 @@ describe("Card assignee gate (e2e)", () => {
 
   it("refuses a pending (never-accepted) invitee", async () => {
     const res = await assign(await userIdOf(INVITEE_EMAIL)).expect(400);
+    expect(res.body).toMatchObject({ field: "action.assigneeId" });
+  });
+
+  it("refuses a non-member even with a forged inverse flag (TASK-80)", async () => {
+    const action = {
+      type: "SET_CARD_ASSIGN",
+      cardId: "card-1",
+      assigneeId: await userIdOf(OUTSIDER_EMAIL),
+      boardId,
+      at: Date.now(),
+      inverse: true,
+    } as unknown as BoardAction;
+    const res = await server()
+      .post(`/api/v1/boards/${boardId}/commands`)
+      .set(auth(ownerToken))
+      .send({ commandId: randomUUID(), action })
+      .expect(400);
     expect(res.body).toMatchObject({ field: "action.assigneeId" });
   });
 

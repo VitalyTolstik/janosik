@@ -191,19 +191,30 @@ export class CommentsService {
     // restore story; the purge job reclaims rows later). Runs under the same
     // board lock so it never races a concurrent command.
     await this.boardWrite.run(comment.card.column.boardId, (tx) =>
-      this.unlinkInlineAttachments(tx, comment.text),
+      this.unlinkInlineAttachments(
+        tx,
+        comment.card.column.boardId,
+        comment.text,
+      ),
     );
   }
 
-  /** Soft-delete the inline attachments embedded in a deleted comment. */
+  /**
+   * Soft-delete the inline attachments embedded in a deleted comment. Scoped
+   * to the comment's board (TASK-81): the ids are parsed out of free text, so
+   * without `boardId` a member could paste another board's attachment id
+   * (leaked through public shares) and delete that board's media by removing
+   * their own comment.
+   */
   private async unlinkInlineAttachments(
     tx: Prisma.TransactionClient,
+    boardId: string,
     text: string,
   ): Promise<void> {
     const ids = [...text.matchAll(INLINE_ATTACHMENT_URL)].map((m) => m[1]);
     if (ids.length === 0) return;
     await tx.attachment.updateMany({
-      where: { id: { in: ids }, isInline: true, deletedAt: null },
+      where: { id: { in: ids }, boardId, isInline: true, deletedAt: null },
       data: { deletedAt: new Date() },
     });
   }

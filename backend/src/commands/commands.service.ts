@@ -100,6 +100,22 @@ const SUPPORTED_ACTIONS = new Set<string>([
   "RESTORE_CHECKLIST_ITEM",
 ]);
 
+/**
+ * TASK-80: the only actions allowed to skip the collection/WIP guards. They
+ * re-add data that already existed (undo of a delete), so refusing them would
+ * make undo impossible. The client-supplied `inverse` flag is *not* trusted:
+ * any other action — including a forged `inverse: true` on `ADD_CARD` or
+ * `SET_CARD_ASSIGN` — is checked exactly like a fresh one.
+ */
+const RESTORE_ACTIONS = new Set<string>([
+  "RESTORE_CARD",
+  "RESTORE_COLUMN",
+  "RESTORE_COLUMN_CARDS",
+  "RESTORE_LABEL",
+  "RESTORE_CHECKLIST",
+  "RESTORE_CHECKLIST_ITEM",
+]);
+
 @Injectable()
 export class CommandsService {
   constructor(
@@ -404,9 +420,8 @@ export class CommandsService {
   /**
    * Jira-style assignee (TASK-49): the assignee must be an active board
    * member — a row that has accepted its invitation (TASK-35 addendum)
-   * and is not an expired VIEWER. Inverse commands are exempt: undo
-   * restores a historical state even when the member has since left, the
-   * same way it restores a label that was renamed since.
+   * and is not an expired VIEWER. TASK-80: the check is unconditional — a
+   * forged `inverse: true` must not let a client assign a non-member.
    */
   private async assertAssigneeIsBoardMember(
     tx: Prisma.TransactionClient,
@@ -414,7 +429,6 @@ export class CommandsService {
     action: BoardAction,
   ): Promise<void> {
     if (action.type !== "SET_CARD_ASSIGN") return;
-    if ("inverse" in action && action.inverse === true) return;
     if (action.assigneeId === null) return;
     const member = await tx.boardMember.findFirst({
       where: {
@@ -506,15 +520,15 @@ export class CommandsService {
    * Mirror the reducer's collection guards. A command that would grow a
    * collection past a `LIMITS` bound or a column past its WIP limit is
    * refused with `409 { conflict: "wip" }` — the same `atWipLimit` predicate
-   * the client uses. Inverse commands add nothing new and are never refused
-   * (AGENT.md undo rule).
+   * the client uses. TASK-80: only the `RESTORE_*` family is exempt (undo of
+   * a delete); a client-supplied `inverse` flag buys nothing.
    */
   private assertNoWipConflict(
     board: Board,
     action: BoardAction,
     currentVersion: number,
   ): void {
-    if ("inverse" in action && action.inverse === true) return;
+    if (RESTORE_ACTIONS.has(action.type)) return;
     const reject = (): never => {
       throw new ConflictException({
         conflict: "wip",
@@ -558,23 +572,12 @@ export class CommandsService {
         if (columnBlocked(column)) reject();
         return;
       }
-      case "RESTORE_CARD": {
-        if (action.columnId === undefined) return;
-        if (
-          columnBlocked(board.columns.find((c) => c.id === action.columnId))
-        ) {
-          reject();
-        }
-        return;
-      }
       case "ADD_COLUMN":
-      case "DUPLICATE_COLUMN":
-      case "RESTORE_COLUMN": {
+      case "DUPLICATE_COLUMN": {
         if (board.columns.length >= LIMITS.columnsPerBoard) reject();
         return;
       }
-      case "ADD_LABEL":
-      case "RESTORE_LABEL": {
+      case "ADD_LABEL": {
         // A duplicate id is a reducer no-op, not a limit violation.
         if (board.labels.some((label) => label.id === action.label.id)) return;
         if (board.labels.length >= LIMITS.labelsPerBoard) reject();
@@ -614,31 +617,21 @@ export class CommandsService {
         if ((card.links?.length ?? 0) >= LIMITS.linksPerCard) reject();
         return;
       }
-      case "ADD_CHECKLIST":
-      case "RESTORE_CHECKLIST": {
+      case "ADD_CHECKLIST": {
         const card = board.cards[action.cardId];
         if (!card) return;
         const checklists = card.checklists ?? [];
-        const id =
-          action.type === "ADD_CHECKLIST"
-            ? action.newChecklistId
-            : action.checklist.id;
-        if (checklists.some((checklist) => checklist.id === id)) return;
+        if (checklists.some((c) => c.id === action.newChecklistId)) return;
         if (checklists.length >= LIMITS.checklistsPerCard) reject();
         return;
       }
-      case "ADD_CHECKLIST_ITEM":
-      case "RESTORE_CHECKLIST_ITEM": {
+      case "ADD_CHECKLIST_ITEM": {
         const card = board.cards[action.cardId];
         if (!card) return;
         const items =
           card.checklists?.find((c) => c.id === action.checklistId)?.items ??
           [];
-        const id =
-          action.type === "ADD_CHECKLIST_ITEM"
-            ? action.newItemId
-            : action.item.id;
-        if (items.some((item) => item.id === id)) return;
+        if (items.some((item) => item.id === action.newItemId)) return;
         if (items.length >= LIMITS.itemsPerChecklist) reject();
         return;
       }

@@ -1,7 +1,7 @@
 import { Transform } from "class-transformer";
 import {
-  IsBoolean,
   IsEmail,
+  IsIn,
   IsOptional,
   IsString,
   MaxLength,
@@ -21,7 +21,12 @@ export class AdminCreateMasterDto {
   @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
   displayName?: string;
 
+  /**
+   * TASK-89: the panel sends `role` (OWNER/OPERATOR). It used to send an
+   * `owner` boolean while the DTO declared `owner`, so `role` was stripped by
+   * `whitelist: true` and every master came out an OPERATOR.
+   */
   @IsOptional()
-  @IsBoolean()
-  owner?: boolean;
+  @IsIn(["OWNER", "OPERATOR"])
+  role?: "OWNER" | "OPERATOR";
 }

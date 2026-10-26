@@ -154,9 +154,13 @@ export class TranscodeService implements OnModuleInit {
   /**
    * Encode one attachment. Shared by the BullMQ worker and the in-process
    * fallback, so both backends run the exact same code. Rejections propagate
-   * (the worker retries on them); the row is already marked `failed`.
+   * so the worker retries (TASK-87); the row is marked `failed` only once no
+   * attempt is left, so the retry's `pending` guard passes.
    */
-  async process(attachmentId: string): Promise<void> {
+  async process(
+    attachmentId: string,
+    retry?: { attemptsMade: number; attempts: number },
+  ): Promise<void> {
     const row = await this.prisma.attachment.findFirst({
       where: { id: attachmentId, deletedAt: null },
       select: {
@@ -206,11 +210,19 @@ export class TranscodeService implements OnModuleInit {
       this.publish(row);
     } catch (error) {
       await rm(tmpOutput, { force: true });
-      await this.prisma.attachment.updateMany({
-        where: { id: row.id, deletedAt: null },
-        data: { transcodeStatus: "failed" },
-      });
-      this.failed += 1;
+      // TASK-87: while BullMQ still has attempts left, leave the row
+      // `pending` so the next attempt's guard does not no-op it. Only the
+      // final attempt — or the in-process fallback, which never retries —
+      // settles on `failed`.
+      const willRetry =
+        retry !== undefined && retry.attemptsMade + 1 < retry.attempts;
+      if (!willRetry) {
+        await this.prisma.attachment.updateMany({
+          where: { id: row.id, deletedAt: null },
+          data: { transcodeStatus: "failed" },
+        });
+        this.failed += 1;
+      }
       this.publish(row);
       throw error;
     }
