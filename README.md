@@ -55,6 +55,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 ├─ docker-entrypoint.sh         # runs `prisma migrate deploy`, then the API
 ├─ .env.example                 # annotated environment for docker compose
 ├─ SECURITY.md / CHANGELOG.md   # disclosure policy, release history
+├─ docs/SELF-HOSTING.md         # full self-hosting guide (TLS, backups, ops)
 ├─ ROADMAP.md                   # plan, architecture assessment, §7 backend spec
 ├─ ROADMAP-DONE.md              # archive of closed tasks
 └─ AGENT.md                     # working agreement for AI agents/contributors
@@ -224,6 +225,9 @@ Environment variables (see `.env.example` for the full annotated list):
 To build the image from a checkout instead of pulling, uncomment `build: .`
 in `docker-compose.yml`. For a TLS-terminating proxy in front, keep
 `PUBLIC_ORIGIN=https://…`, set `COOKIE_SECURE=true` and `TRUST_PROXY=1`.
+
+**Full guide** — TLS setup (Caddy/nginx/Traefik), backups & restore, the
+environment reference and troubleshooting: **[docs/SELF-HOSTING.md](./docs/SELF-HOSTING.md)**.
 
 ---
 
