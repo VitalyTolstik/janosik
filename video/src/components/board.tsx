@@ -2,14 +2,20 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { CARD_H, CHROME_H, HEIGHT, PAD, colWidth, colX } from "../lib/layout";
 
-export type Agent = "a" | "b" | "c" | "d";
-
-const agentColor: Record<Agent, string> = {
-  a: "var(--primary)",
-  b: "var(--secondary)",
-  c: "var(--success)",
-  d: "var(--warning)",
-};
+/** Ten distinct agent colours (the app's label palette), so a swarm reads as
+ * many separate workers rather than four. */
+export const AGENT_COLORS = [
+  "var(--primary)",
+  "var(--secondary)",
+  "var(--success)",
+  "var(--warning)",
+  "var(--indigo)",
+  "var(--pink)",
+  "var(--teal)",
+  "var(--orange)",
+  "var(--fuchsia)",
+  "var(--blue)",
+] as const;
 
 const mutedLine =
   "color-mix(in oklab, var(--muted-foreground) 32%, transparent)";
@@ -108,10 +114,10 @@ export const Avatar = ({
 );
 
 export const AgentDot = ({
-  agent,
+  color,
   size = 16,
 }: {
-  agent: Agent;
+  color: string;
   size?: number;
 }) => (
   <div
@@ -119,7 +125,7 @@ export const AgentDot = ({
       width: size,
       height: size,
       borderRadius: "50%",
-      background: agentColor[agent],
+      background: color,
       flex: "none",
     }}
   />
@@ -130,7 +136,8 @@ export interface CardSpec {
   lines: number[];
   pill?: boolean;
   check?: boolean;
-  agent?: Agent;
+  /** An agent colour (from `AGENT_COLORS`). */
+  agent?: string;
 }
 
 export const CardBody = ({
@@ -163,7 +170,7 @@ export const CardBody = ({
           <span />
         )}
         {spec.check ? <Check on={checkOn} /> : null}
-        {spec.agent ? <AgentDot agent={spec.agent} /> : null}
+        {spec.agent ? <AgentDot color={spec.agent} /> : null}
       </div>
     ) : null}
   </div>
@@ -344,5 +351,46 @@ export const Cursor = ({
         {label}
       </span>
     ) : null}
+  </div>
+);
+
+export type BoardView = "kanban" | "calendar" | "table";
+
+const VIEW_LABELS: Record<BoardView, string> = {
+  kanban: "Kanban",
+  calendar: "Calendar",
+  table: "Table",
+};
+
+/** The kanban / calendar / table segmented control, shown in the chrome bar. */
+export const ViewSwitcher = ({ active }: { active: BoardView }) => (
+  <div
+    style={{
+      display: "flex",
+      gap: 4,
+      padding: 4,
+      borderRadius: 999,
+      background: "var(--surface)",
+      border: "1px solid var(--border)",
+    }}
+  >
+    {(Object.keys(VIEW_LABELS) as BoardView[]).map((view) => (
+      <span
+        key={view}
+        style={{
+          padding: "6px 16px",
+          borderRadius: 999,
+          fontSize: 15,
+          fontWeight: 600,
+          background: active === view ? "var(--primary)" : "transparent",
+          color:
+            active === view
+              ? "var(--primary-foreground)"
+              : "var(--muted-foreground)",
+        }}
+      >
+        {VIEW_LABELS[view]}
+      </span>
+    ))}
   </div>
 );

@@ -18,7 +18,7 @@ export const RemotionRoot = () => (
     <Composition
       id="Hero"
       component={Hero}
-      durationInFrames={210}
+      durationInFrames={300}
       fps={FPS}
       width={WIDTH}
       height={HEIGHT}
@@ -27,7 +27,7 @@ export const RemotionRoot = () => (
     <Composition
       id="Board"
       component={Board}
-      durationInFrames={240}
+      durationInFrames={300}
       fps={FPS}
       width={WIDTH}
       height={HEIGHT}
@@ -36,7 +36,7 @@ export const RemotionRoot = () => (
     <Composition
       id="Realtime"
       component={Realtime}
-      durationInFrames={210}
+      durationInFrames={300}
       fps={FPS}
       width={WIDTH}
       height={HEIGHT}

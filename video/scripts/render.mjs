@@ -20,9 +20,9 @@ mkdirSync(outDir, { recursive: true });
 // `slug` is the file name the site imports; `id` is the composition id; `poster`
 // is the frame captured as the `<video poster>` (a settled, representative one).
 const clips = [
-  { slug: "hero-swarm", id: "Hero", poster: 100 },
-  { slug: "feature-board", id: "Board", poster: 110 },
-  { slug: "feature-realtime", id: "Realtime", poster: 90 },
+  { slug: "hero-swarm", id: "Hero", poster: 160 },
+  { slug: "feature-board", id: "Board", poster: 60 },
+  { slug: "feature-realtime", id: "Realtime", poster: 120 },
   { slug: "feature-cards", id: "Cards", poster: 170 },
   { slug: "feature-sharing", id: "Sharing", poster: 150 },
   { slug: "feature-selfhost", id: "Selfhost", poster: 180 },
