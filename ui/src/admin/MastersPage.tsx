@@ -8,6 +8,7 @@ import {
   ShieldOff,
   ShieldCheck,
   Trash2,
+  Unlock,
   UserPlus,
 } from "lucide-react";
 import type { AdminMasterRowDto } from "@janosik/shared";
@@ -58,6 +59,7 @@ import {
 type PendingAction =
   | { kind: "disable"; master: AdminMasterRowDto }
   | { kind: "enable"; master: AdminMasterRowDto }
+  | { kind: "unlock"; master: AdminMasterRowDto }
   | { kind: "reset"; master: AdminMasterRowDto }
   | { kind: "sessions"; master: AdminMasterRowDto }
   | { kind: "remove"; master: AdminMasterRowDto }
@@ -306,6 +308,11 @@ export function MastersPage() {
             ? t("admin.masters.toast.disabled", { email: action.master.email })
             : t("admin.masters.toast.enabled", { email: action.master.email }),
         );
+      } else if (action.kind === "unlock") {
+        await adminApi.updateMaster(action.master.id, { unlock: true });
+        toast.success(
+          t("admin.masters.toast.unlocked", { email: action.master.email }),
+        );
       } else if (action.kind === "reset") {
         const response = await adminApi.resetMasterPassword(action.master.id);
         toast.success(
@@ -353,6 +360,13 @@ export function MastersPage() {
         title: t("admin.masters.confirm.enable.title", { email }),
         body: t("admin.masters.confirm.enable.body"),
         label: t("admin.masters.action.enable"),
+      };
+    }
+    if (action.kind === "unlock") {
+      return {
+        title: t("admin.masters.confirm.unlock.title", { email }),
+        body: t("admin.masters.confirm.unlock.body"),
+        label: t("admin.masters.action.unlock"),
       };
     }
     if (action.kind === "reset") {
@@ -505,6 +519,17 @@ export function MastersPage() {
                             {t("admin.masters.action.enable")}
                           </DropdownMenuItem>
                         )}
+                        {master.lockedUntil !== null ? (
+                          <DropdownMenuItem
+                            data-testid={`admin-master-unlock-${master.email}`}
+                            onSelect={() =>
+                              setPending({ kind: "unlock", master })
+                            }
+                          >
+                            <Unlock className="h-3.5 w-3.5" aria-hidden />
+                            {t("admin.masters.action.unlock")}
+                          </DropdownMenuItem>
+                        ) : null}
                         <DropdownMenuItem
                           onSelect={() => setPending({ kind: "reset", master })}
                         >
@@ -551,7 +576,11 @@ export function MastersPage() {
         title={confirmText(pending).title}
         body={confirmText(pending).body}
         confirmLabel={confirmText(pending).label}
-        destructive={pending !== null && pending.kind !== "enable"}
+        destructive={
+          pending !== null &&
+          pending.kind !== "enable" &&
+          pending.kind !== "unlock"
+        }
         onClose={() => setPending(null)}
         onConfirm={() => void run(pending)}
       />

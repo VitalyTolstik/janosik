@@ -71,6 +71,8 @@ export interface AdminCreateMasterResponse {
 export interface AdminUpdateMasterRequest {
   disabled?: boolean;
   displayName?: string;
+  /** Clear a lockout: resets the failed-login counter and unlocks the account. */
+  unlock?: boolean;
 }
 
 /** Body of `POST /admin/auth/login|refresh` — token + public projection. */
@@ -337,6 +339,7 @@ export const ADMIN_AUDIT_ACTIONS = [
   "admin.create",
   "admin.disable",
   "admin.enable",
+  "admin.unlock",
   "admin.update",
   "admin.password_changed",
   "admin.password_reset",
@@ -378,6 +381,7 @@ export const ADMIN_AUDIT_ACTIONS = [
   "email.test_sent",
   "email.sent",
   "email.template_changed",
+  "email.template_reset",
   "oauth.settings_changed",
   "throttle.settings_changed",
   "flag.changed",
@@ -1278,8 +1282,11 @@ export interface AdminSendEmailResponse {
 export interface AdminEmailTemplateDto {
   key: string;
   label: string;
+  /** Saved override, or the built-in letter when there is none. */
   subject: string;
   bodyHtml: string;
+  /** Placeholder names usable in the subject/body, e.g. `code`, `minutes`. */
+  placeholders: string[];
   /** True when the saved row overrides the built-in template. */
   custom: boolean;
   updatedBy: string | null;

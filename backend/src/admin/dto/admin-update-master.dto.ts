@@ -12,4 +12,9 @@ export class AdminUpdateMasterDto {
   @MaxLength(50)
   @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
   displayName?: string;
+
+  /** Clear a lockout (TASK-65 addendum): unlock + reset failed logins. */
+  @IsOptional()
+  @IsBoolean()
+  unlock?: boolean;
 }

@@ -375,8 +375,9 @@ export class FakeAdminServer {
     {
       key: "verification_code",
       label: "Email verification code",
-      subject: "",
-      bodyHtml: "",
+      subject: "Janosik: confirmation code {{code}}",
+      bodyHtml: "<p>Code: {{code}} ({{minutes}} min)</p>",
+      placeholders: ["code", "minutes"],
       custom: false,
       updatedBy: null,
       updatedAt: null,
@@ -561,6 +562,10 @@ export class FakeAdminServer {
         return this.json({ message: "Master account not found" }, 404);
       if (jsonBody?.disabled !== undefined) {
         master.disabledAt = jsonBody.disabled ? now : null;
+      }
+      if (jsonBody?.unlock === true) {
+        master.lockedUntil = null;
+        master.failedLogins = 0;
       }
       return this.json(master);
     }
@@ -1199,6 +1204,7 @@ export class FakeAdminServer {
         label: key,
         subject: "",
         bodyHtml: "",
+        placeholders: ["code", "minutes"],
         custom: false,
         updatedBy: null,
         updatedAt: null,
@@ -1208,6 +1214,16 @@ export class FakeAdminServer {
       row.custom = true;
       row.updatedAt = now;
       return this.json(row);
+    }
+    if (tplOne && method === "DELETE") {
+      const key = decodeURIComponent(tplOne[1] ?? "");
+      const row = this.emailTemplates.find((entry) => entry.key === key);
+      if (row) {
+        row.custom = false;
+        row.updatedBy = null;
+        row.updatedAt = null;
+      }
+      return this.json(row ?? { message: "Not found" }, row ? 200 : 404);
     }
 
     // ---------------------------------------------- data/compliance (TASK-63)

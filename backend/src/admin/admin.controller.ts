@@ -763,6 +763,22 @@ export class AdminController {
     return template;
   }
 
+  @Delete("email-templates/:key")
+  async resetEmailTemplate(
+    @Param("key") key: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminEmailTemplateDto> {
+    const template = await this.comms.resetTemplate(key);
+    await this.admin.audit(
+      admin,
+      "email.template_reset",
+      "email_template",
+      key,
+      {},
+    );
+    return template;
+  }
+
   // --------------------------------------------- data/compliance (TASK-63)
 
   @Get("retention")

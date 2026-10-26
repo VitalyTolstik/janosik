@@ -734,6 +734,14 @@ export class AdminApiClient {
     );
   }
 
+  /** Drop an override so the built-in letter takes over again. */
+  resetEmailTemplate(key: string): Promise<AdminEmailTemplateDto> {
+    return this.request<AdminEmailTemplateDto>(
+      `/admin/email-templates/${encodeURIComponent(key)}`,
+      { method: "DELETE" },
+    );
+  }
+
   // -------------------------------------------- data/compliance (TASK-63)
 
   getRetention(): Promise<AdminRetentionDto> {

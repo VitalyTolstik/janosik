@@ -591,6 +591,11 @@ export class AdminService {
         data.lockedUntil = null;
       }
     }
+    if (dto.unlock === true) {
+      // Clear a brute-force lockout without touching the block state.
+      data.failedLogins = 0;
+      data.lockedUntil = null;
+    }
     const updated =
       Object.keys(data).length > 0
         ? await this.prisma.adminUser.update({
@@ -605,6 +610,10 @@ export class AdminService {
       });
     } else if (dto.disabled === false) {
       await this.audit(admin, "admin.enable", "admin", masterId, {
+        email: target.email,
+      });
+    } else if (dto.unlock === true) {
+      await this.audit(admin, "admin.unlock", "admin", masterId, {
         email: target.email,
       });
     } else if (dto.displayName !== undefined) {

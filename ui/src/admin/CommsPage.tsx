@@ -135,21 +135,43 @@ export function CommsPage() {
     }
   }, [mailTo, mailSubject, mailBody, t, toast]);
 
+  // Keep the roster row and its editable draft in step after save/reset.
+  const applyTemplate = useCallback((updated: AdminEmailTemplateDto) => {
+    setTemplates((current) =>
+      current.map((row) => (row.key === updated.key ? updated : row)),
+    );
+    setDraft((current) => ({
+      ...current,
+      [updated.key]: { subject: updated.subject, bodyHtml: updated.bodyHtml },
+    }));
+  }, []);
+
   const saveTemplate = useCallback(
     async (key: string) => {
       const entry = draft[key];
       if (!entry) return;
       try {
         const updated = await adminApi.updateEmailTemplate(key, entry);
-        setTemplates((current) =>
-          current.map((row) => (row.key === key ? updated : row)),
-        );
+        applyTemplate(updated);
         toast.success(t("admin.comms.saved"));
       } catch {
         toast.error(t("admin.common.actionFailed"));
       }
     },
     [draft, t, toast],
+  );
+
+  const resetTemplate = useCallback(
+    async (key: string) => {
+      try {
+        const updated = await adminApi.resetEmailTemplate(key);
+        applyTemplate(updated);
+        toast.success(t("admin.comms.templates.resetDone"));
+      } catch {
+        toast.error(t("admin.common.actionFailed"));
+      }
+    },
+    [t, toast],
   );
 
   if (phase === "loading") return <LoadingState />;
@@ -255,10 +277,21 @@ export function CommsPage() {
         <div className="space-y-4">
           {templates.map((template) => (
             <div key={template.key} className="space-y-2">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <p className="text-sm font-medium">{template.label}</p>
                 {template.custom ? (
                   <Badge variant="primary">{t("admin.comms.custom")}</Badge>
+                ) : (
+                  <Badge variant="neutral">{t("admin.comms.default")}</Badge>
+                )}
+                {template.placeholders.length > 0 ? (
+                  <span className="text-[11px] text-muted-foreground">
+                    {t("admin.comms.templates.placeholders", {
+                      list: template.placeholders
+                        .map((name) => `{{${name}}}`)
+                        .join(", "),
+                    })}
+                  </span>
                 ) : null}
               </div>
               <Input
@@ -293,7 +326,17 @@ export function CommsPage() {
                   }))
                 }
               />
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                {template.custom ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    data-testid={`admin-template-reset-${template.key}`}
+                    onClick={() => void resetTemplate(template.key)}
+                  >
+                    {t("admin.comms.templates.reset")}
+                  </Button>
+                ) : null}
                 <Button
                   variant="outline"
                   size="sm"

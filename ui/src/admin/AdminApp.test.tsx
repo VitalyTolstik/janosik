@@ -439,6 +439,59 @@ describe("AdminApp", () => {
     ).not.toBeNull();
   });
 
+  it("shows the built-in email template by default and can reset an override", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/comms");
+
+    expect(await screen.findByText(t("admin.comms.default"))).toBeTruthy();
+    expect(
+      screen.getByText(
+        t("admin.comms.templates.placeholders", {
+          list: "{{code}}, {{minutes}}",
+        }),
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-template-reset-verification_code"),
+    ).toBeNull();
+
+    fireEvent.click(
+      await screen.findByTestId("admin-template-save-verification_code"),
+    );
+    expect(
+      await screen.findByTestId("admin-template-reset-verification_code"),
+    ).toBeTruthy();
+  });
+
+  it("unlocks a locked master", async () => {
+    const server = serverWith();
+    server.masters = [
+      adminMaster({ lockedUntil: 1_760_000_600_000, failedLogins: 5 }),
+    ];
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/masters");
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-master-menu-operator@example.com"),
+      { button: 0 },
+    );
+    fireEvent.click(await screen.findByText(t("admin.masters.action.unlock")));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
+
+    await waitFor(() => {
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "PATCH" &&
+            request.path === "/admin/admins/master-2" &&
+            (request.body as { unlock?: boolean }).unlock === true,
+        ),
+      ).toBe(true);
+    });
+  });
+
   it("resets a master password from the roster", async () => {
     const server = serverWith();
     server.masters = [adminMaster()];

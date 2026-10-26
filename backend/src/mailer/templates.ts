@@ -4,6 +4,12 @@ import type { MailLocale } from "./mail.types";
  * Email templates (TASK-51). Table-based HTML — mail clients (Outlook,
  * Gmail) strip modern CSS — plus a plain-text alternative. Palette mirrors
  * the app (indigo accent on white).
+ *
+ * `EMAIL_TEMPLATE_DEFAULTS` exposes the very same letters with `{{code}}` /
+ * `{{minutes}}` / `{{email}}` placeholders instead of concrete values, so the
+ * master panel's template editor shows exactly what the app sends (and can be
+ * edited into an override). The builders below stay the single source: the
+ * defaults are their English render with the placeholders put back.
  */
 
 const BRAND = "Janosik";
@@ -39,7 +45,7 @@ const CODE_STYLES =
  */
 export function verificationCodeEmail(
   code: string,
-  minutes: number,
+  minutes: number | string,
   locale: MailLocale,
 ): { subject: string; text: string; html: string } {
   if (locale === "ru") {
@@ -85,7 +91,7 @@ export function verificationCodeEmail(
 /** The verification code email — sent to the NEW address. */
 export function emailChangeCodeEmail(
   code: string,
-  minutes: number,
+  minutes: number | string,
   locale: MailLocale,
 ): { subject: string; text: string; html: string } {
   if (locale === "ru") {
@@ -179,4 +185,65 @@ function escapeHtml(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/** One editable template: the letter with `{{placeholder}}` tokens intact. */
+export interface EmailTemplateDefault {
+  subject: string;
+  bodyHtml: string;
+  /** Placeholder names usable inside `subject` / `bodyHtml`. */
+  placeholders: string[];
+}
+
+const verificationDefault = verificationCodeEmail(
+  "{{code}}",
+  "{{minutes}}",
+  "en",
+);
+const changeCodeDefault = emailChangeCodeEmail("{{code}}", "{{minutes}}", "en");
+const changedNoticeDefault = emailChangedNoticeEmail("{{email}}", "en");
+
+/** The built-in letters as editable templates, keyed by template key. */
+export const EMAIL_TEMPLATE_DEFAULTS: Record<string, EmailTemplateDefault> = {
+  verification_code: {
+    subject: verificationDefault.subject,
+    bodyHtml: verificationDefault.html,
+    placeholders: ["code", "minutes"],
+  },
+  email_change_code: {
+    subject: changeCodeDefault.subject,
+    bodyHtml: changeCodeDefault.html,
+    placeholders: ["code", "minutes"],
+  },
+  email_changed_notice: {
+    subject: changedNoticeDefault.subject,
+    bodyHtml: changedNoticeDefault.html,
+    placeholders: ["email"],
+  },
+};
+
+/** `{{name}}` → value; unknown placeholders are left intact. */
+export function fillTemplate(
+  template: string,
+  vars: Record<string, string | number>,
+): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, name: string) =>
+    Object.prototype.hasOwnProperty.call(vars, name)
+      ? String(vars[name])
+      : match,
+  );
+}
+
+/** A readable plain-text alternative from the HTML body. */
+export function htmlToText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
 }

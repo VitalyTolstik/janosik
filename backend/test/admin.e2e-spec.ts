@@ -933,6 +933,62 @@ describe("Admin API (e2e)", () => {
     });
   });
 
+  describe("email templates & master unlock", () => {
+    it("shows the built-in letter until an override is saved, then restores it", async () => {
+      const initial = await server()
+        .get("/api/v1/admin/email-templates")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      const builtIn = initial.body.find(
+        (row: { key: string }) => row.key === "verification_code",
+      );
+      // Not empty: the editor is prefilled with the built-in letter.
+      expect(builtIn.custom).toBe(false);
+      expect(builtIn.subject).toContain("{{code}}");
+      expect(builtIn.bodyHtml).toContain("{{code}}");
+      expect(builtIn.placeholders).toEqual(["code", "minutes"]);
+
+      const saved = await server()
+        .put("/api/v1/admin/email-templates/verification_code")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ subject: "Hi {{code}}", bodyHtml: "<p>{{code}}</p>" })
+        .expect(200);
+      expect(saved.body.custom).toBe(true);
+      expect(saved.body.subject).toBe("Hi {{code}}");
+
+      const reset = await server()
+        .delete("/api/v1/admin/email-templates/verification_code")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(reset.body.custom).toBe(false);
+      expect(reset.body.subject).toContain("{{code}}");
+    });
+
+    it("lets an owner clear a master's lockout", async () => {
+      const created = await server()
+        .post("/api/v1/admin/admins")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ email: "locked@example.com" })
+        .expect(201);
+      const lockedId: string = created.body.admin.id;
+      await prisma.adminUser.update({
+        where: { id: lockedId },
+        data: {
+          failedLogins: 5,
+          lockedUntil: new Date(Date.now() + 600_000),
+        },
+      });
+
+      const unlocked = await server()
+        .patch(`/api/v1/admin/admins/${lockedId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ unlock: true })
+        .expect(200);
+      expect(unlocked.body.lockedUntil).toBeNull();
+      expect(unlocked.body.failedLogins).toBe(0);
+    });
+  });
+
   it("logs out idempotently and clears the admin cookie", async () => {
     const login = await server()
       .post("/api/v1/admin/auth/login")

@@ -220,4 +220,9 @@ export class CommsService {
     const label = catalog.find((entry) => entry.key === key)?.label ?? key;
     return { ...row, label };
   }
+
+  /** Drop the override so the built-in letter takes over again. */
+  async resetTemplate(key: string): Promise<AdminEmailTemplateDto> {
+    return this.templates.reset(key);
+  }
 }
