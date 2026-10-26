@@ -45,6 +45,7 @@ import {
   CreateBoardButton,
   CreateUserButton,
   DeleteUserDialog,
+  EditAnnouncementDialog,
   PromoteUserDialog,
   ResetUserPasswordDialog,
 } from "./dialogs";
@@ -1305,6 +1306,17 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           },
         ],
         actions: (row) => [
+          {
+            label: t("admin.announcements.action.edit"),
+            run: async () => undefined,
+            renderDialog: ({ close, reload }) => (
+              <EditAnnouncementDialog
+                announcement={row}
+                onClose={close}
+                onDone={reload}
+              />
+            ),
+          },
           row.active
             ? {
                 label: t("admin.announcements.action.deactivate"),
@@ -1319,6 +1331,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.common.delete"),
             destructive: true,
+            confirmTitle: t("admin.common.delete"),
             run: () => adminApi.deleteAnnouncement(row.id),
           },
         ],

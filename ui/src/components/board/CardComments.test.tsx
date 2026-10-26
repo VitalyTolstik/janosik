@@ -152,7 +152,11 @@ describe("CardComments", () => {
           request.method === "POST" &&
           request.path === "/api/v1/cards/card-1/comments",
       )?.body,
-    ).toEqual({ text: "Fresh take" });
+      // TASK-99: the POST carries an idempotency key alongside the text.
+    ).toEqual({
+      text: "Fresh take",
+      commandId: expect.any(String),
+    });
   });
 
   it("submits with Ctrl/Cmd+Enter and keeps plain Enter harmless", async () => {

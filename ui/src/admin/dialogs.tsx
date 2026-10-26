@@ -18,6 +18,7 @@ import {
   ADMIN_PASSWORD_MAX,
   ADMIN_PASSWORD_MIN,
   LIMITS,
+  type AdminAnnouncementDto,
 } from "@janosik/shared";
 import { CharCount, Field } from "./ui";
 import { fieldError, isValid } from "./validation";
@@ -859,4 +860,183 @@ export function PromoteUserDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Edit an announcement (TASK-113): the PATCH endpoint existed, but the UI
+ *  could only activate/deactivate and delete. */
+export function EditAnnouncementDialog({
+  announcement,
+  onClose,
+  onDone,
+}: {
+  announcement: AdminAnnouncementDto;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const t = useAdminT();
+  const toast = useToast();
+  const [title, setTitle] = useState(announcement.title);
+  const [body, setBody] = useState(announcement.body);
+  const [level, setLevel] = useState(announcement.level);
+  const [audience, setAudience] = useState(announcement.audience);
+  const [segment, setSegment] = useState(announcement.segment ?? "");
+  const [active, setActive] = useState(announcement.active);
+  const [sendEmail, setSendEmail] = useState(announcement.sendEmail);
+  const [startsAt, setStartsAt] = useState(toLocalInput(announcement.startsAt));
+  const [endsAt, setEndsAt] = useState(toLocalInput(announcement.endsAt));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await adminApi.updateAnnouncement(announcement.id, {
+        title: title.trim(),
+        body: body.trim(),
+        level,
+        audience,
+        segment: audience === "segment" ? segment.trim() : null,
+        active,
+        sendEmail,
+        startsAt: fromLocalInput(startsAt),
+        endsAt: fromLocalInput(endsAt),
+      });
+      toast.success(t("admin.comms.saved"));
+      onDone();
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError && cause.messageText
+          ? cause.messageText
+          : t("admin.common.error"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-sm">
+            {t("admin.announcements.action.edit")}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <Field label={t("admin.comms.field.title")}>
+            <Input
+              value={title}
+              maxLength={200}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+          </Field>
+          <Field label={t("admin.comms.field.body")}>
+            <textarea
+              value={body}
+              rows={4}
+              className="w-full rounded-md border border-input bg-transparent p-2 text-sm"
+              onChange={(event) => setBody(event.target.value)}
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t("admin.comms.field.level")}>
+              <select
+                value={level}
+                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+                onChange={(event) =>
+                  setLevel(event.target.value as typeof level)
+                }
+              >
+                <option value="info">{t("admin.comms.level.info")}</option>
+                <option value="warning">
+                  {t("admin.comms.level.warning")}
+                </option>
+                <option value="danger">{t("admin.comms.level.danger")}</option>
+              </select>
+            </Field>
+            <Field label={t("admin.comms.field.audience")}>
+              <select
+                value={audience}
+                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+                onChange={(event) =>
+                  setAudience(event.target.value as typeof audience)
+                }
+              >
+                <option value="all">{t("admin.comms.audience.all")}</option>
+                <option value="segment">
+                  {t("admin.comms.audience.segment")}
+                </option>
+              </select>
+            </Field>
+          </div>
+          {audience === "segment" ? (
+            <Field label={t("admin.comms.field.emails")}>
+              <Input
+                value={segment}
+                onChange={(event) => setSegment(event.target.value)}
+              />
+            </Field>
+          ) : null}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t("admin.comms.field.startsAt")}>
+              <Input
+                type="datetime-local"
+                value={startsAt}
+                onChange={(event) => setStartsAt(event.target.value)}
+              />
+            </Field>
+            <Field label={t("admin.comms.field.endsAt")}>
+              <Input
+                type="datetime-local"
+                value={endsAt}
+                onChange={(event) => setEndsAt(event.target.value)}
+              />
+            </Field>
+          </div>
+          <div className="flex items-center gap-4 text-xs">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={active}
+                onChange={(event) => setActive(event.target.checked)}
+              />
+              {t("admin.comms.active")}
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={sendEmail}
+                onChange={(event) => setSendEmail(event.target.checked)}
+              />
+              {t("admin.comms.field.sendEmail")}
+            </label>
+          </div>
+          {error ? <p className="text-xs text-danger">{error}</p> : null}
+        </div>
+        <DialogFooter className="gap-2">
+          <Button size="sm" variant="outline" onClick={onClose} disabled={busy}>
+            {t("admin.common.cancel")}
+          </Button>
+          <Button size="sm" onClick={() => void submit()} disabled={busy}>
+            {t("admin.common.save")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Epoch ms → `datetime-local` value (`YYYY-MM-DDTHH:MM`), "" when null. */
+function toLocalInput(ms: number | null): string {
+  if (ms === null) return "";
+  const date = new Date(ms - new Date(ms).getTimezoneOffset() * 60_000);
+  return date.toISOString().slice(0, 16);
+}
+
+/** `datetime-local` value → epoch ms (local time), null when empty. */
+function fromLocalInput(value: string): number | null {
+  if (value === "") return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
 }

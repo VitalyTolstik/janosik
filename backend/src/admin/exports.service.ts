@@ -196,26 +196,8 @@ export class ExportsService {
     };
   }
 
-  /** Deletes expired exports (files + rows); used by the maintenance sweep. */
-  async sweepExpired(): Promise<number> {
-    const stale = await this.prisma.dataExport.findMany({
-      where: { expiresAt: { lt: new Date() } },
-      select: { id: true, storedName: true },
-    });
-    for (const row of stale) {
-      if (row.storedName) {
-        await this.storage
-          .remove(this.storage.attachmentPath(row.storedName))
-          .catch(() => undefined);
-      }
-    }
-    if (stale.length > 0) {
-      await this.prisma.dataExport.deleteMany({
-        where: { id: { in: stale.map((row) => row.id) } },
-      });
-    }
-    return stale.length;
-  }
+  // Expiry sweep lives in `MaintenanceService.sweepExports` (TASK-68) — a
+  // duplicate here was dead code (TASK-114).
 
   async stats(): Promise<QueueStats> {
     if (this.queue) return redisQueueStats(this.queue);

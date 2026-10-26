@@ -54,7 +54,6 @@ import type {
   AdminUpdateFeatureFlagRequest,
   AdminUpdateOpsSettingsRequest,
   AdminUpdateSecurityRequest,
-  AdminUserExportDto,
   AdminAddBoardMemberRequest,
   AdminUpdateBoardMemberRequest,
   AdminUpdateEmailSettingsRequest,
@@ -582,12 +581,6 @@ export class AdminApiClient {
     return this.request<{ status: "ok" }>(
       `/admin/admins/${encodeURIComponent(id)}`,
       { method: "DELETE" },
-    );
-  }
-
-  exportUser(id: string): Promise<AdminUserExportDto> {
-    return this.request<AdminUserExportDto>(
-      `/admin/users/${encodeURIComponent(id)}/export`,
     );
   }
 

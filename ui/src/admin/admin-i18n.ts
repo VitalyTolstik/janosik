@@ -72,9 +72,6 @@ const en = {
   "admin.demo.liveView": "Open live view",
   "admin.demo.copyLink": "Copy share link",
   "admin.demo.copied": "Share link copied",
-  "admin.demo.watcher": "Watch as (your account email)",
-  "admin.demo.watcherHint":
-    "Pick the account you sign in with (from the list) — it owns the demo board, so “Open board” works in the app. Leave empty for a throwaway owner (viewable only here in the panel).",
   "admin.shares.title": "Public shares",
   "admin.shares.subtitle":
     "Read-only board links minted against any board — inspect and revoke.",
@@ -113,6 +110,9 @@ const en = {
   "admin.announcements.column.author": "Author",
   "admin.announcements.action.activate": "Activate",
   "admin.announcements.action.deactivate": "Deactivate",
+  "admin.announcements.action.edit": "Edit",
+  "admin.comms.field.startsAt": "Starts at",
+  "admin.comms.field.endsAt": "Ends at",
   "admin.announcements.send": "Send announcement",
   "admin.nav.observability": "Observability",
 
@@ -982,9 +982,6 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.demo.liveView": "Открыть вживую",
   "admin.demo.copyLink": "Скопировать ссылку",
   "admin.demo.copied": "Ссылка скопирована",
-  "admin.demo.watcher": "Наблюдать как (email вашего аккаунта)",
-  "admin.demo.watcherHint":
-    "Выбери аккаунт, которым входишь в приложение (из списка) — он владеет демо-доской, и «Открыть доску» работает. Пусто — служебный владелец (видно только в панели).",
   "admin.shares.title": "Публичные ссылки",
   "admin.shares.subtitle":
     "Ссылки только для чтения, созданные к любой доске — просмотр и отзыв.",
@@ -1023,6 +1020,9 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.announcements.column.author": "Автор",
   "admin.announcements.action.activate": "Включить",
   "admin.announcements.action.deactivate": "Отключить",
+  "admin.announcements.action.edit": "Изменить",
+  "admin.comms.field.startsAt": "Начало",
+  "admin.comms.field.endsAt": "Окончание",
   "admin.announcements.send": "Отправить объявление",
   "admin.nav.observability": "Наблюдаемость",
 
