@@ -24,6 +24,8 @@ import { QUEUE_NAMES, redisQueueStats, type QueueStats } from "./queue-core";
  */
 export const COMMS_QUEUE = QUEUE_NAMES.comms;
 export const COMMS_JOB = "run";
+/** setTimeout caps at 2^31-1 ms; cadences beyond it are chunked (TASK-83). */
+const MAX_TIMER_MS = 2_147_483_647;
 export const DIGEST_SCHEDULER_ID = "comms-digest";
 export const REMINDERS_SCHEDULER_ID = "comms-reminders";
 
@@ -75,20 +77,54 @@ export class CommsSchedulerService implements OnModuleInit {
     }
     this.clearTimers();
     if (env.NODE_ENV === "test") return;
+    // Fallback cadence mirrors the BullMQ path (TASK-83): the reminder job
+    // runs every `lead` hours, not every hour — otherwise a `lead`-wide window
+    // fires the same reminder once per hour. Large cadences are chunked
+    // because `setTimeout` caps at 2^31-1 ms.
     if (digest > 0) {
-      this.digestTimer = setInterval(
-        () => void this.run("digest").catch(() => undefined),
+      this.armRecurring(
+        "digest",
         digest * 3_600_000,
+        () => void this.run("digest").catch(() => undefined),
       );
-      this.digestTimer.unref();
     }
     if (lead > 0) {
-      this.reminderTimer = setInterval(
+      this.armRecurring(
+        "reminder",
+        lead * 3_600_000,
         () => void this.run("due-reminders").catch(() => undefined),
-        3_600_000,
       );
-      this.reminderTimer.unref();
     }
+  }
+
+  /**
+   * Recurring timer that survives a cadence beyond `setTimeout`'s 2^31-1 ms
+   * cap by waiting in chunks (TASK-83). The latest pending handle is kept in
+   * `digestTimer`/`reminderTimer`, so `clearTimers` stops the chain (a cleared
+   * timeout never fires, and only a fired timeout re-arms).
+   */
+  private armRecurring(
+    slot: "digest" | "reminder",
+    ms: number,
+    run: () => void,
+  ): void {
+    const arm = (remaining: number): void => {
+      const handle = setTimeout(
+        () => {
+          if (remaining > MAX_TIMER_MS) {
+            arm(remaining - MAX_TIMER_MS);
+            return;
+          }
+          run();
+          arm(ms);
+        },
+        Math.min(remaining, MAX_TIMER_MS),
+      );
+      handle.unref();
+      if (slot === "digest") this.digestTimer = handle;
+      else this.reminderTimer = handle;
+    };
+    arm(ms);
   }
 
   private async upsert(
@@ -201,7 +237,12 @@ export class CommsSchedulerService implements OnModuleInit {
       string,
       {
         email: string;
-        items: Array<{ title: string; board: string; due: Date }>;
+        items: Array<{
+          cardId: string;
+          title: string;
+          board: string;
+          due: Date;
+        }>;
       }
     >();
     for (const card of cards) {
@@ -215,6 +256,7 @@ export class CommsSchedulerService implements OnModuleInit {
         items: [],
       };
       entry.items.push({
+        cardId: card.id,
         title: card.title,
         board: card.column.board.title,
         due: card.dueDate,
@@ -222,19 +264,41 @@ export class CommsSchedulerService implements OnModuleInit {
       byUser.set(assignee.id, entry);
     }
     let sent = 0;
-    for (const { email, items } of byUser.values()) {
-      const tasksHtml = items
+    for (const [userId, { email, items }] of byUser.entries()) {
+      // Persistent dedupe (TASK-83): never remind the same (card, user,
+      // dueDate) twice, even across a restart or an overlapping run. A
+      // rescheduled card has a new dueDate, so it re-arms naturally.
+      const already = await this.prisma.reminderSent.findMany({
+        where: { userId, cardId: { in: items.map((item) => item.cardId) } },
+        select: { cardId: true, dueDate: true },
+      });
+      const reminded = new Set(
+        already.map((row) => `${row.cardId}:${row.dueDate.getTime()}`),
+      );
+      const fresh = items.filter(
+        (item) => !reminded.has(`${item.cardId}:${item.due.getTime()}`),
+      );
+      if (fresh.length === 0) continue;
+      const tasksHtml = fresh
         .map(
           (item) =>
             `<li><strong>${escapeHtml(item.title)}</strong> (${escapeHtml(item.board)}) — due ${item.due.toISOString()}</li>`,
         )
         .join("");
       const message = await this.templates.dueReminderEmail(
-        items.length,
+        fresh.length,
         tasksHtml,
         "en",
       );
       await this.mail.enqueue({ to: email, ...message });
+      await this.prisma.reminderSent.createMany({
+        data: fresh.map((item) => ({
+          cardId: item.cardId,
+          userId,
+          dueDate: item.due,
+        })),
+        skipDuplicates: true,
+      });
       sent += 1;
     }
     return sent;

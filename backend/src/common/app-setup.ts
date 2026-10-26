@@ -4,12 +4,20 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import { MAX_IMPORT_BYTES } from "@janosik/shared";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
+import { env } from "@/config/env";
 
 /**
  * The HTTP pipeline shared by main.ts and the e2e specs, so tests always run
  * against exactly the middleware stack production uses.
  */
 export function setupApp(app: INestApplication): void {
+  // Reverse-proxy trust (TASK-91): with N trusted hops Express resolves
+  // `req.ip` from the rightmost X-Forwarded-For entry it can vouch for, so
+  // the throttler, the IP allowlist and the audit log see the real client.
+  // Off by default (a direct connection's socket address is the truth).
+  if (env.TRUST_PROXY > 0) {
+    (app as NestExpressApplication).set("trust proxy", env.TRUST_PROXY);
+  }
   app.use(helmet());
   app.use(cookieParser());
   // Explicit json limit instead of Express's implicit 100 KB (TASK-30.2):

@@ -116,6 +116,13 @@ const RESTORE_ACTIONS = new Set<string>([
   "RESTORE_CHECKLIST_ITEM",
 ]);
 
+/**
+ * Upper bound on a single delta catch-up (TASK-84). The retention sweep keeps
+ * the log bounded anyway; this is the belt-and-braces cap so a `?since=0`
+ * request can never materialize an unbounded history.
+ */
+const COMMAND_DELTA_MAX = 5_000;
+
 @Injectable()
 export class CommandsService {
   constructor(
@@ -298,7 +305,15 @@ export class CommandsService {
     return applied.response;
   }
 
-  /** Commands with `seq > since`, oldest first — the SSE delta catch-up. */
+  /**
+   * Commands with `seq > since`, oldest first — the SSE delta catch-up.
+   *
+   * Capped (TASK-84): a `since=0` catch-up must never pull a board's whole
+   * history into memory / a single SSE frame. Combined with the `Command`
+   * retention sweep the window is bounded; a client whose baseline is older
+   * than what remains re-reads the board envelope anyway (its seq drives the
+   * next connection).
+   */
   async listSince(
     boardId: string,
     since: number,
@@ -309,6 +324,7 @@ export class CommandsService {
         ...(since > 0 ? { seq: { gt: BigInt(since) } } : {}),
       },
       orderBy: { seq: "asc" },
+      take: COMMAND_DELTA_MAX,
       select: { seq: true, actorId: true, payload: true, touches: true },
     });
     return rows.map((row) => ({

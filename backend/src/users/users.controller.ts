@@ -20,7 +20,10 @@ import type { AuthUser } from "@/auth/auth.types";
 import { ApiTokenService } from "@/auth/api-token.service";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
-import { StorageService } from "@/attachments/storage.service";
+import {
+  mimeForExtension,
+  StorageService,
+} from "@/attachments/storage.service";
 import type { UploadedBlob } from "@/attachments/attachments.service";
 import { CreateUserTokenDto } from "./dto/create-user-token.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
@@ -73,9 +76,11 @@ export class UsersController {
     @Res() res: Response,
   ): Promise<void> {
     const storedName = await this.users.avatarFile(userId);
-    const ext = storedName.slice(storedName.lastIndexOf(".") + 1);
-    const mime =
-      ext === "jpg" ? "image/jpeg" : `image/${ext === "jpeg" ? "jpeg" : ext}`;
+    // The blob name is server-generated from the sniffed type (TASK-76), so
+    // its extension is authoritative — never the client's original file name.
+    const mime = mimeForExtension(
+      storedName.slice(storedName.lastIndexOf(".")),
+    );
     res.setHeader("Content-Type", mime);
     res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
     await this.storage.send(this.storage.avatarPath(storedName), res);

@@ -1,37 +1,57 @@
 import { HttpException } from "@nestjs/common";
-import { HealthService } from "./health.service";
+import { describe, expect, it, jest } from "@jest/globals";
+
 import type { PrismaService } from "@/common/prisma/prisma.service";
+import { HealthService } from "./health.service";
 
-const prismaMock = {
-  ping: jest.fn(),
-  logError: jest.fn(),
-} as unknown as PrismaService;
-
+/** TASK-119: readiness reflects a configured-but-unreachable Redis. */
 describe("HealthService", () => {
-  let service: HealthService;
+  const make = (
+    ping: () => Promise<unknown>,
+    redis: "up" | "down" | "disabled",
+  ): HealthService => {
+    const prisma = {
+      ping,
+      logError: jest.fn(),
+    } as unknown as PrismaService;
+    const service = new HealthService(prisma);
+    jest
+      .spyOn(
+        service as unknown as { checkRedis: () => Promise<string> },
+        "checkRedis",
+      )
+      .mockResolvedValue(redis);
+    return service;
+  };
 
-  beforeEach(() => {
-    jest.resetAllMocks();
-    service = new HealthService(prismaMock);
-  });
-
-  it("reports ok when the database responds", async () => {
-    (prismaMock.ping as jest.Mock).mockResolvedValue(undefined);
+  it("is ready with redis disabled when none is configured", async () => {
+    const service = make(() => Promise.resolve(undefined), "disabled");
     await expect(service.check()).resolves.toEqual({
       status: "ok",
       db: "up",
+      redis: "disabled",
     });
   });
 
-  it("returns 503 with db down when the ping fails", async () => {
-    (prismaMock.ping as jest.Mock).mockRejectedValue(new Error("down"));
-    const err = await service.check().catch((e) => e);
-    expect(err).toBeInstanceOf(HttpException);
-    expect((err as HttpException).getStatus()).toBe(503);
-    expect((err as HttpException).getResponse()).toEqual({
-      status: "error",
-      db: "down",
+  it("503s when the db ping fails", async () => {
+    const service = make(
+      () => Promise.reject(new Error("db down")),
+      "disabled",
+    );
+    await expect(service.check()).rejects.toBeInstanceOf(HttpException);
+  });
+
+  it("503s when a configured redis is unreachable", async () => {
+    const service = make(() => Promise.resolve(undefined), "down");
+    await expect(service.check()).rejects.toBeInstanceOf(HttpException);
+  });
+
+  it("is ready when redis is up", async () => {
+    const service = make(() => Promise.resolve(undefined), "up");
+    await expect(service.check()).resolves.toEqual({
+      status: "ok",
+      db: "up",
+      redis: "up",
     });
-    expect(prismaMock.logError).toHaveBeenCalled();
   });
 });

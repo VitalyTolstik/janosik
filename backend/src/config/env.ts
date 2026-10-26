@@ -121,6 +121,23 @@ export const env = cleanEnv(process.env, {
     default: 300,
     example: "300",
   }),
+  // Reverse-proxy hops in front of the API (TASK-91). 0 (default) trusts no
+  // proxy, so `req.ip` is the socket address. Behind one nginx set it to the
+  // exact hop count: the throttler, the admin IP allowlist and the session
+  // audit then key on the real client address instead of the proxy's.
+  TRUST_PROXY: num({
+    desc: "Number of trusted reverse-proxy hops; 0 = trust none",
+    default: 0,
+    example: "1",
+  }),
+  // Blob storage root (TASK-47/120). Empty = `backend/data/uploads`. A
+  // relative value is anchored to the backend package, never the process cwd,
+  // so a server launched from anywhere resolves the same files.
+  UPLOAD_DIR: str({
+    desc: "Directory for uploaded blobs; empty = backend/data/uploads",
+    default: "",
+    example: "/var/lib/janosik/uploads",
+  }),
   // Public read-only board sharing (TASK-58, §7.9). On by default so a fresh
   // self-host can hand out a link; a private installation sets it to `false`
   // and the whole `/share/*` contour answers 404 (no share is readable).

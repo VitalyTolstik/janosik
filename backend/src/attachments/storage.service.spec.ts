@@ -13,7 +13,12 @@ import {
   jest,
 } from "@jest/globals";
 
-import { extensionForMime, sniffMime, StorageService } from "./storage.service";
+import {
+  extensionForMime,
+  mimeForExtension,
+  sniffMime,
+  StorageService,
+} from "./storage.service";
 
 /**
  * TASK-78: `send` must never let a vanished blob (deleted between the
@@ -23,17 +28,13 @@ import { extensionForMime, sniffMime, StorageService } from "./storage.service";
 describe("StorageService.send", () => {
   let root: string;
   let storage: StorageService;
-  const previous = process.env.UPLOAD_DIR;
 
   beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), "janosik-storage-"));
-    process.env.UPLOAD_DIR = root;
-    storage = new StorageService();
+    storage = new StorageService(root);
   });
 
   afterEach(async () => {
-    if (previous === undefined) delete process.env.UPLOAD_DIR;
-    else process.env.UPLOAD_DIR = previous;
     await rm(root, { recursive: true, force: true });
   });
 
@@ -132,5 +133,13 @@ describe("sniffMime", () => {
     expect(extensionForMime("image/jpeg")).toBe(".jpg");
     expect(extensionForMime("image/webp")).toBe(".webp");
     expect(extensionForMime("text/html")).toBeNull();
+  });
+
+  /** TASK-120: the served avatar type comes from the server-named extension. */
+  it("maps a stored extension back to a served MIME", () => {
+    expect(mimeForExtension(".jpg")).toBe("image/jpeg");
+    expect(mimeForExtension("webp")).toBe("image/webp");
+    expect(mimeForExtension(".png")).toBe("image/png");
+    expect(mimeForExtension(".weird")).toBe("application/octet-stream");
   });
 });

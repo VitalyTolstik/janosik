@@ -18,6 +18,8 @@ export const MAINTENANCE_JOBS = [
   "sweep-shares",
   "sweep-invitations",
   "sweep-exports",
+  "sweep-commands",
+  "sweep-reminders",
   "sweep-orphan-blobs",
 ] as const;
 
@@ -75,6 +77,10 @@ export class MaintenanceService {
         return this.sweepInvitations();
       case "sweep-exports":
         return this.sweepExports();
+      case "sweep-commands":
+        return this.sweepCommands();
+      case "sweep-reminders":
+        return this.sweepReminders();
       case "sweep-orphan-blobs":
         return this.sweepOrphanBlobs();
       default:
@@ -225,6 +231,36 @@ export class MaintenanceService {
       });
     }
     return stale.length;
+  }
+
+  /**
+   * Trims the command log to the retention window (TASK-84). The `Command`
+   * table is the board's replay log and grows forever otherwise; a client
+   * whose `seq` baseline falls outside the window simply re-reads the board
+   * envelope on its next connection. Window = `OpsSettings.retentionDays`
+   * (same knob as the soft-delete purge), default 30 days.
+   */
+  async sweepCommands(): Promise<number> {
+    const days = (await this.ops.retentionDays()) ?? 30;
+    const cutoff = new Date(Date.now() - days * 86_400_000);
+    const result = await this.prisma.command.deleteMany({
+      where: { createdAt: { lt: cutoff } },
+    });
+    return result.count;
+  }
+
+  /**
+   * Due-reminder dedupe rows past their usefulness (TASK-83). A card whose
+   * dueDate is more than the retention window in the past will never be
+   * reminded again, so its marker can go.
+   */
+  async sweepReminders(): Promise<number> {
+    const days = (await this.ops.retentionDays()) ?? 30;
+    const cutoff = new Date(Date.now() - days * 86_400_000);
+    const result = await this.prisma.reminderSent.deleteMany({
+      where: { dueDate: { lt: cutoff } },
+    });
+    return result.count;
   }
 
   /**

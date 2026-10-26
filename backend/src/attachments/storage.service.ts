@@ -5,7 +5,13 @@ import path from "node:path";
 import type { Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from "@nestjs/common";
+import { env } from "@/config/env";
 
 /**
  * Accepted attachment MIME types (TASK-47, tightened in TASK-76). A
@@ -119,6 +125,15 @@ export function extensionForMime(mime: string): string | null {
   return MIME_EXTENSION[mime] ?? null;
 }
 
+/** Inverse of `MIME_EXTENSION` (TASK-120): the served `Content-Type` for a
+ *  server-named avatar blob, derived from its extension — never from the
+ *  client's original file name. */
+export function mimeForExtension(ext: string): string {
+  const dot = ext.startsWith(".") ? ext : `.${ext}`;
+  const match = Object.entries(MIME_EXTENSION).find(([, e]) => e === dot);
+  return match?.[0] ?? "application/octet-stream";
+}
+
 const PNG_SIGNATURE = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
 ]);
@@ -137,15 +152,20 @@ const SEVEN_ZIP_SIGNATURE = Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]);
 @Injectable()
 export class StorageService {
   private readonly logger = new Logger(StorageService.name);
+  private readonly root: string;
+  private readonly avatarRoot: string;
 
-  /** Anchored to the backend package dir, not the process cwd (see above). */
-  private readonly root = path.resolve(
-    process.env.UPLOAD_DIR ??
-      path.join(__dirname, "..", "..", "data", "uploads"),
-  );
-  private readonly avatarRoot = path.join(this.root, "avatars");
-
-  constructor() {
+  /** `root` is overridable for tests; production reads the validated
+   *  `UPLOAD_DIR`. A relative value is anchored to the backend package dir,
+   *  not the process cwd (see above). */
+  constructor(@Optional() root?: string) {
+    const base = path.join(__dirname, "..", "..");
+    const configured = (root ?? env.UPLOAD_DIR).trim();
+    this.root =
+      configured.length > 0
+        ? path.resolve(base, configured)
+        : path.join(base, "data", "uploads");
+    this.avatarRoot = path.join(this.root, "avatars");
     this.logger.log(`Blob storage root: ${this.root}`);
   }
 

@@ -36,6 +36,8 @@ function makePrisma(): PrismaService {
       findMany: jest.fn().mockResolvedValue([]),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
+    command: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    reminderSent: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
   } as unknown as PrismaService;
 }
 
@@ -118,5 +120,17 @@ describe("MaintenanceService", () => {
     const removed = await service.sweepOrphanBlobs();
     expect(removed).toBe(0);
     expect(storageMock.remove).not.toHaveBeenCalled();
+  });
+
+  it("trims the command log to the retention window (TASK-84)", async () => {
+    const prisma = makePrisma();
+    (prisma.command.deleteMany as jest.Mock).mockResolvedValue({ count: 7 });
+    const service = new MaintenanceService(prisma, storageMock, opsMock);
+    const removed = await service.sweepCommands();
+    expect(removed).toBe(7);
+    const call = (prisma.command.deleteMany as jest.Mock).mock.calls[0][0] as {
+      where: { createdAt: { lt: Date } };
+    };
+    expect(call.where.createdAt.lt).toBeInstanceOf(Date);
   });
 });

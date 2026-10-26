@@ -147,7 +147,9 @@ export class DemoService implements OnModuleDestroy {
     }
     const manifest = pending.manifest as unknown as DemoManifest;
     return {
-      running: false,
+      // TASK-82: a queued run lives only in the DB — reflect its real status
+      // (running/stopping) with the progress the worker wrote.
+      running: pending.status === "running" || pending.status === "stopping",
       boardId: manifest.boardId,
       startedAt: pending.startedAt.toISOString(),
       users: manifest.userIds.length,
@@ -362,12 +364,23 @@ export class DemoService implements OnModuleDestroy {
       stop: false,
       tasks: [],
     };
-    this.active = run;
     if (input.run !== false) {
       // Prefer the Redis-backed job (progress/cancel survive restarts); fall
       // back to the in-process launcher when there is no Redis.
       const queued = await this.demoQueue.enqueue(created.id);
-      if (!queued) this.launch(run, specs);
+      if (queued) {
+        // TASK-82: in queued mode the worker owns the run and writes progress
+        // to `DemoRun`. Holding it in `this.active` here would pin the status
+        // at "running, 0 done" forever and make every later `start` conflict —
+        // so the in-memory slot stays empty and `status()` reads the row.
+        this.active = null;
+      } else {
+        this.active = run;
+        this.launch(run, specs);
+      }
+    } else {
+      // Provision-only: nothing is driving it, so keep it for display/cleanup.
+      this.active = run;
     }
     this.logger.log(
       `Demo started on board ${boardId}: ${agents} agents, ${manifest.cardIds.length} cards`,

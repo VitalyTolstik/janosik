@@ -154,6 +154,8 @@ model DemoRun {
   startedBy String // master email (snapshot)
   startedAt DateTime  @default(now())
   stoppedAt DateTime?
+
+  @@index([status, startedAt]) // "is a demo running" lookups (TASK-92)
 }
 
 model Board {
@@ -269,7 +271,9 @@ model Command {
   createdAt DateTime @default(now())
 
   @@index([boardId, seq])
-  @@index([boardId, touches]) // activity feeds per entity (§7.4)
+  // GIN (not B-tree) so the per-entity feed's `touches: { has: … }` lookup is
+  // an index scan, not a seq scan (TASK-92).
+  @@index([touches], type: Gin)
 }
 
 model Column {
@@ -320,6 +324,7 @@ model Card {
 
   @@index([columnId, position])
   @@index([assigneeId]) // admin user-detail "assigned cards" (TASK-49)
+  @@index([dueDate]) // scheduled due reminders (TASK-72, TASK-92)
 }
 
 // Card links (TASK-46). Directional: `fromCard` holds the row and "blocks"
@@ -478,6 +483,9 @@ model Attachment {
   createdAt    DateTime  @default(now())
 
   @@index([cardId, createdAt])
+  @@index([deletedAt]) // purge sweep (TASK-92)
+  @@index([deletedAt, transcodeStatus]) // boot recovery (TASK-92)
+  @@index([deletedAt, derivativeStatus]) // media boot recovery (TASK-92)
 }
 
 // ---------------------------------------------------------------------------
@@ -507,6 +515,7 @@ model DataExport {
   expiresAt  DateTime
 
   @@index([userId])
+  @@index([expiresAt]) // expiry sweep (TASK-92)
 }
 
 model AdminUser {
@@ -600,6 +609,21 @@ model OpsSettings {
   reminderLeadHours    Int?
   updatedBy            String?
   updatedAt            DateTime @updatedAt
+}
+
+// Due-reminder dedupe (TASK-83). One row per (card, user, dueDate) we have
+// already reminded about, so an overlapping/restarted scheduler never sends
+// the same reminder twice. Keyed on `dueDate` too: rescheduling a card
+// re-arms the reminder. Pruned by the maintenance sweep.
+model ReminderSent {
+  id      String   @id @default(cuid())
+  cardId  String
+  userId  String
+  dueDate DateTime
+  sentAt  DateTime @default(now())
+
+  @@unique([cardId, userId, dueDate])
+  @@index([sentAt])
 }
 
 // In-app announcement / banner (TASK-62). `audience` "all" shows to every

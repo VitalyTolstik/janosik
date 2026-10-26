@@ -8,6 +8,10 @@ function prismaMock(): PrismaService {
   return {
     board: { findMany: jest.fn().mockResolvedValue([]) },
     card: { findMany: jest.fn().mockResolvedValue([]) },
+    reminderSent: {
+      findMany: jest.fn().mockResolvedValue([]),
+      createMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
   } as unknown as PrismaService;
 }
 
@@ -119,5 +123,46 @@ describe("CommsSchedulerService", () => {
     const result = await service.run("due-reminders");
     expect(result.sent).toBe(1);
     expect(mailMock.enqueue).toHaveBeenCalledTimes(1);
+    expect(prisma.reminderSent.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [expect.objectContaining({ cardId: "c1", userId: "u1" })],
+      }),
+    );
+  });
+
+  it("does not re-remind an already-notified (card,user,dueDate) (TASK-83)", async () => {
+    const prisma = prismaMock();
+    const due = new Date(Date.now() + 3_600_000);
+    (prisma.card.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: "c1",
+        title: "Task",
+        dueDate: due,
+        column: { board: { title: "Board" } },
+        assignee: {
+          id: "u1",
+          email: "a@example.com",
+          notifyDigest: true,
+          disabledAt: null,
+        },
+      },
+    ]);
+    (prisma.reminderSent.findMany as jest.Mock).mockResolvedValue([
+      { cardId: "c1", dueDate: due },
+    ]);
+    const ops = {
+      digestIntervalHours: jest.fn().mockResolvedValue(0),
+      reminderLeadHours: jest.fn().mockResolvedValue(48),
+    } as unknown as OpsSettingsService;
+    const service = new CommsSchedulerService(
+      prisma,
+      ops,
+      mailMock,
+      templatesMock,
+    );
+
+    const result = await service.run("due-reminders");
+    expect(result.sent).toBe(0);
+    expect(mailMock.enqueue).not.toHaveBeenCalled();
   });
 });
