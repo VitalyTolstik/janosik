@@ -17,6 +17,11 @@ The build decides the mode. When the UI is pointed at an API (`VITE_API_URL`,
 `/api/v1` by default) it runs in server mode; without a backend it keeps the
 local-only mode. The [User guide](user-guide/) explains both in detail.
 
+The Help menu links to the docs on the same origin, which is how the self-host
+image serves them. A split deployment (app and site on different hosts) points
+the UI at the site with `VITE_SITE_URL` (the site origin, with a trailing
+slash).
+
 ## Fastest path: the self-host image
 
 One container serves the whole app (the API under `/api/v1`, the built SPA and

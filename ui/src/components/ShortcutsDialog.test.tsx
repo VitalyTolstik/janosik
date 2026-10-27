@@ -83,6 +83,12 @@ function renderBoard() {
 const pressKey = (key: string, init: KeyboardEventInit = {}) =>
   fireEvent.keyDown(window, { key, ...init });
 
+// Radix DropdownMenu opens on pointerdown, not click.
+const openHelp = () =>
+  fireEvent.pointerDown(screen.getByRole("button", { name: "Help" }), {
+    button: 0,
+  });
+
 describe("keyboard shortcuts", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -100,10 +106,21 @@ describe("keyboard shortcuts", () => {
     // Radix closes on Escape via its own handler.
   });
 
-  it("opens the cheat sheet from the header button", () => {
+  it("opens the cheat sheet from the Help menu", () => {
     renderBoard();
-    fireEvent.click(screen.getByRole("button", { name: "Keyboard shortcuts" }));
+    openHelp();
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /keyboard shortcuts/i }),
+    );
     expect(screen.getByTestId("shortcuts-table")).toBeInTheDocument();
+  });
+
+  it("links to the documentation from the Help menu", () => {
+    renderBoard();
+    openHelp();
+    const docs = screen.getByTestId("help-docs");
+    expect(docs).toHaveAttribute("href", "/docs/");
+    expect(docs).toHaveAttribute("target", "_blank");
   });
 
   it("'n' opens a card composer, 'c' opens the column composer", () => {

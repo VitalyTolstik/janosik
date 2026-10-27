@@ -6,8 +6,8 @@ import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
 import { DataMenu } from "@/components/DataMenu";
 import { GlobalSearch } from "@/components/GlobalSearch";
+import { HelpMenu } from "@/components/HelpMenu";
 import { NotificationsBell } from "@/components/NotificationsBell";
-import { ShortcutsDialog } from "@/components/ShortcutsDialog";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,7 +47,7 @@ export function Header() {
 
       <div className="flex items-center gap-0.5">
         <GlobalSearch />
-        <ShortcutsDialog />
+        <HelpMenu />
 
         <Tooltip>
           <TooltipTrigger asChild>
