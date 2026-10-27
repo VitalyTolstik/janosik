@@ -45,7 +45,7 @@ function storageFor(key) {
   };
 }
 
-async function openBoard(browser, key, theme, { record }) {
+async function openBoard(browser, key, theme, { record, zoom }) {
   const context = await browser.newContext({
     viewport: { width: WIDTH, height: HEIGHT },
     deviceScaleFactor: 2,
@@ -62,6 +62,10 @@ async function openBoard(browser, key, theme, { record }) {
   const page = await context.newPage();
   await page.goto(`${BASE}/app/board/${state.boardId}`, { waitUntil: "load" });
   await page.getByText("Backlog", { exact: true }).first().waitFor();
+  if (zoom) {
+    await page.evaluate(`document.documentElement.style.zoom = "${zoom}"`);
+    await wait(250);
+  }
   // Refresh tokens rotate on every use, so hand the rotated value to the next
   // context for this user (the app refreshed during boot).
   const rotated = (await context.cookies()).find(
@@ -158,19 +162,35 @@ async function sceneSharing(page) {
 }
 
 async function sceneHero(page, { actor }) {
-  await wait(1200);
-  const grace = actor("grace");
-  await drag(
-    grace.page,
-    card(grace.page, "Comment mentions"),
-    column(grace.page, "In progress"),
-    80,
-  );
-  await wait(1000);
-  await card(page, "Realtime cursors on the board").hover();
-  await wait(1200);
-  await page.mouse.move(640, 460, { steps: 20 });
-  await wait(1500);
+  // The swarm works the board: two waves of agents push cards into different
+  // columns at the same time, so several cards relocate in the same second.
+  const wave = (moves) =>
+    Promise.all(
+      moves.map(({ key, title, to }) =>
+        drag(
+          actor(key).page,
+          card(actor(key).page, title),
+          column(actor(key).page, to),
+          96,
+        ),
+      ),
+    );
+  await wait(900);
+  await wave([
+    { key: "grace", title: "Single sign-on for enterprise", to: "In progress" },
+    { key: "leo", title: "Bulk import from CSV", to: "Review" },
+    { key: "nina", title: "Comment mentions", to: "Done" },
+    { key: "omar", title: "Attachment previews", to: "Done" },
+  ]);
+  await wait(1100);
+  await wave([
+    { key: "priya", title: "Dark mode contrast pass", to: "In progress" },
+    { key: "sam", title: "Keyboard shortcut cheat sheet", to: "Review" },
+    { key: "leo", title: "Public read-only share links", to: "Done" },
+  ]);
+  await wait(1400);
+  await page.mouse.move(660, 430, { steps: 18 });
+  await wait(1300);
 }
 
 async function sceneRealtime(page, { actor }) {
@@ -192,6 +212,7 @@ async function sceneRealtime(page, { actor }) {
 const SCENES = {
   "hero-swarm": {
     audience: ["grace", "leo", "nina", "omar", "priya", "sam"],
+    zoom: 1.3,
     run: sceneHero,
   },
   "feature-board": { audience: [], run: sceneBoard },
@@ -204,7 +225,10 @@ async function recordClip(browser, slug, theme, manifest) {
   const scene = SCENES[slug];
   const background = [];
   const actor = (key) => background.find((c) => c.key === key);
-  const recorded = await openBoard(browser, "ada", theme, { record: true });
+  const recorded = await openBoard(browser, "ada", theme, {
+    record: true,
+    zoom: scene.zoom,
+  });
   const video = recorded.page.video();
   for (const key of scene.audience) {
     const opened = await openBoard(browser, key, theme, { record: false });
