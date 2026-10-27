@@ -37,13 +37,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Documentation site** at `/docs` (Astro Starlight): a getting-started
   guide, self-hosting with the full environment reference and operations
   runbooks, a complete user guide, an admin-panel guide, an HTTP API reference
-  with the command catalog, architecture decision records, an FAQ and a
-  security policy, in English and Russian with full-text search and a
-  light/dark theme.
+  with the command catalog, an FAQ and a security policy, in English and
+  Russian with full-text search and a light/dark theme.
 - **Real feature clips.** The landing page's six clips are now genuine
   recordings of the running app (light and dark), produced by a Playwright
   pipeline in `video/record/` that seeds a demo board, records the real UI and
   the self-host terminal, and encodes mp4/webm/posters.
+- **Screenshots in the user guide.** The user guide is rewritten around
+  functions, with real screenshots of the running app on every screen
+  (produced by `video/record/screenshots.mjs`), a new calendar-and-table views
+  page, and a dedicated section for the card right-click quick menu.
+- **In-app 404.** An unknown URL or an unknown board id now shows a themed
+  not-found screen with a "Back to boards" action, instead of silently
+  redirecting to another board (which hid typos and stale links). Revoking a
+  member's access still moves them to another board. The marketing site's 404
+  is now bilingual (English / Russian) and reads the language from the URL.
+- **Dead card links.** A `?card=` that points at a card not on the board no
+  longer fails silently: the stale param is dropped from the address bar and a
+  short "Card not found" toast explains why nothing opened.
 
 ## [0.1.0] - 2026-10-26
 
