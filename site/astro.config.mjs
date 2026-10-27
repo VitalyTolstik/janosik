@@ -73,6 +73,7 @@ export default defineConfig({
           items: [
             { slug: "docs/user-guide" },
             { slug: "docs/user-guide/boards" },
+            { slug: "docs/user-guide/views" },
             { slug: "docs/user-guide/cards" },
             { slug: "docs/user-guide/collaboration" },
             { slug: "docs/user-guide/account" },
@@ -96,16 +97,6 @@ export default defineConfig({
             { slug: "docs/api" },
             { slug: "docs/api/commands" },
             { slug: "docs/api/rest" },
-          ],
-        },
-        {
-          label: "Architecture decisions",
-          translations: { ru: "Архитектурные решения" },
-          items: [
-            { slug: "docs/decisions" },
-            { slug: "docs/decisions/adr-001-command-log" },
-            { slug: "docs/decisions/adr-002-single-image-deploy" },
-            { slug: "docs/decisions/adr-003-agpl-trademark" },
           ],
         },
         {
