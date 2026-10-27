@@ -3,6 +3,8 @@ import {
   Get,
   Header,
   HttpCode,
+  HttpException,
+  Logger,
   MethodNotAllowedException,
   MessageEvent,
   Param,
@@ -13,25 +15,26 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
-import { interval, Observable } from "rxjs";
+import { Observable } from "rxjs";
 import type { BoardShare } from "@prisma/client";
 import type {
   AttachmentDto,
   CommentPage,
-  CommandSseEvent,
   PublicBoardDto,
 } from "@janosik/shared";
+import { CommandStreamSequencer } from "@/commands/command-stream";
 import { CommandsService } from "@/commands/commands.service";
 import { parseSince } from "@/commands/parse-since";
-import { RealtimeService } from "@/realtime/realtime.service";
+import {
+  type InternalCommandEvent,
+  RealtimeService,
+} from "@/realtime/realtime.service";
+import { sseTiming } from "@/realtime/sse-timing";
 import { StorageService } from "@/attachments/storage.service";
 import { CurrentShare } from "./current-share.decorator";
 import { ShareAccessGuard } from "./share-access.guard";
 import { ShareThrottlerGuard } from "./share-throttler.guard";
 import { ShareService } from "./share.service";
-
-/** Keep-alive comment cadence for proxies and idle connections. */
-const KEEP_ALIVE_MS = 25_000;
 
 /**
  * The public read-only contour `/api/v1/share/:token` (TASK-58, §7.9.4).
@@ -45,6 +48,8 @@ const KEEP_ALIVE_MS = 25_000;
 @Controller("share")
 @UseGuards(ShareThrottlerGuard)
 export class ShareController {
+  private readonly logger = new Logger(ShareController.name);
+
   constructor(
     private readonly shares: ShareService,
     private readonly commands: CommandsService,
@@ -64,8 +69,9 @@ export class ShareController {
    * Live mode only: the board's command/activity stream, read-only. Presence
    * and membership frames are dropped entirely (a public viewer sees no
    * identities); activity frames (comments) only when the share exposes them.
-   * The delta catch-up (`?since=`) mirrors the member stream, so a reconnect
-   * never misses a move.
+   * The delta catch-up (`?since=`) mirrors the member stream (same sequencer:
+   * `resync` on truncation, log re-read on a gap), so a reconnect never
+   * misses a move.
    */
   @UseGuards(ShareAccessGuard)
   @Sse(":token/events")
@@ -79,61 +85,69 @@ export class ShareController {
 
   private stream(share: BoardShare, since: number): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
-      let ready = false;
-      let lastSeq = since;
-      const buffered: CommandSseEvent[] = [];
-
-      const push = (event: CommandSseEvent): void => {
-        if (event.seq <= lastSeq) return;
-        lastSeq = event.seq;
-        subscriber.next({ data: event as unknown as object } as MessageEvent);
+      const send = (data: object | string): void => {
+        if (!subscriber.closed) {
+          subscriber.next({ data } as MessageEvent);
+        }
       };
+      const sequencer = new CommandStreamSequencer(
+        this.commands,
+        share.boardId,
+        since,
+        (event) => send(event as unknown as object),
+        (error) => subscriber.error(error),
+      );
 
       const live = this.realtime.watch(share.boardId).subscribe((event) => {
         // No identities on the public contour: presence and membership never
         // leave the building.
         if (event.type === "presence" || event.type === "membership") return;
         if (event.type === "activity") {
-          if (share.includeComments) {
-            subscriber.next({
-              data: event as unknown as object,
-            } as MessageEvent);
-          }
+          if (share.includeComments) send(event as unknown as object);
           return;
         }
         if (event.type !== "command") return;
-        if (ready) push(event);
-        else buffered.push(event);
+        sequencer.offer(event as InternalCommandEvent);
       });
 
-      void this.commands
-        .listSince(share.boardId, since)
-        .then((delta) => {
-          if (subscriber.closed) return;
-          for (const entry of delta) {
-            push({
-              type: "command",
-              seq: entry.seq,
-              action: entry.action,
-              actorId: entry.actorId,
-              touches: entry.touches,
-            });
-          }
-          ready = true;
-          for (const event of buffered) push(event);
-          buffered.length = 0;
-        })
-        .catch((error: unknown) => subscriber.error(error));
+      sequencer.start();
 
-      const keepAlive = interval(KEEP_ALIVE_MS).subscribe(() => {
-        subscriber.next({ data: "ping" } as MessageEvent);
-      });
+      // B-6: a revoked/expired share, a disabled public-sharing switch or a
+      // board that went away ends the open stream on the next tick — not
+      // only new connections.
+      const keepAlive = setInterval(() => {
+        send("ping");
+        void this.tick(share, sequencer).then((allowed) => {
+          if (!allowed && !subscriber.closed) subscriber.complete();
+        });
+      }, sseTiming.keepAliveMs);
 
       return () => {
+        sequencer.close();
         live.unsubscribe();
-        keepAlive.unsubscribe();
+        clearInterval(keepAlive);
       };
     });
+  }
+
+  private async tick(
+    share: BoardShare,
+    sequencer: CommandStreamSequencer,
+  ): Promise<boolean> {
+    try {
+      const current = await this.shares.resolveToken(share.token);
+      await this.shares.liveBoardId(current);
+    } catch (error) {
+      if (error instanceof HttpException) return false;
+      this.logger.warn(
+        `Share stream check failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return true;
+    }
+    await sequencer.verifyCaughtUp().catch(() => undefined);
+    return true;
   }
 
   /** Deterministic board preview; cached briefly at the edge. */

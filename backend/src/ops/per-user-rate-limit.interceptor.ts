@@ -21,6 +21,7 @@ import { OpsSettingsService } from "./ops-settings.service";
 export class PerUserRateLimitInterceptor implements NestInterceptor {
   private readonly hits = new Map<string, number[]>();
   private cached: { at: number; value: number | null } | null = null;
+  private requestsSinceSweep = 0;
 
   constructor(private readonly ops: OpsSettingsService) {}
 
@@ -49,7 +50,7 @@ export class PerUserRateLimitInterceptor implements NestInterceptor {
       if (limit !== null && limit > 0) {
         const now = Date.now();
         const recent = (this.hits.get(userId) ?? []).filter(
-          (t) => now - t < 60_000,
+          (t) => now - t < WINDOW_MS,
         );
         if (recent.length >= limit) {
           throw new HttpException(
@@ -59,8 +60,37 @@ export class PerUserRateLimitInterceptor implements NestInterceptor {
         }
         recent.push(now);
         this.hits.set(userId, recent);
+        this.maybeSweep(now);
       }
     }
     return next.handle();
   }
+
+  /** Users currently tracked (observability/tests). */
+  get trackedUsers(): number {
+    return this.hits.size;
+  }
+
+  /**
+   * B-8: the map used to keep one entry per user ever seen. Every
+   * `SWEEP_EVERY` requests (or as soon as it grows past `MAX_TRACKED`),
+   * users with no hit inside the window are evicted.
+   */
+  private maybeSweep(now: number): void {
+    this.requestsSinceSweep += 1;
+    if (this.requestsSinceSweep < SWEEP_EVERY && this.hits.size < MAX_TRACKED) {
+      return;
+    }
+    this.requestsSinceSweep = 0;
+    for (const [userId, times] of this.hits) {
+      const last = times[times.length - 1];
+      if (last === undefined || now - last >= WINDOW_MS) {
+        this.hits.delete(userId);
+      }
+    }
+  }
 }
+
+const WINDOW_MS = 60_000;
+const SWEEP_EVERY = 1_000;
+const MAX_TRACKED = 10_000;

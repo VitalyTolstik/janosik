@@ -5,7 +5,7 @@ import { api, ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/auth/AuthContext";
-import { useI18n, type MessageKey } from "@/i18n";
+import { useI18n } from "@/i18n";
 import type { OAuthProviderDto } from "@janosik/shared";
 
 /**
@@ -23,16 +23,38 @@ type Mode = "login" | "register";
 /** Localized message for a failed auth call. */
 function authErrorMessage(
   error: unknown,
-  t: (key: MessageKey) => string,
+  t: ReturnType<typeof useI18n>["t"],
 ): string {
   if (error instanceof ApiError) {
     if (error.offline) return t("auth.networkError");
+    if (error.status === 429 && error.code === "login_backoff") {
+      return loginBackoffMessage(error, t);
+    }
     if (error.status === 429) return t("auth.rateLimited");
     if (error.status === 401) return t("auth.invalidCredentials");
     if (error.status === 409) return t("auth.emailTaken");
     if (error.status === 400) return t("auth.invalidInput");
   }
   return t("auth.genericError");
+}
+
+/**
+ * `429 {code:"login_backoff", retryAfter}` — the address is locked after
+ * repeated failed sign-ins; `retryAfter` is the wait in seconds, shown in
+ * seconds under a minute and in whole minutes above.
+ */
+function loginBackoffMessage(
+  error: ApiError,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
+  const raw = (error.body as { retryAfter?: unknown } | null)?.retryAfter;
+  const seconds =
+    typeof raw === "number" && Number.isFinite(raw) && raw > 0
+      ? Math.ceil(raw)
+      : 60;
+  return seconds < 60
+    ? t("auth.loginBackoffSeconds", { seconds })
+    : t("auth.loginBackoffMinutes", { minutes: Math.ceil(seconds / 60) });
 }
 
 export function LoginPage() {

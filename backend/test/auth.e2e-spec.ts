@@ -87,6 +87,8 @@ describe("Auth API (e2e)", () => {
       createdAt: expect.any(Number),
       // SMTP is unconfigured in the test env — registrations auto-verify.
       emailVerifiedAt: expect.any(Number),
+      // U-8: an ordinary session is not an impersonation.
+      impersonatedBy: null,
     });
   });
 

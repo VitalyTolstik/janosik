@@ -92,6 +92,37 @@ describe("LoginPage", () => {
     expect(error.textContent).not.toBe("");
   });
 
+  it("names the wait when the address is locked after failed sign-ins", async () => {
+    let retryAfter = 42;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (pathOf(input).endsWith("/auth/login")) {
+        return json(
+          {
+            message: "Too many failed sign-in attempts",
+            code: "login_backoff",
+            retryAfter,
+          },
+          429,
+        );
+      }
+      return json({ message: "Unauthorized" }, 401);
+    });
+
+    renderPage();
+    submit("admin@example.com", "wrong-password");
+    expect(await screen.findByTestId("login-error")).toHaveTextContent(
+      "Too many failed attempts — try again in 42 s",
+    );
+
+    retryAfter = 125;
+    submit("admin@example.com", "wrong-password");
+    await waitFor(() =>
+      expect(screen.getByTestId("login-error")).toHaveTextContent(
+        "Too many failed attempts — try again in 3 min",
+      ),
+    );
+  });
+
   it("registers from the same screen and starts the session", async () => {
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
       if (pathOf(input).endsWith("/auth/refresh")) {

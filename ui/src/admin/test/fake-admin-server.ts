@@ -432,6 +432,12 @@ export class FakeAdminServer {
   /** Totp enrollment secret echoed by `POST /admin/security/totp`. */
   totpSecret = "JBSWY3DPEHPK3PXP";
 
+  /**
+   * The caller's address as the server sees it: an allowlist that leaves
+   * it out is refused with `400`, like the real lock-out guard.
+   */
+  callerIp: string | null = null;
+
   constructor(state: FakeAdminState = emptyAdminState()) {
     this.state = state;
     this.state.admins = [
@@ -1083,6 +1089,9 @@ export class FakeAdminServer {
 
     const deleteUser = path.match(/^\/admin\/users\/([^/]+)$/);
     if (deleteUser && method === "DELETE") {
+      if (this.sessionRole !== "OWNER") {
+        return this.json({ message: "Owner rights are required" }, 403);
+      }
       const id = decodeURIComponent(deleteUser[1] ?? "");
       this.state.users = this.state.users.filter((user) => user.id !== id);
       return this.json({ status: "ok" });
@@ -1313,6 +1322,18 @@ export class FakeAdminServer {
         ipAllowlist?: string | null;
         totpEnabled?: boolean;
       };
+      if (
+        this.callerIp !== null &&
+        payload.ipAllowlist &&
+        !payload.ipAllowlist.includes(this.callerIp)
+      ) {
+        return this.json(
+          {
+            message: `The allowlist must include your current address (${this.callerIp})`,
+          },
+          400,
+        );
+      }
       if (payload.ipAllowlist !== undefined) {
         this.security = { ...this.security, ipAllowlist: payload.ipAllowlist };
       }

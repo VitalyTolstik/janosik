@@ -6,11 +6,13 @@ import {
 import { AuthGuard } from "@nestjs/passport";
 import { API_TOKEN_PREFIX } from "@janosik/shared";
 import { ApiTokenService } from "./api-token.service";
+import type { AuthPrincipal } from "./auth-principal";
 
 /** Shape of the request bits the guard reads (auth header + resolved user). */
 interface GuardedRequest {
   headers: Record<string, string | undefined>;
   user?: unknown;
+  auth?: AuthPrincipal;
 }
 
 /**
@@ -19,6 +21,11 @@ interface GuardedRequest {
  * parse is authenticated against `ApiToken` instead. Everything else keeps
  * the JWT-first behaviour. Admin routes use `AdminJwtAuthGuard` and never
  * accept PATs.
+ *
+ * B-2: the guard also records *how* the caller authenticated on
+ * `req.auth` (`{ via: "jwt" }` or `{ via: "pat", apiTokenId }`), so
+ * `SessionOnlyGuard` can keep agent keys away from credential management
+ * and open SSE streams can re-validate the exact token they were opened with.
  */
 @Injectable()
 export class JwtAuthGuard extends AuthGuard("jwt") {
@@ -32,6 +39,11 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
     const isPat = raw !== undefined && raw.startsWith(API_TOKEN_PREFIX);
     try {
       if (await super.canActivate(context)) {
+        // The strategy has verified this token; only read a claim from it.
+        request.auth = {
+          via: "jwt",
+          impersonatedBy: impersonatorOf(raw),
+        };
         return true;
       }
     } catch (error) {
@@ -44,7 +56,9 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
     if (!isPat || raw === undefined) {
       throw new UnauthorizedException();
     }
-    request.user = await this.apiTokens.authenticate(raw);
+    const { user, tokenId } = await this.apiTokens.authenticate(raw);
+    request.user = user;
+    request.auth = { via: "pat", apiTokenId: tokenId };
     return true;
   }
 }
@@ -55,4 +69,18 @@ function bearerToken(header: string | undefined): string | undefined {
   }
   const [scheme, value] = header.split(" ");
   return scheme === "Bearer" && value ? value : undefined;
+}
+
+/** The `imp` claim of an already-verified access token, else `null`. */
+function impersonatorOf(token: string | undefined): string | null {
+  const payload = token?.split(".")[1];
+  if (payload === undefined) return null;
+  try {
+    const claims = JSON.parse(
+      Buffer.from(payload, "base64url").toString("utf8"),
+    ) as { imp?: unknown };
+    return typeof claims.imp === "string" ? claims.imp : null;
+  } catch {
+    return null;
+  }
 }

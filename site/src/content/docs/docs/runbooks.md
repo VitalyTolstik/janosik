@@ -105,6 +105,12 @@ no manual migration step.
    ```
 
    The entrypoint runs `npx prisma migrate deploy` before the API starts.
+   Two things can make the first start after an upgrade slower. A migration
+   that adds an index builds it before the API comes up; the command-log time
+   indexes, for example, take longer on a large log. And when the uploads
+   volume still belongs to root (it was created by an older image that ran as
+   root), the entrypoint hands it to the `node` user once with `chown -R`,
+   which takes a while on a large volume.
 
    Rollback: set `JANOSIK_TAG` back to the previous tag and run
    `docker compose up -d`. Migrations are forward-only, so if a migration
@@ -134,7 +140,7 @@ A healthy instance answers `200` with `{"status":"ok","db":"up","redis":"up"}`.
 `redis` is `disabled` when no `REDIS_URL` is configured. A failed database ping
 answers `503` with `{"status":"error","db":"down","redis":"..."}`. A configured
 but unreachable Redis also answers `503` with
-`{"status":"error","db":"up","redis":"down"}`. The [API reference](api/)
+`{"status":"error","db":"up","redis":"down"}`. The [API reference](/docs/api/)
 documents the same shape.
 
 ### Admin observability page
@@ -194,15 +200,41 @@ panel.
 **`docker compose up` fails with `set JWT_SECRET`.** `.env` is missing or
 empty. Copy `.env.example` to `.env` and fill it in.
 
+**The app container exits at once, and the logs say `POSTGRES_PASSWORD is
+still the example value 'change-me'`.** Set a real password in `.env` (for
+example `openssl rand -hex 24`). On an existing install the database already
+has the old password, so change it in PostgreSQL first, then update `.env`
+and run `docker compose up -d`:
+
+```bash
+docker compose exec postgres psql -U janosik -c "ALTER USER janosik WITH PASSWORD '<new password>'"
+```
+
+Replace `janosik` with your `POSTGRES_USER` if it differs.
+
+**Attachments or board imports fail with `413` behind nginx.** nginx refuses
+bodies over 1 MB by default. Add `client_max_body_size 30m;` to the server
+block (see [Self-hosting](../self-hosting/#put-tls-in-front)) and reload nginx.
+
+**After rebuilding the frontend from source, the browser console reports a
+blocked inline script.** The API allows inline scripts by hashes it computes
+at startup. Restart the API after every frontend rebuild. The container image
+does this on every deploy.
+
+**Sign-in answers "Too many failed sign-in attempts".** The address is in
+login backoff after five or more wrong passwords. Wait for the time shown (at
+most 15 minutes); the lock clears on the next successful sign-in.
+
 ## Security checklist
 
 - [ ] Served over HTTPS, with `COOKIE_SECURE=true`.
-- [ ] Strong, unique `JWT_SECRET` and `POSTGRES_PASSWORD`.
+- [ ] Strong, unique `JWT_SECRET` and `POSTGRES_PASSWORD` (never the example
+      `change-me`, which the container refuses).
 - [ ] `ALLOW_REGISTRATION=false` once your account exists.
 - [ ] Reverse proxy in front, `TRUST_PROXY=1`.
 - [ ] Only `80` and `443` exposed; the database and Redis stay internal.
 - [ ] Regular `pg_dump` and uploads backups, plus an occasional restore test.
 - [ ] `docker compose pull && docker compose up -d` applied for security fixes.
 
-See [Security](security/) for the controls the server implements. Report
+See [Security](/docs/security/) for the controls the server implements. Report
 vulnerabilities privately, never in a public issue.

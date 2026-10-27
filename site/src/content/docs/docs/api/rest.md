@@ -3,7 +3,7 @@ title: REST endpoints
 description: Boards, members, comments, attachments, sharing and realtime for the Janosik HTTP API.
 ---
 
-Content mutations travel through the [Command API](./commands/). This page
+Content mutations travel through the [Command API](/docs/api/commands/). This page
 documents everything else on the user-facing surface: boards and membership,
 comments, attachments, public sharing and the realtime stream. See
 [API reference](./) for the shared conventions (base path, auth, errors,
@@ -52,10 +52,20 @@ answers `404`.
 children. Memberships are hard-deleted; live shares are revoked; snapshot
 shares survive.
 
-`POST /boards/:id/members` invites a user by email. The row is created as a
-pending invitation and confers no access until accepted. `expiresAt` is
-honored for `VIEWER` only. An email with no account answers `404`; an existing
-member or pending invitation answers `409`.
+`POST /boards/:id/members` invites a user by email. The address is trimmed
+and lowercased. The answer never reveals whether an account exists for it: a
+known address, an unknown one and a repeat invite of a still-pending invitee
+all answer the same `201` with a masked `BoardMemberDto`. In it `userId` is
+`""` and `displayName`, `avatarColor` and `avatarPath` are `null`; `email`,
+`role` and `expiresAt` echo the request. For a known address the row is
+created as a pending invitation and confers no access until accepted. For an
+unknown address nothing is stored, so invite the person again once they have
+an account. `expiresAt` is honored for `VIEWER` only. Only an address that is
+already an accepted member answers `409`.
+
+An invitee whose account has not confirmed its email does not see the
+invitation, and cannot accept it, until the address is confirmed (see
+[Invitations](../#invitations)).
 
 `PATCH /boards/:id/members/:userId` changes the role and/or the `VIEWER`
 expiry. The last `ADMIN` of a board cannot be demoted, and the last `ADMIN`
@@ -67,6 +77,10 @@ Board-scoped routes answer in this order: a missing or invalid token is `401`;
 an unknown or soft-deleted board is `404`; no membership is `403`; an expired
 `VIEWER` membership is `403` and the stale row is dropped; a role not allowed
 by the route is `403`.
+
+Every route on this page accepts a personal API token as well as an access
+token. Only the account-credential routes are session-only (see
+[API reference](../#session-only-routes)).
 
 ## Comments
 
@@ -187,14 +201,20 @@ is gone answers `410`; a snapshot never depends on the board.
 `GET /share/:token/events` is live mode only; a snapshot answers `404`. It
 streams `command` frames and, when `includeComments` is set, `activity`
 frames. Presence and membership frames are dropped, so a public viewer sees
-no identities. The `?since=` delta catch-up mirrors the member stream. A live
-board that is gone answers `410`.
+no identities. The `?since=` delta catch-up mirrors the member stream,
+including the `resync` frame. A live board that is gone answers `410`. An open
+stream re-checks the share on every keep-alive tick and closes once the share
+is revoked or expired, public sharing is switched off, or the board is gone.
 
 `GET /share/:token/og.png` returns a deterministic board preview PNG.
 
 `GET .../comments` and `GET .../attachments` answer `404` when the share does
 not expose comments or attachments respectively. A card that is not on the
 shared board answers `404`.
+
+A snapshot share freezes the conversation too: its comments, attachment list
+and attachment content include only what was created up to the moment the
+snapshot was captured (or last refreshed). A later attachment answers `404`.
 
 `POST /share/:token` and any nested `POST` answer `405` with
 `"Shared boards are read-only"`. The public contour states its read-only rule
@@ -208,22 +228,43 @@ rather than relying on the absence of a route.
 | `POST` | `/boards/:id/presence` | member      | `PresencePingDto`       | `204`, empty |
 
 `GET /boards/:id/events` is the server-sent event stream. Auth is the Bearer
-token; any role, `VIEWER` included, may connect. To be race-free, the
-connection buffers live events, replays the command-log delta from `?since=`
-(the client's last applied `seq`), then drains the buffer deduplicating by
-`seq`. A keep-alive comment `ping` is sent every 25 seconds.
+token (an access token or a personal API token); any role, `VIEWER` included,
+may connect. The stream delivers the board's command log exactly once and in
+order, or tells the client to resync; it never leaves a silent hole:
+
+- **Catch-up.** The connection replays the command-log delta from `?since=`
+  (the client's last applied `seq`). Live frames that arrive meanwhile are
+  buffered, then drained deduplicated by `seq`.
+- **Resync.** When the gap cannot be replayed faithfully (more than 5000
+  commands, or `since` was trimmed from the log), the stream sends
+  `{ "type": "resync" }` instead of a partial history, then continues from the
+  board's current head. The client must re-read the board with
+  `GET /boards/:id`.
+- **Gaps.** If a live frame shows that an earlier one was lost or reordered
+  on the way (for example between nodes), the stream re-reads the missing
+  commands from the log rather than deliver out of order.
+
+A keep-alive comment `ping` is sent every 25 seconds. On the same tick the
+server re-checks the caller and closes the stream when access is gone: the
+membership was removed or no longer accepted, a `VIEWER`'s access expired,
+the account was disabled, the board was deleted, or the stream was opened
+with a personal API token that has since been revoked or has expired.
 
 `?client=` is an optional tab-scoped id matching `^[A-Za-z0-9_-]{8,64}$`.
 When omitted or malformed, the server mints one.
 
-The stream carries four event types:
+The stream carries five event types:
 
 | `type`       | Payload                                                        | Notes                                          |
 | ------------ | -------------------------------------------------------------- | ---------------------------------------------- |
-| `command`    | `seq`, `action`, `actorId`, `touches`                          | a committed command                            |
+| `command`    | `seq`, `action`, `actorId`, `commandId`, `touches`             | a committed command                            |
 | `presence`   | `users[]`                                                      | who is connected; no `seq`                     |
 | `membership` | `boardId`, `userId`, `change`                                  | `change` is `accepted`, `updated` or `removed` |
 | `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `at`, `kind`, `detail?` | non-reducer activity, e.g. a new comment       |
+| `resync`     | none                                                           | the gap cannot be replayed; refetch the board  |
+
+`commandId` is the idempotency key the command was sent with, so a client
+recognises its own echo by key even when one account runs several writers.
 
 When the removed user is the caller, the server sends the `membership` frame
 as the last one and closes the stream.
@@ -256,7 +297,7 @@ Required tri-state used below:
 
 | Field       | Type           | Required           | Constraints                                                  |
 | ----------- | -------------- | ------------------ | ------------------------------------------------------------ |
-| `email`     | string         | required           | valid email                                                  |
+| `email`     | string         | required           | valid email; trimmed and lowercased                          |
 | `role`      | string         | required           | one of `ADMIN`, `MEMBER`, `VIEWER`                           |
 | `expiresAt` | string or null | optional, nullable | ISO-8601; honored for `VIEWER` only; omitted means unbounded |
 
@@ -333,7 +374,7 @@ The response bodies are the shared wire types. Key fields:
 
 - `BoardSummary`: `id`, `title`, `archivedAt?`, `counters` (`{ cards, columns }`), `role`.
 - `BoardAggregate`: the frontend `Board` (`id`, `title`, `columns[]`, `cards` map, `labels[]`, `createdAt`, `updatedAt`, `archivedAt?`).
-- `BoardMemberDto`: `userId`, `displayName`, `email`, `role`, `expiresAt`, `avatarColor`, `avatarPath`.
+- `BoardMemberDto`: `userId`, `displayName`, `email`, `role`, `expiresAt`, `avatarColor`, `avatarPath`. The invite response is masked (`userId: ""`, profile fields `null`).
 - `CommentDto`: `id`, `cardId`, `authorId`, `text`, `createdAt`. `CommentPage`: `{ items, nextCursor }`.
 - `AttachmentDto`: `id`, `cardId`, `fileName`, `mimeType`, `sizeBytes`, `uploadedById`, `createdAt`, `transcodeStatus`, `hasThumbnail`, `hasPoster`.
 - `BoardShareDto`: `id`, `token`, `boardId`, `boardTitle`, `mode`, `title`, `includeComments`, `includeAttachments`, `expiresAt`, `revokedAt`, `views`, `lastViewedAt`, `createdAt`, `createdBy`.
@@ -347,11 +388,12 @@ The response bodies are the shared wire types. Key fields:
 | `400`  | validation failed, a blank required text, an invalid limit or expiry, an invalid or empty envelope, a rejected file                                       |
 | `401`  | missing or invalid token                                                                                                                                  |
 | `403`  | not a member; a role the route does not allow; an expired `VIEWER`; a share that does not belong to the board; a non-author deleting a comment            |
+| `403`  | `code: "pat_forbidden"`: a personal API token on a session-only route                                                                                     |
 | `404`  | unknown or soft-deleted board, card, comment, attachment or share; a disabled, revoked or expired public share; a thumbnail or poster that does not exist |
 | `405`  | a write against the public share contour                                                                                                                  |
-| `409`  | a duplicate member or invitation; demoting or removing the last `ADMIN`; an expired invitation; a reused `commandId`                                      |
+| `409`  | inviting an accepted member; demoting or removing the last `ADMIN`; an expired invitation; a `commandId` reused on another card                           |
 | `410`  | a live share whose board no longer exists                                                                                                                 |
-| `413`  | a command payload over `MAX_COMMAND_BYTES`                                                                                                                |
+| `413`  | a command payload over `MAX_COMMAND_BYTES`; a JSON body over 256 KB (5 MB on import and commands)                                                         |
 | `416`  | an unsatisfiable `Range` on a blob                                                                                                                        |
-| `429`  | a rate limit was exceeded                                                                                                                                 |
-| `503`  | maintenance mode; a failed health check                                                                                                                   |
+| `429`  | a rate limit was exceeded; `code: "login_backoff"` during a login backoff                                                                                 |
+| `503`  | maintenance mode; a failed health check; `code: "board_write_timeout"` when a board write timed out (safe to retry)                                       |

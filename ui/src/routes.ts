@@ -11,6 +11,11 @@ export const routes = {
   /** Canonical board address. */
   boardPattern: "/board/:boardId",
   board: (boardId: string) => `/board/${boardId}`,
+  /**
+   * Support "view as" entry point (TASK-59, U-8): the only route that
+   * accepts an `#impersonate=` token; it then lands on the home redirect.
+   */
+  impersonate: "/impersonate",
   /** Master panel (TASK-36) — lazy-loaded, never linked from user UI. */
   admin: "/admin",
   adminPattern: "/admin/*",

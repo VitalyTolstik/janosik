@@ -89,6 +89,15 @@ export class ApiError extends Error {
       : undefined;
   }
 
+  /**
+   * Machine-readable error code, when the server named one
+   * (`login_backoff`, `board_write_timeout`, …).
+   */
+  get code(): string | undefined {
+    const body = this.body as { code?: unknown } | null;
+    return typeof body?.code === "string" ? body.code : undefined;
+  }
+
   /** `400 {field}` — the exact command field the strict validator rejected. */
   get field(): string | undefined {
     const body = this.body as { field?: unknown } | null;

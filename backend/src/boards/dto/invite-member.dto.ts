@@ -1,3 +1,4 @@
+import { Transform } from "class-transformer";
 import { IsEmail, IsEnum, IsISO8601, IsOptional } from "class-validator";
 import { Role } from "@prisma/client";
 
@@ -8,6 +9,10 @@ import { Role } from "@prisma/client";
  * (§7.0); for ADMIN/MEMBER it is ignored by the service.
  */
 export class InviteMemberDto {
+  // Same normalization as register/login: emails are stored lowercased.
+  @Transform(({ value }) =>
+    typeof value === "string" ? value.trim().toLowerCase() : value,
+  )
   @IsEmail()
   email!: string;
 

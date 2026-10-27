@@ -52,7 +52,7 @@ Every row has an actions menu with the following entries.
 | Promote to master | creates an `OPERATOR` master | warning colour; opens a dialog |
 | Impersonate | opens a short support session | owner-only; opens the app in a new tab |
 | Export data | downloads a GDPR bundle | owner-only server-side |
-| Delete user | erases the account | opens a dialog that requires typing the email |
+| Delete user | erases the account | owner-only server-side; opens a dialog that requires typing the email |
 
 The list page shows a subset of these actions; the user detail page exposes the
 full set.
@@ -98,7 +98,9 @@ lifetime. It is owner-only server-side.
 
 `Delete user` erases the account and the rows it authored in one transaction,
 then removes its blobs. It is the destructive twin of `Block`. The dialog
-requires typing the account's exact email to confirm. It cannot be undone.
+requires typing the account's exact email to confirm. It cannot be undone. It
+is owner-only server-side: an operator gets `403` with `Owner rights are
+required`.
 
 ## User detail
 
@@ -192,5 +194,5 @@ regular user account, the user is untouched.
 ## Where to go next
 
 The board, card and content listings live on
-[boards, cards and content](./content/). The settings pages live on
-[email, security and operations](./settings/).
+[boards, cards and content](/docs/admin/content/). The settings pages live on
+[email, security and operations](/docs/admin/settings/).

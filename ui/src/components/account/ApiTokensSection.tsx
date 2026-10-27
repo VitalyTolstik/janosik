@@ -39,6 +39,10 @@ const EXPIRY_PRESETS: { id: ExpiryPreset; labelKey: MessageKey }[] = [
   { id: "365", labelKey: "account.tokens.expiry365" },
 ];
 
+/**
+ * The `expiresAt` to send. "Never" is an explicit `null`: the server gives a
+ * token created *without* the field a 90-day default.
+ */
 function expiryIso(preset: ExpiryPreset): string | null {
   if (preset === "never") return null;
   const days = Number(preset);

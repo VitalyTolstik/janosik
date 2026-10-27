@@ -135,7 +135,7 @@ delete it.
   archive, the same action reads `Delete forever`.
 
 The card archive is opened from the data menu (see
-[Account, keys and preferences](account/)).
+[Account, keys and preferences](/docs/user-guide/account/)).
 
 ## The activity feed
 
@@ -160,4 +160,4 @@ archive and restore. Use `Show older` to page back.
 
 ## Next
 
-- [Collaboration, sharing and search](collaboration/)
+- [Collaboration, sharing and search](/docs/user-guide/collaboration/)

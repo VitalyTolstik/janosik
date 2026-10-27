@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { BoardAction } from "./board-reducer";
-import { LIMITS } from "../types/kanban";
-import { validateBoardAction } from "./validate";
+import {
+  boardReducer,
+  initialBoardState,
+  type BoardAction,
+} from "./board-reducer";
+import { invert } from "./invert";
+import type { Board } from "../types/kanban";
+import { LIMITS, MAX_CARD_ACTIVITY } from "../types/kanban";
+import { MAX_ID_LENGTH, validateBoardAction } from "./validate";
 
 /**
  * Strict API validation (ROADMAP §7.0): every supported column/card action
@@ -96,7 +102,6 @@ const validActions: BoardAction[] = [
     cardId: "card-1",
     cover: { type: "gradient", value: "ocean" },
   }),
-  action({ type: "SET_CARD_COVER", cardId: "card-1", cover: null }),
   action({
     type: "MOVE_CARD",
     cardId: "card-1",
@@ -240,13 +245,29 @@ describe("validateBoardAction — accepted shapes", () => {
 
   it("accepts an inverse command with activity ids", () => {
     const input = action({
-      type: "DELETE_CARD",
+      type: "UPDATE_CARD",
       cardId: "card-1",
+      title: "Old",
       inverse: true,
       activityIds: ["act-1"],
+      boardUpdatedAt: 1_700_000_000_000,
+      cardUpdatedAt: 1_699_000_000_000,
       cardActivity: [],
     });
     expect(validateBoardAction(input)).toEqual({ ok: true, action: input });
+  });
+
+  it("reads a JSON null optional as absent (cover cleared)", () => {
+    const input = action({
+      type: "SET_CARD_COVER",
+      cardId: "card-1",
+      cover: null,
+    });
+    const result = validateBoardAction(input);
+    expect(result).toEqual({
+      ok: true,
+      action: action({ type: "SET_CARD_COVER", cardId: "card-1" }),
+    });
   });
 });
 
@@ -623,5 +644,357 @@ describe("validateBoardAction — rejected shapes", () => {
     if (result.ok) return;
     expect(result.field).toBe(field);
     expect(result.message.length).toBeGreaterThan(0);
+  });
+});
+
+/** JSON round-trip: the shape a command has once it crossed the wire. */
+function wire<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/**
+ * S-3: the undo of a delete must pass the server's validator. A card the
+ * reducer created carries an activity feed whose entries are `type`d, not
+ * `kind`ed — the validator used to demand the wrong field and every such
+ * undo answered 400.
+ */
+describe("validateBoardAction — restores built from real cards (S-3)", () => {
+  /** A board whose card-new was created (and renamed) by the reducer. */
+  function boardWithLiveCard(): Board {
+    let state = initialBoardState();
+    state = boardReducer(state, {
+      type: "ADD_CARD",
+      newCardId: "card-new",
+      columnId: "col-backlog",
+      title: "Fresh",
+      at: 1_700_000_000_000,
+      actorId: "user-1",
+      activityIds: ["act-created"],
+    });
+    state = boardReducer(state, {
+      type: "UPDATE_CARD",
+      cardId: "card-new",
+      title: "Renamed",
+      at: 1_700_000_100_000,
+      activityIds: ["act-renamed"],
+    });
+    return state[0];
+  }
+
+  it("accepts the RESTORE_CARD invert() builds for a deleted live card", () => {
+    const before = boardWithLiveCard();
+    expect(before.cards["card-new"].activity).toHaveLength(2);
+    const inverse = invert(before, {
+      type: "DELETE_CARD",
+      cardId: "card-new",
+      at: 1_700_000_200_000,
+    });
+    expect(inverse?.type).toBe("RESTORE_CARD");
+    const result = validateBoardAction(wire(inverse));
+    expect(result).toEqual({ ok: true, action: wire(inverse) });
+  });
+
+  it("rejects an activity entry of an unknown type", () => {
+    const result = validateBoardAction(
+      action({
+        type: "RESTORE_CARD",
+        card: {
+          ...card,
+          activity: [{ id: "a", kind: "created", at: 1, actorId: null }],
+        },
+        columnId: "col-1",
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      field: "action.card.activity[0].type",
+    });
+  });
+
+  it("caps the feed at MAX_CARD_ACTIVITY entries", () => {
+    const activity = Array.from({ length: MAX_CARD_ACTIVITY + 1 }, (_, i) => ({
+      id: `a-${i}`,
+      type: "renamed",
+      at: 1,
+      actorId: null,
+    }));
+    const result = validateBoardAction(
+      action({
+        type: "RESTORE_CARD",
+        card: { ...card, activity },
+        columnId: "col-1",
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      field: "action.card.activity",
+    });
+  });
+});
+
+/**
+ * S-4: the validated action is rebuilt from an allow-list, so whatever the
+ * type does not define never reaches the reducer, the log or the SSE fan-out.
+ */
+describe("validateBoardAction — rebuilds the action (S-4)", () => {
+  it("returns a new object, not the input", () => {
+    const input = action({ type: "DELETE_CARD", cardId: "card-1" });
+    const result = validateBoardAction(input);
+    expect(result.ok && result.action).not.toBe(input);
+  });
+
+  it("drops fields the command type does not define", () => {
+    const result = validateBoardAction(
+      action({
+        type: "RESTORE_CARD",
+        card: { ...card, evil: 1 },
+        columnId: "col-1",
+        actorId: "someone-else",
+        __proto__x: 1,
+        quiet: true,
+      }),
+    );
+    expect(result).toEqual({
+      ok: true,
+      action: action({ type: "RESTORE_CARD", card, columnId: "col-1" }),
+    });
+  });
+
+  it("drops inverse-only overrides from a fresh command", () => {
+    const result = validateBoardAction(
+      action({
+        type: "UPDATE_CARD",
+        cardId: "card-1",
+        title: "x",
+        boardUpdatedAt: 1,
+        cardUpdatedAt: "not even a number",
+        cardActivity: [{ evil: 1 }],
+      }),
+    );
+    expect(result).toEqual({
+      ok: true,
+      action: action({ type: "UPDATE_CARD", cardId: "card-1", title: "x" }),
+    });
+  });
+
+  it("drops a feed rewind on a type invert() never puts one on", () => {
+    const result = validateBoardAction(
+      action({
+        type: "DELETE_CARD",
+        cardId: "card-1",
+        inverse: true,
+        cardActivity: [],
+      }),
+    );
+    expect(result).toEqual({
+      ok: true,
+      action: action({ type: "DELETE_CARD", cardId: "card-1", inverse: true }),
+    });
+  });
+
+  it.each([
+    ["a string cardUpdatedAt", { cardUpdatedAt: "x" }, "action.cardUpdatedAt"],
+    [
+      "a boardUpdatedAt outside the Date range",
+      { boardUpdatedAt: 1e300 },
+      "action.boardUpdatedAt",
+    ],
+    [
+      "a malformed feed entry",
+      { cardActivity: [{ evil: 1 }] },
+      "action.cardActivity[0].id",
+    ],
+  ])("type-checks the inverse-only fields: %s", (_label, extra, field) => {
+    const result = validateBoardAction(
+      action({
+        type: "UPDATE_CARD",
+        cardId: "card-1",
+        title: "x",
+        inverse: true,
+        ...extra,
+      }),
+    );
+    expect(result).toMatchObject({ ok: false, field });
+  });
+
+  it("rejects a clock outside the Date range", () => {
+    for (const at of [1e300, -1e300, 8.64e15 + 1]) {
+      expect(
+        validateBoardAction(action({ type: "DELETE_CARD", cardId: "c", at })),
+      ).toMatchObject({ ok: false, field: "action.at" });
+    }
+  });
+
+  it("passes every inverse invert() emits through unchanged", () => {
+    let state = initialBoardState();
+    const at = 1_700_000_000_000;
+    // Give cards a feed, a checklist and a label so every inverse carries
+    // its overrides (`cardUpdatedAt`, `cardActivity`, snapshots).
+    state = boardReducer(state, {
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      newChecklistId: "cl-1",
+      title: "Steps",
+      at,
+    });
+    state = boardReducer(state, {
+      type: "ADD_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId: "cl-1",
+      newItemId: "it-1",
+      text: "one",
+      at,
+    });
+    state = boardReducer(state, {
+      type: "ARCHIVE_CARD",
+      cardId: "card-3",
+      at,
+    });
+    const before = state[0];
+    const labelId = before.labels[0].id;
+    const commands: BoardAction[] = [
+      { type: "UPDATE_CARD", cardId: "card-1", title: "New", at },
+      { type: "TOUCH_CARD", cardId: "card-1", at },
+      { type: "DELETE_CARD", cardId: "card-1", at },
+      { type: "DELETE_CARD", cardId: "card-3", at },
+      { type: "ARCHIVE_CARD", cardId: "card-2", at },
+      { type: "UNARCHIVE_CARD", cardId: "card-3", at },
+      { type: "ARCHIVE_COLUMN_CARDS", columnId: "col-backlog", at },
+      { type: "DELETE_COLUMN", columnId: "col-backlog", at },
+      { type: "SORT_COLUMN", columnId: "col-backlog", sortBy: "title", at },
+      { type: "SET_COLUMN_WIP_LIMIT", columnId: "col-done", wipLimit: 3, at },
+      {
+        type: "MOVE_CARD",
+        cardId: "card-1",
+        fromColumnId: "col-backlog",
+        fromIndex: 0,
+        toColumnId: "col-done",
+        toIndex: 0,
+        at,
+      },
+      {
+        type: "MOVE_COLUMN",
+        columnId: "col-done",
+        fromIndex: 2,
+        toIndex: 0,
+        at,
+      },
+      { type: "SET_CARD_DUE_DATE", cardId: "card-1", dueDate: at, at },
+      { type: "SET_CARD_PRIORITY", cardId: "card-1", priority: "high", at },
+      { type: "SET_CARD_ASSIGN", cardId: "card-1", assigneeId: "u-1", at },
+      {
+        type: "SET_CARD_COVER",
+        cardId: "card-1",
+        cover: { type: "color", value: "red" },
+        at,
+      },
+      { type: "SET_CARD_LABEL", cardId: "card-1", labelId, on: false, at },
+      { type: "DELETE_LABEL", labelId, at },
+      { type: "RENAME_LABEL", labelId, name: "X", at },
+      { type: "DELETE_CHECKLIST", cardId: "card-1", checklistId: "cl-1", at },
+      {
+        type: "DELETE_CHECKLIST_ITEM",
+        cardId: "card-1",
+        checklistId: "cl-1",
+        itemId: "it-1",
+        at,
+      },
+      {
+        type: "SET_CHECKLIST_ITEM_DONE",
+        cardId: "card-1",
+        checklistId: "cl-1",
+        itemId: "it-1",
+        done: true,
+        at,
+      },
+      {
+        type: "ADD_CARD_LINK",
+        cardId: "card-1",
+        linkId: "ln-1",
+        targetCardId: "card-2",
+        linkType: "blocks",
+        at,
+      },
+      { type: "RENAME_BOARD", title: "Board", at },
+      { type: "RENAME_COLUMN", columnId: "col-done", title: "Shipped", at },
+    ];
+    for (const command of commands) {
+      const inverse = invert(before, command);
+      expect(inverse, command.type).not.toBeNull();
+      expect(validateBoardAction(wire(inverse)), command.type).toEqual({
+        ok: true,
+        action: wire(inverse),
+      });
+    }
+  });
+});
+
+describe("validateBoardAction — string and id bounds", () => {
+  it("measures the raw length, not the trimmed one", () => {
+    const padded = " ".repeat(LIMITS.columnTitle) + "x";
+    expect(
+      validateBoardAction(
+        action({ type: "RENAME_COLUMN", columnId: "c", title: padded }),
+      ),
+    ).toMatchObject({ ok: false, field: "action.title" });
+  });
+
+  it("caps id length", () => {
+    const ok = "i".repeat(MAX_ID_LENGTH);
+    expect(
+      validateBoardAction(action({ type: "DELETE_CARD", cardId: ok })).ok,
+    ).toBe(true);
+    expect(
+      validateBoardAction(action({ type: "DELETE_CARD", cardId: ok + "i" })),
+    ).toMatchObject({ ok: false, field: "action.cardId" });
+    expect(
+      validateBoardAction(
+        action({
+          type: "ADD_CARD",
+          columnId: "c",
+          title: "x",
+          newCardId: "i".repeat(1_000_000),
+        }),
+      ),
+    ).toMatchObject({ ok: false, field: "action.newCardId" });
+  });
+
+  it("accepts the real id shapes (UUID, cuid, mcp- command id)", () => {
+    const result = validateBoardAction(
+      action({
+        type: "DELETE_CARD",
+        cardId: "0f8fad5b-d9cb-469f-a165-70867728950e",
+        boardId: "clh3am8f00000qwer1234abcd",
+        commandId: `mcp-${"a".repeat(60)}`,
+      }),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects __proto__ as an id", () => {
+    expect(
+      validateBoardAction(
+        action({
+          type: "ADD_CARD",
+          columnId: "c",
+          title: "x",
+          newCardId: "__proto__",
+        }),
+      ),
+    ).toMatchObject({ ok: false, field: "action.newCardId" });
+  });
+
+  it.each([
+    ["newCardIds", "DUPLICATE_COLUMN", { columnId: "c", newColumnId: "d" }],
+    ["cardIds", "SET_COLUMN_CARD_ORDER", { columnId: "c" }],
+    ["activityIds", "DELETE_CARD", { cardId: "c" }],
+  ])("caps the %s array", (key, type, body) => {
+    const ids = Array.from(
+      { length: LIMITS.cardsPerColumn + 1 },
+      (_, i) => `id-${i}`,
+    );
+    expect(
+      validateBoardAction(action({ type, ...body, [key]: ids })),
+    ).toMatchObject({ ok: false, field: `action.${key}` });
   });
 });

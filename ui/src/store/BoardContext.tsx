@@ -30,7 +30,7 @@ import {
   createBoardLive,
   type BoardLive,
 } from "@/store/board-live";
-import type { RealtimeBridge } from "@/store/realtime";
+import type { RealtimeBridge, RefetchResult } from "@/store/realtime";
 import { useAuth } from "@/auth/AuthContext";
 import { useUndoHistory } from "@/store/use-undo-history";
 import { SAVE_DEBOUNCE_MS } from "@/store/constants";
@@ -264,6 +264,13 @@ interface BoardActionsValue {
   /* Data safety (TASK-21.2) */
   /** Acknowledges a `corrupt-load` notice (releases held-back writes). */
   dismissDataIssue: () => void;
+  /**
+   * Register a staged-edit flusher (the card dialog's description draft):
+   * it runs before the page is hidden or unloaded and before logout, so
+   * text that only lives in an editor reaches the store and the command
+   * queue (U-3). Returns the unregister function.
+   */
+  registerDraftFlush: (flush: () => void) => () => void;
 }
 
 /** The full surface, as `useBoard()` hands it out. */
@@ -279,7 +286,7 @@ const BoardActionsContext = createContext<BoardActionsValue | null>(null);
 export function BoardProvider({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const toast = useToast();
-  const { user } = useAuth();
+  const { user, registerBeforeLogout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   // Server mode is a build property, not a prop: dev/production builds talk
@@ -333,6 +340,20 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // everything else (dedupe, deferred events, reconnects) and reads the
   // current user id through `userIdRef` for the own-echo filter.
   const seqsRef = useRef(new Map<string, number>());
+  // When each board was last known to match the server (a snapshot, or a
+  // live stream up to its disconnect) — the realtime bridge re-reads a board
+  // idle for long as one snapshot instead of replaying its backlog (U-9).
+  const syncedAtRef = useRef(new Map<string, number>());
+  // Bumped whenever a local command for the board is queued: a snapshot
+  // requested before a bump may not contain that command and must not
+  // replace the optimistic state (U-2).
+  const epochsRef = useRef(new Map<string, number>());
+  const bumpEpoch = useCallback((boardId: string) => {
+    epochsRef.current.set(boardId, (epochsRef.current.get(boardId) ?? 0) + 1);
+  }, []);
+  // The rollback refetch drain (declared further down, next to the refetch
+  // itself) — read from command callbacks that are created before it.
+  const drainRefetchRef = useRef<(boardId: string) => void>(() => undefined);
   const userIdRef = useRef(user?.id);
   useEffect(() => {
     userIdRef.current = user?.id;
@@ -402,6 +423,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           break;
         case "version":
           toast.error(t("sync.foreignEdit"));
+          break;
+        case "busy":
+          toast.error(t("sync.busy"));
           break;
         default:
           toast.error(t("sync.rejected"));
@@ -509,6 +533,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const cardParam = searchParams.get("card");
   const routeBoardId =
     matchPath(routes.boardPattern, location.pathname)?.params.boardId ?? null;
+  // Read by hydration (which board to load first) and by the realtime
+  // handlers, which outlive the render they were created in (U-5).
+  const routeBoardIdRef = useRef(routeBoardId);
+  useEffect(() => {
+    routeBoardIdRef.current = routeBoardId;
+  }, [routeBoardId]);
   const board = routeBoardId
     ? state.find(
         (b) =>
@@ -517,12 +547,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       )
     : undefined;
 
-  // Latest committed state, readable from stable callbacks. `apply` below
-  // keeps it in sync *synchronously*, so this effect is only a safety net.
+  // Latest state, readable from stable callbacks. `apply` below is the only
+  // writer — and the only caller of `dispatchRaw` — so the ref is always the
+  // reducer applied to every action React has been handed, i.e. equal to or
+  // ahead of the committed `state`. (A former "safety net" effect copied
+  // `state` back into the ref after each commit; when an action was applied
+  // between a commit and its passive effect, that copy moved the ref
+  // *backwards* and the next command recorded a stale "before".)
   const stateRef = useRef(state);
-  useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
 
   // Single funnel for every state transition: advance `stateRef` with the
   // pure reducer *before* handing the action to React. Two dispatches in
@@ -565,6 +597,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
    */
   const sendUndoRedo = useCallback(
     async (boardId: string, action: BoardAction): Promise<SendOutcome> => {
+      bumpEpoch(boardId);
       const outcome = await sync.enqueue(
         boardId,
         action,
@@ -578,9 +611,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       } else {
         realtimeRef.current?.settled(boardId);
       }
+      drainRefetchRef.current(boardId);
       return outcome;
     },
-    [sync, preconditionsFor, mergeVersions, live],
+    [sync, preconditionsFor, mergeVersions, live, bumpEpoch],
   );
 
   // Undo/redo lives in its own hook (TASK-21.7d): one command stack per
@@ -708,17 +742,63 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // it cannot cancel the window it is waiting out.
   useEffect(() => () => flushBackup(), [flushBackup]);
 
-  // Flush pending writes when the tab is closed or the provider unmounts.
+  // Staged edits that live only in an editor so far (the card dialog's
+  // description draft): flushed into the store before anything that would
+  // lose them — the tab hiding or unloading, logout (U-3).
+  const draftFlushersRef = useRef(new Set<() => void>());
+  const registerDraftFlush = useCallback((flush: () => void) => {
+    const flushers = draftFlushersRef.current;
+    flushers.add(flush);
+    return () => {
+      flushers.delete(flush);
+    };
+  }, []);
+  const flushDrafts = useCallback(() => {
+    for (const flush of [...draftFlushersRef.current]) {
+      try {
+        flush();
+      } catch {
+        /* one broken editor must not keep the others from saving */
+      }
+    }
+  }, []);
+
+  // Flush pending writes when the tab is hidden, closed or the provider
+  // unmounts: staged drafts first, then the debounced local save (from the
+  // ref — the state effect has not run for what the drafts just applied)
+  // and the server queue's coalesced edits, which go out as `keepalive`
+  // requests that survive the unload (U-3). A hidden tab is flushed too: on
+  // mobile it is often the last event a page ever gets.
   useEffect(() => {
-    const flush = () => persistence.flush();
+    const flush = () => {
+      flushDrafts();
+      if (!serverMode) persistenceRef.current?.queueSave(stateRef.current);
+      persistenceRef.current?.flush();
+      syncRef.current?.flush();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
     window.addEventListener("beforeunload", flush);
     window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("beforeunload", flush);
       window.removeEventListener("pagehide", flush);
-      persistence.flush();
+      document.removeEventListener("visibilitychange", onVisibility);
+      persistenceRef.current?.flush();
     };
-  }, [persistence]);
+  }, [flushDrafts, serverMode]);
+
+  // Logout revokes the session: everything still queued must reach the
+  // server before that, or `dispose()` drops it with the provider (U-3).
+  useEffect(() => {
+    if (!serverMode || registerBeforeLogout === undefined) return;
+    return registerBeforeLogout(async () => {
+      flushDrafts();
+      await syncRef.current?.drain();
+    });
+  }, [serverMode, registerBeforeLogout, flushDrafts]);
 
   /**
    * Server hydration (TASK-29): list the boards, then load every aggregate
@@ -728,13 +808,82 @@ export function BoardProvider({ children }: { children: ReactNode }) {
    * `POST /boards/import` once, archived cards included; the local key is
    * dropped afterwards so the same data cannot be imported twice.
    */
+  /**
+   * Second hydration phase (U-9): the boards that are not on screen. They
+   * merge into whatever the state is by then — the active board may have
+   * been edited meanwhile, so it is never replaced — in the server's list
+   * order. A failed aggregate is retried with a backoff rather than dropped:
+   * a board silently missing from the switcher would look deleted.
+   */
+  // Bumped by every hydration: a background phase of an older one (a
+  // re-hydration after accepting an invitation started meanwhile) must not
+  // merge its outdated list into the newer state.
+  const hydrationGenRef = useRef(0);
+  const loadRemainingBoards = useCallback(
+    async (ids: string[], order: string[], gen: number): Promise<void> => {
+      const loaded = new Map<string, { board: Board; seq: number }>();
+      let missing = ids;
+      for (let attempt = 0; missing.length > 0 && attempt < 4; attempt += 1) {
+        if (attempt > 0) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1_000 * 2 ** (attempt - 1)),
+          );
+        }
+        if (!aliveRef.current || hydrationGenRef.current !== gen) return;
+        const results = await Promise.allSettled(
+          missing.map((id) => api.getBoardSnapshot(id)),
+        );
+        missing = missing.filter((id, index) => {
+          const result = results[index];
+          if (result.status !== "fulfilled") return true;
+          loaded.set(id, result.value);
+          return false;
+        });
+      }
+      if (
+        !aliveRef.current ||
+        hydrationGenRef.current !== gen ||
+        loaded.size === 0
+      ) {
+        return;
+      }
+      const current = stateRef.current;
+      const byId = new Map(current.map((board) => [board.id, board]));
+      const merged: Board[] = [];
+      const now = Date.now();
+      for (const id of order) {
+        const existing = byId.get(id);
+        if (existing !== undefined) {
+          merged.push(existing);
+          byId.delete(id);
+          continue;
+        }
+        const fresh = loaded.get(id);
+        if (fresh === undefined) continue;
+        merged.push(fresh.board);
+        live.attribution.seed(fresh.board);
+        seqsRef.current.set(
+          id,
+          Math.max(seqsRef.current.get(id) ?? 0, fresh.seq),
+        );
+        syncedAtRef.current.set(id, now);
+      }
+      // Boards created while the list was loading.
+      for (const board of byId.values()) merged.push(board);
+      apply({ type: "IMPORT_BOARDS", boards: merged });
+    },
+    [apply, live],
+  );
+
   const runHydration = useCallback(async (): Promise<void> => {
+    const gen = ++hydrationGenRef.current;
     const summaries = await api.listBoards();
     const nextRoles: Record<string, BoardRole> = {};
     for (const summary of summaries) nextRoles[summary.id] = summary.role;
 
     let boards: Board[] = [];
     const nextSeqs = new Map<string, number>();
+    let rest: string[] = [];
     if (summaries.length === 0) {
       const legacy = readLegacyBoards();
       if (legacy !== null) {
@@ -749,26 +898,43 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         boards = imported;
       }
     } else {
-      const snapshots = await Promise.all(
-        summaries.map((summary) => api.getBoardSnapshot(summary.id)),
-      );
-      boards = snapshots.map((snapshot) => snapshot.board);
-      for (const snapshot of snapshots) {
-        nextSeqs.set(snapshot.board.id, snapshot.seq);
-      }
+      // The board on screen first (U-9): the routed one, or the one the home
+      // route will redirect to. The shell renders as soon as it is in; every
+      // other aggregate follows in the background.
+      const routed = routeBoardIdRef.current;
+      const first =
+        summaries.find((summary) => summary.id === routed) ??
+        summaries.find((summary) => !summary.archivedAt) ??
+        summaries[0];
+      const snapshot = await api.getBoardSnapshot(first.id);
+      boards = [snapshot.board];
+      nextSeqs.set(snapshot.board.id, snapshot.seq);
+      rest = summaries
+        .map((summary) => summary.id)
+        .filter((id) => id !== first.id);
     }
 
-    if (!aliveRef.current) return;
-    for (const board of boards) live.attribution.seed(board);
+    if (!aliveRef.current || hydrationGenRef.current !== gen) return;
+    const now = Date.now();
+    const nextSynced = new Map<string, number>();
+    for (const board of boards) {
+      live.attribution.seed(board);
+      nextSynced.set(board.id, now);
+    }
     setRoles(nextRoles);
     // The hydrated state is exactly what the aggregates showed: replacing
     // the seq map keeps the realtime resume point in sync with it.
     seqsRef.current = nextSeqs;
+    syncedAtRef.current = nextSynced;
     // A fresh hydration replaces everything: history from a previous data
     // set would describe entities that no longer exist.
     clearHistory();
     apply({ type: "IMPORT_BOARDS", boards });
-  }, [apply, clearHistory, live]);
+    if (rest.length > 0) {
+      const order = summaries.map((summary) => summary.id);
+      void loadRemainingBoards(rest, order, gen);
+    }
+  }, [apply, clearHistory, live, loadRemainingBoards]);
 
   /**
    * The member directory powers names and avatars for attribution (TASK-36):
@@ -823,34 +989,128 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }, [serverMode, hydrateBoards]);
 
   /**
-   * Focus refetch (TASK-29 fallback; the SSE stream is the live path in
-   * TASK-30): coming back to the tab pulls the active aggregate — unless
-   * commands are in flight, whose optimistic state must not be overwritten.
-   * Entities the server has moved on from are marked foreign in the history
-   * first, so undo skips them with a toast instead of clobbering another
-   * member's edit (§7.0). The snapshot's seq refreshes the stream baseline.
+   * Snapshot refetch (TASK-29 fallback; the SSE stream is the live path in
+   * TASK-30): pulls one board's aggregate — unless commands are in flight,
+   * whose optimistic state must not be overwritten. Entities the server has
+   * moved on from are marked foreign in the history first, so undo skips
+   * them with a toast instead of clobbering another member's edit (§7.0).
+   * The snapshot's seq becomes the stream baseline.
+   *
+   * U-2: everything is re-checked *after* the request — a command queued
+   * while it was in flight (the epoch moved) or still in flight means the
+   * snapshot may predate it and is discarded (`busy`); a snapshot older than
+   * the events already applied (`stale`) would roll them back.
    */
+  const runRefetch = useCallback(
+    async (boardId: string): Promise<RefetchResult> => {
+      if (!serverMode) return "skipped";
+      if (sync.isBusy(boardId)) return "busy";
+      const epoch = epochsRef.current.get(boardId) ?? 0;
+      let snapshot: { board: Board; seq: number };
+      try {
+        snapshot = await api.getBoardSnapshot(boardId);
+      } catch {
+        /* offline / server down — the next focus tries again */
+        return "failed";
+      }
+      if (!aliveRef.current) return "skipped";
+      if (
+        sync.isBusy(boardId) ||
+        (epochsRef.current.get(boardId) ?? 0) !== epoch
+      ) {
+        return "busy";
+      }
+      const local = stateRef.current.find((b) => b.id === boardId);
+      if (local === undefined) return "skipped";
+      const { board: fresh, seq } = snapshot;
+      if (seq < (seqsRef.current.get(boardId) ?? 0)) return "stale";
+      const foreignIds = changedEntityIds(local, fresh);
+      if (foreignIds.length > 0) markForeign(boardId, foreignIds);
+      seqsRef.current.set(boardId, seq);
+      syncedAtRef.current.set(boardId, Date.now());
+      live.attribution.seed(fresh);
+      apply({ type: "RESTORE_BOARD", boardId, board: fresh });
+      return "applied";
+    },
+    [serverMode, sync, markForeign, apply, live],
+  );
+
+  /**
+   * Single-flight per board (U-2): `focus` and `visibilitychange` fire
+   * together on return to the tab and share one request. A caller that
+   * needs a snapshot taken *after* its own moment (`fresh` — a rollback, a
+   * realtime resync) waits for the running one and then starts one more.
+   */
+  const refetchSlotsRef = useRef(
+    new Map<
+      string,
+      {
+        running: Promise<RefetchResult>;
+        trailing: Promise<RefetchResult> | null;
+      }
+    >(),
+  );
+  const refetchBoard = useCallback(
+    (boardId: string, fresh = false): Promise<RefetchResult> => {
+      const slots = refetchSlotsRef.current;
+      const start = (): Promise<RefetchResult> => {
+        const entry = {
+          running: Promise.resolve<RefetchResult>("skipped"),
+          trailing: null as Promise<RefetchResult> | null,
+        };
+        entry.running = runRefetch(boardId).finally(() => {
+          if (slots.get(boardId) === entry) slots.delete(boardId);
+        });
+        slots.set(boardId, entry);
+        return entry.running;
+      };
+      const slot = slots.get(boardId);
+      if (slot === undefined) return start();
+      if (!fresh) return slot.running;
+      slot.trailing ??= slot.running.then(
+        () => slots.get(boardId)?.running ?? start(),
+      );
+      return slot.trailing;
+    },
+    [runRefetch],
+  );
+
   const refetchActiveBoard = useCallback(async (): Promise<void> => {
     const boardId = activeIdRef.current;
     if (!serverMode || boardId === undefined) return;
-    if (sync.isBusy(boardId)) return;
-    try {
-      const { board: fresh, seq } = await api.getBoardSnapshot(boardId);
-      if (!aliveRef.current || activeIdRef.current !== boardId) return;
-      const local = stateRef.current.find((b) => b.id === boardId);
-      if (local === undefined) return;
-      const foreignIds = changedEntityIds(local, fresh);
-      if (foreignIds.length > 0) markForeign(boardId, foreignIds);
-      seqsRef.current.set(
-        boardId,
-        Math.max(seqsRef.current.get(boardId) ?? 0, seq),
-      );
-      live.attribution.seed(fresh);
-      apply({ type: "RESTORE_BOARD", boardId, board: fresh });
-    } catch {
-      /* offline / server down — the next focus tries again */
-    }
-  }, [serverMode, sync, markForeign, apply, live]);
+    await refetchBoard(boardId);
+  }, [serverMode, refetchBoard]);
+
+  /**
+   * A refetch wanted once the board's queue is idle (U-4: a refused command
+   * whose optimistic state cannot be taken back exactly). Retried after the
+   * next command settles when commands are still running.
+   */
+  const refetchWantedRef = useRef(new Set<string>());
+  const drainRefetch = useCallback(
+    (boardId: string): void => {
+      const wanted = refetchWantedRef.current;
+      if (!wanted.has(boardId) || sync.isBusy(boardId)) return;
+      wanted.delete(boardId);
+      void refetchBoard(boardId, true).then((result) => {
+        if (result !== "busy") return;
+        wanted.add(boardId);
+        // Commands that ran meanwhile may all be answered already.
+        if (!sync.isBusy(boardId)) drainRefetchRef.current(boardId);
+      });
+    },
+    [sync, refetchBoard],
+  );
+  useEffect(() => {
+    drainRefetchRef.current = drainRefetch;
+  }, [drainRefetch]);
+  const scheduleRefetch = useCallback(
+    (boardId: string) => {
+      refetchWantedRef.current.add(boardId);
+      drainRefetch(boardId);
+    },
+    [drainRefetch],
+  );
 
   /**
    * The account's membership was revoked (TASK-36): the server sent the
@@ -880,12 +1140,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       // If the caller was viewing the board that just vanished, move them to
       // another active board (or the empty state) instead of leaving them on
       // a dead URL — the 404 route is only for genuinely unknown ids.
-      if (routeBoardId === boardId) {
+      if (routeBoardIdRef.current === boardId) {
         const next = stateRef.current.find((board) => !board.archivedAt);
         navigate(next ? routes.board(next.id) : routes.home, { replace: true });
       }
     },
-    [apply, dropHistory, toast, t, routeBoardId, navigate],
+    [apply, dropHistory, toast, t, navigate],
   );
 
   /**
@@ -909,6 +1169,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     (boardId: string) => revokeBoard(boardId),
     [revokeBoard],
   );
+
+  // The realtime bridge is created once and outlives many renders: it calls
+  // these through a ref, so a language switch or a navigation is seen by
+  // the next frame instead of the closure of the first render (U-5).
+  const realtimeHandlersRef = useRef({ onMembershipChange, onAccessRevoked });
+  useEffect(() => {
+    realtimeHandlersRef.current = { onMembershipChange, onAccessRevoked };
+  }, [onMembershipChange, onAccessRevoked]);
 
   useEffect(() => {
     if (!serverMode) return;
@@ -955,8 +1223,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         },
         isBusy: (id) => sync.isBusy(id),
         getUserId: () => userIdRef.current,
-        onMembershipChange,
-        onAccessRevoked,
+        isOwnCommand: (id, commandId) => sync.wasSent(id, commandId),
+        refetch: (id) => refetchBoard(id, true),
+        getSyncedAt: (id) => syncedAtRef.current.get(id),
+        markSynced: (id) => syncedAtRef.current.set(id, Date.now()),
+        onMembershipChange: (id, userId, change) =>
+          realtimeHandlersRef.current.onMembershipChange(id, userId, change),
+        onAccessRevoked: (id) =>
+          realtimeHandlersRef.current.onAccessRevoked(id),
         onActivity: (event) => {
           live.activity.publish(event);
           // A comment is a change of the card face as well: the commenter
@@ -985,16 +1259,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     // The handlers are stable and read refs on purpose (same as `apply`
     // above): they run from the stream, never during render.
     // eslint-disable-next-line react-hooks/refs
-  }, [
-    serverMode,
-    board?.id,
-    apply,
-    markForeign,
-    sync,
-    live,
-    onMembershipChange,
-    onAccessRevoked,
-  ]);
+  }, [serverMode, board?.id, apply, markForeign, sync, live, refetchBoard]);
 
   // Wrapper dispatch: apply the command, then record the undo step for the
   // board it targeted. Board-scoped actions get the active board id
@@ -1031,6 +1296,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         recordStep(boardId, before, scoped);
       }
       if (!serverMode) return;
+      bumpEpoch(boardId);
       void sync.enqueue(boardId, scoped).then((outcome) => {
         if (outcome.ok) {
           mergeVersions(boardId, outcome.versions);
@@ -1038,21 +1304,31 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           // refetch without the one-behind the optimistic bump has.
           live.commits.publish(boardId, touchedIds);
           realtimeRef.current?.settled(boardId, outcome.seq);
+          drainRefetch(boardId);
           return;
         }
         realtimeRef.current?.settled(boardId);
         showFailure(outcome.failure);
-        if (before === undefined) return;
-        const rollback = rollbackStep(boardId, scoped);
-        if (rollback.kind === "reverted") {
-          apply(rollback.undo);
-        } else if (rollback.kind === "none") {
-          // Nothing was recorded (board-level command) — restore the exact
-          // pre-command snapshot instead.
-          apply({ type: "RESTORE_BOARD", boardId, board: before });
+        if (before !== undefined) {
+          const rollback = rollbackStep(boardId, scoped);
+          const current = stateRef.current.find((b) => b.id === boardId);
+          if (rollback.kind === "reverted") {
+            apply(rollback.undo);
+          } else if (rollback.kind === "none" && current === after) {
+            // Nothing was recorded (board-level command) and nothing has
+            // touched the board since the optimistic apply: the pre-command
+            // snapshot is exactly right.
+            apply({ type: "RESTORE_BOARD", boardId, board: before });
+          } else if (current !== before) {
+            // U-4 — "dead" (newer commands sit on top of the step) or "none"
+            // with later changes on the board: restoring `before` would erase
+            // those, and leaving the optimistic state would keep a change the
+            // server refused. Only the server knows the truth: re-read it as
+            // soon as the queue is idle.
+            scheduleRefetch(boardId);
+          }
         }
-        // "dead": newer commands sit on top; the optimistic state stays and
-        // reconciles with the next focus refetch.
+        drainRefetch(boardId);
       });
     },
     [
@@ -1064,6 +1340,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       showFailure,
       rollbackStep,
       live,
+      bumpEpoch,
+      drainRefetch,
+      scheduleRefetch,
     ],
   );
 
@@ -1209,6 +1488,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       importBoards,
       refreshBoards: hydrateBoards,
       dismissDataIssue,
+      registerDraftFlush,
     }),
     [
       dispatch,
@@ -1223,6 +1503,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       importBoards,
       hydrateBoards,
       dismissDataIssue,
+      registerDraftFlush,
     ],
   );
 
@@ -1712,6 +1993,7 @@ function createReadOnlyBoardActions(): BoardActionsValue {
     importBoards: noop,
     refreshBoards: () => Promise.resolve(),
     dismissDataIssue: noop,
+    registerDraftFlush: () => noop,
   };
 }
 

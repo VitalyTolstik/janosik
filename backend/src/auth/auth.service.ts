@@ -26,6 +26,7 @@ import { toAuthUser } from "./auth-user.mapper";
 import { USER_JWT_AUDIENCE } from "./auth.types";
 import type { AuthResult, AuthUser } from "./auth.types";
 import { LoginDto } from "./dto/login.dto";
+import { LoginBackoffService } from "./login-backoff.service";
 import { RegisterDto } from "./dto/register.dto";
 import type { VerifyEmailDto } from "./dto/verify-email.dto";
 import type { ChangePasswordDto } from "./dto/change-password.dto";
@@ -70,6 +71,7 @@ export class AuthService {
     private readonly mailQueue: MailQueueService,
     private readonly emailTemplates: EmailTemplateService,
     private readonly flags: FeatureFlagsService,
+    private readonly loginBackoff: LoginBackoffService,
   ) {}
 
   /**
@@ -132,22 +134,28 @@ export class AuthService {
   }
 
   async login(dto: LoginDto): Promise<AuthResult> {
+    // B-8: per-account backoff on top of the per-IP throttler.
+    await this.loginBackoff.assertNotLocked(dto.email);
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
     if (!user) {
       await this.burnPasswordTime(dto.password);
+      await this.loginBackoff.recordFailure(dto.email);
       throw new UnauthorizedException("Invalid credentials");
     }
     // OAuth-only account (TASK-54): no local password was ever set.
     if (user.passwordHash === null) {
       await this.burnPasswordTime(dto.password);
+      await this.loginBackoff.recordFailure(dto.email);
       throw new UnauthorizedException("Invalid credentials");
     }
     const valid = await argonVerify(user.passwordHash, dto.password);
     if (!valid) {
+      await this.loginBackoff.recordFailure(dto.email);
       throw new UnauthorizedException("Invalid credentials");
     }
+    await this.loginBackoff.reset(dto.email);
     // Moderation block (TASK-36): the master can disable an account; the
     // password stays correct but no session may be started.
     if (user.disabledAt !== null) {
@@ -230,8 +238,11 @@ export class AuthService {
    * Change the password after verifying the current one, then revoke every
    * refresh session except the caller's (identified by the cookie hash —
    * this route lives under `/auth`, so the cookie is actually sent; TASK-36.1).
-   * API tokens survive on purpose: integrations must not break on a password
-   * rotation.
+   *
+   * B-2: every personal API token is revoked too. A password rotation is the
+   * user's "I think something leaked" button — a key minted by whoever held
+   * the old password (or by a prompt-injected agent) must die with it. The
+   * route itself refuses PATs (`SessionOnlyGuard`).
    */
   async changePassword(
     userId: string,
@@ -251,10 +262,16 @@ export class AuthService {
       }
     }
     const passwordHash = await argonHash(dto.newPassword, { type: argon2id });
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { passwordHash },
-    });
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash },
+      }),
+      this.prisma.apiToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
     if (refreshToken !== undefined) {
       await this.prisma.refreshToken.updateMany({
         where: {

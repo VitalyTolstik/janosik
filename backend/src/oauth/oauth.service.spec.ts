@@ -18,11 +18,22 @@ import type { OAuthSettingsService } from "./oauth-settings.service";
 const prismaMock = {
   user: {
     create: jest.fn(),
+    findFirst: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
   },
+  refreshToken: { updateMany: jest.fn() },
+  apiToken: { updateMany: jest.fn() },
+  emailVerificationCode: { deleteMany: jest.fn() },
+  emailChangeCode: { deleteMany: jest.fn() },
+  $transaction: jest.fn(),
 } as unknown as PrismaService & {
-  user: Record<"create" | "findUnique" | "update", jest.Mock>;
+  user: Record<"create" | "findFirst" | "findUnique" | "update", jest.Mock>;
+  refreshToken: Record<"updateMany", jest.Mock>;
+  apiToken: Record<"updateMany", jest.Mock>;
+  emailVerificationCode: Record<"deleteMany", jest.Mock>;
+  emailChangeCode: Record<"deleteMany", jest.Mock>;
+  $transaction: jest.Mock;
 };
 
 const authMock = {
@@ -69,6 +80,10 @@ describe("OAuthService", () => {
     jest.resetAllMocks();
     service = new OAuthService(prismaMock, authMock, settingsMock);
     settingsMock.credentials.mockResolvedValue(CREDENTIALS);
+    // Array-form transactions: every element is already a (mocked) promise.
+    prismaMock.$transaction.mockImplementation((ops: unknown[]) =>
+      Promise.all(ops),
+    );
     authMock.startSession.mockResolvedValue({
       accessToken: "access-token",
       refreshToken: "refresh-token",
@@ -142,7 +157,7 @@ describe("OAuthService", () => {
         email_verified: true,
         name: "  Vera  ",
       });
-      prismaMock.user.findUnique.mockResolvedValue(null);
+      prismaMock.user.findFirst.mockResolvedValue(null);
       prismaMock.user.create.mockImplementation(async ({ data }) =>
         makeUser({ ...data, id: "user-2" }),
       );
@@ -162,9 +177,15 @@ describe("OAuthService", () => {
       expect(tokenBody).toContain("redirect_uri=");
       const [, userinfoInit] = fetchMock.mock.calls[1];
       expect(userinfoInit.headers.Authorization).toBe("Bearer at");
+      expect(prismaMock.user.findFirst).toHaveBeenCalledWith({
+        where: {
+          email: { equals: "new.user@example.com", mode: "insensitive" },
+        },
+      });
       expect(prismaMock.user.create).toHaveBeenCalledWith({
         data: {
-          email: "New.User@example.com",
+          // Stored normalized, like register/login.
+          email: "new.user@example.com",
           passwordHash: null,
           displayName: "Vera",
           emailVerifiedAt: expect.any(Date),
@@ -173,11 +194,11 @@ describe("OAuthService", () => {
       expect(authMock.startSession).toHaveBeenCalledTimes(1);
     });
 
-    it("links into the existing account by email and stamps the verification", async () => {
+    it("claims an unverified account: wipes the squatter's credentials, then verifies (B-1)", async () => {
       const { state } = await start();
       stubGoogleRoundtrip({ email: "user@example.com", email_verified: true });
-      prismaMock.user.findUnique.mockResolvedValue(
-        makeUser({ emailVerifiedAt: null }),
+      prismaMock.user.findFirst.mockResolvedValue(
+        makeUser({ emailVerifiedAt: null, passwordHash: "$argon2id$squatter" }),
       );
       prismaMock.user.update.mockResolvedValue(
         makeUser({ emailVerifiedAt: new Date() }),
@@ -188,17 +209,46 @@ describe("OAuthService", () => {
       expect(prismaMock.user.create).not.toHaveBeenCalled();
       expect(prismaMock.user.update).toHaveBeenCalledWith({
         where: { id: "user-1" },
-        data: { emailVerifiedAt: expect.any(Date) },
+        data: { passwordHash: null, emailVerifiedAt: expect.any(Date) },
       });
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: "user-1", revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+      expect(prismaMock.apiToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: "user-1", revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+      expect(prismaMock.emailChangeCode.deleteMany).toHaveBeenCalledWith({
+        where: { userId: "user-1" },
+      });
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
       expect(authMock.startSession).toHaveBeenCalledWith(
         expect.objectContaining({ id: "user-1" }),
+      );
+    });
+
+    it("links into a verified account without touching its credentials", async () => {
+      const { state } = await start();
+      stubGoogleRoundtrip({ email: "user@example.com", email_verified: true });
+      prismaMock.user.findFirst.mockResolvedValue(
+        makeUser({ emailVerifiedAt: new Date(), passwordHash: "$argon2id$x" }),
+      );
+
+      await service.handleCallback("google", "auth-code", state, state);
+
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
+      expect(prismaMock.apiToken.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(authMock.startSession).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "user-1", passwordHash: "$argon2id$x" }),
       );
     });
 
     it("refuses a disabled account", async () => {
       const { state } = await start();
       stubGoogleRoundtrip({ email: "user@example.com", email_verified: true });
-      prismaMock.user.findUnique.mockResolvedValue(
+      prismaMock.user.findFirst.mockResolvedValue(
         makeUser({ disabledAt: new Date() }),
       );
 
@@ -243,7 +293,7 @@ describe("OAuthService", () => {
         .mockResolvedValueOnce(
           jsonResponse(200, { default_email: "y@ya.ru", real_name: "Вера" }),
         );
-      prismaMock.user.findUnique.mockResolvedValue(
+      prismaMock.user.findFirst.mockResolvedValue(
         makeUser({ emailVerifiedAt: null }),
       );
       prismaMock.user.update.mockResolvedValue(
@@ -255,7 +305,7 @@ describe("OAuthService", () => {
       expect(fetchMock.mock.calls[0][0]).toBe("https://oauth.yandex.ru/token");
       expect(prismaMock.user.update).toHaveBeenCalledWith({
         where: { id: "user-1" },
-        data: { emailVerifiedAt: expect.any(Date) },
+        data: { passwordHash: null, emailVerifiedAt: expect.any(Date) },
       });
     });
 

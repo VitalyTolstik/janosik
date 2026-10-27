@@ -14,11 +14,14 @@ Every route is served under the global prefix `/api/v1`. A route named
 `POST /auth/login` in this reference is reached at
 `POST /api/v1/auth/login`.
 
-Requests and responses are JSON. The JSON body parser accepts payloads up to
-`MAX_IMPORT_BYTES` (5 MB, `shared/src/types/kanban.ts`), so a large import
-envelope or a `RESTORE_*` command reaches validation instead of dying in the
-parser. One command payload is additionally capped at `MAX_COMMAND_BYTES`
-(2 MB) inside the command service.
+Requests and responses are JSON. A JSON body is capped at 256 KB on every
+route except the two that legitimately carry large bodies: `POST /boards/import`
+and `POST /boards/:id/commands` (plus the master-contour
+`POST /admin/boards/:id/commands`) accept up to `MAX_IMPORT_BYTES` (5 MB,
+`shared/src/types/kanban.ts`), so a large import envelope or a `RESTORE_*`
+command reaches validation instead of dying in the parser. One command payload
+is additionally capped at `MAX_COMMAND_BYTES` (2 MB) inside the command
+service. A body over its limit answers `413`.
 
 File uploads use `multipart/form-data` with a single `file` part.
 
@@ -35,6 +38,27 @@ The first is a short-lived JWT access token from the auth endpoints. The
 second is a personal API token (PAT): a value whose `jnk_` prefix tells the
 guard to authenticate it against the `ApiToken` table instead of the JWT
 strategy. Both open board-scoped routes identically.
+
+### Session-only routes
+
+A personal API token acts as its owner for board work, but it cannot manage
+the account's credentials. These routes refuse a PAT with `403`:
+
+- `GET /users/me/tokens`, `POST /users/me/tokens`, `DELETE /users/me/tokens/:id`
+- `POST /auth/password`
+- `POST /auth/email/change/request`, `POST /auth/email/change/confirm`
+
+```json
+{
+  "message": "Personal API tokens cannot manage account credentials — sign in with a browser session",
+  "code": "pat_forbidden"
+}
+```
+
+Call them with an access token from a browser sign-in. Board, member, share,
+invitation, comment, attachment and command routes keep accepting a PAT. A
+leaked key therefore cannot mint more keys, change the password or move the
+account to another mailbox.
 
 The refresh token never appears in a response body. It rides an httpOnly
 cookie named `refresh_token`, scoped to path `/api/v1/auth` with
@@ -62,39 +86,74 @@ Errors use the NestJS default body:
 body field is stripped. A failed class-validator constraint answers `400` with
 `message` as an array of strings, one per failed constraint.
 
-Two shapes deviate from the default and are documented where they occur:
+Some shapes deviate from the default and are documented where they occur:
 
 - The command endpoint answers `409` with `{ "conflict": "...", "currentVersion": n }`
   (see [Command API](./commands/)).
-- Some endpoints answer `400` with an added `field` string, e.g.
+- Some endpoints answer `400` or `409` with an added `field` string, e.g.
   `{ "message": "...", "field": "text" }`, so a client can point at the input.
+- Some errors carry a machine-readable `code` next to `message`:
+
+| Status | `code`                | Meaning                                                                                     |
+| ------ | --------------------- | ------------------------------------------------------------------------------------------- |
+| `403`  | `pat_forbidden`       | a personal API token called a [session-only route](#session-only-routes)                    |
+| `429`  | `login_backoff`       | the address is in [login backoff](#login-backoff); `retryAfter` is the wait in seconds      |
+| `503`  | `board_write_timeout` | the board's write lock timed out under load; safe to retry (a command with its `commandId`) |
 
 ## Rate limits
 
 Two limiters run globally:
 
-- A per-client (IP) fixed window, `THROTTLE_LIMIT` requests per minute
-  (default 300). An operator can change it at runtime from the master panel.
+- A fixed window of `THROTTLE_LIMIT` requests per minute (default 300) per
+  principal. An operator can change it at runtime from the master panel.
   `/health` is exempt.
 - An optional per-authenticated-user budget, set from the master panel. The
   `/admin`, `/auth` and `/health` contours are exempt from it.
 
-Individual auth routes add tighter `@Throttle` windows on top:
+The principal a request counts against is the user for a valid access token
+(every tab and device of one account share a budget), the key for a personal
+API token that has recently authenticated (each key has its own budget), and
+the client IP for everything else: anonymous calls, unknown keys, expired
+tokens. When `REDIS_URL` is set the counters live in Redis, so every node
+shares them; without it each process counts on its own.
 
-| Route                                | Limit                |
-| ------------------------------------ | -------------------- |
-| `POST /auth/register`                | 5 per minute per IP  |
-| `POST /auth/login`                   | 5 per minute per IP  |
-| `POST /auth/password`                | 5 per minute per IP  |
-| `POST /auth/email/change/request`    | 3 per hour per IP    |
-| `POST /auth/email/change/confirm`    | 5 per minute per IP  |
-| `POST /auth/verify-email`            | 10 per minute per IP |
-| `POST /auth/verify-email/resend`     | 3 per hour per IP    |
-| `GET /auth/oauth/:provider/start`    | 20 per minute per IP |
-| `GET /auth/oauth/:provider/callback` | 20 per minute per IP |
+Individual auth routes add tighter `@Throttle` windows on top, counted the
+same way: per IP on the anonymous routes, per user on the signed-in ones.
+
+| Route                                | Limit                  |
+| ------------------------------------ | ---------------------- |
+| `POST /auth/register`                | 5 per minute per IP    |
+| `POST /auth/login`                   | 5 per minute per IP    |
+| `POST /auth/password`                | 5 per minute per user  |
+| `POST /auth/email/change/request`    | 3 per hour per user    |
+| `POST /auth/email/change/confirm`    | 5 per minute per user  |
+| `POST /auth/verify-email`            | 10 per minute per user |
+| `POST /auth/verify-email/resend`     | 3 per hour per user    |
+| `GET /auth/oauth/:provider/start`    | 20 per minute per IP   |
+| `GET /auth/oauth/:provider/callback` | 20 per minute per IP   |
 
 The public share contour has its own per-token budget (see
 [REST endpoints](./rest/)). A rejection answers `429`.
+
+### Login backoff
+
+On top of the IP window, `POST /auth/login` backs off per account. Failures
+are counted per normalized email whether or not an account exists, so the lock
+reveals nothing about the address. The fifth failure locks the address for 30
+seconds, and every further failure doubles the lock, up to 15 minutes. While
+the lock holds, every login for that address answers `429`, even one with the
+right password:
+
+```json
+{
+  "message": "Too many failed sign-in attempts — try again in 30 s",
+  "code": "login_backoff",
+  "retryAfter": 30
+}
+```
+
+A successful login clears the counter, and it also resets an hour after the
+last failure. With `REDIS_URL` set the counter is shared across nodes.
 
 ## Maintenance mode
 
@@ -139,11 +198,15 @@ out of scope for this reference.
 | `POST` | `/auth/logout`               | refresh cookie | `{ status: "ok" }`                       |
 | `GET`  | `/auth/config`               | none           | `AuthConfigResponse`                     |
 | `GET`  | `/auth/me`                   | user           | `AuthUserDto`                            |
-| `POST` | `/auth/password`             | user           | `{ status: "ok" }`                       |
-| `POST` | `/auth/email/change/request` | user           | `{ expiresAt: number, queued: boolean }` |
-| `POST` | `/auth/email/change/confirm` | user           | `AuthResponseDto`                        |
+| `POST` | `/auth/password`             | session        | `{ status: "ok" }`                       |
+| `POST` | `/auth/email/change/request` | session        | `{ expiresAt: number, queued: boolean }` |
+| `POST` | `/auth/email/change/confirm` | session        | `AuthResponseDto`                        |
 | `POST` | `/auth/verify-email`         | user           | `{ user: AuthUserDto }`                  |
 | `POST` | `/auth/verify-email/resend`  | user           | `{ expiresAt: number, queued: boolean }` |
+
+`user` accepts an access token or a personal API token; `session` accepts
+only an access token from a browser sign-in (see
+[Session-only routes](#session-only-routes)).
 
 `register`, `login`, `refresh` and `email/change/confirm` set the refresh
 cookie and return `{ accessToken, user }`. `register` also sends a 6-digit
@@ -172,7 +235,8 @@ answers `409`.
 | `password` | string | required | at most 100 characters              |
 
 No minimum length is enforced on login: a short password answers `401` like
-any other wrong credential. Returns `AuthResponseDto`.
+any other wrong credential. Returns `AuthResponseDto`. Repeated failures for
+one address trigger the [login backoff](#login-backoff).
 
 ### Refresh and logout
 
@@ -191,7 +255,9 @@ sign-in screen reads before a session exists:
 
 ### Me
 
-`GET /auth/me` returns the authenticated user's `AuthUserDto`.
+`GET /auth/me` returns the authenticated user's `AuthUserDto` plus
+`impersonatedBy`: the master's id when the access token is a support
+(impersonation) session, otherwise `null`, including for API tokens.
 
 ### Password change
 
@@ -202,12 +268,15 @@ sign-in screen reads before a session exists:
 | `currentPassword` | string | required | at most 100 characters |
 | `newPassword`     | string | required | 8 to 100 characters    |
 
-Returns `{ status: "ok" }`. The refresh cookie identifies which session is
-changed; every other session is revoked.
+Session-only: a personal API token answers `403` with `code: "pat_forbidden"`.
+Returns `{ status: "ok" }`. The refresh cookie identifies the caller's session,
+which stays signed in; every other session is revoked, and so is every
+personal API token of the account.
 
 ### Email change
 
-`POST /auth/email/change/request` starts a double opt-in. Body:
+Both email-change routes are session-only. `POST /auth/email/change/request`
+starts a double opt-in. Body:
 
 | Field             | Type   | Required | Constraints                         |
 | ----------------- | ------ | -------- | ----------------------------------- |
@@ -260,9 +329,22 @@ only enabled providers; each entry is `{ id, label }` with `id` one of
 state, sets the refresh cookie, and redirects to the UI root. Any failure
 redirects to `?authError=oauth_failed` on the UI root.
 
+The provider's email is trimmed, lowercased and matched case-insensitively
+against existing accounts. A new address creates an OAuth-only account with no
+password. An existing account is linked, and its address becomes verified. If
+that account had never confirmed its email, the link first hands it over
+clean: its password is removed, every refresh session and personal API token
+is revoked, and pending verification and email-change codes are deleted. This
+closes the pre-account-takeover path where someone registers a victim's address
+with a password before the victim ever signs in. The account is then
+OAuth-only: `POST /auth/password` sets a first password without checking
+`currentPassword`.
+
 ## Users and account
 
-Every route is behind user auth (JWT or PAT).
+Every route is behind user auth (JWT or PAT), except the three token routes,
+which are [session-only](#session-only-routes): an API key can neither list
+nor create nor revoke keys.
 
 | Method   | Path                    | Returns                   |
 | -------- | ----------------------- | ------------------------- |
@@ -291,15 +373,16 @@ aggressively. A user without an avatar answers `404`.
 
 `POST /users/me/tokens` body:
 
-| Field       | Type           | Required | Constraints                                                        |
-| ----------- | -------------- | -------- | ------------------------------------------------------------------ |
-| `name`      | string         | required | at most 50 characters                                              |
-| `expiresAt` | string or null | optional | ISO-8601; must be in the future; omitted or `null` means no expiry |
+| Field       | Type           | Required | Constraints                                                                    |
+| ----------- | -------------- | -------- | ------------------------------------------------------------------------------ |
+| `name`      | string         | required | at most 50 characters                                                          |
+| `expiresAt` | string or null | optional | ISO-8601; must be in the future; omitted means 90 days; `null` means no expiry |
 
 Returns `{ token, apiToken }`. The plaintext `token` appears exactly once;
 only `apiToken` metadata is returned afterwards. `GET /users/me/tokens` lists
 metadata (never the plaintext). `DELETE /users/me/tokens/:id` revokes one and
-returns `{ status: "ok" }`.
+returns `{ status: "ok" }`. Changing the password revokes every token of the
+account.
 
 ## Invitations
 
@@ -317,6 +400,11 @@ newest first. `accept` stamps `acceptedAt`, so the board then appears in
 `GET /boards`. `decline` deletes the row. An expired invitation cannot be
 accepted: the row is dropped and the call answers `409`. An unknown or
 someone else's invitation answers `404`.
+
+Invitations are addressed to a mailbox, so they wait for the account to prove
+it owns one. Until the email is confirmed, `GET /invitations` returns an empty
+list and `accept` answers `403`; after confirmation the pending invitations
+appear as usual.
 
 ## Activity feeds
 

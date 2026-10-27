@@ -100,7 +100,9 @@ password recovery, no social entry.
   answers `401` with `code: "totp_required"` and the form reveals a two-factor
   code field. The code is the six digits from an authenticator app.
 - An IP allowlist, when set for the master, is checked after the password so an
-  attacker never learns the list without valid credentials.
+  attacker never learns the list without valid credentials. It is enforced
+  again on every admin request and every session refresh: a token or refresh
+  cookie used from an address outside the list answers `403`.
 - Refresh tokens rotate on every use. Reusing a revoked token revokes every
   session of that master.
 

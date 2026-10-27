@@ -6,8 +6,10 @@ import {
   attachmentImagePreviewHandler,
   embedMarkdown,
   handleAttachmentImageOpen,
+  openAttachmentBlob,
   openImageLightbox,
 } from "./embedAttachments";
+import { defaultI18n } from "@/i18n/i18n";
 
 vi.mock("@/api/client", () => ({
   api: {
@@ -273,5 +275,83 @@ describe("fullscreen viewer (lightbox)", () => {
     expect(
       document.querySelectorAll('[data-testid="attachment-lightbox"]'),
     ).toHaveLength(1);
+  });
+});
+
+describe("lightbox labels follow the UI language", () => {
+  afterEach(async () => {
+    document.getElementById("attachment-lightbox")?.remove();
+    await defaultI18n.changeLanguage("en");
+  });
+
+  it("labels the viewer and its close button through i18n", async () => {
+    openImageLightbox("blob:labels");
+    const overlay = document.getElementById("attachment-lightbox");
+    expect(overlay?.getAttribute("aria-label")).toBe("Image preview");
+    expect(
+      overlay
+        ?.querySelector('[data-testid="attachment-lightbox-close"]')
+        ?.getAttribute("aria-label"),
+    ).toBe("Close preview");
+    overlay?.remove();
+
+    defaultI18n.addResourceBundle(
+      "ru",
+      "translation",
+      (await import("@/locales/ru/translation.json")).default,
+    );
+    await defaultI18n.changeLanguage("ru");
+    openImageLightbox("blob:labels-ru");
+    expect(
+      document
+        .getElementById("attachment-lightbox")
+        ?.getAttribute("aria-label"),
+    ).toBe("Просмотр изображения");
+  });
+});
+
+describe("openAttachmentBlob", () => {
+  let opened: string[] = [];
+  let downloads: string[] = [];
+
+  beforeEach(() => {
+    opened = [];
+    downloads = [];
+    vi.stubGlobal(
+      "URL",
+      Object.assign(URL, { createObjectURL: () => "blob:attachment" }),
+    );
+    vi.spyOn(window, "open").mockImplementation((url) => {
+      opened.push(String(url));
+      return null;
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloads.push(this.download);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("opens a raster image in a new tab", async () => {
+    vi.mocked(api.fetchAttachment).mockResolvedValue(
+      new Blob(["x"], { type: "image/png" }),
+    );
+    await openAttachmentBlob("att-png", "shot.png");
+    expect(opened).toEqual(["blob:attachment"]);
+    expect(downloads).toEqual([]);
+  });
+
+  it("never opens SVG as a top-level page — it is downloaded", async () => {
+    vi.mocked(api.fetchAttachment).mockResolvedValue(
+      new Blob(["<svg onload='alert(1)'/>"], { type: "image/svg+xml" }),
+    );
+    await openAttachmentBlob("att-svg", "logo.svg");
+    expect(opened).toEqual([]);
+    expect(downloads).toEqual(["logo.svg"]);
   });
 });

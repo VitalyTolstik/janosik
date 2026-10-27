@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type {
   Board,
   BoardAction,
@@ -6,6 +6,7 @@ import type {
   Checklist,
   ChecklistItem,
 } from "@janosik/shared";
+import { cardOf } from "@janosik/shared";
 
 /**
  * Per-action writers (ROADMAP §7.4.1 variant В).
@@ -101,12 +102,42 @@ async function writeCardPositions(
   columnId: string,
   cardIds: string[],
 ): Promise<void> {
-  for (const [position, id] of cardIds.entries()) {
+  // B-7: one `UPDATE … FROM (VALUES …)` per chunk instead of one statement
+  // per card — a move between two 100-card columns used to cost ~200 round
+  // trips under the board lock. Every value is a bound parameter.
+  for (const chunk of chunked(cardIds, POSITION_BATCH)) {
+    const rows = chunk.map(
+      (id, offset) =>
+        Prisma.sql`(${id}::text, ${chunk.offset + offset}::integer)`,
+    );
     await tx.$executeRaw`
-      UPDATE "Card" SET "columnId" = ${columnId}, "position" = ${position}
-      WHERE "id" = ${id}
+      UPDATE "Card" AS c
+      SET "columnId" = ${columnId}, "position" = v.position
+      FROM (VALUES ${Prisma.join(rows)}) AS v(id, position)
+      WHERE c."id" = v.id
     `;
   }
+}
+
+/**
+ * Rows per batched position UPDATE. Two bind parameters per row keeps a
+ * statement far below PostgreSQL's 65 535-parameter limit even for the
+ * largest collection (`LIMITS.cardsPerColumn`).
+ */
+const POSITION_BATCH = 1_000;
+
+/** Split `items` into slices that remember their starting index. */
+function chunked<T>(
+  items: readonly T[],
+  size: number,
+): Array<T[] & { offset: number }> {
+  const chunks: Array<T[] & { offset: number }> = [];
+  for (let start = 0; start < items.length; start += size) {
+    chunks.push(
+      Object.assign(items.slice(start, start + size), { offset: start }),
+    );
+  }
+  return chunks;
 }
 
 /**
@@ -118,9 +149,16 @@ async function writeColumnPositions(
   tx: Tx,
   columns: Board["columns"],
 ): Promise<void> {
-  for (const [position, column] of columns.entries()) {
+  for (const chunk of chunked(columns, POSITION_BATCH)) {
+    const rows = chunk.map(
+      (column, offset) =>
+        Prisma.sql`(${column.id}::text, ${chunk.offset + offset}::integer)`,
+    );
     await tx.$executeRaw`
-      UPDATE "Column" SET "position" = ${position} WHERE "id" = ${column.id}
+      UPDATE "Column" AS c
+      SET "position" = v.position
+      FROM (VALUES ${Prisma.join(rows)}) AS v(id, position)
+      WHERE c."id" = v.id
     `;
   }
 }
@@ -513,7 +551,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         });
       }
       for (const [position, cardId] of copy.cardIds.entries()) {
-        const card = after.cards[cardId];
+        const card = cardOf(after, cardId);
         if (!card) continue;
         await upsertCard(tx, card, copy.id, position, ctx.actorId);
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
@@ -557,7 +595,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     }
 
     case "ADD_CARD": {
-      const card = after.cards[action.newCardId];
+      const card = cardOf(after, action.newCardId);
       if (!card) return [boardTouch];
       const column = after.columns.find((c) => c.cardIds.includes(card.id));
       if (!column) return [boardTouch];
@@ -588,7 +626,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
 
     case "DELETE_CARD": {
       const now = new Date(ctx.at);
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card) return [boardTouch];
       const checklists = await tx.checklist.findMany({
         where: { cardId: card.id },
@@ -627,7 +665,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     }
 
     case "TOUCH_CARD": {
-      const card = after.cards[action.cardId];
+      const card = cardOf(after, action.cardId);
       if (!card) return [boardTouch];
       await tx.card.update({
         where: { id: card.id },
@@ -644,7 +682,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         before.columns.find((c) => c.id === action.columnId)?.cardIds ?? [];
       const archived: string[] = [];
       for (const id of ids) {
-        const card = after.cards[id];
+        const card = cardOf(after, id);
         if (!card?.archivedAt) continue;
         await tx.card.update({
           where: { id },
@@ -754,7 +792,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     }
 
     case "SET_CARD_LABEL": {
-      const card = after.cards[action.cardId];
+      const card = cardOf(after, action.cardId);
       if (!card) return [boardTouch];
       await writeCardLabels(tx, boardId, card.id, card.labelIds);
       await bumpCard(tx, card, ctx.actorId);
@@ -762,7 +800,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     }
 
     case "ADD_CARD_LINK": {
-      const card = after.cards[action.cardId];
+      const card = cardOf(after, action.cardId);
       if (!card) return [boardTouch];
       await bumpCard(tx, card, ctx.actorId);
       const links = card.links ?? [];
@@ -801,7 +839,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     }
 
     case "REMOVE_CARD_LINK": {
-      const card = after.cards[action.cardId];
+      const card = cardOf(after, action.cardId);
       if (!card) return [boardTouch];
       await bumpCard(tx, card, ctx.actorId);
       // Soft delete: the row survives so redo (the re-add) revives it, and
@@ -887,7 +925,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       }
       const touched = [touch.label(label.id)];
       for (const { cardId } of action.assignments ?? []) {
-        const card = after.cards[cardId];
+        const card = cardOf(after, cardId);
         if (!card || !card.labelIds.includes(label.id)) continue;
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
         touched.push(touch.card(card.id));
@@ -896,7 +934,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     }
 
     case "ADD_CHECKLIST": {
-      const card = after.cards[action.cardId];
+      const card = cardOf(after, action.cardId);
       const checklists = card?.checklists ?? [];
       const position = checklists.findIndex(
         (c) => c.id === action.newChecklistId,
@@ -909,7 +947,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     }
 
     case "RENAME_CHECKLIST": {
-      const card = after.cards[action.cardId];
+      const card = cardOf(after, action.cardId);
       const checklist = card?.checklists?.find(
         (c) => c.id === action.checklistId,
       );
@@ -923,7 +961,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     }
 
     case "DELETE_CHECKLIST": {
-      const card = after.cards[action.cardId];
+      const card = cardOf(after, action.cardId);
       if (!card) return [boardTouch];
       const now = new Date(ctx.at);
       const items = await tx.checklistItem.findMany({
@@ -948,7 +986,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     }
 
     case "ADD_CHECKLIST_ITEM": {
-      const card = after.cards[action.cardId];
+      const card = cardOf(after, action.cardId);
       const checklist = card?.checklists?.find(
         (c) => c.id === action.checklistId,
       );
@@ -968,7 +1006,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
 
     case "SET_CHECKLIST_ITEM_DONE":
     case "RENAME_CHECKLIST_ITEM": {
-      const card = after.cards[action.cardId];
+      const card = cardOf(after, action.cardId);
       const checklist = card?.checklists?.find(
         (c) => c.id === action.checklistId,
       );
@@ -990,7 +1028,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     }
 
     case "DELETE_CHECKLIST_ITEM": {
-      const card = after.cards[action.cardId];
+      const card = cardOf(after, action.cardId);
       if (!card) return [boardTouch];
       await tx.checklistItem.update({
         where: { id: action.itemId },
@@ -1006,7 +1044,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     }
 
     case "RESTORE_CHECKLIST": {
-      const card = after.cards[action.cardId];
+      const card = cardOf(after, action.cardId);
       const position =
         card?.checklists?.findIndex((c) => c.id === action.checklist.id) ?? -1;
       if (!card || position === -1) return [boardTouch];
@@ -1029,7 +1067,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     }
 
     case "RESTORE_CHECKLIST_ITEM": {
-      const card = after.cards[action.cardId];
+      const card = cardOf(after, action.cardId);
       if (!card) return [boardTouch];
       const checklist = card.checklists?.find(
         (c) => c.id === action.checklistId,
@@ -1084,7 +1122,7 @@ async function writeCardAction(
   const cardId = "cardId" in action ? action.cardId : undefined;
 
   if (action.type === "DUPLICATE_CARD") {
-    const copy = after.cards[action.newCardId];
+    const copy = cardOf(after, action.newCardId);
     if (!copy) return [boardTouch];
     const column = after.columns.find((c) => c.cardIds.includes(copy.id));
     if (!column) return [boardTouch];
@@ -1100,7 +1138,7 @@ async function writeCardAction(
     return [boardTouch, touch.column(column.id), touch.card(copy.id)];
   }
 
-  const card = cardId ? after.cards[cardId] : undefined;
+  const card = cardId ? cardOf(after, cardId) : undefined;
   if (!card || !cardId) return [boardTouch];
 
   switch (action.type) {

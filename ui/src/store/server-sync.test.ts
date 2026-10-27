@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { BoardAction, CommandResponse } from "@janosik/shared";
 import { ApiError } from "@/api/client";
-import { ServerSync, textEntityKey } from "@/store/server-sync";
+import {
+  SENT_IDS_PER_BOARD,
+  ServerSync,
+  textEntityKey,
+} from "@/store/server-sync";
 
 function renameColumn(commandId: string): BoardAction {
   return {
@@ -137,6 +141,8 @@ describe("ServerSync", () => {
       [new ApiError(0, null), "offline"],
       [new ApiError(409, { conflict: "wip" }), "wip"],
       [new ApiError(409, { conflict: "version" }), "version"],
+      [new ApiError(503, { code: "board_write_timeout" }), "busy"],
+      [new ApiError(503, { message: "Service Unavailable" }), "rejected"],
       [new ApiError(400, { field: "action.title" }), "rejected"],
       [new Error("boom"), "rejected"],
     ];
@@ -150,7 +156,11 @@ describe("ServerSync", () => {
       expect(outcome.ok).toBe(false);
       if (!outcome.ok) {
         expect(outcome.failure.kind).toBe(kind);
-        if (outcome.failure.kind === "rejected" && error instanceof ApiError) {
+        if (
+          outcome.failure.kind === "rejected" &&
+          error instanceof ApiError &&
+          error.status === 400
+        ) {
           expect(outcome.failure.field).toBe("action.title");
         }
       }
@@ -334,5 +344,52 @@ describe("ServerSync lifecycle, flushing and touch keys", () => {
         textEntityKey("b-1", { type, at: 1 } as unknown as BoardAction),
       ).toBeNull();
     }
+  });
+});
+
+describe("ServerSync own-command ids and drain (U-1, U-3)", () => {
+  const ok = async (): Promise<CommandResponse> => ({ seq: 1, versions: {} });
+
+  it("remembers what it sent — before the answer, per board, bounded", async () => {
+    let release: () => void = () => undefined;
+    const sync = new ServerSync({
+      send: () =>
+        new Promise<CommandResponse>((resolve) => {
+          release = () => resolve({ seq: 1, versions: {} });
+        }),
+    });
+    const pending = sync.enqueue("b-1", renameColumn("cmd-1"));
+    // The echo can beat the ack: the id is known while still in flight.
+    await Promise.resolve();
+    expect(sync.wasSent("b-1", "cmd-1")).toBe(true);
+    expect(sync.wasSent("b-2", "cmd-1")).toBe(false);
+    expect(sync.wasSent("b-1", "someone-else")).toBe(false);
+    release();
+    await pending;
+
+    const bounded = new ServerSync({ send: ok });
+    for (let index = 0; index <= SENT_IDS_PER_BOARD; index += 1) {
+      await bounded.enqueue("b-1", renameColumn(`id-${index}`));
+    }
+    expect(bounded.wasSent("b-1", "id-0")).toBe(false);
+    expect(bounded.wasSent("b-1", `id-${SENT_IDS_PER_BOARD}`)).toBe(true);
+  });
+
+  it("drain() sends coalesced edits at once and waits for the answers", async () => {
+    const send = vi.fn(ok);
+    const sync = new ServerSync({ send, coalesceDelayMs: 60_000 });
+    void sync.enqueue("b-1", quietEdit("q-1", "Typed"));
+    expect(send).not.toHaveBeenCalled();
+    await sync.drain();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(sync.isBusy("b-1")).toBe(false);
+  });
+
+  it("drain() gives up after its timeout instead of blocking logout", async () => {
+    const sync = new ServerSync({ send: () => new Promise(() => undefined) });
+    void sync.enqueue("b-1", renameColumn("stuck"));
+    const started = Date.now();
+    await sync.drain(20);
+    expect(Date.now() - started).toBeLessThan(1_000);
   });
 });

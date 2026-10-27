@@ -1,6 +1,6 @@
-import type { Board, Column } from "../types/kanban";
 import type { BoardState } from "../store/board-reducer";
 import { normalizeBoards } from "../store/migrate";
+import { validateImportedBoards } from "../store/validate";
 
 /**
  * Export / import of the whole board state as a JSON document.
@@ -57,37 +57,18 @@ export function parseExport(raw: string): BoardState {
   ) {
     throw new Error("Unsupported schema version");
   }
-  if (!isBoardState(file.boards)) {
+  if (!Array.isArray(file.boards)) {
     throw new Error("Missing valid board data");
   }
-  return normalizeBoards(file.boards);
-}
-
-function isBoardState(value: unknown): value is BoardState {
-  return Array.isArray(value) && value.every(isBoard);
-}
-
-function isBoard(value: unknown): value is Board {
-  if (typeof value !== "object" || value === null) return false;
-  const board = value as Partial<Board>;
-  return (
-    typeof board.id === "string" &&
-    typeof board.title === "string" &&
-    Array.isArray(board.columns) &&
-    board.columns.every(isColumn) &&
-    typeof board.cards === "object" &&
-    board.cards !== null &&
-    !Array.isArray(board.cards) &&
-    Array.isArray(board.labels)
-  );
-}
-
-function isColumn(value: unknown): value is Column {
-  if (typeof value !== "object" || value === null) return false;
-  const column = value as Partial<Column>;
-  return (
-    typeof column.id === "string" &&
-    Array.isArray(column.cardIds) &&
-    column.cardIds.every((id) => typeof id === "string")
-  );
+  // Strict structure and integrity first (types, LIMITS, ids, references),
+  // then the lenient pass for what it can repair (clamps, legacy shapes) —
+  // a malformed file fails here with a field path, not with a TypeError
+  // inside normalization or a 500 from the server's writer.
+  const checked = validateImportedBoards(file.boards);
+  if (!checked.ok) {
+    throw new Error(
+      `Invalid board data at ${checked.field}: ${checked.message}`,
+    );
+  }
+  return normalizeBoards(checked.boards);
 }

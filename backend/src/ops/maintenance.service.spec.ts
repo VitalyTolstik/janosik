@@ -4,21 +4,23 @@ import type { OpsSettingsService } from "./ops-settings.service";
 import { MaintenanceService } from "./maintenance.service";
 
 function makePrisma(): PrismaService {
-  const tx = {
-    attachment: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-    comment: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-    checklistItem: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-    checklist: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-    cardLink: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-    column: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-    label: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-    card: { findMany: jest.fn().mockResolvedValue([]), delete: jest.fn() },
-  };
+  const purgeable = () => ({
+    findMany: jest.fn().mockResolvedValue([]),
+    deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+  });
   return {
-    attachment: { findMany: jest.fn().mockResolvedValue([]) },
+    attachment: purgeable(),
+    comment: purgeable(),
+    checklistItem: purgeable(),
+    checklist: purgeable(),
+    cardLink: purgeable(),
+    cardLabel: purgeable(),
+    card: purgeable(),
+    column: purgeable(),
+    label: purgeable(),
     $transaction: jest.fn(async (arg: unknown) =>
       typeof arg === "function"
-        ? (arg as (t: typeof tx) => unknown)(tx)
+        ? (arg as (t: unknown) => unknown)({})
         : Promise.all(arg as unknown[]),
     ),
     emailVerificationCode: {
@@ -120,6 +122,42 @@ describe("MaintenanceService", () => {
     const removed = await service.sweepOrphanBlobs();
     expect(removed).toBe(0);
     expect(storageMock.remove).not.toHaveBeenCalled();
+  });
+
+  it("purges stale cards in bounded chunks, each in its own transaction (B-7)", async () => {
+    const prisma = makePrisma();
+    const ids = (n: number, prefix: string) =>
+      Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}` }));
+    (prisma.card.findMany as jest.Mock)
+      .mockResolvedValueOnce(ids(500, "a"))
+      .mockResolvedValueOnce(ids(120, "b"));
+    (prisma.card.deleteMany as jest.Mock)
+      .mockResolvedValueOnce({ count: 500 })
+      .mockResolvedValueOnce({ count: 120 });
+    (prisma.attachment.findMany as jest.Mock).mockImplementation(
+      async (args: { where: { cardId?: unknown } }) =>
+        args.where.cardId
+          ? [
+              {
+                storedName: "card-blob.bin",
+                thumbnailName: null,
+                posterName: null,
+              },
+            ]
+          : [],
+    );
+    const service = new MaintenanceService(prisma, storageMock, opsMock);
+
+    const removed = await service.purgeSoftDeleted();
+
+    expect(removed).toBe(620);
+    // Two card chunks → two transactions (500 + the 120 remainder).
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    const firstChunk = (prisma.card.deleteMany as jest.Mock).mock.calls[0][0]
+      .where.id.in as string[];
+    expect(firstChunk).toHaveLength(500);
+    // A purged card's attachment blobs are removed with it.
+    expect(storageMock.remove).toHaveBeenCalledWith("/blobs/card-blob.bin");
   });
 
   it("trims the command log to the retention window (TASK-84)", async () => {

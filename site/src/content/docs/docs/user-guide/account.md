@@ -19,6 +19,15 @@ If the operator has enabled external sign-in, buttons such as `Continue with
 <provider>` appear below the form. An operator can also close registration;
 when it is closed, only the sign-in form is shown.
 
+After five wrong passwords for one address, sign-in pauses for that address:
+first for 30 seconds, then twice as long after each further miss, up to 15
+minutes. The message says how long to wait.
+
+Signing in with a provider uses the account that already has your address.
+If that account never confirmed its email, the provider sign-in takes it
+over cleanly: the password set at registration, every signed-in device and
+every API key are cleared, and from then on you sign in with the provider.
+
 ## Confirm your email
 
 After registering, the app asks you to `Confirm your email`. It sends a
@@ -50,8 +59,8 @@ current password, and the app sends a six-digit code to the new address. Type
 the code to confirm. Other devices are signed out after the change.
 
 **Change your password** asks for your current password and a new one, entered
-twice. After a change, other devices are signed out, but your API keys keep
-working.
+twice. After a change, other devices are signed out and every API key is
+revoked, so create new keys for your scripts and agents.
 
 ### API keys
 
@@ -65,7 +74,12 @@ Use `Create key`, give it a `Name`, and choose when it expires: `Never`,
 a `jnk_` prefix; copy it then and store it in a password manager. The list
 shows each key's name, status (`Active`, `Expired` or `Revoked`), when it was
 created, when it was last used and when it expires. `Revoke` stops a key
-immediately and cannot be undone.
+immediately and cannot be undone; a live connection opened with the key
+closes within about 25 seconds.
+
+Keys are managed only here, in a signed-in browser. A key cannot list, create
+or revoke keys, or change your password or email, so a leaked key can never
+mint a longer-lived one or lock you out of your account.
 
 ### Preferences
 

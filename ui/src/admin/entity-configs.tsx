@@ -21,6 +21,7 @@ import type {
 } from "@janosik/shared";
 import { adminApi } from "./admin-client";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
+import { useAdminAuth } from "./AdminAuthContext";
 import { Badge } from "./ui";
 import {
   AttachmentDownloadButton,
@@ -39,7 +40,7 @@ import {
   TextExpandCell,
   TranscodeBadge,
 } from "./cells";
-import type { EntityListConfig } from "./EntityPage";
+import type { EntityAction, EntityListConfig } from "./EntityPage";
 import {
   ChangeUserEmailDialog,
   CreateBoardButton,
@@ -72,6 +73,7 @@ type AnyConfig = EntityListConfig<any>;
 export function useEntityConfig(entity: AdminEntity): AnyConfig {
   const t = useAdminT();
   const navigate = useNavigate();
+  const isOwner = useAdminAuth().admin?.role === "OWNER";
 
   const statusLabels = {
     active: t("admin.status.active"),
@@ -257,17 +259,22 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             noToast: true,
             run: () => exportUser(user.id),
           },
-          {
-            label: t("admin.userDetail.action.deleteUser"),
-            run: async () => undefined,
-            renderDialog: ({ close, reload }) => (
-              <DeleteUserDialog
-                user={{ id: user.id, email: user.email }}
-                onClose={close}
-                onDone={reload}
-              />
-            ),
-          },
+          // Owner-only on the server (403 for an OPERATOR).
+          ...(isOwner
+            ? [
+                {
+                  label: t("admin.userDetail.action.deleteUser"),
+                  run: async () => undefined,
+                  renderDialog: ({ close, reload }) => (
+                    <DeleteUserDialog
+                      user={{ id: user.id, email: user.email }}
+                      onClose={close}
+                      onDone={reload}
+                    />
+                  ),
+                } satisfies EntityAction,
+              ]
+            : []),
         ],
       };
       return config;

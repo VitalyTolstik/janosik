@@ -13,11 +13,12 @@ import {
   Post,
   Put,
   Query,
+  Req,
   Res,
   UseGuards,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { env } from "@/config/env";
 import { cookieSecure } from "@/config/security";
 import {
@@ -979,8 +980,9 @@ export class AdminController {
   async updateSecurity(
     @Body() dto: AdminUpdateSecurityDto,
     @CurrentAdmin() admin: AdminPrincipal,
+    @Req() req: Request,
   ): Promise<AdminSecurityDto> {
-    const result = await this.security.update(admin, dto);
+    const result = await this.security.update(admin, dto, req.ip ?? null);
     if (dto.ipAllowlist !== undefined) {
       await this.admin.audit(
         admin,

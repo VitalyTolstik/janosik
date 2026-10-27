@@ -131,5 +131,5 @@ its entity supports.
   server` when the request never left, and `The action failed` otherwise.
 
 The dashboard is described here; the user, board and content listings are on
-their own pages: see [users and masters](./people/) and
-[boards, cards and content](./content/).
+their own pages: see [users and masters](/docs/admin/people/) and
+[boards, cards and content](/docs/admin/content/).

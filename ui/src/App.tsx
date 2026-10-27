@@ -1,5 +1,11 @@
 import { Suspense, lazy, useEffect } from "react";
-import { BrowserRouter, Route, Routes, useNavigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useNavigate,
+} from "react-router-dom";
 import { Archive, Loader2, Plus } from "lucide-react";
 
 import { BoardSection } from "@/components/BoardSection";
@@ -155,6 +161,12 @@ function BoardShell() {
         <Routes>
           <Route path={routes.home} element={<NoBoardRoute />} />
           <Route path={routes.boardPattern} element={<BoardRoute />} />
+          {/* The support "view as" entry (U-8): the token was taken from
+              the hash at boot; the session lands on the home redirect. */}
+          <Route
+            path={routes.impersonate}
+            element={<Navigate to={routes.home} replace />}
+          />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </UserProfileProvider>

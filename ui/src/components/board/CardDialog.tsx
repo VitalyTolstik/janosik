@@ -109,6 +109,7 @@ export function CardDialog({
     moveCard,
     deleteCard,
     duplicateCard,
+    registerDraftFlush,
   } = useBoard();
   const { t, lang } = useI18n();
   const hour12 = useHour12();
@@ -164,10 +165,58 @@ export function CardDialog({
   const descriptionDraftRef = useRef<{ cardId: string; value: string } | null>(
     null,
   );
+
+  // U-6: the editor is uncontrolled — it reads the description once, on
+  // mount. `seen` is the text it is showing (the mount value, or what this
+  // dialog committed itself); when the store's description moves away from
+  // it, the change came from elsewhere (another member, an agent, an undo).
+  // Untouched editor: it silently reloads. With unsaved typing: a notice
+  // asks whether to reload or keep mine, and blur no longer overwrites the
+  // other change behind the user's back.
+  const liveDescription = board?.cards[cardId ?? ""]?.description ?? "";
+  const descriptionKey = open && cardId ? cardId : "";
+  const [descriptionSync, setDescriptionSync] = useState({
+    key: descriptionKey,
+    seen: liveDescription,
+    dirty: false,
+    conflict: false,
+    epoch: 0,
+  });
+  if (descriptionSync.key !== descriptionKey) {
+    // Another card (or the dialog reopened): start from what is stored.
+    setDescriptionSync({
+      key: descriptionKey,
+      seen: liveDescription,
+      dirty: false,
+      conflict: false,
+      epoch: descriptionSync.epoch + 1,
+    });
+  } else if (
+    descriptionSync.seen !== liveDescription &&
+    !descriptionSync.conflict
+  ) {
+    setDescriptionSync(
+      descriptionSync.dirty
+        ? { ...descriptionSync, conflict: true }
+        : {
+            ...descriptionSync,
+            seen: liveDescription,
+            epoch: descriptionSync.epoch + 1,
+          },
+    );
+  }
+
   const flushStagedDescription = useCallback(() => {
     const staged = descriptionDraftRef.current;
     if (!staged) return;
     descriptionDraftRef.current = null;
+    // Committed by this dialog: the store's new text is not a foreign one.
+    setDescriptionSync((prev) => ({
+      ...prev,
+      seen: staged.value,
+      dirty: false,
+      conflict: false,
+    }));
     updateCard(staged.cardId, { description: staged.value }, { quiet: true });
     scheduleTouch(staged.cardId);
   }, [updateCard]);
@@ -175,6 +224,35 @@ export function CardDialog({
   useEffect(() => {
     flushDescriptionRef.current = flushStagedDescription;
   }, [flushStagedDescription]);
+  // U-3: the provider flushes the draft before the tab hides or unloads and
+  // before logout — typing that never blurred must not be lost.
+  useEffect(
+    () => registerDraftFlush(() => flushDescriptionRef.current()),
+    [registerDraftFlush],
+  );
+  /** Conflict notice: drop my draft and show the stored description. */
+  const reloadDescription = () => {
+    descriptionDraftRef.current = null;
+    setDescriptionSync((prev) => ({
+      ...prev,
+      seen: liveDescription,
+      dirty: false,
+      conflict: false,
+      epoch: prev.epoch + 1,
+    }));
+  };
+  /** Conflict notice: my draft wins — commit it now, knowingly. */
+  const keepMyDescription = () => {
+    if (descriptionDraftRef.current === null) {
+      setDescriptionSync((prev) => ({
+        ...prev,
+        seen: liveDescription,
+        conflict: false,
+      }));
+      return;
+    }
+    flushStagedDescription();
+  };
   // Paste-embed (Jira-style): every pasted file uploads as a real card
   // attachment AND embeds into the description at the cursor — an image
   // renders inline, any other file stays as a clickable download link, so
@@ -427,13 +505,48 @@ export function CardDialog({
               >
                 {/* The blur wrapper closes the staging window: leaving the
                     editor is what commits the description. */}
+                {descriptionSync.conflict && !readOnly ? (
+                  <div
+                    role="alert"
+                    data-testid="card-description-conflict"
+                    className="mb-1.5 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-foreground"
+                  >
+                    <span className="min-w-0 flex-1">
+                      {t("card.descriptionConflict")}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7"
+                      data-testid="card-description-conflict-reload"
+                      onClick={reloadDescription}
+                    >
+                      {t("card.descriptionConflictReload")}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7"
+                      data-testid="card-description-conflict-keep"
+                      onClick={keepMyDescription}
+                    >
+                      {t("card.descriptionConflictKeep")}
+                    </Button>
+                  </div>
+                ) : null}
                 <div
-                  onBlur={() => flushStagedDescription()}
+                  onBlur={() => {
+                    // A pending conflict is decided by the notice, not by
+                    // leaving the editor.
+                    if (!descriptionSync.conflict) flushStagedDescription();
+                  }}
                   onPasteCapture={onDescriptionPaste}
                 >
                   <DescriptionEditor
                     ref={descriptionEditorRef}
-                    key={`${card.id}:${overflowTick}`}
+                    key={`${card.id}:${overflowTick}:${descriptionSync.epoch}`}
                     value={card.description ?? ""}
                     readOnly={readOnly}
                     onChange={(description) => {
@@ -447,6 +560,12 @@ export function CardDialog({
                         // Oversized pastes clamp immediately — this path
                         // still commits right away, staging stays empty.
                         descriptionDraftRef.current = null;
+                        setDescriptionSync((prev) => ({
+                          ...prev,
+                          seen: description.slice(0, LIMITS.description),
+                          dirty: false,
+                          conflict: false,
+                        }));
                         updateCard(
                           card.id,
                           {
@@ -468,6 +587,11 @@ export function CardDialog({
                         cardId: card.id,
                         value: description,
                       };
+                      if (!descriptionSync.dirty) {
+                        setDescriptionSync((prev) =>
+                          prev.dirty ? prev : { ...prev, dirty: true },
+                        );
+                      }
                     }}
                     placeholder={t("card.descriptionPlaceholder")}
                   />

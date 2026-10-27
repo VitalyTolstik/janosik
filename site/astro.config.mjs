@@ -101,6 +101,7 @@ export default defineConfig({
             { slug: "docs/api" },
             { slug: "docs/api/commands" },
             { slug: "docs/api/rest" },
+            { slug: "docs/mcp" },
           ],
         },
         {

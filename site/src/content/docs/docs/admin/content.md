@@ -335,6 +335,6 @@ after the board is gone.
 
 ## Where to go next
 
-The dashboard and logs are on [monitoring and logs](./monitoring/). The email,
+The dashboard and logs are on [monitoring and logs](/docs/admin/monitoring/). The email,
 security, operations and communications pages are on
-[email, security and operations](./settings/).
+[email, security and operations](/docs/admin/settings/).

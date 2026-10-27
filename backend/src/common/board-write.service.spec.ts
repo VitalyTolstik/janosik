@@ -1,7 +1,10 @@
+import { ServiceUnavailableException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import {
   BOARD_WRITE_MAX_ATTEMPTS,
+  BOARD_WRITE_MAX_WAIT_MS,
+  BOARD_WRITE_TIMEOUT_MS,
   BoardWriteService,
   isTransientConflict,
 } from "./board-write.service";
@@ -170,5 +173,30 @@ describe("BoardWriteService", () => {
 
     await expect(first).rejects.toThrow("first failed");
     await expect(second).resolves.toBe("second ok");
+  });
+});
+
+describe("BoardWriteService transaction bounds (B-7)", () => {
+  it("runs with explicit maxWait/timeout", async () => {
+    const { prisma } = fakePrisma();
+    await service(prisma).run("b1", async () => "ok");
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      maxWait: BOARD_WRITE_MAX_WAIT_MS,
+      timeout: BOARD_WRITE_TIMEOUT_MS,
+    });
+  });
+
+  it("answers a Prisma transaction timeout (P2028) with 503, without retrying", async () => {
+    const prisma = {
+      $transaction: jest.fn().mockRejectedValue(
+        Object.assign(new Error("Transaction already closed"), {
+          code: "P2028",
+        }),
+      ),
+    };
+    await expect(
+      service(prisma).run("b1", async () => "never"),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 });

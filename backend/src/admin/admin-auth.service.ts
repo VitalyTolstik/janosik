@@ -13,7 +13,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
 import { AdminLoginDto } from "@/auth/dto/login.dto";
-import { SecurityService } from "./security.service";
+import { isIpAllowed, SecurityService } from "./security.service";
 import {
   ADMIN_JWT_AUDIENCE,
   ADMIN_LOCKOUT_MS,
@@ -178,6 +178,20 @@ export class AdminAuthService {
     if (stored.admin.disabledAt !== null) {
       await this.revokeAllSessions(stored.adminId);
       throw new ForbiddenException("Account is disabled");
+    }
+    // The allowlist gates session renewal too (not only the password login):
+    // a refresh cookie carried off an allowed network cannot mint tokens.
+    if (!isIpAllowed(stored.admin.ipAllowlist, context.ip ?? null)) {
+      await this.auditLoginFailed(
+        stored.admin.email,
+        stored.adminId,
+        "ip not allowed",
+        {
+          ip: context.ip ?? null,
+          stage: "refresh",
+        },
+      );
+      throw new ForbiddenException("Sign-in from this IP is not allowed");
     }
     const rotated = await this.prisma.adminRefreshToken.updateMany({
       where: { id: stored.id, revokedAt: null },

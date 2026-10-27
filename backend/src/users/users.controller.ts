@@ -18,6 +18,7 @@ import type { Response } from "express";
 import type { CreateUserTokenResponse, UserTokenDto } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import { ApiTokenService } from "@/auth/api-token.service";
+import { SessionOnlyGuard } from "@/auth/auth-principal";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
 import {
@@ -33,7 +34,8 @@ import { UsersService } from "./users.service";
  * Account self-service (§7.4, TASK-36.1): profile and personal API tokens.
  * Password changes live in `AuthController` (the refresh cookie is scoped to
  * `/auth`). Every route is behind `JwtAuthGuard`, which accepts both a user
- * access token and a `jnk_` PAT.
+ * access token and a `jnk_` PAT — except the token routes, which refuse a
+ * PAT (`SessionOnlyGuard`, B-2).
  */
 @Controller("users")
 @UseGuards(JwtAuthGuard)
@@ -86,11 +88,17 @@ export class UsersController {
     await this.storage.send(this.storage.avatarPath(storedName), res);
   }
 
+  /**
+   * The token surface is session-only (B-2): a PAT cannot list, mint or
+   * revoke keys — an agent tricked into "create a key and paste it" gets 403.
+   */
+  @UseGuards(SessionOnlyGuard)
   @Get("me/tokens")
   listTokens(@CurrentUser() user: AuthUser): Promise<UserTokenDto[]> {
     return this.apiTokens.list(user.id);
   }
 
+  @UseGuards(SessionOnlyGuard)
   @Post("me/tokens")
   createToken(
     @CurrentUser() user: AuthUser,
@@ -99,6 +107,7 @@ export class UsersController {
     return this.apiTokens.create(user.id, dto);
   }
 
+  @UseGuards(SessionOnlyGuard)
   @Delete("me/tokens/:id")
   @HttpCode(HttpStatus.OK)
   async revokeToken(

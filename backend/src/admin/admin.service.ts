@@ -87,6 +87,12 @@ import { DemoService } from "./demo.service";
 import { ThrottleSettingsService } from "./throttle-settings.service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** One row of the SQL per-day aggregation (B-7). */
+interface DayCountRow {
+  day: Date;
+  count: bigint;
+}
+
 const SPARKLINE_DAYS = 14;
 
 /** Backend package version, read once for the infra card. */
@@ -166,8 +172,8 @@ export class AdminService {
       commentsTotal,
       sessionsActive,
       adminsTotal,
-      recentUsers,
-      recentCommands,
+      usersByDay,
+      commandsByDay,
     ] = await this.prisma.$transaction([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { createdAt: { gte: since7d } } }),
@@ -190,14 +196,21 @@ export class AdminService {
         where: { revokedAt: null, expiresAt: { gt: new Date() } },
       }),
       this.prisma.adminUser.count(),
-      this.prisma.user.findMany({
-        where: { createdAt: { gte: sinceSpark } },
-        select: { createdAt: true },
-      }),
-      this.prisma.command.findMany({
-        where: { createdAt: { gte: sinceSpark } },
-        select: { createdAt: true },
-      }),
+      // B-7: the per-day series are aggregated in SQL (index range scan on
+      // `createdAt` + GROUP BY), not by loading 14 days of rows into memory
+      // — the command log of a busy swarm is millions of rows.
+      this.prisma.$queryRaw<DayCountRow[]>`
+        SELECT date_trunc('day', "createdAt") AS day,
+               COUNT(*)::bigint AS count
+        FROM "User"
+        WHERE "createdAt" >= ${sinceSpark}
+        GROUP BY 1`,
+      this.prisma.$queryRaw<DayCountRow[]>`
+        SELECT date_trunc('day', "createdAt") AS day,
+               COUNT(*)::bigint AS count
+        FROM "Command"
+        WHERE "createdAt" >= ${sinceSpark}
+        GROUP BY 1`,
     ]);
 
     return {
@@ -217,14 +230,8 @@ export class AdminService {
       sessions: { active: sessionsActive },
       admins: { total: adminsTotal },
       runtime: this.runtime(databaseLatencyMs),
-      registrationsByDay: this.toDaySeries(
-        recentUsers.map((row) => row.createdAt),
-        sinceSpark,
-      ),
-      commandsByDay: this.toDaySeries(
-        recentCommands.map((row) => row.createdAt),
-        sinceSpark,
-      ),
+      registrationsByDay: this.toDaySeriesFromCounts(usersByDay, sinceSpark),
+      commandsByDay: this.toDaySeriesFromCounts(commandsByDay, sinceSpark),
     };
   }
 
@@ -1742,16 +1749,20 @@ export class AdminService {
   }
 
   /** Buckets timestamps into a dense per-day series (oldest first). */
-  private toDaySeries(dates: Date[], since: Date): AdminDayPoint[] {
-    const points: AdminDayPoint[] = [];
+  /** Fill the SQL per-day counts into a dense `SPARKLINE_DAYS` series. */
+  private toDaySeriesFromCounts(
+    rows: DayCountRow[],
+    since: Date,
+  ): AdminDayPoint[] {
     const counts = new Map<string, number>();
-    for (const date of dates) {
-      const key = this.dayKey(date);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+    for (const row of rows) {
+      // `createdAt` is `timestamp(3)` holding UTC; `date_trunc` keeps it a
+      // naive timestamp, which Prisma hands back as a UTC Date.
+      counts.set(this.dayKey(new Date(row.day)), Number(row.count));
     }
+    const points: AdminDayPoint[] = [];
     for (let i = 0; i < SPARKLINE_DAYS; i += 1) {
-      const day = new Date(since.getTime() + i * DAY_MS);
-      const key = this.dayKey(day);
+      const key = this.dayKey(new Date(since.getTime() + i * DAY_MS));
       points.push({ date: key, count: counts.get(key) ?? 0 });
     }
     return points;
@@ -1828,6 +1839,9 @@ export class AdminService {
     userId: string,
     admin: AdminPrincipal,
   ): Promise<{ status: "ok" }> {
+    // Owner-only like the (less destructive) password reset, promote and
+    // impersonate next to it — an OPERATOR could erase any account before.
+    this.assertOwner(admin);
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException("User not found");
     const blobs = await this.prisma.attachment.findMany({

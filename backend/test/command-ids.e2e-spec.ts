@@ -118,10 +118,12 @@ describe("Command ids and payload limits (e2e)", () => {
   const server = () => request(app.getHttpServer());
   const auth = () => ({ Authorization: `Bearer ${token}` });
 
-  let clock = 1_700_000_000_000;
+  // Near the server clock: commands outside its ±5 min skew window get
+  // their `at` replaced (B-5), which would break the reducer contract.
+  let clock = Date.now() - 120_000;
   const scoped = (boardId: string, body: Record<string, unknown>) => ({
     boardId,
-    at: (clock += 1000),
+    at: (clock += 100),
     ...body,
   });
 

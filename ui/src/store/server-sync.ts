@@ -26,6 +26,8 @@ export type SendFailure =
   | { kind: "offline" }
   | { kind: "wip" }
   | { kind: "version" }
+  /** `503 board_write_timeout` — the board was too busy; nothing was saved. */
+  | { kind: "busy" }
   | { kind: "rejected"; status: number; field?: string };
 
 export type SendOutcome =
@@ -49,6 +51,14 @@ interface QuietEntry {
 /** Coalesce a keystroke burst this long after the last keystroke. */
 const DEFAULT_COALESCE_MS = 400;
 
+/**
+ * How many recently sent command ids are remembered per board for own-echo
+ * detection (U-1). The echo of a command arrives within a round-trip or
+ * two; even a long offline burst replays far fewer commands than this, and
+ * the cap keeps a tab that stays open for days at a bounded footprint.
+ */
+export const SENT_IDS_PER_BOARD = 1_000;
+
 function quietKey(boardId: string, action: BoardAction): string {
   const cardId = (action as { cardId?: string }).cardId ?? "";
   return `${boardId}:${cardId}`;
@@ -58,6 +68,8 @@ export class ServerSync {
   private readonly chains = new Map<string, Promise<unknown>>();
   private readonly busy = new Map<string, number>();
   private readonly quiet = new Map<string, QuietEntry>();
+  /** Insertion-ordered (oldest first) ids this client sent, per board. */
+  private readonly sentIds = new Map<string, Set<string>>();
   private disposed = false;
 
   constructor(private readonly options: ServerSyncOptions) {}
@@ -92,6 +104,34 @@ export class ServerSync {
       return;
     }
     this.flushQuiet(boardId);
+  }
+
+  /**
+   * Flush every coalesced edit and wait (at most `timeoutMs`) for every
+   * queued command to be answered — logout calls it before revoking the
+   * session, so nothing the user typed is dropped with the queue (U-3).
+   */
+  async drain(timeoutMs = 3_000): Promise<void> {
+    this.flush();
+    const pending = Promise.all([...this.chains.values()]).then(
+      () => undefined,
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs);
+    });
+    await Promise.race([pending, timeout]);
+    clearTimeout(timer);
+  }
+
+  /**
+   * Did this client send the command with this idempotency key? The
+   * realtime bridge tells its own echoes apart by key, not by actor: one
+   * account may run several writers at once (tabs, MCP agents on the same
+   * personal key) and their commands must be applied (U-1).
+   */
+  wasSent(boardId: string, commandId: string): boolean {
+    return this.sentIds.get(boardId)?.has(commandId) ?? false;
   }
 
   /** Are there queued, in-flight or coalesced commands for this board? */
@@ -175,6 +215,9 @@ export class ServerSync {
     preconditions?: Record<string, number>,
   ): Promise<SendOutcome> {
     this.bump(boardId, 1);
+    // Remembered before the request leaves: the server echoes a command on
+    // the stream before it answers the POST, so the echo may beat the ack.
+    this.rememberSent(boardId, action);
     const chain = this.chains.get(boardId) ?? Promise.resolve();
     const run = chain.then(() => this.attempt(boardId, action, preconditions));
     this.chains.set(
@@ -207,6 +250,22 @@ export class ServerSync {
     }
   }
 
+  private rememberSent(boardId: string, action: BoardAction): void {
+    const commandId = (action as { commandId?: string }).commandId;
+    if (commandId === undefined || commandId === "") return;
+    let ids = this.sentIds.get(boardId);
+    if (ids === undefined) {
+      ids = new Set();
+      this.sentIds.set(boardId, ids);
+    }
+    ids.add(commandId);
+    if (ids.size > SENT_IDS_PER_BOARD) {
+      // Sets iterate in insertion order: the first id is the oldest.
+      const oldest = ids.values().next().value;
+      if (oldest !== undefined) ids.delete(oldest);
+    }
+  }
+
   private bump(boardId: string, delta: number): void {
     const next = (this.busy.get(boardId) ?? 0) + delta;
     if (next <= 0) this.busy.delete(boardId);
@@ -220,6 +279,11 @@ export function classify(error: unknown): SendFailure {
     if (error.offline) return { kind: "offline" };
     if (error.conflict === "wip") return { kind: "wip" };
     if (error.conflict === "version") return { kind: "version" };
+    // A transient refusal (the board's write lock timed out): rolled back
+    // like any failure, but reported as "busy, try again", not "rejected".
+    if (error.status === 503 && error.code === "board_write_timeout") {
+      return { kind: "busy" };
+    }
     return {
       kind: "rejected",
       status: error.status,

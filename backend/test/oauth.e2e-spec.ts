@@ -70,6 +70,7 @@ describe("OAuth (e2e)", () => {
     await prisma.adminUser.deleteMany();
     await prisma.oAuthProviderSettings.deleteMany();
     await prisma.refreshToken.deleteMany();
+    await prisma.apiToken.deleteMany();
     await prisma.user.deleteMany();
 
     await prisma.adminUser.createMany({
@@ -255,8 +256,10 @@ describe("OAuth (e2e)", () => {
     expect(created.passwordHash).toBeNull();
   });
 
-  it("links an existing password account by email", async () => {
-    await prisma.user.create({
+  it("claims an unverified squatter account: password, sessions and API tokens are wiped (B-1)", async () => {
+    // The attacker registered the victim's address first and never verified
+    // it; they hold a password, a refresh session and an agent key.
+    const squatter = await prisma.user.create({
       data: {
         email: "linked@gmail.com",
         passwordHash: await argonHash("correct horse battery", {
@@ -265,7 +268,22 @@ describe("OAuth (e2e)", () => {
         emailVerifiedAt: null,
       },
     });
-    stubProvider({ email: "linked@gmail.com", email_verified: true });
+    await prisma.refreshToken.create({
+      data: {
+        userId: squatter.id,
+        tokenHash: "squatter-session",
+        expiresAt: new Date(Date.now() + 86_400_000),
+      },
+    });
+    await prisma.apiToken.create({
+      data: {
+        userId: squatter.id,
+        name: "squatter",
+        tokenHash: "squatter-pat",
+      },
+    });
+    // The provider reports the address in another case: still one account.
+    stubProvider({ email: "Linked@Gmail.com", email_verified: true });
 
     const start = await server()
       .get("/api/v1/auth/oauth/google/start")
@@ -288,6 +306,23 @@ describe("OAuth (e2e)", () => {
     });
     expect(users).toHaveLength(1);
     expect(users[0].emailVerifiedAt).not.toBeNull();
+    // The squatter's credentials are gone: no password to log in with…
+    expect(users[0].passwordHash).toBeNull();
+    await server()
+      .post("/api/v1/auth/login")
+      .send({ email: "linked@gmail.com", password: "correct horse battery" })
+      .expect(401);
+    // …and every session and API key minted before the claim is revoked.
+    const stale = await prisma.refreshToken.findUniqueOrThrow({
+      where: { tokenHash: "squatter-session" },
+    });
+    expect(stale.revokedAt).not.toBeNull();
+    const pat = await prisma.apiToken.findUniqueOrThrow({
+      where: { tokenHash: "squatter-pat" },
+    });
+    expect(pat.revokedAt).not.toBeNull();
+    // Other specs wipe users without API tokens — leave none behind.
+    await prisma.apiToken.deleteMany({ where: { userId: squatter.id } });
   });
 
   it("bounces a forged callback to the UI error param", async () => {

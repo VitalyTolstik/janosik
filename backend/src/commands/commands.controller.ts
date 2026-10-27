@@ -7,8 +7,10 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { Role } from "@prisma/client";
 import type { CommandDeltaEntry, CommandResponse } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
@@ -18,6 +20,9 @@ import { MembershipGuard } from "@/common/membership.guard";
 import { CommandsService } from "./commands.service";
 import { CreateCommandDto } from "./dto/create-command.dto";
 import { parseSince } from "./parse-since";
+
+/** Response header of a delta that must not be trusted (B-3). */
+export const DELTA_RESYNC_HEADER = "X-Delta-Resync";
 
 /**
  * Command transport (§7.4): `POST /boards/:id/commands` applies a reducer
@@ -43,12 +48,25 @@ export class CommandsController {
     return this.commands.apply(id, user.id, dto);
   }
 
+  /**
+   * The delta since `?since=`. B-3: when the gap cannot be replayed (the
+   * page hit its cap, or the baseline was trimmed from the log) the answer
+   * carries `X-Delta-Resync: 1` and an empty body — the client must re-read
+   * the board (`GET /boards/:id` + `X-Board-Seq`) instead of applying a
+   * partial history.
+   */
   @UseGuards(MembershipGuard)
   @Get()
-  list(
+  async list(
     @Param("id") id: string,
+    @Res({ passthrough: true }) res: Response,
     @Query("since") since?: string,
   ): Promise<CommandDeltaEntry[]> {
-    return this.commands.listSince(id, parseSince(since));
+    const delta = await this.commands.deltaSince(id, parseSince(since));
+    if (delta.resync) {
+      res.setHeader(DELTA_RESYNC_HEADER, "1");
+      return [];
+    }
+    return delta.entries;
   }
 }

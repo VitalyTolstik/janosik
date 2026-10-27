@@ -79,7 +79,7 @@
   версионируется с бинарем; при расхождении с этим файлом — править
   сюда).
 - **Селекторы (проверено 2026-09-16, после обновления CLI):** `--repo`
-  принимает и `path:/Users/vitaltol/Dev/janosik`, и `id:<repoId>`;
+  принимает и `path:<repo>`, и `id:<repoId>`;
   worktree-селекторы — `id:<repoId>::<abs path>` (полный id из
   `create`/`list`), `path:<abs>`, `name:<display>`, `branch:<ветка>`.
   Прежняя заметка «`id:` в `worktree create` отвечает
@@ -87,10 +87,10 @@
   create+show+rm пробного worktree).
 1. **Worktree под каждого субагента** (ветка = имя):
    `orca worktree create --repo path:… --name <slug> --setup run --json`
-   → `/Users/vitaltol/orca/workspaces/janosik/<slug>`, `node_modules`
+   → `~/orca/workspaces/janosik/<slug>`, `node_modules`
    ставится setup-хууком. До `worker-start`: (а) дождаться setup-хуука —
    `ls <worktree>/node_modules/.bin` непуст; (б) скопировать секреты
-   координатором: `cp /Users/vitaltol/Dev/janosik/backend/.env <worktree>/backend/.env` —
+   координатором: `cp <repo>/backend/.env <worktree>/backend/.env` —
    воркер не должен ходить в пути вне своего worktree (чужой каталог =
    permission-промпт «Access external directory» и пауза; проверено
    2026-09-16).
@@ -1607,7 +1607,7 @@ TASK-36 и TASK-37.)*
 | 66 | TASK-133 `docs-user-guide` ✅ | `main` | §7.12: пользовательская документация — гайды по всем фичам, гифки/скрины из `video/`, «первые шаги», FAQ/troubleshooting, навигация и поиск | покрыты все пользовательские фичи; есть скринкасты/гифки; навигация/поиск работают; en+ru. **Выполнено:** 5 страниц пользовательского гайда (`site/src/content/docs[/ru]/docs/user-guide/`: index, boards, cards, collaboration, account) en+ru — режимы local/server, шапка, доски/колонки/карточки, drag&drop, три вида (Board/Calendar/Table), детали карточки (метки/приоритет/срок/исполнитель/чек-листы/связи/обложка/вложения), комментарии и markdown, вставка файлов, участники и роли, realtime/presence, публичные read-only шары, поиск/фильтр, хоткеи, аккаунт/API-ключи/настройки, оффлайн/PWA, бэкапы/экспорт/архив, лимиты; встроены клипы из `video/` (`feature-board`/`feature-cards`/`feature-realtime`/`feature-sharing`) как `<video>` с постером; навигация — Starlight sidebar с переводами, поиск Pagefind. Гейты: site 17, `astro check` 0, сборка 53 страницы, lint 0, format ✓; проверено вживую EN+RU dark |
 | 67 | TASK-134 `docs-api-reference` ✅ | `main` | §7.12: API-reference (из `shared/src/api.ts` DTO / OpenAPI) с примерами curl, self-hosting runbooks (бэкап/восстановление/апгрейд/мониторинг/troubleshooting), ADR-раздел, ссылка на security-гайд | reference покрывает публичные роуты; примеры рабочие; runbooks проверены на чистой машине; ADR-структура заведена. **Выполнено:** API-reference из кода (`shared/src/api.ts` + контроллеры/DTO) — 3 страницы (`site/src/content/docs[/ru]/docs/api/`: index, commands, rest) en+ru: конвенции (префикс `/api/v1`, auth JWT+`jnk_…`, error-envelope, `409`-конфликты команд, лимиты, maintenance), 63 пользовательских роута, полный каталог `BoardAction` (48 действий), DTO-каталог (wire-типы, tri-state required, defaults, ограничения), таблица ошибок; self-hosting с полным env-reference (29 переменных) и per-OS Docker; runbooks (бэкап/восстановление/апгрейд/мониторинг/troubleshooting) symptom-first с rollback; ADR-раздел (index + ADR-001 command log, ADR-002 single-image deploy, ADR-003 AGPL+trademark, формат Nygard); security-гайд; faq; changelog. Команды/env взяты из репозитория; внутренние ссылки проверены (48 маршрутов резолвятся). Runbook-и помечены как проверенные против репозитория, не против чистой машины (честно). **Обновлено (2026-10):** раздел «Архитектурные решения» (ADR-001/002/003 + index) удалён из доков по решению владельца — документация про функции для пользователя, не про архитектуру; ссылки из `docs/index` и секция сайдбара убраны |
 | 68 | TASK-135 `landing-agent-swarm` ✅ | `main` | Вне очереди, по запросу владельца: развернуть лендинг под главную идею — канбан не для человека, а для **роя ИИ-агентов**, а человек наблюдает. Опирается только на реальные фичи: командный API `POST /boards/:id/commands` + персональные API-ключи (TASK-36.1, `jnk_…`), сериализация писателей доски (TASK-56, «рой ИИшек»), realtime SSE и публичные read-only шары (TASK-58) | ядро сайта — про рой агентов; тексты честные (никаких MCP/SDK, которых нет); en+ru. **Выполнено:** герой переписан («Kanban for your agent swarm.») + новый вариант мокапа `swarm` в `MediaSlot` (4 колонки, агенты на карточках, presence-ростер, активная карточка с пульсом, комментарий-бабл; `prefers-reduced-motion` → статика); новая секция `#swarm` «How a swarm works the board» — 3 шага (ключ → агент ведёт доску → вы наблюдаете) + реальный запрос/ответ командного API (`POST /boards/:id/commands` → `{seq, versions}`) + 3 чек-буллета; в «И детали» добавлены «Personal API keys for agents» и «Live read-only share links»; +2 FAQ («Can AI agents use Janosik?», «How do I watch the swarm?»); SEO home title/description под агентов; `llms.txt` и `site.description` обновлены; i18n en+ru. Гейты: site 17, `astro check` 0, сборка 7 страниц, lint 0 (51 пре-существующих warning), format ✓; Lighthouse a11y/perf/SEO/best-practices **100** на `/` и `/pricing`; детектор `impeccable` — только намеренные `overused-font` (Space Grotesk) и `nested-cards` (макет доски); визуально EN+RU light/dark, 1280/390 (починен гор. скролл от `<pre>` — `minmax(0,1fr)` в гриде) |
-| 69 | TASK-136 `mcp-server` | `feature/TASK-136-mcp-server` | §7.12: **MCP-сервер для роя агентов** — тонкая TS-обёртка над командным API (`POST /boards/:id/commands`) и комментами; auth персональным ключом `jnk_…` (env `JANOSIK_URL`/`JANOSIK_TOKEN`); тулзы `list_boards`/`get_board`/`create_card`/`update_card`/`move_card`/`comment`/`checklist_*`/`set_label`/`assign`; read-only тулзы отдельно от write; переиспользует DTO из `shared/src/api.ts`; `npx @janosik/mcp` + регистрация в MCP registry | тулзы двигают карточку, комментят и тикают чек-лист на живом борде ключом `jnk_…`; идемпотентность/`ifMatch`/409 обработаны; e2e-смоук; опубликовано в registry |
+| 69 | TASK-136 `mcp-server` ✅ | `feature/TASK-136-mcp-server` | §7.12: **MCP-сервер для роя агентов** — тонкая TS-обёртка над командным API (`POST /boards/:id/commands`) и комментами; auth персональным ключом `jnk_…` (env `JANOSIK_URL`/`JANOSIK_TOKEN`); тулзы `list_boards`/`get_board`/`create_card`/`update_card`/`move_card`/`comment`/`checklist_*`/`set_label`/`assign`; read-only тулзы отдельно от write; переиспользует DTO из `shared/src/api.ts`; `npx @janosik/mcp` + регистрация в MCP registry | тулзы двигают карточку, комментят и тикают чек-лист на живом борде ключом `jnk_…`; идемпотентность/`ifMatch`/409 обработаны; e2e-смоук; опубликовано в registry |
 | 70 | TASK-137 `agent-skill` | `feature/TASK-137-agent-skill` | §7.12: **скилл-плейбук роя** поверх MCP-тулзов — конвенции (колонки, когда комментировать и тащить в Review, как называть карточки), шаблоны карточек/меток, рецепт жизненного цикла; не дублирует I/O, ссылается на тулзы | скилл ставится в харнессы (Claude/opencode/Codex); агент по нему ведёт карточку на реальном борде через MCP; без дублей API-деталей |
 | 71 | TASK-138 `contributing-cla` ✅ | `main` | Вне очереди (решение 2026-10): `CONTRIBUTING.md` — как ставить/тестировать/отправлять PR + **DCO** (Developer Certificate of Origin, `git commit -s`), inbound=outbound. Страховка на будущее: перелицензировать проект можно, только пока все права у владельца, поэтому DCO/CLA нужны **до** первых внешних PR. Ссылка из README | процесс PR описан; DCO требуется явно; лицензирование вкладов недвусмысленно. **Выполнено:** `CONTRIBUTING.md` (dev-setup, гейты, стиль коммитов, PR-процесс, DCO + `Signed-off-by`, inbound=outbound); ссылка из README |
 
@@ -2699,6 +2699,66 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   комментируют и тикают чек-лист ключом `jnk_…`; ошибки/идемпотентность/`ifMatch`
   обработаны; e2e-смоук; опубликовано в MCP registry.
 - **Зависимости:** 126 (позиционирование), 134 (API-reference).
+- **Статус:** ✅ выполнено. Воркспейс `mcp/` (`@janosik/mcp`, bin `janosik-mcp`,
+  сборка `tsup` в один `dist/index.js` со вшитым `@janosik/shared`): клиент
+  командного контура (штампует `commandId`/`at`/`boardId`, обработка
+  `ifMatch`/409 внутри) + REST-обёртки; **71 тулз** покрывают всё приложение
+  (доски, колонки, карточки, метки, чек-листы, связи, комментарии, участники,
+  приглашения, ссылки на доску, активность, вложения, аккаунт/API-ключи);
+  auth — `Bearer jnk_…` через `JANOSIK_URL`/`JANOSIK_TOKEN` (или `--url`/`--token`);
+  `response_format` markdown/json, пагинация курсором, лимит ответа, аннотации
+  readOnly/destructive, actionable-ошибки. Гейты: typecheck, **28 тестов**
+  (config/errors/format/client + сервер через `InMemoryTransport` с fake-API),
+  lint/format, сборка; живой смоук `mcp/scripts/smoke.mjs` — 13/13 на
+  `:3210` (полный цикл: доска → колонка → карточка → чек-лист → коммент →
+  активность → поиск → удаление). Публикация: `npx @janosik/mcp` (publishConfig
+  public), страница доков `/docs/mcp/` (en+ru). Осталось внешнее: `npm publish`
+  и регистрация в MCP registry.
+- **Ревью и харденинг (независимый архитектурный аудит).** Исправлено: битая
+  `npx`-установка (`@janosik/shared` ушёл в devDependencies — он и так вшит в
+  бандл); `janosik_accept_invitation` больше не падает (эндпоинт отвечает
+  `void`); ссылка на доску строится от `JANOSIK_APP_BASE` (`/s/:token`, а не
+  `/app/s/…`); upload/download вложений стали opt-in (`JANOSIK_MCP_ALLOW_FS`,
+  опционально `JANOSIK_MCP_FS_ROOT`) — это реальный prompt-injection → запись
+  в файл, плюс `download` перестал помечаться read-only; `structuredContent`
+  больше не льётся без лимита; ошибки REST показывают тело (`message`), а не
+  только статус; границы полей берутся из `LIMITS`; `limit` проброшен в
+  пагинацию; `search_cards` останавливается на лимите; cover-`value` — enum;
+  `expiresInDays` ограничен `API_TOKEN_MAX_TTL_DAYS`; CLI ругается на опечатки
+  в флагах и не режет `=` в значении; graceful shutdown по SIGINT/SIGTERM;
+  тестов **39** (было 28), счётчик тулзов запинен на 71.
+- **Финальное ревью (2026-10-28, `FINAL_REVIEW.md` §1).** Предыдущий статус
+  завышал: `ifMatch`/409 были только в клиенте, ни один тулз их не слал;
+  «идемпотентность» не работала (новый `commandId` на каждый вызов, без
+  повторов). Исправлено:
+  - no-op-команда (`versions: {}`) → ошибка «nothing changed», а не успех;
+    «не найдено» везде `isError`;
+  - id валидируются (`[A-Za-z0-9_-]{1,128}`) и кодируются в пути
+    (`apiPath`) — `delete_comment("../boards/<id>?")` больше не уходит как
+    `DELETE /boards/<id>`;
+  - тулзы аккаунта/участников/приглашений/шар — opt-in
+    (`JANOSIK_MCP_TOOLSETS`), режим `JANOSIK_MCP_READONLY`;
+  - read-then-write тулзы (`move_card`, `move_column`, `duplicate_column`,
+    `remove_card_link`) шлют `ifMatch` = `X-Board-Seq` и повторяют при 409;
+    `update_card` — CAS через `expectedDescription`;
+  - сетевые сбои команд повторяются с тем же `commandId`; таймауты на все
+    запросы;
+  - `create_card` валидирует дату/исполнителя до `ADD_CARD`, а частичный
+    сбой называет id созданной карточки;
+  - `search_cards include_archived` реально ищет в архиве;
+  - JSON сверх лимита — ошибка с подсказкой вместо битого JSON;
+    `get_board` получил `columnId`/`include_archived`, `export_board` —
+    `outputPath`;
+  - FS-песочница: `realpath` (симлинки за корень отклоняются), только
+    обычные файлы ≤ лимита вложения, запись только новых файлов (`wx`);
+  - строгий тип `CommandAction` = `BoardAction` без `at`/`boardId` (ошибка
+    формы команды — ошибка компиляции); cover — discriminated union; лимиты
+    из `LIMITS`/`SHARE_LIMITS`/`DISPLAY_NAME_MAX`.
+  Тулзы API-ключей (`list/create/revoke_api_key`) удалены: бэкенд теперь
+  отвечает ключу `jnk_…` 403 `pat_forbidden` на управление ключами, паролем
+  и email; со всеми группами — 68 тулзов, по умолчанию 54 (~11.6k токенов
+  каталога вместо ~13.9k). Тестов **65** (было 39). Осталось внешнее:
+  `npm publish` и MCP registry.
 
 #### TASK-137 — `agent-skill` · Скилл-плейбук роя
 

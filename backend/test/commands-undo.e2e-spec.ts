@@ -147,8 +147,10 @@ describe("Undo contract: command then inverse (e2e)", () => {
   const server = () => request(app.getHttpServer());
   const auth = () => ({ Authorization: `Bearer ${token}` });
 
-  let clock = 1_700_000_000_000;
-  const tick = () => (clock += 1000);
+  // Near the server clock: commands outside its ±5 min skew window get
+  // their `at` replaced (B-5), which would break the reducer contract.
+  let clock = Date.now() - 120_000;
+  const tick = () => (clock += 100);
 
   function register(): Promise<string> {
     return server()

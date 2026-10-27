@@ -1,5 +1,5 @@
 import type { BoardAction } from "./board-reducer";
-import { DEFAULT_CARD_PRIORITY } from "./board-reducer";
+import { cardOf, DEFAULT_CARD_PRIORITY } from "./board-reducer";
 import type { Board, Card, CardActivityEvent } from "../types/kanban";
 import { clamp } from "../utils/text";
 
@@ -50,7 +50,7 @@ function locate(
 /** The cards a column holds, in order (missing ids are skipped). */
 function cardsOf(board: Board, cardIds: readonly string[]): Card[] {
   return cardIds
-    .map((id) => board.cards[id])
+    .map((id) => cardOf(board, id))
     .filter((card): card is Card => card !== undefined);
 }
 
@@ -166,7 +166,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
       return { ...head, type: "DELETE_CARD", cardId: action.newCardId };
 
     case "UPDATE_CARD": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card) return null;
       return {
         ...head,
@@ -181,7 +181,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "TOUCH_CARD": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card) return null;
       return {
         ...head,
@@ -192,7 +192,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "DELETE_CARD": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card) return null;
       const spot = locate(before, card.id);
       return {
@@ -208,7 +208,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
       return { ...head, type: "DELETE_CARD", cardId: action.card.id };
 
     case "ARCHIVE_CARD": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card || card.archivedAt !== undefined) return null;
       const spot = locate(before, card.id);
       if (!spot) return null;
@@ -224,7 +224,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "UNARCHIVE_CARD": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card || card.archivedAt === undefined) return null;
       return {
         ...head,
@@ -271,9 +271,17 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "MOVE_CARD": {
-      const from = before.columns.find((c) => c.id === action.fromColumnId);
+      // Where the card was is read off `before`, never off the command: a
+      // client's `fromIndex` can be stale, and an undo built on it puts the
+      // card back in the wrong place. A command the reducer ignores (the
+      // card is not in `fromColumnId`) has nothing to undo.
+      const card = cardOf(before, action.cardId);
+      const spot = locate(before, action.cardId);
       const to = before.columns.find((c) => c.id === action.toColumnId);
-      if (!from || !to) return null;
+      if (!card || !spot || spot.columnId !== action.fromColumnId || !to) {
+        return null;
+      }
+      const from = before.columns.find((c) => c.id === spot.columnId)!;
       const sameColumn = from.id === to.id;
       // Where the card lands: the reducer removes it first, so the target
       // column is one shorter when the insert position is clamped.
@@ -289,15 +297,13 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         fromColumnId: to.id,
         fromIndex: landed,
         toColumnId: from.id,
-        toIndex: action.fromIndex,
-        ...(before.cards[action.cardId]
-          ? { cardActivity: feedOf(before.cards[action.cardId]) }
-          : {}),
+        toIndex: spot.index,
+        cardActivity: feedOf(card),
       };
     }
 
     case "SET_CARD_DUE_DATE": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card) return null;
       return {
         ...head,
@@ -310,7 +316,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "SET_CARD_PRIORITY": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card) return null;
       return {
         ...head,
@@ -323,7 +329,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "SET_CARD_ASSIGN": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card) return null;
       return {
         ...head,
@@ -336,7 +342,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "ADD_CARD_LINK": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card) return null;
       return {
         ...head,
@@ -351,7 +357,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "REMOVE_CARD_LINK": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card) return null;
       // The link's payload travels in the remove command itself — re-adding
       // it needs nothing but the command (TASK-21.7b).
@@ -368,7 +374,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "SET_CARD_COVER": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card) return null;
       return {
         ...head,
@@ -382,7 +388,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
 
     /* ----------------------------------------------------------------- labels */
     case "SET_CARD_LABEL": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card) return null;
       const index = card.labelIds.indexOf(action.labelId);
       return {
@@ -447,7 +453,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
 
     /* ------------------------------------------------------------- checklists */
     case "ADD_CHECKLIST": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card) return null;
       return {
         ...head,
@@ -460,7 +466,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "RENAME_CHECKLIST": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       const checklist = card?.checklists?.find(
         (c) => c.id === action.checklistId,
       );
@@ -477,7 +483,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "DELETE_CHECKLIST": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       const index =
         card?.checklists?.findIndex((c) => c.id === action.checklistId) ?? -1;
       if (!card || index === -1) return null;
@@ -493,7 +499,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "RESTORE_CHECKLIST": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       return {
         ...head,
         type: "DELETE_CHECKLIST",
@@ -506,7 +512,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "ADD_CHECKLIST_ITEM": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card) return null;
       return {
         ...head,
@@ -520,7 +526,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "SET_CHECKLIST_ITEM_DONE": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       if (!card) return null;
       return {
         ...head,
@@ -535,7 +541,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "RENAME_CHECKLIST_ITEM": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       const item = card?.checklists
         ?.find((c) => c.id === action.checklistId)
         ?.items.find((i) => i.id === action.itemId);
@@ -553,7 +559,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "DELETE_CHECKLIST_ITEM": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       const items =
         card?.checklists?.find((c) => c.id === action.checklistId)?.items ?? [];
       const index = items.findIndex((i) => i.id === action.itemId);
@@ -571,7 +577,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     }
 
     case "RESTORE_CHECKLIST_ITEM": {
-      const card = before.cards[action.cardId];
+      const card = cardOf(before, action.cardId);
       return {
         ...head,
         type: "DELETE_CHECKLIST_ITEM",

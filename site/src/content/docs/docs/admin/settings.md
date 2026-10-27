@@ -121,6 +121,12 @@ empty list allows any address. An exact string match or an IPv4 CIDR match
 passes. The list is trimmed and de-duplicated on save. It is owner-only: an
 operator cannot restrict their own sign-in origin.
 
+The list is enforced on every request of the master's session and on every
+refresh, not only at sign-in. Saving a list that does not include your current
+address is therefore refused with `400` (`The allowlist must include your
+current address (…)`), so you cannot lock yourself out mid-session. Behind a
+reverse proxy, set `TRUST_PROXY` so the server sees the real client address.
+
 ### Suspicious activity
 
 The alerts feed lists failed and locked sign-ins from the last 24 hours, up to
@@ -356,5 +362,5 @@ each one once.
 
 ## Where to go next
 
-The monitoring pages are on [monitoring and logs](./monitoring/). People and
-master management are on [users and masters](./people/).
+The monitoring pages are on [monitoring and logs](/docs/admin/monitoring/). People and
+master management are on [users and masters](/docs/admin/people/).

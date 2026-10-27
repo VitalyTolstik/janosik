@@ -22,6 +22,25 @@ import { createSeedBoard } from "./seed-data";
 import { clampText, clamp } from "../utils/text";
 import { atWipLimit } from "../utils/column-limits";
 
+/**
+ * The card stored under `id`, or `undefined`. Own properties only: cards
+ * live in a plain record, so a bare `board.cards["constructor"]` resolves
+ * to `Object.prototype.constructor` and a command naming it would "find"
+ * a card that does not exist.
+ */
+export function cardOf(board: Board, id: string): Card | undefined {
+  return Object.hasOwn(board.cards, id) ? board.cards[id] : undefined;
+}
+
+/**
+ * Can a command create a card under `id`? Not over an existing card (that
+ * would silently replace somebody else's), and never `__proto__`, which a
+ * `record[id] = card` write turns into a prototype swap instead of a key.
+ */
+function isFreshCardId(board: Board, id: string): boolean {
+  return id !== "__proto__" && !Object.hasOwn(board.cards, id);
+}
+
 /** Insert a value at `index`, returning a new array (no in-place mutation). */
 function insertAt<T>(array: T[], index: number, value: T): T[] {
   return [...array.slice(0, index), value, ...array.slice(index)];
@@ -218,6 +237,11 @@ export interface BoardScopedAction {
    * state the app already has (an import, or a limit lowered under the
    * current count) and shows honestly with a red counter until it is back
    * under. Text clamps still apply: they bound a field, not a collection.
+   *
+   * Two structural caps hold even here: `columnsPerBoard` and
+   * `cardsPerColumn`. The flag comes from the client, so without them a
+   * crafted "inverse" restore could grow a board without bound; and a
+   * restore never overwrites an id that is still on the board.
    */
   inverse?: boolean;
   /**
@@ -507,7 +531,8 @@ export interface DuplicateColumnAction {
   newColumnId: string;
   /**
    * Ids for the card copies, positionally matching the source column's
-   * `cardIds`. A source card without an id here is not copied.
+   * `cardIds` — exactly one fresh, unique id per source card, or the
+   * command is ignored.
    */
   newCardIds: string[];
   /** Localized title for the copy ("Copy of …"); defaults to the source title. */
@@ -517,11 +542,15 @@ export interface DuplicateColumnAction {
 export interface MoveCardAction {
   type: "MOVE_CARD";
   cardId: string;
+  /**
+   * The column the client believes holds the card. The reducer checks it
+   * against the board and ignores the command when it is stale.
+   */
   fromColumnId: string;
   /**
-   * Position the card is leaving (0-based). The reducer removes the card
-   * by id — this is recorded so the inverse move is derivable from the
-   * command alone, without the board it applied to (TASK-21.7b).
+   * Position the card is leaving (0-based) — informational only. The
+   * reducer removes the card by id and `invert()` reads the real position
+   * from the board it applied to; a client-supplied index can be stale.
    */
   fromIndex: number;
   toColumnId: string;
@@ -794,7 +823,7 @@ function addCard(
 ): Board {
   const column = board.columns.find((c) => c.id === action.columnId);
   if (!column) return board;
-  if (board.cards[action.newCardId]) return board;
+  if (!isFreshCardId(board, action.newCardId)) return board;
   if (column.cardIds.length >= LIMITS.cardsPerColumn) return board;
   if (atWipLimit(column, true)) return board;
   const at = action.at;
@@ -837,7 +866,7 @@ function updateCard(
   action: BoardScoped<UpdateCardAction>,
   options: ReduceOptions,
 ): Board {
-  const target = board.cards[action.cardId];
+  const target = cardOf(board, action.cardId);
   if (!target) return board;
 
   // Live editing: clamp length only — trimming here would eat the trailing
@@ -889,7 +918,7 @@ function updateCard(
 }
 
 function deleteCard(board: Board, action: DeleteCardAction): Board {
-  if (!board.cards[action.cardId]) return board;
+  if (!cardOf(board, action.cardId)) return board;
   const cards = { ...board.cards };
   delete cards[action.cardId];
   const columns = board.columns.map((col) => ({
@@ -905,7 +934,7 @@ function archiveCard(
   action: BoardScoped<ArchiveCardAction>,
   options: ReduceOptions,
 ): Board {
-  const target = board.cards[action.cardId];
+  const target = cardOf(board, action.cardId);
   if (!target || target.archivedAt !== undefined) return board;
   let nextCard: Card = {
     ...target,
@@ -933,15 +962,14 @@ function unarchiveCard(
   action: BoardScoped<UnarchiveCardAction>,
   options: ReduceOptions,
 ): Board {
-  const target = board.cards[action.cardId];
+  const target = cardOf(board, action.cardId);
   if (!target || target.archivedAt === undefined) return board;
   const column =
     board.columns.find((col) => col.id === action.columnId) ?? board.columns[0];
   if (!column) return board;
-  if (guarded(action)) {
-    if (column.cardIds.length >= LIMITS.cardsPerColumn) return board;
-    if (atWipLimit(column, true)) return board;
-  }
+  // The column-size cap is absolute; only the WIP limit spares an inverse.
+  if (column.cardIds.length >= LIMITS.cardsPerColumn) return board;
+  if (guarded(action) && atWipLimit(column, true)) return board;
   const restoredCard: Card = {
     ...target,
     archivedAt: undefined,
@@ -985,7 +1013,7 @@ function archiveColumnCards(
   const at = action.at;
   const cards = { ...board.cards };
   column.cardIds.forEach((cardId, index) => {
-    const target = cards[cardId];
+    const target = Object.hasOwn(cards, cardId) ? cards[cardId] : undefined;
     if (!target || target.archivedAt !== undefined) return;
     let nextCard: Card = { ...target, archivedAt: at, updatedAt: at };
     nextCard = appendActivity(nextCard, "archived", action, index, options);
@@ -1011,9 +1039,9 @@ function duplicateCard(
   action: BoardScoped<DuplicateCardAction>,
   options: ReduceOptions,
 ): Board {
-  const source = board.cards[action.cardId];
+  const source = cardOf(board, action.cardId);
   if (!source) return board;
-  if (board.cards[action.newCardId]) return board;
+  if (!isFreshCardId(board, action.newCardId)) return board;
   const columnIndex = board.columns.findIndex((col) =>
     col.cardIds.includes(source.id),
   );
@@ -1089,11 +1117,19 @@ function duplicateColumn(
   const source = board.columns[sourceIndex];
   const at = action.at;
   const cardIds = action.newCardIds;
+  // Every copy needs a fresh id of its own. An id that already names a
+  // card (or repeats inside the list) would overwrite that card here and
+  // on the server's upsert — and the undo (DELETE_COLUMN) would then
+  // delete the original. A list that does not line up with the source
+  // column is a stale or hand-crafted command: refuse it whole.
+  if (cardIds.length !== source.cardIds.length) return board;
+  if (cardIds.length > LIMITS.cardsPerColumn) return board;
+  if (new Set(cardIds).size !== cardIds.length) return board;
+  if (!cardIds.every((id) => isFreshCardId(board, id))) return board;
   const cards = { ...board.cards };
   source.cardIds.forEach((sourceId, index) => {
-    const sourceCard = board.cards[sourceId];
-    // A source card the caller did not mint an id for is not copied.
-    if (!sourceCard || !cardIds[index]) return;
+    const sourceCard = cardOf(board, sourceId);
+    if (!sourceCard) return;
     const cardCopy: Card = {
       ...sourceCard,
       id: cardIds[index],
@@ -1122,7 +1158,9 @@ function duplicateColumn(
     id: action.newColumnId,
     title: action.title ?? source.title,
     cardIds: source.cardIds
-      .map((sourceId, index) => (sourceId in board.cards ? cardIds[index] : ""))
+      .map((sourceId, index) =>
+        Object.hasOwn(board.cards, sourceId) ? cardIds[index] : "",
+      )
       .filter((id): id is string => Boolean(id)),
     // Keep the source's WIP limit — the copy starts with the same count,
     // so dropping it would silently unlimit the copy.
@@ -1142,7 +1180,7 @@ function setCardLabel(
   action: BoardScoped<SetCardLabelAction>,
   options: ReduceOptions,
 ): Board {
-  const target = board.cards[action.cardId];
+  const target = cardOf(board, action.cardId);
   if (!target) return board;
   // Ignore labels that no longer exist on the board.
   if (!board.labels.some((l) => l.id === action.labelId)) return board;
@@ -1248,7 +1286,7 @@ function deleteLabel(board: Board, action: DeleteLabelAction): Board {
 
 /** Stamp the card's `updatedAt` after a burst of quiet live edits. */
 function touchCard(board: Board, action: BoardScoped<TouchCardAction>): Board {
-  const target = board.cards[action.cardId];
+  const target = cardOf(board, action.cardId);
   if (!target) return board;
   const at = cardStamp(action);
   if (target.updatedAt === at) return board;
@@ -1271,7 +1309,7 @@ function patchChecklists(
   event?: { type: CardActivityType; detail?: string },
 ): Board | null {
   const cardId = action.cardId;
-  const target = board.cards[cardId];
+  const target = cardOf(board, cardId);
   if (!target) return null;
   const checklists = fn(target.checklists ?? []);
   if (checklists === null || checklists === (target.checklists ?? [])) {
@@ -1361,7 +1399,7 @@ function deleteChecklist(
   action: BoardScoped<DeleteChecklistAction>,
   options: ReduceOptions,
 ): Board | null {
-  const title = board.cards[action.cardId]?.checklists?.find(
+  const title = cardOf(board, action.cardId)?.checklists?.find(
     (c) => c.id === action.checklistId,
   )?.title;
   return patchChecklists(
@@ -1403,8 +1441,8 @@ function setChecklistItemDone(
   action: BoardScoped<SetChecklistItemDoneAction>,
   options: ReduceOptions,
 ): Board | null {
-  const item = board.cards[action.cardId]?.checklists
-    ?.find((c) => c.id === action.checklistId)
+  const item = cardOf(board, action.cardId)
+    ?.checklists?.find((c) => c.id === action.checklistId)
     ?.items.find((i) => i.id === action.itemId);
   return patchChecklists(
     board,
@@ -1453,8 +1491,8 @@ function deleteChecklistItem(
   action: BoardScoped<DeleteChecklistItemAction>,
   options: ReduceOptions,
 ): Board | null {
-  const text = board.cards[action.cardId]?.checklists
-    ?.find((c) => c.id === action.checklistId)
+  const text = cardOf(board, action.cardId)
+    ?.checklists?.find((c) => c.id === action.checklistId)
     ?.items.find((i) => i.id === action.itemId)?.text;
   return patchChecklists(
     board,
@@ -1476,7 +1514,7 @@ function setCardDueDate(
   action: BoardScoped<SetCardDueDateAction>,
   options: ReduceOptions,
 ): Board {
-  const target = board.cards[action.cardId];
+  const target = cardOf(board, action.cardId);
   if (!target) return board;
   const dueDate =
     action.dueDate !== undefined && Number.isFinite(action.dueDate)
@@ -1511,7 +1549,7 @@ function setCardPriority(
   action: BoardScoped<SetCardPriorityAction>,
   options: ReduceOptions,
 ): Board {
-  const target = board.cards[action.cardId];
+  const target = cardOf(board, action.cardId);
   if (!target) return board;
   // Defensive: unknown values fall back to the default (validate.ts already
   // rejects them; imports and stale replays stay safe either way).
@@ -1559,7 +1597,7 @@ function setCardAssign(
   action: BoardScoped<SetCardAssignAction>,
   options: ReduceOptions,
 ): Board {
-  const target = board.cards[action.cardId];
+  const target = cardOf(board, action.cardId);
   if (!target) return board;
   const assigneeId =
     action.assigneeId !== null && action.assigneeId.trim() !== ""
@@ -1603,9 +1641,9 @@ function addCardLink(
   action: BoardScoped<AddCardLinkAction>,
   options: ReduceOptions,
 ): Board {
-  const source = board.cards[action.cardId];
+  const source = cardOf(board, action.cardId);
   if (!source) return board;
-  const target = board.cards[action.targetCardId];
+  const target = cardOf(board, action.targetCardId);
   if (!target || target.id === source.id) return board;
   if (!isCardLinkType(action.linkType)) return board;
   const links = source.links ?? [];
@@ -1656,12 +1694,12 @@ function removeCardLink(
   action: BoardScoped<RemoveCardLinkAction>,
   options: ReduceOptions,
 ): Board {
-  const source = board.cards[action.cardId];
+  const source = cardOf(board, action.cardId);
   if (!source) return board;
   const links = source.links ?? [];
   const index = links.findIndex((link) => link.id === action.linkId);
   if (index === -1) return board;
-  const targetTitle = board.cards[links[index].targetCardId]?.title;
+  const targetTitle = cardOf(board, links[index].targetCardId)?.title;
   const nextLinks = links.filter((_, i) => i !== index);
   const nextCard: Card = { ...source, updatedAt: cardStamp(action) };
   if (nextLinks.length === 0) {
@@ -1719,7 +1757,7 @@ function setCardCover(
   action: BoardScoped<SetCardCoverAction>,
   options: ReduceOptions,
 ): Board {
-  const target = board.cards[action.cardId];
+  const target = cardOf(board, action.cardId);
   if (!target) return board;
   const cover = isValidCover(action.cover) ? action.cover : undefined;
   if (isSameCover(cover, target.cover)) return board;
@@ -1746,39 +1784,46 @@ function setCardCover(
   };
 }
 
-/** Move a card between (or within) columns, inserting at `toIndex`. */
+/**
+ * Move a card between (or within) columns, inserting at `toIndex`.
+ *
+ * The board, not the command, says where the card is: `fromColumnId` must
+ * name the column that actually holds it, and `fromIndex` is never read.
+ * A stale `fromColumnId` — a concurrent writer moved the card first, or a
+ * hand-crafted command — is a no-op rather than an insert into `to` that
+ * leaves the original in place (one card in two columns on every viewer).
+ * An archived card sits in no column, so it cannot be moved either.
+ */
 function moveCard(
   board: Board,
   action: BoardScoped<MoveCardAction>,
   options: ReduceOptions,
 ): Board {
-  if (!board.cards[action.cardId]) return board;
-  const from = board.columns.find((c) => c.id === action.fromColumnId);
+  const card = cardOf(board, action.cardId);
+  if (!card || card.archivedAt !== undefined) return board;
+  const from = board.columns.find((c) => c.cardIds.includes(action.cardId));
+  if (!from || from.id !== action.fromColumnId) return board;
   const to = board.columns.find((c) => c.id === action.toColumnId);
-  if (!from || !to) return board;
+  if (!to) return board;
+  const sameColumn = from.id === to.id;
 
   // Moving to the position the card already occupies is a no-op.
-  if (action.fromColumnId === action.toColumnId) {
-    const currentIndex = from.cardIds.indexOf(action.cardId);
-    if (currentIndex === action.toIndex) return board;
-  }
-
-  // A full (WIP-limited) destination refuses cards from other columns.
-  if (
-    action.fromColumnId !== action.toColumnId &&
-    guarded(action) &&
-    atWipLimit(to, true)
-  ) {
+  if (sameColumn && from.cardIds.indexOf(action.cardId) === action.toIndex) {
     return board;
   }
 
+  // A full (WIP-limited) destination refuses cards from other columns, and
+  // no move — inverse or not — pushes a column past the absolute cap.
+  if (!sameColumn) {
+    if (to.cardIds.length >= LIMITS.cardsPerColumn) return board;
+    if (guarded(action) && atWipLimit(to, true)) return board;
+  }
+
   const columns = board.columns.map((col) => {
-    if (col.id !== action.fromColumnId && col.id !== action.toColumnId) {
-      return col;
-    }
+    if (col.id !== from.id && col.id !== to.id) return col;
     // Remove from the source column first (no same-column moves).
     let next = col.cardIds.filter((id) => id !== action.cardId);
-    if (col.id === action.toColumnId) {
+    if (col.id === to.id) {
       const at = clamp(action.toIndex, 0, next.length);
       next = [...next.slice(0, at), action.cardId, ...next.slice(at)];
     }
@@ -1793,11 +1838,11 @@ function moveCard(
   // Cross-column moves land in the feed; same-column reorders don't
   // (they're pure layout, not progress).
   let cards = board.cards;
-  if (action.fromColumnId !== action.toColumnId) {
+  if (!sameColumn) {
     cards = {
       ...board.cards,
       [action.cardId]: appendActivity(
-        board.cards[action.cardId],
+        card,
         "moved",
         action,
         0,
@@ -1822,8 +1867,8 @@ function sortColumn(board: Board, action: SortColumnAction): Board {
   const column = board.columns.find((c) => c.id === action.columnId);
   if (!column) return board;
   const sorted = [...column.cardIds].sort((aId, bId) => {
-    const a = board.cards[aId];
-    const b = board.cards[bId];
+    const a = cardOf(board, aId);
+    const b = cardOf(board, bId);
     if (!a || !b) return 0;
     switch (action.sortBy) {
       case "createdAt":
@@ -1900,27 +1945,42 @@ function setColumnCardOrder(
   };
 }
 
+/** Does any column of the board list `cardId`? */
+function isPlaced(board: Board, cardId: string): boolean {
+  return board.columns.some((column) => column.cardIds.includes(cardId));
+}
+
 /**
  * Put a card back exactly as it was, at its old position. The card object
  * travels in the command (the frontend has nowhere else to keep it), so no
  * data is invented here — `updatedAt`, `archivedAt` and the activity feed
  * come back untouched. A card with no `columnId` was archived when it was
  * deleted and belongs to no column.
+ *
+ * A restore only ever puts back what is gone: an id that still names a
+ * card (or that a column still lists) is refused rather than overwritten,
+ * and the two shapes must agree — a live card goes into a column, an
+ * archived one into none. A column-less live card would be invisible yet
+ * unbounded, the one way around `cardsPerColumn`. The per-column cap
+ * itself holds even for an inverse; only the WIP limit steps aside.
  */
 function restoreCard(
   board: Board,
   action: BoardScoped<RestoreCardAction>,
 ): Board {
   const { card } = action;
-  if (board.cards[card.id]) return board;
+  if (!isFreshCardId(board, card.id) || isPlaced(board, card.id)) return board;
+  if ((action.columnId === undefined) !== (card.archivedAt !== undefined)) {
+    return board;
+  }
   const column =
     action.columnId === undefined
       ? undefined
       : board.columns.find((c) => c.id === action.columnId);
   if (action.columnId !== undefined && !column) return board;
-  if (column && guarded(action)) {
+  if (column) {
     if (column.cardIds.length >= LIMITS.cardsPerColumn) return board;
-    if (atWipLimit(column, true)) return board;
+    if (guarded(action) && atWipLimit(column, true)) return board;
   }
   return {
     ...board,
@@ -1942,16 +2002,35 @@ function restoreCard(
   };
 }
 
-/** Put a deleted column back at its index, with the cards it took down. */
+/**
+ * Put a deleted column back at its index, with the cards it took down.
+ *
+ * Everything it brings back must be gone from the board: its id, and every
+ * card it lists. Otherwise a crafted restore takes over a live card — the
+ * snapshot overwrites it and the card ends up in two columns. The payload
+ * cards must all belong to the column (a card outside it would be an
+ * invisible extra). Board- and column-size caps hold even for an inverse.
+ */
 function restoreColumn(
   board: Board,
   action: BoardScoped<RestoreColumnAction>,
 ): Board {
   const { column } = action;
   if (board.columns.some((c) => c.id === column.id)) return board;
-  if (guarded(action) && board.columns.length >= LIMITS.columnsPerBoard) {
+  if (board.columns.length >= LIMITS.columnsPerBoard) return board;
+  const listed = new Set(column.cardIds);
+  if (listed.size !== column.cardIds.length) return board;
+  if (listed.size > LIMITS.cardsPerColumn) return board;
+  if (
+    column.cardIds.some(
+      (id) => !isFreshCardId(board, id) || isPlaced(board, id),
+    )
+  ) {
     return board;
   }
+  const payload = new Set(action.cards.map((card) => card.id));
+  if (payload.size !== action.cards.length) return board;
+  if (!action.cards.every((card) => listed.has(card.id))) return board;
   const cards = { ...board.cards };
   for (const card of action.cards) cards[card.id] = card;
   return {
@@ -1977,7 +2056,7 @@ function restoreLabel(
   }
   const cards = { ...board.cards };
   for (const { cardId, index } of action.assignments ?? []) {
-    const card = cards[cardId];
+    const card = Object.hasOwn(cards, cardId) ? cards[cardId] : undefined;
     if (!card || card.labelIds.includes(label.id)) continue;
     if (guarded(action) && card.labelIds.length >= LIMITS.labelsPerCard) {
       continue;
@@ -2060,21 +2139,42 @@ function restoreColumnCards(
 ): Board {
   const column = board.columns.find((c) => c.id === action.columnId);
   if (!column) return board;
+  const own = new Set(column.cardIds);
+  const written = new Set(action.cards.map((card) => card.id));
+  if (written.size !== action.cards.length) return board;
+  // Rewind only: every card in the payload must still be on the board, and
+  // not live in *another* column — writing it here would put one card in
+  // two columns and overwrite whatever was done to it there. A hand-made
+  // payload that would conjure new cards is refused the same way.
+  for (const card of action.cards) {
+    if (!cardOf(board, card.id)) return board;
+    if (!own.has(card.id) && isPlaced(board, card.id)) return board;
+  }
   const cards = { ...board.cards };
   for (const card of action.cards) cards[card.id] = card;
-  const written = new Set(action.cards.map((card) => card.id));
-  const restored = action.cardIds.filter((id) => id in cards);
+  // The order may only place cards this command rewrote live, or that the
+  // column already holds — never a card that sits elsewhere or stays
+  // archived — and each of them once.
+  const restored = [
+    ...new Set(
+      action.cardIds.filter((id) =>
+        written.has(id) ? cards[id].archivedAt === undefined : own.has(id),
+      ),
+    ),
+  ];
+  const kept = new Set(restored);
   // Kept: what the column gained meanwhile. Dropped: cards this command
   // rewrote but left out of the order (they go back to the archive).
   const extras = column.cardIds.filter(
-    (id) => !restored.includes(id) && !written.has(id),
+    (id) => !kept.has(id) && !written.has(id),
   );
   const cardIds = [...restored, ...extras];
-  if (guarded(action) && cardIds.length > LIMITS.cardsPerColumn) return board;
+  // The absolute cap holds even for an inverse (the WIP limit does not).
+  if (cardIds.length > LIMITS.cardsPerColumn) return board;
   if (
     cardIds.length === column.cardIds.length &&
     cardIds.every((id, i) => id === column.cardIds[i]) &&
-    action.cards.every((card) => board.cards[card.id] === card)
+    action.cards.every((card) => cardOf(board, card.id) === card)
   ) {
     return board;
   }
@@ -2210,7 +2310,7 @@ export function boardReducer(
     // byte; cards without one inherit the local feed.
     const cards: Board["cards"] = {};
     for (const [id, card] of Object.entries(action.board.cards)) {
-      const local = board.cards[id];
+      const local = cardOf(board, id);
       cards[id] =
         card.activity === undefined && local?.activity !== undefined
           ? { ...card, activity: local.activity }

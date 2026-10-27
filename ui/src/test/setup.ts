@@ -4,8 +4,15 @@ import {
   TransformStream as NodeTransformStream,
   WritableStream as NodeWritableStream,
 } from "node:stream/web";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, beforeEach } from "vitest";
+
+// The default 1s async-utility budget is too tight when the whole suite runs
+// in parallel (lazy chunks, SSE settles and fetch round-trips queue behind
+// each other): an assertion is correct but the element lands a beat late.
+// Matches the generous `testTimeout` in vitest.config.ts — a green run is not
+// slowed down, a busy machine no longer flakes.
+configure({ asyncUtilTimeout: 5_000 });
 
 // jsdom has no web-stream classes; the SSE reader (TASK-30) and the fake
 // server's event streams need them in tests.

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AdminSecurityDto, AdminTotpSetupDto } from "@janosik/shared";
+import { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/Toast";
@@ -94,8 +95,14 @@ export function SecurityPage() {
       });
       setSecurity(next);
       toast.success(t("admin.common.save"));
-    } catch {
-      toast.error(t("admin.common.actionFailed"));
+    } catch (cause) {
+      // A 400 names the problem — notably an allowlist that would exclude
+      // the caller's own address (and lock them out mid-session).
+      toast.error(
+        cause instanceof ApiError && cause.status === 400
+          ? cause.messageText
+          : t("admin.common.actionFailed"),
+      );
     } finally {
       setBusy(false);
     }

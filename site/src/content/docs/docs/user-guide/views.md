@@ -5,7 +5,7 @@ description: Two more ways to work the same cards — a calendar by due date and
 
 The view switcher above the board offers three projections of the same cards.
 Your last choice is remembered across sessions. The board view is covered in
-[Boards, columns and cards](boards/); this page covers the other two.
+[Boards, columns and cards](/docs/user-guide/boards/); this page covers the other two.
 
 ## Calendar
 
@@ -20,7 +20,7 @@ due date sit in the `Unscheduled` panel on the left.
 - **A day's panel**: click a day to open it — a small composer that creates a
   card due that day, plus the full list of that day's cards.
 - **Quick menu**: right-click a card chip for the same quick menu as on the
-  board (see [Card details and the quick menu](cards/)).
+  board (see [Card details and the quick menu](/docs/user-guide/cards/)).
 
 ## Table
 
@@ -41,5 +41,5 @@ Inside the table you can:
 
 ## Next
 
-- [Card details and the quick menu](cards/)
-- [Collaboration, sharing and search](collaboration/)
+- [Card details and the quick menu](/docs/user-guide/cards/)
+- [Collaboration, sharing and search](/docs/user-guide/collaboration/)

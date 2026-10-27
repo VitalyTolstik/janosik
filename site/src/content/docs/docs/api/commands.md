@@ -7,7 +7,7 @@ Board content (columns, cards, labels, checklists, links, covers, moves)
 does not travel as ordinary REST. The client posts a `CommandRequest` to the
 board's command endpoint, and the server replays the very same `BoardAction`
 through the shared `boardReducer`. Membership, board create/import/delete and
-files are the exceptions, and they live in [REST endpoints](./rest/).
+files are the exceptions, and they live in [REST endpoints](/docs/api/rest/).
 
 ## Apply a command
 
@@ -36,12 +36,48 @@ Response `200` (`CommandResponse`):
 `seq` is the board's monotonic sequence number. `versions` holds the version
 counter of every entity the command actually wrote.
 
+### Validation and the command clock
+
+The shared validator rebuilds the action from a per-type allow-list instead
+of passing the input through. A field the action type does not define is
+dropped before the reducer, the command log or the SSE stream see it. Ids are
+at most 128 characters, and `__proto__` is refused as an id. The inverse-only
+fields (`boardUpdatedAt`, `cardUpdatedAt`, `cardActivity`) are kept only on a
+command marked `inverse: true`, and `cardUpdatedAt` and `cardActivity` only on
+the action types whose inverse carries them. Elsewhere they are dropped; when
+kept, they are validated like any other field.
+
+Every timestamp in the payload (`at`, `dueDate`, the `createdAt`-style fields
+of a `RESTORE_*` snapshot) must lie within the JavaScript Date range
+(±8.64e15 ms). A value outside it answers `400` with the offending path in
+`field`, for example `"field": "action.at"`.
+
+`at` is the command clock: the reducer stamps it into `createdAt`,
+`updatedAt`, `archivedAt` and the rest. The server trusts it within five
+minutes of its own clock. An `at` further off is replaced with the server time
+before the command is applied, so a client cannot backdate or postdate what it
+writes.
+
 ### Idempotency
 
 `commandId` is the primary key of the `Command` row. A retry that reuses the
-same `commandId` returns the stored `result` without applying the action a
-second time and without consuming a second `seq`. A `commandId` already used
-on a different board answers `409` with `{ "message": "...", "field": "commandId" }`.
+same `commandId` with the same action returns the stored `result` without
+applying the action a second time and without consuming a second `seq`. The
+comparison ignores `at`, so a retry sent later with a fresh clock still
+matches.
+
+Reusing a `commandId` with a different action answers `409`:
+
+```json
+{
+  "message": "commandId already used with a different payload",
+  "field": "commandId"
+}
+```
+
+Answering with the first command's result would tell the client that its new
+action had been applied. A `commandId` already used on a different board also
+answers `409` with `"field": "commandId"`.
 
 ### Optimistic concurrency
 
@@ -54,8 +90,14 @@ Two optional preconditions guard against clobbering:
   `checklistItem:<id>`) with the entity `version` the client last saw. Every
   listed key must still hold that version. A stale or missing entity answers
   `409 { "conflict": "version", "currentVersion": n }`. An unknown key, or a
-  non-integer value, answers `400 { "field": "ifMatchVersions" }`. Omitted
-  keys are not checked, so positional changes stay last-write-wins.
+  non-integer value, answers `400 { "field": "ifMatchVersions" }`, and so does
+  a `board:` key naming any board but the target. Omitted keys are not
+  checked, so positional changes stay last-write-wins.
+
+`ifMatchVersions` keys are resolved on the target board only. An entity id
+that lives on another board reads as missing and answers `409`, so the
+precondition cannot be used to probe the versions of boards the caller is not
+a member of.
 
 `ifMatchVersions` is what makes undo of a text edit safe: if another writer
 changed the entity since, the server refuses and the client refuses the undo
@@ -88,11 +130,18 @@ silently rewritten by the upserts.
 | ------ | ------------------------------------------------------------------------------ |
 | `400`  | `action` fails the shared validator; body carries `field` and `message`        |
 | `400`  | unsupported action type; body carries `field: "action.type"`                   |
+| `400`  | a timestamp outside the Date range; `field` names its path                     |
 | `400`  | `ifMatchVersions` key or value is invalid                                      |
 | `403`  | caller is a `VIEWER`; or a non-`ADMIN` sends `ARCHIVE_BOARD`/`UNARCHIVE_BOARD` |
 | `404`  | board not found                                                                |
 | `409`  | a conflict (see above), or `commandId` used on another board                   |
+| `409`  | `commandId` reused with a different action; `field: "commandId"`               |
 | `413`  | the serialized `action` exceeds `MAX_COMMAND_BYTES` (2 MB)                     |
+| `503`  | `code: "board_write_timeout"`: the board write timed out under load            |
+
+A `503` with `board_write_timeout` means the transaction holding the board's
+write lock timed out and was rolled back, so nothing was applied. Retry with
+the same `commandId`: the idempotency key makes the retry safe.
 
 Commands that reference unknown entities no-op exactly like the reducer and
 are still recorded. A replay returns the stored no-op result.
@@ -108,8 +157,15 @@ Auth: user auth. Role: any member, `VIEWER` included. Returns
 `since`. `since` is a non-negative integer or absent (absent means `0`); any
 other value answers `400`. The response is capped at 5000 entries.
 
-This is the delta catch-up a client runs after an SSE gap. The live stream is
-documented in [REST endpoints](./rest/).
+This is the delta catch-up a client runs after an SSE gap. The server never
+answers with a partial history. When the gap cannot be replayed faithfully,
+because more than 5000 commands follow `since` or `since` is no longer in this
+board's log (the retention sweep trimmed it), the response is an empty array
+with the header `X-Delta-Resync: 1`. The client must then re-read the board
+with `GET /boards/:id` and resume from its `X-Board-Seq` header.
+
+The live stream is documented in [REST endpoints](/docs/api/rest/); it sends a
+`resync` frame in the same situation.
 
 ## DTOs
 
@@ -140,12 +196,17 @@ The shared wire shape the DTO mirrors:
 
 One entry of the delta feed:
 
-| Field     | Type          | Meaning                                                                     |
-| --------- | ------------- | --------------------------------------------------------------------------- |
-| `seq`     | number        | the command's board sequence                                                |
-| `action`  | `BoardAction` | the committed action, exactly as applied                                    |
-| `actorId` | string        | who issued the command                                                      |
-| `touches` | string[]      | the entities the command wrote, as touch labels; empty when nothing changed |
+| Field       | Type          | Meaning                                                                     |
+| ----------- | ------------- | --------------------------------------------------------------------------- |
+| `seq`       | number        | the command's board sequence                                                |
+| `action`    | `BoardAction` | the committed action, exactly as applied                                    |
+| `actorId`   | string        | who issued the command                                                      |
+| `commandId` | string        | the idempotency key the command was sent with                               |
+| `touches`   | string[]      | the entities the command wrote, as touch labels; empty when nothing changed |
+
+`commandId` lets a client recognise its own echo by key rather than by
+`actorId`: one account may run several writers at once (tabs, agents on the
+same API key).
 
 ### ConflictError
 
@@ -161,12 +222,12 @@ Every board-scoped action carries these fields on top of its own:
 | Field            | Type                  | Required | Meaning                                                                            |
 | ---------------- | --------------------- | -------- | ---------------------------------------------------------------------------------- |
 | `boardId`        | string                | optional | target board; omitted means the first board. The endpoint injects the route board. |
-| `at`             | number                | required | command clock in ms; every timestamp the reducer writes comes from here            |
-| `actorId`        | string or null        | optional | who performed the command; the server overwrites it with the authenticated user    |
+| `at`             | number                | required | command clock in ms; replaced by server time when more than 5 minutes off          |
+| `actorId`        | string or null        | optional | dropped by the validator; the command is attributed to the authenticated user      |
 | `commandId`      | string                | optional | carried by the client; the endpoint's top-level `commandId` is the idempotency key |
 | `activityIds`    | string[]              | optional | ids for the activity events this command appends, in append order                  |
-| `boardUpdatedAt` | number                | optional | inverse-only override of `board.updatedAt`                                         |
-| `cardUpdatedAt`  | number                | optional | inverse-only override of the touched card's `updatedAt`                            |
+| `boardUpdatedAt` | number                | optional | inverse-only override of `board.updatedAt`; dropped unless `inverse: true`         |
+| `cardUpdatedAt`  | number                | optional | inverse-only override of the touched card's `updatedAt`; dropped unless inverse    |
 | `inverse`        | boolean               | optional | marks an undo command; the server does not trust it for guard exemptions           |
 | `cardActivity`   | `CardActivityEvent[]` | optional | inverse-only: the card feed as it was before the undone command                    |
 

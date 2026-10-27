@@ -81,7 +81,9 @@ COPY --from=build /app/backend/scripts ./backend/scripts
 COPY --from=build /app/ui/dist ./public
 COPY --from=build /app/site/dist ./site
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh \
+  && mkdir -p /data/uploads \
+  && chown node:node /data/uploads
 
 # Serve the built frontends from the API process; store blobs on a volume.
 ENV STATIC_DIR=/app/public
@@ -101,5 +103,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 WORKDIR /app/backend
 EXPOSE 3000
 
-# Migrations run on boot, then the API starts (see docker-entrypoint.sh).
+# Migrations run on boot, then the API starts (see docker-entrypoint.sh). The
+# entrypoint starts as root only to fix the uploads volume's owner, then drops
+# to the unprivileged `node` user for everything it runs.
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

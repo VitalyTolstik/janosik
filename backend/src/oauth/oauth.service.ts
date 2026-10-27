@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { Prisma, type User } from "@prisma/client";
 import { env } from "@/config/env";
 import type { OAuthProviderDto, OAuthProviderId } from "@janosik/shared";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -26,9 +26,11 @@ import { OAuthSettingsService } from "./oauth-settings.service";
  * from a password session (same rotation, same cookies, same audit surface).
  *
  * Accounts are matched by email: the provider proves mailbox ownership, so
- * the first OAuth login of an existing address simply links into it (and
- * stamps `emailVerifiedAt` — the address is now provider-verified). A new
- * address creates an OAuth-only account with `passwordHash: null`.
+ * the first OAuth login of an existing address links into it (and stamps
+ * `emailVerifiedAt` — the address is now provider-verified). Linking into an
+ * *unverified* account first wipes its credentials (B-1, see
+ * `claimUnverifiedAccount`). A new address creates an OAuth-only account
+ * with `passwordHash: null`.
  */
 @Injectable()
 export class OAuthService {
@@ -218,10 +220,14 @@ export class OAuthService {
    */
   private async provision(
     provider: OAuthProviderId,
-    profile: OAuthProfile,
+    rawProfile: OAuthProfile,
   ): Promise<AuthResult> {
-    const existing = await this.prisma.user.findUnique({
-      where: { email: profile.email },
+    // Same normalization as register/login: emails are stored lowercased.
+    const profile = { ...rawProfile, email: normalizeEmail(rawProfile.email) };
+    // Case-insensitive lookup so a legacy mixed-case row is still the match
+    // instead of a second account on the same mailbox.
+    const existing = await this.prisma.user.findFirst({
+      where: { email: { equals: profile.email, mode: "insensitive" } },
     });
     if (existing !== null) {
       if (existing.disabledAt !== null) {
@@ -229,10 +235,7 @@ export class OAuthService {
       }
       const user =
         existing.emailVerifiedAt === null
-          ? await this.prisma.user.update({
-              where: { id: existing.id },
-              data: { emailVerifiedAt: new Date() },
-            })
+          ? await this.claimUnverifiedAccount(existing.id)
           : existing;
       this.logger.log(
         `OAuth login (${provider}) linked into account ${user.id}`,
@@ -266,6 +269,46 @@ export class OAuthService {
       throw error;
     }
   }
+
+  /**
+   * B-1 — pre-account takeover. An *unverified* account on this address was
+   * created by someone who never proved they own the mailbox; the provider
+   * just proved that the person signing in now does. Linking must therefore
+   * hand the account over clean: the squatter's password is dropped (the
+   * account becomes OAuth-only until the owner sets one), every refresh
+   * session and every personal API token is revoked, and any pending
+   * verification / email-change code is destroyed. Only then is the address
+   * stamped verified. One transaction — a crash can never leave a verified
+   * account that still carries the squatter's credentials.
+   */
+  private async claimUnverifiedAccount(userId: string): Promise<User> {
+    const now = new Date();
+    const [, , , , user] = await this.prisma.$transaction([
+      this.prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+      this.prisma.apiToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+      this.prisma.emailVerificationCode.deleteMany({ where: { userId } }),
+      this.prisma.emailChangeCode.deleteMany({ where: { userId } }),
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash: null, emailVerifiedAt: now },
+      }),
+    ]);
+    this.logger.warn(
+      `OAuth claimed unverified account ${userId}: password cleared, sessions and API tokens revoked`,
+    );
+    return user;
+  }
+}
+
+/** Emails are stored trimmed + lowercased (register/login/invite agree). */
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
 function nameOf(value: unknown): string | null {

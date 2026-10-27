@@ -1,5 +1,5 @@
 import { AlignLeft, Archive, Check, CopyPlus, ListTodo, X } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import {
   Tooltip,
@@ -233,6 +233,21 @@ function CardItemView({
               }
             : undefined
         }
+        // A VIEWER's card has no dnd-kit wrapper (the drag is disabled, and
+        // with it the wrapper's `role`/`tabIndex`): the face itself is the
+        // keyboard target — Tab reaches it, Enter or Space opens it (a11y).
+        {...(readOnly && onClick
+          ? {
+              role: "button",
+              tabIndex: 0,
+              onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+                if (event.target !== event.currentTarget) return;
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                onClick(card.id);
+              },
+            }
+          : {})}
         data-card-cursor={isCursor || undefined}
         data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
         className={cn(

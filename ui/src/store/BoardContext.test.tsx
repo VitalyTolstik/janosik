@@ -1,4 +1,5 @@
 import { act, render } from "@testing-library/react";
+import { useLayoutEffect, useRef } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -372,5 +373,69 @@ describe("undo walks a whole session back (TASK-21.7d)", () => {
     for (const id of full ?? []) {
       expect(live?.cards[id].archivedAt).toBeUndefined();
     }
+  });
+});
+
+/**
+ * The stateRef "safety net" (an effect copying the committed `state` back
+ * into the ref) was removed: `apply` is the only writer of both, so the ref
+ * is never behind — while that effect could move it *backwards*. Here two
+ * renames are dispatched from layout effects (as a component reacting to a
+ * just-committed change does): the second one ran after the first commit
+ * but before the provider's passive effect, which reset the ref to the
+ * pre-rename board — so the second step recorded "Alpha" as its "before"
+ * and one undo jumped straight back past the first rename.
+ */
+describe("BoardContext stateRef never moves backwards", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    seedBoard();
+  });
+
+  let chained: { title: string; undo: () => void } = {
+    title: "",
+    undo: () => undefined,
+  };
+
+  function ChainedRenames() {
+    const { board, renameBoard, undo } = useBoard();
+    const title = board?.title ?? "";
+    chained = { title, undo };
+    const stepRef = useRef(0);
+    useLayoutEffect(() => {
+      // One chain only: after it the undo must be free to change the title.
+      if (title === "Alpha" && stepRef.current === 0) {
+        stepRef.current = 1;
+        renameBoard("One");
+      } else if (title === "One" && stepRef.current === 1) {
+        stepRef.current = 2;
+        renameBoard("Two");
+      }
+    }, [title, renameBoard]);
+    return null;
+  }
+
+  it("records each step against the state the previous one produced", () => {
+    render(
+      <ThemeProvider>
+        <I18nProvider>
+          <TooltipProvider>
+            <MemoryRouter initialEntries={[routes.board("b-1")]}>
+              <BoardProvider>
+                <Routes>
+                  <Route
+                    path={routes.boardPattern}
+                    element={<ChainedRenames />}
+                  />
+                </Routes>
+              </BoardProvider>
+            </MemoryRouter>
+          </TooltipProvider>
+        </I18nProvider>
+      </ThemeProvider>,
+    );
+    expect(chained.title).toBe("Two");
+    act(() => chained.undo());
+    expect(chained.title).toBe("One");
   });
 });

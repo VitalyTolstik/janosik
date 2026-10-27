@@ -20,7 +20,8 @@ import { ApiError, api, apiBaseUrl } from "@/api/client";
  * `BoardRealtime` owns one connection at a time (the active board), resumes
  * from the last applied `seq` after every drop — the server replays the
  * missed delta before going live — and backs off on failures. Fatal answers
- * (401 after a failed refresh, 403/404) stop the loop instead of hammering.
+ * (401 after a failed refresh, 403/404/410) stop the loop instead of
+ * hammering.
  */
 
 /** Parse a `text/event-stream` body into typed board events. */
@@ -81,7 +82,7 @@ export interface RealtimeOptions {
   onConnected?: (boardId: string) => void;
   /** The stream dropped (or stopped): the heartbeat pauses with it. */
   onDisconnected?: (boardId: string) => void;
-  /** The stream was refused for good (401/403/404): the caller reacts. */
+  /** The stream was refused for good (401/403/404/410): the caller reacts. */
   onFatal?: (boardId: string, status: number) => void;
 }
 
@@ -182,9 +183,12 @@ export class BoardRealtime {
   }
 }
 
-/** Statuses where retrying cannot help: the session or access is gone. */
+/**
+ * Statuses where retrying cannot help: the session or access is gone, or
+ * (`410`, the public share stream) the board behind a live link was deleted.
+ */
 function isFatal(status: number): boolean {
-  return status === 401 || status === 403 || status === 404;
+  return status === 401 || status === 403 || status === 404 || status === 410;
 }
 
 /** Presence heartbeat cadence — comfortably inside the server's 60 s TTL. */
@@ -274,6 +278,15 @@ function requestEvents(
 }
 
 /**
+ * The outcome of a snapshot refetch the bridge asked for: `applied` — the
+ * board now shows the snapshot and the baseline moved to its seq; `busy` —
+ * local commands ran while it was in flight, so it was discarded (ask again
+ * once they settle); `stale` — the snapshot was older than the baseline;
+ * `skipped`/`failed` — not the active board any more, or the network.
+ */
+export type RefetchResult = "applied" | "busy" | "stale" | "skipped" | "failed";
+
+/**
  * The bridge between the store and the stream: what a committed command
  * means for the local board. It lives in this lazily imported chunk so none
  * of the dedupe/queueing logic lands on the critical path — `BoardContext`
@@ -307,6 +320,25 @@ export interface RealtimeHost {
   ) => void;
   isBusy: (boardId: string) => boolean;
   getUserId: () => string | undefined;
+  /**
+   * Did this client send the command with this idempotency key? (U-1 —
+   * own echoes are recognised by key, never by actor alone.)
+   */
+  isOwnCommand: (boardId: string, commandId: string) => boolean;
+  /** Pull a fresh snapshot of the board (single-flight on the host side). */
+  refetch: (boardId: string) => Promise<RefetchResult>;
+  /**
+   * When the board was last known to be in sync with the server (a snapshot
+   * or a live stream) — `undefined` when never. Drives the idle snapshot.
+   */
+  getSyncedAt: (boardId: string) => number | undefined;
+  /** The stream for the board was live up to now. */
+  markSynced: (boardId: string) => void;
+  /**
+   * A board idle for longer than this is re-read as one snapshot instead of
+   * replaying its whole backlog event by event (U-9). Default 5 minutes.
+   */
+  idleSnapshotMs?: number;
 }
 
 export interface RealtimeBridge {
@@ -345,11 +377,22 @@ export function touchedEntityIds(touches: readonly string[]): string[] {
   return ids;
 }
 
+/** Default idle window before a board is re-read as a snapshot (U-9). */
+export const IDLE_SNAPSHOT_MS = 5 * 60_000;
+
 export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
   /** Highest seq this client committed itself (per board). */
   const ownSeq = new Map<string, number>();
   /** Events that arrived while commands were in flight, in arrival order. */
   const deferred = new Map<string, CommandSseEvent[]>();
+  /**
+   * Boards whose local state must be re-read as a snapshot before more
+   * events can be applied: the server asked for it (`resync`), or a foreign
+   * event turned out to precede one of our own already-applied commands.
+   * Events are held back until the snapshot lands.
+   */
+  const resyncWanted = new Set<string>();
+  const resyncRunning = new Set<string>();
 
   const boardIdOf = (event: CommandSseEvent): string | undefined =>
     (event.action as { boardId?: string }).boardId;
@@ -368,22 +411,107 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
     }
   };
 
-  const process = (event: CommandSseEvent): void => {
-    const boardId = boardIdOf(event);
-    if (boardId === undefined) return;
-    const own =
+  /**
+   * Is this the echo of a command this client sent? By idempotency key when
+   * the server reports it (U-1): the same account may have other writers —
+   * another tab, an MCP agent on the user's personal key — whose commands
+   * must be applied even though the actor matches. An older server without
+   * `commandId` falls back to the key inside the action, and only then to
+   * the actor-and-seq heuristic.
+   */
+  const isOwn = (boardId: string, event: CommandSseEvent): boolean => {
+    const key =
+      event.commandId ?? (event.action as { commandId?: string }).commandId;
+    if (key !== undefined && key !== "") return host.isOwnCommand(boardId, key);
+    return (
       event.actorId === host.getUserId() &&
-      event.seq <= (ownSeq.get(boardId) ?? 0);
-    if (!own) applyForeign(boardId, event);
-    host.setBaseline(boardId, event.seq);
+      event.seq <= (ownSeq.get(boardId) ?? 0)
+    );
   };
 
-  const flush = (boardId: string): void => {
+  /**
+   * Apply one event. Returns `false` when it cannot be applied in order: a
+   * foreign event the server committed *before* one of our own commands
+   * that the local state already shows (U-7) — applying it on top would
+   * reorder the two, so the board is re-read instead.
+   */
+  const process = (
+    event: CommandSseEvent,
+    allowOutOfOrder: boolean,
+  ): boolean => {
+    const boardId = boardIdOf(event);
+    if (boardId === undefined) return true;
+    if (isOwn(boardId, event)) {
+      host.setBaseline(boardId, event.seq);
+      return true;
+    }
+    if (!allowOutOfOrder && event.seq < (ownSeq.get(boardId) ?? 0)) {
+      return false;
+    }
+    applyForeign(boardId, event);
+    host.setBaseline(boardId, event.seq);
+    return true;
+  };
+
+  const defer = (boardId: string, event: CommandSseEvent): void => {
+    const queue = deferred.get(boardId) ?? [];
+    queue.push(event);
+    deferred.set(boardId, queue);
+  };
+
+  const flush = (boardId: string, allowOutOfOrder = false): void => {
     if (host.isBusy(boardId)) return;
+    if (resyncWanted.has(boardId)) {
+      tryResync(boardId);
+      return;
+    }
     const queue = deferred.get(boardId);
     if (queue === undefined || queue.length === 0) return;
     deferred.delete(boardId);
-    for (const event of queue) process(event);
+    for (let index = 0; index < queue.length; index += 1) {
+      const event = queue[index];
+      // A snapshot may have covered it in the meantime.
+      if (event.seq <= host.getBaseline(boardId)) continue;
+      if (!process(event, allowOutOfOrder)) {
+        // Keep the rest (this event included) for after the snapshot.
+        deferred.set(boardId, [
+          ...queue.slice(index),
+          ...(deferred.get(boardId) ?? []),
+        ]);
+        requestResync(boardId);
+        return;
+      }
+    }
+  };
+
+  const tryResync = (boardId: string): void => {
+    if (!resyncWanted.has(boardId) || resyncRunning.has(boardId)) return;
+    // Our own commands are in flight: their optimistic state must not be
+    // replaced — `settled` retries once they are answered.
+    if (host.isBusy(boardId)) return;
+    resyncRunning.add(boardId);
+    void host
+      .refetch(boardId)
+      .catch((): RefetchResult => "failed")
+      .then((result) => {
+        resyncRunning.delete(boardId);
+        if (result === "busy") {
+          // Commands started meanwhile; `settled` asks again.
+          if (!host.isBusy(boardId)) tryResync(boardId);
+          return;
+        }
+        resyncWanted.delete(boardId);
+        // Applied: everything up to the snapshot's seq is dropped by the
+        // baseline check. Otherwise (offline, board switched away) the held
+        // events are applied as they are — the best this tab can do now;
+        // the next focus refetch reconciles.
+        flush(boardId, result !== "applied");
+      });
+  };
+
+  const requestResync = (boardId: string): void => {
+    resyncWanted.add(boardId);
+    tryResync(boardId);
   };
 
   const handle = (event: BoardSseEvent): void => {
@@ -411,17 +539,27 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
       host.onActivity(event);
       return;
     }
+    // The server could not replay the whole gap (the delta was truncated):
+    // only a snapshot can bring the board up to date.
+    if (event.type === "resync") {
+      const boardId = host.getActiveBoardId();
+      if (boardId !== undefined) requestResync(boardId);
+      return;
+    }
     if (event.type !== "command") return;
     const boardId = boardIdOf(event);
     if (boardId === undefined) return;
     if (event.seq <= host.getBaseline(boardId)) return;
-    if (host.isBusy(boardId)) {
-      const queue = deferred.get(boardId) ?? [];
-      queue.push(event);
-      deferred.set(boardId, queue);
+    if (host.isBusy(boardId) || resyncWanted.has(boardId)) {
+      defer(boardId, event);
       return;
     }
-    process(event);
+    // A foreign event we would otherwise have to reorder (the ack of our
+    // own later command beat it here): re-read the board instead.
+    if (!process(event, false)) {
+      defer(boardId, event);
+      requestResync(boardId);
+    }
   };
 
   // The tab's presence identity: stable across reconnects (a network blip
@@ -452,7 +590,11 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
       openBoardEvents(boardId, since, signal, clientId),
     onEvent: handle,
     onConnected: startPing,
-    onDisconnected: stopPing,
+    onDisconnected: (boardId) => {
+      // Live up to this moment: the idle clock starts now.
+      host.markSynced(boardId);
+      stopPing();
+    },
     onFatal: (boardId, status) => {
       // A 403 from the stream is the membership check: the account is no
       // longer on the board (a reconnect after removal, or a direct URL).
@@ -477,9 +619,36 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
   window.addEventListener("online", onOnline);
   document.addEventListener("visibilitychange", onVisible);
 
+  /** The board a deferred (snapshot-first) `watch` is waiting to open. */
+  let pendingWatch: string | null = null;
+
   return {
-    watch: (boardId) => connection.watch(boardId),
+    watch: (boardId) => {
+      if (pendingWatch === boardId) return;
+      pendingWatch = null;
+      // A board that has been idle for a while has a long backlog: replaying
+      // it event by event costs one reducer pass and one render per event,
+      // so read one snapshot first and resume the stream from its seq (U-9).
+      const syncedAt = host.getSyncedAt(boardId);
+      const idleMs = host.idleSnapshotMs ?? IDLE_SNAPSHOT_MS;
+      if (syncedAt !== undefined && Date.now() - syncedAt > idleMs) {
+        stopPing();
+        connection.stop();
+        pendingWatch = boardId;
+        void host
+          .refetch(boardId)
+          .catch(() => "failed")
+          .then(() => {
+            if (pendingWatch !== boardId) return;
+            pendingWatch = null;
+            connection.watch(boardId);
+          });
+        return;
+      }
+      connection.watch(boardId);
+    },
     stop: () => {
+      pendingWatch = null;
       stopPing();
       connection.stop();
     },
@@ -490,11 +659,13 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
       flush(boardId);
     },
     dispose: () => {
+      pendingWatch = null;
       window.removeEventListener("online", onOnline);
       document.removeEventListener("visibilitychange", onVisible);
       stopPing();
       connection.stop();
       deferred.clear();
+      resyncWanted.clear();
     },
   };
 }

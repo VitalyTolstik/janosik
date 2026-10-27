@@ -271,6 +271,23 @@ describe("Admin API (e2e)", () => {
     expect(missing.body.total).toBe(0);
   });
 
+  it("marks an impersonation session on GET /auth/me (U-8)", async () => {
+    const master = await server()
+      .get("/api/v1/admin/auth/me")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    const imp = await server()
+      .post(`/api/v1/admin/users/${userId}/impersonate`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(201);
+    const me = await server()
+      .get("/api/v1/auth/me")
+      .set("Authorization", `Bearer ${imp.body.accessToken as string}`)
+      .expect(200);
+    expect(me.body.id).toBe(userId);
+    expect(me.body.impersonatedBy).toBe(master.body.id);
+  });
+
   it("creates a user and returns the generated password exactly once", async () => {
     const res = await server()
       .post("/api/v1/admin/users")
@@ -958,6 +975,10 @@ describe("Admin API (e2e)", () => {
         .get(`/api/v1/admin/users/${userId}/export`)
         .set(operator())
         .expect(403);
+      await server()
+        .delete(`/api/v1/admin/users/${userId}`)
+        .set(operator())
+        .expect(403);
     });
 
     it("lets only owners edit the IP allowlist (TASK-65)", async () => {
@@ -967,12 +988,39 @@ describe("Admin API (e2e)", () => {
         .send({ ipAllowlist: "10.0.0.0/8" })
         .expect(403);
 
-      const saved = await server()
+      // A list that excludes the caller's own address is refused: it is
+      // enforced on every admin request, so it would lock the owner out.
+      await server()
         .put("/api/v1/admin/security")
         .set("Authorization", `Bearer ${adminToken}`)
         .send({ ipAllowlist: "10.0.0.0/8" })
+        .expect(400);
+
+      const local = "10.0.0.0/8,127.0.0.1,::ffff:127.0.0.1,::1";
+      const saved = await server()
+        .put("/api/v1/admin/security")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ ipAllowlist: local })
         .expect(200);
-      expect(saved.body.ipAllowlist).toBe("10.0.0.0/8");
+      expect(saved.body.ipAllowlist).toBe(local);
+
+      // Enforced per request, not only at sign-in: with the list narrowed
+      // behind the session's back, the very same token stops working.
+      const owner = await prisma.adminUser.findUniqueOrThrow({
+        where: { email: ADMIN_EMAIL },
+      });
+      await prisma.adminUser.update({
+        where: { id: owner.id },
+        data: { ipAllowlist: "10.0.0.0/8" },
+      });
+      await server()
+        .get("/api/v1/admin/security")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(403);
+      await prisma.adminUser.update({
+        where: { id: owner.id },
+        data: { ipAllowlist: local },
+      });
 
       // Clear it again so the owner's own sign-in is not gated for later tests.
       const cleared = await server()

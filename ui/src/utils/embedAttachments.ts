@@ -1,6 +1,7 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
 
 import { api } from "@/api/client";
+import { defaultI18n } from "@/i18n/i18n";
 
 /**
  * Body-embedded attachments (Jira-style paste, TASK-48): files pasted into
@@ -186,7 +187,10 @@ export function openImageLightbox(src: string): void {
   overlay.setAttribute("data-testid", "attachment-lightbox");
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", "Image preview");
+  overlay.setAttribute(
+    "aria-label",
+    defaultI18n.t("card.attachments.previewLabel"),
+  );
   // Radix modal dialogs disable pointer events on <body> while open — the
   // overlay must opt back in, otherwise clicks fall through it into the
   // layers underneath (closing the card dialog instead of the viewer).
@@ -232,7 +236,10 @@ export function openImageLightbox(src: string): void {
   const closeButton = document.createElement("button");
   closeButton.type = "button";
   closeButton.setAttribute("data-testid", "attachment-lightbox-close");
-  closeButton.setAttribute("aria-label", "Close");
+  closeButton.setAttribute(
+    "aria-label",
+    defaultI18n.t("card.attachments.previewClose"),
+  );
   closeButton.textContent = "×";
   closeButton.style.cssText =
     "position:absolute;top:1rem;right:1.25rem;width:2.25rem;height:2.25rem;" +
@@ -290,8 +297,24 @@ export function handleAttachmentImageOpen(
 }
 
 /**
- * Open or download one attachment blob: images render in a new tab, other
- * files are saved under their link text. Used by the click delegation below.
+ * Raster image types that are safe to open as a top-level document. A
+ * `blob:` URL inherits the app's origin, so anything that can carry script
+ * — SVG above all, or an unknown `image/*` subtype — must never be opened
+ * as a page: it is downloaded instead, whatever the upload allowlist says.
+ */
+const SAFE_TOP_LEVEL_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+  "image/bmp",
+]);
+
+/**
+ * Open or download one attachment blob: raster images render in a new tab,
+ * other files (SVG included) are saved under their link text. Used by the
+ * click delegation below.
  */
 export async function openAttachmentBlob(
   attachmentId: string,
@@ -299,7 +322,8 @@ export async function openAttachmentBlob(
 ): Promise<void> {
   const blob = await api.fetchAttachment(attachmentId);
   const url = URL.createObjectURL(blob);
-  if (blob.type.startsWith("image/")) {
+  const type = blob.type.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (SAFE_TOP_LEVEL_IMAGE_TYPES.has(type)) {
     window.open(url, "_blank", "noopener,noreferrer");
     return;
   }

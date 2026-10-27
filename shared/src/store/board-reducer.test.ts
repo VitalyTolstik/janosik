@@ -50,7 +50,7 @@ type TestAction = Unstamped<BoardAction>;
 const CLOCK = Date.now();
 let commands = 0;
 
-function stamp(action: TestAction): BoardAction {
+function stamp(action: TestAction, state?: BoardState): BoardAction {
   commands += 1;
   const filled = { at: CLOCK + commands, ...action } as Record<
     string,
@@ -62,10 +62,13 @@ function stamp(action: TestAction): BoardAction {
   if (filled.type === "DUPLICATE_CARD") filled.newCardId ??= id("copy-card");
   if (filled.type === "DUPLICATE_COLUMN") {
     filled.newColumnId ??= id("copy-col");
-    // Positional ids for the copies; the reducer uses as many as the source
-    // column has cards and ignores the rest.
+    // Positional ids for the copies — exactly one per source card, or the
+    // reducer refuses the command (S-2).
+    const board =
+      state?.find((b) => b.id === filled.boardId) ?? state?.[0] ?? undefined;
+    const source = board?.columns.find((c) => c.id === filled.columnId);
     filled.newCardIds ??= Array.from(
-      { length: LIMITS.cardsPerColumn },
+      { length: source?.cardIds.length ?? 0 },
       (_, i) => `${id("copy-card")}-${i}`,
     );
   }
@@ -79,7 +82,7 @@ function stamp(action: TestAction): BoardAction {
 }
 
 function reduceState(state: BoardState, action: TestAction): BoardState {
-  return boardReducer(state, stamp(action));
+  return boardReducer(state, stamp(action, state));
 }
 
 function reduceBoard(seed: Board, action: TestAction): Board {
@@ -2390,16 +2393,40 @@ describe("boardReducer — restore commands (TASK-21.7c)", () => {
       }),
     ).toBe(board);
 
-    // An undo still goes through: the guard bounds new content, and this
-    // card was in the column a moment ago.
-    const undone = reduceBoard(board, {
+    // S-5: the absolute cap holds for an undo too — `inverse` comes from
+    // the client, so it cannot be what keeps a column bounded.
+    expect(
+      reduceBoard(board, {
+        type: "RESTORE_CARD",
+        card,
+        columnId: "col-packed",
+        index: 0,
+        inverse: true,
+      }),
+    ).toBe(board);
+  });
+
+  it("lets an undo restore a card past the WIP limit", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: "col-done",
+      wipLimit: 1,
+    });
+    const card: Card = {
+      id: "back-again",
+      title: "Back again",
+      labelIds: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const restore = {
       type: "RESTORE_CARD",
       card,
-      columnId: "col-packed",
-      index: 0,
-      inverse: true,
-    });
-    expect(undone.columns[0].cardIds).toHaveLength(LIMITS.cardsPerColumn + 1);
+      columnId: "col-done",
+    } as const;
+    expect(reduceBoard(board, restore)).toBe(board);
+    const undone = reduceBoard(board, { ...restore, inverse: true });
+    expect(undone.columns[2].cardIds).toContain("back-again");
   });
 
   it("refuses a column restore past LIMITS.columnsPerBoard", () => {
@@ -2423,15 +2450,16 @@ describe("boardReducer — restore commands (TASK-21.7c)", () => {
       }),
     ).toBe(board);
 
-    const undone = reduceBoard(board, {
-      type: "RESTORE_COLUMN",
-      column,
-      index: 0,
-      cards: [],
-      inverse: true,
-    });
-    expect(undone.columns[0].id).toBe("col-back");
-    expect(undone.columns).toHaveLength(LIMITS.columnsPerBoard + 1);
+    // S-5: the board-size cap holds for an undo too.
+    expect(
+      reduceBoard(board, {
+        type: "RESTORE_COLUMN",
+        column,
+        index: 0,
+        cards: [],
+        inverse: true,
+      }),
+    ).toBe(board);
   });
 });
 
@@ -2655,5 +2683,362 @@ describe("boardReducer — card links (TASK-46)", () => {
     });
     expect(dup.cards["card-copy"].links).toBeUndefined();
     expect(dup.cards["card-1"].links).toHaveLength(1);
+  });
+});
+
+/**
+ * Review findings S-1/S-2/S-5 and the prototype-key lookups: the reducer
+ * trusts the board, not the command, about what exists and where it sits —
+ * the same command reaches every viewer over SSE, so a card it duplicates
+ * or captures is duplicated or captured everywhere.
+ */
+describe("boardReducer — commands cannot corrupt the board (review S-*)", () => {
+  /** Column ids per column, in order — the shape every corruption shows in. */
+  function layout(board: Board): string[][] {
+    return board.columns.map((column) => column.cardIds);
+  }
+
+  /** No card id appears in two places. */
+  function expectEachCardPlacedOnce(board: Board): void {
+    const ids = board.columns.flatMap((column) => column.cardIds);
+    expect(new Set(ids).size).toBe(ids.length);
+  }
+
+  describe("MOVE_CARD (S-1)", () => {
+    it("ignores a stale fromColumnId instead of copying the card", () => {
+      const board = freshBoard();
+      // card-1 lives in col-backlog, not in col-progress.
+      const next = reduceBoard(board, {
+        type: "MOVE_CARD",
+        cardId: "card-1",
+        fromColumnId: "col-progress",
+        toColumnId: "col-done",
+        toIndex: 0,
+      });
+      expect(next).toBe(board);
+      expectEachCardPlacedOnce(next);
+    });
+
+    it("ignores the move of an archived card", () => {
+      const archived = reduceBoard(freshBoard(), {
+        type: "ARCHIVE_CARD",
+        cardId: "card-1",
+      });
+      const next = reduceBoard(archived, {
+        type: "MOVE_CARD",
+        cardId: "card-1",
+        fromColumnId: "col-backlog",
+        toColumnId: "col-done",
+        toIndex: 0,
+      });
+      expect(next).toBe(archived);
+    });
+
+    it("ignores a card that is not on the board", () => {
+      const board = freshBoard();
+      expect(
+        reduceBoard(board, {
+          type: "MOVE_CARD",
+          cardId: "card-ghost",
+          fromColumnId: "col-backlog",
+          toColumnId: "col-done",
+          toIndex: 0,
+        }),
+      ).toBe(board);
+    });
+
+    it("moves by the real position whatever fromIndex says", () => {
+      const next = reduceBoard(freshBoard(), {
+        type: "MOVE_CARD",
+        cardId: "card-2",
+        fromColumnId: "col-backlog",
+        fromIndex: 42,
+        toColumnId: "col-done",
+        toIndex: 0,
+      });
+      expect(layout(next)).toEqual([
+        ["card-1", "card-6"],
+        ["card-4", "card-5"],
+        ["card-2", "card-3"],
+      ]);
+    });
+
+    it("refuses an inverse move into a column at the absolute cap", () => {
+      const board = freshBoard();
+      const full: Board = {
+        ...board,
+        columns: board.columns.map((column) =>
+          column.id === "col-done"
+            ? {
+                ...column,
+                cardIds: Array.from(
+                  { length: LIMITS.cardsPerColumn },
+                  (_, i) => `filler-${i}`,
+                ),
+              }
+            : column,
+        ),
+      };
+      expect(
+        reduceBoard(full, {
+          type: "MOVE_CARD",
+          cardId: "card-1",
+          fromColumnId: "col-backlog",
+          toColumnId: "col-done",
+          toIndex: 0,
+          inverse: true,
+        }),
+      ).toBe(full);
+    });
+  });
+
+  describe("DUPLICATE_COLUMN (S-2)", () => {
+    const duplicate = (newCardIds: string[]) =>
+      ({
+        type: "DUPLICATE_COLUMN",
+        columnId: "col-backlog",
+        newColumnId: "col-copy",
+        newCardIds,
+      }) as const;
+
+    it("refuses a copy id that already names a card", () => {
+      const board = freshBoard();
+      const next = reduceBoard(board, duplicate(["x-1", "x-2", "card-3"]));
+      expect(next).toBe(board);
+      expect(next.cards["card-3"].title).toBe(board.cards["card-3"].title);
+    });
+
+    it("refuses a copy id repeated inside the list", () => {
+      const board = freshBoard();
+      expect(reduceBoard(board, duplicate(["x-1", "x-1", "x-2"]))).toBe(board);
+    });
+
+    it("refuses a list that does not match the source column", () => {
+      const board = freshBoard();
+      expect(reduceBoard(board, duplicate(["x-1", "x-2"]))).toBe(board);
+      expect(reduceBoard(board, duplicate(["x-1", "x-2", "x-3", "x-4"]))).toBe(
+        board,
+      );
+    });
+
+    it("refuses __proto__ as a copy id", () => {
+      const board = freshBoard();
+      expect(reduceBoard(board, duplicate(["x-1", "__proto__", "x-2"]))).toBe(
+        board,
+      );
+    });
+
+    it("copies with one fresh id per source card", () => {
+      const next = reduceBoard(freshBoard(), duplicate(["x-1", "x-2", "x-3"]));
+      expect(next.columns[1].cardIds).toEqual(["x-1", "x-2", "x-3"]);
+      expectEachCardPlacedOnce(next);
+    });
+  });
+
+  describe("DUPLICATE_CARD / ADD_CARD freshness", () => {
+    it("refuses a copy over an existing card or under __proto__", () => {
+      const board = freshBoard();
+      for (const newCardId of ["card-3", "__proto__"]) {
+        expect(
+          reduceBoard(board, {
+            type: "DUPLICATE_CARD",
+            cardId: "card-1",
+            newCardId,
+          }),
+          newCardId,
+        ).toBe(board);
+        expect(
+          reduceBoard(board, {
+            type: "ADD_CARD",
+            columnId: "col-done",
+            title: "x",
+            newCardId,
+          }),
+          newCardId,
+        ).toBe(board);
+      }
+    });
+  });
+
+  describe("RESTORE_* never overwrite or misplace a card (S-5)", () => {
+    const snapshot = (id: string, extra: Partial<Card> = {}): Card => ({
+      id,
+      title: "HIJACK",
+      labelIds: [],
+      createdAt: 1,
+      updatedAt: 1,
+      ...extra,
+    });
+
+    it("refuses a RESTORE_CARD whose id is still on the board, even as undo", () => {
+      const board = freshBoard();
+      for (const inverse of [false, true]) {
+        expect(
+          reduceBoard(board, {
+            type: "RESTORE_CARD",
+            card: snapshot("card-3"),
+            columnId: "col-backlog",
+            inverse,
+          }),
+        ).toBe(board);
+      }
+    });
+
+    it("refuses a RESTORE_CARD whose id a column still lists", () => {
+      const board = freshBoard();
+      const dangling: Board = {
+        ...board,
+        columns: board.columns.map((column, index) =>
+          index === 0
+            ? { ...column, cardIds: [...column.cardIds, "lost"] }
+            : column,
+        ),
+      };
+      expect(
+        reduceBoard(dangling, {
+          type: "RESTORE_CARD",
+          card: snapshot("lost"),
+          columnId: "col-done",
+        }),
+      ).toBe(dangling);
+    });
+
+    it("restores a column-less card only when it is archived", () => {
+      const board = freshBoard();
+      expect(
+        reduceBoard(board, { type: "RESTORE_CARD", card: snapshot("loose") }),
+      ).toBe(board);
+      const archived = reduceBoard(board, {
+        type: "RESTORE_CARD",
+        card: snapshot("loose", { archivedAt: 5 }),
+      });
+      expect(archived.cards["loose"].archivedAt).toBe(5);
+      expect(layout(archived)).toEqual(layout(board));
+      // …and an archived snapshot never lands in a column.
+      expect(
+        reduceBoard(board, {
+          type: "RESTORE_CARD",
+          card: snapshot("loose", { archivedAt: 5 }),
+          columnId: "col-done",
+        }),
+      ).toBe(board);
+    });
+
+    it("refuses a RESTORE_COLUMN that lists a live card", () => {
+      const board = freshBoard();
+      for (const inverse of [false, true]) {
+        const next = reduceBoard(board, {
+          type: "RESTORE_COLUMN",
+          column: {
+            id: "col-x",
+            title: "X",
+            cardIds: ["card-3"],
+            createdAt: 1,
+          },
+          index: 0,
+          cards: [snapshot("card-3")],
+          inverse,
+        });
+        expect(next).toBe(board);
+      }
+    });
+
+    it("refuses a RESTORE_COLUMN carrying cards outside the column", () => {
+      const board = freshBoard();
+      expect(
+        reduceBoard(board, {
+          type: "RESTORE_COLUMN",
+          column: { id: "col-x", title: "X", cardIds: [], createdAt: 1 },
+          index: 0,
+          cards: [snapshot("stray")],
+        }),
+      ).toBe(board);
+    });
+
+    it("refuses a RESTORE_COLUMN_CARDS that pulls in a card from another column", () => {
+      const board = freshBoard();
+      const next = reduceBoard(board, {
+        type: "RESTORE_COLUMN_CARDS",
+        columnId: "col-backlog",
+        cardIds: ["card-3"],
+        cards: [snapshot("card-3")],
+        inverse: true,
+      });
+      expect(next).toBe(board);
+      expect(next.cards["card-3"].title).not.toBe("HIJACK");
+    });
+
+    it("refuses a RESTORE_COLUMN_CARDS that conjures new cards", () => {
+      const board = freshBoard();
+      expect(
+        reduceBoard(board, {
+          type: "RESTORE_COLUMN_CARDS",
+          columnId: "col-done",
+          cardIds: ["fresh"],
+          cards: [snapshot("fresh")],
+          inverse: true,
+        }),
+      ).toBe(board);
+    });
+
+    it("never places a card from elsewhere through the order alone", () => {
+      const archived = reduceBoard(freshBoard(), {
+        type: "ARCHIVE_COLUMN_CARDS",
+        columnId: "col-done",
+      });
+      // card-4 sits in col-progress and is not in the payload.
+      const next = reduceBoard(archived, {
+        type: "RESTORE_COLUMN_CARDS",
+        columnId: "col-done",
+        cardIds: ["card-4", "card-3"],
+        cards: [{ ...archived.cards["card-3"], archivedAt: undefined }],
+        inverse: true,
+      });
+      expect(next.columns[2].cardIds).toEqual(["card-3"]);
+      expectEachCardPlacedOnce(next);
+    });
+  });
+
+  describe("ids that name Object.prototype members", () => {
+    it.each(["constructor", "hasOwnProperty", "toString", "__proto__"])(
+      "treats %s as a missing card",
+      (cardId) => {
+        const board = freshBoard();
+        for (const action of [
+          { type: "UPDATE_CARD", cardId, title: "x" },
+          { type: "ARCHIVE_CARD", cardId },
+          { type: "DELETE_CARD", cardId },
+          { type: "DUPLICATE_CARD", cardId, newCardId: "copy" },
+          { type: "SET_CARD_DUE_DATE", cardId, dueDate: 1 },
+          {
+            type: "MOVE_CARD",
+            cardId,
+            fromColumnId: "col-backlog",
+            toColumnId: "col-done",
+            toIndex: 0,
+          },
+        ] as TestAction[]) {
+          const next = reduceBoard(board, action);
+          expect(next, action.type).toBe(board);
+          expect(Object.keys(next.cards)).not.toContain(cardId);
+        }
+      },
+    );
+
+    it("still accepts a real card created under such an id", () => {
+      const next = reduceBoard(freshBoard(), {
+        type: "ADD_CARD",
+        columnId: "col-done",
+        title: "Named oddly",
+        newCardId: "constructor",
+      });
+      expect(Object.hasOwn(next.cards, "constructor")).toBe(true);
+      const renamed = reduceBoard(next, {
+        type: "UPDATE_CARD",
+        cardId: "constructor",
+        title: "Renamed",
+      });
+      expect(renamed.cards["constructor"].title).toBe("Renamed");
+    });
   });
 });

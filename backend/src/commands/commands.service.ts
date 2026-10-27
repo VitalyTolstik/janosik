@@ -19,6 +19,7 @@ import type {
 import {
   atWipLimit,
   boardReducer,
+  cardOf,
   hasLinkedPair,
   LIMITS,
   MAX_COMMAND_BYTES,
@@ -28,7 +29,10 @@ import {
 import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
-import { RealtimeService } from "@/realtime/realtime.service";
+import {
+  type InternalCommandEvent,
+  RealtimeService,
+} from "@/realtime/realtime.service";
 import { applyCommandWrites, collectVersions } from "./command-writers";
 import { commandDetails } from "./command-details";
 import { referencedEntityIds } from "./referenced-entity-ids";
@@ -142,7 +146,31 @@ const RESTORE_ACTIONS = new Set<string>([
  * the log bounded anyway; this is the belt-and-braces cap so a `?since=0`
  * request can never materialize an unbounded history.
  */
-const COMMAND_DELTA_MAX = 5_000;
+export const COMMAND_DELTA_MAX = 5_000;
+
+/**
+ * B-5: how far a client's `action.at` may drift from the server clock and
+ * still be trusted. The reducer turns `at` into `createdAt`/`updatedAt`/
+ * `deletedAt`/`archivedAt`; an unbounded value let a client backdate a
+ * delete to 1970 (→ the next purge erased it past the restore window) or
+ * send `1e300` (→ Invalid Date → 500). Anything outside the window is
+ * replaced by the server's own clock before the reducer runs.
+ */
+export const COMMAND_AT_MAX_SKEW_MS = 5 * 60 * 1000;
+
+/** ECMAScript's Date range: ±8.64e15 ms around the epoch. */
+const MAX_DATE_MS = 8.64e15;
+
+/**
+ * One page of the command delta (B-3). `resync` means the gap since the
+ * caller's baseline can *not* be replayed faithfully — the delta hit its cap,
+ * or the baseline command was trimmed from the log — so the caller must
+ * re-read the board snapshot instead of trusting `entries`.
+ */
+export interface CommandDelta {
+  entries: CommandDeltaEntry[];
+  resync: boolean;
+}
 
 @Injectable()
 export class CommandsService {
@@ -174,13 +202,18 @@ export class CommandsService {
         field: validation.field,
       });
     }
-    const action = validation.action;
-    if (!SUPPORTED_ACTIONS.has(action.type)) {
+    if (!SUPPORTED_ACTIONS.has(validation.action.type)) {
       throw new BadRequestException({
-        message: `Unsupported command type: ${action.type}`,
+        message: `Unsupported command type: ${validation.action.type}`,
         field: "action.type",
       });
     }
+    assertDatesInRange(validation.action);
+    // Identity of the request for the idempotency check below — taken before
+    // the clamp, so an honest retry (same body, later wall clock) still
+    // matches the stored command.
+    const requestFingerprint = actionFingerprint(validation.action);
+    const action = clampActionAt(validation.action, Date.now());
 
     const applied = await this.boardWrite.run(
       boardId,
@@ -190,6 +223,7 @@ export class CommandsService {
         response: CommandResponse;
         fresh: boolean;
         touches: string[];
+        prevSeq: number;
       }> => {
         // The board write lock (BoardWriteService) already serializes every
         // command on this board — the `ifMatch` check below sees each
@@ -212,10 +246,20 @@ export class CommandsService {
               field: "commandId",
             });
           }
+          // A reused key with a different body is a client bug (or a key
+          // collision), not a retry: answering with the first command's
+          // result would tell the caller its *new* action was applied.
+          if (actionFingerprint(existing.payload) !== requestFingerprint) {
+            throw new ConflictException({
+              message: "commandId already used with a different payload",
+              field: "commandId",
+            });
+          }
           return {
             response: existing.result as unknown as CommandResponse,
             fresh: false,
             touches: [],
+            prevSeq: 0,
           };
         }
 
@@ -304,7 +348,7 @@ export class CommandsService {
             touches,
           },
         });
-        return { response, fresh: true, touches };
+        return { response, fresh: true, touches, prevSeq: currentVersion };
       },
     );
 
@@ -314,14 +358,24 @@ export class CommandsService {
     // `touches` rides along (TASK-30.1): it is what the command actually
     // wrote, so subscribers mark their undo history foreign without diffing
     // the whole board.
+    //
+    // `commandId` lets a client recognise its own echo by key (one account
+    // may run several writers). `prevSeq` — the board's seq right before
+    // this command, known because the board lock serialized it — is an
+    // internal hint for the stream (B-4): a subscriber whose last delivered
+    // seq differs knows it missed something and re-reads the log. It is
+    // stripped before the frame goes out on the wire.
     if (applied.fresh) {
-      this.realtime.publish(boardId, {
+      const event: InternalCommandEvent = {
         type: "command",
         seq: applied.response.seq,
         action,
         actorId,
+        commandId: dto.commandId,
         touches: applied.touches,
-      });
+        prevSeq: applied.prevSeq,
+      };
+      this.realtime.publish(boardId, event);
     }
     return applied.response;
   }
@@ -339,21 +393,70 @@ export class CommandsService {
     boardId: string,
     since: number,
   ): Promise<CommandDeltaEntry[]> {
+    return (await this.deltaSince(boardId, since)).entries;
+  }
+
+  /**
+   * The delta plus whether it is complete (B-3). `seq` is global, so a gap
+   * in the numbers is normal and proves nothing; what *does* prove a lost
+   * gap is:
+   * - the page hit `COMMAND_DELTA_MAX` (more commands remain), or
+   * - the caller's baseline `since` (always a seq of this board's own log —
+   *   it comes from `X-Board-Seq`, a command response or a stream frame) is
+   *   no longer in the log: the retention sweep trimmed it, and possibly
+   *   commands after it.
+   * Either way `resync: true` — the caller must re-read the board snapshot.
+   */
+  async deltaSince(
+    boardId: string,
+    since: number,
+    max: number = COMMAND_DELTA_MAX,
+  ): Promise<CommandDelta> {
+    if (since > 0) {
+      const baseline = await this.prisma.command.findFirst({
+        where: { boardId, seq: BigInt(since) },
+        select: { seq: true },
+      });
+      if (baseline === null) {
+        return { entries: [], resync: true };
+      }
+    }
     const rows = await this.prisma.command.findMany({
       where: {
         boardId,
         ...(since > 0 ? { seq: { gt: BigInt(since) } } : {}),
       },
       orderBy: { seq: "asc" },
-      take: COMMAND_DELTA_MAX,
-      select: { seq: true, actorId: true, payload: true, touches: true },
+      // One extra row tells "exactly max" apart from "more than max".
+      take: max + 1,
+      select: {
+        id: true,
+        seq: true,
+        actorId: true,
+        payload: true,
+        touches: true,
+      },
     });
-    return rows.map((row) => ({
-      seq: Number(row.seq),
-      action: row.payload as unknown as BoardAction,
-      actorId: row.actorId,
-      touches: row.touches,
-    }));
+    const truncated = rows.length > max;
+    return {
+      entries: (truncated ? rows.slice(0, max) : rows).map((row) => ({
+        seq: Number(row.seq),
+        action: row.payload as unknown as BoardAction,
+        actorId: row.actorId,
+        commandId: row.id,
+        touches: row.touches,
+      })),
+      resync: truncated,
+    };
+  }
+
+  /** Highest committed `seq` of the board (0 without commands). */
+  async latestSeq(boardId: string): Promise<number> {
+    const aggregate = await this.prisma.command.aggregate({
+      where: { boardId },
+      _max: { seq: true },
+    });
+    return aggregate._max.seq === null ? 0 : Number(aggregate._max.seq);
   }
 
   /** Highest committed `seq` for the board, or 0 when it has no commands. */
@@ -548,7 +651,7 @@ export class CommandsService {
           field: "ifMatchVersions",
         });
       }
-      const actual = await entityVersion(tx, match[1], match[2]);
+      const actual = await entityVersion(tx, boardId, match[1], match[2]);
       if (actual === null || actual !== expected) {
         throw new ConflictException({
           conflict: "version",
@@ -592,7 +695,7 @@ export class CommandsService {
         return;
       }
       case "DUPLICATE_CARD": {
-        const source = board.cards[action.cardId];
+        const source = cardOf(board, action.cardId);
         if (!source) return;
         const column = board.columns.find((c) => c.cardIds.includes(source.id));
         if (columnBlocked(column)) reject();
@@ -627,7 +730,7 @@ export class CommandsService {
       }
       case "SET_CARD_LABEL": {
         if (!action.on) return;
-        const card = board.cards[action.cardId];
+        const card = cardOf(board, action.cardId);
         if (!card || card.labelIds.includes(action.labelId)) return;
         // An unknown label never attaches (the reducer ignores it).
         if (!board.labels.some((label) => label.id === action.labelId)) return;
@@ -641,8 +744,8 @@ export class CommandsService {
         // no-op identically and the states stay equal. Answering 409 for
         // them would turn a harmless race into an error toast; the cap is
         // different, because the user must learn why the link never appeared.
-        const card = board.cards[action.cardId];
-        const target = board.cards[action.targetCardId];
+        const card = cardOf(board, action.cardId);
+        const target = cardOf(board, action.targetCardId);
         if (!card || !target || card.id === target.id) return;
         if (card.links?.some((link) => link.id === action.linkId)) return;
         if (hasLinkedPair(board.cards, card.id, target.id)) return;
@@ -660,7 +763,7 @@ export class CommandsService {
         return;
       }
       case "ADD_CHECKLIST": {
-        const card = board.cards[action.cardId];
+        const card = cardOf(board, action.cardId);
         if (!card) return;
         const checklists = card.checklists ?? [];
         if (checklists.some((c) => c.id === action.newChecklistId)) return;
@@ -668,7 +771,7 @@ export class CommandsService {
         return;
       }
       case "ADD_CHECKLIST_ITEM": {
-        const card = board.cards[action.cardId];
+        const card = cardOf(board, action.cardId);
         if (!card) return;
         const items =
           card.checklists?.find((c) => c.id === action.checklistId)?.items ??
@@ -704,58 +807,110 @@ function stableStringify(value: unknown): string {
 
 /**
  * Current `version` of one `touch` target (`board:<id>`, `card:<id>`, …), or
- * `null` when no such row exists (soft-deleted rows keep theirs, exactly like
- * `collectVersions` reports them).
+ * `null` when no such row exists *on this board* (soft-deleted rows keep
+ * theirs, exactly like `collectVersions` reports them). Scoped to the board
+ * so `ifMatchVersions` cannot be used as a version oracle for entities on
+ * boards the caller is not a member of — a foreign id simply reads as absent.
  */
 async function entityVersion(
   tx: Prisma.TransactionClient,
+  boardId: string,
   entity: string,
   id: string,
 ): Promise<number | null> {
+  const select = { version: true } as const;
   switch (entity) {
     case "board": {
-      const row = await tx.board.findUnique({
-        where: { id },
-        select: { version: true },
-      });
+      // `board:` keys were already pinned to `boardId` by the caller.
+      const row = await tx.board.findFirst({ where: { id }, select });
       return row?.version ?? null;
     }
     case "column": {
-      const row = await tx.column.findUnique({
-        where: { id },
-        select: { version: true },
-      });
+      const row = await tx.column.findFirst({ where: { id, boardId }, select });
       return row?.version ?? null;
     }
     case "card": {
-      const row = await tx.card.findUnique({
-        where: { id },
-        select: { version: true },
+      const row = await tx.card.findFirst({
+        where: { id, column: { boardId } },
+        select,
       });
       return row?.version ?? null;
     }
     case "label": {
-      const row = await tx.label.findUnique({
-        where: { id },
-        select: { version: true },
-      });
+      const row = await tx.label.findFirst({ where: { id, boardId }, select });
       return row?.version ?? null;
     }
     case "checklist": {
-      const row = await tx.checklist.findUnique({
-        where: { id },
-        select: { version: true },
+      const row = await tx.checklist.findFirst({
+        where: { id, card: { column: { boardId } } },
+        select,
       });
       return row?.version ?? null;
     }
     case "checklistItem": {
-      const row = await tx.checklistItem.findUnique({
-        where: { id },
-        select: { version: true },
+      const row = await tx.checklistItem.findFirst({
+        where: { id, checklist: { card: { column: { boardId } } } },
+        select,
       });
       return row?.version ?? null;
     }
     default:
       return null;
   }
+}
+
+/**
+ * Stable identity of an action for the idempotency check: canonical JSON
+ * without `at` (the client clock is not part of *what* the command does, and
+ * the stored copy may carry the server-clamped value).
+ */
+function actionFingerprint(action: unknown): string {
+  if (action === null || typeof action !== "object") {
+    return stableStringify(action);
+  }
+  const rest: Record<string, unknown> = {
+    ...(jsonSafe(action) as Record<string, unknown>),
+  };
+  delete rest.at;
+  return stableStringify(rest);
+}
+
+/** B-5: replace an `at` outside the trusted skew window with server time. */
+function clampActionAt<T extends BoardAction>(action: T, now: number): T {
+  const at = (action as { at?: unknown }).at;
+  if (typeof at !== "number") return action;
+  if (Number.isFinite(at) && Math.abs(at - now) <= COMMAND_AT_MAX_SKEW_MS) {
+    return action;
+  }
+  return { ...action, at: now };
+}
+
+/** Field names whose numeric values the writers turn into `Date`s. */
+const DATE_FIELD = /^(at|dueDate|[a-z]+At)$/;
+
+/**
+ * Every timestamp in the payload (`dueDate`, `RESTORE_*` snapshots'
+ * `createdAt`/`updatedAt`/…) must be a representable Date — `new Date(1e300)`
+ * is Invalid Date and would surface as a Prisma 500 instead of a 400. `at`
+ * itself is clamped afterwards; here it only has to be finite.
+ */
+function assertDatesInRange(action: unknown): void {
+  const visit = (value: unknown, path: string, depth: number): void => {
+    if (depth > 8 || value === null || typeof value !== "object") return;
+    for (const [key, entry] of Object.entries(value)) {
+      const field = Array.isArray(value) ? `${path}[${key}]` : `${path}.${key}`;
+      if (
+        typeof entry === "number" &&
+        DATE_FIELD.test(key) &&
+        !(Number.isFinite(entry) && Math.abs(entry) <= MAX_DATE_MS)
+      ) {
+        throw new BadRequestException({
+          message: `Invalid command (${field}): must be a valid timestamp`,
+          field,
+        });
+      }
+      visit(entry, field, depth + 1);
+    }
+  };
+  visit(action, "action", 0);
 }

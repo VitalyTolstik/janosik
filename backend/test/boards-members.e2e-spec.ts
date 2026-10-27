@@ -201,12 +201,17 @@ describe("Boards API (e2e)", () => {
       });
     });
 
-    it("404s an invite for an unknown email", async () => {
-      await server()
+    it("answers an invite for an unknown email like any other (no enumeration)", async () => {
+      const res = await server()
         .post(`/api/v1/boards/${boardId}/members`)
         .set(auth(adminToken))
         .send({ email: "nobody@example.com", role: "MEMBER" })
-        .expect(404);
+        .expect(201);
+      expect(res.body).toMatchObject({
+        userId: "",
+        email: "nobody@example.com",
+        role: "MEMBER",
+      });
     });
 
     it("409s a duplicate invite", async () => {

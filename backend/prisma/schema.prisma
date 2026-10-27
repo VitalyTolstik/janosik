@@ -274,6 +274,11 @@ model Command {
   // GIN (not B-tree) so the per-entity feed's `touches: { has: … }` lookup is
   // an index scan, not a seq scan (TASK-92).
   @@index([touches], type: Gin)
+  // B-7: the retention sweep (`createdAt < cutoff`) and the admin metrics
+  // (24h/7d counts, per-day series) range-scan by time; the per-board
+  // history/time-window reads use the composite.
+  @@index([createdAt])
+  @@index([boardId, createdAt, seq])
 }
 
 model Column {

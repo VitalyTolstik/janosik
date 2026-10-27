@@ -529,7 +529,9 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
 
 ### Pre-commit (husky)
 
-При каждом коммите: `npm run build` (ui) + `lint-staged`
-(`.lintstagedrc.mjs`: prettier по стейдженным файлам + eslint --fix по
-workspaces). Хук ставится автоматически через `prepare: husky`.
+При каждом коммите: `npx tsc -b ui` (типчек ui вместе с shared, без
+vite-сборки — её делает CI) + `lint-staged` (`.lintstagedrc.mjs`: prettier по
+стейдженным файлам + eslint по workspaces без `--fix`, чтобы коммит не
+переписывал нестейдженные файлы). Хук ставится автоматически через
+`prepare: husky`.
 

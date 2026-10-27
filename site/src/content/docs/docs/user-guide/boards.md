@@ -100,7 +100,7 @@ shows the title and its labels on the first line, the due-date badge on the
 second, and a row of badges below: a description marker, linked-card counts,
 checklist progress, the priority and the assignee's avatar. Click a card to
 open its details — or right-click it for the quick menu (see
-[Card details and the quick menu](cards/)).
+[Card details and the quick menu](/docs/user-guide/cards/)).
 
 ### Drag and drop
 
@@ -118,5 +118,5 @@ highlighted column and `C` to add a column. Escape clears the cursor.
 
 ## Next
 
-- [Calendar and table views](views/)
-- [Card details and the quick menu](cards/)
+- [Calendar and table views](/docs/user-guide/views/)
+- [Card details and the quick menu](/docs/user-guide/cards/)

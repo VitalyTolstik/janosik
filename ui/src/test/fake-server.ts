@@ -1,5 +1,6 @@
 import {
   boardReducer,
+  validateBoardAction,
   type ActivityFeedEntry,
   type ActivitySseEvent,
   type AuthResponseDto,
@@ -22,6 +23,7 @@ import {
   type MembershipSseEvent,
   type PresenceSseEvent,
   type PresenceUser,
+  type ResyncSseEvent,
   type UpdateProfileRequest,
   type UserAvatarColor,
   type UserTokenDto,
@@ -104,6 +106,11 @@ export class FakeServer {
   emailVerifyCode = "123456";
   /** Live flag the verify route flips; tests may set it directly. */
   emailVerified = true;
+  /**
+   * `impersonatedBy` of `GET /auth/me` (U-8): the master id when the token
+   * in use is a view-as one, `null` for a normal session.
+   */
+  impersonatedBy: string | null = null;
   /** Caller's role per board summary (`GET /boards`) — drives VIEWER tests. */
   role: BoardRole = "ADMIN";
   /** Per-board role overrides (mixed-role switcher lists, TASK-36.2). */
@@ -138,6 +145,23 @@ export class FakeServer {
   private nextRequestFailure: { status: number; body: unknown } | null = null;
   /** Held command response (`holdNextCommand`) — the in-flight window. */
   private commandGate: Promise<void> | null = null;
+  /**
+   * Held command *commit* (`holdNextCommandBeforeCommit`): the request is in
+   * flight but the server has not written it yet — a foreign command
+   * published meanwhile gets the lower seq, exactly like a concurrent agent.
+   */
+  private commitGate: Promise<void> | null = null;
+  /**
+   * Whether events carry the issuing client's `commandId` (the current
+   * server contract). `false` mimics an older server for fallback tests.
+   */
+  emitCommandIds = true;
+  /**
+   * Catch-up cap of `GET /events`: a gap larger than this is not replayed —
+   * the stream sends `resync` instead (the backend's truncated delta).
+   */
+  maxCatchUp = Number.POSITIVE_INFINITY;
+  private foreignCommandCounter = 0;
   private boardCounter = 0;
   /** Id counter of `POST /cards/:id/comments` (TASK-37). */
   private commentCounter = 0;
@@ -210,6 +234,7 @@ export class FakeServer {
     action: Record<string, unknown>,
     actorId: string = "user-2",
     touches: string[] = touchesOf(boardId, action),
+    commandId: string = `foreign-${++this.foreignCommandCounter}`,
   ): number {
     const board = this.boards.get(boardId);
     if (board === undefined) throw new Error(`Unknown board ${boardId}`);
@@ -219,7 +244,7 @@ export class FakeServer {
         withActivity: false,
       })[0] ?? board;
     this.boards.set(boardId, after);
-    return this.recordEvent(boardId, scoped, actorId, touches);
+    return this.recordEvent(boardId, scoped, actorId, touches, commandId);
   }
 
   /** Append one committed event to the log and push it to open streams. */
@@ -228,6 +253,7 @@ export class FakeServer {
     action: BoardAction,
     actorId: string,
     touches: string[],
+    commandId: string,
   ): number {
     const seq = (this.seq.get(boardId) ?? 0) + 1;
     this.seq.set(boardId, seq);
@@ -236,6 +262,7 @@ export class FakeServer {
       seq,
       action,
       actorId,
+      ...(this.emitCommandIds ? { commandId } : {}),
       touches,
     };
     const log = this.eventLog.get(boardId) ?? [];
@@ -324,6 +351,15 @@ export class FakeServer {
     );
   }
 
+  /**
+   * Whether a `GET /boards/:id/events` stream is currently open. Tests wait
+   * on this instead of sleeping a fixed time, so a live-frame assertion is
+   * deterministic however busy the machine is.
+   */
+  hasEventStream(boardId: string): boolean {
+    return (this.eventStreams.get(boardId)?.size ?? 0) > 0;
+  }
+
   /** Close every open stream of the board (simulates a dropped SSE). */
   closeEvents(boardId: string): void {
     for (const controller of this.eventStreams.get(boardId) ?? []) {
@@ -341,6 +377,35 @@ export class FakeServer {
    * the client stays busy — the window in which the bridge must defer
    * streamed events instead of applying them out of order.
    */
+  /**
+   * Hold the next command *before* it is committed and return its release:
+   * anything published meanwhile is ordered before it (lower seq) — the
+   * "agent commits while my drag is in flight" race (U-1, U-7).
+   */
+  holdNextCommandBeforeCommit(): () => void {
+    let release: (() => void) | null = null;
+    this.commitGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      this.commitGate = null;
+      release?.();
+    };
+  }
+
+  /** Push a `resync` frame to every open stream of the board. */
+  publishResync(boardId: string): void {
+    const event: ResyncSseEvent = { type: "resync" };
+    const frame = encodeEvent(event);
+    for (const controller of this.eventStreams.get(boardId) ?? []) {
+      try {
+        controller.enqueue(frame);
+      } catch {
+        /* the stream was cancelled */
+      }
+    }
+  }
+
   holdNextCommand(): () => void {
     let release: (() => void) | null = null;
     this.commandGate = new Promise<void>((resolve) => {
@@ -404,7 +469,10 @@ export class FakeServer {
       return json(200, { expiresAt: Date.now() + 15 * 60 * 1000 });
     }
     if (path === "/api/v1/auth/me" && method === "GET") {
-      return json(200, this.publicUser());
+      return json(200, {
+        ...this.publicUser(),
+        impersonatedBy: this.impersonatedBy,
+      });
     }
     if (path === "/api/v1/auth/password" && method === "POST") {
       const { currentPassword, newPassword } = (body ?? {}) as {
@@ -536,6 +604,29 @@ export class FakeServer {
         structuredClone(this.membersByBoard.get(membersMatch[1]) ?? []),
       );
     }
+    // Non-enumerating invite: every address (unknown, known, already
+    // pending) gets the same masked 201 — only an accepted member is a 409.
+    if (membersMatch && method === "POST") {
+      const { email = "", role = "MEMBER" } = (body ?? {}) as {
+        email?: string;
+        role?: BoardRole;
+      };
+      const address = email.trim().toLowerCase();
+      const members = this.membersByBoard.get(membersMatch[1]) ?? [];
+      if (members.some((member) => member.email.toLowerCase() === address)) {
+        return json(409, { message: "User is already a board member" });
+      }
+      const masked: BoardMemberDto = {
+        userId: "",
+        displayName: null,
+        email: address,
+        role,
+        expiresAt: null,
+        avatarColor: null,
+        avatarPath: null,
+      };
+      return json(201, masked);
+    }
     const boardMatch = /^\/api\/v1\/boards\/([^/]+)$/.exec(path);
     if (boardMatch) {
       const boardId = boardMatch[1];
@@ -649,11 +740,17 @@ export class FakeServer {
     const backlog = (this.eventLog.get(boardId) ?? []).filter(
       (event) => event.seq > since,
     );
+    const truncated = backlog.length > this.maxCatchUp;
     const stream = new ReadableStream<Uint8Array>({
       start: (controller) => {
-        // The real server's connection handshake: the command backlog first,
-        // then the current presence roster (TASK-36).
-        for (const event of backlog) controller.enqueue(encodeEvent(event));
+        // The real server's connection handshake: the command backlog first
+        // (or `resync` when the gap is past the catch-up cap), then the
+        // current presence roster (TASK-36).
+        if (truncated) {
+          controller.enqueue(encodeEvent({ type: "resync" }));
+        } else {
+          for (const event of backlog) controller.enqueue(encodeEvent(event));
+        }
         if (this.initialPresence.length > 0) {
           controller.enqueue(
             encodeEvent({ type: "presence", users: this.initialPresence }),
@@ -682,6 +779,18 @@ export class FakeServer {
     }
     const stored = this.commands.get(request.commandId);
     if (stored !== undefined) return json(200, stored);
+    if (this.commitGate !== null) await this.commitGate;
+
+    // The real server's boundary check (S-3 slipped through because this
+    // fake never ran it): a malformed action is a 400 with the field path,
+    // and only the validated action is applied and echoed.
+    const validation = validateBoardAction(request.action);
+    if (!validation.ok) {
+      return json(400, {
+        message: `Invalid command (${validation.field}): ${validation.message}`,
+        field: validation.field,
+      });
+    }
 
     const board = this.boards.get(boardId);
     if (board === undefined) return json(404, { message: "Board not found" });
@@ -695,7 +804,7 @@ export class FakeServer {
       }
     }
 
-    const action = request.action as BoardAction;
+    const action = validation.action;
     const after =
       boardReducer(
         [structuredClone(board)],
@@ -713,6 +822,7 @@ export class FakeServer {
       { ...action, boardId } as BoardAction,
       this.account.id,
       touchesOf(boardId, action),
+      request.commandId,
     );
     const response: CommandResponse = { seq, versions };
     this.commands.set(request.commandId, response);

@@ -1,4 +1,8 @@
-import { Injectable, Logger } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "@/common/prisma/prisma.service";
 
@@ -11,6 +15,30 @@ import { PrismaService } from "@/common/prisma/prisma.service";
  * the per-board lock below already removes almost every conflict.
  */
 export const BOARD_WRITE_MAX_ATTEMPTS = 5;
+
+/**
+ * Explicit interactive-transaction bounds (B-7). Prisma's defaults (2 s to
+ * get a connection, 5 s for the whole transaction) are implicit and the
+ * timeout surfaced as an opaque 500. A board write holds the board lock, so
+ * it must stay bounded, but a large legitimate command (restoring a column
+ * of a few hundred cards) needs more than 5 s on a loaded database.
+ */
+export const BOARD_WRITE_MAX_WAIT_MS = 5_000;
+export const BOARD_WRITE_TIMEOUT_MS = 15_000;
+
+/**
+ * Prisma `P2028` = "Transaction API error": no pooled connection within
+ * `maxWait`, or the transaction outlived `timeout` (it was rolled back).
+ * Neither is a client error nor a bug — the database is overloaded — so it
+ * is answered as `503` (retryable) instead of a 500.
+ */
+export function isTransactionTimeout(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "P2028"
+  );
+}
 
 /** SQLSTATEs that mean "the transaction can be safely replayed": serialization
  *  failure (40001) and deadlock (40P01). */
@@ -116,13 +144,25 @@ export class BoardWriteService {
   ): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       try {
-        return await this.prisma.$transaction(async (tx) => {
-          // Take the per-board lock first, before any row lock, so every
-          // writer acquires locks in the same order (board → children).
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${boardId}, 0))`;
-          return fn(tx);
-        });
+        return await this.prisma.$transaction(
+          async (tx) => {
+            // Take the per-board lock first, before any row lock, so every
+            // writer acquires locks in the same order (board → children).
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${boardId}, 0))`;
+            return fn(tx);
+          },
+          { maxWait: BOARD_WRITE_MAX_WAIT_MS, timeout: BOARD_WRITE_TIMEOUT_MS },
+        );
       } catch (error) {
+        if (isTransactionTimeout(error)) {
+          this.logger.warn(
+            `board ${boardId}: transaction timed out (${error instanceof Error ? error.message : String(error)})`,
+          );
+          throw new ServiceUnavailableException({
+            message: "The board is busy — retry the request",
+            code: "board_write_timeout",
+          });
+        }
         if (
           attempt >= BOARD_WRITE_MAX_ATTEMPTS ||
           !isTransientConflict(error)

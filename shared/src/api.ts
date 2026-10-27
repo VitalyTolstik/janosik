@@ -72,6 +72,12 @@ export interface CommandDeltaEntry {
   /** Who issued the command. */
   actorId: string;
   /**
+   * The issuing client's idempotency key. Lets a client recognise its own
+   * echo by key rather than by `actorId` — one account may run several
+   * writers at once (tabs, MCP agents on the same personal key).
+   */
+  commandId?: string;
+  /**
    * Entities the command actually wrote, as `Command.touches` labels
    * (`card:<id>`, `column:<id>`, `label:<id>`, `checklist:<id>`,
    * `checklistItem:<id>`, `board:<id>`; TASK-30.1). Empty for a command
@@ -87,6 +93,8 @@ export interface CommandSseEvent {
   seq: number;
   action: BoardAction;
   actorId: string;
+  /** The issuing client's idempotency key (see `CommandDeltaEntry.commandId`). */
+  commandId?: string;
   /** Touched entity labels — same contract as `CommandDeltaEntry.touches`. */
   touches: string[];
 }
@@ -135,8 +143,21 @@ export interface ActivitySseEvent {
 }
 
 /** Discriminated union of every `GET /boards/:id/events` event (§7.4). */
+/**
+ * The server could not replay the full gap since `?since=` (the delta hit
+ * its cap, or the requested seq is older than the retained log): the client
+ * must refetch the board snapshot instead of trusting the stream to catch up.
+ */
+export interface ResyncSseEvent {
+  type: "resync";
+}
+
 export type BoardSseEvent =
-  CommandSseEvent | PresenceSseEvent | ActivitySseEvent | MembershipSseEvent;
+  | CommandSseEvent
+  | PresenceSseEvent
+  | ActivitySseEvent
+  | MembershipSseEvent
+  | ResyncSseEvent;
 
 /**
  * Board membership roles (§7.0) — mirrors the backend Prisma `Role` enum.
@@ -347,6 +368,13 @@ export interface AuthUserDto {
    * verification gate.
    */
   emailVerifiedAt?: number | null;
+  /**
+   * `GET /auth/me` only: the master who minted the access token this request
+   * used (its `imp` claim), or `null` for a normal session or an API key.
+   * Lets the app confirm server-side that a hash-delivered token really is a
+   * support session before adopting it.
+   */
+  impersonatedBy?: string | null;
 }
 
 /**

@@ -101,13 +101,18 @@ function renderComments(server: FakeServer, readOnly = false) {
   );
 }
 
-/** Wait until the realtime stream is connected (the request is in flight). */
-async function waitStream(server: FakeServer) {
+/**
+ * Wait until the realtime stream is actually open (the request is in flight
+ * *and* the reader is attached), not just a fixed sleep — so a frame
+ * published afterwards is never missed under load.
+ */
+async function waitStream(server: FakeServer, boardId = "b-1") {
   await waitFor(() =>
     expect(server.requests.some((r) => r.path.endsWith("/events"))).toBe(true),
   );
+  await waitFor(() => expect(server.hasEventStream(boardId)).toBe(true));
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 

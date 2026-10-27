@@ -62,4 +62,21 @@ describe("PerUserRateLimitInterceptor", () => {
     await expect(guard.intercept(ctx, next)).resolves.toBeDefined();
     await expect(guard.intercept(ctx, next)).resolves.toBeDefined();
   });
+
+  it("evicts users idle for a whole window (B-8: bounded map)", async () => {
+    jest.useFakeTimers({ now: 5_000_000 });
+    try {
+      const guard = interceptor(1_000_000);
+      for (let i = 0; i < 999; i += 1) {
+        await guard.intercept(context("/api/v1/boards", `idle-${i}`), next);
+      }
+      expect(guard.trackedUsers).toBe(999);
+      jest.setSystemTime(5_000_000 + 61_000);
+      // The 1000th request triggers the sweep: only the active user stays.
+      await guard.intercept(context("/api/v1/boards", "active"), next);
+      expect(guard.trackedUsers).toBe(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

@@ -110,7 +110,7 @@ describe("Users API (e2e)", () => {
         .get("/api/v1/auth/me")
         .set(auth(profileToken))
         .expect(200);
-      expect(me.body).toEqual(user);
+      expect(me.body).toEqual({ ...user, impersonatedBy: null });
     });
 
     it("clears a field with null", async () => {
@@ -176,12 +176,12 @@ describe("Users API (e2e)", () => {
     });
 
     it("rotates the password, keeps the caller's session and kills others", async () => {
-      // A second tab's session, and a PAT that must survive the rotation.
+      // A second tab's session, and a PAT that must die with the rotation.
       const secondSession = await login(PROFILE_EMAIL, PASSWORD);
       const created = await server()
         .post("/api/v1/users/me/tokens")
         .set(auth(profileToken))
-        .send({ name: "survives rotation" })
+        .send({ name: "dies with rotation" })
         .expect(201);
       const pat = created.body.token as string;
 
@@ -216,8 +216,8 @@ describe("Users API (e2e)", () => {
         .send({ email: PROFILE_EMAIL, password: NEW_PASSWORD })
         .expect(200);
 
-      // API tokens are not sessions: the PAT still authenticates.
-      await server().get("/api/v1/auth/me").set(auth(pat)).expect(200);
+      // B-2: a password rotation revokes every personal API token too.
+      await server().get("/api/v1/auth/me").set(auth(pat)).expect(401);
     });
   });
 
@@ -252,7 +252,7 @@ describe("Users API (e2e)", () => {
         .set(auth(profileToken))
         .expect(200);
       const tokens = res.body as UserTokenDto[];
-      expect(tokens).toHaveLength(2); // "CI" + "survives rotation"
+      expect(tokens).toHaveLength(2); // "CI" + the revoked "dies with rotation"
       expect(tokens[0].id).toBe(tokenId);
       expect(JSON.stringify(res.body)).not.toContain("jnk_");
       expect(res.body[0].tokenHash).toBeUndefined();

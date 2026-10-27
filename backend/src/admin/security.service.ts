@@ -187,6 +187,7 @@ export class SecurityService {
   async update(
     admin: AdminPrincipal,
     dto: AdminUpdateSecurityRequest,
+    callerIp: string | null = null,
   ): Promise<AdminSecurityDto> {
     if (dto.ipAllowlist !== undefined) {
       // The IP allowlist is an OWNER-only control (TASK-65 addendum): an
@@ -194,9 +195,17 @@ export class SecurityService {
       if (admin.role !== "OWNER") {
         throw new ForbiddenException("Owner rights are required");
       }
+      const allowlist = normalizeAllowlist(dto.ipAllowlist);
+      // The list is enforced on every admin request now, so saving one that
+      // excludes the caller's own address would lock them out mid-session.
+      if (!isIpAllowed(allowlist, callerIp)) {
+        throw new BadRequestException(
+          `The allowlist must include your current address (${callerIp ?? "unknown"})`,
+        );
+      }
       await this.prisma.adminUser.update({
         where: { id: admin.id },
-        data: { ipAllowlist: normalizeAllowlist(dto.ipAllowlist) },
+        data: { ipAllowlist: allowlist },
       });
     }
     if (dto.totpEnabled === false) {

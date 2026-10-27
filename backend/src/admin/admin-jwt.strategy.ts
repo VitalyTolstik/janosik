@@ -1,9 +1,15 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
+import type { Request } from "express";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
 import { ADMIN_JWT_AUDIENCE, ADMIN_TOKEN_TYPE } from "./admin.types";
+import { isIpAllowed } from "./security.service";
 import type { AdminPrincipal } from "./admin.types";
 
 interface AdminTokenPayload {
@@ -16,6 +22,10 @@ interface AdminTokenPayload {
  * mean a regular user token (signed with `janosik-user`) is rejected here
  * before any database work, and this strategy's tokens are equally useless
  * on user routes.
+ *
+ * The master's IP allowlist (TASK-65) is enforced here on *every* request,
+ * not only at sign-in: a token lifted from an allowed network must not keep
+ * working from anywhere else for the rest of its lifetime.
  */
 @Injectable()
 export class AdminJwtStrategy extends PassportStrategy(Strategy, "admin-jwt") {
@@ -25,10 +35,14 @@ export class AdminJwtStrategy extends PassportStrategy(Strategy, "admin-jwt") {
       ignoreExpiration: false,
       secretOrKey: env.JWT_SECRET,
       audience: ADMIN_JWT_AUDIENCE,
+      passReqToCallback: true,
     });
   }
 
-  async validate(payload: AdminTokenPayload): Promise<AdminPrincipal> {
+  async validate(
+    req: Request,
+    payload: AdminTokenPayload,
+  ): Promise<AdminPrincipal> {
     if (payload.typ !== ADMIN_TOKEN_TYPE) {
       throw new UnauthorizedException();
     }
@@ -37,6 +51,9 @@ export class AdminJwtStrategy extends PassportStrategy(Strategy, "admin-jwt") {
     });
     if (!admin || admin.disabledAt !== null) {
       throw new UnauthorizedException();
+    }
+    if (!isIpAllowed(admin.ipAllowlist, req.ip ?? null)) {
+      throw new ForbiddenException("Access from this IP is not allowed");
     }
     return {
       id: admin.id,

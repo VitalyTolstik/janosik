@@ -31,6 +31,13 @@ import { renderBoardPng } from "./og-image";
 interface SnapshotPayload {
   envelope: BoardEnvelope;
   members: PublicBoardMemberDto[];
+  /**
+   * Capture time (Unix ms). Comments and attachments are served live from
+   * their tables, so a snapshot filters them to `createdAt <= takenAt` —
+   * otherwise a "frozen" link would keep leaking every later discussion.
+   * Absent on snapshots captured before this field: `share.createdAt`.
+   */
+  takenAt?: number;
 }
 
 /**
@@ -224,7 +231,7 @@ export class ShareService {
       return {
         mode: "snapshot",
         title: share.title,
-        takenAt: share.createdAt.getTime(),
+        takenAt: payload.takenAt ?? share.createdAt.getTime(),
         board: payload.envelope.boards[0],
         seq: share.snapshotVersion ?? null,
         members: payload.members,
@@ -273,7 +280,12 @@ export class ShareService {
       throw new NotFoundException("Not found");
     }
     await this.assertCardOnBoard(share, cardId);
-    return this.comments.list(cardId, cursor, limit);
+    return this.comments.list(
+      cardId,
+      cursor,
+      limit,
+      this.snapshotCutoff(share),
+    );
   }
 
   /** Attachment metadata for a card on the shared board, when exposed. */
@@ -285,7 +297,7 @@ export class ShareService {
       throw new NotFoundException("Not found");
     }
     await this.assertCardOnBoard(share, cardId);
-    return this.attachments.list(cardId);
+    return this.attachments.list(cardId, this.snapshotCutoff(share));
   }
 
   /** A blob for the public attachment route, when the share exposes blobs. */
@@ -298,6 +310,10 @@ export class ShareService {
     }
     const { meta, storedName } = await this.attachments.content(attachmentId);
     if (!(await this.cardOnBoard(share, meta.cardId))) {
+      throw new NotFoundException("Not found");
+    }
+    const cutoff = this.snapshotCutoff(share);
+    if (cutoff !== undefined && meta.createdAt > cutoff.getTime()) {
       throw new NotFoundException("Not found");
     }
     return { meta, storedName };
@@ -344,9 +360,24 @@ export class ShareService {
     }
     const envelope = JSON.parse(serializeExport([board])) as BoardEnvelope;
     return {
-      payload: { envelope, members: await this.publicMembers(boardId) },
+      payload: {
+        envelope,
+        members: await this.publicMembers(boardId),
+        takenAt: Date.now(),
+      },
       version: seq,
     };
+  }
+
+  /** For a snapshot share: newest `createdAt` a comment/attachment may have. */
+  private snapshotCutoff(share: ShareRow): Date | undefined {
+    if (share.mode !== "snapshot") return undefined;
+    const raw = share.snapshot as unknown as SnapshotPayload | null;
+    const takenAt =
+      raw !== null && typeof raw === "object" && typeof raw.takenAt === "number"
+        ? raw.takenAt
+        : share.createdAt.getTime();
+    return new Date(takenAt);
   }
 
   private parseSnapshot(share: ShareRow): SnapshotPayload {

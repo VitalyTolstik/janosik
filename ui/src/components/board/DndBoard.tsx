@@ -63,9 +63,20 @@ type ColumnDraft = {
 
 type Draft = CardDraft | ColumnDraft;
 
+/**
+ * Keyboard drag starts on Space only: dnd-kit's default also starts it on
+ * Enter, which made Enter on a focused card lift it instead of opening it
+ * (a11y). Enter now opens the card (see `SortableCard`); Space picks it up,
+ * arrows move it, Space/Enter drops and Escape cancels — unchanged.
+ */
 const KEYBOARD_SENSOR_OPTIONS = {
   coordinateGetter: sortableKeyboardCoordinates,
-} as const;
+  keyboardCodes: {
+    start: ["Space"],
+    cancel: ["Escape"],
+    end: ["Space", "Enter", "Tab"],
+  },
+};
 
 const MOUSE_SENSOR_OPTIONS = {
   activationConstraint: { distance: 5 },

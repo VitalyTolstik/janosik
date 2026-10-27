@@ -252,6 +252,10 @@ describe("presence bridge", () => {
       onMembershipChange: vi.fn(),
       onAccessRevoked: vi.fn(),
       onActivity: vi.fn(),
+      isOwnCommand: () => false,
+      refetch: vi.fn(async () => "applied" as const),
+      getSyncedAt: () => undefined,
+      markSynced: vi.fn(),
     };
   }
 
@@ -405,6 +409,149 @@ describe("presence bridge", () => {
     // Activity is not a command: no reducer apply, no baseline movement.
     expect(bridgeHost.apply).not.toHaveBeenCalled();
     expect(bridgeHost.setBaseline).not.toHaveBeenCalled();
+    bridge.dispose();
+  });
+});
+
+describe("createRealtimeBridge own-echo and resync (U-1, U-7)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function command(
+    seq: number,
+    commandId: string | undefined,
+    actorId = "me",
+  ): CommandSseEvent {
+    return {
+      type: "command",
+      seq,
+      action: {
+        type: "RENAME_BOARD",
+        title: `t${seq}`,
+        at: seq,
+        boardId: "b-1",
+      },
+      actorId,
+      ...(commandId === undefined ? {} : { commandId }),
+      touches: ["board:b-1"],
+    };
+  }
+
+  function serve(events: BoardSseEvent[]) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes("/presence")) {
+          return new Response(null, { status: 204 });
+        }
+        const encoder = new TextEncoder();
+        // Stays open: the frames land once, no reconnect replays them.
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (const event of events) {
+              controller.enqueue(encoder.encode(frame(event)));
+            }
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }),
+    );
+  }
+
+  function makeHost(sent: string[] = []) {
+    const baseline = new Map<string, number>();
+    const host: RealtimeHost = {
+      getActiveBoardId: () => "b-1",
+      getBaseline: (id) => baseline.get(id) ?? 0,
+      setBaseline: (id, seq) =>
+        baseline.set(id, Math.max(baseline.get(id) ?? 0, seq)),
+      apply: vi.fn(),
+      markForeign: vi.fn(),
+      setPresence: vi.fn(),
+      flagForeign: vi.fn(),
+      isBusy: () => false,
+      getUserId: () => "me",
+      onMembershipChange: vi.fn(),
+      onAccessRevoked: vi.fn(),
+      onActivity: vi.fn(),
+      isOwnCommand: (_board, id) => sent.includes(id),
+      refetch: vi.fn(async () => {
+        baseline.set("b-1", 10);
+        return "applied" as const;
+      }),
+      getSyncedAt: () => undefined,
+      markSynced: vi.fn(),
+    };
+    return { host, baseline };
+  }
+
+  it("tells own echoes from same-actor commands by commandId", async () => {
+    serve([command(1, "agent-key"), command(2, "mine")]);
+    const { host, baseline } = makeHost(["mine"]);
+    const bridge = createRealtimeBridge(host);
+    bridge.watch("b-1");
+
+    await vi.waitFor(() => expect(baseline.get("b-1")).toBe(2));
+    // The agent on the user's own key is applied; our echo is not.
+    expect(host.apply).toHaveBeenCalledTimes(1);
+    expect(host.apply).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "t1", actorId: "me" }),
+    );
+    bridge.dispose();
+  });
+
+  it("re-reads the board instead of applying a foreign event ordered before our settled command", async () => {
+    serve([command(3, "agent-key")]);
+    const { host } = makeHost(["mine"]);
+    const bridge = createRealtimeBridge(host);
+    // Our own command was acknowledged as seq 5 before its stream caught up.
+    bridge.settled("b-1", 5);
+    bridge.watch("b-1");
+
+    await vi.waitFor(() => expect(host.refetch).toHaveBeenCalledWith("b-1"));
+    // Covered by the snapshot (seq 10): never applied out of order.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(host.apply).not.toHaveBeenCalled();
+    bridge.dispose();
+  });
+
+  it("refetches the active board on a resync frame", async () => {
+    serve([{ type: "resync" }]);
+    const { host } = makeHost();
+    const bridge = createRealtimeBridge(host);
+    bridge.watch("b-1");
+    await vi.waitFor(() => expect(host.refetch).toHaveBeenCalledWith("b-1"));
+    bridge.dispose();
+  });
+
+  it("falls back to the actor/seq heuristic when the server sends no commandId", async () => {
+    serve([command(4, undefined)]);
+    const { host, baseline } = makeHost();
+    const bridge = createRealtimeBridge(host);
+    bridge.settled("b-1", 4);
+    bridge.watch("b-1");
+    await vi.waitFor(() => expect(baseline.get("b-1")).toBe(4));
+    expect(host.apply).not.toHaveBeenCalled();
+    bridge.dispose();
+  });
+
+  it("reads a long-idle board as a snapshot before opening its stream (U-9)", async () => {
+    serve([]);
+    const { host } = makeHost();
+    host.getSyncedAt = () => Date.now() - 60 * 60_000;
+    const bridge = createRealtimeBridge(host);
+    bridge.watch("b-1");
+    await vi.waitFor(() =>
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+        expect.stringContaining("/boards/b-1/events?since=10"),
+        expect.anything(),
+      ),
+    );
+    expect(host.refetch).toHaveBeenCalledTimes(1);
     bridge.dispose();
   });
 });

@@ -6,6 +6,7 @@ import type {
   CardPriority,
   Checklist,
   ChecklistItem,
+  Label,
   LabelColor,
 } from "../types/kanban";
 import {
@@ -263,7 +264,7 @@ function normalizeCard(card: LegacyCard): Card {
     activity,
     ...rest
   } = card;
-  const title = clampText(rest.title, LIMITS.cardTitle);
+  const title = toText(rest.title, LIMITS.cardTitle);
   const description =
     typeof rest.description === "string"
       ? clampText(rest.description, LIMITS.description)
@@ -327,26 +328,46 @@ function dedupeBoardLinks(cards: Record<string, Card>): Record<string, Card> {
   return changed ? next : cards;
 }
 
+/**
+ * A text field as a string: a stored non-string (hand-edited data) becomes
+ * empty instead of crashing `clampText` with a raw TypeError.
+ */
+function toText(value: unknown, limit: number): string {
+  return typeof value === "string" ? clampText(value, limit) : "";
+}
+
+/** A stored label must at least be an object with a string id. */
+function isLabelRecord(value: unknown): value is Label {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as Partial<Label>).id === "string"
+  );
+}
+
 function normalizeBoard(board: Board): Board {
   return {
     ...board,
-    title: clampText(board.title, LIMITS.boardTitle),
+    title: toText(board.title, LIMITS.boardTitle),
     columns: board.columns.map((column) => {
       // Destructure so a stored garbage limit never survives `...column`.
       const { wipLimit, ...rest } = column;
       const clean = toWipLimit(wipLimit);
       return {
         ...rest,
-        title: clampText(column.title, LIMITS.columnTitle),
+        title: toText(column.title, LIMITS.columnTitle),
         // Keep the "omit when unset" invariant (no `wipLimit: undefined`).
         ...(clean !== undefined ? { wipLimit: clean } : {}),
       };
     }),
-    labels: board.labels.slice(0, LIMITS.labelsPerBoard).map((label) => ({
-      ...label,
-      name: clampText(label.name, LIMITS.labelName),
-      color: toLabelColor(label.color),
-    })),
+    labels: board.labels
+      .filter(isLabelRecord)
+      .slice(0, LIMITS.labelsPerBoard)
+      .map((label) => ({
+        ...label,
+        name: toText(label.name, LIMITS.labelName),
+        color: toLabelColor(label.color),
+      })),
     cards: dedupeBoardLinks(
       Object.fromEntries(
         Object.entries(board.cards)
@@ -362,17 +383,20 @@ function normalizeBoard(board: Board): Board {
 /** Normalize every board in the state array (no-op when already current). */
 export function normalizeBoards(state: BoardState): BoardState {
   return state.map((board) => {
+    // `typeof` first: stored data is not trusted to have the declared
+    // types, and a property read off `null` must not escape as a TypeError.
     const needsFix =
-      board.title.length > LIMITS.boardTitle ||
+      !isTextCurrent(board.title, LIMITS.boardTitle) ||
       board.columns.some(
         (column) =>
-          column.title.length > LIMITS.columnTitle ||
+          !isTextCurrent(column.title, LIMITS.columnTitle) ||
           !isWipLimitCurrent(column.wipLimit),
       ) ||
       board.labels.length > LIMITS.labelsPerBoard ||
       board.labels.some(
         (label) =>
-          label.name.length > LIMITS.labelName ||
+          !isLabelRecord(label) ||
+          !isTextCurrent(label.name, LIMITS.labelName) ||
           !isLabelColorCurrent(label.color),
       ) ||
       !areLinksCurrent(board.cards) ||
@@ -381,7 +405,7 @@ export function normalizeBoards(state: BoardState): BoardState {
         // drop it instead of reading `.title` off a primitive (B-10).
         if (!isCardRecord(card)) return true;
         const legacy = card as LegacyCard;
-        if (card.title.length > LIMITS.cardTitle) return true;
+        if (!isTextCurrent(card.title, LIMITS.cardTitle)) return true;
         if ((card.description ?? "").length > LIMITS.description) return true;
         if (!Array.isArray(legacy.labelIds)) return true;
         if (!isChecklistsCurrent(legacy.checklists)) return true;
@@ -391,6 +415,11 @@ export function normalizeBoards(state: BoardState): BoardState {
       });
     return needsFix ? normalizeBoard(board) : board;
   });
+}
+
+/** True when a stored text field is a string within its bound. */
+function isTextCurrent(value: unknown, limit: number): boolean {
+  return typeof value === "string" && value.length <= limit;
 }
 
 /**

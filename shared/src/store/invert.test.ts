@@ -458,7 +458,12 @@ const PLANS: Record<BoardAction["type"], Plan> = {
       index: 1,
       at: AT,
     },
-    { type: "RESTORE_CARD", card: card("c-restored", "Back"), at: AT },
+    // Without a column only an archived card comes back (S-5).
+    {
+      type: "RESTORE_CARD",
+      card: card("c-restored", "Back", { archivedAt: 150 }),
+      at: AT,
+    },
   ],
   RESTORE_COLUMN: [
     {
@@ -699,4 +704,44 @@ describe("invert — undoing a whole session", () => {
       expect(persisted(board)).toEqual(persisted(start));
     });
   }
+});
+
+/**
+ * S-6: the inverse of a move reads the card's old position off the board it
+ * applied to. A client's `fromIndex` can be stale (or simply wrong); an
+ * undo built on it put the card back in the wrong place.
+ */
+describe("invert — MOVE_CARD trusts the board, not the command", () => {
+  it("undoes a move with a stale fromIndex back to the real position", () => {
+    const before = fixture();
+    // c-2 sits at index 1 of col-a; the command claims index 0.
+    const move: BoardAction = {
+      type: "MOVE_CARD",
+      cardId: "c-2",
+      fromColumnId: "col-a",
+      fromIndex: 0,
+      toColumnId: "col-c",
+      toIndex: 0,
+      at: AT,
+    };
+    const after = reduce(before, move);
+    const inverse = invert(before, move);
+    expect(inverse).toMatchObject({ toColumnId: "col-a", toIndex: 1 });
+    expect(persisted(reduce(after, inverse!))).toEqual(persisted(before));
+  });
+
+  it("has no inverse for a move the reducer ignores", () => {
+    const before = fixture();
+    const stale: BoardAction = {
+      type: "MOVE_CARD",
+      cardId: "c-2",
+      fromColumnId: "col-b",
+      fromIndex: 0,
+      toColumnId: "col-c",
+      toIndex: 0,
+      at: AT,
+    };
+    expect(reduce(before, stale)).toBe(before);
+    expect(invert(before, stale)).toBeNull();
+  });
 });

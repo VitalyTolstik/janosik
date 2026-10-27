@@ -40,6 +40,11 @@ export interface MaintenanceRunResult {
   detail?: string;
 }
 
+/** Rows per purge transaction (B-7). */
+export const PURGE_CHUNK = 500;
+/** Safety bound on chunks per table per run (500 × 200 = 100k rows). */
+const PURGE_MAX_CHUNKS = 200;
+
 @Injectable()
 export class MaintenanceService {
   private readonly logger = new Logger(MaintenanceService.name);
@@ -98,52 +103,175 @@ export class MaintenanceService {
     return (await this.ops.retentionDays()) ?? env.PURGE_AFTER_DAYS;
   }
 
-  /** Hard-deletes soft-deleted rows past the retention window (TASK-38a/63). */
+  /**
+   * Hard-deletes soft-deleted rows past the retention window (TASK-38a/63).
+   *
+   * B-7: chunked. One unbounded transaction over every stale row of every
+   * table held locks (and a connection) for as long as the purge took — on a
+   * large instance, minutes. Each chunk is now its own short transaction of
+   * at most `PURGE_CHUNK` ids; a crash mid-run leaves only fully-purged
+   * chunks behind and the next run picks up the rest. Parents go last:
+   * children first, then cards (with everything hanging off them), then the
+   * columns/labels that no longer hold any card.
+   */
   async purgeSoftDeleted(): Promise<number> {
     const days = await this.retentionDays();
     const cutoff = new Date(Date.now() - days * 86_400_000);
     const stale = { deletedAt: { not: null, lte: cutoff } } as const;
-    const blobs = await this.prisma.attachment.findMany({
-      where: stale,
-      select: { storedName: true, thumbnailName: true, posterName: true },
-    });
-    const affected = await this.prisma.$transaction(async (tx) => {
-      let count = 0;
-      count += (await tx.attachment.deleteMany({ where: stale })).count;
-      count += (await tx.comment.deleteMany({ where: stale })).count;
-      count += (await tx.checklistItem.deleteMany({ where: stale })).count;
-      count += (await tx.checklist.deleteMany({ where: stale })).count;
-      count += (await tx.cardLink.deleteMany({ where: stale })).count;
-      count += (
-        await tx.column.deleteMany({
-          where: { ...stale, cards: { none: {} } },
-        })
-      ).count;
-      count += (
-        await tx.label.deleteMany({
-          where: { ...stale, cards: { none: {} } },
-        })
-      ).count;
-      const cards = await tx.card.findMany({
-        where: stale,
-        select: { id: true },
-      });
-      for (const card of cards) {
-        await tx.checklistItem.deleteMany({
-          where: { checklist: { cardId: card.id } },
+    let count = 0;
+
+    count += await this.purgeChunks(
+      (take) =>
+        this.prisma.attachment.findMany({
+          where: stale,
+          select: {
+            id: true,
+            storedName: true,
+            thumbnailName: true,
+            posterName: true,
+          },
+          take,
+        }),
+      async (rows) => {
+        const removed = await this.prisma.attachment.deleteMany({
+          where: { id: { in: rows.map((row) => row.id) } },
         });
-        await tx.checklist.deleteMany({ where: { cardId: card.id } });
-        await tx.cardLabel.deleteMany({ where: { cardId: card.id } });
-        await tx.cardLink.deleteMany({
-          where: { OR: [{ fromCardId: card.id }, { toCardId: card.id }] },
+        await this.removeBlobs(rows);
+        return removed.count;
+      },
+    );
+    count += await this.purgeChunks(
+      (take) =>
+        this.prisma.comment.findMany({
+          where: stale,
+          select: { id: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.comment.deleteMany({
+            where: { id: { in: rows.map((row) => row.id) } },
+          })
+        ).count,
+    );
+    count += await this.purgeChunks(
+      (take) =>
+        this.prisma.checklistItem.findMany({
+          where: stale,
+          select: { id: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.checklistItem.deleteMany({
+            where: { id: { in: rows.map((row) => row.id) } },
+          })
+        ).count,
+    );
+    count += await this.purgeChunks(
+      (take) =>
+        this.prisma.checklist.findMany({
+          where: stale,
+          select: { id: true },
+          take,
+        }),
+      async (rows) => {
+        const ids = rows.map((row) => row.id);
+        const [, removed] = await this.prisma.$transaction([
+          this.prisma.checklistItem.deleteMany({
+            where: { checklistId: { in: ids } },
+          }),
+          this.prisma.checklist.deleteMany({ where: { id: { in: ids } } }),
+        ]);
+        return removed.count;
+      },
+    );
+    count += await this.purgeChunks(
+      (take) =>
+        this.prisma.cardLink.findMany({
+          where: stale,
+          select: { id: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.cardLink.deleteMany({
+            where: { id: { in: rows.map((row) => row.id) } },
+          })
+        ).count,
+    );
+    // Cards with everything that hangs off them, one chunk per transaction.
+    count += await this.purgeChunks(
+      (take) =>
+        this.prisma.card.findMany({ where: stale, select: { id: true }, take }),
+      async (rows) => {
+        const ids = rows.map((row) => row.id);
+        const blobs = await this.prisma.attachment.findMany({
+          where: { cardId: { in: ids } },
+          select: { storedName: true, thumbnailName: true, posterName: true },
         });
-        await tx.comment.deleteMany({ where: { cardId: card.id } });
-        await tx.attachment.deleteMany({ where: { cardId: card.id } });
-        await tx.card.delete({ where: { id: card.id } });
-        count += 1;
-      }
-      return count;
-    });
+        const results = await this.prisma.$transaction([
+          this.prisma.checklistItem.deleteMany({
+            where: { checklist: { cardId: { in: ids } } },
+          }),
+          this.prisma.checklist.deleteMany({ where: { cardId: { in: ids } } }),
+          this.prisma.cardLabel.deleteMany({ where: { cardId: { in: ids } } }),
+          this.prisma.cardLink.deleteMany({
+            where: {
+              OR: [{ fromCardId: { in: ids } }, { toCardId: { in: ids } }],
+            },
+          }),
+          this.prisma.comment.deleteMany({ where: { cardId: { in: ids } } }),
+          this.prisma.attachment.deleteMany({ where: { cardId: { in: ids } } }),
+          this.prisma.card.deleteMany({ where: { id: { in: ids } } }),
+        ]);
+        // A purged card's attachment blobs go with it (they were never
+        // soft-deleted themselves, so the attachment pass above missed them).
+        await this.removeBlobs(blobs);
+        return results[results.length - 1].count;
+      },
+    );
+    // Containers last, once they no longer hold any card.
+    count += (
+      await this.prisma.column.deleteMany({
+        where: { ...stale, cards: { none: {} } },
+      })
+    ).count;
+    count += (
+      await this.prisma.label.deleteMany({
+        where: { ...stale, cards: { none: {} } },
+      })
+    ).count;
+    return count;
+  }
+
+  /**
+   * Drain `find` → `purge` in chunks of `PURGE_CHUNK` until a short page.
+   * Bounded by `PURGE_MAX_CHUNKS` so one run can never spin forever (a row
+   * that refuses to go — say an FK the purge does not know about — would
+   * otherwise be found again and again).
+   */
+  private async purgeChunks<T>(
+    find: (take: number) => Promise<T[]>,
+    purge: (rows: T[]) => Promise<number>,
+  ): Promise<number> {
+    let total = 0;
+    for (let chunk = 0; chunk < PURGE_MAX_CHUNKS; chunk += 1) {
+      const rows = await find(PURGE_CHUNK);
+      if (rows.length === 0) break;
+      total += await purge(rows);
+      if (rows.length < PURGE_CHUNK) break;
+    }
+    return total;
+  }
+
+  private async removeBlobs(
+    blobs: Array<{
+      storedName: string;
+      thumbnailName: string | null;
+      posterName: string | null;
+    }>,
+  ): Promise<void> {
     for (const blob of blobs) {
       for (const name of [
         blob.storedName,
@@ -157,7 +285,6 @@ export class MaintenanceService {
         }
       }
     }
-    return affected;
   }
 
   /** Expired or consumed verification / email-change codes. */

@@ -62,12 +62,100 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the keyboard-shortcut sheet and links to the documentation in the reader's
   language (`/docs/`, `/ru/docs/`).
 
+- **MCP server (`@janosik/mcp`).** AI agents can drive a board through a
+  personal API key, from any MCP client (`npx @janosik/mcp`). Every write goes
+  through the command log, so changes stay undoable and stream live.
+  - Tools come in groups. Boards, columns, cards, labels, checklists, card
+    links, comments, activity and attachments are on by default; members,
+    invitations, share links and the account are opt-in
+    (`JANOSIK_MCP_TOOLSETS`), and `JANOSIK_MCP_READONLY=1` registers only
+    tools that change nothing. With every group enabled there are 68 tools.
+  - A write that changed nothing (an unknown id) is reported as an error, not
+    as success. Tools that compute a write from a read send it with `ifMatch`
+    and retry when another agent got there first; `janosik_update_card`
+    offers compare-and-set through `expectedDescription`. Network failures
+    are retried with the same idempotency key, and every request has a
+    timeout.
+  - API keys are managed only in the app: an API key can no longer create,
+    list or revoke keys, so an agent cannot mint itself a key that outlives
+    its own.
+  - Ids are validated and percent-encoded, so an id can never re-target a
+    request to another route.
+  - Attachment upload/download and export to a file are opt-in
+    (`JANOSIK_MCP_ALLOW_FS=1`) and can be confined with
+    `JANOSIK_MCP_FS_ROOT`; symlinks out of the root are refused and existing
+    files are never overwritten.
+
 ### Fixed
 
 - **Share-dialog link lifetime.** The "Expires in" picker was a native
   `<select>` that rendered as a black browser control in the dark theme; it is
   now a themed popover with the project's check-mark radio rows, matching the
   role and expiry pickers elsewhere.
+- **Board integrity under concurrent writers.**
+  - A stale `MOVE_CARD` (wrong source column, archived card) could leave a card
+    in two columns on every watching client; it is now a no-op.
+  - `DUPLICATE_COLUMN` and the `RESTORE_*` undo commands can no longer reuse
+    an id that is already on the board, which could overwrite another card.
+  - Collection caps hold even for undo commands.
+  - Undoing a card delete was refused by the server because the validator
+    checked a non-existent activity field; it works again.
+  - Undo of a move returns the card to its real former position.
+  - Board import validates types, limits and integrity, and names the bad
+    field instead of failing with a type error.
+- **Realtime.**
+  - A tab no longer drops changes made by the same account elsewhere, such as
+    an MCP agent on your API key: echoes are matched by `commandId`, not by
+    author.
+  - A focus refetch can no longer overwrite newer changes.
+  - A failed command refetches the board instead of restoring a stale
+    snapshot.
+  - A truncated catch-up triggers a full resync instead of silently
+    diverging, and multi-node event streams re-read the log instead of
+    dropping out-of-order events.
+- **Edits survive leaving the page.** The description draft and queued edits
+  are sent on page hide and before sign-out.
+- **Command performance.** Card and column positions are written in one
+  batched statement: a move between two 100-card columns went from 231 SQL
+  statements and ~77 ms to 33 statements and ~20 ms (median, test database).
+  New `Command` indexes back the admin metrics and the retention sweep.
+- **`deploy/nginx.conf`.** App assets and the SPA fallback returned `404`, the
+  1 MB default body limit refused imports and attachments, and share pages
+  were not marked `noindex`. All three are fixed, and security headers were
+  added.
+- **Docs links.** 86 relative links in the documentation pointed at
+  non-existent pages; a test now checks every internal link.
+
+### Security
+
+- **API keys cannot manage credentials.** Listing, creating and revoking keys,
+  changing the password and changing the email need a browser session
+  (`403 pat_forbidden` for a key). Changing the password revokes every key.
+  Keys created through the API without an expiry last 90 days.
+- **OAuth pre-account takeover.** Signing in with a provider into an existing
+  unverified account now removes its password and revokes its sessions and
+  keys before linking. Unverified accounts cannot accept invitations.
+- **No account enumeration through invites.** Every address answers `201`.
+- **Login backoff** per account, and rate limits per user or key rather than
+  per IP (Redis-backed when configured).
+- **Forged command clocks.** An `at` more than five minutes off is replaced
+  with server time, so a client can no longer backdate a delete past the
+  restore window. Unknown action fields are dropped, and a reused `commandId`
+  with a different action answers `409`.
+- **Streams re-check access** on every keep-alive and close when membership,
+  the API key or the share is gone.
+- **Impersonation links** are accepted only on `/impersonate` and only when
+  the server confirms the token is a support session.
+- **Admin.** The IP allowlist applies to every request, not just sign-in, and
+  only an owner can delete a user.
+- **Hardening.**
+  - The CSP no longer allows inline scripts (hashes instead).
+  - JSON bodies are capped at 256 KB outside import and commands.
+  - Snapshot shares hide comments and attachments added after the snapshot.
+  - The Docker image runs as an unprivileged user.
+  - The container refuses the example database password.
+  - CI publishes an image only after the tests pass, pins actions by commit,
+    and runs CodeQL and Dependabot.
 
 ## [0.1.0] - 2026-10-26
 

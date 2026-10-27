@@ -511,3 +511,28 @@ describe("normalizeBoards — card links", () => {
     expect(normalizeBoards([board])[0]).toBe(board);
   });
 });
+
+/**
+ * S-7: the lenient mode stays lenient on the localStorage path — stored
+ * data with the wrong types is repaired, never thrown out as a TypeError
+ * (which would take the whole board list down on load).
+ */
+describe("normalizeBoards — wrong types do not crash", () => {
+  it("drops a null label and blanks non-string titles", () => {
+    const board = {
+      id: "b",
+      title: 7,
+      columns: [{ id: "col", cardIds: ["c1"], createdAt: 1 }],
+      cards: { c1: card({ labelIds: [], title: null }) },
+      labels: [null, { id: "l", name: 3, color: "red" }],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+
+    const [next] = normalizeBoards([board]);
+    expect(next.title).toBe("");
+    expect(next.columns[0].title).toBe("");
+    expect(next.cards["c1"].title).toBe("");
+    expect(next.labels).toEqual([{ id: "l", name: "", color: "red" }]);
+  });
+});

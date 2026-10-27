@@ -27,6 +27,10 @@ removed.
 
 An admin uses the `Invite by email` form: type an address, pick a `Role` and
 submit with `Invite`. The invitation is pending until the invitee accepts it.
+The confirmation reads `If <email> has a Janosik account, they'll see the
+invitation` whatever the address: the app never reveals who has an account.
+An address without an account receives nothing, so invite the person again
+once they have signed up.
 For a `Viewer`, the admin can also set an `Access until` date, after which the
 access expires.
 
@@ -41,6 +45,7 @@ expiry, and remove a member (behind a confirmation). A viewer's row shows
 The bell in the header lists your pending board invitations. Each row shows
 the board, who invited you, the role and a viewer's expiry. Use `Accept` to
 join the board — it then appears in your switcher — or `Decline` to refuse.
+Invitations appear only once you have confirmed your email address.
 
 ## Realtime updates and presence
 
@@ -54,7 +59,9 @@ and the presence stack in the header shows who is on the board now.
 When someone else changes a card, that card briefly wears a ring in the
 author's colour, so you can see what moved. Your own changes stay quiet. If
 the connection drops, the app reconnects and catches up from the last event it
-saw.
+saw. If it missed too much to catch up event by event, it reloads the board
+instead. When your access to the board ends (you are removed, a viewer's
+access expires), the live connection closes.
 
 In server mode, edits are applied at once and sent to the server. If the
 server refuses a change, the app rolls it back and shows a message. If the
@@ -71,7 +78,9 @@ Choose a mode:
 
 - `Live` follows the board as it changes.
 - `Snapshot` is a frozen copy captured now, which only you can refresh. A
-  snapshot survives the board's deletion.
+  snapshot survives the board's deletion. Its comments and attachments are
+  frozen too: comments and files added after the capture do not appear until
+  you refresh it.
 
 Each link can include `Comments` and `Attachments`, and can be given an
 expiry: `Never`, 1 hour, 24 hours, one week or about a month. Optionally give
@@ -79,7 +88,8 @@ the link a label for your own list.
 
 `Create link` copies the new link to your clipboard. The active-links list
 lets you `Copy link`, copy an `Embed code` (an `<iframe>` snippet), `Refresh`
-a snapshot, or `Revoke` a link. A revoked or expired link stops working.
+a snapshot, or `Revoke` a link. A revoked or expired link stops working, and
+a visitor already watching a live link is disconnected.
 
 ![A live share link opened without an account: the board read-only, marked Live · read-only.](/screens/public-share.png)
 

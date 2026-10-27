@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { appPath } from "@/utils/app-path";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
+import { useAdminAuth } from "./AdminAuthContext";
 import {
   ChangeUserEmailDialog,
   DeleteUserDialog,
@@ -112,6 +113,8 @@ export function UserDetailPage() {
   const toast = useToast();
   const { lang } = useI18n();
   const hour12 = useHour12();
+  // Deleting an account is owner-only on the server (403 for an OPERATOR).
+  const isOwner = useAdminAuth().admin?.role === "OWNER";
   const [detail, setDetail] = useState<AdminUserDetailDto | null>(null);
   const [error, setError] = useState(false);
   const [tab, setTab] = useState<TabKey>("memberships");
@@ -361,14 +364,16 @@ export function UserDetailPage() {
                   <Download className="h-3.5 w-3.5" aria-hidden />
                   {t("admin.userDetail.action.export")}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-danger focus:text-danger"
-                  data-testid="admin-user-delete"
-                  onSelect={() => setDeleteDialog(true)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                  {t("admin.userDetail.action.deleteUser")}
-                </DropdownMenuItem>
+                {isOwner ? (
+                  <DropdownMenuItem
+                    className="text-danger focus:text-danger"
+                    data-testid="admin-user-delete"
+                    onSelect={() => setDeleteDialog(true)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                    {t("admin.userDetail.action.deleteUser")}
+                  </DropdownMenuItem>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           }

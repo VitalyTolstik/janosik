@@ -1,9 +1,16 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { BullModule } from "@nestjs/bullmq";
-import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import {
+  ThrottlerGuard,
+  ThrottlerModule,
+  ThrottlerStorageService,
+} from "@nestjs/throttler";
 import { env } from "@/config/env";
 import { throttleLimit } from "@/config/throttle";
+import Redis from "ioredis";
+import { RedisThrottlerStorage } from "@/common/redis-throttler-storage";
+import { principalTracker } from "@/common/throttle-tracker";
 import { PrismaModule } from "@/common/prisma/prisma.module";
 import { BoardWriteModule } from "@/common/board-write.module";
 import { TrafficModule } from "@/common/traffic.module";
@@ -32,10 +39,26 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
  */
 @Module({
   imports: [
+    // B-8: buckets are per principal (user / known PAT, else IP — see
+    // `principalTracker`) and shared across nodes through Redis when one is
+    // configured.
     ThrottlerModule.forRoot({
       throttlers: [
         { name: "default", ttl: 60_000, limit: () => throttleLimit() },
       ],
+      getTracker: (req) => principalTracker(req),
+      ...(env.REDIS_URL.trim().length > 0
+        ? {
+            storage: new RedisThrottlerStorage(
+              new Redis(env.REDIS_URL, {
+                maxRetriesPerRequest: 1,
+                commandTimeout: 500,
+                lazyConnect: true,
+              }),
+              new ThrottlerStorageService(),
+            ),
+          }
+        : {}),
     }),
     PrismaModule,
     BoardWriteModule,

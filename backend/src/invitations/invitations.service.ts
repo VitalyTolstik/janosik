@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -17,6 +18,11 @@ import { RealtimeService } from "@/realtime/realtime.service";
  * stamps `acceptedAt` — from then on the row is ordinary membership;
  * declining deletes the row. Both write an `Activity` event so the board
  * feed keeps the story complete.
+ *
+ * B-1: invitations are addressed to a *mailbox*. Until the account has
+ * proven it owns that mailbox (`emailVerifiedAt`), the feed is empty and an
+ * accept is refused — a squatter who registered someone else's address must
+ * not see (or take) the boards that person is invited to.
  */
 @Injectable()
 export class InvitationsService {
@@ -28,6 +34,7 @@ export class InvitationsService {
 
   /** Pending, non-expired-board invitations of the caller, newest first. */
   async listForUser(userId: string): Promise<BoardInvitationDto[]> {
+    if (!(await this.isVerified(userId))) return [];
     const invitations = await this.prisma.boardMember.findMany({
       where: { userId, acceptedAt: null, board: { deletedAt: null } },
       include: {
@@ -50,6 +57,11 @@ export class InvitationsService {
 
   /** Accept a pending invitation — the board appears in `GET /boards`. */
   async accept(userId: string, invitationId: string): Promise<void> {
+    if (!(await this.isVerified(userId))) {
+      throw new ForbiddenException(
+        "Confirm your email address before accepting invitations",
+      );
+    }
     const invitation = await this.findPending(userId, invitationId);
     if (
       invitation.expiresAt !== null &&
@@ -98,6 +110,14 @@ export class InvitationsService {
         },
       });
     });
+  }
+
+  private async isVerified(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { emailVerifiedAt: true },
+    });
+    return user?.emailVerifiedAt != null;
   }
 
   private async findPending(userId: string, invitationId: string) {

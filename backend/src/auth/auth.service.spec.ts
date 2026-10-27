@@ -19,6 +19,7 @@ import {
 import type { EmailTemplateService } from "@/ops/email-template.service";
 import type { FeatureFlagsService } from "@/ops/feature-flags.service";
 import { AuthService, REFRESH_REUSE_GRACE_MS } from "./auth.service";
+import { LoginBackoffService } from "./login-backoff.service";
 
 const prismaMock = {
   user: {
@@ -31,6 +32,9 @@ const prismaMock = {
     findUnique: jest.fn(),
     updateMany: jest.fn(),
   },
+  apiToken: {
+    updateMany: jest.fn(),
+  },
   emailChangeCode: {
     findFirst: jest.fn(),
     create: jest.fn(),
@@ -41,6 +45,7 @@ const prismaMock = {
 } as unknown as PrismaService & {
   user: Record<"create" | "findUnique" | "update", jest.Mock>;
   refreshToken: Record<"create" | "findUnique" | "updateMany", jest.Mock>;
+  apiToken: Record<"updateMany", jest.Mock>;
   emailChangeCode: Record<
     "findFirst" | "create" | "update" | "deleteMany",
     jest.Mock
@@ -133,6 +138,7 @@ describe("AuthService", () => {
       mailQueueMock,
       emailTemplatesMock,
       flagsMock,
+      new LoginBackoffService(),
     );
     jwtMock.signAsync.mockResolvedValue("access-token");
     prismaMock.refreshToken.create.mockResolvedValue({});
@@ -468,6 +474,11 @@ describe("AuthService", () => {
         },
         data: { revokedAt: expect.any(Date) },
       });
+      // B-2: a password rotation also kills every personal API token.
+      expect(prismaMock.apiToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: "user-1", revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
     });
 
     it("rejects a wrong current password without writing", async () => {
@@ -488,9 +499,10 @@ describe("AuthService", () => {
       expect(error.message).toBe("Current password is incorrect");
       expect(prismaMock.user.update).not.toHaveBeenCalled();
       expect(prismaMock.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.apiToken.updateMany).not.toHaveBeenCalled();
     });
 
-    it("does not revoke anything when no caller cookie is present", async () => {
+    it("does not revoke sessions when no caller cookie is present", async () => {
       const passwordHash = await argon2.hash(current, {
         type: argon2.argon2id,
       });

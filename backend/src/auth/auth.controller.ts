@@ -18,6 +18,11 @@ import { pickLocale } from "@/mailer/mail.types";
 import { REFRESH_COOKIE } from "./auth.types";
 import type { AuthResult, AuthResponse, AuthUser } from "./auth.types";
 import { AuthService } from "./auth.service";
+import {
+  type AuthPrincipal,
+  CurrentPrincipal,
+  SessionOnlyGuard,
+} from "./auth-principal";
 import { CurrentUser } from "./current-user.decorator";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { ConfirmEmailChangeDto } from "./dto/confirm-email-change.dto";
@@ -100,15 +105,25 @@ export class AuthController {
     return this.auth.publicConfig();
   }
 
+  /**
+   * The caller's profile plus `impersonatedBy` (U-8): the master id from the
+   * access token's `imp` claim when this is an impersonation session, else
+   * `null` (ordinary sessions and PATs). The client verifies impersonation
+   * here, server-side, instead of decoding the JWT itself.
+   */
   @UseGuards(JwtAuthGuard)
   @Get("me")
-  me(@CurrentUser() user: AuthUser): AuthUser {
-    return user;
+  me(
+    @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+  ): AuthUser & { impersonatedBy: string | null } {
+    return { ...user, impersonatedBy: principal?.impersonatedBy ?? null };
   }
 
   // Lives under `/auth` on purpose: the refresh cookie is scoped to this
   // path, so the endpoint can tell the caller's session from the others.
-  @UseGuards(JwtAuthGuard)
+  // Session-only (B-2): a personal API token must never rotate the password.
+  @UseGuards(JwtAuthGuard, SessionOnlyGuard)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post("password")
   @HttpCode(HttpStatus.OK)
@@ -127,7 +142,7 @@ export class AuthController {
    * endpoint: 3 per hour per IP, with the per-user single-code policy
    * server-side on top.
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SessionOnlyGuard)
   @Throttle({ default: { limit: 3, ttl: 3_600_000 } })
   @Post("email/change/request")
   @HttpCode(HttpStatus.OK)
@@ -149,7 +164,7 @@ export class AuthController {
    * Lives under `/auth` so the refresh cookie identifies the caller's
    * session — like `POST /password`.
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SessionOnlyGuard)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post("email/change/confirm")
   @HttpCode(HttpStatus.OK)

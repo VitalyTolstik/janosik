@@ -75,11 +75,15 @@ const ROLE_KEYS = {
 
 type Translate = ReturnType<typeof useI18n>["t"];
 
-/** Maps an API failure onto one of the member-specific toast messages. */
+/**
+ * Maps an API failure onto one of the member-specific toast messages. An
+ * invite never answers "no such user" — the server does not reveal whether
+ * an account exists — so a `409` (already a member) is the only invite-
+ * specific refusal.
+ */
 function membershipError(error: unknown, t: Translate): string {
   if (error instanceof ApiError) {
     if (error.offline) return t("board.members.errors.offline");
-    if (error.status === 404) return t("board.members.errors.userNotFound");
     if (error.status === 409) return t("board.members.errors.alreadyMember");
     if (error.status === 403) return t("board.members.errors.forbidden");
   }
@@ -396,22 +400,25 @@ export function BoardMembersPanel({
     if (email.trim() === "") return;
     setInviting(true);
     try {
-      const invited = await api.inviteMember(boardId, {
-        email: email.trim(),
+      const address = email.trim();
+      await api.inviteMember(boardId, {
+        email: address,
         role,
         expiresAt:
           role === "VIEWER" && expiry !== null
             ? new Date(expiry).toISOString()
             : undefined,
       });
-      toast.success(
-        t("board.members.invite.success", { email: invited.email }),
-      );
+      // The answer is the same masked projection (`userId: ""`) for every
+      // address, so the toast cannot promise delivery — only that a
+      // Janosik account at that address will see the invitation.
+      toast.success(t("board.members.invite.success", { email: address }));
       setEmail("");
       setRole("MEMBER");
       setExpiry(null);
       // The invitation is pending until the invitee accepts — it must not
-      // show up as a member yet, so the list is refetched.
+      // show up as a member yet (and the masked answer is no member row),
+      // so the list is refetched.
       await load();
     } catch (error) {
       toast.error(membershipError(error, t));

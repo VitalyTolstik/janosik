@@ -139,6 +139,7 @@ export class CommentsService {
     cardId: string,
     cursorRaw?: string,
     limitRaw?: string,
+    createdUpTo?: Date,
   ): Promise<CommentPage> {
     const limit = parseLimit(limitRaw);
     const cursor = cursorRaw ? parseCursor(cursorRaw) : null;
@@ -146,6 +147,8 @@ export class CommentsService {
       where: {
         cardId,
         deletedAt: null,
+        // Snapshot shares freeze the conversation at capture time too.
+        ...(createdUpTo ? { createdAt: { lte: createdUpTo } } : {}),
         ...(cursor
           ? {
               OR: [

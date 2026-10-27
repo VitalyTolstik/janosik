@@ -7,7 +7,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useNavigate } from "react-router-dom";
 
 import type { Board, Card, CommandRequest } from "@janosik/shared";
 import { BOARD_STORAGE_KEY } from "@janosik/shared";
@@ -57,7 +57,8 @@ function seedBoard(): Board {
 function Probe() {
   const { board, boards, syncStatus, canUndo, canRedo } = useBoard();
   const actions = useBoardActions();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const presence = useBoardPresence(board?.id);
   const attribution = useEntityAttribution("c-1");
   const newcomer = useBoardMember(board?.id, "user-3");
@@ -114,6 +115,36 @@ function Probe() {
         type="button"
         data-testid="touch"
         onClick={() => actions.touchCard("c-1")}
+      />
+      <div data-testid="card-desc">
+        {board?.cards["c-1"]?.description ?? ""}
+      </div>
+      <button
+        type="button"
+        data-testid="add-two-columns"
+        onClick={() => {
+          actions.addColumn("One");
+          actions.addColumn("Two");
+        }}
+      />
+      <button
+        type="button"
+        data-testid="quiet-desc"
+        onClick={() =>
+          actions.updateCard("c-1", { description: "Draft" }, { quiet: true })
+        }
+      />
+      <button
+        type="button"
+        data-testid="go-b2"
+        onClick={() => navigate("/board/b-2")}
+      />
+      <button
+        type="button"
+        data-testid="logout"
+        onClick={() => {
+          void logout();
+        }}
       />
       <button type="button" data-testid="undo" onClick={() => actions.undo()} />
       <button type="button" data-testid="redo" onClick={() => actions.redo()} />
@@ -227,6 +258,29 @@ describe("BoardProvider in server mode", () => {
       "Todo",
     ]);
     // The refused command left no undo step behind.
+    expect(screen.getByTestId("can-undo").textContent).toBe("false");
+  });
+
+  it("rolls back a command the busy board timed out and says so", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    server.failNextCommand(503, {
+      message: "The board is busy — retry the request",
+      code: "board_write_timeout",
+    });
+
+    renderApp();
+    await waitReady();
+
+    fireEvent.click(screen.getByTestId("add-column"));
+    await waitFor(() =>
+      expect(screen.getByTestId("columns").textContent).toBe("Todo"),
+    );
+    expect(
+      await screen.findByText(
+        "The server is busy — the change was not saved, try again",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("can-undo").textContent).toBe("false");
   });
 
@@ -1039,5 +1093,420 @@ describe("BoardProvider server-mode failures and board management", () => {
     await waitFor(() =>
       expect(screen.getByTestId("title").textContent).toBe("Remote title"),
     );
+  });
+});
+
+describe("BoardProvider realtime review fixes (U-1…U-9)", () => {
+  async function waitStream(server: FakeServer, boardId = "b-1") {
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (entry) => entry.path === `/api/v1/boards/${boardId}/events`,
+        ),
+      ).toBe(true),
+    );
+  }
+
+  const snapshotGets = (server: FakeServer, boardId = "b-1") =>
+    server.requests.filter(
+      (entry) =>
+        entry.method === "GET" && entry.path === `/api/v1/boards/${boardId}`,
+    ).length;
+
+  const sleep = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
+  it("applies a same-account agent's command held back while our command is in flight (U-1)", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+    await waitStream(server);
+
+    // Our command is in flight and not committed yet: the agent — an MCP
+    // client on this user's own key, so the *same actor* — commits first
+    // and gets the lower seq. The old filter (`actorId === me && seq <=
+    // ownSeq`) took its event for our own echo and dropped it for good.
+    const release = server.holdNextCommandBeforeCommit();
+    fireEvent.click(screen.getByTestId("add-column"));
+    act(() => {
+      server.publishCommand(
+        "b-1",
+        { type: "RENAME_BOARD", title: "Agent", at: Date.now() },
+        server.account.id,
+      );
+    });
+    await sleep(30);
+    // Held back while our optimistic command is unanswered.
+    expect(screen.getByTestId("title").textContent).toBe("Board");
+
+    act(() => release());
+    await waitFor(() =>
+      expect(screen.getByTestId("title").textContent).toBe("Agent"),
+    );
+    expect(screen.getByTestId("columns").textContent).toBe("Todo,New");
+    // The agent's event was ordered before ours: instead of applying it on
+    // top of our optimistic state (U-7), the board was re-read once.
+    expect(server.boards.get("b-1")?.title).toBe("Agent");
+  });
+
+  it("applies the agent's earlier command when our ack beat the stream (U-1, U-7)", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+    await waitStream(server);
+    const before = snapshotGets(server);
+
+    // The stream is down: our ack arrives first, the events only on the
+    // reconnect — the agent's (lower seq, same actor) and then our echo.
+    act(() => server.closeEvents("b-1"));
+    const release = server.holdNextCommandBeforeCommit();
+    fireEvent.click(screen.getByTestId("add-column"));
+    act(() => {
+      server.publishCommand(
+        "b-1",
+        { type: "RENAME_BOARD", title: "Agent", at: Date.now() },
+        server.account.id,
+      );
+    });
+    act(() => release());
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.columns).toHaveLength(2),
+    );
+
+    await waitFor(
+      () => expect(screen.getByTestId("title").textContent).toBe("Agent"),
+      { timeout: 5_000 },
+    );
+    expect(screen.getByTestId("columns").textContent).toBe("Todo,New");
+    expect(snapshotGets(server)).toBeGreaterThan(before);
+  });
+
+  it("still recognises its own echo on an older server without commandId", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.emitCommandIds = false;
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+    await waitStream(server);
+
+    fireEvent.click(screen.getByTestId("add-column"));
+    await waitFor(() => expect(server.seqOf("b-1")).toBeGreaterThan(0));
+    await sleep(30);
+    expect(screen.getByTestId("columns").textContent).toBe("Todo,New");
+    expect(screen.getByTestId("can-undo").textContent).toBe("true");
+  });
+
+  it("refetches the board when the server sends resync", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+    await waitStream(server);
+
+    server.overwriteBoard("b-1", (board) => ({ ...board, title: "Fresh" }));
+    act(() => server.publishResync("b-1"));
+    await waitFor(() =>
+      expect(screen.getByTestId("title").textContent).toBe("Fresh"),
+    );
+  });
+
+  it("re-reads the board when the catch-up gap is truncated", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.maxCatchUp = 1;
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+    await waitStream(server);
+
+    act(() => {
+      server.closeEvents("b-1");
+      for (const title of ["One", "Two", "Three"]) {
+        server.publishCommand("b-1", { type: "RENAME_BOARD", title, at: 1 });
+      }
+    });
+    await waitFor(
+      () => expect(screen.getByTestId("title").textContent).toBe("Three"),
+      { timeout: 5_000 },
+    );
+  });
+
+  it("single-flights focus and visibilitychange into one snapshot request (U-2)", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+    const before = snapshotGets(server);
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await sleep(30);
+    expect(snapshotGets(server)).toBe(before + 1);
+  });
+
+  it("discards a focus snapshot that predates a command sent while it was in flight (U-2)", async () => {
+    const server = new FakeServer([seedBoard()]);
+    let gate: Promise<void> | null = null;
+    let open: () => void = () => undefined;
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        // The fake computes the answer on arrival; holding it back models a
+        // slow snapshot taken *before* our command.
+        const response = await server.handle(input, init);
+        const url = new URL(String(input), "http://api.test");
+        if (
+          gate !== null &&
+          (init?.method ?? "GET") === "GET" &&
+          url.pathname === "/api/v1/boards/b-1"
+        ) {
+          await gate;
+        }
+        return response;
+      },
+    );
+    renderApp();
+    await waitReady();
+    const before = snapshotGets(server);
+
+    gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(snapshotGets(server)).toBe(before + 1));
+    fireEvent.click(screen.getByTestId("add-column"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.columns).toHaveLength(2),
+    );
+    gate = null;
+    act(() => open());
+    await sleep(30);
+    // The pre-command snapshot must not erase the acknowledged column.
+    expect(screen.getByTestId("columns").textContent).toBe("Todo,New");
+  });
+
+  it("discards a snapshot older than the events already applied (U-2)", async () => {
+    const server = new FakeServer([seedBoard()]);
+    let gate: Promise<void> | null = null;
+    let open: () => void = () => undefined;
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const response = await server.handle(input, init);
+        const url = new URL(String(input), "http://api.test");
+        if (
+          gate !== null &&
+          (init?.method ?? "GET") === "GET" &&
+          url.pathname === "/api/v1/boards/b-1"
+        ) {
+          await gate;
+        }
+        return response;
+      },
+    );
+    renderApp();
+    await waitReady();
+    await waitStream(server);
+    const before = snapshotGets(server);
+
+    gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(snapshotGets(server)).toBe(before + 1));
+    act(() => {
+      server.publishCommand("b-1", {
+        type: "RENAME_BOARD",
+        title: "Live",
+        at: Date.now(),
+      });
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("title").textContent).toBe("Live"),
+    );
+    gate = null;
+    act(() => open());
+    await sleep(30);
+    expect(screen.getByTestId("title").textContent).toBe("Live");
+  });
+
+  it("re-reads the board instead of keeping a refused command buried under newer ones (U-4)", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+
+    // Two commands in one go; the first is refused while the second is
+    // already applied on top — its step is "dead" and cannot be reverted.
+    server.failNextCommand(409, { conflict: "wip", currentVersion: 0 });
+    fireEvent.click(screen.getByTestId("add-two-columns"));
+    expect(screen.getByTestId("columns").textContent).toBe("Todo,One,Two");
+    await waitFor(() =>
+      expect(screen.getByTestId("columns").textContent).toBe("Todo,Two"),
+    );
+    expect(server.boards.get("b-1")?.columns.map((c) => c.title)).toEqual([
+      "Todo",
+      "Two",
+    ]);
+  });
+
+  it("revokes the board the user navigated to, not the one the stream started on (U-5)", async () => {
+    localStorage.removeItem(BOARD_STORAGE_KEY);
+    const server = new FakeServer([
+      seedBoard(),
+      { ...seedBoard(), id: "b-2", title: "Second" },
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp("/board/b-1");
+    await waitReady();
+    await waitStream(server, "b-1");
+    await waitFor(() =>
+      expect(screen.getByTestId("board-count").textContent).toBe("2"),
+    );
+
+    fireEvent.click(screen.getByTestId("go-b2"));
+    await waitFor(() =>
+      expect(screen.getByTestId("title").textContent).toBe("Second"),
+    );
+    await waitStream(server, "b-2");
+
+    act(() => {
+      server.revokeMembership("b-2");
+      server.publishMembership("b-2", server.account.id, "removed");
+    });
+    // The handler sees the *current* route and walks off the dead board.
+    await waitFor(() =>
+      expect(screen.getByTestId("title").textContent).toBe("Board"),
+    );
+  });
+
+  it("flushes coalesced edits on pagehide (U-3)", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+
+    fireEvent.click(screen.getByTestId("quiet-desc"));
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+    // Sent at once — not after the 400 ms coalescing window.
+    await waitFor(
+      () =>
+        expect(server.boards.get("b-1")?.cards["c-1"].description).toBe(
+          "Draft",
+        ),
+      { timeout: 200 },
+    );
+  });
+
+  it("sends pending edits before logging out (U-3)", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+
+    fireEvent.click(screen.getByTestId("quiet-desc"));
+    fireEvent.click(screen.getByTestId("logout"));
+    await waitFor(() =>
+      expect(
+        server.requests.some((entry) => entry.path === "/api/v1/auth/logout"),
+      ).toBe(true),
+    );
+    const paths = server.requests.map((entry) => entry.path);
+    const command = paths.lastIndexOf("/api/v1/boards/b-1/commands");
+    expect(command).toBeGreaterThan(-1);
+    expect(command).toBeLessThan(paths.indexOf("/api/v1/auth/logout"));
+    expect(server.boards.get("b-1")?.cards["c-1"].description).toBe("Draft");
+  });
+
+  it("hydrates the routed board first and the rest in the background (U-9)", async () => {
+    localStorage.removeItem(BOARD_STORAGE_KEY);
+    const server = new FakeServer([
+      seedBoard(),
+      { ...seedBoard(), id: "b-2", title: "Second" },
+      { ...seedBoard(), id: "b-3", title: "Third" },
+    ]);
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), "http://api.test");
+        if (
+          url.pathname === "/api/v1/boards/b-1" ||
+          url.pathname === "/api/v1/boards/b-3"
+        ) {
+          await gate;
+        }
+        return server.handle(input, init);
+      },
+    );
+    renderApp("/board/b-2");
+    // Ready with the routed board alone, while the others are still loading.
+    await waitReady();
+    expect(screen.getByTestId("title").textContent).toBe("Second");
+    expect(screen.getByTestId("board-count").textContent).toBe("1");
+
+    act(() => open());
+    await waitFor(() =>
+      expect(screen.getByTestId("board-count").textContent).toBe("3"),
+    );
+  });
+
+  it("re-reads a long-idle board as one snapshot instead of replaying its backlog (U-9)", async () => {
+    localStorage.removeItem(BOARD_STORAGE_KEY);
+    const server = new FakeServer([
+      seedBoard(),
+      { ...seedBoard(), id: "b-2", title: "Second" },
+    ]);
+    const eventUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/events")) eventUrls.push(url);
+        return server.handle(input, init);
+      },
+    );
+    renderApp("/board/b-1");
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("board-count").textContent).toBe("2"),
+    );
+
+    // b-2 moves on for a long time while nobody watches it.
+    for (let index = 1; index <= 40; index += 1) {
+      server.publishCommand("b-2", {
+        type: "RENAME_BOARD",
+        title: `Renamed ${index}`,
+        at: index,
+      });
+    }
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now + 10 * 60_000);
+    try {
+      fireEvent.click(screen.getByTestId("go-b2"));
+      await waitFor(() =>
+        expect(screen.getByTestId("title").textContent).toBe("Renamed 40"),
+      );
+      await waitFor(() =>
+        expect(eventUrls.some((url) => url.includes("/b-2/events"))).toBe(true),
+      );
+    } finally {
+      clock.mockRestore();
+    }
+    // The stream resumed from the snapshot: nothing left to replay.
+    const b2 = eventUrls.find((url) => url.includes("/b-2/events")) ?? "";
+    expect(b2).toContain("since=40");
   });
 });

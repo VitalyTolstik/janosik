@@ -69,10 +69,15 @@ export function blocksReaches(
   const seen = new Set<string>([start]);
   while (stack.length > 0) {
     const current = stack.pop() as string;
-    for (const link of cards[current]?.links ?? []) {
+    // Own keys only: a target named "constructor" is no card.
+    const links = Object.hasOwn(cards, current) ? cards[current].links : [];
+    for (const link of links ?? []) {
       if (link.type !== "blocks") continue;
       if (link.targetCardId === goal) return true;
-      if (!(link.targetCardId in cards) || seen.has(link.targetCardId)) {
+      if (
+        !Object.hasOwn(cards, link.targetCardId) ||
+        seen.has(link.targetCardId)
+      ) {
         continue;
       }
       seen.add(link.targetCardId);

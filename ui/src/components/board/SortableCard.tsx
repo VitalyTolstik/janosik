@@ -80,6 +80,22 @@ function SortableCardView({
       }}
       {...attributes}
       {...listeners}
+      onKeyDown={(event) => {
+        // dnd-kit's keyboard activator (Space) first; Enter on the focused
+        // card itself opens it — never a drag (a11y). Keys typed into the
+        // card's own controls are theirs.
+        listeners?.onKeyDown?.(event);
+        if (
+          event.defaultPrevented ||
+          event.key !== "Enter" ||
+          event.target !== event.currentTarget ||
+          isDragging
+        ) {
+          return;
+        }
+        event.preventDefault();
+        onCardClick?.(card.id);
+      }}
     >
       <CardItem
         card={card}

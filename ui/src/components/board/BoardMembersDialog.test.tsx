@@ -110,9 +110,11 @@ describe("BoardMembersPanel (TASK-35)", () => {
 
   it("invites by email and keeps the pending invitation out of the list", async () => {
     const list = vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN]);
+    // The server answers every address with the same masked projection
+    // (`userId: ""`) — it never says whether the account exists.
     const invite = vi.spyOn(api, "inviteMember").mockResolvedValue({
-      userId: "user-9",
-      displayName: "Newbie",
+      userId: "",
+      displayName: null,
       email: "new@example.com",
       role: "MEMBER",
       expiresAt: null,
@@ -134,31 +136,34 @@ describe("BoardMembersPanel (TASK-35)", () => {
       expiresAt: undefined,
     });
     expect(
-      await screen.findByText("Invitation sent to new@example.com"),
+      await screen.findByText(
+        "If new@example.com has a Janosik account, they'll see the invitation",
+      ),
     ).toBeInTheDocument();
     // Opt-in invitations (TASK-35 addendum): the invitee is not a member
-    // until they accept, so the dialog refetches and shows the same one row.
+    // until they accept, so the dialog refetches and shows the same one row
+    // — no phantom row for the masked answer.
     expect(list).toHaveBeenCalledTimes(2);
-    expect(screen.queryByText("Newbie")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("board-member-row")).toHaveLength(1);
     expect(screen.getByText("Members (1)")).toBeInTheDocument();
   });
 
-  it("maps invite failures to specific toasts (404 unknown user)", async () => {
+  it("maps an invite of an existing member to a specific toast (409)", async () => {
     vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN]);
     vi.spyOn(api, "inviteMember").mockRejectedValue(
-      new ApiError(404, { message: "No user with that email" }),
+      new ApiError(409, { message: "User is already a board member" }),
     );
 
     renderPanel(true);
     await screen.findByText("Boris");
 
     fireEvent.change(screen.getByLabelText("Email"), {
-      target: { value: "ghost@example.com" },
+      target: { value: "boris@example.com" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Invite" }));
 
     expect(
-      await screen.findByText("No user with that email"),
+      await screen.findByText("This user is already a member of the board"),
     ).toBeInTheDocument();
   });
 

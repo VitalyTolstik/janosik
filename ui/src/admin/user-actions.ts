@@ -1,3 +1,4 @@
+import { routes } from "@/routes";
 import { appShareUrl } from "@/utils/app-path";
 
 import { adminApi } from "./admin-client";
@@ -14,8 +15,9 @@ import { adminApi } from "./admin-client";
  */
 export async function impersonateUser(userId: string): Promise<void> {
   const result = await adminApi.impersonateUser(userId);
+  // The dedicated route: the app refuses the hash anywhere else (U-8).
   const url = appShareUrl(
-    `/#impersonate=${encodeURIComponent(result.accessToken)}`,
+    `${routes.impersonate}#impersonate=${encodeURIComponent(result.accessToken)}`,
   );
   window.open(url, "_blank", "noopener,noreferrer");
 }

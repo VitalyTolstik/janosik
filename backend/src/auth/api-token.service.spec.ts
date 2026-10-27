@@ -7,7 +7,10 @@ import type { ApiToken, User } from "@prisma/client";
 import { API_TOKEN_PREFIX } from "@janosik/shared";
 import { createHash } from "node:crypto";
 import type { PrismaService } from "@/common/prisma/prisma.service";
-import { ApiTokenService } from "./api-token.service";
+import {
+  API_TOKEN_DEFAULT_TTL_DAYS,
+  ApiTokenService,
+} from "./api-token.service";
 
 const prismaMock = {
   apiToken: {
@@ -87,7 +90,8 @@ describe("ApiTokenService", () => {
         user: makeUser({ displayName: "Vera", avatarColor: "teal" }),
       });
 
-      const user = await service.authenticate("raw-token");
+      const { user, tokenId } = await service.authenticate("raw-token");
+      expect(tokenId).toBe("token-1");
 
       expect(prismaMock.apiToken.findUnique).toHaveBeenCalledWith({
         where: { tokenHash: sha256("raw-token") },
@@ -106,6 +110,22 @@ describe("ApiTokenService", () => {
         where: { id: "token-1" },
         data: { lastUsedAt: expect.any(Date) },
       });
+    });
+
+    it("stamps lastUsedAt at most once a minute", async () => {
+      prismaMock.apiToken.findUnique.mockResolvedValue({
+        ...makeToken({ lastUsedAt: new Date(Date.now() - 5_000) }),
+        user: makeUser(),
+      });
+      await service.authenticate("raw-token");
+      expect(prismaMock.apiToken.update).not.toHaveBeenCalled();
+
+      prismaMock.apiToken.findUnique.mockResolvedValue({
+        ...makeToken({ lastUsedAt: new Date(Date.now() - 61_000) }),
+        user: makeUser(),
+      });
+      await service.authenticate("raw-token");
+      expect(prismaMock.apiToken.update).toHaveBeenCalledTimes(1);
     });
 
     it("rejects an unknown token", async () => {
@@ -189,7 +209,10 @@ describe("ApiTokenService", () => {
           makeToken({ name: data.name, expiresAt: data.expiresAt ?? null }),
       );
 
-      const result = await service.create("user-1", { name: "Deploy" });
+      const result = await service.create("user-1", {
+        name: "Deploy",
+        expiresAt: null,
+      });
 
       expect(result.token.startsWith(API_TOKEN_PREFIX)).toBe(true);
       const stored = prismaMock.apiToken.create.mock.calls[0][0].data;
@@ -202,6 +225,19 @@ describe("ApiTokenService", () => {
         revokedAt: null,
         createdAt: new Date("2026-09-01T00:00:00Z").getTime(),
       });
+    });
+
+    it("bounds a token created without any expiresAt (B-2 default TTL)", async () => {
+      prismaMock.apiToken.create.mockImplementation(
+        async ({ data }: { data: Partial<ApiToken> }) => makeToken(data),
+      );
+      const before = Date.now();
+
+      const result = await service.create("user-1", { name: "Forgetful" });
+
+      const ttl = API_TOKEN_DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000;
+      expect(result.apiToken.expiresAt).toBeGreaterThanOrEqual(before + ttl);
+      expect(result.apiToken.expiresAt).toBeLessThanOrEqual(Date.now() + ttl);
     });
 
     it("accepts a future expiry inside the TTL bound", async () => {

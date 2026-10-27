@@ -7,8 +7,22 @@ import {
 import { randomUUID } from "node:crypto";
 import { Observable, Subject } from "rxjs";
 import Redis from "ioredis";
-import type { BoardSseEvent } from "@janosik/shared";
+import type { BoardSseEvent, CommandSseEvent } from "@janosik/shared";
 import { env } from "@/config/env";
+
+/**
+ * A command frame as it travels on the internal bus (B-4): the wire event
+ * plus `prevSeq`, the board's seq right before this command. Streams use it
+ * to prove contiguity — a frame whose `prevSeq` is not the last seq they
+ * delivered means something was lost or reordered in between (a second node,
+ * a failed Redis publish), and they re-read the log instead of guessing.
+ * Never sent to clients: the stream strips it.
+ */
+export type InternalCommandEvent = CommandSseEvent & { prevSeq?: number };
+
+/** Redis publish retries before the frame is given up on (B-4). */
+const PUBLISH_ATTEMPTS = 3;
+const PUBLISH_RETRY_MS = 250;
 
 /**
  * Board event fan-out (§7.0, TASK-30).
@@ -80,12 +94,46 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
     // `get` (not `channel`) — publishing to a board nobody listens to must
     // not resurrect a channel that was just released (TASK-102).
     this.channels.get(boardId)?.next(event);
-    this.publisher
-      ?.publish(
-        CHANNEL_PREFIX + boardId,
+    if (this.publisher !== null) {
+      void this.publishRemote(
+        boardId,
         JSON.stringify({ origin: this.nodeId, event }),
-      )
-      .catch(() => undefined);
+        1,
+      );
+    }
+  }
+
+  /**
+   * Cross-node fan-out with a short retry (B-4). A frame that still cannot
+   * be published is logged, not silently dropped — and it is not lost for
+   * good either: every stream proves contiguity through `prevSeq` and
+   * re-checks the log on its keep-alive tick, so the remote subscribers
+   * re-read the gap from the database.
+   */
+  private async publishRemote(
+    boardId: string,
+    payload: string,
+    attempt: number,
+  ): Promise<void> {
+    if (this.publisher === null) return;
+    try {
+      await this.publisher.publish(CHANNEL_PREFIX + boardId, payload);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      if (attempt >= PUBLISH_ATTEMPTS) {
+        this.logger.error(
+          `Redis publish for board ${boardId} failed after ${attempt} attempts: ${reason} — remote streams will catch up from the log`,
+        );
+        return;
+      }
+      this.logger.warn(
+        `Redis publish for board ${boardId} failed (attempt ${attempt}/${PUBLISH_ATTEMPTS}): ${reason}`,
+      );
+      await new Promise((resolve) =>
+        setTimeout(resolve, PUBLISH_RETRY_MS * attempt),
+      );
+      await this.publishRemote(boardId, payload, attempt + 1);
+    }
   }
 
   /**

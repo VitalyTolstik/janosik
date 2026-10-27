@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -50,6 +51,12 @@ export interface AuthValue {
    */
   updateUser: (user: AuthUserDto) => void;
   logout: () => Promise<void>;
+  /**
+   * Run `task` before logout revokes the session — the board provider
+   * drains its command queue here so no pending edit is dropped (U-3).
+   * Returns the unregister function.
+   */
+  registerBeforeLogout?: (task: () => Promise<void>) => () => void;
   /** True while a master "view as" session is active (TASK-59). */
   impersonating?: boolean;
   /** Ends the view-as session and reloads into the master's own session. */
@@ -63,6 +70,7 @@ const LOCAL_AUTH: AuthValue = {
   register: async () => {},
   updateUser: () => {},
   logout: async () => {},
+  registerBeforeLogout: () => () => {},
   impersonating: false,
   exitImpersonation: () => {},
 };
@@ -85,8 +93,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     // A dead view-as session (TASK-85) must not be refreshed into the master
     // session: clear it and reload into the master's own session instead.
+    // While the boot check below confirms a view-as token, its own failure
+    // path falls back to the normal session — no reload.
+    let confirming = false;
     const onLost = (): void => {
-      if (cancelled) return;
+      if (cancelled || confirming) return;
       if (api.isImpersonating()) {
         clearImpersonation();
         window.location.reload();
@@ -98,24 +109,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api.onAuthLost = onLost;
     // A support "view as" session (TASK-59) wins over the refresh cookie:
     // the impersonation token is adopted for this tab, then `/auth/me`
-    // resolves the profile it belongs to.
+    // resolves the profile it belongs to. Only a genuine impersonation
+    // token on the dedicated route qualifies (U-8, see `impersonation.ts`):
+    // the token's own `imp` claim is a first, client-side filter, and the
+    // server then confirms it — `/auth/me` names the impersonating master in
+    // `impersonatedBy` only for a verified view-as token. Anything else (a
+    // forged claim, a normal token, a 401) is dropped and the tab falls back
+    // to its own session.
     const impersonationToken =
       getImpersonationToken() ?? consumeImpersonationHash();
     if (impersonationToken !== null) {
       api.setAccessToken(impersonationToken);
       api.setImpersonating(true);
       setImpersonating(true);
+      confirming = true;
       void api
         .me()
         .then((profile) => {
+          if (
+            typeof profile.impersonatedBy !== "string" ||
+            profile.impersonatedBy === ""
+          ) {
+            throw new Error("Not a view-as session");
+          }
+          confirming = false;
           if (cancelled) return;
           setUser(profile);
           setStatus("authenticated");
         })
         .catch(() => {
+          confirming = false;
           if (cancelled) return;
           clearImpersonation();
           api.setImpersonating(false);
+          api.clearAccessToken();
           setImpersonating(false);
           void api.refreshSession().then((session) => {
             if (cancelled) return;
@@ -169,7 +196,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [applySession],
   );
 
+  const beforeLogoutRef = useRef(new Set<() => Promise<void>>());
+  const registerBeforeLogout = useCallback((task: () => Promise<void>) => {
+    const tasks = beforeLogoutRef.current;
+    tasks.add(task);
+    return () => {
+      tasks.delete(task);
+    };
+  }, []);
+
   const logout = useCallback(async () => {
+    // Pending edits go out while the session is still valid (U-3); a task
+    // that fails or hangs must not keep the user from logging out (each one
+    // bounds its own wait).
+    await Promise.allSettled(
+      [...beforeLogoutRef.current].map((task) => task()),
+    );
     try {
       await api.logout();
     } catch {
@@ -203,6 +245,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register,
       updateUser,
       logout,
+      registerBeforeLogout,
       impersonating,
       exitImpersonation,
     }),
@@ -213,6 +256,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register,
       updateUser,
       logout,
+      registerBeforeLogout,
       impersonating,
       exitImpersonation,
     ],

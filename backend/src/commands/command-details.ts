@@ -1,5 +1,5 @@
 import type { ActivityChange, Board, BoardAction, Card } from "@janosik/shared";
-import { DEFAULT_CARD_PRIORITY, LIMITS } from "@janosik/shared";
+import { cardOf, DEFAULT_CARD_PRIORITY, LIMITS } from "@janosik/shared";
 
 /**
  * The display snapshot stored on a `Command` row (TASK-37) and rendered by
@@ -73,8 +73,8 @@ export function commandDetails(
 ): CommandDetails | null {
   switch (action.type) {
     case "UPDATE_CARD": {
-      const from = before.cards[action.cardId];
-      const to = after.cards[action.cardId];
+      const from = cardOf(before, action.cardId);
+      const to = cardOf(after, action.cardId);
       if (!from || !to) return null;
       const changes: ActivityChange[] = [];
       if (action.title !== undefined && from.title !== to.title) {
@@ -126,7 +126,7 @@ export function commandDetails(
     }
 
     case "SET_CARD_DUE_DATE": {
-      const from = before.cards[action.cardId];
+      const from = cardOf(before, action.cardId);
       if (!from) return null;
       return {
         changes: [
@@ -140,7 +140,7 @@ export function commandDetails(
     }
 
     case "SET_CARD_PRIORITY": {
-      const from = before.cards[action.cardId];
+      const from = cardOf(before, action.cardId);
       if (!from) return null;
       return {
         changes: [
@@ -154,7 +154,7 @@ export function commandDetails(
     }
 
     case "SET_CARD_ASSIGN": {
-      const from = before.cards[action.cardId];
+      const from = cardOf(before, action.cardId);
       if (!from) return null;
       return {
         changes: [
@@ -175,7 +175,7 @@ export function commandDetails(
       // `before` title and falls back to `after` (the link is gone either
       // way; only the name matters); an add reads the `after` aggregate.
       const titleOf = (board: Board): string | null =>
-        board.cards[action.targetCardId]?.title ?? null;
+        cardOf(board, action.targetCardId)?.title ?? null;
       const adding = action.type === "ADD_CARD_LINK";
       const from = adding ? null : (titleOf(before) ?? titleOf(after));
       const to = adding ? titleOf(after) : null;
@@ -187,8 +187,8 @@ export function commandDetails(
     }
 
     case "SET_CARD_COVER": {
-      const from = before.cards[action.cardId];
-      const to = after.cards[action.cardId];
+      const from = cardOf(before, action.cardId);
+      const to = cardOf(after, action.cardId);
       if (!from || !to) return null;
       const value = (card: typeof from): string | null =>
         card.cover ? `${card.cover.type}:${card.cover.value}` : null;
@@ -208,7 +208,7 @@ export function commandDetails(
 
     case "RENAME_CHECKLIST": {
       const from = checklistTitle(
-        before.cards[action.cardId],
+        cardOf(before, action.cardId),
         action.checklistId,
       );
       return {
@@ -225,7 +225,7 @@ export function commandDetails(
 
     case "DELETE_CHECKLIST": {
       const from = checklistTitle(
-        before.cards[action.cardId],
+        cardOf(before, action.cardId),
         action.checklistId,
       );
       return {
@@ -245,7 +245,7 @@ export function commandDetails(
 
     case "RENAME_CHECKLIST_ITEM": {
       const from = checklistItem(
-        before.cards[action.cardId],
+        cardOf(before, action.cardId),
         action.checklistId,
         action.itemId,
       );
@@ -259,7 +259,7 @@ export function commandDetails(
 
     case "DELETE_CHECKLIST_ITEM": {
       const from = checklistItem(
-        before.cards[action.cardId],
+        cardOf(before, action.cardId),
         action.checklistId,
         action.itemId,
       );
@@ -272,12 +272,12 @@ export function commandDetails(
     case "SET_CHECKLIST_ITEM_DONE": {
       const text =
         checklistItem(
-          before.cards[action.cardId],
+          cardOf(before, action.cardId),
           action.checklistId,
           action.itemId,
         ) ??
         checklistItem(
-          after.cards[action.cardId],
+          cardOf(after, action.cardId),
           action.checklistId,
           action.itemId,
         );

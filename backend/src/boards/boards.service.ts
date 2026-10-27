@@ -253,35 +253,54 @@ export class BoardsService {
    * meaningful for VIEWER only — a time-limited read-only guest (§7.0). For
    * ADMIN/MEMBER it is ignored and stored as null. The invite is an
    * `Activity` event (not a reducer command) recording who invited whom.
+   *
+   * Non-enumerating (review "minor" items): the answer never reveals whether
+   * an account exists for the address. An unknown address, a known one and a
+   * repeat invite of a still-pending invitee all answer the same `201` with
+   * the same masked projection (`userId: ""`, no profile fields) — only an
+   * already-*accepted* member is a `409`, and those are on the board's own
+   * member list anyway. An unverified account (B-1) gets the pending row,
+   * but `InvitationsService` hides it until the address is confirmed.
    */
   async inviteMember(
     boardId: string,
     actorId: string,
     dto: InviteMemberDto,
   ): Promise<BoardMemberDto> {
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+    const email = dto.email.trim().toLowerCase();
+    const expiresAt = this.resolveExpiresAt(dto.role, dto.expiresAt, null);
+    const masked: BoardMemberDto = {
+      userId: "",
+      displayName: null,
+      email,
+      role: dto.role,
+      expiresAt: expiresAt?.getTime() ?? null,
+      avatarColor: null,
+      avatarPath: null,
+    };
+    const user = await this.prisma.user.findFirst({
+      where: { email: { equals: email, mode: "insensitive" } },
     });
     if (!user) {
-      throw new NotFoundException("No user with that email");
+      return masked;
     }
 
-    const expiresAt = this.resolveExpiresAt(dto.role, dto.expiresAt, null);
     // The duplicate check lives inside the board lock (TASK-100): two
     // concurrent invites would otherwise both pass the read and one `create`
     // would surface a raw P2002 as a 500. The lock serializes them, and the
     // unique constraint is the final backstop.
-    const member = await this.boardWrite
+    await this.boardWrite
       .run(boardId, async (tx) => {
         const existing = await tx.boardMember.findUnique({
           where: { boardId_userId: { boardId, userId: user.id } },
         });
         if (existing) {
-          throw new ConflictException(
-            existing.acceptedAt === null
-              ? "User already has a pending invitation"
-              : "User is already a board member",
-          );
+          if (existing.acceptedAt === null) {
+            // A repeat invite of a pending invitee is an idempotent no-op —
+            // a 409 here would tell the inviter the account exists.
+            return null;
+          }
+          throw new ConflictException("User is already a board member");
         }
         const created = await tx.boardMember.create({
           data: {
@@ -318,7 +337,7 @@ export class BoardsService {
         }
         throw error;
       });
-    return toMemberDto(member);
+    return masked;
   }
 
   /**

@@ -838,4 +838,59 @@ describe("admin content and security pages", () => {
     expect(await screen.findByTestId("admin-ip-readonly")).toBeTruthy();
     expect(screen.queryByTestId("admin-ip-save")).toBeNull();
   });
+
+  it("surfaces the server's reason when the allowlist would lock the caller out", async () => {
+    const server = serverWith();
+    server.callerIp = "203.0.113.7";
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/security");
+
+    fireEvent.change(await screen.findByTestId("admin-ip-allowlist"), {
+      target: { value: "10.0.0.0/8" },
+    });
+    fireEvent.click(screen.getByTestId("admin-ip-save"));
+    expect(
+      await screen.findByText(
+        "The allowlist must include your current address (203.0.113.7)",
+      ),
+    ).toBeTruthy();
+    expect(server.security.ipAllowlist).not.toBe("10.0.0.0/8");
+  });
+
+  it("offers account deletion to owners only", async () => {
+    const state = serverWith().state;
+    state.users = [adminUser()];
+    const server = new FakeAdminServer(state);
+    server.sessionRole = "OPERATOR";
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users/u-1");
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-user-detail-actions"),
+      { button: 0 },
+    );
+    expect(
+      await screen.findByTestId("admin-user-change-email"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("admin-user-delete")).toBeNull();
+  });
+
+  it("leaves the delete action out of an operator's users row menu", async () => {
+    const state = serverWith().state;
+    state.users = [adminUser()];
+    const server = new FakeAdminServer(state);
+    server.sessionRole = "OPERATOR";
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users");
+
+    fireEvent.pointerDown(await screen.findByTestId("admin-row-actions-u-1"), {
+      button: 0,
+    });
+    expect(
+      await screen.findByText(t("admin.users.action.changeEmail")),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(t("admin.userDetail.action.deleteUser")),
+    ).toBeNull();
+  });
 });

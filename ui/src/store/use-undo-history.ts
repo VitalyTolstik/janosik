@@ -128,57 +128,61 @@ export function useUndoHistory({
    * silently succeeding locally while the server rejected it would desync
    * the board.
    */
-  const run = useCallback(
-    (direction: "undo" | "redo") => {
+  // Server mode: the tail of the running undo/redo presses. Each press
+  // waits for the previous one to be answered — two presses racing over the
+  // same stack could pop, send and restore out of order, so a refused undo
+  // would land back above a newer step (Low: overlapping Ctrl+Z).
+  const queueRef = useRef<Promise<void> | null>(null);
+
+  const runOnce = useCallback(
+    async (direction: "undo" | "redo"): Promise<void> => {
       const boardId = getActiveBoardId();
       if (!boardId) return;
       const stack = historiesRef.current.get(boardId);
       if (!stack) return;
-      void (async () => {
-        for (;;) {
-          const action = direction === "undo" ? stack.undo() : stack.redo();
-          if (action === null) break;
-          const before = getBoard(boardId);
-          // Undo happens now, so its own clock is now; redo re-sends the
-          // original command verbatim (same `at`, so the step is replayed
-          // rather than re-dated). Both get a fresh idempotency key — the
-          // original one is spent.
-          // The per-keystroke `quiet` marker must not survive either: quiet
-          // commands skip the version preconditions (§7.0) and are coalesced
-          // by the sync queue, so a redo would silently clobber a foreign
-          // edit it never saw (live bug, 2026-09-18).
-          const { quiet: _quiet, ...plain } = action as BoardAction & {
-            quiet?: boolean;
-          };
-          const applied = {
-            ...plain,
-            ...(direction === "undo" ? { at: Date.now() } : {}),
-            commandId: createId(),
-          } as BoardAction;
-          apply(applied);
-          if (before !== undefined && getBoard(boardId) !== before) {
-            if (send !== undefined) {
-              const outcome = await send(boardId, applied);
-              if (!outcome.ok) {
-                const revert = invert(before, applied);
-                if (revert !== null) apply(revert);
-                if (direction === "undo") stack.restoreUndone();
-                else stack.restoreRedone();
-                onSendFailed?.(outcome.failure);
-                sync();
-                return;
-              }
+      for (;;) {
+        const action = direction === "undo" ? stack.undo() : stack.redo();
+        if (action === null) break;
+        const before = getBoard(boardId);
+        // Undo happens now, so its own clock is now; redo re-sends the
+        // original command verbatim (same `at`, so the step is replayed
+        // rather than re-dated). Both get a fresh idempotency key — the
+        // original one is spent.
+        // The per-keystroke `quiet` marker must not survive either: quiet
+        // commands skip the version preconditions (§7.0) and are coalesced
+        // by the sync queue, so a redo would silently clobber a foreign
+        // edit it never saw (live bug, 2026-09-18).
+        const { quiet: _quiet, ...plain } = action as BoardAction & {
+          quiet?: boolean;
+        };
+        const applied = {
+          ...plain,
+          ...(direction === "undo" ? { at: Date.now() } : {}),
+          commandId: createId(),
+        } as BoardAction;
+        apply(applied);
+        if (before !== undefined && getBoard(boardId) !== before) {
+          if (send !== undefined) {
+            const outcome = await send(boardId, applied);
+            if (!outcome.ok) {
+              const revert = invert(before, applied);
+              if (revert !== null) apply(revert);
+              if (direction === "undo") stack.restoreUndone();
+              else stack.restoreRedone();
+              onSendFailed?.(outcome.failure);
+              sync();
+              return;
             }
-            break;
           }
-          if (direction === "undo") stack.dropUndone();
-          else stack.dropRedone();
+          break;
         }
-        // Skipping happens when a foreign change overtook a step: the user
-        // gets told why Ctrl+Z skipped their edit instead of undoing it.
-        if (stack.consumeSkippedDead() > 0) onForeignSkipped?.();
-        sync();
-      })();
+        if (direction === "undo") stack.dropUndone();
+        else stack.dropRedone();
+      }
+      // Skipping happens when a foreign change overtook a step: the user
+      // gets told why Ctrl+Z skipped their edit instead of undoing it.
+      if (stack.consumeSkippedDead() > 0) onForeignSkipped?.();
+      sync();
     },
     [
       apply,
@@ -189,6 +193,28 @@ export function useUndoHistory({
       onSendFailed,
       onForeignSkipped,
     ],
+  );
+
+  const run = useCallback(
+    (direction: "undo" | "redo") => {
+      // Local mode never awaits: the press completes synchronously, exactly
+      // as before.
+      if (send === undefined) {
+        void runOnce(direction);
+        return;
+      }
+      const previous = queueRef.current;
+      const current =
+        previous === null
+          ? runOnce(direction)
+          : previous.then(() => runOnce(direction));
+      const settled = current.catch(() => undefined);
+      queueRef.current = settled;
+      void settled.then(() => {
+        if (queueRef.current === settled) queueRef.current = null;
+      });
+    },
+    [runOnce, send],
   );
 
   const undo = useCallback(() => run("undo"), [run]);

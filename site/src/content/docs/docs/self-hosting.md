@@ -21,6 +21,13 @@ Only the app port is published to the host; `postgres` and `redis` stay
 internal. On boot the `app` container applies database migrations, then starts
 the API.
 
+The container starts as root only to hand the uploads volume to the
+unprivileged `node` user (volumes created by older images belong to root),
+then runs migrations, the API and ffmpeg as `node`. Before that it checks two
+settings: it refuses to start while `POSTGRES_PASSWORD` is still the example
+`change-me`, and it logs a reminder at every start while
+`ALLOW_REGISTRATION=true`.
+
 The image sets `STATIC_DIR=/app/public`, `SITE_DIR=/app/site` and
 `UI_BASE=/app/`. With those defaults the marketing site is at `/` and the app
 is under `/app/`, so the board UI is at `PUBLIC_ORIGIN/app/` and the master
@@ -57,7 +64,8 @@ curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.e
 Edit `.env`:
 
 - `JWT_SECRET`: generate one with `openssl rand -hex 32`.
-- `POSTGRES_PASSWORD`: pick a strong password.
+- `POSTGRES_PASSWORD`: pick a strong password. The container refuses to
+  start with the example `change-me`.
 - `PUBLIC_ORIGIN=http://<host-ip>:3000` (or `http://localhost:3000`).
 - Leave `COOKIE_SECURE=false` for now.
 
@@ -114,7 +122,10 @@ sudo systemctl reload caddy
 
 **nginx** terminates TLS and proxies everything to the app. Realtime works
 without extra tuning because the API sends `X-Accel-Buffering: no`, but turning
-buffering off explicitly is harmless and makes the intent clear:
+buffering off explicitly is harmless and makes the intent clear. Raise
+`client_max_body_size`: nginx refuses bodies over 1 MB by default, which would
+break attachments (up to 25 MB), board imports (5 MB) and large commands
+(2 MB) with a `413`.
 
 ```nginx
 server {
@@ -123,6 +134,8 @@ server {
 
     # ssl_certificate     /etc/letsencrypt/live/kanban.example.com/fullchain.pem;
     # ssl_certificate_key /etc/letsencrypt/live/kanban.example.com/privkey.pem;
+
+    client_max_body_size 30m;         # attachments, imports, commands
 
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -220,14 +233,14 @@ compose stack fills the ones it needs from `.env`.
 | `JWT_SECRET` | none (required) | Signs access tokens. At least 32 characters. Generate with `openssl rand -hex 32`. |
 | `ACCESS_TOKEN_TTL` | `15m` | Access-token lifetime, a vercel/ms duration string. |
 | `REFRESH_TOKEN_TTL_DAYS` | `30` | Refresh-token lifetime in days. |
-| `THROTTLE_LIMIT` | `300` | Global API rate limit, requests per minute per client. |
+| `THROTTLE_LIMIT` | `300` | Global API rate limit, requests per minute per principal: the user, the API key, or the IP for anonymous calls. |
 | `TRUST_PROXY` | `0` | Trusted reverse-proxy hops. Set `1` behind one proxy. |
 | `UPLOAD_DIR` | empty | Blob root for attachments and avatars. Empty means `backend/data/uploads`; a relative value anchors to the backend package, never the process working directory. |
-| `STATIC_DIR` | empty | Built UI directory. Empty means API only. The image sets `/app/public`. |
+| `STATIC_DIR` | empty | Built UI directory. Empty means API only. The image sets `/app/public`. Inline scripts here are allowed by CSP hashes computed at startup, so restart the API after rebuilding the UI. |
 | `SITE_DIR` | empty | Built marketing site directory served at `/`. Empty means not served. The image sets `/app/site`. |
 | `UI_BASE` | `/` | Sub-path the app is served from, used for OAuth redirects. The image sets `/app/`. |
 | `ALLOW_PUBLIC_SHARES` | `true` | Master switch for public read-only share links. `false` makes the whole share contour answer `404`. |
-| `ALLOW_REGISTRATION` | `true` | Open sign-up. Set `false` after your account exists. |
+| `ALLOW_REGISTRATION` | `true` | Open sign-up. Set `false` after your account exists. The container logs a warning at start while it is `true`. |
 | `COOKIE_SECURE` | empty | Force the `Secure` cookie attribute. Empty means auto: on in production, off elsewhere. Choices are empty, `true`, `false`. |
 | `PURGE_AFTER_DAYS` | `30` | Delete soft-deleted rows older than this many days. Used when the panel has no retention setting. |
 | `SHARE_RATE_LIMIT` | `240` | Public share requests per minute, per token. |
@@ -238,7 +251,7 @@ compose stack fills the ones it needs from `.env`.
 | `SMTP_USER` | empty | SMTP user. |
 | `SMTP_PASS` | empty | SMTP password. |
 | `SMTP_FROM` | `Janosik <no-reply@janosik.local>` | From header for outgoing mail. |
-| `REDIS_URL` | empty | Redis URL for BullMQ queues. Unset means the in-process queue. |
+| `REDIS_URL` | empty | Redis URL for BullMQ queues, realtime fan-out across nodes, and the shared rate-limit and login-backoff counters. Unset means the in-process queue and per-process counters. |
 | `QUEUES_DASHBOARD` | `false` | Mount the Bull Board queue dashboard at `/admin/queues`. Owner only. |
 | `SETTINGS_SECRET` | empty | Encrypts credentials saved from the master panel. Derived from `JWT_SECRET` when unset. |
 | `PUBLIC_ORIGIN` | `http://localhost:5173` | Public base URL of the UI. Builds OAuth callback URLs. Compose defaults it to `http://localhost:3000`. |
@@ -248,7 +261,7 @@ The compose file also reads variables that the API does not validate:
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `POSTGRES_USER` | `janosik` in `.env.example` | Database user, created on first `up`. |
-| `POSTGRES_PASSWORD` | `change-me` in `.env.example` (required) | Database password. Pick a strong one. |
+| `POSTGRES_PASSWORD` | `change-me` in `.env.example` (required) | Database password. Pick a strong one: the container refuses to start while it is `change-me`. |
 | `POSTGRES_DB` | `janosik` in `.env.example` | Database name. |
 | `JANOSIK_TAG` | `latest` | Image tag to run, for example `v0.1.0`. |
 
@@ -438,5 +451,5 @@ To build the image from a checkout instead of pulling, uncomment `build: .` in
 | Configuration | `.env` next to `docker-compose.yml` |
 
 Backups, restores and upgrades live in
-[Operations runbooks](runbooks/). Report vulnerabilities privately; see
-[Security](security/).
+[Operations runbooks](/docs/runbooks/). Report vulnerabilities privately; see
+[Security](/docs/security/).

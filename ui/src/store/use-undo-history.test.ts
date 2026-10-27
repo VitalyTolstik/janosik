@@ -227,3 +227,78 @@ describe("useUndoHistory — keyboard shortcuts (T-1)", () => {
     expect(apply).not.toHaveBeenCalled();
   });
 });
+
+describe("useUndoHistory — overlapping presses in server mode", () => {
+  it("serializes undo runs: the next press waits for the previous answer", async () => {
+    const { boardReducer } = await import("@janosik/shared");
+    const state = { current: makeBoard() };
+    const apply = (action: BoardAction) => {
+      state.current = boardReducer([state.current], action)[0] ?? state.current;
+    };
+    const answers: Array<(ok: boolean) => void> = [];
+    const sent: BoardAction[] = [];
+    const send = vi.fn(
+      (_boardId: string, action: BoardAction) =>
+        new Promise<
+          | { ok: true; versions: Record<string, number>; seq: number }
+          | { ok: false; failure: { kind: "offline" } }
+        >((resolve) => {
+          sent.push(action);
+          answers.push((ok) =>
+            resolve(
+              ok
+                ? { ok: true, versions: {}, seq: answers.length }
+                : { ok: false, failure: { kind: "offline" } },
+            ),
+          );
+        }),
+    );
+    const { result } = renderHook(() =>
+      useUndoHistory({
+        getBoard: () => state.current,
+        getActiveBoardId: () => "b-1",
+        apply,
+        send,
+      }),
+    );
+
+    act(() => {
+      const first = renameBoard("First", 1);
+      const before1 = state.current;
+      apply(first);
+      result.current.record("b-1", before1, first);
+      const second = renameBoard("Second", 2);
+      const before2 = state.current;
+      apply(second);
+      result.current.record("b-1", before2, second);
+    });
+
+    // Two presses back to back (key repeat): the second must not pop and
+    // send while the first is still unanswered.
+    act(() => {
+      result.current.undo();
+      result.current.undo();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(state.current.title).toBe("First");
+
+    // The first undo is refused: it is reverted and its step goes back on
+    // top — only then does the second press run, against the right stack.
+    await act(async () => {
+      answers[0](false);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(sent[1]).toMatchObject({ type: "RENAME_BOARD", title: "First" });
+    await act(async () => {
+      answers[1](true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(state.current.title).toBe("First");
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(true);
+  });
+});

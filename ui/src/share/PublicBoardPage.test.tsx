@@ -193,4 +193,116 @@ describe("PublicBoardPage", () => {
       expect(screen.getByText(/Live · read-only/)).toBeInTheDocument(),
     );
   });
+
+  it("refetches the payload when the stream asks for a resync", async () => {
+    const fresh = snapshotBoard();
+    fresh.cards.k3 = {
+      id: "k3",
+      title: "From the fresh payload",
+      labelIds: [],
+      createdAt: 3,
+      updatedAt: 3,
+    };
+    fresh.columns[0]!.cardIds.push("k3");
+    const payloads = [
+      dto({ mode: "live", seq: 8 }),
+      dto({ mode: "live", seq: 40, board: fresh }),
+    ];
+    let boardReads = 0;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/events")) {
+        return Promise.resolve(
+          new Response(sseStream(['data: {"type":"resync"}\n\n']), {
+            status: 200,
+          }),
+        );
+      }
+      const body = payloads[Math.min(boardReads, payloads.length - 1)];
+      boardReads += 1;
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    renderPage("livetok");
+    expect(await screen.findByText("Read me")).toBeInTheDocument();
+    // The truncated catch-up is replaced by a fresh payload — the page keeps
+    // running, it does not fall into an error state.
+    expect(
+      await screen.findByText("From the fresh payload"),
+    ).toBeInTheDocument();
+    expect(boardReads).toBe(2);
+    expect(screen.queryByTestId("share-unavailable")).toBeNull();
+  });
+
+  it("shows the unavailable notice once a revoked link's stream ends", async () => {
+    let streams = 0;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/events")) {
+        streams += 1;
+        // The server ends the open stream on revocation; the reconnect is
+        // refused with the same 404 as an unknown token.
+        if (streams === 1) {
+          return Promise.resolve(
+            new Response(
+              new ReadableStream<Uint8Array>({
+                start(controller) {
+                  controller.close();
+                },
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ message: "Not found" }), {
+            status: 404,
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(dto({ mode: "live", seq: 8 })), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    renderPage("livetok");
+    expect(await screen.findByText("Read me")).toBeInTheDocument();
+    // One backoff step (1 s) later the reconnect is refused for good.
+    expect(
+      await screen.findByTestId("share-unavailable", {}, { timeout: 3_000 }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("share-unavailable-code")).toHaveTextContent(
+      "404",
+    );
+    expect(streams).toBe(2);
+  });
+
+  it("shows the gone notice when a live link's board was deleted (410)", async () => {
+    vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/events")) {
+        return Promise.resolve(new Response(null, { status: 410 }));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(dto({ mode: "live", seq: 8 })), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    renderPage("livetok");
+    expect(await screen.findByTestId("share-unavailable")).toBeInTheDocument();
+    expect(screen.getByTestId("share-unavailable-code")).toHaveTextContent(
+      "410",
+    );
+  });
 });

@@ -222,14 +222,20 @@ describe("Invitations API (e2e)", () => {
     expect(await invitationsFor(inviteeToken, boardId)).toHaveLength(0);
   });
 
-  it("409s a duplicate invite while one is pending", async () => {
+  it("treats a duplicate invite while one is pending as an idempotent no-op", async () => {
+    // Not a 409: that would tell the inviter the address has an account
+    // (an unknown address answers 201 every time).
     const boardId = await createBoard("Duplicate board");
     await invite(boardId, INVITEE_EMAIL);
     await server()
       .post(`/api/v1/boards/${boardId}/members`)
       .set(auth(ownerToken))
       .send({ email: INVITEE_EMAIL, role: "MEMBER" })
-      .expect(409);
+      .expect(201);
+    const rows = await prisma.boardMember.count({
+      where: { boardId, acceptedAt: null },
+    });
+    expect(rows).toBe(1);
   });
 
   it("ignores pending ADMINs for the last-ADMIN guard", async () => {
