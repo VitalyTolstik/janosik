@@ -381,6 +381,8 @@ See [ROADMAP.md](./ROADMAP.md) for the full architecture assessment, competitor 
 6. The backend follows the fixed stack in `ROADMAP.md` §7 (NestJS/Prisma/PostgreSQL/JWT) and its iteration order.
 7. By submitting a pull request you agree that your contribution is licensed under the [AGPL-3.0 License](./LICENSE), the same terms as the rest of the project.
 
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide — dev setup, the gate commands, and the required DCO sign-off (`git commit -s`).
+
 ---
 
 ## License
