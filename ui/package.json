@@ -145,7 +145,7 @@
     "jsdom": "^29.1.1",
     "prettier": "^3.9.6",
     "size-limit": "^13.1.1",
-    "typescript": "~5.9.0",
+    "typescript": "~7.0.2",
     "typescript-eslint": "^8.70.0",
     "vite": "^8.2.2",
     "vitest": "^5.0.0"
