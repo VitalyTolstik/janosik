@@ -62,6 +62,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the keyboard-shortcut sheet and links to the documentation in the reader's
   language (`/docs/`, `/ru/docs/`).
 
+### Fixed
+
+- **Share-dialog link lifetime.** The "Expires in" picker was a native
+  `<select>` that rendered as a black browser control in the dark theme; it is
+  now a themed popover with the project's check-mark radio rows, matching the
+  role and expiry pickers elsewhere.
+
 ## [0.1.0] - 2026-10-26
 
 Initial self-hosted release: offline-first PWA Kanban board with drag & drop,

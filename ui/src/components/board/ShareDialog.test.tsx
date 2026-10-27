@@ -164,6 +164,16 @@ describe("ShareDialog", () => {
     expect(row).toHaveTextContent("/s/newtok");
   });
 
+  it("changes the link lifetime from the themed picker", async () => {
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    const trigger = await screen.findByTestId("share-ttl");
+    expect(trigger).toHaveTextContent("24 h");
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole("radio", { name: "1 h" }));
+    expect(screen.getByTestId("share-ttl")).toHaveTextContent("1 h");
+  });
+
   it("revokes a link", async () => {
     shares = [share()];
     renderDialog();

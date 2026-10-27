@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, Copy, Link2, RefreshCw, Trash2 } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Copy,
+  Link2,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 
 import type { BoardShareDto, BoardShareMode } from "@janosik/shared";
 import { SHARE_TTL_HOURS } from "@janosik/shared";
@@ -19,11 +26,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
+import { cn } from "@/lib/utils";
 import { useBoard } from "@/store/BoardContext";
 
 /**
@@ -256,6 +269,72 @@ function ShareRow({
   );
 }
 
+/**
+ * Link-lifetime picker: an outline trigger opening a popover of radio rows
+ * with the project's check-mark idiom (BoardMembersDialog's RolePicker) —
+ * a native `<select>` renders as a black browser control in the dark theme
+ * and cannot be styled to match the dialog.
+ */
+function TtlPicker({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+
+  const label = (hours: number) =>
+    hours === 0 ? t("share.ttl.never") : t("share.ttl.hours", { count: hours });
+  const options = [0, ...SHARE_TTL_HOURS];
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label={t("share.ttl.label")}
+          data-testid="share-ttl"
+          className="h-8 min-w-[5.5rem] justify-between gap-1.5 px-2 font-normal"
+        >
+          {label(value)}
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-40 p-1">
+        <div role="radiogroup" aria-label={t("share.ttl.label")}>
+          {options.map((hours) => (
+            <button
+              key={hours}
+              type="button"
+              role="radio"
+              aria-checked={hours === value}
+              data-testid="share-ttl-option"
+              onClick={() => {
+                setOpen(false);
+                onChange(hours);
+              }}
+              className={cn(
+                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover",
+                hours === value
+                  ? "font-medium text-foreground"
+                  : "text-foreground/90",
+              )}
+            >
+              {label(hours)}
+              {hours === value && (
+                <Check className="h-3.5 w-3.5 text-primary" />
+              )}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function CreateForm({
   busy,
   onCreate,
@@ -325,22 +404,10 @@ function CreateForm({
         </label>
       </div>
 
-      <label className="flex items-center justify-between gap-2 text-sm">
+      <div className="flex items-center justify-between gap-2 text-sm">
         <span className="text-muted-foreground">{t("share.ttl.label")}</span>
-        <select
-          value={ttlHours}
-          onChange={(event) => setTtlHours(Number(event.target.value))}
-          className="h-8 rounded-md border bg-background px-2 text-sm"
-          data-testid="share-ttl"
-        >
-          <option value={0}>{t("share.ttl.never")}</option>
-          {SHARE_TTL_HOURS.map((hours) => (
-            <option key={hours} value={hours}>
-              {t("share.ttl.hours", { count: hours })}
-            </option>
-          ))}
-        </select>
-      </label>
+        <TtlPicker value={ttlHours} onChange={setTtlHours} />
+      </div>
 
       <Button
         type="button"
