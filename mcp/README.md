@@ -173,6 +173,27 @@ npm run build -w mcp
 JANOSIK_URL=http://localhost:3210 JANOSIK_TOKEN=jnk_… node mcp/scripts/smoke.mjs
 ```
 
+## Releasing
+
+The package is published to npm and listed in the
+[MCP Registry](https://registry.modelcontextprotocol.io) as
+`io.github.vitalytolstik/janosik`. A release is one tag; CI does the rest.
+
+1. Bump the version in **both** `package.json` and `server.json` (a test
+   keeps them in lockstep) and merge to `main`.
+2. Tag and push: `git tag mcp-v0.1.1 && git push origin mcp-v0.1.1`.
+
+The `mcp-publish` job in `.github/workflows/ci.yml` then waits for the test
+suite, publishes to npm with `--provenance`, and publishes the metadata to the
+registry. Auth is OIDC (npm Trusted Publishing + the registry's GitHub OIDC),
+so there is no token to rotate. `mcpName` in `package.json` must equal the
+registry name in `server.json`.
+
+One-time bootstrap (before the first automated release): create the npm
+package and the registry entry by hand — `npm publish -w mcp --access public`
+from a logged-in shell, then `mcp-publisher login github && mcp-publisher
+publish` from `mcp/`.
+
 ## License
 
 AGPL-3.0-or-later.

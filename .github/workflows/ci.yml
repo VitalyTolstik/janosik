@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    tags: ["v*", "mcp-v*"]
   pull_request:
   # Manual / tag-only render of the marketing feature clips (TASK-128).
   workflow_dispatch:
@@ -198,3 +198,60 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Publish the MCP server to npm and to the MCP Registry on a `mcp-v*` tag
+  # (TASK-136). The registry only hosts metadata; the npm package is the
+  # artifact, so npm goes first. Auth is OIDC throughout — npm Trusted
+  # Publishing and the registry's GitHub OIDC — so there is no long-lived
+  # token to leak. Never publish a build the suite rejected (`needs`).
+  mcp-publish:
+    if: startsWith(github.ref, 'refs/tags/mcp-v')
+    needs: [verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # npm Trusted Publishing + MCP Registry GitHub OIDC
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Trusted Publishing needs npm >= 11.5.1 (node 22 ships npm 10).
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      # The tag is only a trigger; the published version comes from
+      # `mcp/package.json`. A mismatch would publish a version nobody asked
+      # for, so refuse it.
+      - name: Check the tag matches the package version
+        run: |
+          tag="${GITHUB_REF_NAME#mcp-v}"
+          pkg="$(node -p "require('./mcp/package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "Tag mcp-v$tag does not match mcp/package.json version $pkg" >&2
+            exit 1
+          fi
+
+      - name: Build (MCP server)
+        run: npm run build -w mcp
+
+      - name: Publish to npm
+        run: npm publish -w mcp --provenance --access public
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          sudo mv mcp-publisher /usr/local/bin/
+
+      - name: Authenticate to the MCP Registry
+        run: mcp-publisher login github-oidc
+
+      - name: Publish to the MCP Registry
+        working-directory: mcp
+        run: mcp-publisher publish
