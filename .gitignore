@@ -55,3 +55,8 @@ site/public/og-*.png
 # landing page's assets), so they are not ignored here.
 video/public/fonts/
 video/public/logo.svg
+
+# Recording pipeline — raw takes and the seed manifest are regenerated, only
+# the encoded clips in `site/public/media/` are committed.
+video/record/out/
+video/record/.state.json

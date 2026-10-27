@@ -23,7 +23,7 @@ export default tseslint.config(
   },
   {
     // Node scripts and the Remotion config run outside the browser.
-    files: ["scripts/**/*.mjs", "*.config.ts"],
+    files: ["scripts/**/*.mjs", "record/**/*.mjs", "*.config.ts"],
     languageOptions: {
       globals: globals.node,
     },

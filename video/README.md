@@ -1,79 +1,111 @@
 # `@janosik/video` — feature clips
 
-Remotion compositions that render the landing page's feature clips. One clip
-per media slot on the home page (the hero + four feature rows + the self-host
-band). Everything is drawn on the shared brand tokens from `@janosik/brand`, so
-the clips match the app and the site exactly — no hardcoded colours.
+The landing page's feature clips: one clip per media slot on the home page
+(the hero, four feature rows and the self-host band). Two pipelines can produce
+them.
+
+**Recording pipeline (current source of truth).** Real screen recordings of the
+running app, driven by Playwright against a seeded board. This is what the
+committed files in `site/public/media/` come from.
+
+**Remotion pipeline (alternative).** Authored compositions drawn on the shared
+brand tokens from `@janosik/brand`. Useful for clips that cannot be recorded
+(an abstract explainer), and kept as an authoring tool.
+
+Both write the same slugs, so only run one at a time.
 
 ## Requirements
 
-- Node 18+ (the repo's CI uses 22).
-- Nothing else: the first render downloads Remotion's Chrome Headless Shell
-  (~170 MB, cached in `~/.remotion`), and the encoder ships with Remotion.
+- Node 22 and `ffmpeg` on the PATH (the recording pipeline shells out to it).
+- A running Janosik stack reachable over HTTP (the dev/test server, default
+  `http://localhost:3210`), with `backend/.env` present so the seed can mint
+  tokens.
+- Playwright browsers: `npx playwright install chromium ffmpeg` (once).
 
-## Commands
+## Recording pipeline
 
 ```bash
-npm run studio -w video   # live preview (Remotion Studio) — the default way to iterate
-npm run render -w video   # render every clip into site/public/media
-npm run typecheck -w video
-npm run lint -w video
+npm run seed -w video      # create the demo users + a realistic board
+npm run record -w video    # record every clip, light and dark, into record/out
+npm run terminal -w video  # the self-host clip (real command output)
+npm run encode -w video    # trim + encode into site/public/media
+npm run clips -w video     # seed, record, terminal, encode in one go
 ```
 
-`render` writes, per clip and per theme, an `mp4` (H.264), a `webm` (VP8) and a
-`jpg` poster into `site/public/media/` — `<slug>.*` for light, `<slug>-dark.*`
-for dark. Those files **are committed** — they are the landing page's assets —
-so the site build never needs Remotion.
+`seed` creates seven demo users (`@janosik.demo`, all verified) and a
+`Product roadmap` board with four columns, twelve cards, labels, due dates,
+assignees, a checklist and comments. It is idempotent: matching users are
+deleted and recreated first. It also logs each user in once to capture the
+refresh cookie the recorder injects, so no login screen appears in the footage.
 
-## Structure
+`record` captures each clip at 1280×800 (16:10, the site slot's aspect ratio),
+rendered at 2x device scale for crisp text. It records both themes by seeding
+`janosik-theme` before the app boots. The hero and realtime clips open extra
+browser contexts (teammates) so presence and live updates are real. Refresh
+tokens rotate on every use, so the recorder carries the rotated cookie from one
+context to the next; run `seed` immediately before `record`.
+
+`terminal` runs the documented start-up commands for real, captures their
+stdout, and plays that output in a terminal recorded by Playwright. Every line
+is real command output.
+
+`encode` reads the offsets in `record/out/manifest.json` and writes, per clip
+and theme, an `mp4` (H.264), a `webm` (VP9) and a `jpg` poster into
+`site/public/media/`: `<slug>.*` for light, `<slug>-dark.*` for dark. Those
+files are committed, so the site build never needs the pipelines.
+
+Raw takes and the seed manifest live in `video/record/out/` and
+`video/record/.state.json` (both git-ignored).
+
+## Remotion pipeline
+
+```bash
+npm run studio -w video   # live preview (Remotion Studio)
+npm run render -w video   # render every composition into site/public/media
+```
+
+The first render downloads Remotion's Chrome Headless Shell into `~/.remotion`.
+`render` writes the same slugs as the recording pipeline.
 
 ```
 src/
   index.ts            entry point (imports the brand CSS, registers the root)
   Root.tsx            one authored <Composition> per clip (Studio-editable)
   styles/theme.css    light site palette by default; `.dark` for the app theme
-  lib/
-    layout.ts         1280×800 geometry shared by every clip
-    motion.ts         brand easing curves + loop-friendly helpers
-    fonts.ts          loads Space Grotesk (no FOUT)
-    types.ts          the `theme` prop every clip takes
-  components/         the board mockup primitives (chrome, columns, cards, cursor)
+  lib/                layout, motion, fonts, shared types
+  components/         the board mockup primitives
   compositions/       the six clips
 scripts/
   copy-assets.mjs     copies fonts + the brand mark into public/ (git-ignored)
   render.mjs          bundles once, renders every clip (mp4 + webm + poster)
+record/
+  seed.mjs            demo users + board via the API
+  record.mjs          Playwright recordings of the real UI
+  terminal.mjs        the self-host clip from real command output
+  encode.mjs          trim + encode into site/public/media
 ```
 
-## Clips → slots
+## Clips to slots
 
-| Composition | File (`site/public/media`) | Slot (`MediaSlot` variant) |
-| --- | --- | --- |
-| `Hero` | `hero-swarm` | `swarm` (hero) |
-| `Board` | `feature-board` | `board` |
-| `Realtime` | `feature-realtime` | `realtime` |
-| `Cards` | `feature-cards` | `cards` |
-| `Sharing` | `feature-sharing` | `sharing` |
-| `Selfhost` | `feature-selfhost` | `selfhost` (open-source band) |
+| Slug | Slot (`MediaSlot` variant) |
+| --- | --- |
+| `hero-swarm` | `swarm` (hero) |
+| `feature-board` | `board` |
+| `feature-realtime` | `realtime` |
+| `feature-cards` | `cards` |
+| `feature-sharing` | `sharing` |
+| `feature-selfhost` | `selfhost` (open-source band) |
 
-Each clip is 1280×800 (16:10 — the site slot's aspect ratio) at 30 fps, 7–8 s,
-and loops seamlessly (its last frame returns to the first).
+Each clip is 1280×800 (16:10) and loops: its last frame returns to the first.
 
 ## Theme
 
-Clips take a `theme` prop (`"light"` default, `"dark"` for the app palette).
-Flip it in the Studio or per composition in `Root.tsx`. Because a clip is baked
-video, it cannot follow CSS variables at runtime — so `render` writes both
-variants and `MediaSlot` shows the one matching the page's `data-theme`.
-
-## Adding or changing a clip
-
-1. Edit or add a composition in `src/compositions/`, register it in `Root.tsx`.
-2. `npm run studio -w video` to preview.
-3. Add an entry to the `clips` list in `scripts/render.mjs` (slug + poster frame).
-4. `npm run render -w video` and commit the new files in `site/public/media/`.
+A clip is baked video, so it cannot follow CSS variables at runtime. Every
+pipeline writes both variants, and `MediaSlot` shows the one matching the
+page's `data-theme`.
 
 ## CI
 
 The `video` job in `.github/workflows/ci.yml` re-renders the clips on a version
-tag or a manual `workflow_dispatch` and uploads them as an artifact — it is not
+tag or a manual `workflow_dispatch` and uploads them as an artifact. It is not
 run on every PR, since the clips are committed.

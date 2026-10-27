@@ -40,6 +40,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with the command catalog, architecture decision records, an FAQ and a
   security policy, in English and Russian with full-text search and a
   light/dark theme.
+- **Real feature clips.** The landing page's six clips are now genuine
+  recordings of the running app (light and dark), produced by a Playwright
+  pipeline in `video/record/` that seeds a demo board, records the real UI and
+  the self-host terminal, and encodes mp4/webm/posters.
 
 ## [0.1.0] - 2026-10-26
 

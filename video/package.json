@@ -9,6 +9,11 @@
     "assets": "node scripts/copy-assets.mjs",
     "studio": "npm run assets && remotion studio",
     "render": "npm run assets && node scripts/render.mjs",
+    "seed": "node record/seed.mjs",
+    "record": "node record/record.mjs",
+    "terminal": "node record/terminal.mjs",
+    "encode": "node record/encode.mjs",
+    "clips": "npm run seed && npm run record && npm run terminal && npm run encode",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },
@@ -30,6 +35,7 @@
     "@types/react-dom": "^18.3.7",
     "eslint": "^10.13.0",
     "globals": "^17.13.0",
+    "playwright": "^1.64.1",
     "typescript": "~5.9.0",
     "typescript-eslint": "^8.72.1"
   }
