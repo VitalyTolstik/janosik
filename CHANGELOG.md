@@ -55,6 +55,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Dead card links.** A `?card=` that points at a card not on the board no
   longer fails silently: the stale param is dropped from the address bar and a
   short "Card not found" toast explains why nothing opened.
+- **Docs version and an in-app Help menu.** The docs header now shows the
+  version it describes (`v0.1.0`, read from the repo version at build time);
+  the docs track the latest release and gain a version switcher once a second
+  major exists. In the app, the header's "?" button is a Help menu that opens
+  the keyboard-shortcut sheet and links to the documentation in the reader's
+  language (`/docs/`, `/ru/docs/`).
 
 ## [0.1.0] - 2026-10-26
 
