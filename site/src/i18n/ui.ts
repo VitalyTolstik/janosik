@@ -29,9 +29,9 @@ const en = {
   "seo.home.title": "Janosik — self-hosted Kanban for AI agents",
   "seo.home.description":
     "Give a swarm of AI agents one board. They move cards, comment and tick checklists through the command API while you watch. Self-hosted, open source (AGPL-3.0).",
-  "seo.pricing.title": "Pricing — self-host free or let us host",
+  "seo.pricing.title": "Pricing — free to self-host, cloud coming soon",
   "seo.pricing.description":
-    "Janosik is free to self-host forever. Compare Self-hosted, Hosted Free, Pro, Team and Enterprise plans. Start free, no credit card required.",
+    "Janosik is free to self-host forever under the AGPL-3.0 license. A managed cloud is coming later. Start free, no credit card required.",
   "breadcrumb.home": "Home",
 
   "home.hero.title": "Kanban for your agent swarm.",
@@ -119,7 +119,7 @@ const en = {
   "home.faq.title": "Questions",
   "home.faq.q1": "Is Janosik free?",
   "home.faq.a1":
-    "Yes — the self-hosted edition is free and open source under the AGPL-3.0 license. A hosted plan is available if you'd rather not run a server.",
+    "Yes — the self-hosted edition is free and open source under the AGPL-3.0 license. A managed cloud is coming later if you'd rather not run a server.",
   "home.faq.q2": "Do I need a server?",
   "home.faq.a2":
     "No. Janosik also runs fully local-first in your browser; a server adds accounts, shared boards and realtime sync.",
@@ -137,27 +137,24 @@ const en = {
     "Open the board and every change arrives live. To let anyone watch without an account, mint a read-only share: a frozen snapshot, or a live view that follows the swarm.",
 
   "home.cta.title": "Ready to plan?",
-  "home.cta.lead": "Start with the hosted plan or self-host in minutes.",
+  "home.cta.lead": "Self-host in minutes — or join the cloud waitlist.",
 
   "home.pricing.title": "Free to self-host, forever",
   "home.pricing.lead":
-    "Run Janosik on your own server at no cost — or let us host it, starting free.",
+    "Run Janosik on your own server at no cost. A managed cloud is coming later.",
   "home.pricing.cta": "See pricing",
 
-  "pricing.title": "Simple, honest pricing",
+  "pricing.title": "Free to self-host, forever",
   "pricing.lead":
-    "Free to self-host, forever. Pay only if you would rather we run it, and start free either way.",
+    "Janosik is open source and free to run on your own server. A managed cloud is on the way — join the waitlist and we'll tell you when it lands.",
   "pricing.note":
-    "Hosted plans are launching soon. Prices shown are indicative and may change before launch. Join the waitlist to lock in early-access pricing.",
+    "Self-hosting is free, forever. The managed cloud is not launched yet.",
 
-  "pricing.billing.aria": "Billing period",
-  "pricing.billing.monthly": "Monthly",
-  "pricing.billing.annual": "Annual",
-  "pricing.billing.save": "2 months free",
+  "pricing.badge": "Start here",
 
-  "pricing.compare.title": "Compare plans",
+  "pricing.compare.title": "Self-hosted vs cloud",
   "pricing.compare.lead":
-    "The board is the same on every plan. The limits, controls and support differ.",
+    "The board is the same either way. Run it yourself today; let us run it when the cloud lands.",
   "pricing.compare.aria": "Plan comparison",
   "pricing.compare.feature": "Feature",
   "pricing.compare.yes": "Included",
@@ -180,28 +177,18 @@ const en = {
   "pricing.row.admin": "Admin panel & backups",
   "pricing.row.roles": "Roles & permissions",
   "pricing.row.audit": "Audit log",
-  "pricing.row.sso": "Single sign-on (SSO)",
-  "pricing.row.onprem": "Self-hosted / air-gapped",
   "pricing.row.hosting": "Who runs it",
   "pricing.row.updates": "Updates & maintenance",
   "pricing.row.support": "Support",
-  "pricing.row.sla": "Uptime SLA",
 
   "pricing.value.unlimited": "Unlimited",
   "pricing.value.yourDisk": "Your disk",
-  "pricing.value.custom": "Custom",
+  "pricing.value.managed": "Managed",
   "pricing.value.you": "You",
   "pricing.value.us": "We do",
-  "pricing.value.youOrUs": "You or us",
   "pricing.value.auto": "Automatic",
-  "pricing.value.managed": "Managed",
   "pricing.value.community": "Community",
-  "pricing.value.email": "Email",
   "pricing.value.priority": "Priority",
-  "pricing.value.dedicated": "Dedicated + SLA",
-  "pricing.value.storage.free": "100 MB",
-  "pricing.value.storage.pro": "10 GB / user",
-  "pricing.value.storage.team": "100 GB",
 
   "pricing.limit.boards": "Boards",
   "pricing.limit.members": "Members",
@@ -209,80 +196,39 @@ const en = {
 
   "pricing.selfhost.name": "Self-hosted",
   "pricing.selfhost.for": "For teams that run it themselves",
-  "pricing.selfhost.periodM": "forever",
-  "pricing.selfhost.periodY": "forever",
+  "pricing.selfhost.period": "forever",
   "pricing.selfhost.cta": "Self-host now",
   "pricing.selfhost.f1": "Every feature included",
   "pricing.selfhost.f2": "Your database, your data",
   "pricing.selfhost.f3": "AGPL-3.0 — fork & audit",
 
-  "pricing.free.name": "Hosted Free",
-  "pricing.free.for": "For trying Janosik with a small team",
-  "pricing.free.periodM": "forever",
-  "pricing.free.periodY": "forever",
-  "pricing.free.cta": "Join the waitlist",
-  "pricing.free.f1": "Realtime sync & presence",
-  "pricing.free.f2": "Offline-first, installable PWA",
-  "pricing.free.f3": "Community support",
-
-  "pricing.pro.name": "Pro",
-  "pricing.pro.badge": "Most popular",
-  "pricing.pro.for": "For growing teams that plan every day",
-  "pricing.pro.periodM": "per user / month",
-  "pricing.pro.periodY": "per user / year",
-  "pricing.pro.cta": "Join the waitlist",
-  "pricing.pro.f1": "Everything in Hosted Free",
-  "pricing.pro.f2": "Realtime sync & presence",
-  "pricing.pro.f3": "Email support",
-
-  "pricing.team.name": "Team",
-  "pricing.team.for": "For teams that need controls and support",
-  "pricing.team.periodM": "per user / month",
-  "pricing.team.periodY": "per user / year",
-  "pricing.team.cta": "Join the waitlist",
-  "pricing.team.f1": "Everything in Pro",
-  "pricing.team.f2": "SSO & audit log",
-  "pricing.team.f3": "Priority support",
-
-  "pricing.enterprise.name": "Enterprise",
-  "pricing.enterprise.title": "Running at scale?",
-  "pricing.enterprise.body":
-    "Deploy on your own terms, whether on-prem, air-gapped or fully managed, with SAML SSO, an audit trail, an uptime SLA and a named engineer.",
-  "pricing.enterprise.periodM": "Let's talk",
-  "pricing.enterprise.periodY": "Let's talk",
-  "pricing.enterprise.cta": "Contact us",
-  "pricing.enterprise.point1": "On-prem or air-gapped deployment",
-  "pricing.enterprise.point2": "SAML SSO, audit log & data residency",
-  "pricing.enterprise.point3": "Uptime SLA and a dedicated support engineer",
+  "pricing.cloud.name": "Cloud",
+  "pricing.cloud.for": "Managed hosting — coming later",
+  "pricing.cloud.price": "Coming soon",
+  "pricing.cloud.period": "Join the waitlist",
+  "pricing.cloud.cta": "Join the waitlist",
+  "pricing.cloud.f1": "We run it, update it and back it up",
+  "pricing.cloud.f2": "Realtime sync & presence",
+  "pricing.cloud.f3": "Email support",
 
   "pricing.faq.title": "Pricing questions",
   "pricing.faq.q1": "Is the self-hosted edition really free?",
   "pricing.faq.a1":
     "Yes. It is free and open source under the AGPL-3.0 license, with every feature and no seat limit. You only pay for the infrastructure you run it on.",
-  "pricing.faq.q2": "What is the difference between self-hosted and hosted?",
+  "pricing.faq.q2": "When does the cloud launch?",
   "pricing.faq.a2":
-    "It is the same board. Self-hosted runs on your server with your database; hosted runs on ours, so we handle the installs, updates and backups.",
-  "pricing.faq.q3": "How does per-user pricing work?",
+    "The managed cloud is not available yet. Join the waitlist and we will email you when it opens — there is nothing else to do until then.",
+  "pricing.faq.q3": "Will the cloud be priced per user?",
   "pricing.faq.a3":
-    "Paid hosted plans are billed per active member, monthly or annually. Read-only viewers and share links are free, and you can add or remove members at any time.",
-  "pricing.faq.q4": "Is there a free trial?",
+    "We are still settling the details. Self-hosting stays free with no seat limit regardless, so you can always run it yourself.",
+  "pricing.faq.q4": "What happens to my data if I leave?",
   "pricing.faq.a4":
-    "The hosted Free plan is the trial. Sign up with an email and use it for as long as you like, then move up to Pro or Team only when you outgrow its limits.",
-  "pricing.faq.q5": "Can I change or cancel my plan?",
-  "pricing.faq.a5":
-    "Yes, at any time. Downgrades and cancellations take effect at the end of the billing period, and you can export all of your data first.",
-  "pricing.faq.q6": "Do you offer discounts?",
-  "pricing.faq.a6":
-    "Yes — for non-profits, education and open-source projects. Get in touch and we will sort something out.",
-  "pricing.faq.q7": "What happens to my data if I leave?",
-  "pricing.faq.a7":
     "It stays yours. Export every board, or move to the self-hosted edition and keep running on your own server. There is no lock-in.",
 
   "pricing.cta.title": "Start free today",
   "pricing.cta.lead":
-    "Self-host in minutes, or join the hosted waitlist. Either way, you start free.",
-  "pricing.waitlist.subject": "Janosik hosted waitlist",
-  "pricing.contact.subject": "Janosik Enterprise",
+    "Self-host in minutes. The managed cloud is coming later — join the waitlist to hear first.",
+  "pricing.waitlist.subject": "Janosik cloud waitlist",
 
   "footer.tagline": "A self-hosted Kanban board for a swarm of agents.",
   "footer.product": "Product",
@@ -320,9 +266,9 @@ const ru: Record<keyof typeof en, string> = {
   "seo.home.title": "Janosik — self-hosted канбан для ИИ-агентов",
   "seo.home.description":
     "Рой ИИ-агентов на одной доске: они двигают карточки, комментируют и отмечают чек-листы через командный API, а вы смотрите. Self-hosted, AGPL-3.0.",
-  "seo.pricing.title": "Тарифы — бесплатный self-hosting или хостинг",
+  "seo.pricing.title": "Тарифы — бесплатный self-hosting, облако скоро",
   "seo.pricing.description":
-    "Self-hosting Janosik бесплатен навсегда. Сравните планы Self-hosted, Hosted Free, Pro, Team и Enterprise. Начните бесплатно, карта не нужна.",
+    "Self-hosting Janosik бесплатен навсегда по лицензии AGPL-3.0. Облако под нашим управлением появится позже. Начните бесплатно, карта не нужна.",
   "breadcrumb.home": "Главная",
 
   "home.hero.title": "Канбан для вашего роя агентов.",
@@ -410,7 +356,7 @@ const ru: Record<keyof typeof en, string> = {
   "home.faq.title": "Вопросы",
   "home.faq.q1": "Janosik бесплатный?",
   "home.faq.a1":
-    "Да — self-hosted версия бесплатна и открыта по лицензии AGPL-3.0. Если не хотите держать сервер, есть хостинг-план.",
+    "Да — self-hosted версия бесплатна и открыта по лицензии AGPL-3.0. Если не хотите держать сервер, облако под нашим управлением появится позже.",
   "home.faq.q2": "Нужен ли сервер?",
   "home.faq.a2":
     "Нет. Janosik работает и полностью локально в браузере; сервер добавляет аккаунты, общие доски и realtime-синхронизацию.",
@@ -428,27 +374,24 @@ const ru: Record<keyof typeof en, string> = {
     "Откройте доску — все изменения приходят вживую. Чтобы кто угодно мог смотреть без аккаунта, создайте ссылку только для чтения: замороженный снапшот или живой просмотр, следящий за роем.",
 
   "home.cta.title": "Готовы планировать?",
-  "home.cta.lead": "Начните с хостинг-плана или разверните у себя за минуты.",
+  "home.cta.lead":
+    "Разверните у себя за минуты — или запишитесь в лист ожидания облака.",
 
   "home.pricing.title": "Self-hosting бесплатен навсегда",
   "home.pricing.lead":
-    "Разверните Janosik на своём сервере бесплатно — или доверьте хостинг нам, начав с бесплатного плана.",
+    "Разверните Janosik на своём сервере бесплатно. Облако под нашим управлением появится позже.",
   "home.pricing.cta": "Смотреть тарифы",
 
-  "pricing.title": "Простые и честные тарифы",
+  "pricing.title": "Self-hosting бесплатен навсегда",
   "pricing.lead":
-    "Self-hosting бесплатен навсегда. Платите только за наш хостинг. Старт бесплатный в любом случае.",
-  "pricing.note":
-    "Хостинг-планы скоро запустятся. Указанные цены ориентировочные и могут измениться до запуска. Запишитесь в лист ожидания, чтобы зафиксировать цены раннего доступа.",
+    "Janosik — открытый исходный код, который можно бесплатно запустить на своём сервере. Облачный хостинг под нашим управлением уже в пути: запишитесь в лист ожидания, и мы сообщим, когда он запустится.",
+  "pricing.note": "Self-hosting бесплатен навсегда. Облако пока не запущено.",
 
-  "pricing.billing.aria": "Период оплаты",
-  "pricing.billing.monthly": "Ежемесячно",
-  "pricing.billing.annual": "Ежегодно",
-  "pricing.billing.save": "2 месяца в подарок",
+  "pricing.badge": "Начните здесь",
 
-  "pricing.compare.title": "Сравнение планов",
+  "pricing.compare.title": "Self-hosted или облако",
   "pricing.compare.lead":
-    "Доска одинаковая на всех планах. Различаются лимиты, управление и поддержка.",
+    "Доска одна и та же. Запускайте у себя сейчас — или доверьте её нам, когда облако запустится.",
   "pricing.compare.aria": "Сравнение тарифов",
   "pricing.compare.feature": "Возможность",
   "pricing.compare.yes": "Есть",
@@ -471,28 +414,18 @@ const ru: Record<keyof typeof en, string> = {
   "pricing.row.admin": "Админ-панель и бэкапы",
   "pricing.row.roles": "Роли и права",
   "pricing.row.audit": "Журнал аудита",
-  "pricing.row.sso": "Единый вход (SSO)",
-  "pricing.row.onprem": "Self-hosted / air-gapped",
   "pricing.row.hosting": "Кто держит сервер",
   "pricing.row.updates": "Обновления и обслуживание",
   "pricing.row.support": "Поддержка",
-  "pricing.row.sla": "SLA по доступности",
 
   "pricing.value.unlimited": "Без лимита",
   "pricing.value.yourDisk": "Ваш диск",
-  "pricing.value.custom": "По запросу",
+  "pricing.value.managed": "Под управлением",
   "pricing.value.you": "Вы",
   "pricing.value.us": "Мы",
-  "pricing.value.youOrUs": "Вы или мы",
   "pricing.value.auto": "Автоматически",
-  "pricing.value.managed": "Под управлением",
   "pricing.value.community": "Сообщество",
-  "pricing.value.email": "Почта",
   "pricing.value.priority": "Приоритетная",
-  "pricing.value.dedicated": "Выделенная + SLA",
-  "pricing.value.storage.free": "100 МБ",
-  "pricing.value.storage.pro": "10 ГБ / участника",
-  "pricing.value.storage.team": "100 ГБ",
 
   "pricing.limit.boards": "Доски",
   "pricing.limit.members": "Участники",
@@ -500,80 +433,39 @@ const ru: Record<keyof typeof en, string> = {
 
   "pricing.selfhost.name": "Self-hosted",
   "pricing.selfhost.for": "Для команд, которые держат сервер сами",
-  "pricing.selfhost.periodM": "навсегда",
-  "pricing.selfhost.periodY": "навсегда",
+  "pricing.selfhost.period": "навсегда",
   "pricing.selfhost.cta": "Развернуть",
   "pricing.selfhost.f1": "Все возможности включены",
   "pricing.selfhost.f2": "Ваша база, ваши данные",
   "pricing.selfhost.f3": "Лицензия AGPL-3.0 — форкайте и проверяйте",
 
-  "pricing.free.name": "Hosted Free",
-  "pricing.free.for": "Чтобы попробовать Janosik небольшой командой",
-  "pricing.free.periodM": "навсегда",
-  "pricing.free.periodY": "навсегда",
-  "pricing.free.cta": "В лист ожидания",
-  "pricing.free.f1": "Realtime-синхронизация и presence",
-  "pricing.free.f2": "Offline-first PWA с установкой",
-  "pricing.free.f3": "Поддержка сообщества",
-
-  "pricing.pro.name": "Pro",
-  "pricing.pro.badge": "Популярный",
-  "pricing.pro.for": "Для растущих команд, планирующих каждый день",
-  "pricing.pro.periodM": "за участника / мес",
-  "pricing.pro.periodY": "за участника / год",
-  "pricing.pro.cta": "В лист ожидания",
-  "pricing.pro.f1": "Всё из Hosted Free",
-  "pricing.pro.f2": "Realtime-синхронизация и presence",
-  "pricing.pro.f3": "Поддержка по почте",
-
-  "pricing.team.name": "Team",
-  "pricing.team.for": "Для команд, которым нужны контроль и поддержка",
-  "pricing.team.periodM": "за участника / мес",
-  "pricing.team.periodY": "за участника / год",
-  "pricing.team.cta": "В лист ожидания",
-  "pricing.team.f1": "Всё из Pro",
-  "pricing.team.f2": "SSO и журнал аудита",
-  "pricing.team.f3": "Приоритетная поддержка",
-
-  "pricing.enterprise.name": "Enterprise",
-  "pricing.enterprise.title": "Масштаб крупной компании?",
-  "pricing.enterprise.body":
-    "Разворачивайте на своих условиях: on-prem, air-gapped или под нашим управлением. SAML SSO, журнал аудита, SLA по доступности и выделенный инженер.",
-  "pricing.enterprise.periodM": "Обсудим",
-  "pricing.enterprise.periodY": "Обсудим",
-  "pricing.enterprise.cta": "Связаться",
-  "pricing.enterprise.point1": "Развёртывание on-prem или air-gapped",
-  "pricing.enterprise.point2": "SAML SSO, журнал аудита и хранение данных",
-  "pricing.enterprise.point3": "SLA по доступности и выделенный инженер",
+  "pricing.cloud.name": "Облако",
+  "pricing.cloud.for": "Хостинг под нашим управлением — позже",
+  "pricing.cloud.price": "Скоро",
+  "pricing.cloud.period": "Лист ожидания",
+  "pricing.cloud.cta": "В лист ожидания",
+  "pricing.cloud.f1": "Мы запускаем, обновляем и делаем бэкапы",
+  "pricing.cloud.f2": "Realtime-синхронизация и presence",
+  "pricing.cloud.f3": "Поддержка по почте",
 
   "pricing.faq.title": "Вопросы о тарифах",
   "pricing.faq.q1": "Self-hosted версия правда бесплатна?",
   "pricing.faq.a1":
     "Да. Она бесплатна и открыта по лицензии AGPL-3.0, со всеми возможностями и без лимита мест. Вы платите только за инфраструктуру, на которой её запускаете.",
-  "pricing.faq.q2": "Чем отличается self-hosted от hosted?",
+  "pricing.faq.q2": "Когда запустится облако?",
   "pricing.faq.a2":
-    "Доска одна и та же. Self-hosted работает на вашем сервере с вашей базой; hosted — на нашем, так что установка, обновления и бэкапы на нас.",
-  "pricing.faq.q3": "Как работает оплата за участника?",
+    "Облако под нашим управлением пока недоступно. Запишитесь в лист ожидания — мы напишем, когда оно откроется. Больше ничего делать не нужно.",
+  "pricing.faq.q3": "Будет ли облако платным за участника?",
   "pricing.faq.a3":
-    "Платные хостинг-планы оплачиваются за активного участника — ежемесячно или ежегодно. Наблюдатели и ссылки только для чтения бесплатны, а участников можно добавлять и убирать в любой момент.",
-  "pricing.faq.q4": "Есть бесплатный пробный период?",
+    "Детали ещё определяем. Self-hosting в любом случае остаётся бесплатным и без лимита мест, так что запустить у себя можно всегда.",
+  "pricing.faq.q4": "Что будет с данными, если я уйду?",
   "pricing.faq.a4":
-    "Бесплатный hosted-план и есть пробный период. Зарегистрируйтесь по почте и пользуйтесь сколько угодно, а на Pro или Team переходите, только когда упрётесь в его лимиты.",
-  "pricing.faq.q5": "Можно сменить или отменить план?",
-  "pricing.faq.a5":
-    "Да, в любой момент. Понижение и отмена вступают в силу в конце расчётного периода, а данные можно сначала выгрузить.",
-  "pricing.faq.q6": "Есть скидки?",
-  "pricing.faq.a6":
-    "Да — для НКО, образования и open-source проектов. Напишите нам, и мы что-нибудь придумаем.",
-  "pricing.faq.q7": "Что будет с данными, если я уйду?",
-  "pricing.faq.a7":
     "Они остаются вашими. Выгрузите все доски или перейдите на self-hosted версию и продолжайте работать на своём сервере. Вендор-лока нет.",
 
   "pricing.cta.title": "Начните бесплатно",
   "pricing.cta.lead":
-    "Разверните у себя за минуты или запишитесь в лист ожидания хостинга. В любом случае старт бесплатный.",
-  "pricing.waitlist.subject": "Лист ожидания Janosik (хостинг)",
-  "pricing.contact.subject": "Janosik Enterprise",
+    "Разверните у себя за минуты. Облако появится позже — запишитесь в лист ожидания, чтобы узнать первым.",
+  "pricing.waitlist.subject": "Лист ожидания облака Janosik",
 
   "footer.tagline": "Self-hosted канбан для роя агентов.",
   "footer.product": "Продукт",

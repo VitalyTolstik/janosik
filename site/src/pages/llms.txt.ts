@@ -13,12 +13,12 @@ export const GET: APIRoute = ({ site }) => {
 
 > ${siteConfig.description}
 
-Janosik is a Kanban board for a swarm of AI agents: give each agent a personal API key, and it moves cards, comments and ticks checklists through the command API while you watch live. Free and open source under the AGPL-3.0 license; self-host it or use the hosted plan.
+Janosik is a Kanban board for a swarm of AI agents: give each agent a personal API key, and it moves cards, comments and ticks checklists through the command API while you watch live. Free and open source under the AGPL-3.0 license; self-host it today, with a managed cloud coming later.
 
 ## Pages
 
 - [Home](${abs("/")}): Features, how it works and answers to common questions.
-- [Pricing](${abs("/pricing/")}): Self-hosted, Hosted Free, Pro, Team and Enterprise plans.
+- [Pricing](${abs("/pricing/")}): A free self-hosted edition, and a managed cloud (coming later).
 - [Documentation](${abs("/docs/")}): Install, configure and self-host Janosik.
 - [Machine-readable pricing](${abs("/pricing.md")}): Plans and limits as Markdown.
 

@@ -6,14 +6,18 @@ import type { UIKey } from "./i18n/ui";
  * change lands once — no drifting between the two languages or between the
  * cards and the table.
  *
- * A `Value` is either a bare number (language-neutral, e.g. `3` boards) or an
- * i18n key for anything carrying words (e.g. `"Unlimited"`, `"100 MB"`).
+ * A `Value` is either a bare number (language-neutral, e.g. `0`) or an i18n
+ * key for anything carrying words (e.g. `"Unlimited"`, `"Coming soon"`).
  * Localised prose — plan names, blurbs, feature bullets, table labels — lives
  * in `i18n/ui.ts` and is referenced by key.
+ *
+ * Only two plans exist today: a free self-hosted edition (open source) and a
+ * managed cloud that is not launched yet. Per-seat tiers arrive with the cloud
+ * (TASK-131).
  */
 
-export type PlanId = "selfhost" | "free" | "pro" | "team" | "enterprise";
-export type PlanLink = "github" | "waitlist" | "contact";
+export type PlanId = "selfhost" | "cloud";
+export type PlanLink = "github" | "waitlist";
 export type Value = number | UIKey;
 /** A table cell: a boolean (included / not) or a value to print. */
 export type Cell = boolean | Value;
@@ -27,8 +31,8 @@ export type Plan = {
   link: PlanLink;
   /** Highlighted as the recommended tier. */
   featured?: boolean;
-  price: { monthly: Value; annual: Value };
-  period: { monthly: UIKey; annual: UIKey };
+  price: Value;
+  period: UIKey;
   limits: { boards: Value; members: Value; storage: Value };
   /** Card bullets — qualitative, referenced by i18n key. */
   highlights: UIKey[];
@@ -42,11 +46,9 @@ export const plans: Plan[] = [
   {
     id: "selfhost",
     link: "github",
-    price: { monthly: 0, annual: 0 },
-    period: {
-      monthly: "pricing.selfhost.periodM",
-      annual: "pricing.selfhost.periodY",
-    },
+    featured: true,
+    price: 0,
+    period: "pricing.selfhost.period",
     limits: {
       boards: "pricing.value.unlimited",
       members: "pricing.value.unlimited",
@@ -59,82 +61,25 @@ export const plans: Plan[] = [
     ],
   },
   {
-    id: "free",
+    id: "cloud",
     link: "waitlist",
-    price: { monthly: 0, annual: 0 },
-    period: {
-      monthly: "pricing.free.periodM",
-      annual: "pricing.free.periodY",
-    },
-    limits: {
-      boards: 3,
-      members: 5,
-      storage: "pricing.value.storage.free",
-    },
-    highlights: [
-      planKey("free", "f1"),
-      planKey("free", "f2"),
-      planKey("free", "f3"),
-    ],
-  },
-  {
-    id: "pro",
-    link: "waitlist",
-    featured: true,
-    price: { monthly: 8, annual: 80 },
-    period: {
-      monthly: "pricing.pro.periodM",
-      annual: "pricing.pro.periodY",
-    },
+    price: "pricing.cloud.price",
+    period: "pricing.cloud.period",
     limits: {
       boards: "pricing.value.unlimited",
       members: "pricing.value.unlimited",
-      storage: "pricing.value.storage.pro",
+      storage: "pricing.value.managed",
     },
     highlights: [
-      planKey("pro", "f1"),
-      planKey("pro", "f2"),
-      planKey("pro", "f3"),
+      planKey("cloud", "f1"),
+      planKey("cloud", "f2"),
+      planKey("cloud", "f3"),
     ],
-  },
-  {
-    id: "team",
-    link: "waitlist",
-    price: { monthly: 16, annual: 160 },
-    period: {
-      monthly: "pricing.team.periodM",
-      annual: "pricing.team.periodY",
-    },
-    limits: {
-      boards: "pricing.value.unlimited",
-      members: "pricing.value.unlimited",
-      storage: "pricing.value.storage.team",
-    },
-    highlights: [
-      planKey("team", "f1"),
-      planKey("team", "f2"),
-      planKey("team", "f3"),
-    ],
-  },
-  {
-    id: "enterprise",
-    link: "contact",
-    price: { monthly: "pricing.value.custom", annual: "pricing.value.custom" },
-    period: {
-      monthly: "pricing.enterprise.periodM",
-      annual: "pricing.enterprise.periodY",
-    },
-    limits: {
-      boards: "pricing.value.unlimited",
-      members: "pricing.value.unlimited",
-      storage: "pricing.value.custom",
-    },
-    highlights: [],
   },
 ];
 
-/** Cards in the plan grid; Enterprise gets its own band instead. */
-export const cardPlanIds: PlanId[] = ["selfhost", "free", "pro", "team"];
+/** Cards in the plan grid. */
+export const cardPlanIds: PlanId[] = ["selfhost", "cloud"];
 
 const planOrder = plans.map((plan) => plan.id);
 export const planById = Object.fromEntries(
@@ -155,45 +100,28 @@ export const comparison: Category[] = [
   {
     titleKey: "pricing.cat.board",
     rows: [
-      { labelKey: "pricing.row.views", cells: [true, true, true, true, true] },
-      { labelKey: "pricing.row.cards", cells: [true, true, true, true, true] },
-      {
-        labelKey: "pricing.row.offline",
-        cells: [true, true, true, true, true],
-      },
-      {
-        labelKey: "pricing.row.filters",
-        cells: [true, true, true, true, true],
-      },
+      { labelKey: "pricing.row.views", cells: [true, true] },
+      { labelKey: "pricing.row.cards", cells: [true, true] },
+      { labelKey: "pricing.row.offline", cells: [true, true] },
+      { labelKey: "pricing.row.filters", cells: [true, true] },
     ],
   },
   {
     titleKey: "pricing.cat.collab",
     rows: [
-      {
-        labelKey: "pricing.row.realtime",
-        cells: [true, true, true, true, true],
-      },
+      { labelKey: "pricing.row.realtime", cells: [true, true] },
       { labelKey: "pricing.row.members", cells: limitCells("members") },
       { labelKey: "pricing.row.boards", cells: limitCells("boards") },
       { labelKey: "pricing.row.storage", cells: limitCells("storage") },
-      { labelKey: "pricing.row.shares", cells: [true, true, true, true, true] },
+      { labelKey: "pricing.row.shares", cells: [true, true] },
     ],
   },
   {
     titleKey: "pricing.cat.admin",
     rows: [
-      { labelKey: "pricing.row.admin", cells: [true, true, true, true, true] },
-      { labelKey: "pricing.row.roles", cells: [true, true, true, true, true] },
-      {
-        labelKey: "pricing.row.audit",
-        cells: [false, false, false, true, true],
-      },
-      { labelKey: "pricing.row.sso", cells: [false, false, false, true, true] },
-      {
-        labelKey: "pricing.row.onprem",
-        cells: [true, false, false, false, true],
-      },
+      { labelKey: "pricing.row.admin", cells: [true, true] },
+      { labelKey: "pricing.row.roles", cells: [true, true] },
+      { labelKey: "pricing.row.audit", cells: [true, true] },
     ],
   },
   {
@@ -201,37 +129,15 @@ export const comparison: Category[] = [
     rows: [
       {
         labelKey: "pricing.row.hosting",
-        cells: [
-          "pricing.value.you",
-          "pricing.value.us",
-          "pricing.value.us",
-          "pricing.value.us",
-          "pricing.value.youOrUs",
-        ],
+        cells: ["pricing.value.you", "pricing.value.us"],
       },
       {
         labelKey: "pricing.row.updates",
-        cells: [
-          "pricing.value.you",
-          "pricing.value.auto",
-          "pricing.value.auto",
-          "pricing.value.auto",
-          "pricing.value.managed",
-        ],
+        cells: ["pricing.value.you", "pricing.value.auto"],
       },
       {
         labelKey: "pricing.row.support",
-        cells: [
-          "pricing.value.community",
-          "pricing.value.community",
-          "pricing.value.email",
-          "pricing.value.priority",
-          "pricing.value.dedicated",
-        ],
-      },
-      {
-        labelKey: "pricing.row.sla",
-        cells: [false, false, false, false, true],
+        cells: ["pricing.value.community", "pricing.value.priority"],
       },
     ],
   },

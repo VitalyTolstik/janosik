@@ -45,11 +45,11 @@ const locale = lang === "ru" ? "ru_RU" : "en_US";
 // Prices come from `pricing.ts`, so the structured data can never drift from
 // the pricing page. Non-numeric tiers (Enterprise) are left out of `offers`.
 const offers = plans
-  .filter((plan) => typeof plan.price.monthly === "number")
+  .filter((plan) => typeof plan.price === "number")
   .map((plan) => ({
     "@type": "Offer",
     name: plan.id,
-    price: String(plan.price.monthly),
+    price: String(plan.price),
     priceCurrency: "USD",
   }));
 

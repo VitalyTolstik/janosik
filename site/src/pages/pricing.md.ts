@@ -22,12 +22,10 @@ const value = (cell: Cell): string => {
 const planSection = plans
   .map((plan) => {
     const name = ui.en[planKey(plan.id, "name")];
-    const monthly = plan.price.monthly;
-    const annual = plan.price.annual;
     const price =
-      typeof monthly === "number"
-        ? `${currency}${monthly}/month or ${currency}${annual}/year`
-        : ui.en[monthly];
+      typeof plan.price === "number"
+        ? `${currency}${plan.price}`
+        : ui.en[plan.price];
     const limits = [
       `Boards: ${value(plan.limits.boards)}`,
       `Members: ${value(plan.limits.members)}`,
@@ -38,7 +36,7 @@ const planSection = plans
       .join("\n");
     return [
       `### ${name}`,
-      `- Price: ${price}`,
+      `- Price: ${price} (${ui.en[plan.period]})`,
       ...limits.map((line) => `- ${line}`),
       highlights ? `- Includes:\n${highlights}` : "",
     ]
