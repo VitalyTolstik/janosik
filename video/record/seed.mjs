@@ -105,6 +105,26 @@ const CARDS = [
     due: -2,
   },
   {
+    title: "SAML group mapping",
+    column: "Backlog",
+    labels: ["feature", "backend"],
+  },
+  { title: "Audit log export", column: "Backlog", labels: ["feature"] },
+  {
+    title: "Board templates",
+    column: "Backlog",
+    labels: ["feature", "design"],
+  },
+  { title: "Card watchers", column: "Backlog", labels: ["feature"] },
+  {
+    title: "Slack notifications",
+    column: "Backlog",
+    labels: ["feature", "backend"],
+  },
+  { title: "Custom fields", column: "Backlog", labels: ["feature"] },
+  { title: "Time in column report", column: "Backlog", labels: ["design"] },
+  { title: "API rate limit headers", column: "Backlog", labels: ["backend"] },
+  {
     title: "Realtime cursors on the board",
     column: "In progress",
     labels: ["feature"],

@@ -75,7 +75,7 @@ async function openBoard(browser, key, theme, { record, zoom }) {
   return { context, page, videoStart };
 }
 
-async function drag(page, from, to, dy) {
+async function drag(page, from, to, dy, fast = false) {
   const a = await from.boundingBox();
   const b = await to.boundingBox();
   const sx = a.x + a.width / 2;
@@ -84,10 +84,10 @@ async function drag(page, from, to, dy) {
   const ty = b.y + (dy ?? b.height / 2);
   await page.mouse.move(sx, sy);
   await page.mouse.down();
-  await page.mouse.move(sx + 10, sy + 10, { steps: 6 });
-  await wait(150);
-  await page.mouse.move(tx, ty, { steps: 28 });
-  await wait(220);
+  await page.mouse.move(sx + 10, sy + 10, { steps: fast ? 4 : 6 });
+  await wait(fast ? 60 : 150);
+  await page.mouse.move(tx, ty, { steps: fast ? 14 : 28 });
+  await wait(fast ? 90 : 220);
   await page.mouse.up();
 }
 
@@ -162,8 +162,10 @@ async function sceneSharing(page) {
 }
 
 async function sceneHero(page, { actor }) {
-  // The swarm works the board: two waves of agents push cards into different
-  // columns at the same time, so several cards relocate in the same second.
+  // Five agents keep the flow moving: they pull cards from Backlog into In
+  // progress, then push them into Review, then pull the next batch. Every
+  // drop lands at the top of the target column, so the moved card stays on
+  // screen. All three columns are in frame at this zoom.
   const wave = (moves) =>
     Promise.all(
       moves.map(({ key, title, to }) =>
@@ -171,26 +173,39 @@ async function sceneHero(page, { actor }) {
           actor(key).page,
           card(actor(key).page, title),
           column(actor(key).page, to),
-          96,
+          44,
+          true,
         ),
       ),
     );
+  const agents = ["grace", "leo", "nina", "omar", "priya"];
+  const first = [
+    "Single sign-on for enterprise",
+    "Bulk import from CSV",
+    "Keyboard shortcut cheat sheet",
+    "Dark mode contrast pass",
+    "Mobile drag on touch screens",
+  ];
+  const second = [
+    "SAML group mapping",
+    "Audit log export",
+    "Board templates",
+    "Card watchers",
+    "Slack notifications",
+  ];
+  await wait(600);
+  await wave(
+    agents.map((key, i) => ({ key, title: first[i], to: "In progress" })),
+  );
+  await wait(500);
+  await wave(agents.map((key, i) => ({ key, title: first[i], to: "Review" })));
+  await wait(500);
+  await wave(
+    agents.map((key, i) => ({ key, title: second[i], to: "In progress" })),
+  );
+  await wait(800);
+  await page.mouse.move(660, 430, { steps: 16 });
   await wait(900);
-  await wave([
-    { key: "grace", title: "Single sign-on for enterprise", to: "In progress" },
-    { key: "leo", title: "Bulk import from CSV", to: "Review" },
-    { key: "nina", title: "Comment mentions", to: "Done" },
-    { key: "omar", title: "Attachment previews", to: "Done" },
-  ]);
-  await wait(1100);
-  await wave([
-    { key: "priya", title: "Dark mode contrast pass", to: "In progress" },
-    { key: "sam", title: "Keyboard shortcut cheat sheet", to: "Review" },
-    { key: "leo", title: "Public read-only share links", to: "Done" },
-  ]);
-  await wait(1400);
-  await page.mouse.move(660, 430, { steps: 18 });
-  await wait(1300);
 }
 
 async function sceneRealtime(page, { actor }) {
