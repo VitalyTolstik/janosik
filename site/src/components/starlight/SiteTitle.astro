@@ -1,0 +1,74 @@
+---
+import { logos } from "virtual:starlight/user-images";
+import config from "virtual:starlight/user-config";
+import { docsVersion } from "../../lib/docs-version";
+
+const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="site-title sl-flex">
+  {config.logo && logos.dark && (
+    <>
+      <img
+        class:list={{ "light:sl-hidden print:hidden": !("src" in config.logo) }}
+        alt={config.logo.alt}
+        src={logos.dark.src}
+        width={logos.dark.width}
+        height={logos.dark.height}
+      />
+      {!("src" in config.logo) && (
+        <img
+          class="dark:sl-hidden print:block"
+          alt={config.logo.alt}
+          src={logos.light?.src}
+          width={logos.light?.width}
+          height={logos.light?.height}
+        />
+      )}
+    </>
+  )}
+  <span class:list={{ "sr-only": config.logo?.replacesTitle }} translate="no">
+    {siteTitle}
+  </span>
+  <span class="docs-version" title={`Janosik ${docsVersion}`}>
+    v{docsVersion}
+  </span>
+</a>
+
+<style>
+  @layer starlight.core {
+    .site-title {
+      align-items: center;
+      gap: var(--sl-nav-gap);
+      font-size: var(--sl-text-h4);
+      font-weight: 600;
+      color: var(--sl-color-text-accent);
+      text-decoration: none;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    span {
+      overflow: hidden;
+    }
+    img {
+      height: calc(var(--sl-nav-height) - 2 * var(--sl-nav-pad-y));
+      width: auto;
+      max-width: 100%;
+      object-fit: contain;
+      object-position: 0 50%;
+    }
+    /* The version the docs describe. Docs track the latest release, so this
+       is a static label until a second major ships and a switcher replaces it. */
+    .docs-version {
+      flex-shrink: 0;
+      overflow: visible;
+      padding: 0.1rem 0.4rem;
+      border: 1px solid var(--sl-color-gray-5);
+      border-radius: 999px;
+      color: var(--sl-color-gray-3);
+      font-size: var(--sl-text-xs);
+      font-weight: 500;
+      line-height: 1.4;
+    }
+  }
+</style>

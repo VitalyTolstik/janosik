@@ -13,3 +13,19 @@ interface ImportMetaEnv {
   readonly PUBLIC_ANALYTICS_DOMAIN?: string;
   readonly PUBLIC_ANALYTICS_SRC?: string;
 }
+
+// Starlight's virtual modules are resolved by Vite but ship no ambient types,
+// so a component override that imports them needs these declarations.
+declare module "virtual:starlight/user-config" {
+  import type { StarlightConfig } from "@astrojs/starlight/types";
+  const config: StarlightConfig;
+  export default config;
+}
+
+declare module "virtual:starlight/user-images" {
+  import type { ImageMetadata } from "astro";
+  export const logos: {
+    light?: ImageMetadata;
+    dark?: ImageMetadata;
+  };
+}
