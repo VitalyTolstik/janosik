@@ -1586,3 +1586,19 @@ p {
   margin-top: 1rem;
   color: var(--muted-foreground);
 }
+
+/* ---------------------------------------------------------------------------
+ * Language swap — for pages that ship both languages (the 404). Only the block
+ * matching `data-lang` shows; the attribute is set before first paint by the
+ * layout. Without JS the English block is the fallback.
+ * ------------------------------------------------------------------------- */
+
+.lang-slot {
+  display: none;
+}
+
+:root[data-nf-lang="en"] .lang-slot[data-lang="en"],
+:root[data-nf-lang="ru"] .lang-slot[data-lang="ru"],
+:root:not([data-nf-lang]) .lang-slot[data-lang="en"] {
+  display: block;
+}

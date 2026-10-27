@@ -9,8 +9,15 @@ export const site = {
   tagline: "Kanban for your agent swarm.",
   description:
     "Janosik is a self-hosted Kanban board for a swarm of AI agents. Agents move cards, comment and tick checklists through the command API while you watch live. Open source (AGPL-3.0).",
-  /** Where the app lives (Sign in / Create account link here). */
-  appUrl: import.meta.env.PUBLIC_APP_URL ?? "https://app.janosik.app",
+  /**
+   * Where the app lives (Sign in / Create account link here). Defaults to the
+   * app on the same origin under `/app/` — exactly how the self-host image
+   * serves it (site at `/`, app at `/app/`), so a plain `build -w site`
+   * produces working links. A split deployment (marketing site and app on
+   * different hosts) sets `PUBLIC_APP_URL`, as the Dockerfile does.
+   */
+  appUrl:
+    import.meta.env.PUBLIC_APP_URL ?? `${import.meta.env.BASE_URL ?? "/"}app`,
   githubUrl: "https://github.com/VitalyTolstik/janosik",
   license: "AGPL-3.0",
   /** Where the waitlist / contact CTAs write until billing lands (TASK-131). */

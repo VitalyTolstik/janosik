@@ -20,6 +20,13 @@ interface Props {
   noindex?: boolean;
   schema?: Record<string, unknown> | Record<string, unknown>[];
   breadcrumbs?: { name: string; path: string }[];
+  /**
+   * Renders the header and footer in both languages and swaps them before
+   * first paint, together with the page body. Only the 404 needs this: it is a
+   * single static file served for any missing path, so it cannot know the
+   * visitor's language at build time.
+   */
+  dualLang?: boolean;
 }
 
 const {
@@ -30,6 +37,7 @@ const {
   noindex,
   schema,
   breadcrumbs,
+  dualLang = false,
 } = Astro.props;
 const t = useTranslations(lang);
 ---
@@ -60,17 +68,53 @@ const t = useTranslations(lang);
         }
       } catch (error) {}
     </script>
+    {dualLang && <script is:inline>
+      // Pick the 404's language before first paint from the URL, matching the
+      // rest of the site (which localizes by path, not browser language).
+      // `lang-slot` blocks then reveal the matching copy, header and footer
+      // with no flash.
+      (function () {
+        try {
+          var ru = /(^|\/)ru(\/|$)/.test(location.pathname);
+          var root = document.documentElement;
+          root.dataset.nfLang = ru ? "ru" : "en";
+          root.lang = ru ? "ru" : "en";
+        } catch (error) {}
+      })();
+    </script>}
     <Analytics />
   </head>
   <body>
     <a class="skip-link" href="#main">
       {t("a11y.skip")}
     </a>
-    <Header lang={lang} />
+    {dualLang ? (
+      <>
+        <div class="lang-slot" data-lang="en">
+          <Header lang="en" />
+        </div>
+        <div class="lang-slot" data-lang="ru">
+          <Header lang="ru" />
+        </div>
+      </>
+    ) : (
+      <Header lang={lang} />
+    )}
     <main id="main">
       <slot />
     </main>
-    <Footer lang={lang} />
+    {dualLang ? (
+      <>
+        <div class="lang-slot" data-lang="en">
+          <Footer lang="en" />
+        </div>
+        <div class="lang-slot" data-lang="ru">
+          <Footer lang="ru" />
+        </div>
+      </>
+    ) : (
+      <Footer lang={lang} />
+    )}
     <script>
       // Feature clips ship in both themes (they are baked, so they cannot read
       // CSS variables at runtime). Play only the variant matching the current

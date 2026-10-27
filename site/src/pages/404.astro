@@ -1,36 +1,329 @@
 ---
 import { site } from "../config";
-import { useTranslations } from "../i18n/utils";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { withBase } from "../utils/url";
 
 // GitHub Pages serves this file for any missing path, so it cannot know the
-// visitor's language — it offers both home links.
-const t = useTranslations("en");
-const title = `${t("404.title")} — ${site.name}`;
+// visitor's language at build time. Both languages are rendered and an inline
+// script (before first paint) picks one from the path prefix or the browser
+// language — no flash, no "English page with a Russian footnote".
+const COPY = {
+  en: {
+    title: "Page not found",
+    headline: "This card left the board.",
+    lead: "The page you're looking for was moved, archived, or never created. An agent from the swarm may have dragged it somewhere else.",
+    home: "Back to home",
+    docs: "Read the docs",
+    backlog: "Backlog",
+    progress: "In progress",
+    cardTitle: "This page",
+    overdue: "overdue",
+    blocker: "Blocker",
+    bubble: "couldn't find it",
+  },
+  ru: {
+    title: "Страница не найдена",
+    headline: "Эта карточка ушла с доски.",
+    lead: "Страница, которую вы ищете, переехала, ушла в архив или никогда не существовала. Возможно, её перетащил кто-то из роя агентов.",
+    home: "На главную",
+    docs: "Документация",
+    backlog: "Бэклог",
+    progress: "В работе",
+    cardTitle: "Эта страница",
+    overdue: "просрочено",
+    blocker: "Блокер",
+    bubble: "не нашёл её",
+  },
+} as const;
+
+const langs = ["en", "ru"] as const;
+const title = `${COPY.en.title} — ${site.name}`;
 ---
 
-<BaseLayout title={title} description={t("404.lead")} lang="en" noindex>
-  <section class="section">
-    <div class="container prose">
-      <h1>{t("404.title")}</h1>
-      <p>{t("404.lead")}</p>
-      <p>
-        <a class="btn btn-primary" href={withBase("/")}>
-          {t("404.home")}
-        </a>
-        <a class="btn btn-ghost" href={withBase("/ru/")}>
-          На главную
-        </a>
-      </p>
+<BaseLayout title={title} description={COPY.en.lead} lang="en" noindex dualLang>
+  <section
+    class="section nf"
+    data-nf-home
+    data-home-en={withBase("/")}
+    data-home-ru={withBase("/ru/")}
+  >
+    <script is:inline>
+      // The layout already picked the language (`data-nf-lang`). Fix the two
+      // header switchers — on a 404 their target path does not exist, so point
+      // them at the other language's home — and set the document title.
+      (function () {
+        try {
+          var ru = document.documentElement.dataset.nfLang === "ru";
+          document.title =
+            (ru ? "Страница не найдена" : "Page not found") + " — Janosik";
+          var section = document.querySelector("[data-nf-home]");
+          if (!section) return;
+          var en = section.getAttribute("data-home-en");
+          var ruHome = section.getAttribute("data-home-ru");
+          document.querySelectorAll(".lang-btn").forEach(function (link) {
+            var target = link.getAttribute("hreflang");
+            if (target === "ru" && ruHome) link.setAttribute("href", ruHome);
+            else if (target === "en" && en) link.setAttribute("href", en);
+          });
+        } catch (error) {}
+      })();
+    </script>
+
+    <div class="container">
+      {langs.map((lang) => {
+        const c = COPY[lang];
+        return (
+          <div class="lang-slot" data-lang={lang}>
+            <div class="nf-grid">
+              <div class="nf-copy">
+                <span class="eyebrow">{c.title}</span>
+                <h1 class="nf-title">{c.headline}</h1>
+                <p class="lead nf-lead">{c.lead}</p>
+                <div class="nf-actions">
+                  <a class="btn btn-primary btn-lg" href={withBase("/")}>
+                    {c.home}
+                  </a>
+                  <a class="btn btn-ghost btn-lg" href={withBase("/docs/")}>
+                    {c.docs}
+                  </a>
+                </div>
+              </div>
+
+              <div class="nf-board" aria-hidden="true">
+                <div class="slot-frame">
+                  <div class="slot-top">
+                    <span class="slot-dot" />
+                    <span class="slot-dot" />
+                    <span class="slot-dot" />
+                    <span class="slot-bar" />
+                  </div>
+                  <div class="slot-canvas">
+                    <div class="slot-col">
+                      <div class="nf-colhead">{c.backlog}</div>
+                      <div class="slot-card">
+                        <span class="slot-line w70" />
+                        <span class="slot-line w40" />
+                      </div>
+                      <div class="slot-card">
+                        <span class="slot-line w60" />
+                      </div>
+                      <div class="slot-card">
+                        <span class="slot-line w80" />
+                        <span class="slot-line w50" />
+                      </div>
+                    </div>
+                    <div class="slot-col">
+                      <div class="nf-colhead">{c.progress}</div>
+                      <div class="slot-card">
+                        <span class="slot-line w60" />
+                        <div class="slot-row">
+                          <span class="slot-line w40" />
+                          <span class="slot-agent slot-agent--a" />
+                        </div>
+                      </div>
+                      <div class="slot-card">
+                        <span class="slot-line w50" />
+                        <div class="slot-row">
+                          <span class="slot-line w40" />
+                          <span class="slot-agent slot-agent--b" />
+                        </div>
+                      </div>
+                    </div>
+                    <div class="slot-col nf-col">
+                      <div class="nf-colhead nf-colhead--404">404</div>
+                      <div class="slot-card slot-card--accent nf-card">
+                        <div class="nf-card-title">{c.cardTitle}</div>
+                        <div class="nf-card-meta">
+                          <span class="nf-pill">404</span>
+                          <span class="nf-due">{c.overdue}</span>
+                        </div>
+                        <div class="nf-card-foot">
+                          <span class="nf-prio">{c.blocker}</span>
+                          <span class="nf-avatar">?</span>
+                        </div>
+                      </div>
+                      <div class="nf-bubble">
+                        <span class="nf-agent slot-agent slot-agent--c" />
+                        {c.bubble}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   </section>
 </BaseLayout>
 
 <style>
-  .prose p:last-child {
+  .nf-grid {
+    display: grid;
+    gap: clamp(2.5rem, 6vw, 4.5rem);
+    align-items: center;
+  }
+
+  @media (min-width: 900px) {
+    .nf-grid {
+      grid-template-columns: 1fr 1.05fr;
+    }
+  }
+
+  .nf-copy {
+    max-width: 32rem;
+  }
+
+  .nf-title {
+    margin-top: 0.75rem;
+    font-size: clamp(2.25rem, 5vw, 3.5rem);
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+  }
+
+  .nf-lead {
+    margin-top: 1.25rem;
+  }
+
+  .nf-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 0.75rem;
+    margin-top: 2rem;
+  }
+
+  /* --- the board mockup ------------------------------------------------- */
+
+  .nf-colhead {
+    margin-bottom: 0.15rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  .nf-colhead--404 {
+    color: var(--danger);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.1em;
+  }
+
+  .nf-card {
+    position: relative;
+    gap: 0.5rem;
+    border-color: color-mix(in oklab, var(--danger) 45%, var(--border));
+    animation:
+      nf-drop 620ms var(--janosik-ease-out) both,
+      nf-pulse 2.6s var(--janosik-ease-in-out) 700ms infinite;
+  }
+
+  .nf-card-title {
+    font-size: var(--janosik-type-small-size);
+    font-weight: 600;
+    color: var(--foreground);
+  }
+
+  .nf-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .nf-pill,
+  .nf-due {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .nf-pill {
+    background: color-mix(in oklab, var(--danger) 16%, transparent);
+    color: color-mix(in oklab, var(--danger) 82%, var(--foreground));
+  }
+
+  .nf-due {
+    border: 1px solid color-mix(in oklab, var(--danger) 45%, var(--border));
+    color: color-mix(in oklab, var(--danger) 82%, var(--foreground));
+  }
+
+  .nf-card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .nf-prio {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: color-mix(in oklab, var(--danger) 82%, var(--foreground));
+  }
+
+  .nf-avatar {
+    display: grid;
+    place-items: center;
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1.5px dashed color-mix(in oklab, var(--danger) 55%, var(--border));
+    color: color-mix(in oklab, var(--danger) 82%, var(--foreground));
+    font-size: 0.7rem;
+    font-weight: 700;
+  }
+
+  .nf-bubble {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    align-self: flex-start;
+    margin-top: 0.1rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    background: var(--card);
+    font-size: 0.72rem;
+    color: var(--muted-foreground);
+  }
+
+  .nf-agent {
+    width: 0.7rem;
+    height: 0.7rem;
+  }
+
+  @keyframes nf-drop {
+    from {
+      opacity: 0;
+      transform: translateY(-14px) rotate(-2deg);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0) rotate(0);
+    }
+  }
+
+  @keyframes nf-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 color-mix(in oklab, var(--danger) 30%, transparent);
+    }
+
+    50% {
+      box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 14%, transparent);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nf-card {
+      animation: none;
+    }
   }
 </style>
