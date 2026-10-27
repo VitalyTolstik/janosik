@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { Archive, Loader2, Plus } from "lucide-react";
 
 import { BoardSection } from "@/components/BoardSection";
+import { NotFoundPage } from "@/components/errors/NotFoundPage";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { DataSafetyBanner } from "@/components/DataSafetyBanner";
@@ -100,7 +101,10 @@ export function NoBoardRoute() {
  */
 function BoardRoute() {
   const { board } = useBoard();
-  return <BoardSection key={board?.id ?? "none"} />;
+  // The shell only renders once the boards are loaded, so a missing board here
+  // is a genuinely unknown id — show the 404 rather than an empty board.
+  if (!board) return <NotFoundPage variant="board" />;
+  return <BoardSection key={board.id} />;
 }
 
 /**
@@ -151,7 +155,7 @@ function BoardShell() {
         <Routes>
           <Route path={routes.home} element={<NoBoardRoute />} />
           <Route path={routes.boardPattern} element={<BoardRoute />} />
-          <Route path="*" element={<NoBoardRoute />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </UserProfileProvider>
     </>

@@ -625,11 +625,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     syncHistory();
   }, [board?.id, syncHistory]);
 
-  // Redirect `/`, unknown paths, dead board ids and archived boards to a
-  // real active board (replace, so dead URLs never land in history). With
-  // zero active boards, land on `/` — the empty-state screen (Trello's
-  // home with "create new board"): the user is never left *on* an
-  // archived board, and restoration stays one click away in the switcher.
+  // Redirect the home route and archived boards to a real active board
+  // (replace, so dead URLs never land in history). With zero active boards
+  // the home route lands on `/` — the empty-state screen (Trello's home with
+  // "create new board"). Unknown paths and unknown board ids are deliberately
+  // left alone: they fall through to the 404 route instead of being silently
+  // swallowed by a redirect to some other board (which hid typos and stale
+  // links).
   useEffect(() => {
     // A cold boot still has an empty `state` while the boards are on their
     // way: redirecting then would drop a `?card=` deep link (the URL is
@@ -643,6 +645,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     // deep-link onto one of its cards (global search).
     if (routed?.archivedAt && cardParam !== null && cardParam in routed.cards)
       return;
+    // Only the home route and archived boards redirect; anything else — an
+    // unknown path, or a board id that is not ours — is a 404.
+    const isHome = location.pathname === routes.home;
+    if (!isHome && !routed?.archivedAt) return;
     const firstActive = state.find((b) => !b.archivedAt);
     const target = firstActive ? routes.board(firstActive.id) : routes.home;
     if (location.pathname !== target) {
@@ -871,8 +877,15 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         return rest;
       });
       toast.error(t("board.accessRevoked"));
+      // If the caller was viewing the board that just vanished, move them to
+      // another active board (or the empty state) instead of leaving them on
+      // a dead URL — the 404 route is only for genuinely unknown ids.
+      if (routeBoardId === boardId) {
+        const next = stateRef.current.find((board) => !board.archivedAt);
+        navigate(next ? routes.board(next.id) : routes.home, { replace: true });
+      }
     },
-    [apply, dropHistory, toast, t],
+    [apply, dropHistory, toast, t, routeBoardId, navigate],
   );
 
   /**

@@ -440,7 +440,7 @@ describe("BoardProvider in server mode", () => {
       <StrictMode>
         <I18nProvider>
           <ToastProvider>
-            <MemoryRouter initialEntries={["/board/legacy-1"]}>
+            <MemoryRouter initialEntries={["/"]}>
               <BoardProvider>
                 <Probe />
               </BoardProvider>

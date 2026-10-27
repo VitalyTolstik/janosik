@@ -1,9 +1,16 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
 import { Header } from "@/components/Header";
+import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
@@ -38,15 +45,17 @@ function renderBoard(initialRoute = "/") {
       <BoardBackgroundProvider>
         <BoardGlassProvider>
           <I18nProvider>
-            <TooltipProvider>
-              <MemoryRouter initialEntries={[initialRoute]}>
-                <BoardProvider>
-                  <Header />
-                  <BoardSection />
-                  <RouteProbe />
-                </BoardProvider>
-              </MemoryRouter>
-            </TooltipProvider>
+            <ToastProvider>
+              <TooltipProvider>
+                <MemoryRouter initialEntries={[initialRoute]}>
+                  <BoardProvider>
+                    <Header />
+                    <BoardSection />
+                    <RouteProbe />
+                  </BoardProvider>
+                </MemoryRouter>
+              </TooltipProvider>
+            </ToastProvider>
           </I18nProvider>
         </BoardGlassProvider>
       </BoardBackgroundProvider>
@@ -368,6 +377,20 @@ describe("BoardSection", () => {
     fireEvent.click(screen.getByTestId("route-back"));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByTestId("route-probe")).toHaveTextContent("");
+  });
+
+  it("drops a dead ?card= param and reports the missing card", async () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard("/board/board-view?card=does-not-exist");
+
+    // No dialog opens for a card that is not on the board…
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // …the dead param is stripped from the URL (replace, not push)…
+    await waitFor(() =>
+      expect(screen.getByTestId("route-probe")).toHaveTextContent(""),
+    );
+    // …and the user is told why nothing happened.
+    expect(await screen.findByText("Card not found")).toBeInTheDocument();
   });
 
   // Regression: a server commit landing right after a deliberate close

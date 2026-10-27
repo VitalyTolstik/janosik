@@ -6,9 +6,8 @@ import App from "@/App";
 /**
  * BrowserRouter smoke (TASK-21.8). Deep links are plain paths now, so a
  * direct load of /board/:id (jsdom owns the URL via the History API) must
- * land on the board itself. Any other path acts as home: with an active
- * board present the app redirects to it — the empty state is for the
- * no-boards case, not for unknown paths.
+ * land on the board itself. An unknown path (or an unknown board id) shows
+ * the in-app 404 instead of being silently redirected to another board.
  */
 function visit(path: string) {
   window.history.pushState({}, "", path);
@@ -34,7 +33,7 @@ describe("BrowserRouter routing", () => {
   });
 
   it("opens the board on a direct /board/:id deep link", async () => {
-    visit("/board/b-1");
+    visit("/board/board-main");
     // The seed board's first card — proof the board, not the empty
     // state, is on screen.
     expect(
@@ -48,17 +47,10 @@ describe("BrowserRouter routing", () => {
     ).toBeDefined();
   });
 
-  it("redirects an unknown path to the active board", async () => {
+  it("shows the not-found screen for an unknown path", async () => {
     visit("/definitely-not-a-route");
-    // Same proof as the deep link: the board is reachable from any path.
     expect(
-      await screen.findByText(
-        "Design the new onboarding flow",
-        {},
-        {
-          timeout: 5000,
-        },
-      ),
+      await screen.findByText("Page not found", {}, { timeout: 5000 }),
     ).toBeDefined();
   });
 

@@ -7,6 +7,7 @@ import { DndBoard } from "@/components/board/DndBoard";
 import { CalendarView, TableView } from "@/components/board/views-lazy";
 import { CardDialog } from "@/components/board/CardDialog";
 import { ViewSwitcher, type BoardView } from "@/components/board/ViewSwitcher";
+import { useToast } from "@/components/Toast";
 import { ColumnGlassMenu } from "@/components/board/ColumnGlassMenu";
 import { useBoardBackground } from "@/hooks/use-board-background";
 import { useI18n } from "@/i18n";
@@ -81,6 +82,7 @@ export function BoardSection() {
   // param opens the dialog in any view; closing the dialog clears the param.
   // Every open path — click included — writes the param, so the address bar
   // is always a copy-pasteable link to the open card.
+  const toast = useToast();
   const [openCardId, setOpenCardId] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   // The card deliberately closed a moment ago. The close handler clears the
@@ -91,8 +93,25 @@ export function BoardSection() {
   // suppresses the SAME card and resets once the URL caught up, so deep
   // links and browser Back keep working.
   const closedCardRef = useRef<string | null>(null);
+  // The dead card id already reported, so StrictMode's double effect never
+  // toasts the same miss twice.
+  const missingCardRef = useRef<string | null>(null);
   useEffect(() => {
     const cardParam = searchParams.get("card");
+    // A `?card=` that is not on this board (typo, deleted card, stale link):
+    // drop the dead param so the address bar stops advertising a card that
+    // cannot open, and say why nothing happened. The board must be loaded
+    // first, or a cold boot would strip a valid deep link before it resolves.
+    if (cardParam && board && !board.cards[cardParam]) {
+      if (missingCardRef.current !== cardParam) {
+        missingCardRef.current = cardParam;
+        toast.error(t("card.notFound"));
+      }
+      const next = new URLSearchParams(searchParams);
+      next.delete("card");
+      setSearchParams(next, { replace: true });
+      return;
+    }
     if (
       cardParam &&
       board?.cards[cardParam] &&
@@ -105,7 +124,10 @@ export function BoardSection() {
       // Back after a click-open) — close the dialog with it.
       setOpenCardId(null);
     }
-    if (!cardParam) closedCardRef.current = null;
+    if (!cardParam) {
+      closedCardRef.current = null;
+      missingCardRef.current = null;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to URL changes only; including openCardId would reopen the dialog right after the user closes it (the close handler clears the param asynchronously)
   }, [searchParams, board]);
   const handleCardClick = useCallback(
