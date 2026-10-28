@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.vitalytolstik/janosik",
+  "name": "io.github.VitalyTolstik/janosik",
   "description": "Drive a Janosik Kanban board from any MCP client with a personal API key.",
   "repository": {
     "url": "https://github.com/VitalyTolstik/janosik",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@janosik/mcp",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "transport": {
         "type": "stdio"
       },

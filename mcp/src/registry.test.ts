@@ -35,7 +35,9 @@ const server = JSON.parse(
 describe("MCP registry metadata", () => {
   it("declares a GitHub-namespaced mcpName matching server.json", () => {
     expect(pkg.mcpName).toBeDefined();
-    expect(pkg.mcpName).toMatch(/^io\.github\.[a-z0-9-]+\/[a-z0-9-]+$/);
+    // The registry is case-sensitive: the namespace must be the GitHub
+    // login's exact casing (`io.github.VitalyTolstik/…`).
+    expect(pkg.mcpName).toMatch(/^io\.github\.[A-Za-z0-9-]+\/[A-Za-z0-9-]+$/);
     expect(server.name).toBe(pkg.mcpName);
   });
 

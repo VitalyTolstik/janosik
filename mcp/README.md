@@ -177,7 +177,7 @@ JANOSIK_URL=http://localhost:3210 JANOSIK_TOKEN=jnk_… node mcp/scripts/smoke.m
 
 The package is published to npm and listed in the
 [MCP Registry](https://registry.modelcontextprotocol.io) as
-`io.github.vitalytolstik/janosik`. A release is one tag; CI does the rest.
+`io.github.VitalyTolstik/janosik`. A release is one tag; CI does the rest.
 
 1. Bump the version in **both** `package.json` and `server.json` (a test
    keeps them in lockstep) and merge to `main`.
