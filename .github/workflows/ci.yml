@@ -242,8 +242,10 @@ jobs:
       - name: Build (MCP server)
         run: npm run build -w mcp
 
+      # No `--provenance`: it needs a *public* source repository (the repo is
+      # private for now). Add it back when the repo goes public.
       - name: Publish to npm
-        run: npm publish -w mcp --provenance --access public
+        run: npm publish -w mcp --access public
 
       - name: Install mcp-publisher
         run: |
