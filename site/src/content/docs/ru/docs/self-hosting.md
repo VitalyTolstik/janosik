@@ -413,39 +413,76 @@ docker compose exec app node backend/scripts/admin-cli.cjs create --email me@exa
 
 ### Из исходников, все платформы
 
-После установки Node 22.17 или новее и выполнения `npm install` в корне
-репозитория:
-
-Локальный режим, без бэкенда, данные в браузере:
-
-```bash
-npm run dev                     # http://localhost:5173
-```
-
-Серверный режим с учётными записями, общими досками и реальным временем:
+После установки Node 22.17 или новее (репозиторий пинит **24** в `.nvmrc`) и
+выполнения `npm install` в корне репозитория. Сначала настройте API — dev-compose
+читает `POSTGRES_*` из `backend/.env`, поэтому файл должен существовать до
+`docker compose up`:
 
 ```bash
-# 1. dev PostgreSQL (container janosik-postgres on port 5433)
+# 1. настройка API
+cp backend/.env.example backend/.env
+#   задайте JWT_SECRET (openssl rand -hex 32; в PowerShell см. раздел Windows)
+
+# 2. dev PostgreSQL (контейнер janosik-postgres на порту 5433)
 docker compose -f backend/docker-compose.yml up -d
 
-# 2. configure the API
-cp backend/.env.example backend/.env
-#   set JWT_SECRET (openssl rand -hex 32; on PowerShell see the Windows section)
-
-# 3. migrate, build and start the API (port 3000)
+# 3. миграции, сборка и запуск API (порт 3000)
 npm run prisma:deploy -w backend
 npm run build:backend
 npm run start -w backend
 
-# 4. in a second terminal, start the UI (Vite proxies /api to :3000)
+# 4. во втором терминале запустите UI (Vite проксирует /api на :3000)
 npm run dev
 ```
 
-Зарегистрируйтесь на `http://localhost:5173`, создайте мастера командой
-`npm run admin:create -w backend -- --email me@example.com` и откройте `/admin`.
+Dev-UI **всегда в серверном режиме**: `npm run dev` показывает **экран входа** и
+требует API выше — «демо-доски без логина» в dev нет. Зарегистрируйтесь на
+`http://localhost:5173` (регистрация открыта по умолчанию), создайте мастера
+командой `npm run admin:create -w backend -- --email me@example.com` и откройте
+`/admin`.
+
+**Маркетинговый сайт** — отдельный dev-сервер (`npm run dev:site`, порт 4321).
+В dev приложение не отдаётся по `/app/` на сайте — этот путь принадлежит
+self-host образу, — поэтому CTA сайта надо нацелить на UI-сервер:
+`PUBLIC_APP_URL=http://localhost:5173 npm run dev:site`.
+
+**Исходящая почта по умолчанию выключена** (log-mode, если не заданы `SMTP_*`):
+коды идут в лог сервера, письма не отправляются. См.
+[Email service](/ru/docs/admin/settings/) и [Runbooks](/ru/docs/runbooks/).
+Локальная песочница — Mailpit:
+
+```bash
+docker run -d --name janosik-mailpit --restart unless-stopped \
+  -p 1025:1025 -p 8025:8025 axllent/mailpit
+# SMTP localhost:1025, веб-ящик http://localhost:8025
+```
 
 Чтобы собрать образ из рабочей копии вместо загрузки готового, раскомментируйте
 `build: .` в `docker-compose.yml`.
+
+## Раздельный деплой (приложение и сайт на разных хостах)
+
+Self-host образ это **один origin** — сайт по `/`, приложение по `/app/`, —
+поэтому настраивать нечего. Если **приложение** и **маркетинговый сайт/доки**
+отдаются с *разных* хостов, свяжите две перекрёстные ссылки:
+
+| Направление | Переменная | Где задаётся | Значение |
+| --- | --- | --- | --- |
+| Сайт → Приложение (CTA «Sign in» / «Create account») | `PUBLIC_APP_URL` | сборка **сайта** | origin приложения, напр. `https://app.example.com/` |
+| Приложение → Сайт («Help → Documentation») | `VITE_SITE_URL` | сборка **UI** | origin сайта, со слешем на конце, напр. `https://example.com/` |
+
+Ошибка в любой из них приводит к **404**: CTA открывает страницу «не найдено»
+сайта, либо Help → Documentation открывает страницу «не найдено» приложения. Та
+же пара нужна в dev, где приложение и сайт всегда два сервера (приложение
+`:5173`, сайт `:4321`):
+
+```bash
+# dev-сервер UI — меню «Помощь» ведёт на dev-сайт Astro:
+VITE_SITE_URL=http://localhost:4321/ npm run dev
+
+# dev-сервер сайта — CTA «Sign in» / «Create account» ведут на UI:
+PUBLIC_APP_URL=http://localhost:5173 npm run dev:site
+```
 
 ## Расположение данных
 

@@ -11,15 +11,16 @@ to sharing a read-only link.
 
 ## Two ways to run the app
 
-- **Local mode** — no server and no sign-in. Every board lives in your browser
-  and the app works fully offline. You move data between browsers with
-  `Export JSON` and `Import JSON`.
-- **Server mode** — boards live in a database behind an account. It adds
-  members and roles, realtime updates, comments, file attachments, public
-  share links and personal API keys.
+- **Server mode** — boards live in a database behind an account. It brings
+  members and roles, realtime updates, comments, file attachments, public share
+  links and personal API keys. This is what the app ships: sign in, and your
+  boards load.
+- **Local mode** — a no-backend mode where boards live in your browser. It is
+  not part of the shipped build; only the **unit tests** run it. You still move
+  data between instances with `Export JSON` and `Import JSON`.
 
-The build decides the mode; there is no switch inside the app. Everything
-below describes server mode and notes where local mode differs.
+There is no switch inside the app — the build decides. Everything below
+describes the shipped (server) mode.
 
 ## The screen at a glance
 

@@ -1,6 +1,6 @@
 ---
 title: FAQ and troubleshooting
-description: Common questions about licensing, hosting, data, offline use, backups, browsers, Node.js and the API.
+description: Common questions about licensing, hosting, data, offline use, backups, browsers, email delivery, Node.js and the API.
 ---
 
 Short answers to common questions. Each one links to the page that owns the
@@ -26,33 +26,30 @@ own host and is the documented path in [Self-hosting](/docs/self-hosting/).
 
 ## Where is my data stored?
 
-It depends on the mode. In local-only mode every board and card lives in the
-browser under `localStorage`. In server mode boards live in PostgreSQL, on the
-Docker volume `janosik-pgdata`, and attachments and avatars live on the
-`janosik-uploads` volume. [Self-hosting](/docs/self-hosting/) lists every data
-location.
+Janosik runs in server mode: boards live in PostgreSQL, on the Docker volume
+`janosik-pgdata`, and attachments and avatars on the `janosik-uploads` volume.
+[Self-hosting](/docs/self-hosting/) lists every data location. (A no-backend
+"local-only" mode exists only in the unit tests, where data is kept in
+`localStorage`.)
 
 ## Does it work offline?
 
-Yes, with one limit. Janosik installs as a PWA and caches its app shell, so it
-opens with the network cut. Local-only mode then works fully offline. Server
-mode opens offline but writes need the network: an optimistic edit rolls back
-with a toast if the API is unreachable, and a reload drops unsynced changes
-because there is no persistent outbox yet.
+The PWA caches its app shell, so it opens with the network cut. Server mode needs
+the network for writes: an optimistic edit rolls back with a toast if the API is
+unreachable, and a reload drops unsynced changes because there is no persistent
+outbox yet. Reads keep working offline from the last fetch.
 
 ## How do I back up my data?
 
-In server mode, take a database dump and an uploads archive; both are in
-[Operations runbooks](/docs/runbooks/). In local-only mode the app keeps automatic
-backups on its own, and you can move data with `Export JSON` and
-`Import JSON`.
+Take a database dump and an uploads archive; both are in
+[Operations runbooks](/docs/runbooks/). You can also export a board to JSON and
+import it back from **Data & backups** in the app.
 
 ## Can I move boards between instances?
 
-In local-only mode, export a board to JSON and import it into the other
-browser. In server mode, boards live in the database, so moving them between
-instances means restoring a database dump on the target (see
-[Operations runbooks](/docs/runbooks/)).
+Yes — export a board to JSON and import it into the other instance (from
+**Data & backups**). To move an entire instance, restore a database dump on the
+target (see [Operations runbooks](/docs/runbooks/)).
 
 ## Which browsers are supported?
 
@@ -61,8 +58,24 @@ that support service workers and progressive web apps.
 
 ## Which Node.js version does the backend need?
 
-Node.js 22.17 or newer. The backend `engines` field enforces this. Check with
-`node -v`. The from-source steps are in [Self-hosting](/docs/self-hosting/).
+Node.js 22.17 or newer; the repository pins **24** in `.nvmrc` (`nvm use`), and
+that is what CI runs. The backend `engines` field enforces the minimum. Check
+with `node -v`. The from-source steps are in
+[Self-hosting](/docs/self-hosting/).
+
+## Is email delivered out of the box?
+
+No — **email delivery is off by default.** With no SMTP transport configured the
+API runs in **log mode**: verification codes and notices are written to the
+server log instead of being sent, and registration auto-verifies. Nothing is
+emailed until you configure a transport in
+[Email service](/docs/admin/settings/) (or the `SMTP_*` environment variables).
+For local testing, Mailpit catches the letters on `localhost:1025` with a web
+inbox on `http://localhost:8025`:
+
+```bash
+docker run -d --name janosik-mailpit --restart unless-stopped -p 1025:1025 -p 8025:8025 axllent/mailpit
+```
 
 ## How do agents and scripts use the API?
 

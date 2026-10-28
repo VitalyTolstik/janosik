@@ -55,9 +55,9 @@ Edits are committed when you leave the editor, so the history shows one change
 per editing session.
 
 Pasting a file uploads it as an attachment and embeds it at the cursor: an
-image renders inline and any other file becomes a download link. This needs
-server mode; in local mode pasting a file reports that it requires server
-mode.
+image renders inline and any other file becomes a download link. Uploads need
+the server; in the no-backend (local) mode pasting a file reports that it needs
+the server.
 
 ### Labels
 

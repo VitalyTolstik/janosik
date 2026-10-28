@@ -31,9 +31,11 @@ server to your MCP client:
 
 `JANOSIK_URL` is your instance origin and `JANOSIK_TOKEN` is the key. Both can
 also be passed as `--url` and `--token` flags (prefer `env` for the token: a
-flag shows up in the local process list). Add `JANOSIK_APP_BASE` (e.g.
-`/app`) only when the app is not served at the site root; it is used to build
-share links.
+flag shows up in the local process list). The server needs the instance running
+and reachable at `JANOSIK_URL` — for example `http://localhost:3000` when you run
+from source. Add `JANOSIK_APP_BASE` (e.g. `/app`) when the app is not served at
+the site root; it is used to build board links. The self-host image serves the
+app under `/app/`, so set `JANOSIK_APP_BASE=/app` there.
 
 Upload and download of attachments, and exporting a board to a file, touch
 the machine running the server, so they stay off until you set

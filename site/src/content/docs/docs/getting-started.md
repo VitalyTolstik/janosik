@@ -1,26 +1,24 @@
 ---
 title: Getting started
-description: What Janosik is, the two ways it runs, and the fastest path to a working board.
+description: What Janosik is, how it runs, and the fastest path to a working board.
 ---
 
-Janosik is a Kanban app for planning work on columns of cards. It installs as
-a PWA and runs in one of two modes.
+Janosik is a Kanban app for planning work on columns of cards. It installs as a
+PWA and runs in **server mode**: the boards live behind an account, in
+PostgreSQL, served by a NestJS API.
 
-## Two ways to run
+The board logic is offline-first by design, but the **shipped builds always talk
+to the API** — `npm run dev` and `npm run build` show a **sign-in screen**; they
+do not open a no-login demo board. The only no-backend ("local-only") mode is the
+one the **unit tests** run: the reducer over `localStorage`, with a seeded demo
+board.
 
-| Mode | Backend | Data lives in | Best for |
-| --- | --- | --- | --- |
-| Local-only | none | the browser (`localStorage`) | trying it out, offline use, a single person |
-| Server-backed | NestJS API and PostgreSQL | a database behind an account | accounts, shared boards, realtime |
-
-The build decides the mode. When the UI is pointed at an API (`VITE_API_URL`,
-`/api/v1` by default) it runs in server mode; without a backend it keeps the
-local-only mode. The [User guide](/docs/user-guide/) explains both in detail.
-
-The Help menu links to the docs on the same origin, which is how the self-host
-image serves them. A split deployment (app and site on different hosts) points
-the UI at the site with `VITE_SITE_URL` (the site origin, with a trailing
-slash).
+The self-host image serves the docs on the same origin as the app. A split
+deployment (app and site on different hosts) wires the two cross-links by hand:
+`VITE_SITE_URL` (UI build) points **Help → Documentation** at the site, and
+`PUBLIC_APP_URL` (site build) points the **Sign in** / **Create account** CTAs at
+the app — see [Split deployment](/docs/self-hosting/). In dev they are two
+servers (app `:5173`, site `:4321`), so set both.
 
 ## Fastest path: the self-host image
 
@@ -40,18 +38,52 @@ registration. [Self-hosting](/docs/self-hosting/) covers the first run step by s
 
 ## From source (development)
 
-Prerequisites: Node.js 22.17 or newer and npm.
+Prerequisites: Node.js 22.17 or newer — the repo pins **24** in `.nvmrc`
+(`nvm install && nvm use`).
 
-Local-only mode needs no backend:
+Configure the API **first**, then start the database: the dev compose file reads
+`POSTGRES_*` from `backend/.env`, so that file must exist before
+`docker compose up`.
 
 ```bash
-npm install
-npm run dev
-# http://localhost:5173/
+cp backend/.env.example backend/.env                 # set JWT_SECRET
+docker compose -f backend/docker-compose.yml up -d   # PostgreSQL on :5433
+npm run prisma:deploy -w backend
+npm run build:backend
+npm run start -w backend                             # API on :3000
+npm run dev                                          # UI on :5173 (proxies /api → :3000)
 ```
 
-Server mode adds a PostgreSQL container and the API. See
-[Self-hosting](/docs/self-hosting/) for the from-source steps on every platform.
+Register at `http://localhost:5173` (registration is open by default) and create
+the first master with `npm run admin:create -w backend -- --email me@example.com`
+for the `/admin` panel. Every from-source step, per platform, is in
+[Self-hosting](/docs/self-hosting/).
+
+### Marketing site (Astro) in dev
+
+The site and docs run as their own dev server (`npm run dev:site`, port 4321). In
+dev the app is **not** served at `/app/` on the site — that path belongs to the
+self-host image, where one server serves the site at `/` and the app at `/app/`.
+So point the site's "Sign in" / "Create account" CTAs at the UI dev server, or
+they 404:
+
+```bash
+PUBLIC_APP_URL=http://localhost:5173 npm run dev:site
+```
+
+### Outgoing email is off by default
+
+With no SMTP transport configured the API runs in **log mode**: verification
+codes and notices are written to the server log instead of being sent, and
+registration auto-verifies — nothing is emailed until you configure a transport
+(see [Email service](/docs/admin/settings/) and [Runbooks](/docs/runbooks/)).
+For a local sandbox:
+
+```bash
+docker run -d --name janosik-mailpit --restart unless-stopped \
+  -p 1025:1025 -p 8025:8025 axllent/mailpit
+# SMTP localhost:1025, web inbox http://localhost:8025
+```
 
 ## Where to go next
 

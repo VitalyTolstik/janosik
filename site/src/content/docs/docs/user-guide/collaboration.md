@@ -3,8 +3,9 @@ title: Collaboration, sharing and search
 description: Board members and roles, realtime updates, public read-only links, search, filters and shortcuts.
 ---
 
-Members, realtime updates and public share links all need server mode. In
-local mode there is one person and one browser, so those controls are hidden.
+Members, realtime updates and public share links all come from the server, so
+they are present in the shipped app. (In the no-backend local mode there is one
+person and one browser, and those controls are hidden.)
 
 ## Board members and roles
 

@@ -40,18 +40,27 @@ thumb: **`shared` is a library; `ui` and `backend` are programs that use it.**
 
 ```bash
 npm install
-npm run dev          # UI dev server on http://localhost:5173 (local-first mode)
+npm run dev          # UI dev server on http://localhost:5173
 ```
 
-For server mode (accounts, shared boards, realtime) you need PostgreSQL:
+The dev UI runs in **server mode** — it talks to the API, so it shows a
+**sign-in screen** until you have an account; `npm run dev` alone does not show a
+board. In server mode (accounts, shared boards, realtime) you also need
+PostgreSQL. Configure the API **before** starting the database: the dev compose
+file reads `POSTGRES_*` from `backend/.env`.
 
 ```bash
-docker compose -f backend/docker-compose.yml up -d   # janosik-postgres on :5433
 cp backend/.env.example backend/.env                 # set JWT_SECRET
+docker compose -f backend/docker-compose.yml up -d   # janosik-postgres on :5433
 npm run prisma:deploy -w backend
 npm run build:backend
 npm run start -w backend                             # API on :3000
 ```
+
+Register at <http://localhost:5173> once the API is up. The marketing site runs
+on its own dev server (`npm run dev:site`, port 4321) — point its
+`PUBLIC_APP_URL` at the UI dev server so the "Sign in" CTA works in dev (see the
+README).
 
 `README.md` has the full walkthrough, including self-hosting with Docker and the
 master-admin CLI.

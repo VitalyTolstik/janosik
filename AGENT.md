@@ -192,6 +192,57 @@ Draft‑состояние диалога (значение формы, стро
 
 **Важно**: после каждой итерации выводи отчёт: что сделано, какие файлы изменены, как проверить вручную, и останавливайся. Я затем выполню `/compact` и дам команду продолжать.
 
+## Быстрый запуск окружения (dev)
+
+Порядок важен: **сначала `.env`, потом БД** — dev-compose читает `POSTGRES_*`
+из `backend/.env` и без него не поднимется.
+
+```bash
+nvm install && nvm use                  # репо пинит версию в .nvmrc (Node 24)
+
+cp backend/.env.example backend/.env    # задать JWT_SECRET (openssl rand -hex 32)
+docker compose -f backend/docker-compose.yml up -d   # postgres :5433 (+redis :6379)
+npm run prisma:deploy -w backend        # миграции
+npm run build:backend
+npm run start -w backend                # API :3000
+npm run dev                             # UI :5173 (/api проксируется на :3000)
+```
+
+- **Dev UI всегда в server-режиме** (`isApiEnabled()` = true вне `MODE=test`):
+  показывает **экран логина**, «демо-доска без входа» недоступна. Local-only
+  (без API) живёт только в unit-тестах. Регистрация открыта по умолчанию
+  (`ALLOW_REGISTRATION=true`) — аккаунт заводится прямо в UI.
+- **Мастер (`/admin`)** — отдельный от пользователя аккаунт, только через CLI
+  (первый становится `OWNER`); без TTY пароль берётся из `ADMIN_PASSWORD`:
+  `ADMIN_PASSWORD='…' npm run admin:create -w backend -- --email me@example.com`.
+- **Сайт (Astro + Starlight)** — отдельный dev-сервер, порт 4321. В dev
+  приложение НЕ под `/app/` (это путь self-host образа), поэтому две
+  перекрёстные ссылки (сайт↔приложение) надо нацелить вручную, иначе ловишь 404:
+  сайт → приложение (`Sign in`/`Create account` задают `PUBLIC_APP_URL`) и
+  приложение → сайт (меню Help → Documentation задаёт `VITE_SITE_URL` в UI):
+  `PUBLIC_APP_URL=http://localhost:5173 npm run dev:site` и
+  `VITE_SITE_URL=http://localhost:4321/ npm run dev`.
+- **Email выключен по умолчанию** (log-mode: коды пишутся в лог сервера,
+  регистрация само-верифицируется — ничего не отправляется). Песочница Mailpit:
+  `docker run -d --name janosik-mailpit --restart unless-stopped -p 1025:1025 -p 8025:8025 axllent/mailpit`
+  (SMTP `localhost:1025`, веб-ящик <http://localhost:8025>); включается в
+  `/admin` → Email service (пресет «Mailpit (sandbox)»).
+
+### WSL: фоновые процессы (важно для агентов)
+
+Процесс, запущенный из одноразового `wsl.exe … &`/`nohup`, **убивается** при
+завершении сессии (WSL гасит всё дерево процессов). Держи серверы в открытом
+терминале или поднимай через **systemd** (`systemd-run`/unit + `systemctl`),
+иначе они не переживут следующий `wsl.exe`-вызов, а хот-релоад — перезапуск.
+
+### MCP (`mcp/`, `@janosik/mcp`)
+
+Отдельный MCP-сервер отдаёт доску агенту (68 tools) по персональному API-ключу.
+Нужны `JANOSIK_URL` (origin инстанса, напр. `http://localhost:3000`) и
+`JANOSIK_TOKEN` (`jnk_…`; создаётся в UI: Account → API keys). Требует
+**запущенного API**. Поведение агента задаёт скилл `skills/janosik`. Сборка —
+`npm run build:mcp`; подробности в `README.md` и `mcp/README.md`.
+
 ## Команды (monorepo, после TASK-22)
 
 Репозиторий — npm workspaces: `ui/` (фронт), `shared/` (`@janosik/shared`,
