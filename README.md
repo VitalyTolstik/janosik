@@ -1,6 +1,6 @@
 # Janosik
 
-A premium **Kanban board** — Trello-class drag & drop with a Space Grotesk wordmark and obsessive attention to micro-detail. It runs **local-first** (everything in `localStorage`, fully usable offline) or **server-backed** (accounts, shared boards, realtime sync).
+A premium **Kanban board** — Trello-class drag & drop with a Space Grotesk wordmark and obsessive attention to micro-detail. **Server mode** (accounts, shared boards, realtime sync) on an offline-first foundation: the whole board lives in one pure reducer, every edit runs through a shared command log, and the app is an installable PWA.
 
 [![React](https://img.shields.io/badge/React-18-61dafb?logo=react&logoColor=white)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -10,7 +10,7 @@ A premium **Kanban board** — Trello-class drag & drop with a Space Grotesk wor
 [![Tests](https://img.shields.io/badge/tests-932%20passing-brightgreen)](#)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 
-> **Janosik** installs as a **PWA** and runs either **local-first** (no backend — everything in `localStorage`, works fully offline) or **server-backed**: accounts, shared boards and a command-log sync (`POST /boards/:id/commands`) on top of the very same reducer, with optimistic updates and undo. Point the UI at the API (`VITE_API_URL`, `/api/v1` by default) for server mode; without it the app keeps the original client-side mode (all data in `localStorage`, JSON export/import, automatic `IndexedDB` backups). Members UI and **realtime SSE** (everyone sees each other's edits without a reload, dropped streams catch up from `?since=`) have landed; presence and the comments UI are next — see [ROADMAP.md §7](./ROADMAP.md).
+> **Janosik** installs as a **PWA** and runs in **server mode**: accounts, shared boards and a command-log sync (`POST /boards/:id/commands`) sit on top of one pure reducer (`boardReducer`) shared by the UI and the API, with optimistic updates and undo. The reducer is offline-first by design and the **unit tests** run it with no API (data in `localStorage`); the dev and production builds always talk to the API (`VITE_API_URL`, `/api/v1` by default) and show a sign-in screen. Members UI, **realtime SSE** (everyone sees each other's edits without a reload, dropped streams catch up from `?since=`), presence and the comments UI have all landed — see [ROADMAP.md §7](./ROADMAP.md).
 
 ---
 
@@ -84,8 +84,8 @@ janosik/                        # npm workspaces root (one package-lock.json)
 - **Activity feed** — per-card event history (10 event types) with relative timestamps.
 - **Keyboard-first** — shortcut palette (`?`), `j/k` cursor navigation, `n`/`c` composers, `e`/`Enter` edit.
 - **Undo / redo** — 50-step history with coalescing, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`, `Ctrl+Y`, header buttons.
-- **PWA** — installable (manifest + icons), service worker caches the app shell and all hashed chunks, so it opens with the network cut. **Local mode** then works fully offline; **server mode** needs the network for writes (optimistic edits roll back with a toast if the API is unreachable — there is no persistent outbox yet, so a reload drops unsynced changes).
-- **Server mode** — sign in, and boards live in PostgreSQL: every edit travels the command log (`POST /boards/:id/commands`) through the same `boardReducer`, optimistic first, with rollback + toast on refusal; typed text is protected by per-entity version preconditions so undo never clobbers another member's edit. Sign-out is always visible in the board header, and HTTP keepalive delivers a command that was already in flight if the tab reloads. The local-only mode stays as the no-API fallback.
+- **PWA** — installable (manifest + icons), service worker caches the app shell and all hashed chunks, so it opens with the network cut. Writes need the network (optimistic edits roll back with a toast if the API is unreachable — there is no persistent outbox yet, so a reload drops unsynced changes); reads keep working offline from the last fetch.
+- **Server mode** — sign in, and boards live in PostgreSQL: every edit travels the command log (`POST /boards/:id/commands`) through the same `boardReducer`, optimistic first, with rollback + toast on refusal; typed text is protected by per-entity version preconditions so undo never clobbers another member's edit. Sign-out is always visible in the board header, and HTTP keepalive delivers a command that was already in flight if the tab reloads. The reducer stays offline-first; the no-API (local-only) mode ships in the unit tests, not in the dev/prod build.
 - **Realtime** — a `GET /boards/:id/events` SSE stream carries every committed command (`{type, seq, action, actorId}`) and the client replays foreign actions through the very same reducer. Edits appear in other browsers with no reload; a dropped stream resumes exactly where it stopped (`?since=`) and window focus remains the fallback. Your own commands are never applied twice, and a stale undo still refuses to clobber someone else's text.
 - **Shared boards** — a **Members (N)** dialog in the header: admins invite by email, switch roles (`ADMIN`/`MEMBER`/`VIEWER`), bound a viewer's access with an expiry date ("access expired" badge) and remove members — the last admin can never be demoted or removed. Invitations are **opt-in**: the invitee gets a badge on the header bell and accepts or declines there; nothing is shared until they accept. Everyone else sees the same member list read-only, and a `VIEWER` gets a genuinely read-only board: no drag, no composers, no menus, no inline editors, a read-only card dialog — while the server independently answers 403 to every mutation.
 - **Master panel** — a separate `/admin` area for the platform operator: metrics, all users and boards, command log, audit trail and moderation (block a user and their sessions die instantly, revoke API tokens, archive/soft-delete a board, create accounts with a one-time password). Master accounts live outside the user table, have their own login, cookie and JWT audience, and are created only by the server CLI (`npm run admin:create -w backend`); `OWNER` can add more masters, `OPERATOR` cannot. Panel tables are **schema-first**: columns are named after Prisma fields (`Board.id`, `BoardMember.userId`, `Card.columnId`, `Comment.authorId`, …), foreign keys are shown as copyable IDs (title/email only as a caption) and search matches those IDs — a row can be traced to its parents even when names are not unique.
@@ -121,52 +121,66 @@ janosik/                        # npm workspaces root (one package-lock.json)
 
 ## Quick start
 
-**Prerequisites:** Node.js **22.17+** (enforced by the backend `engines` field; Vite 8 alone would accept 20.19+/22.12+), npm. Docker only if you want server mode (PostgreSQL).
+**Prerequisites:** Node.js **22.17+** — the repo pins **24** via `.nvmrc` (`nvm use`), and that is what CI runs. npm. Docker for server mode (PostgreSQL/Redis).
 
 > Per-OS walkthroughs (macOS, Windows 11, Linux) — both Docker and from-source, with the OS-specific gotchas — live in **[docs/INSTALL-BY-OS.md](./docs/INSTALL-BY-OS.md)**.
 
-### Local-only mode (no backend needed)
-
-```bash
-# 1. Install dependencies for all workspaces (one lockfile)
-npm install
-
-# 2. Start the UI dev server (default port 5173; `--port 5199 --strictPort`
-#    pins another one)
-npm run dev
-
-# 3. Open
-# http://localhost:5173/
-```
-
-On first launch the app shows a seeded **"Product Launch"** demo board. Everything you change is persisted locally, so the local (no-API) build keeps working fully offline. The PWA installs in either mode; in server mode it opens offline but writes need the network.
-
 ### Server mode (accounts + PostgreSQL)
 
-```bash
-# 1. Start the dev database (container `janosik-postgres`, port 5433)
-docker compose -f backend/docker-compose.yml up -d
+The dev UI is **always in server mode**: it calls `/api/v1` (Vite proxies it to `:3000`), so you get a **sign-in screen** and `npm run dev` alone does not show a board. Bring the database and API up first:
 
-# 2. Configure the API: copy backend/.env.example → backend/.env
-#    and set JWT_SECRET (openssl rand -hex 32). DATABASE_URL/TEST_DATABASE_URL
-#    already point at the container.
+```bash
+# 1. Configure the API FIRST — the dev compose file reads POSTGRES_* from
+#    backend/.env, so it must exist before `docker compose up`.
 cp backend/.env.example backend/.env
+#    set JWT_SECRET (openssl rand -hex 32); DATABASE_URL/TEST_DATABASE_URL
+#    already point at the container.
+
+# 2. Start the dev database (container `janosik-postgres`, port 5433)
+docker compose -f backend/docker-compose.yml up -d
 
 # 3. Apply migrations and build + start the API (port 3000)
 npm run prisma:deploy -w backend
 npm run build:backend
 npm run start -w backend
 
-# 4. Start the UI; in dev Vite proxies /api to :3000, so no extra config is
-#    needed (VITE_API_URL overrides the API base for other hosts)
+# 4. In a second terminal, start the UI; Vite proxies /api to :3000
 npm run dev
 ```
 
-Register an account in the UI — the boards now live in PostgreSQL and sync through the command log. To open the master panel at `/admin`, create the first master on the server (see below).
+Register at <http://localhost:5173> (registration is open by default) — the boards then live in PostgreSQL and sync through the command log. To open the master panel at `/admin`, create the first master on the server (see below).
 
-### Enabling outgoing email (optional)
+> **Local-only / no-API build.** The app can also render with no backend — that is the in-browser mode the **unit tests** use (`MODE=test`), with the seeded "Product Launch" board in `localStorage`. The `npm run dev` / `npm run build` builds are **not** that mode: they always talk to the API and show the login screen, so "just look at the demo board, no login" is not available from the dev server.
 
-The API boots fine **without any mail setup**: with no SMTP transport configured it runs in **log mode** — every message (verification codes, email-change notices) is written to the server log instead of being sent, and registration auto-verifies so nobody is locked out.
+### Marketing site (Astro) — dev
+
+The marketing site and docs live in `site/` (Astro + Starlight) and run on their own dev server:
+
+```bash
+npm run dev:site                 # Astro dev server, default port 4321
+```
+
+In dev the app is **not** served under `/app/` on the site — that path belongs to the **self-host image**, where one server serves the site at `/` and the app at `/app/`. So the site's "Sign in" / "Create account" CTAs must be pointed at the UI dev server, otherwise they 404:
+
+```bash
+PUBLIC_APP_URL=http://localhost:5173 npm run dev:site
+```
+
+The reverse link — the in-app **Help → Documentation** — points at the site, so give the UI dev server `VITE_SITE_URL` (otherwise it opens `/docs/` on the UI origin and hits the not-found page):
+
+```bash
+VITE_SITE_URL=http://localhost:4321/ npm run dev
+```
+
+The self-host image sets both by serving the site at `/` and the app at `/app/` on one origin; a **split deployment** (two hosts) sets `PUBLIC_APP_URL` and `VITE_SITE_URL` to the two origins — see [docs/SELF-HOSTING.md](./docs/SELF-HOSTING.md).
+
+### Enabling outgoing email (optional — off by default)
+
+**Email delivery is not enabled by default.** The API boots fine with no mail
+setup: with no SMTP transport configured it runs in **log mode** — every message
+(verification codes, email-change notices) is written to the server log instead
+of being sent, and registration auto-verifies so nobody is locked out. Messages
+are never actually delivered until you configure a transport in the master panel.
 
 To actually send mail, open **`/admin` → Email service** (owner only), pick a preset and paste the credentials, then flip **Enable delivery** and hit **Send test email**:
 
@@ -177,7 +191,7 @@ To actually send mail, open **`/admin` → Email service** (owner only), pick a 
 **Trying it out locally (Mailpit).** The **Mailpit (sandbox)** preset sends to a local catcher and needs no credentials — letters land in a web inbox instead of a real address. Start it, then open the inbox:
 
 ```bash
-docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit
+docker run -d --name janosik-mailpit --restart unless-stopped -p 1025:1025 -p 8025:8025 axllent/mailpit
 # open http://localhost:8025, or click "Open the inbox" in the panel
 ```
 
@@ -364,11 +378,14 @@ Full guide in-repo: [mcp/README.md](./mcp/README.md) and
 
 ## Scripts
 
-Root scripts fan out to the workspaces (`-w ui`, `-w shared`, `-w backend`):
+Root scripts fan out to the workspaces (`-w ui`, `-w shared`, `-w backend`, `-w site`, `-w mcp`, …):
 
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | UI dev server (`npm run dev -w ui`; default port 5173, proxies `/api` to `:3000`) |
+| `npm run dev:site` | Marketing site + docs dev server (`npm run dev -w site`; Astro, default port 4321) |
+| `npm run build:site` | Build the Astro site (`site/dist`) |
+| `npm run build:mcp` | Build the MCP server (`mcp/dist`) |
 | `npm run build` | Type-check + build the UI (`ui/dist`) |
 | `npm run build:backend` | Prisma generate + compile the API (`backend/dist`) |
 | `npm run preview` | Serve the built UI locally |

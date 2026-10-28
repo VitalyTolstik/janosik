@@ -55,15 +55,17 @@ getting it running on your own machine.
 ### From source
 
 ```bash
-brew install node@22            # or: brew install nvm && nvm install 22 && nvm use 22
+brew install node@24            # or: brew install nvm && nvm install   # .nvmrc pins 24
 git clone https://github.com/VitalyTolstik/janosik.git
 cd janosik
 npm install
-npm run dev                     # → http://localhost:5173 (local-only mode)
+npm run dev                     # → http://localhost:5173 (server mode: sign in / register)
 ```
 
-For server mode (accounts + PostgreSQL) add the dev database and API — see
-[From source, all platforms](#from-source-all-platforms) below.
+`npm run dev` starts the UI in **server mode**: it talks to the API and shows a
+sign-in screen, so you also need the dev database and API — see
+[From source, all platforms](#from-source-all-platforms) below. The marketing
+site is a separate dev server (`npm run dev:site`, port 4321).
 
 ---
 
@@ -132,15 +134,42 @@ docker compose exec app node backend/scripts/admin-cli.cjs create --email me@exa
 Prefer WSL2 Ubuntu for the dev flow (native tooling, fast file watching):
 
 ```bash
-sudo apt update && sudo apt install -y nodejs npm git   # or use nvm, see Linux
+# Node via nvm (the distro `nodejs` is often too old for the backend engines):
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+nvm install                     # reads .nvmrc (Node 24)
 git clone https://github.com/VitalyTolstik/janosik.git
 cd janosik && npm install
-npm run dev
+npm run dev                     # → http://localhost:5173 (server mode)
 ```
 
-On native Windows, install **Node.js 22 LTS** from nodejs.org (or via
-`winget install OpenJS.NodeJS.LTS` / `fnm`), then the same `npm install` /
-`npm run dev`. Use PowerShell or Git Bash.
+`npm run dev` alone shows a **sign-in screen** (the dev UI is always in server
+mode) — add the dev database + API per
+[From source, all platforms](#from-source-all-platforms) to get a board. The
+marketing site is a separate dev server:
+
+```bash
+PUBLIC_APP_URL=http://localhost:5173 npm run dev:site   # → http://localhost:4321
+```
+
+In dev both cross-links need pointing: `PUBLIC_APP_URL` for the site's "Sign in" / "Create account" CTAs (they default to `/app/`, which only exists in the self-host image) and `VITE_SITE_URL` for the app's **Help → Documentation** link. Without them the site CTAs 404 on `:4321/app/` and Help 404s on `:5173/docs/`:
+
+```bash
+VITE_SITE_URL=http://localhost:4321/ npm run dev        # UI   (:5173)
+PUBLIC_APP_URL=http://localhost:5173 npm run dev:site   # site (:4321)
+```
+
+See the README and the "Split deployment" section of `docs/SELF-HOSTING.md`.
+
+> **WSL gotcha — background servers die with the shell.** A process started from
+> a one-shot `wsl.exe … &`/`nohup` is killed the moment that `wsl.exe` session
+> ends (WSL terminates the whole tree). So run the dev servers in a terminal you
+> keep open, or as a **systemd unit** (`systemd-run`/`systemctl`) so they survive
+> across `wsl.exe` calls and reboots. This matters for scripts and AI agents
+> that start a server and then return.
+
+On native Windows, install **Node.js 22 LTS or newer** (the repo pins 24 via
+`.nvmrc`) from nodejs.org (or via `winget install OpenJS.NodeJS.LTS` / `fnm`),
+then the same `npm install` / `npm run dev`. Use PowerShell or Git Bash.
 
 ---
 
@@ -189,37 +218,37 @@ On native Windows, install **Node.js 22 LTS** from nodejs.org (or via
 ### From source
 
 ```bash
-# Node 22.17+ — via nvm (recommended) or your distro
+# Node via nvm (recommended); the repo pins 24 in .nvmrc
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-nvm install 22 && nvm use 22
+nvm install                     # reads .nvmrc (Node 24)
 
 git clone https://github.com/VitalyTolstik/janosik.git
 cd janosik
 npm install
-npm run dev                     # → http://localhost:5173 (local-only mode)
+npm run dev                     # → http://localhost:5173 (server mode: sign in / register)
 ```
 
 ---
 
 ## From source, all platforms
 
-Once Node 22.17+ is installed and `npm install` has run at the repo root:
+Once Node 22.17+ (the repo pins 24 via `.nvmrc`) is installed and `npm install`
+has run at the repo root:
 
-**Local-only mode** (no backend, data in the browser):
-
-```bash
-npm run dev                     # http://localhost:5173
-```
+> The dev UI is **always in server mode** — `npm run dev` shows a **sign-in
+> screen** and needs the API below. There is no "no-login demo board" dev run;
+> the local-only (no-API) mode is what the **unit tests** exercise.
 
 **Server mode** (accounts, shared boards, realtime):
 
 ```bash
-# 1. dev PostgreSQL (container janosik-postgres on port 5433)
-docker compose -f backend/docker-compose.yml up -d
-
-# 2. configure the API
+# 1. Configure the API FIRST — the dev compose file reads POSTGRES_* from
+#    backend/.env, so it must exist before `docker compose up`.
 cp backend/.env.example backend/.env
 #   set JWT_SECRET (openssl rand -hex 32; on PowerShell see the Windows section)
+
+# 2. dev PostgreSQL (container janosik-postgres on port 5433)
+docker compose -f backend/docker-compose.yml up -d
 
 # 3. migrate + build + start the API (port 3000)
 npm run prisma:deploy -w backend
@@ -230,8 +259,28 @@ npm run start -w backend
 npm run dev
 ```
 
-Register at <http://localhost:5173>; create a master with
-`npm run admin:create -w backend -- --email me@example.com` and open `/admin`.
+Register at <http://localhost:5173> (registration is open by default); create a
+master with `npm run admin:create -w backend -- --email me@example.com` and open
+`/admin`.
+
+**Marketing site** (optional, separate dev server):
+
+```bash
+PUBLIC_APP_URL=http://localhost:5173 npm run dev:site   # → http://localhost:4321
+```
+
+In dev the app is not under `/app/` on the site (that path is for the self-host
+image only), so point **both** cross-links by hand: `PUBLIC_APP_URL` at the UI
+dev server (or the site's "Sign in" CTA 404s), and the UI's `VITE_SITE_URL` at
+the site (or the app's **Help → Documentation** 404s):
+
+```bash
+VITE_SITE_URL=http://localhost:4321/ npm run dev        # UI   (:5173)
+PUBLIC_APP_URL=http://localhost:5173 npm run dev:site   # site (:4321)
+```
+
+For a two-host production deployment the same two variables are set on the two
+builds — see the "Split deployment" section of `docs/SELF-HOSTING.md`.
 
 **Common commands:** `npm test` (UI + shared), `npm run test:backend`,
 `npm run lint`, `npm run build`, `npm run size`. See the README for the full
@@ -241,11 +290,12 @@ list.
 
 ## Node version quick reference
 
-| OS | Install Node 22.17+ |
+| OS | Install Node 22.17+ (repo pins 24) |
 | --- | --- |
-| macOS | `brew install node@22` or `nvm install 22` |
-| Windows 11 | WSL: `nvm install 22` · native: `winget install OpenJS.NodeJS.LTS` or `fnm` |
-| Linux | `nvm install 22` or distro packages |
+| macOS | `brew install node@24` or `nvm install` (reads `.nvmrc`) |
+| Windows 11 | WSL: `nvm install` (`.nvmrc`) · native: `winget install OpenJS.NodeJS.LTS` or `fnm` |
+| Linux | `nvm install` (`.nvmrc`) or distro packages |
 
-If the backend complains about the Node version, check with `node -v` — it must
-be **22.17 or newer**.
+The repo pins the exact version in **`.nvmrc`** (currently **24**): run `nvm use`
+in the repo root, or `nvm install` once. If the backend complains about the Node
+version, check with `node -v` — it must be **22.17 or newer**.

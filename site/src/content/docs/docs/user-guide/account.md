@@ -3,8 +3,8 @@ title: Account, keys and preferences
 description: Sign in, manage your profile, password and API keys, set preferences, and back up your data.
 ---
 
-Accounts exist only in server mode. In local mode the app opens straight to
-your boards with no sign-in, and the account button is hidden.
+Janosik runs in server mode: an account is required, and the app opens to the
+sign-in screen before your boards load.
 
 ## Sign in and register
 
@@ -103,9 +103,9 @@ standalone window and a service worker that caches the app shell and its
 hashed files, so the app opens with the network cut. Use your browser's own
 install option to add it; the app has no separate install button.
 
-In local mode the app works fully offline, because everything is in your
-browser. In server mode the app still opens offline, but saving changes needs
-the network: an edit made while offline is not stored.
+The app opens offline from its cached shell, but saving changes needs the
+network: an edit made while offline is not stored, and reloading drops unsynced
+changes.
 
 ## Data and backups
 
@@ -114,8 +114,8 @@ The data menu in the header manages your data.
 ![The data menu: export, import, a manual copy, the card archive and automatic backups.](/screens/data-menu.png)
 
 - `Export JSON` downloads all your boards as `janosik-boards.json`.
-- `Import JSON` reads a Janosik export. In local mode importing replaces your
-  current data set; in server mode it adds the imported boards.
+- `Import JSON` reads a Janosik export and adds the imported boards to your
+  account.
 - `Save a copy now` writes a backup copy straight away.
 - `Automatic backups` opens the list of copies the app kept on its own while
   you worked. From there you can restore a copy or delete it. Restoring takes
@@ -125,8 +125,9 @@ The data menu in the header manages your data.
 
 ![The card archive: archived cards of the active board, with restore and delete.](/screens/archive.png)
 
-Automatic backups run in local mode. In server mode your boards live in the
-database, and board data is not mirrored into the browser.
+Automatic backups belong to the local mode (the no-API build the tests use). In
+the shipped server mode your boards live in the database and are not mirrored
+into the browser.
 
 ### The data-safety banner
 

@@ -199,6 +199,24 @@ that matter most:
 
 OAuth (Google / Yandex) is configured in the panel, not in `.env`.
 
+### Split deployment (app and site on different hosts)
+
+The self-host image is a **single origin** — the site at `/`, the app at `/app/`
+— so nothing needs configuring. If you serve the **app** and the **marketing
+site/docs** from *different* hosts, point the two cross-links by hand:
+
+| Direction | Variable | Set on the… | Value |
+| --- | --- | --- | --- |
+| Site → App ("Sign in" / "Create account" CTAs) | `PUBLIC_APP_URL` | **site** build | the app origin, e.g. `https://app.example.com/` |
+| App → Site ("Help → Documentation") | `VITE_SITE_URL` | **UI** build | the site origin, with a trailing slash, e.g. `https://example.com/` |
+
+Get either wrong and a link lands on a **404** — the site's not-found page for
+the CTAs, or the app's not-found page for Help. This is the same pair the dev
+setup needs, where the app (`:5173`) and the site (`:4321`) are always two
+servers: `VITE_SITE_URL=http://localhost:4321/ npm run dev` and
+`PUBLIC_APP_URL=http://localhost:5173 npm run dev:site`. The image already sets
+both for the single-origin layout (`UI_BASE=/app/`, `PUBLIC_APP_URL=/app/`).
+
 ---
 
 ## 5. Email (optional)

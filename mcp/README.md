@@ -23,9 +23,9 @@ and stream live to anyone watching the board.
 
    | Variable | Example | Meaning |
    | --- | --- | --- |
-   | `JANOSIK_URL` | `https://boards.example.com` | Origin of your instance. |
+   | `JANOSIK_URL` | `https://boards.example.com` | Origin of your running instance (e.g. `http://localhost:3000` when you run from source). |
    | `JANOSIK_TOKEN` | `jnk_…` | The personal API key. |
-   | `JANOSIK_APP_BASE` | `/app` | App sub-path, only if the app is not at the site root (used to build share links). |
+   | `JANOSIK_APP_BASE` | `/app` | App sub-path, when the app is not at the site root (used to build board links). The self-host image serves the app under `/app/`, so set `/app` there. |
 
    All three can also be passed as `--url` / `--token` / `--app-base` flags.
    Prefer `env` for the token: a `--token` flag shows up in the local
@@ -186,13 +186,16 @@ The package is published to npm and listed in the
 
 1. Bump the version in **both** `package.json` and `server.json` (a test
    keeps them in lockstep) and merge to `main`.
-2. Tag and push: `git tag mcp-v0.1.1 && git push origin mcp-v0.1.1`.
+2. Tag and push: `git tag mcp-v<version> && git push origin mcp-v<version>` (the
+   tag must equal the version you just bumped).
 
-The `mcp-publish` job in `.github/workflows/ci.yml` then waits for the test
-suite, publishes to npm with `--provenance`, and publishes the metadata to the
-registry. Auth is OIDC (npm Trusted Publishing + the registry's GitHub OIDC),
-so there is no token to rotate. `mcpName` in `package.json` must equal the
-registry name in `server.json`.
+The `mcp-publish` job in `.github/workflows/ci.yml` runs only on an `mcp-v*` tag,
+waits for the test suite, then publishes to npm and pushes the metadata to the
+registry. It refuses to publish when the tag does not match the `package.json`
+version. Auth is OIDC (npm Trusted Publishing + the registry's GitHub OIDC), so
+there is no token to rotate; `--provenance` is omitted because it needs a public
+source repository. `mcpName` in `package.json` must equal the registry name in
+`server.json`.
 
 One-time bootstrap (before the first automated release): create the npm
 package and the registry entry by hand — `npm publish -w mcp --access public`

@@ -5,8 +5,9 @@ description: Guides for self-hosting, using and administering Janosik.
 
 Janosik is a self-hosted Kanban app. A board is columns of cards, and every
 change is recorded as a command so a board can be replayed, undone and shared.
-It runs either as a local-only PWA in the browser or against a NestJS backend
-with accounts, realtime updates and public share links.
+It runs in **server mode**: a NestJS API with accounts, realtime updates and
+public share links, over PostgreSQL. (A no-backend "local-only" mode exists only
+in the unit tests.)
 
 This documentation has four parts.
 

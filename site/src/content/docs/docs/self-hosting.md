@@ -407,24 +407,18 @@ Open the firewall only for `80` and `443` (`sudo ufw allow 80,443/tcp`).
 
 ### From source, all platforms
 
-Once Node 22.17 or newer is installed and `npm install` has run at the repo
-root:
-
-Local-only mode, no backend, data in the browser:
-
-```bash
-npm run dev                     # http://localhost:5173
-```
-
-Server mode with accounts, shared boards and realtime:
+Once Node 22.17 or newer (the repo pins **24** in `.nvmrc`) is installed and
+`npm install` has run at the repo root. Configure the API **first** — the dev
+compose file reads `POSTGRES_*` from `backend/.env`, so that file must exist
+before `docker compose up`:
 
 ```bash
-# 1. dev PostgreSQL (container janosik-postgres on port 5433)
-docker compose -f backend/docker-compose.yml up -d
-
-# 2. configure the API
+# 1. configure the API
 cp backend/.env.example backend/.env
 #   set JWT_SECRET (openssl rand -hex 32; on PowerShell see the Windows section)
+
+# 2. dev PostgreSQL (container janosik-postgres on port 5433)
+docker compose -f backend/docker-compose.yml up -d
 
 # 3. migrate, build and start the API (port 3000)
 npm run prisma:deploy -w backend
@@ -435,11 +429,52 @@ npm run start -w backend
 npm run dev
 ```
 
-Register at `http://localhost:5173`, create a master with
+The dev UI is **always in server mode**: `npm run dev` shows a **sign-in screen**
+and needs the API above — there is no "no-login demo board" dev run. Register at
+`http://localhost:5173` (registration is open by default), create a master with
 `npm run admin:create -w backend -- --email me@example.com`, and open `/admin`.
+
+The **marketing site** is a separate dev server (`npm run dev:site`, port 4321).
+In dev the app is not served under `/app/` on the site — that path belongs to the
+self-host image — so point its CTAs at the UI dev server:
+`PUBLIC_APP_URL=http://localhost:5173 npm run dev:site`.
+
+**Outgoing email is off by default** (log mode unless `SMTP_*` is set): codes go
+to the server log, nothing is emailed. See [Email service](/docs/admin/settings/)
+and [Runbooks](/docs/runbooks/). A local sandbox is Mailpit:
+
+```bash
+docker run -d --name janosik-mailpit --restart unless-stopped \
+  -p 1025:1025 -p 8025:8025 axllent/mailpit
+# SMTP localhost:1025, web inbox http://localhost:8025
+```
 
 To build the image from a checkout instead of pulling, uncomment `build: .` in
 `docker-compose.yml`.
+
+## Split deployment (app and site on different hosts)
+
+The self-host image is a **single origin** — the site at `/`, the app at `/app/`
+— so nothing needs configuring. If you serve the **app** and the **marketing
+site/docs** from *different* hosts, wire the two links that cross between them:
+
+| Direction | Variable | Set on | Value |
+| --- | --- | --- | --- |
+| Site → App ("Sign in" / "Create account" CTAs) | `PUBLIC_APP_URL` | the **site** build | the app origin, e.g. `https://app.example.com/` |
+| App → Site ("Help → Documentation") | `VITE_SITE_URL` | the **UI** build | the site origin, with a trailing slash, e.g. `https://example.com/` |
+
+Getting either wrong lands the user on a **404**: a CTA that opens the site's
+not-found page, or Help → Documentation that opens the app's not-found page. This
+is the same pair you set in dev, where the app and the site are always two
+servers (app `:5173`, site `:4321`):
+
+```bash
+# UI dev server — the in-app Help menu points at the Astro dev site:
+VITE_SITE_URL=http://localhost:4321/ npm run dev
+
+# site dev server — the Sign in / Create account CTAs point at the UI:
+PUBLIC_APP_URL=http://localhost:5173 npm run dev:site
+```
 
 ## Data locations
 
