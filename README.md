@@ -49,6 +49,13 @@ janosik/                        # npm workspaces root (one package-lock.json)
 │  ├─ scripts/                  # admin-cli.cjs, migrate-test-db.cjs
 │  ├─ docker-compose.yml        # dev PostgreSQL 16 (janosik + janosik_test)
 │  └─ .env.example
+├─ mcp/                         # @janosik/mcp — the MCP server: the board as agent tools
+│  ├─ src/                      # client + 13 tool groups (71 tools), toolset gating
+│  ├─ server.json               # MCP Registry metadata (published as io.github.vitalytolstik/janosik)
+│  └─ scripts/smoke.mjs         # live smoke test against a running instance
+├─ skills/janosik/              # the agent skill (behaviour playbook for the MCP tools)
+│  ├─ SKILL.md                  #   the behaviour a harness loads
+│  └─ references/               #   card/comment templates + lifecycle recipes
 ├─ deploy/nginx.conf            # optional SPA fallback + /api proxy (single-image serving is built in)
 ├─ Dockerfile                   # multi-stage: builds UI + API into one self-host image
 ├─ docker-compose.yml           # self-host stack: app + postgres + redis
@@ -82,6 +89,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 - **Realtime** — a `GET /boards/:id/events` SSE stream carries every committed command (`{type, seq, action, actorId}`) and the client replays foreign actions through the very same reducer. Edits appear in other browsers with no reload; a dropped stream resumes exactly where it stopped (`?since=`) and window focus remains the fallback. Your own commands are never applied twice, and a stale undo still refuses to clobber someone else's text.
 - **Shared boards** — a **Members (N)** dialog in the header: admins invite by email, switch roles (`ADMIN`/`MEMBER`/`VIEWER`), bound a viewer's access with an expiry date ("access expired" badge) and remove members — the last admin can never be demoted or removed. Invitations are **opt-in**: the invitee gets a badge on the header bell and accepts or declines there; nothing is shared until they accept. Everyone else sees the same member list read-only, and a `VIEWER` gets a genuinely read-only board: no drag, no composers, no menus, no inline editors, a read-only card dialog — while the server independently answers 403 to every mutation.
 - **Master panel** — a separate `/admin` area for the platform operator: metrics, all users and boards, command log, audit trail and moderation (block a user and their sessions die instantly, revoke API tokens, archive/soft-delete a board, create accounts with a one-time password). Master accounts live outside the user table, have their own login, cookie and JWT audience, and are created only by the server CLI (`npm run admin:create -w backend`); `OWNER` can add more masters, `OPERATOR` cannot. Panel tables are **schema-first**: columns are named after Prisma fields (`Board.id`, `BoardMember.userId`, `Card.columnId`, `Comment.authorId`, …), foreign keys are shown as copyable IDs (title/email only as a caption) and search matches those IDs — a row can be traced to its parents even when names are not unique.
+- **AI agents (MCP + skill)** — `@janosik/mcp` exposes the whole board to any MCP client (Claude, Cursor, VS Code, opencode, Codex) over a personal API key, and the `janosik` skill teaches the agent *how* to behave: comment at every step, fill a card so it stands on its own, move it through the columns, and — when a bug turns up — return the card with the evidence instead of burying it. Writes go through the same command log, so an agent's work is undoable, streamed live, and keeps the full history. See [Drive it from an AI agent](#drive-it-from-an-ai-agent-mcp--skill).
 - **Fast by construction** — code-split bundle (editor & calendar load on demand), vendor chunks with stable cache keys; first paint ~212 ms on throttled CPU.
 - **Data safety** — debounced saves, JSON export/import, automatic backups (20 snapshots, rotated), error boundary + toasts, input/collection limits everywhere.
 - **Themes & polish** — dark/light with no-flash preflight, four board backgrounds, adjustable column glass, `prefers-reduced-motion`, custom scrollbars.
@@ -284,6 +292,73 @@ Rules worth knowing:
 - Sign in at `http://localhost:5173/admin` (dev) or `https://your-host/admin` (self-hosted). Sign-out sits in the top-right corner.
 - What you get there: metrics with 14-day sparklines plus a runtime card (version, uptime, DB latency), all users (search, filter, create with a one-time password, block → sessions die instantly, revoke API tokens), all boards (create for an owner, archive/restore, soft-delete), all cards and comments (search + moderation), active sessions and personal API tokens with per-row revoke, the cross-board command log, and the audit trail of every master action. Tables follow the database schema (see Highlights) and search matches foreign-key IDs. The board content editor (`/admin/boards/:id/content`) creates and renames columns and cards **through the command log on behalf of the board owner**, so the board UI stays consistent.
 - Hardening that ships with it: argon2id hashes, 5-failed-login lockout (15 min) plus rate limiting, per-entity refresh rotation with reuse detection, response shapes that never include password/token hashes, and an audit row for every login attempt and mutation.
+
+---
+
+## Drive it from an AI agent (MCP + skill)
+
+Janosik is built so a swarm of AI agents can work a board alongside people. Two
+pieces make that real, and they are deliberately separate:
+
+- **`@janosik/mcp` — the tools (the "hands").** An MCP server that exposes the
+  whole board — boards, columns, cards, labels, checklists, links, comments,
+  activity and attachments (plus, opt-in, members, invitations, share links and
+  the account) — to any MCP client. It talks to your instance with a personal
+  API key (`jnk_…`) and routes every write through the same command log the UI
+  uses, so an agent's changes are undoable and stream live to everyone watching.
+- **`skills/janosik` — the behaviour (the "manners").** A playbook that tells
+  the agent *how* to work: read before writing, claim a card, fill it so it
+  stands on its own, comment at every step, move it through the columns, and —
+  when a bug turns up — move the card back with the evidence instead of marking
+  it Done.
+
+### 1. Get an API key
+
+In the app: **Account → API keys → create** (starts with `jnk_`). Give each
+agent its **own user account and key**, so the activity feed shows who did what
+and revoking one key stops one agent.
+
+### 2. Add the MCP server
+
+```json
+{
+  "mcpServers": {
+    "janosik": {
+      "command": "npx",
+      "args": ["-y", "@janosik/mcp"],
+      "env": {
+        "JANOSIK_URL": "https://boards.example.com",
+        "JANOSIK_TOKEN": "jnk_…"
+      }
+    }
+  }
+}
+```
+
+Works in Claude Desktop/Code, Cursor, VS Code, opencode and Codex.
+`JANOSIK_APP_BASE` is only needed when the app is not at the site root (e.g.
+`/app`). By default the server registers the board-work tools; member,
+invitation, share and account tools are opt-in (`JANOSIK_MCP_TOOLSETS`), and
+attachment upload/download stays off until you set `JANOSIK_MCP_ALLOW_FS=1`.
+
+### 3. Add the skill
+
+Drop `skills/janosik/` into your harness's skills directory — Claude Code:
+`~/.claude/skills/`, opencode: `~/.config/opencode/skills/`, agent-compatible
+harnesses: `~/.agents/skills/`. Details in
+[skills/janosik/README.md](./skills/janosik/README.md). The skill needs no
+configuration; it just makes the agent follow the board's conventions.
+
+### What the agent does with it
+
+Picks up a card, comments as it goes, fills the description and checklist, moves
+it **In Progress → Review → Done**, and on a bug moves it **back** (to Bugs /
+In Progress) with a comment describing the defect — so a reviewer sees the card
+travel forward, back and forward again, with a reason at every turn. That
+backward move plus the comment is the audit trail.
+
+Full guide in-repo: [mcp/README.md](./mcp/README.md) and
+[skills/janosik/SKILL.md](./skills/janosik/SKILL.md).
 
 ---
 

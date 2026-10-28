@@ -86,6 +86,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `JANOSIK_MCP_FS_ROOT`; symlinks out of the root are refused and existing
     files are never overwritten.
 
+- **Agent skill (`skills/janosik`).** A behaviour playbook for agents working a
+  board through the MCP tools: read before writing, claim and fill a card so it
+  stands on its own, comment at every step, move it through the columns, and —
+  when a bug turns up — return the card with the evidence (a comment and a
+  checklist item) instead of marking it Done, so the board keeps an honest
+  history. Plain `SKILL.md` plus `references/` for card/comment templates and
+  lifecycle recipes; installs into Claude Code, opencode and any
+  agent-compatible harness.
+
 ### Fixed
 
 - **Share-dialog link lifetime.** The "Expires in" picker was a native

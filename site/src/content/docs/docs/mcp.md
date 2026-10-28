@@ -1,6 +1,6 @@
 ---
 title: MCP server
-description: Let AI agents read and drive a board with the Janosik MCP server and a personal API key.
+description: Let AI agents read and drive a board with the Janosik MCP server and its behaviour skill, using a personal API key.
 ---
 
 The `@janosik/mcp` server exposes a board to any MCP client (Claude, Cursor,
@@ -71,6 +71,39 @@ compute a write from a read retry when another agent changed the board in
 between, and `janosik_update_card` accepts `expectedDescription` to edit
 shared text only if nobody changed it since.
 
+## The skill: teach the agent how to work
+
+The server gives an agent the tools; it does not tell it *how* to use them well.
+The **`janosik` skill** is the behaviour half — a playbook that makes the agent
+work a card the way a good teammate would:
+
+- **Read before writing** — list the boards, read the board, read the card's
+  comments and activity before touching anything.
+- **Claim and fill the card** — assign it to itself, move it to *In Progress*,
+  and write a description and checklist that stand on their own.
+- **Comment at every step** — a short note when it picks the card up, when a
+  step is done, and when it hands the card over. The comment thread is the
+  card's story.
+- **Move it forward** — Backlog → In Progress → Review → Done, with a human gate
+  at Review.
+- **Return it on a bug** — if the card is wrong or breaks something, the agent
+  moves it **back** (to Bugs, or In Progress) with a comment describing the
+  defect and a checklist item for the fix, instead of marking it Done. That
+  backward move plus the comment is the audit trail.
+
+Install it by dropping `skills/janosik/` into your harness's skills directory:
+
+| Harness | Where |
+| --- | --- |
+| Claude Code | `~/.claude/skills/janosik/` (or `.claude/skills/` in a project) |
+| opencode | `~/.config/opencode/skills/janosik/` (or `.opencode/skills/`) |
+| Agent-compatible harnesses | `~/.agents/skills/janosik/` (or `.agents/skills/`) |
+| Codex / no skills support | Paste `SKILL.md` into your `AGENTS.md` |
+
+The skill references the tools by name and needs no configuration. It ships in
+the repository under `skills/janosik/` (behaviour in `SKILL.md`, plus
+`references/templates.md` and `references/recipes.md`).
+
 ## Permissions
 
 The key acts as the user who created it, with the same roles: an agent can
@@ -83,5 +116,5 @@ an agent reads from a board as untrusted. Give each agent its own user account
 and key: the activity feed then shows which agent did what, and revoking one
 key stops one agent.
 
-The server is open source in the repository under `mcp/`; its README lists the
-full tool set.
+The server is open source in the repository under `mcp/`, and the skill under
+`skills/janosik/`; the MCP README lists the full tool set.

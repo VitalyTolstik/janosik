@@ -10,6 +10,11 @@ but opt-in.
 Writes go through the same command log the UI uses, so changes are undoable
 and stream live to anyone watching the board.
 
+> **Companion skill.** The tools are the "hands"; the
+> [`janosik` skill](../skills/janosik/SKILL.md) is the "behaviour" — when to
+> comment, how to fill a card, and how to return a card with evidence when a bug
+> turns up. Install it alongside this server.
+
 ## Quick start
 
 1. In Janosik, open **Account → API keys** and create a key (it starts with
