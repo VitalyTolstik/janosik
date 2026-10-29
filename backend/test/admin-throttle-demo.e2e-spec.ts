@@ -60,6 +60,11 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
     await prisma.boardMember.deleteMany();
     await prisma.boardShare.deleteMany();
     await prisma.board.deleteMany();
+    // Rows that reference a user without a cascade (another suite may have
+    // left them behind) must go before the users themselves.
+    await prisma.apiToken.deleteMany();
+    await prisma.dataExport.deleteMany();
+    await prisma.reminderSent.deleteMany();
     await prisma.user.deleteMany();
 
     await prisma.adminUser.createMany({
