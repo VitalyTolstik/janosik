@@ -36,6 +36,13 @@ export async function* parseEventStream(
       const { done, value } = await reader.read();
       if (done) return;
       buffer += decoder.decode(value, { stream: true });
+      // A frame is a small JSON object; a peer that streams megabytes without
+      // a separator must not grow the client's memory (or the regex cost)
+      // without bound. Throwing forces a reconnect instead (TASK-147
+      // follow-up).
+      if (buffer.length > MAX_EVENT_BUFFER_BYTES) {
+        throw new Error("SSE frame exceeded the buffer limit");
+      }
       for (;;) {
         // Accept both `\n\n` and a proxy's `\r\n\r\n` (A10): SSE frames may
         // legally end either way.
@@ -51,6 +58,9 @@ export async function* parseEventStream(
     void reader.cancel().catch(() => undefined);
   }
 }
+
+/** Cap on the un-parsed SSE buffer — one frame is a few KB at most. */
+const MAX_EVENT_BUFFER_BYTES = 1_000_000;
 
 /** One SSE block: `data:` lines joined, comments/keep-alives dropped. */
 export function parseBlock(block: string): BoardSseEvent | null {
@@ -86,6 +96,12 @@ export interface RealtimeOptions {
   onDisconnected?: (boardId: string) => void;
   /** The stream was refused for good (401/403/404/410): the caller reacts. */
   onFatal?: (boardId: string, status: number) => void;
+  /**
+   * The server refused this tab's presence id (`409 client_id_taken`, e.g. a
+   * duplicated link): the caller must mint a new one. The stream is retried
+   * at once, not treated as a fatal access error (TASK-147 follow-up).
+   */
+  onClientIdTaken?: () => void;
 }
 
 /** First retry delay; doubles per attempt up to `MAX_RETRY_MS`. */
@@ -98,6 +114,10 @@ export class BoardRealtime {
   private attempt = 0;
   private stopped = true;
   private wake: (() => void) | null = null;
+  /** `reconnect()` asks the loop to skip its backoff once. */
+  private skipBackoff = false;
+  /** Consecutive `client_id_taken` answers for the current board. */
+  private clientIdRetries = 0;
 
   constructor(private readonly options: RealtimeOptions) {}
 
@@ -107,6 +127,8 @@ export class BoardRealtime {
     this.stop();
     this.boardId = boardId;
     this.stopped = false;
+    this.skipBackoff = false;
+    this.clientIdRetries = 0;
     void this.run(boardId);
   }
 
@@ -115,9 +137,14 @@ export class BoardRealtime {
    * session means the current stream's view is incomplete, and only a fresh
    * connection (which re-joins and re-`sync`s) repairs it. Resets the
    * backoff so the reconnect is immediate, not after a long pause.
+   *
+   * `skipBackoff` is what makes it immediate even when the stream is *live*
+   * (an abort throws out of `for await`, and the loop would otherwise sleep
+   * for the first backoff step before reopening).
    */
   reconnect(): void {
     this.attempt = 0;
+    this.skipBackoff = true;
     this.controller?.abort();
     this.wakeNow();
   }
@@ -148,6 +175,8 @@ export class BoardRealtime {
           controller.signal,
         );
         this.attempt = 0;
+        this.skipBackoff = false;
+        this.clientIdRetries = 0;
         connected = true;
         this.options.onConnected?.(boardId);
         for await (const event of parseEventStream(stream)) {
@@ -157,6 +186,16 @@ export class BoardRealtime {
         // Clean end (server restart, proxy timeout): reconnect at once.
       } catch (error) {
         if (this.stopped || this.boardId !== boardId) return;
+        // A taken tab id is recoverable: mint a fresh one and rejoin, rather
+        // than surfacing it as a fatal access error (TASK-147 follow-up).
+        if (error instanceof ApiError && error.code === "client_id_taken") {
+          this.options.onClientIdTaken?.();
+          this.clientIdRetries += 1;
+          if (this.clientIdRetries <= 3) {
+            await this.pause(200, controller);
+            continue;
+          }
+        }
         if (error instanceof ApiError && isFatal(error.status)) {
           this.boardId = null;
           this.options.onFatal?.(boardId, error.status);
@@ -166,8 +205,13 @@ export class BoardRealtime {
         if (connected) this.options.onDisconnected?.(boardId);
       }
       if (this.stopped || this.boardId !== boardId) return;
-      this.attempt += 1;
-      await this.pause(this.delay(this.attempt), controller);
+      if (this.skipBackoff) {
+        this.skipBackoff = false;
+        await this.pause(0, controller);
+      } else {
+        this.attempt += 1;
+        await this.pause(this.delay(this.attempt), controller);
+      }
     }
   }
 
@@ -265,6 +309,13 @@ export async function openBoardEvents(
       throw new ApiError(401, null);
     }
     response = await requestEvents(boardId, since, clientId, signal);
+  }
+  if (response.status === 409) {
+    // The presence tab id is taken (a duplicated link/tab copy). Keep the
+    // body so `BoardRealtime` can read `code: "client_id_taken"` and mint a
+    // fresh id instead of treating it as a fatal access error.
+    const body: unknown = await response.json().catch(() => null);
+    throw new ApiError(409, body);
   }
   if (!response.ok || response.body === null) {
     throw new ApiError(response.status, null);
@@ -597,8 +648,9 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
   };
 
   // The tab's presence identity: stable across reconnects (a network blip
-  // must not flicker the avatar) and unique per tab.
-  const clientId = createClientId();
+  // must not flicker the avatar) and unique per tab. Re-minted only if the
+  // server says another holder already owns it (`client_id_taken`).
+  let clientId = createClientId();
 
   // Presence heartbeat: the stream is one-way, so the tab refreshes its
   // session every 20 s (`PresenceService` sweeps at 60 s) and there is no
@@ -610,7 +662,9 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
     const target = boardId ?? host.getActiveBoardId();
     if (target === undefined || target === null) return;
     void pingPresence(target, clientId).then((status) => {
-      if (status === 410) connection.reconnect();
+      // A late `410` for a board we already left must not reopen the current
+      // board's healthy stream (TASK-147 follow-up).
+      if (status === 410 && target === watching) connection.reconnect();
     });
   };
   const startPing = (boardId: string): void => {
@@ -647,6 +701,11 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
       // forever (the refresh already failed inside `openBoardEvents`).
       else if (status === 401) api.onAuthLost?.();
       // 404 is board-level and has its own path.
+    },
+    onClientIdTaken: () => {
+      // Someone else holds our tab id: take a new one and rejoin. Not a
+      // reason to drop the board.
+      clientId = createClientId();
     },
     getSince: () => {
       const active = host.getActiveBoardId();

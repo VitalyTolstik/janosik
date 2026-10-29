@@ -1,5 +1,5 @@
 import {
-  ForbiddenException,
+  ConflictException,
   Injectable,
   Logger,
   OnModuleDestroy,
@@ -13,6 +13,18 @@ import type {
   UserAvatarColor,
 } from "@janosik/shared";
 import { RealtimeService } from "./realtime.service";
+
+/**
+ * `409 client_id_taken` — stable across the pre-stream check and the rare
+ * join-time race so the UI can recognise "take a new tab id" (TASK-147
+ * follow-up) instead of treating it as access revocation.
+ */
+export function clientIdTaken(): ConflictException {
+  return new ConflictException({
+    message: "This client id is already in use",
+    code: "client_id_taken",
+  });
+}
 
 /**
  * A connection counts as gone after this long without a touch (TASK-36).
@@ -108,8 +120,12 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
   /**
    * Throws when `clientId` is already held by another user. Called before
    * the SSE Observable is built (TASK-145): the refusal then surfaces as a
-   * real 403 before any bytes of the stream, instead of an error thrown
+   * real response before any bytes of the stream, instead of an error thrown
    * mid-subscribe that leaks the subscription tracking.
+   *
+   * `409 client_id_taken` (not 403) on purpose: 403 on this stream means
+   * "membership revoked", and the UI acts on that by dropping the board. A
+   * taken tab id is recoverable — the client just takes a fresh one.
    */
   assertClientAvailable(
     boardId: string,
@@ -118,7 +134,7 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
   ): void {
     const previous = this.boards.get(boardId)?.get(clientId);
     if (previous && previous.id !== userId) {
-      throw new ForbiddenException("clientId belongs to another session");
+      throw clientIdTaken();
     }
   }
 
@@ -142,7 +158,7 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
     const sessions = this.sessions(boardId);
     const previous = sessions.get(clientId);
     if (previous && previous.id !== user.id) {
-      throw new ForbiddenException("clientId belongs to another session");
+      throw clientIdTaken();
     }
     const wasPresent = this.hasUser(sessions, user.id);
     const token = randomUUID();
@@ -184,7 +200,7 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
         userId: current.id,
       });
     }
-    if (sessions.size === 0) this.boards.delete(boardId);
+    if (sessions.size === 0) this.releaseBoard(boardId);
   }
 
   /**
@@ -283,8 +299,19 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
           });
         }
       }
-      if (sessions.size === 0) this.boards.delete(boardId);
+      if (sessions.size === 0) this.releaseBoard(boardId);
     }
+  }
+
+  /**
+   * Drop a board's now-empty session map and its epoch (TASK-147 follow-up):
+   * the epoch map used to keep one entry per board ever seen. A reset to 0 is
+   * safe — an empty board has no connected client to be confused by it, and
+   * the next `join` starts from 1 with a fresh `sync`.
+   */
+  private releaseBoard(boardId: string): void {
+    this.boards.delete(boardId);
+    this.epochs.delete(boardId);
   }
 
   /** The board's current presence epoch (0 before anyone ever joined). */

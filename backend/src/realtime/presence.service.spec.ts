@@ -201,6 +201,7 @@ describe("PresenceService", () => {
   });
 
   it("tracks a per-board epoch and stamps every delta (TASK-145)", () => {
+    const seen = collector(realtime);
     expect(presence.epochOf("b1")).toBe(0);
     presence.join("b1", "a1", alice);
     expect(presence.epochOf("b1")).toBe(1);
@@ -210,9 +211,12 @@ describe("PresenceService", () => {
     // Closing one of two tabs is not a leave either.
     presence.leave("b1", "a2");
     expect(presence.epochOf("b1")).toBe(1);
-    // The last tab going away is.
+    // The last tab going away bumps the epoch for its frame...
     presence.leave("b1", "a1");
-    expect(presence.epochOf("b1")).toBe(2);
+    expect(seen.find((event) => event.op === "leave")?.epoch).toBe(2);
+    // ...then the empty board releases its epoch (TASK-147 follow-up): no
+    // client is connected to be confused, and the next join starts at 1.
+    expect(presence.epochOf("b1")).toBe(0);
     expect(presence.epochOf("b2")).toBe(0);
   });
 
@@ -225,11 +229,19 @@ describe("PresenceService", () => {
     expect(remote).not.toHaveBeenCalled();
   });
 
-  it("exposes a pre-stream clientId check (A9)", () => {
+  it("exposes a pre-stream clientId check that is recoverable (A9)", () => {
     presence.join("b1", "shared", alice);
-    expect(() =>
-      presence.assertClientAvailable("b1", "shared", "u-bob"),
-    ).toThrow();
+    // A taken tab id answers `409 client_id_taken` (not 403, which on this
+    // stream means "access revoked"): the UI mints a new id and rejoins.
+    try {
+      presence.assertClientAvailable("b1", "shared", "u-bob");
+      throw new Error("should have thrown");
+    } catch (error) {
+      expect((error as { getStatus?: () => number }).getStatus?.()).toBe(409);
+      expect(
+        (error as { getResponse?: () => unknown }).getResponse?.(),
+      ).toMatchObject({ code: "client_id_taken" });
+    }
     expect(() =>
       presence.assertClientAvailable("b1", "shared", "u-alice"),
     ).not.toThrow();

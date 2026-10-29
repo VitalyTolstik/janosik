@@ -96,6 +96,12 @@ describe("parseEventStream", () => {
     expect(parseBlock("data: ping")).toBeNull();
     expect(parseBlock("event: message")).toBeNull();
   });
+
+  it("aborts on an oversized frame instead of buffering forever", async () => {
+    await expect(
+      drain(streamOf([`data: ${"x".repeat(1_000_100)}`])),
+    ).rejects.toThrow();
+  });
 });
 
 describe("touchedEntityIds", () => {
@@ -243,6 +249,70 @@ describe("BoardRealtime", () => {
     realtime.stop();
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(opened).toEqual(["b-1", "b-2"]);
+  });
+
+  it("reconnect() is immediate while the stream is still live", async () => {
+    const opens: string[] = [];
+    const realtime = new BoardRealtime({
+      open: (boardId, _since, signal) => {
+        opens.push(boardId);
+        // A stream that stays open until aborted — the loop is inside
+        // `for await`, not in its backoff.
+        return Promise.resolve(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              signal.addEventListener("abort", () =>
+                controller.error(new Error("aborted")),
+              );
+            },
+          }),
+        );
+      },
+      onEvent: () => undefined,
+      getSince: () => 0,
+      retryDelayMs: () => 60_000,
+    });
+
+    realtime.watch("b-1");
+    await vi.waitFor(() => expect(opens.length).toBe(1));
+    realtime.reconnect();
+    // Would take 60 s without the skip-backoff path.
+    await vi.waitFor(() => expect(opens.length).toBe(2), { timeout: 1_000 });
+    realtime.stop();
+  });
+
+  it("mints a new client id on 409 client_id_taken instead of going fatal", async () => {
+    let calls = 0;
+    const onClientIdTaken = vi.fn();
+    const onFatal = vi.fn();
+    const realtime = new BoardRealtime({
+      open: (_boardId, _since, signal) => {
+        calls += 1;
+        if (calls === 1) {
+          return Promise.reject(new ApiError(409, { code: "client_id_taken" }));
+        }
+        return Promise.resolve(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              signal.addEventListener("abort", () =>
+                controller.error(new Error("aborted")),
+              );
+            },
+          }),
+        );
+      },
+      onEvent: () => undefined,
+      getSince: () => 0,
+      retryDelayMs: () => 0,
+      onClientIdTaken,
+      onFatal,
+    });
+
+    realtime.watch("b-1");
+    await vi.waitFor(() => expect(calls).toBeGreaterThanOrEqual(2));
+    expect(onClientIdTaken).toHaveBeenCalledTimes(1);
+    expect(onFatal).not.toHaveBeenCalled();
+    realtime.stop();
   });
 });
 
