@@ -333,6 +333,10 @@
   .janosik-toast {
     animation: none;
   }
+  /* Card entry animation (TASK-150, C20). */
+  .animate-card-in {
+    animation: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------

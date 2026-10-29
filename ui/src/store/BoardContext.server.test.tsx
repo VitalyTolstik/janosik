@@ -323,9 +323,14 @@ describe("BoardProvider in server mode", () => {
     );
     expect(screen.getByTestId("can-undo").textContent).toBe("true");
 
-    // Someone else edits the same card; the focus refetch pulls it in.
+    // Someone else edits the same card; the focus refetch pulls it in. A real
+    // foreign command stamps the card's `updatedAt` too (TASK-150, C14).
     server.overwriteBoard("b-1", (board) => {
-      board.cards["c-1"] = { ...board.cards["c-1"], title: "Theirs" };
+      board.cards["c-1"] = {
+        ...board.cards["c-1"],
+        title: "Theirs",
+        updatedAt: Date.now(),
+      };
       board.updatedAt = 2;
       return board;
     });

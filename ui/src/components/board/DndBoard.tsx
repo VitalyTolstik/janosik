@@ -100,12 +100,14 @@ const TOUCH_SENSOR_OPTIONS = {
  * lands in dnd-kit's context, so a fresh array/object here re-renders every
  * `useSortable`/`useDroppable` consumer — each column and card — on every
  * keystroke, `memo` or not. `sensors: []` disables dragging while a filter
- * is active; `Always` re-measures droppables, and a new object asked for
- * that measurement again on every render.
+ * is active; `WhileDragging` re-measures droppables only while a drag is in
+ * progress (TASK-150, C6) — `Always` re-measured the whole board on every
+ * action frame, which is the cost the load test saw on 2400 cards.
  */
 const NO_SENSORS: ReturnType<typeof useSensors> = [];
 const MEASURING = {
-  droppable: { strategy: MeasuringStrategy.Always },
+  droppable: { strategy: MeasuringStrategy.WhileDragging },
+  dragging: { strategy: MeasuringStrategy.BeforeDragging },
 } as const;
 
 interface DndBoardProps {
@@ -350,9 +352,9 @@ export function DndBoard({
       // card's TOP vs the hovered card's BOTTOM decides before/after. This
       // matches Trello's slot behavior: hovering the upper part of a card
       // inserts before it, past its bottom edge inserts after it (dropping
-      // below the last card therefore appends). Measured with
-      // MeasuringStrategy Always so the rects are never stale during
-      // reorders.
+      // below the last card therefore appends). Droppable rects are measured
+      // while dragging (TASK-150), so they stay fresh on every hover move
+      // without re-measuring the idle board.
       const translated = event.active.rect.current.translated;
       const insertAfter =
         translated != null && translated.top > over.rect.top + over.rect.height;

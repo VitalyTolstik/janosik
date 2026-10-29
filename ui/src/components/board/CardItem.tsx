@@ -111,6 +111,9 @@ function useClamped(): [React.RefCallback<HTMLParagraphElement>, boolean] {
   return [ref, clamped];
 }
 
+/** Card ids already shown in this tab (TASK-150, C20). */
+const seenCardIds = new Set<string>();
+
 /**
  * A single card inside a column.
  * Hover uses border/shadow changes (no transform) so it stays compatible
@@ -144,6 +147,15 @@ function CardItemView({
   readOnly = false,
 }: CardItemProps) {
   const [titleRef, titleClamped] = useClamped();
+  // Entry animation only for a card that appears in this tab now (created,
+  // moved in, restored). A board load or switch re-mounts everything; running
+  // the animation on all 2400 cards is pure render cost (TASK-150, C20).
+  const [entering, setEntering] = useState(false);
+  useEffect(() => {
+    if (seenCardIds.has(card.id)) return;
+    seenCardIds.add(card.id);
+    setEntering(true);
+  }, [card.id]);
   const { t } = useI18n();
   const { user } = useAuth();
   // Attribution (TASK-36): foreign-change highlight only — the "who
@@ -251,7 +263,8 @@ function CardItemView({
         data-card-cursor={isCursor || undefined}
         data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
         className={cn(
-          "group animate-card-in relative flex h-[92px] cursor-pointer flex-col gap-1 overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
+          "group relative flex h-[92px] cursor-pointer flex-col gap-1 overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
+          entering && "animate-card-in",
           isDragging && "opacity-40",
           isCursor && "border-primary ring-2 ring-primary/60",
         )}

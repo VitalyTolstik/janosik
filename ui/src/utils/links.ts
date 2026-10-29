@@ -129,6 +129,8 @@ export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
   return index;
 }
 
+const signatureCache = new WeakMap<Board["cards"], string>();
+
 /**
  * A change signature of everything the link facts derive from: each card's
  * link rows, its archived flag (an archived blocker stops counting) and
@@ -136,8 +138,15 @@ export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
  * description, a due date — leave it untouched, so callers can hold one
  * index object stable across them and memoized card fronts keep their
  * render isolation (TASK-21.4.1).
+ *
+ * Cached per `board.cards` snapshot (TASK-150, C7): building it sorts every
+ * id and concatenates every link row, and callers ask on every render. The
+ * WeakMap makes repeat asks O(1) while a new snapshot starts a fresh entry.
  */
 export function linkSignature(cards: Board["cards"]): string {
+  const cached = signatureCache.get(cards);
+  if (cached !== undefined) return cached;
+
   let signature = "";
   for (const id of Object.keys(cards).sort()) {
     const card = cards[id];
@@ -147,6 +156,7 @@ export function linkSignature(cards: Board["cards"]): string {
     }
     signature += ";";
   }
+  signatureCache.set(cards, signature);
   return signature;
 }
 

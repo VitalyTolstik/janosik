@@ -1621,7 +1621,7 @@ TASK-36 и TASK-37.)*
 | 78 | TASK-147 `security-hardening` ✅ | `main` | §7.14: `/health`, read-only impersonation, expiry/assignee-leak, bull-board allowlist, `COOKIE_SECURE`, CIDR/TOTP/логи | **Выполнено:** `/health` — liveness без I/O, `/health/ready` — readiness с кэшем ~2 с и single-flight; impersonation-токен read-only (safe-методы + presence-ping, прочие записи и `/users/me/tokens` → `403`); единый предикат активного членства в `listBoards`/`listMembers`/дайджестах/напоминаниях + drop assignee на restore/import; bull-board за тем же IP-allowlist; `COOKIE_SECURE=true` по умолчанию (compose/.env/docs); CIDR с валидацией префикса и IPv6 (+ отказ при сохранении); TOTP в lockout + защита от replay; тела писем не логируются в production. e2e на каждую дыру; тесты. См. §7.14 |
 | 79 | TASK-148 `retention-and-indexes` ✅ | `main` | §7.14: индексы `deletedAt/expiresAt/dueDate`, sweeps Board/Activity/audit/shares/exports, retry очередей | **Выполнено:** индексы purge/TTL/due (`CONCURRENTLY`-скрипт `db:indexes` + миграция `IF NOT EXISTS`); sweep целых `Board` (доска+фид+лог+шары+блобы), `Activity`, `AdminAuditLog` (`AUDIT_RETENTION_DAYS=365`), отозванных шар (24 ч), `.tmp-*` по grace; `exports`/`media` бросают ошибку пока есть попытки (BullMQ retry); retention-opts у Job Scheduler; GDPR-erase удаляет `DataExport`/бандлы; тесты на каждый sweep. См. §7.14 |
 | 80 | TASK-149 `admin-consistency` ✅ | `main` | §7.14: admin-мутации через команды, `attachmentCount`, импорт батч/атомарность | **Выполнено:** archive/delete/restore карточек и колонок (включая bulk) идут через `CommandsService.apply` от owner — версия, SSE и каскад; `DELETE_CARD`/`DELETE_COLUMN` больше не рвут `CardLabel` (restore пересобирает `labelIds`/чек-листы); бейдж вложений пересчитывается на delete/restore/erase и на revive карточки; импорт — одна транзакция с явным `timeout`, `createMany`-батчи; тесты. См. §7.14 |
-| 81 | TASK-150 `ui-render-perf` | `feature/TASK-150-ui-render-perf` | §7.14: per-key members, drag strategy, `linkSignature`, CardDialog, focus-diff, анимации | нет лишних полных рендеров. См. §7.14 |
+| 81 | TASK-150 `ui-render-perf` ✅ | `main` | §7.14: per-key members, drag strategy, `linkSignature`, CardDialog, focus-diff, анимации | **Выполнено:** `MembersStore` — per-user/per-board подписки (directory reload не ререндерит карточки); dnd `MeasuringStrategy.WhileDragging`/`BeforeDragging`; `linkSignature` кэшируется по снапшоту (WeakMap); заголовок карточки — локальный черновик с тихим коммитом по blur/close (ввод не ререндерит MDXEditor); focus-diff по `updatedAt`/`archivedAt` вместо JSON всей доски; входная анимация только у новых карточек + `prefers-reduced-motion`; тесты изоляции рендера. См. §7.14 |
 | 82 | TASK-151 `pwa-stream-recovery` | `feature/TASK-151-pwa-stream-recovery` | §7.14: SW не убивает старый деплой, SSE-watchdog, 404 доски, `APP_BASE`, restore | деплой/обрыв не ломают доску. См. §7.14 |
 | 83 | TASK-152 `ui-a11y-polish` | `feature/TASK-152-ui-a11y-polish` | §7.14: tab-order зон, drag-handle/AT, lightbox focus, due-тик, локали | keyboard-only; ru/en. См. §7.14 |
 | 84 | TASK-153 `config-and-observability` | `feature/TASK-153-config-and-observability` | §7.14: `connection_limit`/Postgres, кэш OpsSettings, low-баги, slow-query/requestId | пул и логи под контролем. См. §7.14 |
@@ -3157,6 +3157,24 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   O(n)/frame; ввод не рендерит MDXEditor; focus-refetch без JSON.stringify; замер
   до/после.
 - **Зависимости:** TASK-139 (виртуализация).
+- **Выполнено (2026-10-29):** C4 — `MembersStore.set()` уведомляет только
+  изменившиеся `board:user` ключи (и per-board ростер); неизменившиеся строки
+  переиспользуют объект, поэтому `useBoardMember` даёт стабильный снапшот и
+  reload директории не ререндерит карточки. C6 — droppable измеряется
+  `WhileDragging`, dragging — `BeforeDragging` (вместо `Always` на каждый кадр).
+  C7 — `linkSignature` кэшируется в `WeakMap` по снапшоту `board.cards` (O(1)
+  на повторный рендер). C8 — заголовок в `CardDialog` держится локальным
+  черновиком, стор получает один тихий `UPDATE_CARD` по blur/закрытию/смене
+  карточки, а не на каждый символ — MDXEditor больше не ререндерится при
+  наборе заголовка. C14 — focus-refetch сравнивает `updatedAt` (и наличие
+  `archivedAt`) на карточку вместо `JSON.stringify` всей доски; колонки/метки
+  остаются глубоким сравнением. C20 — входная анимация только у карточек,
+  впервые появившихся в этой вкладке, плюс `animation: none` при
+  `prefers-reduced-motion`. Тесты: `MembersStore` per-key notify, изоляция
+  рендера при наборе заголовка (store не пишется до blur, затем ровно один
+  рендер колонки и один flip undo). ui 876 зелёные.
+- **Остаётся:** числовой Playwright-замер 2400 карточек — в объёме **TASK-139**
+  (виртуализация); здесь доказательство через счётчики рендеров.
 
 #### TASK-151 — `pwa-stream-recovery` · Деплой и обрывы не ломают открытую доску
 

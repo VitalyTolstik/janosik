@@ -226,17 +226,49 @@ export class AttributionStore {
   }
 }
 
-/** Board member directory: `userId → profile` for names and avatars. */
+/**
+ * Board member directory: `userId → profile` for names and avatars.
+ *
+ * Consumers subscribe narrowly (TASK-150, C4): one user id, one board roster,
+ * or the global version. A membership change previously bumped one global
+ * version, and every card that showed an assignee re-rendered — a second full
+ * board render for a directory refresh that changed nothing visible.
+ */
 export class MembersStore {
   private readonly byBoard = new Map<string, Map<string, BoardMemberDto>>();
   private version = 0;
   private readonly listeners = new Set<() => void>();
+  private readonly boardListeners = new Map<string, Set<() => void>>();
+  private readonly userListeners = new Map<string, Set<() => void>>();
 
   set(boardId: string, members: readonly BoardMemberDto[]): void {
+    const previous = this.byBoard.get(boardId);
     const byUser = new Map<string, BoardMemberDto>();
-    for (const member of members) byUser.set(member.userId, member);
+    for (const member of members) {
+      const before = previous?.get(member.userId);
+      // Keep the previous object when the row is unchanged, so a
+      // `useSyncExternalStore` snapshot stays identical across a reload.
+      byUser.set(
+        member.userId,
+        before !== undefined && sameMember(before, member) ? before : member,
+      );
+    }
     this.byBoard.set(boardId, byUser);
     this.version += 1;
+
+    // Notify only the keys whose profile actually changed. A directory load
+    // that only touches other users leaves this card's render untouched.
+    const touchedUsers = new Set<string>();
+    for (const [userId, member] of byUser) {
+      if (!sameMember(previous?.get(userId), member)) touchedUsers.add(userId);
+    }
+    for (const userId of previous?.keys() ?? []) {
+      if (!byUser.has(userId)) touchedUsers.add(userId);
+    }
+    for (const userId of touchedUsers) {
+      this.notify(this.userListeners, `${boardId}:${userId}`);
+    }
+    this.notify(this.boardListeners, boardId);
     this.emit();
   }
 
@@ -254,8 +286,13 @@ export class MembersStore {
 
   clear(): void {
     if (this.byBoard.size === 0) return;
+    const boards = [...this.byBoard.keys()];
     this.byBoard.clear();
     this.version += 1;
+    for (const boardId of boards) this.notify(this.boardListeners, boardId);
+    for (const key of [...this.userListeners.keys()]) {
+      this.notify(this.userListeners, key);
+    }
     this.emit();
   }
 
@@ -264,12 +301,66 @@ export class MembersStore {
     return () => this.listeners.delete(listener);
   };
 
+  /** One user's profile on one board (narrow per-key subscription). */
+  subscribeUser(
+    boardId: string | undefined,
+    userId: string | null | undefined,
+    listener: () => void,
+  ): () => void {
+    if (boardId === undefined || !userId) return () => undefined;
+    return this.add(this.userListeners, `${boardId}:${userId}`, listener);
+  }
+
+  /** The whole roster of one board. */
+  subscribeBoard(
+    boardId: string | undefined,
+    listener: () => void,
+  ): () => void {
+    if (boardId === undefined) return () => undefined;
+    return this.add(this.boardListeners, boardId, listener);
+  }
+
   /** Snapshot for `useSyncExternalStore`: a counter, not the map itself. */
   getVersion = (): number => this.version;
+
+  private add(
+    map: Map<string, Set<() => void>>,
+    key: string,
+    listener: () => void,
+  ): () => void {
+    let listeners = map.get(key);
+    if (!listeners) {
+      listeners = new Set();
+      map.set(key, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) map.delete(key);
+    };
+  }
+
+  private notify(map: Map<string, Set<() => void>>, key: string): void {
+    for (const listener of [...(map.get(key) ?? [])]) listener();
+  }
 
   private emit(): void {
     for (const listener of [...this.listeners]) listener();
   }
+}
+
+/** Same directory row? Compared field by field so a reload is quiet. */
+function sameMember(a: BoardMemberDto | undefined, b: BoardMemberDto): boolean {
+  return (
+    a !== undefined &&
+    a.userId === b.userId &&
+    a.displayName === b.displayName &&
+    a.email === b.email &&
+    a.role === b.role &&
+    a.expiresAt === b.expiresAt &&
+    a.avatarColor === b.avatarColor &&
+    a.avatarPath === b.avatarPath
+  );
 }
 
 /**
@@ -387,8 +478,15 @@ export function useBoardMember(
   userId: string | null | undefined,
 ): BoardMemberDto | undefined {
   const { members } = useBoardLive();
-  useSyncExternalStore(members.subscribe, members.getVersion);
-  return members.get(boardId, userId);
+  const subscribe = useCallback(
+    (listener: () => void) => members.subscribeUser(boardId, userId, listener),
+    [members, boardId, userId],
+  );
+  const get = useCallback(
+    () => members.get(boardId, userId),
+    [members, boardId, userId],
+  );
+  return useSyncExternalStore(subscribe, get);
 }
 
 /**
@@ -401,7 +499,11 @@ export function useBoardMembersList(
   boardId: string | undefined,
 ): BoardMemberDto[] {
   const { members } = useBoardLive();
-  useSyncExternalStore(members.subscribe, members.getVersion);
+  const subscribe = useCallback(
+    (listener: () => void) => members.subscribeBoard(boardId, listener),
+    [members, boardId],
+  );
+  useSyncExternalStore(subscribe, members.getVersion);
   return members.list(boardId);
 }
 

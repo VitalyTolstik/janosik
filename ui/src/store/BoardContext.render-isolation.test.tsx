@@ -115,7 +115,7 @@ describe("render isolation while typing (TASK-21.4)", () => {
     seedBoard();
   });
 
-  it("five keystrokes in a card title cost the header one render", async () => {
+  it("five keystrokes stay local and cost the board one write (TASK-150, C8)", async () => {
     renderBoard();
     const dialog = await screen.findByRole("dialog");
     const title = within(dialog).getByRole("textbox", { name: /title/i });
@@ -131,11 +131,17 @@ describe("render isolation while typing (TASK-21.4)", () => {
     }
     expect(title).toHaveValue("Edited card12345");
 
-    // The board data reaches its consumers on every keystroke...
-    expect(stateRenders - stateBefore).toBeGreaterThanOrEqual(5);
-    // ...the actions never change...
+    // The draft is local: the store has not been rewritten mid-typing, so
+    // the header, the board and the description editor sat out the keystrokes.
+    expect(stateRenders - stateBefore).toBe(0);
     expect(actionsRenders).toBe(actionsBefore);
-    // ...and undo availability flips once: disabled -> enabled.
+    expect(historyRenders).toBe(historyBefore);
+
+    // Blur commits the whole title once (quiet write + stamp); undo
+    // availability flips once: disabled -> enabled.
+    fireEvent.blur(title);
+    expect(stateRenders - stateBefore).toBeGreaterThanOrEqual(1);
+    expect(actionsRenders).toBe(actionsBefore);
     expect(historyRenders - historyBefore).toBe(1);
   });
 });

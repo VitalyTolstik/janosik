@@ -119,6 +119,9 @@ async function typeInCardTitle(text: string) {
     value += ch;
     fireEvent.change(title, { target: { value } });
   }
+  // Title edits are local until blur/close (TASK-150, C8); flush the quiet
+  // write so the board sees the edit once, like a real editing session.
+  fireEvent.blur(title);
 }
 
 describe("render isolation on a card edit (TASK-21.4.1)", () => {

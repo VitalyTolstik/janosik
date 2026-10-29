@@ -55,7 +55,15 @@ function changedCards(local: Board, server: Board): string[] {
   for (const [id, card] of Object.entries(local.cards)) {
     seen.add(id);
     const fresh: Card | undefined = server.cards[id];
-    if (fresh === undefined || !same(card, fresh)) {
+    // TASK-150 (C14): `updatedAt` is the server's own stamp and every
+    // undo-relevant writer bumps it (text, labels, checklists, links, cover,
+    // archive). An equal stamp therefore proves the entity is unchanged, so
+    // the focus refetch no longer deep-compares every card on the board.
+    if (
+      fresh === undefined ||
+      card.updatedAt !== fresh.updatedAt ||
+      card.archivedAt !== fresh.archivedAt
+    ) {
       ids.push(id);
     }
   }

@@ -258,6 +258,49 @@ describe("MembersStore", () => {
     expect(store.get("b-2", "u-bob")).toBeUndefined();
     expect(listener).toHaveBeenCalledTimes(1);
   });
+
+  it("notifies only the user key whose profile changed (TASK-150, C4)", () => {
+    const store = new MembersStore();
+    const aliceKey = vi.fn();
+    const bobKey = vi.fn();
+    const roster = vi.fn();
+    store.subscribeUser("b-1", "u-alice", aliceKey);
+    store.subscribeUser("b-1", "u-bob", bobKey);
+    store.subscribeBoard("b-1", roster);
+
+    store.set("b-1", [
+      {
+        userId: "u-alice",
+        displayName: "Alice",
+        email: "alice@example.com",
+        role: "MEMBER",
+        expiresAt: null,
+        avatarColor: null,
+        avatarPath: null,
+      },
+    ]);
+    expect(aliceKey).toHaveBeenCalledTimes(1);
+    expect(bobKey).not.toHaveBeenCalled();
+    expect(roster).toHaveBeenCalledTimes(1);
+
+    // Reload with identical rows: stable snapshots, no key notifications.
+    const before = store.get("b-1", "u-alice");
+    store.set("b-1", [
+      {
+        userId: "u-alice",
+        displayName: "Alice",
+        email: "alice@example.com",
+        role: "MEMBER",
+        expiresAt: null,
+        avatarColor: null,
+        avatarPath: null,
+      },
+    ]);
+    expect(store.get("b-1", "u-alice")).toBe(before);
+    expect(aliceKey).toHaveBeenCalledTimes(1);
+    // The roster still reloads (views that keep their own list reload on it).
+    expect(roster).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("live hooks", () => {

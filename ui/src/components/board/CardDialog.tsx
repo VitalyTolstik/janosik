@@ -83,6 +83,16 @@ interface CardDialogProps {
 const QUIET_TOUCH_DELAY_MS = 800;
 
 /**
+ * Idle gap before a title edit is written to the store (TASK-150, C8).
+ *
+ * Writing on every keystroke replaced the whole board object, which
+ * re-rendered the dialog — and with it the MDXEditor — for a change the
+ * editor shows nothing of. The draft stays local; this timer is the quiet
+ * commit, and blur/close flush it at once.
+ */
+const TITLE_COMMIT_DELAY_MS = 400;
+
+/**
  * Description drafts held back because someone else changed the card while
  * they were being typed (C3). Kept per `board:card`, outside the component,
  * so closing or switching the dialog never overwrites the other writer's
@@ -387,7 +397,69 @@ export function CardDialog({
   // Title grows with its content (Jira-style) instead of reserving three
   // blank rows: one line at rest, a scrollbar past four rows.
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
-  const titleText = board?.cards[cardId ?? ""]?.title;
+  // Local title draft (TASK-150, C8): keystrokes stay here, the store sees
+  // one quietly-stamped write after an idle gap (or on blur/close), so typing
+  // the title no longer re-renders the description editor.
+  const [titleDraft, setTitleDraft] = useState("");
+  const titleDraftRef = useRef("");
+  const titleTargetRef = useRef<string | null>(null);
+  const titleTimerRef = useRef<number | null>(null);
+  const updateCardRef = useRef(updateCard);
+  useEffect(() => {
+    updateCardRef.current = updateCard;
+  }, [updateCard]);
+  const flushTitle = useCallback(() => {
+    if (titleTimerRef.current !== null) {
+      window.clearTimeout(titleTimerRef.current);
+      titleTimerRef.current = null;
+    }
+    const target = titleTargetRef.current;
+    titleTargetRef.current = null;
+    if (!target) return;
+    const value = titleDraftRef.current;
+    updateCardRef.current(target, { title: value }, { quiet: true });
+    // The idle gap already played the debounce role; stamp now so "updated"
+    // and the undo precondition line up with the write.
+    touchCardRef.current(target);
+  }, []);
+  const flushTitleRef = useRef(flushTitle);
+  useEffect(() => {
+    flushTitleRef.current = flushTitle;
+  }, [flushTitle]);
+  useEffect(() => {
+    if (!cardId) return;
+    const stored = board?.cards[cardId]?.title ?? "";
+    titleDraftRef.current = stored;
+    titleTargetRef.current = null;
+    if (titleTimerRef.current !== null) {
+      window.clearTimeout(titleTimerRef.current);
+      titleTimerRef.current = null;
+    }
+    setTitleDraft(stored);
+    // The draft deliberately survives store rewrites; only a card/board
+    // switch reseeds it (TASK-150, C8).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardId, open, board?.id]);
+  useEffect(
+    () => () => {
+      flushTitleRef.current();
+    },
+    [cardId, open],
+  );
+  const onTitleChange = (value: string) => {
+    if (readOnly || !cardId) return;
+    titleDraftRef.current = value;
+    titleTargetRef.current = cardId;
+    setTitleDraft(value);
+    if (titleTimerRef.current !== null) {
+      window.clearTimeout(titleTimerRef.current);
+    }
+    titleTimerRef.current = window.setTimeout(() => {
+      titleTimerRef.current = null;
+      flushTitleRef.current();
+    }, TITLE_COMMIT_DELAY_MS);
+  };
+  const titleText = titleDraft;
   useLayoutEffect(() => {
     const el = titleRef.current;
     if (!el) return;
@@ -522,23 +594,20 @@ export function CardDialog({
                 name="card-title"
                 autoFocus
                 readOnly={readOnly}
-                value={card.title}
+                value={titleDraft}
                 maxLength={LIMITS.cardTitle}
                 onChange={(e) => {
-                  if (readOnly) return;
-                  updateCard(
-                    card.id,
-                    { title: e.target.value },
-                    { quiet: true },
-                  );
-                  scheduleTouch(card.id);
+                  onTitleChange(e.target.value);
+                }}
+                onBlur={() => {
+                  if (!readOnly) flushTitle();
                 }}
                 onFocus={(e) => e.target.select()}
                 rows={1}
                 className="min-h-9 resize-none break-words"
                 placeholder={t("card.titlePlaceholder")}
                 aria-describedby={
-                  showRemaining(card.title.length, LIMITS.cardTitle)
+                  showRemaining(titleDraft.length, LIMITS.cardTitle)
                     ? "card-title-counter"
                     : undefined
                 }
@@ -547,7 +616,7 @@ export function CardDialog({
                   character counts are noise for a 300-char title. */}
               <LimitCounter
                 id="card-title-counter"
-                length={card.title.length}
+                length={titleDraft.length}
                 limit={LIMITS.cardTitle}
                 testId="card-title-counter"
               />
