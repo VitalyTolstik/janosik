@@ -219,6 +219,7 @@ async function wipe(prisma: PrismaService): Promise<void> {
   await prisma.checklistItem.deleteMany();
   await prisma.checklist.deleteMany();
   await prisma.cardLink.deleteMany();
+  await prisma.cardLabel.deleteMany();
   await prisma.card.deleteMany();
   await prisma.label.deleteMany();
   await prisma.column.deleteMany();

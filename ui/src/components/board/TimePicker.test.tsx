@@ -49,7 +49,7 @@ describe("TimePickerPanel", () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
-  it("confirms an hour on click and Enter, but not on arrows (TASK-156 review)", () => {
+  it("moves the hour selection on arrows/click/Enter without confirming", () => {
     const onChange = vi.fn();
     const onConfirm = vi.fn();
     render(
@@ -68,17 +68,17 @@ describe("TimePickerPanel", () => {
     expect(onChange).toHaveBeenCalledWith("09:30");
     expect(onConfirm).not.toHaveBeenCalled();
 
-    // Enter on the (now focused) option confirms that selection — once,
-    // not twice through the native button activation.
+    // Enter on the focused option changes the hour but keeps the panel open
+    // so a minute can still be picked (owner's design).
     const nine = hours.querySelector<HTMLElement>('[data-value="9"]');
     expect(nine).not.toBeNull();
     fireEvent.keyDown(nine!, { key: "Enter" });
-    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(onConfirm).not.toHaveBeenCalled();
 
-    // A click on an hour confirms too.
+    // A click on an hour changes it without confirming.
     const eleven = hours.querySelector<HTMLElement>('[data-value="11"]');
     fireEvent.click(eleven!);
     expect(onChange).toHaveBeenCalledWith("11:30");
-    expect(onConfirm).toHaveBeenCalledTimes(2);
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 });

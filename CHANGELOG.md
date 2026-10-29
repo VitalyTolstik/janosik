@@ -97,6 +97,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Retention, admin, realtime and upload hardening (TASK-148…156).**
+  Retention sweeps and the board purge are paged; a soft-deleted board is
+  restored as a whole subtree (children, labels, links, members and live
+  shares), while previously deleted checklists stay deleted. Admin bulk
+  restores replay in position order, report refused ids, and audit failures.
+  Card/column restores keep their attachment badge and link snapshot;
+  `RESTORE_COLUMN` has a finite internal size cap. Revoked live shares
+  survive until the board purge window ends; snapshot shares are detached
+  from a purged board instead of being deleted.
+  Realtime re-attaches after a transient 404/410; the service worker reloads
+  every open tab on `controllerchange`, refuses HTML-as-JS (including a
+  poisoned previous cache), and announces an update once per waiting worker.
+  Uploads stream to disk, clean the final blob on any failure after `rename`,
+  and leave no `.tmp-*` scratch. `since`/cursor overflow is a 400, not a 500;
+  the ops-settings cache cannot be overwritten by an in-flight stale read.
 - **Share-dialog link lifetime.** The "Expires in" picker was a native
   `<select>` that rendered as a black browser control in the dark theme; it is
   now a themed popover with the project's check-mark radio rows, matching the

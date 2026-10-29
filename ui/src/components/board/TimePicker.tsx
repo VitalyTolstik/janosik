@@ -223,7 +223,6 @@ export function TimePickerPanel({
         options={hourOptions(hour12)}
         selected={hour}
         onSelect={(h) => onChange(composeTime(h, minute))}
-        onActivate={() => onConfirm?.()}
         label={t("dueDate.hoursLabel")}
       />
       <Column
