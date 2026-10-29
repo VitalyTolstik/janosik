@@ -1152,6 +1152,12 @@ export interface AdminBulkActionRequest {
 /** Answer of a bulk operation / a single restore. */
 export interface AdminBulkResultDto {
   affected: number;
+  /**
+   * Ids that refused the action (unknown, live when a restore expects
+   * deleted, …). Omitted when every id succeeded, so the pure-success
+   * response keeps its old shape.
+   */
+  failed?: string[];
 }
 
 // --- TASK-61: flags + ops --------------------------------------------------

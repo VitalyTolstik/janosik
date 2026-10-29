@@ -61,6 +61,7 @@ import {
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
+import { activeMembershipWhere } from "@/common/membership";
 import { TrafficService } from "@/common/traffic.service";
 import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
@@ -2254,12 +2255,21 @@ export class AdminService {
           : action === "archive"
             ? "entity.bulk_archived"
             : "entity.bulk_unarchived";
+    // One row per refused id (TASK-156): a partial bulk used to surface only
+    // as a count in the summary row — which id refused, and why the caller
+    // should re-check it, was invisible in the audit trail.
+    for (const failedId of failed) {
+      await this.audit(admin, auditAction, entity, failedId, {
+        action,
+        failed: true,
+      });
+    }
     await this.audit(admin, auditAction, entity, null, {
       action,
       count: affected,
       ...(failed.length > 0 ? { failed } : {}),
     });
-    return { affected };
+    return { affected, ...(failed.length > 0 ? { failed } : {}) };
   }
 
   /** Ids in the order their saved positions must be replayed (TASK-156). */
@@ -2360,40 +2370,61 @@ export class AdminService {
           });
           if (!board) throw new NotFoundException("Board not found");
           const stamp = board.deletedAt;
-          if (stamp !== null) {
-            const stale = { deletedAt: stamp } as const;
-            await tx.checklistItem.updateMany({
-              where: {
-                ...stale,
-                checklist: { card: { column: { boardId: id } } },
-              },
-              data: { deletedAt: null, version: { increment: 1 } },
-            });
-            await tx.checklist.updateMany({
-              where: { ...stale, card: { column: { boardId: id } } },
-              data: { deletedAt: null, version: { increment: 1 } },
-            });
-            await tx.cardLink.updateMany({
-              where: { boardId: id, ...stale },
-              data: { deletedAt: null },
-            });
-            await tx.card.updateMany({
-              where: { ...stale, column: { boardId: id } },
-              data: { deletedAt: null, version: { increment: 1 } },
-            });
-            await tx.column.updateMany({
-              where: { boardId: id, ...stale },
-              data: { deletedAt: null, version: { increment: 1 } },
-            });
-            await tx.label.updateMany({
-              where: { boardId: id, ...stale },
-              data: { deletedAt: null, version: { increment: 1 } },
-            });
-            await tx.boardShare.updateMany({
-              where: { boardId: id, revokedAt: stamp },
-              data: { revokedAt: null },
-            });
+          // A live board has nothing to restore: the old path still bumped
+          // `version` outside any command (an SSE frame describing no
+          // change) and answered 201. Refuse instead — a single restore
+          // gets a 409, a bulk records the id in `failed` (TASK-156).
+          if (stamp === null) {
+            throw new ConflictException(`Board "${id}" is not deleted`);
           }
+          const stale = { deletedAt: stamp } as const;
+          await tx.checklistItem.updateMany({
+            where: {
+              ...stale,
+              checklist: { card: { column: { boardId: id } } },
+            },
+            data: { deletedAt: null, version: { increment: 1 } },
+          });
+          await tx.checklist.updateMany({
+            where: { ...stale, card: { column: { boardId: id } } },
+            data: { deletedAt: null, version: { increment: 1 } },
+          });
+          await tx.cardLink.updateMany({
+            where: { boardId: id, ...stale },
+            data: { deletedAt: null },
+          });
+          await tx.card.updateMany({
+            where: { ...stale, column: { boardId: id } },
+            data: { deletedAt: null, version: { increment: 1 } },
+          });
+          await tx.column.updateMany({
+            where: { boardId: id, ...stale },
+            data: { deletedAt: null, version: { increment: 1 } },
+          });
+          await tx.label.updateMany({
+            where: { boardId: id, ...stale },
+            data: { deletedAt: null, version: { increment: 1 } },
+          });
+          await tx.boardShare.updateMany({
+            where: { boardId: id, revokedAt: stamp },
+            data: { revokedAt: null },
+          });
+          // TASK-147 (B5): `RESTORE_CARD` drops an assignee who is no
+          // longer an active member — a board restore must not resurrect
+          // one either. One membership set, one bulk write (the restore
+          // above already bumped every card's `version` for this frame).
+          const members = await tx.boardMember.findMany({
+            where: { boardId: id, ...activeMembershipWhere() },
+            select: { userId: true },
+          });
+          await tx.card.updateMany({
+            where: {
+              column: { boardId: id },
+              deletedAt: null,
+              assigneeId: { notIn: members.map((member) => member.userId) },
+            },
+            data: { assigneeId: null },
+          });
           await tx.board.update({
             where: { id },
             data: { deletedAt: null, version: { increment: 1 } },

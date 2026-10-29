@@ -1,4 +1,5 @@
 import {
+  CARD_PRIORITIES,
   COVER_COLORS,
   COVER_GRADIENTS,
   isCardLinkType,
@@ -12,6 +13,7 @@ import {
   type CoverGradient,
 } from "@janosik/shared";
 import type { PrismaService } from "@/common/prisma/prisma.service";
+import { activeMembershipWhere } from "@/common/membership";
 
 const CARD_INCLUDE = {
   labels: {
@@ -72,8 +74,17 @@ type CardRow = {
  * on its own before deleting the card must stay deleted. Label links survive a
  * card delete now (the writer no longer drops them), which is what lets this
  * rebuild `labelIds` — the rows are the only record of them.
+ *
+ * `RESTORE_COLUMN*` does not pass through the command-side assignee check
+ * (`assertAssigneeIsBoardMember` covers `RESTORE_CARD` only), so the snapshot
+ * itself must be clean: `liveAssignees` is the board's active member set, and
+ * an `assigneeId` outside it is dropped (TASK-147/B5) instead of resurrecting
+ * a removed member with the board's content.
  */
-function toCardSnapshot(row: CardRow): Card {
+function toCardSnapshot(
+  row: CardRow,
+  liveAssignees: ReadonlySet<string>,
+): Card {
   const stamp = row.deletedAt?.getTime();
   const sameOp = (value: Date | null): boolean =>
     value === null || (stamp !== undefined && value.getTime() === stamp);
@@ -124,10 +135,15 @@ function toCardSnapshot(row: CardRow): Card {
     ...(row.description !== null ? { description: row.description } : {}),
     ...(checklists.length > 0 ? { checklists } : {}),
     ...(row.dueDate !== null ? { dueDate: row.dueDate.getTime() } : {}),
-    ...(row.priority !== null
-      ? { priority: row.priority as CardPriority }
+    // A hand-edited `priority` must not make the restore command invalid
+    // (400 before any write): unknown values are omitted, like an unknown
+    // cover (TASK-156).
+    ...(row.priority !== null && isKnownPriority(row.priority)
+      ? { priority: row.priority }
       : {}),
-    ...(row.assigneeId !== null ? { assigneeId: row.assigneeId } : {}),
+    ...(row.assigneeId !== null && liveAssignees.has(row.assigneeId)
+      ? { assigneeId: row.assigneeId }
+      : {}),
     ...(cover !== undefined ? { cover } : {}),
     labelIds: row.labels.map((label) => label.labelId),
     ...(links.length > 0 ? { links } : {}),
@@ -141,6 +157,27 @@ function toCardSnapshot(row: CardRow): Card {
       ? { archivedAt: row.archivedAt.getTime() }
       : {}),
   };
+}
+
+/** The `priority` ladder the command contract knows (TASK-156). */
+function isKnownPriority(value: string): value is CardPriority {
+  return (CARD_PRIORITIES as readonly string[]).includes(value);
+}
+
+/**
+ * Active member user ids of one board — the same predicate the command-side
+ * assignee check uses. One set query per snapshot load, never one per card
+ * (TASK-147/B5).
+ */
+async function liveAssignees(
+  db: PrismaService,
+  boardId: string,
+): Promise<Set<string>> {
+  const members = await db.boardMember.findMany({
+    where: { boardId, ...activeMembershipWhere() },
+    select: { userId: true },
+  });
+  return new Set(members.map((member) => member.userId));
 }
 
 export interface CardRestore {
@@ -164,12 +201,13 @@ export async function loadCardRestore(
     },
   });
   if (!row) return null;
+  const assignees = await liveAssignees(db, row.column.boardId);
   return {
     boardId: row.column.boardId,
     columnId: row.archivedAt !== null ? null : row.columnId,
     columnDeleted: row.column.deletedAt !== null,
     index: row.position,
-    card: toCardSnapshot(row as CardRow),
+    card: toCardSnapshot(row as CardRow, assignees),
   };
 }
 
@@ -203,7 +241,8 @@ export async function loadColumnRestore(
     orderBy: { position: "asc" },
     include: CARD_INCLUDE,
   });
-  const cards = rows.map((row) => toCardSnapshot(row as CardRow));
+  const assignees = await liveAssignees(db, column.boardId);
+  const cards = rows.map((row) => toCardSnapshot(row as CardRow, assignees));
 
   return {
     boardId: column.boardId,

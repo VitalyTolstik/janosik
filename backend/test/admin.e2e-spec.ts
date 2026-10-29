@@ -3,6 +3,8 @@ import { Test } from "@nestjs/testing";
 import { JwtService } from "@nestjs/jwt";
 import { argon2id, hash as argonHash } from "argon2";
 import { writeFile } from "node:fs/promises";
+import { boardReducer } from "@janosik/shared";
+import type { BoardAction } from "@janosik/shared";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import { env } from "@/config/env";
@@ -1156,6 +1158,448 @@ describe("Admin API (e2e)", () => {
           (entry: { id: string }) => entry.id === "full-column",
         ).cardIds,
       ).toEqual(["full-card", "full-target"]);
+    });
+
+    it("refuses to restore a live board instead of no-op bumping it (TASK-156)", async () => {
+      const board = await prisma.board.create({
+        data: { title: "Still live board" },
+      });
+      await prisma.boardMember.create({
+        data: {
+          boardId: board.id,
+          userId,
+          role: "ADMIN",
+          acceptedAt: new Date(),
+        },
+      });
+      const before = await prisma.board.findUniqueOrThrow({
+        where: { id: board.id },
+      });
+
+      const refusal = await server()
+        .post(`/api/v1/admin/entities/boards/${board.id}/restore`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(409);
+      expect(refusal.body.message).toMatch(/not deleted/i);
+
+      // No version bump, no success audit — nothing was restored.
+      const after = await prisma.board.findUniqueOrThrow({
+        where: { id: board.id },
+      });
+      expect(after.version).toBe(before.version);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: { action: "entity.restored", targetId: board.id },
+        }),
+      ).toBe(0);
+
+      // Inside a bulk the refusal is a `failed` entry, not a thrown error,
+      // and a genuinely deleted sibling still restores.
+      const doomed = await prisma.board.create({
+        data: { title: "Doomed board" },
+      });
+      await prisma.boardMember.create({
+        data: {
+          boardId: doomed.id,
+          userId,
+          role: "ADMIN",
+          acceptedAt: new Date(),
+        },
+      });
+      await server()
+        .post("/api/v1/admin/entities/boards/bulk")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ ids: [doomed.id], action: "delete" })
+        .expect(201);
+
+      const bulk = await server()
+        .post("/api/v1/admin/entities/boards/bulk")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ ids: [board.id, doomed.id], action: "restore" })
+        .expect(201);
+      expect(bulk.body).toEqual({ affected: 1, failed: [board.id] });
+      expect(
+        (await prisma.board.findUniqueOrThrow({ where: { id: doomed.id } }))
+          .deletedAt,
+      ).toBeNull();
+      expect(
+        (await prisma.board.findUniqueOrThrow({ where: { id: board.id } }))
+          .version,
+      ).toBe(before.version);
+
+      // The refusal is audited per item, not only as a count in the summary.
+      const perItem = await prisma.adminAuditLog.findFirst({
+        where: { action: "entity.bulk_restored", targetId: board.id },
+      });
+      expect(perItem).not.toBeNull();
+      expect(perItem?.details).toMatchObject({
+        action: "restore",
+        failed: true,
+      });
+      const summary = await prisma.adminAuditLog.findFirst({
+        where: {
+          action: "entity.bulk_restored",
+          targetId: null,
+          details: { path: ["failed"], array_contains: board.id },
+        },
+      });
+      expect(summary).not.toBeNull();
+      expect(summary?.details).toMatchObject({ action: "restore", count: 1 });
+    });
+
+    it("drops assignees who lost membership while their card was deleted (TASK-156)", async () => {
+      const stranger = await prisma.user.create({
+        data: { email: "removed-assignee@example.com" },
+      });
+      const subtree = await prisma.board.create({
+        data: { title: "Assignee subtree board" },
+      });
+      const columnar = await prisma.board.create({
+        data: { title: "Assignee column board" },
+      });
+      for (const boardId of [subtree.id, columnar.id]) {
+        await prisma.boardMember.create({
+          data: { boardId, userId, role: "ADMIN", acceptedAt: new Date() },
+        });
+        await prisma.boardMember.create({
+          data: {
+            boardId,
+            userId: stranger.id,
+            role: "MEMBER",
+            acceptedAt: new Date(),
+          },
+        });
+      }
+      await prisma.column.create({
+        data: {
+          id: "assign-sub-column",
+          boardId: subtree.id,
+          title: "Sub",
+          position: 0,
+        },
+      });
+      await prisma.card.create({
+        data: {
+          id: "assign-sub-card",
+          columnId: "assign-sub-column",
+          title: "Gone member",
+          position: 0,
+          assigneeId: stranger.id,
+        },
+      });
+      await prisma.card.create({
+        data: {
+          id: "assign-sub-keep",
+          columnId: "assign-sub-column",
+          title: "Kept member",
+          position: 1,
+          assigneeId: userId,
+        },
+      });
+      await prisma.column.create({
+        data: {
+          id: "assign-col-column",
+          boardId: columnar.id,
+          title: "Col",
+          position: 0,
+        },
+      });
+      await prisma.card.create({
+        data: {
+          id: "assign-col-card",
+          columnId: "assign-col-column",
+          title: "Column restore",
+          position: 0,
+          assigneeId: stranger.id,
+        },
+      });
+      await prisma.card.create({
+        data: {
+          id: "assign-card",
+          columnId: "assign-col-column",
+          title: "Card restore",
+          position: 1,
+          assigneeId: stranger.id,
+        },
+      });
+
+      // Take everything down: one card on its own, one column with its
+      // card, and the first board as a whole subtree.
+      await server()
+        .post("/api/v1/admin/entities/cards/bulk")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ ids: ["assign-card"], action: "delete" })
+        .expect(201);
+      await server()
+        .post("/api/v1/admin/entities/columns/bulk")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ ids: ["assign-col-column"], action: "delete" })
+        .expect(201);
+      await server()
+        .post("/api/v1/admin/entities/boards/bulk")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ ids: [subtree.id], action: "delete" })
+        .expect(201);
+
+      // The stranger leaves both boards while everything is down.
+      await prisma.boardMember.delete({
+        where: {
+          boardId_userId: { boardId: subtree.id, userId: stranger.id },
+        },
+      });
+      await prisma.boardMember.delete({
+        where: {
+          boardId_userId: { boardId: columnar.id, userId: stranger.id },
+        },
+      });
+
+      // Subtree restore (TASK-147/B5): the removed member is not
+      // resurrected; the member who stayed keeps the assignment.
+      await server()
+        .post(`/api/v1/admin/entities/boards/${subtree.id}/restore`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+      expect(
+        (
+          await prisma.card.findUniqueOrThrow({
+            where: { id: "assign-sub-card" },
+          })
+        ).assigneeId,
+      ).toBeNull();
+      expect(
+        (
+          await prisma.card.findUniqueOrThrow({
+            where: { id: "assign-sub-keep" },
+          })
+        ).assigneeId,
+      ).toBe(userId);
+
+      // Column and card restores: the snapshot drops the stale assignee.
+      await server()
+        .post("/api/v1/admin/entities/columns/assign-col-column/restore")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+      const columnCard = await prisma.card.findUniqueOrThrow({
+        where: { id: "assign-col-card" },
+      });
+      expect(columnCard.deletedAt).toBeNull();
+      expect(columnCard.assigneeId).toBeNull();
+
+      await server()
+        .post("/api/v1/admin/entities/cards/assign-card/restore")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+      const restored = await prisma.card.findUniqueOrThrow({
+        where: { id: "assign-card" },
+      });
+      expect(restored.deletedAt).toBeNull();
+      expect(restored.assigneeId).toBeNull();
+    });
+
+    it("replays an admin snapshot restore through the reducer byte-for-byte (TASK-156)", async () => {
+      const board = await prisma.board.create({
+        data: { title: "Snapshot contract board" },
+      });
+      await prisma.boardMember.create({
+        data: {
+          boardId: board.id,
+          userId,
+          role: "ADMIN",
+          acceptedAt: new Date(),
+        },
+      });
+      await prisma.label.create({
+        data: {
+          id: "snap-label",
+          boardId: board.id,
+          name: "Ready",
+          color: "green",
+          position: 0,
+        },
+      });
+      await prisma.column.create({
+        data: {
+          id: "snap-column",
+          boardId: board.id,
+          title: "Snap",
+          position: 0,
+        },
+      });
+      // One card carrying every badge the snapshot must preserve. The
+      // delete/restore actor is the board's only admin (`userId`), so the
+      // reducer's payload card and the written `lastActorId` agree.
+      await prisma.card.create({
+        data: {
+          id: "snap-card",
+          columnId: "snap-column",
+          title: "Snapshot card",
+          position: 0,
+          description: "with everything on it",
+          priority: "high",
+          dueDate: new Date("2026-11-01T09:00:00Z"),
+          lastActorId: userId,
+          attachmentCount: 2,
+        },
+      });
+      await prisma.card.create({
+        data: {
+          id: "snap-target",
+          columnId: "snap-column",
+          title: "Target",
+          position: 1,
+        },
+      });
+      await prisma.cardLabel.create({
+        data: { cardId: "snap-card", labelId: "snap-label", position: 0 },
+      });
+      await prisma.checklist.create({
+        data: {
+          id: "snap-checklist",
+          cardId: "snap-card",
+          title: "Steps",
+          position: 0,
+        },
+      });
+      await prisma.checklistItem.create({
+        data: {
+          id: "snap-item",
+          checklistId: "snap-checklist",
+          text: "first",
+          position: 0,
+          done: true,
+        },
+      });
+      await prisma.cardLink.create({
+        data: {
+          id: "snap-link",
+          boardId: board.id,
+          fromCardId: "snap-card",
+          toCardId: "snap-target",
+          type: "blocks",
+          position: 0,
+        },
+      });
+      for (const storedName of ["snap-a.bin", "snap-b.bin"]) {
+        await prisma.attachment.create({
+          data: {
+            cardId: "snap-card",
+            boardId: board.id,
+            fileName: storedName,
+            storedName,
+            mimeType: "application/octet-stream",
+            sizeBytes: 8,
+            uploadedById: userId,
+          },
+        });
+      }
+
+      const content = async () =>
+        (
+          await server()
+            .get(`/api/v1/admin/boards/${board.id}/content`)
+            .set("Authorization", `Bearer ${adminToken}`)
+            .expect(200)
+        ).body;
+
+      const before = await content();
+      expect(before.cards["snap-card"]).toMatchObject({
+        priority: "high",
+        labelIds: ["snap-label"],
+        links: [
+          { id: "snap-link", type: "blocks", targetCardId: "snap-target" },
+        ],
+        lastActorId: userId,
+        attachmentCount: 2,
+        checklists: [
+          { id: "snap-checklist", items: [{ id: "snap-item", done: true }] },
+        ],
+      });
+
+      // Admin delete → real command; admin restore → snapshot replay.
+      await server()
+        .post("/api/v1/admin/entities/cards/bulk")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ ids: ["snap-card"], action: "delete" })
+        .expect(201);
+      const deleted = await content();
+      expect(deleted.cards["snap-card"]).toBeUndefined();
+
+      await server()
+        .post("/api/v1/admin/entities/cards/snap-card/restore")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+
+      // The stored RESTORE_CARD action — the snapshot this admin path
+      // rebuilt — must reproduce the live aggregate through the pure
+      // reducer, exactly like a user-issued command does.
+      const command = await prisma.command.findFirst({
+        where: { boardId: board.id, type: "RESTORE_CARD" },
+        orderBy: { seq: "desc" },
+      });
+      expect(command).not.toBeNull();
+      const expected = boardReducer(
+        [deleted],
+        command?.payload as unknown as BoardAction,
+        { withActivity: false },
+      )[0];
+      const after = await content();
+      expect(after).toEqual(expected);
+    });
+
+    it("omits an unknown priority instead of failing the restore (TASK-156)", async () => {
+      const board = await prisma.board.create({
+        data: { title: "Odd priority board" },
+      });
+      await prisma.boardMember.create({
+        data: {
+          boardId: board.id,
+          userId,
+          role: "ADMIN",
+          acceptedAt: new Date(),
+        },
+      });
+      await prisma.column.create({
+        data: {
+          id: "odd-column",
+          boardId: board.id,
+          title: "Odd",
+          position: 0,
+        },
+      });
+      await prisma.card.create({
+        data: {
+          id: "odd-card",
+          columnId: "odd-column",
+          title: "Hand-edited",
+          position: 0,
+          // Not on the CARD_PRIORITIES ladder — a hand-edited row.
+          priority: "ultra",
+        },
+      });
+
+      await server()
+        .post("/api/v1/admin/entities/cards/bulk")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ ids: ["odd-card"], action: "delete" })
+        .expect(201);
+
+      // The snapshot drops the bogus value, so the command validates and
+      // the restore succeeds instead of answering 400.
+      await server()
+        .post("/api/v1/admin/entities/cards/odd-card/restore")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+
+      const restored = await prisma.card.findUniqueOrThrow({
+        where: { id: "odd-card" },
+      });
+      expect(restored.deletedAt).toBeNull();
+      expect(restored.priority).toBeNull();
+      const content = await server()
+        .get(`/api/v1/admin/boards/${board.id}/content`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(content.body.cards["odd-card"].priority).toBeUndefined();
     });
 
     it("keeps the attachment badge exact through delete and restore (TASK-149)", async () => {
