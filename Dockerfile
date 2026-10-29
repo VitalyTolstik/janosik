@@ -10,7 +10,7 @@
 # Run:    see docker-compose.yml (app + postgres + redis).
 
 # ---------------------------------------------------------------- build ----
-FROM node:22-bookworm-slim AS build
+FROM node:25-bookworm-slim AS build
 WORKDIR /app
 
 # openssl must be present when `prisma generate` runs, so the generated query
@@ -51,7 +51,7 @@ RUN npm run build -w backend \
   && npm run build -w site
 
 # -------------------------------------------------------------- runtime ----
-FROM node:22-bookworm-slim AS runtime
+FROM node:25-bookworm-slim AS runtime
 ENV NODE_ENV=production
 # Prisma needs openssl at runtime; ca-certificates for outbound TLS (SMTP,
 # OAuth). ffmpeg-static ships its own binary, so no system ffmpeg is needed.
