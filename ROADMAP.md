@@ -1610,6 +1610,21 @@ TASK-36 и TASK-37.)*
 | 69 | TASK-136 `mcp-server` ✅ | `feature/TASK-136-mcp-server` | §7.12: **MCP-сервер для роя агентов** — тонкая TS-обёртка над командным API (`POST /boards/:id/commands`) и комментами; auth персональным ключом `jnk_…` (env `JANOSIK_URL`/`JANOSIK_TOKEN`); тулзы `list_boards`/`get_board`/`create_card`/`update_card`/`move_card`/`comment`/`checklist_*`/`set_label`/`assign`; read-only тулзы отдельно от write; переиспользует DTO из `shared/src/api.ts`; `npx @janosik/mcp` + регистрация в MCP registry | тулзы двигают карточку, комментят и тикают чек-лист на живом борде ключом `jnk_…`; идемпотентность/`ifMatch`/409 обработаны; e2e-смоук; опубликовано в registry |
 | 70 | TASK-137 `agent-skill` ✅ | `feature/TASK-137-agent-skill` | §7.12: **скилл-плейбук роя** поверх MCP-тулзов — конвенции (колонки, когда комментировать и тащить в Review, как называть карточки), шаблоны карточек/меток, рецепт жизненного цикла; не дублирует I/O, ссылается на тулзы | скилл ставится в харнессы (Claude/opencode/Codex); агент по нему ведёт карточку на реальном борде через MCP; без дублей API-деталей |
 | 71 | TASK-138 `contributing-cla` ✅ | `main` | Вне очереди (решение 2026-10): `CONTRIBUTING.md` — как ставить/тестировать/отправлять PR + **DCO** (Developer Certificate of Origin, `git commit -s`), inbound=outbound. Страховка на будущее: перелицензировать проект можно, только пока все права у владельца, поэтому DCO/CLA нужны **до** первых внешних PR. Ссылка из README | процесс PR описан; DCO требуется явно; лицензирование вкладов недвусмысленно. **Выполнено:** `CONTRIBUTING.md` (dev-setup, гейты, стиль коммитов, PR-процесс, DCO + `Signed-off-by`, inbound=outbound); ссылка из README |
+| 72 | TASK-139 `board-virtualization` | `feature/TASK-139-board-virtualization` | §7.13: виртуализация больших досок — рендер только видимых карточек/колонок, без фризов на 1000+ карточек | доска 2400 карточек рендерится <1 c без long tasks >200 мс, heap <300 MB; DnD/фильтр/поиск/read-only целы; замер до/после. См. §7.13 |
+| 72.1 | TASK-142 `simplify-design` | `feature/TASK-142-simplify-design` | §7.13: чекбокс «Упростить дизайн» — плотная лицевая часть карточки и лёгкий «watch»-вид для наблюдения за роем (снижает DOM и перерисовки), **после виртуализации** | тумблер переключает плотный/полный вид и сохраняется; DOM/время рендера заметно ниже (замер); функции по клику; en+ru. См. §7.13 |
+| 72.2 | TASK-143 `presence-deltas` ✅ | `main` | §7.13: presence дельтами — `sync` на connect, `join`/`leave`/`update` дальше, без 30-секундного broadcast ростера; `?presence=0` для агентских потоков | **Выполнено:** 3000 SSE без OOM (703 MB, было падение); 1600 коннектов 1464→463 MB; backend 280 / ui 866 / shared 431 тестов зелёные. См. §7.13 |
+| 73 | TASK-140 `realtime-resilience` | `feature/TASK-140-realtime-resilience` | §7.13: устойчивость SSE — heap-лимит, лимит соединений на инстанс с вежливым отказом вместо OOM, масштабирование нод | перегруз не роняет процесс; лимит и heap настраиваются env; доки self-hosting описывают масштаб. См. §7.13 |
+| 74 | TASK-141 `scale-caches-config` | `feature/TASK-141-scale-caches-config` | §7.13: TTL-кэш live-share и admin-метрик, `shared_buffers` в self-host compose | live-share и метрики читаются из кэша (RPS ×N), конфиг БД задокументирован. См. §7.13 |
+| 75 | TASK-144 `ui-edit-coalescing` | `feature/TASK-144-ui-edit-coalescing` | §7.14: слияние quiet-патчей по полям; не коммитить описание при неразрешённом конфликте | нет молчаливых потерь правок; тесты. См. §7.14 |
+| 76 | TASK-145 `presence-consistency` | `feature/TASK-145-presence-consistency` | §7.14: топология presence (1/несколько нод), presence-epoch + resync, rejoin по TTL, `avatarPath`, `clientId` до Observable | ростер сходится; TTL не теряет юзера. См. §7.14 |
+| 77 | TASK-146 `resource-limits` | `feature/TASK-146-resource-limits` | §7.14: кэпы SSE/сессий, `ifMatchVersions`, upload-квоты, bounded share-throttle | вежливый отказ вместо DoS. См. §7.14 |
+| 78 | TASK-147 `security-hardening` | `feature/TASK-147-security-hardening` | §7.14: `/health`, read-only impersonation, expiry/assignee-leak, bull-board allowlist, `COOKIE_SECURE`, CIDR/TOTP/логи | e2e на каждую дыру. См. §7.14 |
+| 79 | TASK-148 `retention-and-indexes` | `feature/TASK-148-retention-and-indexes` | §7.14: индексы `deletedAt/expiresAt/dueDate`, sweeps Board/Activity/audit/shares/exports, retry очередей | нет роста БД/Redis/диска. См. §7.14 |
+| 80 | TASK-149 `admin-consistency` | `feature/TASK-149-admin-consistency` | §7.14: admin-мутации через команды, `attachmentCount`, импорт батч/атомарность | нет orphan-карточек. См. §7.14 |
+| 81 | TASK-150 `ui-render-perf` | `feature/TASK-150-ui-render-perf` | §7.14: per-key members, drag strategy, `linkSignature`, CardDialog, focus-diff, анимации | нет лишних полных рендеров. См. §7.14 |
+| 82 | TASK-151 `pwa-stream-recovery` | `feature/TASK-151-pwa-stream-recovery` | §7.14: SW не убивает старый деплой, SSE-watchdog, 404 доски, `APP_BASE`, restore | деплой/обрыв не ломают доску. См. §7.14 |
+| 83 | TASK-152 `ui-a11y-polish` | `feature/TASK-152-ui-a11y-polish` | §7.14: tab-order зон, drag-handle/AT, lightbox focus, due-тик, локали | keyboard-only; ru/en. См. §7.14 |
+| 84 | TASK-153 `config-and-observability` | `feature/TASK-153-config-and-observability` | §7.14: `connection_limit`/Postgres, кэш OpsSettings, low-баги, slow-query/requestId | пул и логи под контролем. См. §7.14 |
 
 > **TASK-38a/38b выполнены (2026-10-26).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -2785,6 +2800,317 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   Bugs) виден в `janosik_board_activity` как forward-back-forward. Документация:
   раздел в корневом README, страница `/docs/mcp/` (en+ru) про скилл и установку,
   ссылка в `mcp/README.md`.
+
+---
+
+### 7.13. Производительность и масштаб (TASK-139…143)
+
+> **Зачем.** Нагрузочный прогон (2026-10-29, полный отчёт —
+> `~/.janosik-dev/load/LOAD-REPORT.md`, одна нода 16 vCPU, лимиты подняты)
+> показал: архитектура ведёт себя **предсказуемо**, но есть несколько точек, которые
+> стоит закрыть (пять задач; TASK-143 уже закрыта, §7.7 строки 72–74). Замеры,
+> одиночная нагрузка:
+> - агрегат доски **~430–465 rps и не зависит от размера** (200 и 2400 карточек —
+>   одинаково) → упирается в CPU сборки, ~4.3 ядра;
+> - микс (read/write/comment) ~250 rps; запись **одной** доски **~48/s**
+>   (сериализация advisory-lock `BoardWriteService`, латентность линейна: 100
+>   писателей → ~1 с); запись по 100 доскам ~290/s (CPU); комментарии ~257 rps;
+> - admin ~650 rps (~6 ядер); live-share ~95 rps, snapshot ~250; `/health` ~5.6k rps;
+> - realtime: 1000 потоков ок, **~3000 → `V8 heap out of memory`, падение процесса**
+>   (~0.45 MB/соединение), systemd-рестарт рвёт **все** соединения;
+> - UI: доска 2400 карточек рендерится **4.8 с**, 67.7k DOM-узлов, ~1.1 GB heap,
+>   блокировка main-thread **3.9 с**;
+> - БД: все индексы корректны (горячие запросы 0.05–0.76 ms), но
+>   `shared_buffers=16 MB` (дефолт контейнера);
+> - «всё сразу»: микс ×4.9, admin ×6.7, сайт ×1.6, fan-out realtime 30–90 ms → **10–20 с**.
+>
+> **Вывод.** Всё упирается в один CPU-процесс и очередь записи на доску — это
+> масштабируется **нодами + Redis** (pub/sub fan-out уже есть, TASK-74), а не
+> переписыванием. Многонодность и защита `/auth/login` (5/мин) уже в порядке —
+> закрываем то, что бьёт пользователя и режим отказа. Порядок — в таблице §7.7
+> (строки 72–74).
+
+#### TASK-139 — `board-virtualization` · Большие доски без фризов
+
+- **Зачем:** доска максимального размера (`LIMITS` 12×200 = 2400 карточек)
+  достижима уже сейчас, но рендерится 4.8 с и морозит main-thread на 3.9 с
+  (67.7k DOM, ~1.1 GB heap). Это **единственная** найденная проблема, которая бьёт
+  обычного пользователя, а не гипотетический масштаб.
+- **Что:** виртуализация списка карточек в колонке (рендер видимых + буфер),
+  скролл без ломки DnD; строка таблицы — виртуализация; календарь — по необходимости.
+  Модель/редьюсер не трогаем. Совместимость с `memo`/рендер-изоляцией и **со
+  стабильными значениями для dnd-kit** (§1.2: новый массив/объект меняет контекст).
+- **Трогаем:** `ui/src/components/board/ColumnView.tsx`, `CardItem.tsx`,
+  `AddCardZone.tsx`, таблица/календарь при необходимости; тесты рендера.
+- **DoD:** доска 2400 карточек рендерится <1 c, ни одной long task >200 мс, heap
+  <300 MB (замер Playwright **до/после** в PR); DnD, фильтр, архив, поиск, read-only
+  не сломаны; ui-тесты и `size` зелёные.
+- **Зависимости:** нет.
+
+#### TASK-142 — `simplify-design` · Чекбокс «Упростить дизайн» (+ лёгкий «watch»-вид)
+
+- **Зачем:** рой агентов постоянно меняет карточки → частые перерисовки; полная карточка
+  (~28 DOM-узлов: бейджи, контролы, обёртки) тяжела для рендера и шумна для глаза,
+  который **наблюдает** за роем. Гипотеза: упрощённый визуальный слой снижает DOM и
+  стоимость рендера и делает «что происходит на доске» читаемее. Проверить **замером**
+  (§7.13 «всё сразу»/UI), а не на веру: если выигрыш чисто косметический — не усложнять.
+- **Что:**
+  1. пользовательский тумблер **«Упростить дизайн»** (в настройках/шапке, сохраняется
+     как локальная настройка вида, как выбор «канбан/календарь/таблица») — переключает
+     **плотную** лицевую часть карточки (только ключевое: заголовок, при необходимости
+     метка/приоритет/исполнитель) против полной. Не «пусто» ради простоты — смысл на
+     стене человеку нужен;
+  2. опционально — **read-only «watch»-режим** для наблюдения за роем: поток
+     активности + presence + минимум DOM, крупный статус;
+  3. совместимость с виртуализацией (TASK-139) и рендер-изоляцией: значения для
+     dnd-kit стабильны, `memo` не ломается; полные детали — по клику, не на лицевой части.
+- **Трогаем:** `ui/src/components/board/CardItem.tsx`, `ColumnView.tsx`, шапка/настройки
+  вида, `src/locales/{en,ru}`, локальные настройки вида; при «watch»-режиме — отдельный
+  лёгкий компонент.
+- **DoD:** тумблер «Упростить дизайн» переключает плотный/полный вид и **сохраняется
+  между сессиями**; упрощённый вид заметно снижает DOM-узлов и время рендера (замер
+  до/после в PR); функции доступны по клику; en+ru; read-only/presence/DnD не сломаны.
+- **Зависимости:** TASK-139 (виртуализация — сначала она), затем этот слой.
+
+#### TASK-143 — `presence-deltas` · Presence без O(N²) ✅
+
+- **Зачем.** Нагрузочный прогон показал, что ~0.5–0.8 MB на SSE-соединение — это не
+  сам поток, а полный presence-ростер, который рассылался **всем** на каждый
+  join/leave и каждые 30 c: O(N²) на событие, O(N³) на массовое подключение. Именно
+  это валило процесс (`V8 heap out of memory`) на ~3000 соединений (разбор —
+  `~/.janosik-dev/load/SSE-MEMORY-FINDINGS.md`).
+- **Что (сделано).** Протокол presence переведён на дельты — как в Yjs awareness /
+  Ably / Pusher / Supabase: `sync` (полный ростер) отправляется **только** новому
+  соединению; дальше `join`/`leave`/`update`. 30-секундный broadcast ростера удалён
+  (остался TTL-sweep); клиент ведёт `Map<userId, PresenceUser>` (`PresenceStore.apply`).
+  Добавлен `?presence=0` для агентских/служебных потоков. Контракт —
+  `shared/src/api.ts` (`PresenceSseEvent`), сервер — `realtime/presence.service.ts`,
+  `commands/events.controller.ts`, клиент — `store/realtime.ts`, `store/board-live.tsx`.
+- **Результат (замер).** 1600 коннектов: **1464 → 463 MB**; **3000 коннектов —
+  703 MB, API жив** (раньше — падение по OOM); steady-state 1000 коннектов +
+  heartbeat 3 мин — плато ~470 MB (не течёт). ~0.17 MB/коннект при массовом
+  подключении (включая `sync` каждому) и ~0.10 в steady-state.
+- **DoD.** ✅ дельты + sync-on-connect; backend 280 тестов, ui 866, shared 431 —
+  зелёные; lint/format/build/size зелёные.
+- **Зависимости:** TASK-30 (SSE), TASK-36 (presence).
+
+#### TASK-140 — `realtime-resilience` · Перегруз не должен ронять сервер
+
+- **Зачем:** при ~3000 одновременных SSE процесс падает `V8 heap out of memory`,
+  systemd перезапускает — и **все** соединения рвутся разом. Режим отказа должен быть
+  «вежливо не пустить новым», а не «умереть для всех».
+- **Что:** `NODE_OPTIONS=--max-old-space-size` (дефолт в `Dockerfile` + self-host),
+  настраиваемый env-лимит одновременных SSE на инстанс с **отказом** при превышении
+  (событие/`503`, без падения), метрика и лог числа активных соединений; в
+  `docs/SELF-HOSTING.md` — масштабирование нескольких нод API за LB (Redis pub/sub
+  fan-out готов, TASK-74) и `docker` replicas.
+- **Трогаем:** `backend/src/commands/events.controller.ts`,
+  `backend/src/realtime/realtime.service.ts`, `backend/src/realtime/presence.service.ts`,
+  `backend/src/config/env.ts`, `.env.example`, `Dockerfile`, `docker-compose.yml`,
+  `docs/SELF-HOSTING.md`.
+- **DoD:** под синтетическим перегрузом (> лимита) сервер **отказывает** новым
+  соединениям и остаётся жив; лимит и heap — через env; доки self-hosting описывают
+  масштаб и путь «несколько нод»; смоук `sse-agents`: N соединений без OOM.
+- **Зависимости:** TASK-74 (уже реализовано).
+- **Статус:** причина OOM (присутствие) уже устранена в TASK-143 (3000 коннектов
+  держатся без падения). Здесь остаются heap-лимит, лимит соединений с вежливым
+  отказом, метрики и доки по нодам.
+
+#### TASK-141 — `scale-caches-config` · Кэши и конфиг БД
+
+- **Зачем:** live-share пересобирает агрегат на каждый просмотр (~95 rps против ~250
+  у snapshot); admin-чтение дорогое (~6 ядер на 650 rps); Postgres стартует с
+  `shared_buffers=16 MB`.
+- **Что:** (1) short-TTL кэш live-share (снапшот агрегата + инвалидация по `seq`);
+  (2) инвалидируемый кэш `/admin/metrics` и тяжёлых admin-списков; (3) `shared_buffers`
+  как настраиваемый параметр в self-host compose + обоснование в `docs/SELF-HOSTING.md`;
+  (4) пометка: пул Prisma и `max_connections=100` пересчитать при нескольких нодах.
+- **Трогаем:** `backend/src/share/share.service.ts`, `backend/src/admin/*` (метрики),
+  `docker-compose.yml`, `docs/SELF-HOSTING.md`.
+- **DoD:** повторные live-share и admin-метрики обслуживаются из кэша (замер RPS
+  до/после в PR), консистентность сохраняется (инвалидация по `seq`); self-host compose
+  и доки описывают `shared_buffers`.
+- **Зависимости:** нет.
+
+#### Отложено (не сейчас)
+
+- **Батчинг/шардинг команд одной доски** (~48/s) и **глобальный потолок команд**
+  (~290/s, CPU). Для команды из 5–20 человек незаметно; браться только когда
+  упрётся «рой агентов» на одной доске — отдельной задачей по потребности.
+- Многонодность, Redis pub/sub fan-out, лимит `/auth/login` 5/мин — **не трогаем**
+  (первое уже есть, второе — защита by design). **Исключение:** presence при
+  нескольких нодах ломается (см. TASK-145) — включать >1 ноды можно только после неё.
+
+---
+
+### 7.14. Аудит 2026-10-29 — найденные дыры (TASK-144…153)
+
+> **Зачем.** Три независимых аудита (realtime/scale, backend/DB/queues/security,
+> frontend/UI) после нагрузочного теста дали ~50 находок. Полный свод с
+> `file:line` — `~/.janosik-dev/load/AUDIT-FINDINGS.md`. Здесь — сгруппированные
+> задачи: одна тема = одна ветка = один PR. Порядок — по цене ошибки, не по
+> объёму.
+
+#### TASK-144 — `ui-edit-coalescing` · Без молчаливых потерь правок
+
+- **Зачем:** C2 — коалесинг quiet-правок ключуется `${boardId}:${cardId}` и
+  **заменяет весь patch**: «описание (blur) + заголовок (по символу)» в пределах
+  400 мс теряют одно из полей (локально видно, на сервер не ушло). C3 — при
+  неразрешённом конфликте описания закрытие диалога/смена карточки/`pagehide`
+  коммитят черновик поверх чужого нового текста.
+- **Что:** сливать `UPDATE_CARD`-патчи по полям (а не заменять целиком), резолвить
+  waiter только когда покрыты его поля; при `conflict` не флашить описание
+  (сохранять черновик по карточке и переопрашивать при открытии); тесты на оба
+  сценария.
+- **DoD:** «описание → сразу заголовок» не теряет ни одного поля (сервер + reload);
+  закрытие диалога с конфликтом не затирает чужой текст; тесты зелёные.
+- **Зависимости:** нет.
+
+#### TASK-145 — `presence-consistency` · Presence не врёт и самовосстанавливается
+
+- **Зачем:** A1 — per-node presence фан-аутится через Redis глобально: на 2+ нодах
+  `sync` неполный, ложные `leave`, `update` по невидимым сессиям. A2 — после
+  удаления 30-сек broadcast нет сверки: потерянная дельта (Redis at-most-once,
+  реконнект подписчика, порядок) навсегда. A3 — фоновые вкладки троттлятся >TTL,
+  `POST /presence` всегда 204, клиент не переподключается → юзер «пропадает».
+- **Что:** решить топологию (фильтровать `presence` из Redis при одной ноде **или**
+  общий presence-store в Redis для нескольких); per-board presence `epoch` и
+  сверка `sync` на keep-alive/редкий resync; `ping` отдаёт `410` при пропавшей
+  сессии → клиент перезапускает стрим (rejoin); `samePresence` учитывает
+  `avatarPath`; чистить ростер на disconnect/смене доски; валидировать `clientId`
+  до создания Observable (иначе течёт `releaseTracking`); SSE-парсер по `/\r?\n\r?\n/`.
+- **DoD:** single-node: TTL/rejoin не теряет юзера; 2 ноды: ростер сходится, нет
+  ложных `leave`; тесты на `presence=0`, `avatarPath`, touch-miss/rejoin и
+  two-node.
+- **Зависимости:** TASK-143 (есть), TASK-74.
+
+#### TASK-146 — `resource-limits` · Кэпы на SSE, команды, загрузки, шары
+
+- **Зачем:** A4 — нет лимита SSE-соединений/сессий (один VIEWER = неограниченно
+  потоков). B1 — `ifMatchVersions` без лимита: десятки тысяч ключей внутри
+  advisory-lock → board-wide DoS. B20 — вложения без квот, multer в память 25 MB.
+  B23 — share-throttler in-memory, неограниченный Map, на нодах ×N.
+- **Что:** env-лимиты SSE (instance/user/board) с `503 Retry-After`; cap
+  `ifMatchVersions` (~100) + батч-запрос версий; квоты upload + temp-file вместо
+  памяти + upload-rate; bounded share-throttle (Redis/LRU) + валидация токена.
+- **DoD:** перегруз > лимита — вежливый отказ, процесс жив; большая
+  `ifMatchVersions` — `400` без блокировки доски; квоты работают; тесты.
+- **Зависимости:** TASK-140 (пересекается по кэпу соединений).
+
+#### TASK-147 — `security-hardening` · Auth, доступ, секреты
+
+- **Зачем:** B2 — `/health` публичный/без троттлинга/ходит в БД+Redis (усилитель
+  пула). B3 — impersonation выдаёт полноценный user-JWT (смена пароля/PAT →
+  takeover). B4/B5 — истёкшие VIEWER и не-члены-исполнители получают данные по
+  email. B6 — bull-board в обход admin IP-allowlist. B13 — прод-compose по
+  умолчанию `COOKIE_SECURE=false`. B17 — CIDR без валидации префикса/IPv6.
+  B18 — TOTP-ошибки не в lockout, нет replay. B19 — коды писем в прод-логах.
+- **Что:** разделить liveness/readiness (или троттлить/кэшировать); read-only
+  impersonation (запрет credential/PAT/email/write при `imp`); единый предикат
+  активного членства в `listBoards`/`listMembers`/дайджестах/напоминаниях;
+  проверка assignee на restore/import; bull-board за тем же allowlist; default
+  `COOKIE_SECURE=true`; валидация CIDR; TOTP в lockout + replay-защита; без тел
+  писем/кодов в прод-логах.
+- **DoD:** e2e на read-only impersonation, expiry-leak, assignee-non-member;
+  allowlist у дашборда; secure-cookie по умолчанию.
+- **Зависимости:** нет.
+
+#### TASK-148 — `retention-and-indexes` · Очистка, индексы, очереди не копятся
+
+- **Зачем:** B8 — нет индексов `deletedAt` (Card/Comment/Checklist/…),
+  `expiresAt/revokedAt` (токены/шары/инвайты), `dueDate` (ReminderSent) → purge
+  seq-scan/O(n²). B9 — retention не удаляет `Board`/`Activity`/`AdminAuditLog`/
+  отозванные шары (GDPR/рост). B12 — GDPR-erase не удаляет `DataExport`/бандлы.
+  B22 — `.tmp-*` блобы не чиcтятся. B7 — scheduler копит completed/failed.
+  B21 — exports/media глотают ошибки (retry BullMQ не работает).
+- **Что:** индексы `CONCURRENTLY`; sweeps для Board/Activity/audit/shares/exports;
+  rethrow в exports/media при остатке попыток; `removeOnComplete/Fail` у scheduler;
+  чистка `.tmp-*` по grace.
+- **DoD:** maintenance на большой таблице без seq-scan; erase удаляет экспорт;
+  очереди не растут; тесты на каждую sweep.
+- **Зависимости:** нет.
+
+#### TASK-149 — `admin-consistency` · Админка через те же инварианты
+
+- **Зачем:** B10 — admin archive/delete/restore мутируют строку напрямую (без
+  command/version/SSE/каскада): удаление колонки оставляет карточки вне колонок.
+  B11 — `Card.attachmentCount` разъезжается. B16 — импорт: 5 с транзакция, N+1
+  `user.findFirst`, частичный импорт.
+- **Что:** admin-мутации через команды/`BoardWriteService` + события; счётчики
+  вложений условно/с восстановлением; импорт: батч юзеров, явный timeout,
+  атомарно или детерминированно.
+- **DoD:** админ-удаление колонки не теряет карточки; счётчик вложений сходится;
+  импорт атомарен/батчится; тесты.
+- **Зависимости:** нет.
+
+#### TASK-150 — `ui-render-perf` · Больше не дёргать всю доску
+
+- **Зачем:** C4 — `MembersStore` глобальный: загрузка участников/любое membership
+  перерисовывает все карточки (второй полный рендер). C6 — `MeasuringStrategy.Always`
+  + пересчёт курсора на drag. C7 — `linkSignature` O(n log n) на каждый рендер.
+  C8 — `CardDialog` подписан на весь board (ввод заголовка рендерит MDXEditor).
+  C14 — focus-refetch диффит JSON.stringify по всем карточкам. C20 — анимация на
+  каждой карточке без `prefers-reduced-motion`.
+- **Что:** per-key подписки участников (и не подписываться без assignee/attribution);
+  `WhileDragging`/`BeforeDragging`; memo `linkSignature`; локальный draft заголовка
+  + memo-секции диалога; дифф по `version`/`updatedAt`; анимировать только новые
+  карточки + `motion-reduce`.
+- **DoD:** загрузка участников не перерисовывает все карточки; drag на 2400 без
+  O(n)/frame; ввод не рендерит MDXEditor; focus-refetch без JSON.stringify; замер
+  до/после.
+- **Зависимости:** TASK-139 (виртуализация).
+
+#### TASK-151 — `pwa-stream-recovery` · Деплой и обрывы не ломают открытую доску
+
+- **Зачем:** C5 — SW делает `skipWaiting`/`claim` и удаляет прошлый кэш → открытая
+  вкладка ловит старый lazy-chunk, nginx отдаёт `index.html` (200) → SyntaxError,
+  весь app падает. C12 — нет watchdog SSE: полуоткрытый поток не даёт reconnect.
+  C13 — фатальный 404 стрима проглатывается (удалённая доска висит). C11 — один
+  error boundary на всё. C9 — ссылки в новой вкладке теряют `APP_BASE`. C15 —
+  «Restore backup» в server-режиме дублирует доски.
+- **Что:** update-prompt / не claim'ить при живых старых клиентах / хранить прошлый
+  кэш; boundary на BoardSection/CardDialog + retry для chunk-load; watchdog
+  last-frame + reconnect на `online`; 404 → убрать доску; `cardHref` с `APP_BASE`;
+  отключить/починить restore в server-режиме.
+- **DoD:** деплой при открытой вкладке не роняет открытие карточки; half-open
+  стрим переподключается; удалённая доска уходит; ссылки на `/app/`; restore не
+  дублирует.
+- **Зависимости:** нет.
+
+#### TASK-152 — `ui-a11y-polish` · Клавиатура, фокус, локали
+
+- **Зачем:** C16 — зоны вставки невидимы, но в tab-порядке (~2400 stop). C17 —
+  каждая карточка `role="button"` с вложенными кнопками, j/k-курсор недоступен AT,
+  dnd-kit объявления на английском в ru-UI. C18 — lightbox без focus-trap, `alt=""`,
+  blob URL не revoke'атся. C19 — просрочка/«скоро» не обновляются по времени.
+  Плюс: английский «Close», listbox/radio без стрелок, закрытие карточки стирает
+  все query-параметры.
+- **Что:** `tabIndex=-1`/focus-visible для зон; drag-handle/roving tabindex +
+  локализованные dnd-announcements; Radix-диалог для lightbox (trap + revoke);
+  тик due на visibility/focus; `t("common.close")`; стрелки в TimePicker/FilterBar;
+  удалять только `card` из URL.
+- **DoD:** keyboard-only проходит доску, нет невидимого фокуса; lightbox
+  запирает фокус; «просрочено» обновляется; ru/en.
+- **Зависимости:** нет.
+
+#### TASK-153 — `config-and-observability` · Конфиг БД, guard-кэш, логи
+
+- **Зачем:** B14 — `shared_buffers=16MB`, пул Prisma ~33/нода без `connection_limit`;
+  B15 — `MaintenanceGuard` ходит в БД на каждый запрос до auth; low-находки:
+  счётчики карточек включают архив/удалённые колонки, фид приглашений не фильтрует
+  истёкшие, битые курсоры → 500, idempotency коммента без проверки автора, admin
+  refresh без grace, нет `notifyDigest`, `CREATE INDEX` не CONCURRENTLY, нет
+  slow-query/requestId.
+- **Что:** `connection_limit` + настройки Postgres в self-host; кэш `OpsSettings`
+  с инвалидацией; исправить перечисленные low-пункты; slow-query + `requestId` в
+  логах; `CONCURRENTLY` в операционных миграциях.
+- **DoD:** нет DB-запроса maintenance на каждый запрос; пул не выедает
+  `max_connections`; low-пункты закрыты тестами; инцидент трассируется по id.
+- **Зависимости:** нет.
+
+> Порядок внедрения (рекомендация): **144 → 145/146 → 147 → 148 → 150/151 →
+> 149/152/153**. Первые две — потери данных и целостность realtime (их видно
+> пользователю), дальше безопасность и ресурсы, потом перф/полировка.
 
 ---
 
