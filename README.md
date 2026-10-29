@@ -209,6 +209,9 @@ curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.e
 
 # 2. Edit .env — at minimum JWT_SECRET and PUBLIC_ORIGIN:
 #    JWT_SECRET=$(openssl rand -hex 32)
+#    For this plain-HTTP quickstart also set COOKIE_SECURE=false (the safe
+#    default is true; over HTTP the API refuses to boot rather than drop the
+#    refresh cookie). Behind HTTPS keep it true.
 
 # 3. Bring it up (migrations run automatically on boot)
 docker compose up -d
@@ -242,10 +245,10 @@ Environment variables (see `.env.example` for the full annotated list):
 | `JWT_SECRET` | — (required) | Access-token signing secret; `openssl rand -hex 32` |
 | `PUBLIC_ORIGIN` | `http://localhost:3000` | Public URL users open; builds OAuth callbacks |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `janosik` / — / `janosik` | Database credentials |
-| `COOKIE_SECURE` | `false` (example) | `Secure` cookie flag. **Set `true` behind HTTPS** — the API refuses to boot on HTTP in production unless this is explicitly `false`. |
+| `COOKIE_SECURE` | `true` | `Secure` cookie flag. Keep `true` behind HTTPS (the API refuses to boot on HTTP in production); set `false` only for a plain-HTTP trial. |
 | `ALLOW_REGISTRATION` | `true` | Open sign-up; turn off after creating your account |
 | `TRUST_PROXY` | `0` | Reverse-proxy hops (set `1` behind nginx/Caddy/Traefik) |
-| `SMTP_*` | unset | Outgoing email; unset = log mode (codes go to the server log) |
+| `SMTP_*` | unset | Outgoing email. Unset = log mode; in production codes are withheld from the log, so configure SMTP to deliver them. |
 | `PURGE_AFTER_DAYS` | `30` | Retention for the hourly soft-delete sweep |
 
 To build the image from a checkout instead of pulling, uncomment `build: .`

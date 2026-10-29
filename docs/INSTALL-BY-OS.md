@@ -201,7 +201,8 @@ then the same `npm install` / `npm run dev`. Use PowerShell or Git Bash.
    curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
    curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
    openssl rand -hex 32            # → JWT_SECRET
-   nano .env                       # JWT_SECRET, POSTGRES_PASSWORD, PUBLIC_ORIGIN
+   nano .env                       # JWT_SECRET, POSTGRES_PASSWORD, PUBLIC_ORIGIN,
+                                   # and COOKIE_SECURE=false for this plain-HTTP trial
    docker compose up -d
    ```
 

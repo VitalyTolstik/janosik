@@ -188,7 +188,7 @@ that matter most:
 | `JWT_SECRET` | — (**required**) | Access-token signing key. `openssl rand -hex 32`. Never change it casually — everyone is logged out. |
 | `PUBLIC_ORIGIN` | `http://localhost:3000` | Public URL. Builds OAuth callbacks; must be `https://…` for `COOKIE_SECURE=true`. |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `janosik` / — / `janosik` | Database credentials (created on first `up`). |
-| `COOKIE_SECURE` | `false` in the example | `Secure` flag on the refresh cookie. **Set `true` behind HTTPS.** A production install served over HTTP **refuses to boot** unless this is explicitly `false`. |
+| `COOKIE_SECURE` | `true` (compose default) | `Secure` flag on the refresh cookie. Keep `true` behind HTTPS; set `false` only for a plain-HTTP trial. A production install served over HTTP with it unset/`true` **refuses to boot**. |
 | `ALLOW_REGISTRATION` | `true` | Open sign-up. Turn off after creating your account. |
 | `TRUST_PROXY` | `0` | Number of trusted proxy hops. Set `1` behind one reverse proxy. |
 | `PORT` | `3000` | Host port to publish (container always listens on 3000). |

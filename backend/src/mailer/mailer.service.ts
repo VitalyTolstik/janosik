@@ -109,14 +109,13 @@ export class MailerService {
       this.outbox.push(email);
       if (this.outbox.length > OUTBOX_LIMIT) this.outbox.shift();
       // TASK-147 (B19): in production the log must never carry a message body
-      // — sign-in and e-mail-change codes are in there. Keep the full text in
-      // `outbox` for dev/e2e introspection; log only the envelope in prod.
-      const body =
-        env.NODE_ENV === "production"
-          ? " [body withheld in production — configure SMTP to deliver]"
-          : `\n${email.text}`;
+      // — sign-in and e-mail-change codes are in there. The *subject* carries
+      // the code too (`templates.ts`: "confirmation code 123456"), so it is
+      // withheld as well. Dev/e2e keep the full line for introspection.
       this.logger.log(
-        `[mail suppressed] to=${email.to} subject="${email.subject}"${body}`,
+        env.NODE_ENV === "production"
+          ? `[mail suppressed] to=${email.to} subject withheld (no SMTP configured)`
+          : `[mail suppressed] to=${email.to} subject="${email.subject}"\n${email.text}`,
       );
       return;
     }

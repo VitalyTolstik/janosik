@@ -67,7 +67,8 @@ Edit `.env`:
 - `POSTGRES_PASSWORD`: pick a strong password. The container refuses to
   start with the example `change-me`.
 - `PUBLIC_ORIGIN=http://<host-ip>:3000` (or `http://localhost:3000`).
-- Leave `COOKIE_SECURE=false` for now.
+- Set `COOKIE_SECURE=false` for this plain-HTTP trial (the safe default is
+  `true`; over HTTP the app refuses to boot rather than drop the cookie).
 
 ```bash
 docker compose up -d
@@ -241,7 +242,7 @@ compose stack fills the ones it needs from `.env`.
 | `UI_BASE` | `/` | Sub-path the app is served from, used for OAuth redirects. The image sets `/app/`. |
 | `ALLOW_PUBLIC_SHARES` | `true` | Master switch for public read-only share links. `false` makes the whole share contour answer `404`. |
 | `ALLOW_REGISTRATION` | `true` | Open sign-up. Set `false` after your account exists. The container logs a warning at start while it is `true`. |
-| `COOKIE_SECURE` | empty | Force the `Secure` cookie attribute. Empty means auto: on in production, off elsewhere. Choices are empty, `true`, `false`. |
+| `COOKIE_SECURE` | `true` (compose default) | Force the `Secure` cookie attribute. Keep `true` behind HTTPS; set `false` only for a plain-HTTP trial (the app then refuses to boot with it on). Choices are empty (auto: on in production), `true`, `false`. |
 | `PURGE_AFTER_DAYS` | `30` | Delete soft-deleted rows older than this many days. Used when the panel has no retention setting. |
 | `SHARE_RATE_LIMIT` | `240` | Public share requests per minute, per token. |
 | `SHARE_OG_RATE_LIMIT` | `60` | Public share OG preview requests per minute, per token. |
