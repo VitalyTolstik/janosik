@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import type { PrismaService } from "@/common/prisma/prisma.service";
 import {
+  invalidAllowlistEntries,
   SecurityService,
   isIpAllowed,
   normalizeAllowlist,
@@ -82,6 +83,60 @@ describe("isIpAllowed", () => {
 
   it("refuses a request without an IP when a list is set", () => {
     expect(isIpAllowed("203.0.113.7", null)).toBe(false);
+  });
+});
+
+describe("SecurityService.verifyCode (TOTP replay)", () => {
+  const service = new SecurityService({} as PrismaService);
+  const code = totp(SECRET);
+
+  it("accepts a code once per admin and refuses the replay", () => {
+    expect(service.verifyCode(SECRET, code, "admin-1")).toBe(true);
+    expect(service.verifyCode(SECRET, code, "admin-1")).toBe(false);
+  });
+
+  it("keeps the replay window per admin", () => {
+    expect(service.verifyCode(SECRET, code, "admin-2")).toBe(true);
+  });
+
+  it("stays stateless for callers that pass no admin", () => {
+    expect(service.verifyCode(SECRET, code)).toBe(true);
+    expect(service.verifyCode(SECRET, code)).toBe(true);
+  });
+});
+
+describe("isIpAllowed (CIDR hardening)", () => {
+  it("refuses an out-of-range IPv4 prefix instead of wrapping the mask", () => {
+    expect(isIpAllowed("10.0.0.0/33", "10.0.0.1")).toBe(false);
+    expect(isIpAllowed("10.0.0.0/-1", "10.0.0.1")).toBe(false);
+  });
+
+  it("matches /0 and an exact address", () => {
+    expect(isIpAllowed("0.0.0.0/0", "8.8.8.8")).toBe(true);
+  });
+
+  it("matches IPv6 CIDR and normalises an expanded address", () => {
+    expect(isIpAllowed("2001:db8::/32", "2001:db8:1::1")).toBe(true);
+    expect(isIpAllowed("2001:db8::/32", "2001:db9::1")).toBe(false);
+    expect(isIpAllowed("2001:db8::1", "2001:0db8:0:0:0:0:0:1")).toBe(true);
+  });
+
+  it("folds an IPv4-mapped IPv6 caller into the IPv4 range", () => {
+    expect(isIpAllowed("127.0.0.0/8", "::ffff:127.0.0.1")).toBe(true);
+    expect(isIpAllowed("10.0.0.0/8", "::ffff:127.0.0.1")).toBe(false);
+  });
+});
+
+describe("invalidAllowlistEntries", () => {
+  it("lists malformed entries and ignores the good ones", () => {
+    expect(
+      invalidAllowlistEntries("10.0.0.0/33, ::1/129, not-an-ip, 10.0.0.0/8"),
+    ).toEqual(["10.0.0.0/33", "::1/129", "not-an-ip"]);
+  });
+
+  it("treats an empty list as valid", () => {
+    expect(invalidAllowlistEntries(null)).toEqual([]);
+    expect(invalidAllowlistEntries("  ")).toEqual([]);
   });
 });
 

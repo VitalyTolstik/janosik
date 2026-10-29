@@ -15,6 +15,7 @@ import type {
 import { parseExport, serializeExport } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
+import { activeMembershipWhere } from "@/common/membership";
 import { RealtimeService } from "@/realtime/realtime.service";
 import {
   loadBoardAggregate,
@@ -42,10 +43,19 @@ export class BoardsService {
     private readonly realtime: RealtimeService,
   ) {}
 
-  /** Boards where the caller is a member (§7.4). Pending invitations don't count. */
+  /**
+   * Boards where the caller is a member (§7.4). Pending invitations don't
+   * count, and neither does an expired VIEWER (TASK-147, B4): the row still
+   * exists until a request lazily cleans it, so the expiry must be in the
+   * query or a lapsed guest keeps the board in their listing.
+   */
   async listBoards(userId: string): Promise<BoardSummary[]> {
     const memberships = await this.prisma.boardMember.findMany({
-      where: { userId, acceptedAt: { not: null }, board: { deletedAt: null } },
+      where: {
+        userId,
+        board: { deletedAt: null },
+        ...activeMembershipWhere(),
+      },
       include: {
         board: {
           include: {
@@ -234,10 +244,14 @@ export class BoardsService {
     });
   }
 
-  /** Accepted members of the board (§7.4) — readable by any role, VIEWER included. */
+  /**
+   * Accepted members of the board (§7.4) — readable by any role, VIEWER
+   * included. An expired VIEWER is left out even before a request lazily
+   * deletes the row (TASK-147, B4).
+   */
   async listMembers(boardId: string): Promise<BoardMemberDto[]> {
     const members = await this.prisma.boardMember.findMany({
-      where: { boardId, acceptedAt: { not: null } },
+      where: { boardId, ...activeMembershipWhere() },
       include: { user: true },
       orderBy: { createdAt: "asc" },
     });

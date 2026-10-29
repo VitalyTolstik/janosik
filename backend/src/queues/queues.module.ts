@@ -9,6 +9,7 @@ import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
+import { isIpAllowed } from "@/admin/security.service";
 import { QUEUE_NAMES, queuesEnabled } from "@/ops/queue-core";
 import {
   ADMIN_JWT_AUDIENCE,
@@ -22,6 +23,28 @@ export const ADMIN_QUEUES_COOKIE = "admin_queues";
 export const ADMIN_QUEUES_PATH = "/api/v1/admin/queues";
 /** Ticket lifetime — long enough to open a tab, short enough to stay safe. */
 export const ADMIN_QUEUES_TICKET_TTL = "10m";
+
+/**
+ * Whether this admin may open the queue dashboard from `ip` (TASK-147, B6).
+ * The dashboard is mounted straight on Express, outside Nest's guard
+ * pipeline, so it never passes through `AdminJwtAuthGuard` — the IP allowlist
+ * that protects every `/admin/*` route has to be applied here too, or the
+ * board is a way around it.
+ */
+export function queueDashboardOwner(
+  admin: {
+    role: string;
+    disabledAt: Date | null;
+    ipAllowlist: string | null;
+  },
+  ip: string | null,
+): boolean {
+  return (
+    admin.disabledAt === null &&
+    admin.role === "OWNER" &&
+    isIpAllowed(admin.ipAllowlist, ip)
+  );
+}
 
 /**
  * TASK-73 — the Bull Board queue dashboard. Mounted at
@@ -111,8 +134,8 @@ export class QueuesBoardService implements OnModuleInit {
       const admin = await this.prisma.adminUser.findUnique({
         where: { id: payload.sub },
       });
-      if (!admin || admin.disabledAt !== null || admin.role !== "OWNER") {
-        throw new Error("not an owner");
+      if (!admin || !queueDashboardOwner(admin, req.ip ?? null)) {
+        throw new Error("not an allowed owner");
       }
       next();
     } catch {

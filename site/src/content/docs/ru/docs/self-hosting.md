@@ -67,7 +67,9 @@ curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.e
 - `POSTGRES_PASSWORD`: задайте надёжный пароль. С примерным `change-me`
   контейнер не запустится.
 - `PUBLIC_ORIGIN=http://<host-ip>:3000` (или `http://localhost:3000`).
-- Пока оставьте `COOKIE_SECURE=false`.
+- Для пробного запуска по HTTP задайте `COOKIE_SECURE=false` (безопасное
+  значение по умолчанию — `true`; по HTTP приложение откажется стартовать,
+  чтобы не терять cookie молча).
 
 ```bash
 docker compose up -d

@@ -7,9 +7,13 @@ import { AuthGuard } from "@nestjs/passport";
 import { API_TOKEN_PREFIX } from "@janosik/shared";
 import { ApiTokenService } from "./api-token.service";
 import type { AuthPrincipal } from "./auth-principal";
+import { assertImpersonationAllows } from "./impersonation-policy";
 
 /** Shape of the request bits the guard reads (auth header + resolved user). */
 interface GuardedRequest {
+  method?: string;
+  url?: string;
+  originalUrl?: string;
   headers: Record<string, string | undefined>;
   user?: unknown;
   auth?: AuthPrincipal;
@@ -40,10 +44,17 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
     try {
       if (await super.canActivate(context)) {
         // The strategy has verified this token; only read a claim from it.
-        request.auth = {
-          via: "jwt",
-          impersonatedBy: impersonatorOf(raw),
-        };
+        const impersonatedBy = impersonatorOf(raw);
+        request.auth = { via: "jwt", impersonatedBy };
+        // TASK-147 (B3): an impersonation token is a full user token, so the
+        // read-only rule is enforced here — every user-contour route,
+        // `MembershipGuard` included, authenticates through this guard.
+        if (impersonatedBy !== null) {
+          assertImpersonationAllows(
+            request.method ?? "GET",
+            request.originalUrl ?? request.url ?? "",
+          );
+        }
         return true;
       }
     } catch (error) {

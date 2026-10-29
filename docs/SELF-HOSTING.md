@@ -60,7 +60,8 @@ Edit `.env`:
 - `JWT_SECRET` — generate one: `openssl rand -hex 32`
 - `POSTGRES_PASSWORD` — pick a strong password
 - `PUBLIC_ORIGIN=http://<host-ip>:3000` (or `http://localhost:3000`)
-- leave `COOKIE_SECURE=false` for now
+- set `COOKIE_SECURE=false` for this plain-HTTP trial (the safe default is
+  `true`; over HTTP the app refuses to boot rather than drop the cookie)
 
 ```bash
 docker compose up -d

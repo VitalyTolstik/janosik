@@ -3,7 +3,8 @@
 # Quick start:
 #   curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
 #   curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-#   # edit .env: set JWT_SECRET (openssl rand -hex 32) and PUBLIC_ORIGIN
+#   # edit .env: set JWT_SECRET (openssl rand -hex 32) and PUBLIC_ORIGIN;
+#   # for a plain-HTTP trial also set COOKIE_SECURE=false (see the app block)
 #   docker compose up -d
 #   # → open PUBLIC_ORIGIN, create the first account, then close registration
 #
@@ -34,10 +35,12 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (openssl rand -hex 32)}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
-      # 'false' ships in .env.example so the plain-HTTP quickstart boots; set
-      # it to true (or remove the line) once you serve over HTTPS. The API
-      # refuses to start on HTTP when this is left unset in production.
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # Secure by default (TASK-147, B13): the refresh cookie is Secure unless
+      # the operator explicitly opts out. A production install served over
+      # plain HTTP refuses to boot with this on, so the HTTP *trial* below
+      # must set COOKIE_SECURE=false — a visible, deliberate risk, not a
+      # silent default.
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
       # 0 = no proxy in front (the port is published directly). Set to 1 when
       # you put nginx/Caddy/Traefik in front, so rate limits and the audit log
@@ -58,7 +61,7 @@ services:
         - CMD
         - node
         - -e
-        - "const p=process.env.PORT||3000;Promise.all(['/api/v1/health','/'].map(u=>fetch('http://127.0.0.1:'+p+u))).then(rs=>process.exit(rs.every(r=>r.ok)?0:1)).catch(()=>process.exit(1))"
+        - "const p=process.env.PORT||3000;Promise.all(['/api/v1/health/ready','/'].map(u=>fetch('http://127.0.0.1:'+p+u))).then(rs=>process.exit(rs.every(r=>r.ok)?0:1)).catch(()=>process.exit(1))"
       interval: 30s
       timeout: 5s
       retries: 3

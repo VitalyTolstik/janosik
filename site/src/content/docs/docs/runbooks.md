@@ -119,13 +119,19 @@ no manual migration step.
 
 ## Monitoring
 
-### Health endpoint
+### Health endpoints
 
-`GET /api/v1/health` is the readiness probe. It is exempt from the global rate
-limit, so an orchestrator can poll it freely.
+`GET /api/v1/health` is the **liveness** probe: it always answers `200` and
+touches neither the database nor Redis, so an orchestrator can restart a stuck
+process on it.
+
+`GET /api/v1/health/ready` is the **readiness** probe: it checks the database
+(and Redis when configured) and answers `503` when a dependency is down. The
+result is cached for a couple of seconds, so probe traffic cannot amplify onto
+the connection pool. Both are exempt from the global rate limit.
 
 ```bash
-curl -fsS http://localhost:3000/api/v1/health
+curl -fsS http://localhost:3000/api/v1/health/ready
 ```
 
 The response has three fields:

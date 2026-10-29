@@ -95,10 +95,11 @@ ENV UPLOAD_DIR=/data/uploads
 ARG GIT_COMMIT=
 ENV GIT_COMMIT=${GIT_COMMIT}
 
-# Liveness: the API readiness probe plus the site root (the baked marketing
-# site), so a container that lost its static assets is reported unhealthy.
+# Readiness: the API readiness probe (DB + Redis, cached) plus the site root
+# (the baked marketing site), so a container that lost its dependencies or its
+# static assets is reported unhealthy.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD node -e "const p=process.env.PORT||3000;Promise.all(['/api/v1/health','/'].map(u=>fetch('http://127.0.0.1:'+p+u))).then(rs=>process.exit(rs.every(r=>r.ok)?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "const p=process.env.PORT||3000;Promise.all(['/api/v1/health/ready','/'].map(u=>fetch('http://127.0.0.1:'+p+u))).then(rs=>process.exit(rs.every(r=>r.ok)?0:1)).catch(()=>process.exit(1))"
 
 WORKDIR /app/backend
 EXPOSE 3000

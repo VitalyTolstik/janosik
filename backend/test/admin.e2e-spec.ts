@@ -286,6 +286,27 @@ describe("Admin API (e2e)", () => {
       .expect(200);
     expect(me.body.id).toBe(userId);
     expect(me.body.impersonatedBy).toBe(master.body.id);
+
+    // TASK-147 (B3): the "view as" token is read-only — it must not be a full
+    // account takeover (create boards, rotate credentials, mint keys).
+    const impToken = imp.body.accessToken as string;
+    const created = await server()
+      .post("/api/v1/boards")
+      .set("Authorization", `Bearer ${impToken}`)
+      .send({ title: "Should not exist" })
+      .expect(403);
+    expect(created.body.code).toBe("impersonation_read_only");
+
+    await server()
+      .post("/api/v1/auth/password")
+      .set("Authorization", `Bearer ${impToken}`)
+      .send({ currentPassword: USER_PASSWORD, newPassword: "new password 123" })
+      .expect(403);
+
+    await server()
+      .get("/api/v1/users/me/tokens")
+      .set("Authorization", `Bearer ${impToken}`)
+      .expect(403);
   });
 
   it("creates a user and returns the generated password exactly once", async () => {

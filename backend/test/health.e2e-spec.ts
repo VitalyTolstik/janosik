@@ -21,9 +21,16 @@ describe("Health (e2e)", () => {
     await app.close();
   });
 
-  it("GET /api/v1/health returns 200 with db up and redis disabled", async () => {
+  it("GET /api/v1/health is liveness — 200 without touching a dependency", async () => {
     const res = await request(app.getHttpServer())
       .get("/api/v1/health")
+      .expect(200);
+    expect(res.body).toEqual({ status: "ok" });
+  });
+
+  it("GET /api/v1/health/ready reports db up and redis disabled", async () => {
+    const res = await request(app.getHttpServer())
+      .get("/api/v1/health/ready")
       .expect(200);
     // No Redis in the test env → "disabled", not "down" (TASK-119).
     expect(res.body).toEqual({ status: "ok", db: "up", redis: "disabled" });

@@ -29,6 +29,7 @@ import {
 import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
+import { activeMembershipWhere } from "@/common/membership";
 import {
   type InternalCommandEvent,
   RealtimeService,
@@ -567,20 +568,43 @@ export class CommandsService {
    * member — a row that has accepted its invitation (TASK-35 addendum)
    * and is not an expired VIEWER. TASK-80: the check is unconditional — a
    * forged `inverse: true` must not let a client assign a non-member.
+   *
+   * TASK-147 (B5): a restored card carries its old snapshot, assignee
+   * included, so `RESTORE_CARD` gets the same rule — a member who was removed
+   * or whose VIEWER budget lapsed while the card was deleted is dropped
+   * instead of silently re-attached.
    */
   private async assertAssigneeIsBoardMember(
     tx: Prisma.TransactionClient,
     boardId: string,
     action: BoardAction,
   ): Promise<void> {
+    if (action.type === "RESTORE_CARD") {
+      const assigneeId = action.card.assigneeId ?? null;
+      if (assigneeId !== null) {
+        const member = await tx.boardMember.findFirst({
+          where: {
+            boardId,
+            userId: assigneeId,
+            ...activeMembershipWhere(),
+          },
+          select: { id: true },
+        });
+        if (!member) {
+          const withoutAssignee = { ...action.card };
+          delete withoutAssignee.assigneeId;
+          action.card = withoutAssignee;
+        }
+      }
+      return;
+    }
     if (action.type !== "SET_CARD_ASSIGN") return;
     if (action.assigneeId === null) return;
     const member = await tx.boardMember.findFirst({
       where: {
         boardId,
         userId: action.assigneeId,
-        acceptedAt: { not: null },
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        ...activeMembershipWhere(),
       },
       select: { id: true },
     });

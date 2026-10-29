@@ -67,31 +67,140 @@ function hotp(secret: Buffer, counter: number): string {
   return (code % 10 ** DIGITS).toString().padStart(DIGITS, "0");
 }
 
-/** Verifies a TOTP code inside a ±1 step window. */
-function verifyTotp(
+/**
+ * The time-step a code belongs to inside a ±1 window, or `null` when it
+ * matches nothing. The step (not a bare boolean) is what lets the service
+ * reject a replay: the same code always maps to the same step.
+ */
+function matchingTotpStep(
   secretBase32: string,
   code: string,
   at = Date.now(),
-): boolean {
-  if (!/^\d{6}$/.test(code)) return false;
+): number | null {
+  if (!/^\d{6}$/.test(code)) return null;
   const secret = base32Decode(secretBase32);
   const counter = Math.floor(at / 1000 / PERIOD_SEC);
   for (let drift = -1; drift <= 1; drift += 1) {
-    if (hotp(secret, counter + drift) === code) return true;
+    const step = counter + drift;
+    if (hotp(secret, step) === code) return step;
   }
-  return false;
+  return null;
 }
 
-function ipv4ToInt(ip: string): number | null {
+function ipv4ToBigInt(ip: string): bigint | null {
   const parts = ip.split(".");
   if (parts.length !== 4) return null;
-  let value = 0;
+  let value = 0n;
   for (const part of parts) {
+    if (!/^\d{1,3}$/.test(part)) return null;
     const n = Number(part);
-    if (!Number.isInteger(n) || n < 0 || n > 255) return null;
-    value = (value << 8) | n;
+    if (n > 255) return null;
+    value = (value << 8n) + BigInt(n);
   }
-  return value >>> 0;
+  return value;
+}
+
+/** IPv6 as a 128-bit integer. `%zone` is ignored; no zone-scoped semantics. */
+function ipv6ToBigInt(input: string): bigint | null {
+  const zone = input.indexOf("%");
+  let ip = zone === -1 ? input : input.slice(0, zone);
+  if (ip === "") return null;
+  // An embedded IPv4 tail (`::ffff:192.0.2.1`) becomes two hex groups.
+  if (ip.includes(".")) {
+    const lastColon = ip.lastIndexOf(":");
+    if (lastColon === -1) return null;
+    const v4 = ipv4ToBigInt(ip.slice(lastColon + 1));
+    if (v4 === null) return null;
+    const hi = ((v4 >> 16n) & 0xffffn).toString(16);
+    const lo = (v4 & 0xffffn).toString(16);
+    ip = `${ip.slice(0, lastColon + 1)}${hi}:${lo}`;
+  }
+  const parts = ip.split("::");
+  if (parts.length > 2) return null;
+  const head = parts[0] === "" ? [] : parts[0].split(":");
+  const tail = parts.length === 2 && parts[1] !== "" ? parts[1].split(":") : [];
+  if (parts.length === 1 && head.length !== 8) return null;
+  if (parts.length === 2 && head.length + tail.length > 7) return null;
+  const all =
+    parts.length === 2
+      ? [
+          ...head,
+          ...Array<string>(8 - head.length - tail.length).fill("0"),
+          ...tail,
+        ]
+      : head;
+  if (all.length !== 8) return null;
+  let value = 0n;
+  for (const group of all) {
+    if (!/^[0-9a-fA-F]{1,4}$/.test(group)) return null;
+    value = (value << 16n) + BigInt(parseInt(group, 16));
+  }
+  return value;
+}
+
+interface ParsedIp {
+  version: 4 | 6;
+  value: bigint;
+}
+
+/**
+ * Parses an address to a comparable integer. IPv4-mapped IPv6
+ * (`::ffff:127.0.0.1`, what a dual-stack listener reports) folds to IPv4 so an
+ * IPv4 allowlist keeps matching.
+ */
+function parseIp(input: string): ParsedIp | null {
+  const ip = input.trim();
+  if (ip === "") return null;
+  if (ip.includes(":")) {
+    const value = ipv6ToBigInt(ip);
+    if (value === null) return null;
+    if (value >> 32n === 0xffffn) {
+      return { version: 4, value: value & 0xffffffffn };
+    }
+    return { version: 6, value };
+  }
+  const value = ipv4ToBigInt(ip);
+  return value === null ? null : { version: 4, value };
+}
+
+/** True when `entry` (an exact address or a CIDR) is a well-formed entry. */
+function isValidAllowlistEntry(entry: string): boolean {
+  const slash = entry.indexOf("/");
+  if (slash === -1) return parseIp(entry) !== null;
+  if (entry.indexOf("/", slash + 1) !== -1) return false;
+  const network = parseIp(entry.slice(0, slash));
+  const bits = entry.slice(slash + 1);
+  if (network === null || !/^\d{1,3}$/.test(bits)) return false;
+  const max = network.version === 4 ? 32 : 128;
+  const prefix = Number(bits);
+  return prefix >= 0 && prefix <= max;
+}
+
+/**
+ * Matches one allowlist entry against an address. Both sides are parsed to
+ * integers, so a CIDR with out-of-range prefix bits (the old `~0 << (32-33)`
+ * shift wrapped modulo 32) simply never matches, and IPv6 prefixes work
+ * instead of silently comparing strings.
+ */
+function cidrOrExactMatches(entry: string, ip: string): boolean {
+  if (entry === ip) return true;
+  const slash = entry.indexOf("/");
+  const target = parseIp(ip);
+  if (target === null) return false;
+  if (slash === -1) {
+    const exact = parseIp(entry);
+    return (
+      exact !== null &&
+      exact.version === target.version &&
+      exact.value === target.value
+    );
+  }
+  if (!isValidAllowlistEntry(entry)) return false;
+  const network = parseIp(entry.slice(0, slash));
+  if (network === null || network.version !== target.version) return false;
+  const max = network.version === 4 ? 32 : 128;
+  const shift = BigInt(max - Number(entry.slice(slash + 1)));
+  return network.value >> shift === target.value >> shift;
 }
 
 /**
@@ -101,6 +210,14 @@ function ipv4ToInt(ip: string): number | null {
  */
 @Injectable()
 export class SecurityService {
+  /**
+   * Last accepted TOTP step per admin (TASK-147, B18). A code stays valid for
+   * its whole ±1 window, so without this the same six digits could sign in
+   * again and again. In-memory on purpose: the master contour is a single
+   * small account, and a restart only re-opens one 30 s window.
+   */
+  private readonly lastTotpStep = new Map<string, number>();
+
   constructor(private readonly prisma: PrismaService) {}
 
   // ------------------------------------------------------------------- 2FA
@@ -124,7 +241,7 @@ export class SecurityService {
   ): Promise<{ totpEnabled: true }> {
     const secret = await this.secretFor(admin.id);
     if (!secret) throw new BadRequestException("Start enrollment first");
-    if (!verifyTotp(secret, code)) {
+    if (!this.verifyCode(secret, code, admin.id)) {
       throw new UnauthorizedException("Invalid code");
     }
     await this.prisma.adminUser.update({
@@ -155,8 +272,20 @@ export class SecurityService {
     return decryptSecret(row.totpSecretEnc);
   }
 
-  verifyCode(secret: string, code: string): boolean {
-    return verifyTotp(secret, code);
+  /**
+   * Verifies a code. When `adminId` is given the accepted time-step is
+   * recorded and the same code is refused a second time (TASK-147, B18) — a
+   * replayed, shoulder-surfed or phished code is useless once used. Callers
+   * without an admin (the pure unit tests) keep the stateless behaviour.
+   */
+  verifyCode(secret: string, code: string, adminId?: string): boolean {
+    const step = matchingTotpStep(secret, code);
+    if (step === null) return false;
+    if (adminId === undefined) return true;
+    const last = this.lastTotpStep.get(adminId);
+    if (last !== undefined && step <= last) return false;
+    this.lastTotpStep.set(adminId, step);
+    return true;
   }
 
   // -------------------------------------------------------------- allowlist
@@ -195,6 +324,15 @@ export class SecurityService {
       if (admin.role !== "OWNER") {
         throw new ForbiddenException("Owner rights are required");
       }
+      // A malformed entry (bad prefix, unknown shorthand) silently matched
+      // nothing and could lock the owner out believing the list was saved
+      // (TASK-147, B17). Refuse it instead.
+      const invalid = invalidAllowlistEntries(dto.ipAllowlist);
+      if (invalid.length > 0) {
+        throw new BadRequestException(
+          `Invalid allowlist entries: ${invalid.join(", ")}`,
+        );
+      }
       const allowlist = normalizeAllowlist(dto.ipAllowlist);
       // The list is enforced on every admin request now, so saving one that
       // excludes the caller's own address would lock them out mid-session.
@@ -210,7 +348,10 @@ export class SecurityService {
     }
     if (dto.totpEnabled === false) {
       const secret = await this.secretFor(admin.id);
-      if (secret && (!dto.totpCode || !verifyTotp(secret, dto.totpCode))) {
+      if (
+        secret &&
+        (!dto.totpCode || !this.verifyCode(secret, dto.totpCode, admin.id))
+      ) {
         throw new UnauthorizedException("A valid 2FA code is required");
       }
       await this.prisma.adminUser.update({
@@ -259,7 +400,18 @@ export function normalizeAllowlist(value: string | null): string | null {
   return entries.length > 0 ? Array.from(new Set(entries)).join(",") : null;
 }
 
-/** True when the IP matches any entry (exact string or IPv4 CIDR). */
+/** The entries a save should refuse (TASK-147, B17), de-duplicated. */
+export function invalidAllowlistEntries(value: string | null): string[] {
+  if (value === null) return [];
+  const bad = value
+    .split(/[,\s]+/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .filter((entry) => !isValidAllowlistEntry(entry));
+  return Array.from(new Set(bad));
+}
+
+/** True when the IP matches any entry (exact address or IPv4/IPv6 CIDR). */
 export function isIpAllowed(
   allowlist: string | null,
   ip: string | null,
@@ -267,18 +419,5 @@ export function isIpAllowed(
   if (!allowlist || allowlist.trim() === "") return true;
   if (!ip) return false;
   const entries = allowlist.split(",").map((entry) => entry.trim());
-  for (const entry of entries) {
-    if (entry === ip) return true;
-    if (entry.includes("/")) {
-      const [network, bitsRaw] = entry.split("/");
-      const bits = Number(bitsRaw);
-      const net = ipv4ToInt(network);
-      const target = ipv4ToInt(ip);
-      if (net !== null && target !== null && Number.isInteger(bits)) {
-        const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
-        if ((net & mask) === (target & mask)) return true;
-      }
-    }
-  }
-  return false;
+  return entries.some((entry) => cidrOrExactMatches(entry, ip));
 }

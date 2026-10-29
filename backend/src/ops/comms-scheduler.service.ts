@@ -8,6 +8,7 @@ import { InjectQueue } from "@nestjs/bullmq";
 import type { Queue } from "bullmq";
 import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { activeMembershipWhere } from "@/common/membership";
 import { MailQueueService } from "@/mailer/mail-queue.service";
 import { EmailTemplateService } from "./email-template.service";
 import { OpsSettingsService } from "./ops-settings.service";
@@ -156,7 +157,8 @@ export class CommsSchedulerService implements OnModuleInit {
   private async sendDigests(): Promise<number> {
     const hours = (await this.ops.digestIntervalHours()) ?? 0;
     if (hours <= 0) return 0;
-    const since = new Date(Date.now() - hours * 3_600_000);
+    const now = new Date();
+    const since = new Date(now.getTime() - hours * 3_600_000);
     const boards = await this.prisma.board.findMany({
       where: {
         deletedAt: null,
@@ -166,7 +168,7 @@ export class CommsSchedulerService implements OnModuleInit {
         id: true,
         title: true,
         members: {
-          where: { acceptedAt: { not: null } },
+          where: activeMembershipWhere(now),
           select: {
             user: {
               select: {
@@ -222,7 +224,12 @@ export class CommsSchedulerService implements OnModuleInit {
         id: true,
         title: true,
         dueDate: true,
-        column: { select: { board: { select: { title: true } } } },
+        column: {
+          select: {
+            boardId: true,
+            board: { select: { title: true } },
+          },
+        },
         assignee: {
           select: {
             id: true,
@@ -233,6 +240,10 @@ export class CommsSchedulerService implements OnModuleInit {
         },
       },
     });
+    // B5 (TASK-147): only an *active* member may be reminded. A removed or
+    // expired assignee still holds the card's `assigneeId`, so the address is
+    // resolved against current membership in one batched query, not per card.
+    const memberKeys = await this.activeMemberKeys(cards, now);
     const byUser = new Map<
       string,
       {
@@ -251,6 +262,7 @@ export class CommsSchedulerService implements OnModuleInit {
         continue;
       }
       if (!card.dueDate) continue;
+      if (!memberKeys.has(`${card.column.boardId}:${assignee.id}`)) continue;
       const entry = byUser.get(assignee.id) ?? {
         email: assignee.email,
         items: [],
@@ -302,6 +314,37 @@ export class CommsSchedulerService implements OnModuleInit {
       sent += 1;
     }
     return sent;
+  }
+
+  /**
+   * The `boardId:userId` pairs among `cards` that are still active members
+   * (TASK-147, B5). One batched query for the whole due-reminder run; the
+   * result is a Set so the per-card loop is O(1).
+   */
+  private async activeMemberKeys(
+    cards: Array<{
+      column: { boardId: string };
+      assignee: { id: string } | null;
+    }>,
+    now: Date,
+  ): Promise<Set<string>> {
+    const boardIds = new Set<string>();
+    const userIds = new Set<string>();
+    for (const card of cards) {
+      if (!card.assignee) continue;
+      boardIds.add(card.column.boardId);
+      userIds.add(card.assignee.id);
+    }
+    if (boardIds.size === 0 || userIds.size === 0) return new Set();
+    const members = await this.prisma.boardMember.findMany({
+      where: {
+        boardId: { in: [...boardIds] },
+        userId: { in: [...userIds] },
+        ...activeMembershipWhere(now),
+      },
+      select: { boardId: true, userId: true },
+    });
+    return new Set(members.map((m) => `${m.boardId}:${m.userId}`));
   }
 
   async stats(): Promise<QueueStats> {

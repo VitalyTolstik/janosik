@@ -77,18 +77,7 @@ export class AdminAuthService {
 
     const valid = await argonVerify(admin.passwordHash, dto.password);
     if (!valid) {
-      const failedLogins = admin.failedLogins + 1;
-      const locked =
-        failedLogins >= ADMIN_MAX_FAILED_LOGINS
-          ? new Date(Date.now() + ADMIN_LOCKOUT_MS)
-          : null;
-      await this.prisma.adminUser.update({
-        where: { id: admin.id },
-        data: { failedLogins, lockedUntil: locked },
-      });
-      await this.auditLoginFailed(dto.email, admin.id, "wrong password", {
-        failedLogins,
-      });
+      await this.registerFailedLogin(admin, "wrong password");
       throw new UnauthorizedException("Invalid credentials");
     }
 
@@ -110,13 +99,16 @@ export class AdminAuthService {
     // Two-factor (TASK-65): when enabled, the password alone is not enough.
     // `code: "totp_required"` lets the login screen know it must reveal the
     // one-time-code field (as opposed to a plain wrong-password 401).
+    // TASK-147 (B18): a wrong code feeds the same lockout as a wrong password
+    // — otherwise a valid password plus unlimited 6-digit guesses is open —
+    // and a code is single-use (SecurityService replays reject it).
     const totpSecret = await this.security.requiredSecret(admin.id);
     if (totpSecret) {
-      if (
-        !dto.totpCode ||
-        !this.security.verifyCode(totpSecret, dto.totpCode)
-      ) {
-        await this.auditLoginFailed(dto.email, admin.id, "2fa required");
+      const codeValid = dto.totpCode
+        ? this.security.verifyCode(totpSecret, dto.totpCode, admin.id)
+        : false;
+      if (!codeValid) {
+        await this.registerFailedLogin(admin, "2fa required");
         throw new UnauthorizedException({
           message: "A valid two-factor code is required",
           code: "totp_required",
@@ -293,6 +285,29 @@ export class AdminAuthService {
         action: "admin.login_failed",
         details: { reason, ...details },
       },
+    });
+  }
+
+  /**
+   * Counts a failed password *or* two-factor attempt and arms the lockout
+   * (TASK-147, B18). Both gates share one counter, so a correct password plus
+   * guessed TOTP codes cannot outlast the brute-force budget.
+   */
+  private async registerFailedLogin(
+    admin: AdminUser,
+    reason: string,
+  ): Promise<void> {
+    const failedLogins = admin.failedLogins + 1;
+    const lockedUntil =
+      failedLogins >= ADMIN_MAX_FAILED_LOGINS
+        ? new Date(Date.now() + ADMIN_LOCKOUT_MS)
+        : null;
+    await this.prisma.adminUser.update({
+      where: { id: admin.id },
+      data: { failedLogins, lockedUntil },
+    });
+    await this.auditLoginFailed(admin.email, admin.id, reason, {
+      failedLogins,
     });
   }
 
