@@ -385,6 +385,16 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const sync = syncRef.current;
   /* eslint-enable react-hooks/refs */
 
+  /**
+   * Outcomes already handled by a dispatch handler. A coalesced quiet send
+   * resolves every folded waiter with the same outcome object; the failure
+   * side effects (one toast, one rollback) must run once, not once per
+   * waiter (TASK-147 follow-up). `ServerSync` resolves the newest waiter
+   * first, so it is the one that acts — and its command id is the one that
+   * was actually sent (so its history step reverts the whole coalesced run).
+   */
+  const handledOutcomesRef = useRef(new WeakSet<object>());
+
   // Stops async hydration/refetch from applying after unmount (logout).
   // StrictMode runs setup → cleanup → setup on mount: `aliveRef` must be
   // re-armed and the queue revived, or the second mount would stay stuck on
@@ -1298,6 +1308,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       if (!serverMode) return;
       bumpEpoch(boardId);
       void sync.enqueue(boardId, scoped).then((outcome) => {
+        // One coalesced send → one set of side effects (see the ref's note).
+        if (handledOutcomesRef.current.has(outcome)) {
+          drainRefetch(boardId);
+          return;
+        }
+        handledOutcomesRef.current.add(outcome);
         if (outcome.ok) {
           mergeVersions(boardId, outcome.versions);
           // The command is on the server now — the open card's history can

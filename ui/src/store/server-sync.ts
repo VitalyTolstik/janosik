@@ -225,7 +225,13 @@ export class ServerSync {
     // Quiet edits are last-write-wins per §7.0: no version preconditions are
     // attached (only undo/redo of text carries them).
     const outcome = this.sendNow(entry.boardId, entry.action);
-    for (const waiter of entry.waiters) void outcome.then(waiter);
+    // Resolve the newest waiter first: the merged patch carries its command
+    // id, so it is the only waiter whose history step matches this send. The
+    // caller dedupes on the shared outcome object, so the folded waiters do
+    // not repeat the failure toast/rollback (TASK-147 follow-up).
+    for (let index = entry.waiters.length - 1; index >= 0; index -= 1) {
+      void outcome.then(entry.waiters[index]);
+    }
   }
 
   /** All coalesced quiet edits of one board, in one go. */
