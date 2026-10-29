@@ -906,11 +906,20 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     }
 
     case "DELETE_LABEL": {
+      // TASK-156: only the links of live/archived cards — exactly the cards
+      // in the reducer's state — are removed. Links of soft-deleted cards
+      // are kept, the same way DELETE_CARD/DELETE_COLUMN keep them: that
+      // card row is the restore record, and hard-deleting its links here
+      // would strip the label from a card revived later. The join rows of
+      // soft-deleted cards are invisible in the aggregate anyway (the
+      // label itself is soft-deleted below).
       const links = await tx.cardLabel.findMany({
-        where: { labelId: action.labelId },
+        where: { labelId: action.labelId, card: { deletedAt: null } },
         select: { cardId: true },
       });
-      await tx.cardLabel.deleteMany({ where: { labelId: action.labelId } });
+      await tx.cardLabel.deleteMany({
+        where: { labelId: action.labelId, card: { deletedAt: null } },
+      });
       await tx.label.update({
         where: { id: action.labelId },
         data: { deletedAt: new Date(ctx.at), version: { increment: 1 } },
@@ -992,8 +1001,12 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       const card = cardOf(after, action.cardId);
       if (!card) return [boardTouch];
       const now = new Date(ctx.at);
+      // TASK-156 (item 2 remainder): only the checklist's live items are
+      // part of this deletion. A previously deleted item must keep its own
+      // `deletedAt` — restamping it would shift its retention window (and
+      // a later admin restore would resurrect it as part of this op).
       const items = await tx.checklistItem.findMany({
-        where: { checklistId: action.checklistId },
+        where: { checklistId: action.checklistId, deletedAt: null },
         select: { id: true },
       });
       await tx.checklistItem.updateMany({

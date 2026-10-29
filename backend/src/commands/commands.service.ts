@@ -150,6 +150,17 @@ const RESTORE_ACTIONS = new Set<string>([
 export const COMMAND_DELTA_MAX = 5_000;
 
 /**
+ * TASK-156 (item 17): the ceiling the internal `allowOversize` bypass may
+ * reach — the companion of the shared `MAX_COMMAND_BYTES` (2 MiB) client cap.
+ * Internal admin restores pack a whole column's snapshot into one
+ * `RESTORE_COLUMN` (~6 MB for a full column of large cards), which must not
+ * 413 — but the bypass still may not be unlimited: everything above this
+ * lands in `Command.action` JSONB and in one SSE frame per subscriber, so it
+ * stays finite (8 MiB, 4× the client cap) and everything larger is a 413.
+ */
+export const MAX_COMMAND_BYTES_INTERNAL = 8 * 1024 * 1024;
+
+/**
  * B-5: how far a client's `action.at` may drift from the server clock and
  * still be trusted. The reducer turns `at` into `createdAt`/`updatedAt`/
  * `deletedAt`/`archivedAt`; an unbounded value let a client backdate a
@@ -190,12 +201,17 @@ export class CommandsService {
   ): Promise<CommandResponse> {
     // An oversized action is refused before anything else runs (TASK-30.2):
     // the writers would happily persist megabytes of snapshot/activity ids.
-    // Internal admin restores may exceed it (RESTORE_COLUMN carries a whole
-    // column's snapshot, TASK-156); the caller is already trusted.
+    // Internal admin restores may exceed the client cap (RESTORE_COLUMN
+    // carries a whole column's snapshot, TASK-156) but not the internal one
+    // — the caller is trusted, the JSONB row and the SSE frame are not.
     const bytes = Buffer.byteLength(JSON.stringify(dto.action), "utf8");
-    if (options.allowOversize !== true && bytes > MAX_COMMAND_BYTES) {
+    const cap =
+      options.allowOversize === true
+        ? MAX_COMMAND_BYTES_INTERNAL
+        : MAX_COMMAND_BYTES;
+    if (bytes > cap) {
       throw new PayloadTooLargeException({
-        message: `Command is too large (${bytes} bytes, max ${MAX_COMMAND_BYTES})`,
+        message: `Command is too large (${bytes} bytes, max ${cap})`,
         field: "action",
       });
     }

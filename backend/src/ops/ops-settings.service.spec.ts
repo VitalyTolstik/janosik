@@ -57,4 +57,32 @@ describe("OpsSettingsService cache", () => {
     expect(prisma.opsSettings.findUnique).toHaveBeenCalledTimes(2);
     expect(prisma.opsSettings.upsert).toHaveBeenCalledTimes(1);
   });
+
+  it("an in-flight read resolving after invalidate() must not overwrite the fresh cache (TASK-156, item 42)", async () => {
+    const prisma = makePrisma();
+    const service = new OpsSettingsService(prismaOf(prisma));
+    const fresh = { ...prisma.row, maintenanceMode: true };
+
+    // A cold-cache read whose DB round-trip is still in flight…
+    let resolveStale: ((row: typeof prisma.row) => void) | undefined;
+    const staleRead = new Promise<typeof prisma.row>((resolve) => {
+      resolveStale = resolve;
+    });
+    prisma.opsSettings.findUnique
+      .mockImplementationOnce(() => staleRead)
+      .mockResolvedValue(fresh);
+    const stale = service.maintenance();
+
+    // …while a panel write lands and warms the cache with the fresh row…
+    await service.update({ maintenanceMode: true }, "owner@example.com");
+
+    // …and only now does the stale row arrive, after `invalidate()` ran.
+    resolveStale?.(prisma.row);
+    await expect(stale).resolves.toMatchObject({ mode: false });
+
+    // The row the update wrote must still own the cache — the stale
+    // in-flight read may answer its own caller, but must not overwrite.
+    await expect(service.maintenance()).resolves.toMatchObject({ mode: true });
+    expect(prisma.opsSettings.findUnique).toHaveBeenCalledTimes(2);
+  });
 });

@@ -1107,6 +1107,81 @@ describe("Commands API (e2e)", () => {
       );
     });
 
+    it("repoints an archived card of a deleted column at the orphan column so the column can purge (TASK-156, item 21)", async () => {
+      const boardId = await createBoard("Orphan purge board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-oc",
+          title: "OC",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-oc1",
+          columnId: "col-oc",
+          title: "Archived survivor",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, { type: "ARCHIVE_CARD", cardId: "card-oc1" }),
+      );
+
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, { type: "DELETE_COLUMN", columnId: "col-oc" }),
+      );
+
+      // The archived card stays live, repointed at the invisible orphan
+      // column instead of the soft-deleted one…
+      const archived = await prisma.card.findUnique({
+        where: { id: "card-oc1" },
+      });
+      expect(archived?.deletedAt).toBeNull();
+      expect(archived?.columnId).toBe(`orphan:${boardId}`);
+      // …and the orphan column itself is a soft-deleted parking spot.
+      const orphan = await prisma.column.findUnique({
+        where: { id: `orphan:${boardId}` },
+      });
+      expect(orphan?.deletedAt).not.toBeNull();
+
+      // The aggregate still holds the card in `cards` and in no column,
+      // and the orphan column never surfaces in it.
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.cards["card-oc1"]?.archivedAt).toEqual(
+        expect.any(Number),
+      );
+      expect(
+        aggregate.columns.every((c) => !c.cardIds.includes("card-oc1")),
+      ).toBe(true);
+      expect(aggregate.columns.map((c) => c.id)).not.toContain(
+        `orphan:${boardId}`,
+      );
+
+      // Purgeable (the point of the repoint): no card of any state
+      // references the deleted column any more, so once its retention
+      // window passes, the sweep's exact condition takes it.
+      expect(await prisma.card.count({ where: { columnId: "col-oc" } })).toBe(
+        0,
+      );
+      const cutoff = new Date(Date.now() - 40 * 86_400_000);
+      await prisma.column.update({
+        where: { id: "col-oc" },
+        data: { deletedAt: cutoff },
+      });
+      const swept = await prisma.column.deleteMany({
+        where: { deletedAt: { not: null, lte: cutoff }, cards: { none: {} } },
+      });
+      expect(swept.count).toBeGreaterThanOrEqual(1);
+      expect(
+        await prisma.column.findUnique({ where: { id: "col-oc" } }),
+      ).toBeNull();
+    });
+
     it("blocks unarchive on a WIP-limited column and honours UNARCHIVE_CARD.index", async () => {
       const boardId = await createBoard("Unarchive board");
       await apply(

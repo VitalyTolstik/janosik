@@ -257,6 +257,68 @@ describe("Invitations API (e2e)", () => {
     expect(rows).toBe(1);
   });
 
+  it("revives a pending invite whose TTL expired instead of a silent no-op (TASK-156, item 37)", async () => {
+    const boardId = await createBoard("Revive expired board");
+    // A lapsed VIEWER invite: invisible in the feed, but the row blocks a
+    // fresh one until the sweep reclaims it.
+    await server()
+      .post(`/api/v1/boards/${boardId}/members`)
+      .set(auth(ownerToken))
+      .send({
+        email: INVITEE_EMAIL,
+        role: "VIEWER",
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      })
+      .expect(201);
+    expect(await invitationsFor(inviteeToken, boardId)).toHaveLength(0);
+
+    // Re-invite with a fresh TTL: same masked 201, but the row is revived
+    // with the new TTL/inviter instead of answering nothing.
+    await server()
+      .post(`/api/v1/boards/${boardId}/members`)
+      .set(auth(ownerToken))
+      .send({
+        email: INVITEE_EMAIL,
+        role: "VIEWER",
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      })
+      .expect(201);
+
+    const rows = await prisma.boardMember.findMany({
+      where: { boardId, acceptedAt: null },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].role).toBe("VIEWER");
+    expect(rows[0].expiresAt?.getTime()).toBeGreaterThan(Date.now());
+    // Actionable again: the feed shows the invite once more.
+    const revived = await invitationsFor(inviteeToken, boardId);
+    expect(revived).toHaveLength(1);
+    expect(revived[0].role).toBe("VIEWER");
+  });
+
+  it("updates the role of a still-pending invite instead of a silent no-op (TASK-156, item 37)", async () => {
+    const boardId = await createBoard("Revive role board");
+    await invite(boardId, INVITEE_EMAIL, "MEMBER");
+
+    // Same pending invitee, different role: the invite must carry the new
+    // role (and drop the TTL the old role never had), not swallow it.
+    await server()
+      .post(`/api/v1/boards/${boardId}/members`)
+      .set(auth(ownerToken))
+      .send({ email: INVITEE_EMAIL, role: "ADMIN" })
+      .expect(201);
+
+    const rows = await prisma.boardMember.findMany({
+      where: { boardId, acceptedAt: null },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].role).toBe("ADMIN");
+    expect(rows[0].expiresAt).toBeNull();
+    const feed = await invitationsFor(inviteeToken, boardId);
+    expect(feed).toHaveLength(1);
+    expect(feed[0].role).toBe("ADMIN");
+  });
+
   it("ignores pending ADMINs for the last-ADMIN guard", async () => {
     const boardId = await createBoard("Last admin board");
     await invite(boardId, INVITEE_EMAIL, "ADMIN");

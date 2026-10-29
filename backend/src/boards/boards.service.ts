@@ -336,20 +336,27 @@ export class BoardsService {
         });
         if (existing) {
           if (existing.acceptedAt === null) {
-            // An expired pending invite is invisible in the feed but still
-            // blocks a fresh one until the sweep (TASK-156): revive the row
-            // with the new role/TTL instead of a silent no-op.
-            if (
+            // A pending invite must not swallow a material change
+            // (TASK-156, item 37): an expired one is invisible in the feed
+            // but still blocks a fresh row until the sweep, and a repeat
+            // invite with a different role/TTL used to be a silent no-op —
+            // the invitee never saw the new role. Revive the row with the
+            // new role/TTL/inviter instead. Only a truly identical pending
+            // invite stays an idempotent no-op — a 409 here would tell the
+            // inviter the account exists.
+            const expired =
               existing.expiresAt !== null &&
-              existing.expiresAt.getTime() <= Date.now()
-            ) {
+              existing.expiresAt.getTime() <= Date.now();
+            const roleChanged = existing.role !== dto.role;
+            const ttlChanged =
+              (expiresAt?.getTime() ?? null) !==
+              (existing.expiresAt?.getTime() ?? null);
+            if (expired || roleChanged || ttlChanged) {
               await tx.boardMember.update({
                 where: { id: existing.id },
                 data: { role: dto.role, expiresAt, invitedById: actorId },
               });
             }
-            // A repeat invite of a still-pending invitee is an idempotent
-            // no-op — a 409 here would tell the inviter the account exists.
             return null;
           }
           throw new ConflictException("User is already a board member");
