@@ -2973,6 +2973,10 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   неразрешённом конфликте (черновик в per-card `Map`, восстановление при
   открытии, «Keep mine»/«Reload» его чистят). Тесты: `server-sync.test.ts`,
   `CardDialog.conflict.test.tsx`.
+- **Дополнено (аудит 2026-10-29):** `conflictedDrafts` ключуется `board:card`
+  (нет коллизий между досками); провал коалесцированного отправления
+  обрабатывается один раз (одно сообщение/откат) — waiter'ы резолвятся одним
+  outcome, дедуп в `BoardContext`; тест на порядок резолва.
 
 #### TASK-145 — `presence-consistency` · Presence не врёт и самовосстанавливается
 
@@ -3005,6 +3009,12 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 - **Остаётся:** общий presence-store в Redis (HSET/Lua) для сходимости ростера на
   нескольких нодах — сейчас многонодный режим нельзя включать с ожиданием полного
   presence (нода пишет warning при `usingRedis`).
+- **Дополнено (аудит 2026-10-29):** `clientId`, занятый другим пользователем,
+  теперь `409 client_id_taken` → UI берёт новый id и переподключается, а не
+  «отзывает доступ» (не сбрасывает доску); `reconnect()` форсирует мгновенное
+  переподключение и на живом стриме; поздний ping `410` старой доски не
+  реконнектит новую; `epochs` освобождается вместе с пустой доской; SSE-парсер
+  ограничен по размеру буфера.
 
 #### TASK-146 — `resource-limits` · Кэпы на SSE, команды, загрузки, шары
 
@@ -3029,6 +3039,12 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   `commands-board-level.e2e-spec`, `attachments`/`board-share` e2e.
 - **Остаётся:** temp-file uploads — вынесено в **TASK-155**; Redis-лимитер шары
   на несколько нод (сейчас лимит per-process, на N нодах ×N).
+- **Дополнено (аудит 2026-10-29):** `parseSince` считается до `reserveSubscriber`
+  (нет утечки слота на `400`); кэп `ifMatchVersions` проверяется до advisory-lock;
+  admission (instance/board) добавлен и на публичный SSE-шар (`userId=null`,
+  per-user не применяется); upload-rate вынесен в `UploadRateGuard` до буферизации
+  multer; share-throttle — честный LRU. Тесты: events e2e (нет утечки слота),
+  `realtime.service.spec`, `upload-limiter.spec`, `share-throttler.guard.spec`.
 
 #### TASK-147 — `security-hardening` · Auth, доступ, секреты
 
@@ -3064,6 +3080,9 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   лог писем не содержит тела/кодов. Тесты: unit 249, e2e 284.
 - **Остаётся:** общий presence-store в Redis (TASK-145) — не в объёме этой задачи;
   per-node TOTP-replay и IP-лимитер шары (см. TASK-146) остаются per-process.
+- **Дополнено (аудит 2026-10-29):** тема письма (несёт код подтверждения) тоже
+  не логируется в production; квикстарты `README`/`INSTALL-BY-OS`/self-hosting
+  (en/ru) и таблицы дефолтов приведены к `COOKIE_SECURE=true`.
 
 #### TASK-148 — `retention-and-indexes` · Очистка, индексы, очереди не копятся
 
