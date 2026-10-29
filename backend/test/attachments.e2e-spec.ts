@@ -8,6 +8,7 @@ import { randomUUID } from "crypto";
 import { AppModule } from "@/app.module";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { setupApp } from "@/common/app-setup";
+import { StorageService } from "@/attachments/storage.service";
 
 const PASSWORD = "Password123!";
 
@@ -241,6 +242,29 @@ describe("Attachments (TASK-47)", () => {
         contentType: "application/octet-stream",
       })
       .expect(413);
+  });
+
+  it("leaves no temp scratch behind a rejected upload (TASK-156)", async () => {
+    const storage = app.get(StorageService);
+
+    await server()
+      .post(`/api/v1/cards/${cardId}/attachments`)
+      .set(auth(admin.token))
+      .attach("file", Buffer.alloc(26_214_401, 7), {
+        filename: "too-big.bin",
+        contentType: "application/octet-stream",
+      })
+      .expect(413);
+    await server()
+      .post(`/api/v1/cards/${cardId}/attachments`)
+      .set(auth(admin.token))
+      .attach("file", Buffer.from("<html>no</html>"), {
+        filename: "fake.png",
+        contentType: "image/png",
+      })
+      .expect(400);
+
+    await expect(storage.listTempBlobs()).resolves.toEqual([]);
   });
 
   it("refuses content whose bytes contradict the declared type (TASK-76)", async () => {

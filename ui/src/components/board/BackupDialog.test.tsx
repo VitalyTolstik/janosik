@@ -23,6 +23,12 @@ vi.mock("@/utils/backup", async (importOriginal) => {
   return { ...actual, createBackup: vi.fn().mockResolvedValue(undefined) };
 });
 
+const mode = vi.hoisted(() => ({ server: false }));
+vi.mock("@/api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/client")>();
+  return { ...actual, isApiEnabled: () => mode.server };
+});
+
 /**
  * Smoke tests for the automatic-backups browser (T-8): it lists stored
  * snapshots, restores one after the inline confirmation, and deletes one.
@@ -119,6 +125,24 @@ describe("BackupDialog", () => {
     await waitFor(() =>
       expect(screen.getByText("Backup restored")).toBeInTheDocument(),
     );
+  });
+
+  it("refuses to restore in server mode (TASK-156)", async () => {
+    await seedBackup(boardState());
+    mode.server = true;
+    try {
+      renderDialog();
+      await screen.findAllByTestId("backup-row");
+
+      const restore = screen.getByRole("button", { name: "Restore" });
+      expect(restore).toBeDisabled();
+      expect(restore).toHaveAttribute(
+        "title",
+        expect.stringContaining("unavailable in server mode"),
+      );
+    } finally {
+      mode.server = false;
+    }
   });
 
   it("deletes a snapshot", async () => {

@@ -605,36 +605,85 @@ export class MaintenanceService {
   }
 
   /**
+   * Every blob name still referenced by a row, read in bounded pages
+   * (TASK-156) instead of one unbounded `findMany` per table.
+   */
+  private async referencedBlobs(): Promise<Set<string>> {
+    const referenced = new Set<string>();
+
+    let cursor: string | undefined;
+    for (;;) {
+      const rows = await this.prisma.attachment.findMany({
+        select: {
+          id: true,
+          storedName: true,
+          thumbnailName: true,
+          posterName: true,
+        },
+        orderBy: { id: "asc" },
+        take: PURGE_CHUNK,
+        ...(cursor !== undefined ? { cursor: { id: cursor }, skip: 1 } : {}),
+      });
+      for (const row of rows) {
+        for (const name of [
+          row.storedName,
+          row.thumbnailName,
+          row.posterName,
+        ]) {
+          if (name) referenced.add(name);
+        }
+      }
+      if (rows.length < PURGE_CHUNK) break;
+      cursor = rows[rows.length - 1]?.id;
+      if (cursor === undefined) break;
+    }
+
+    cursor = undefined;
+    for (;;) {
+      const rows: Array<{ id: string; avatarPath: string | null }> =
+        await this.prisma.user.findMany({
+          where: { avatarPath: { not: null } },
+          select: { id: true, avatarPath: true },
+          orderBy: { id: "asc" },
+          take: PURGE_CHUNK,
+          ...(cursor !== undefined ? { cursor: { id: cursor }, skip: 1 } : {}),
+        });
+      for (const user of rows) {
+        if (user.avatarPath) referenced.add(user.avatarPath);
+      }
+      if (rows.length < PURGE_CHUNK) break;
+      cursor = rows[rows.length - 1]?.id;
+      if (cursor === undefined) break;
+    }
+
+    cursor = undefined;
+    for (;;) {
+      const rows: Array<{ id: string; storedName: string | null }> =
+        await this.prisma.dataExport.findMany({
+          where: { storedName: { not: null } },
+          select: { id: true, storedName: true },
+          orderBy: { id: "asc" },
+          take: PURGE_CHUNK,
+          ...(cursor !== undefined ? { cursor: { id: cursor }, skip: 1 } : {}),
+        });
+      for (const row of rows) {
+        if (row.storedName) referenced.add(row.storedName);
+      }
+      if (rows.length < PURGE_CHUNK) break;
+      cursor = rows[rows.length - 1]?.id;
+      if (cursor === undefined) break;
+    }
+
+    return referenced;
+  }
+
+  /**
    * Blobs no row points at anymore (failed uploads, missed deletes), older
    * than the grace window (TASK-77), plus the `.tmp-*` scratch files ffmpeg
    * leaves behind when a derive/encode is killed (TASK-107/OOM, TASK-148).
    */
   async sweepOrphanBlobs(): Promise<number> {
-    const [attachments, users, exports] = await Promise.all([
-      this.prisma.attachment.findMany({
-        select: { storedName: true, thumbnailName: true, posterName: true },
-      }),
-      this.prisma.user.findMany({
-        where: { avatarPath: { not: null } },
-        select: { avatarPath: true },
-      }),
-      this.prisma.dataExport.findMany({
-        where: { storedName: { not: null } },
-        select: { storedName: true },
-      }),
-    ]);
-    const referenced = new Set<string>();
-    for (const row of attachments) {
-      for (const name of [row.storedName, row.thumbnailName, row.posterName]) {
-        if (name) referenced.add(name);
-      }
-    }
-    for (const user of users) {
-      if (user.avatarPath) referenced.add(user.avatarPath);
-    }
-    for (const row of exports) {
-      if (row.storedName) referenced.add(row.storedName);
-    }
+    const referenced = await this.referencedBlobs();
     const blobs = await this.storage.listBlobs();
     // Spare anything written inside the grace window: its row may still be
     // in flight (blobs land before the DB commit — TASK-77).

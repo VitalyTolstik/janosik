@@ -354,6 +354,17 @@ describe("Activity & comments API (e2e)", () => {
         .get(`/api/v1/boards/${boardId}/activity?cursor=1:c:not-a-seq`)
         .set(auth(adminToken))
         .expect(400);
+      // TASK-156: `bigint`/Date overflow is a 400 here, never a database 500.
+      await server()
+        .get(
+          `/api/v1/boards/${boardId}/activity?cursor=1:c:9223372036854775808`,
+        )
+        .set(auth(adminToken))
+        .expect(400);
+      await server()
+        .get(`/api/v1/boards/${boardId}/activity?cursor=8640000000000001:a:x`)
+        .set(auth(adminToken))
+        .expect(400);
     });
   });
 

@@ -34,3 +34,21 @@ describe("common notification labels (H-1)", () => {
     }
   });
 });
+
+describe("TASK-156 conflict and access announcements", () => {
+  it("resolves the title-conflict and deleted-board strings in both locales", () => {
+    for (const key of [
+      "card.titleConflict",
+      "card.descriptionConflict",
+      "card.descriptionConflictReload",
+      "card.descriptionConflictKeep",
+      "board.deleted",
+      "dueDate.hoursLabel",
+      "dueDate.minutesLabel",
+    ]) {
+      for (const [locale, catalog] of Object.entries(CATALOGS)) {
+        expect(catalog[key], `${locale}:${key}`).toBeTruthy();
+      }
+    }
+  });
+});

@@ -4,6 +4,7 @@ import type { Board, Card } from "@janosik/shared";
 import {
   cardLinkIndex,
   isPairLinked,
+  linkSignature,
   suggestLinkTargets,
   wouldCreateCycle,
 } from "./links";
@@ -84,6 +85,23 @@ describe("cardLinkIndex", () => {
     expect(cardLinkIndex(cards)).toBe(first);
     const next = { ...cards };
     expect(cardLinkIndex(next)).not.toBe(first);
+  });
+});
+
+describe("linkSignature", () => {
+  it("reuses the snapshot signature and invalidates on a new snapshot", () => {
+    const { cards } = fixture();
+    const first = linkSignature(cards);
+    expect(linkSignature(cards)).toBe(first);
+
+    // A restore rebuilds the cards map: the new object must not keep the
+    // old signature (TASK-156).
+    const restored = { ...cards };
+    restored["c-1"] = card("c-1", "Zebra", {
+      links: [{ id: "lk-9", type: "duplicates", targetCardId: "c-4" }],
+    });
+    expect(linkSignature(restored)).not.toBe(first);
+    expect(linkSignature(restored)).toContain("lk-9:duplicates:c-4");
   });
 });
 
