@@ -6,6 +6,7 @@ import { DndBoard } from "@/components/board/DndBoard";
 // Calendar/table render only after a view switch — lazy chunks (TASK-34).
 import { CalendarView, TableView } from "@/components/board/views-lazy";
 import { CardDialog } from "@/components/board/CardDialog";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ViewSwitcher, type BoardView } from "@/components/board/ViewSwitcher";
 import { useToast } from "@/components/Toast";
 import { ColumnGlassMenu } from "@/components/board/ColumnGlassMenu";
@@ -202,23 +203,26 @@ export function BoardSection() {
         </div>
       )}
 
-      <CardDialog
-        cardId={openCardId}
-        open={openCardId !== null}
-        readOnly={readOnly}
-        onOpenChange={(open) => {
-          if (!open) {
-            // Mark the closing card so a server commit landing between the
-            // state update and the param cleanup cannot reopen the dialog.
-            closedCardRef.current = openCardId;
-            setOpenCardId(null);
-            // Drop the deep-link param so a refresh doesn't reopen the card.
-            if (searchParams.get("card")) {
-              setSearchParams({}, { replace: true });
+      {/* A crash inside the dialog is contained here (TASK-151, C11). */}
+      <ErrorBoundary compact>
+        <CardDialog
+          cardId={openCardId}
+          open={openCardId !== null}
+          readOnly={readOnly}
+          onOpenChange={(open) => {
+            if (!open) {
+              // Mark the closing card so a server commit landing between the
+              // state update and the param cleanup cannot reopen the dialog.
+              closedCardRef.current = openCardId;
+              setOpenCardId(null);
+              // Drop the deep-link param so a refresh doesn't reopen the card.
+              if (searchParams.get("card")) {
+                setSearchParams({}, { replace: true });
+              }
             }
-          }
-        }}
-      />
+          }}
+        />
+      </ErrorBoundary>
     </main>
   );
 }

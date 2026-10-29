@@ -14,10 +14,12 @@ import {
  * the browser would: the source is evaluated against a fake worker global
  * (`self`, `caches`, `fetch`), and the registered listeners are driven with
  * fake events. That covers exactly what TASK-21.3 fixed — an error response
- * must never be cached as the app shell, and `activate` must drop the
- * previous deploy's cache — plus the off-nominal branches of K-4/K-5/T-7,
- * and TASK-75: the API, authenticated and streaming requests stay out of the
- * cache while the shell's static files keep their cache-first behaviour.
+ * must never be cached as the app shell, and `activate` must not accumulate
+ * caches — plus TASK-151: updates wait for the page and an open old tab can
+ * still fetch its lazy chunks from the kept previous cache. Also the
+ * off-nominal branches of K-4/K-5/T-7, and TASK-75: the API, authenticated
+ * and streaming requests stay out of the cache while the shell's static files
+ * keep their cache-first behaviour.
  */
 
 const SW_SOURCE = path.resolve(import.meta.dirname, "./sw.js");
@@ -106,6 +108,7 @@ interface FakeEvent {
     mode?: string;
     headers?: FakeHeaders;
   };
+  data?: unknown;
   respondWith: (value: Promise<FakeResponse>) => void;
   waitUntil: (value: Promise<unknown>) => void;
 }
@@ -141,13 +144,18 @@ function loadWorker(
   const evaluate = new Function("self", "caches", "fetch", "Response", source);
   evaluate(self, cachesApi, fetchImpl, FakeResponseCtor);
 
-  const dispatch = async (type: string, request?: FakeEvent["request"]) => {
+  const dispatch = async (
+    type: string,
+    request?: FakeEvent["request"],
+    data?: unknown,
+  ) => {
     const listener = listeners.get(type);
     if (!listener) throw new Error(`no ${type} listener registered`);
     const pending: Promise<unknown>[] = [];
     let responded: Promise<FakeResponse> | undefined;
     listener({
       request,
+      data,
       respondWith: (value) => {
         responded = value;
         pending.push(value);
@@ -198,7 +206,28 @@ describe("service worker", () => {
     const installed = caches.store.get(VERSION);
     expect(installed?.has("/")).toBe(true);
     expect(installed?.has(ENTRY_ASSET)).toBe(true);
-    expect(self.skipWaiting).toHaveBeenCalled();
+    // TASK-151 (C5): an update waits for the page, it does not seize open
+    // tabs on install.
+    expect(self.skipWaiting).not.toHaveBeenCalled();
+
+    await dispatch("message", undefined, { type: "SKIP_WAITING" });
+    expect(self.skipWaiting).toHaveBeenCalledTimes(1);
+  });
+
+  it("serves a lazy chunk from the kept previous deploy (TASK-151, C5)", async () => {
+    caches = createCaches({
+      [VERSION]: {},
+      "janosik-previous": {
+        [`${ORIGIN}${ENTRY_ASSET}`]: response("old-chunk"),
+      },
+    });
+    const fetchImpl = vi.fn().mockRejectedValue(new Error("offline"));
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", asset);
+
+    expect(result).toMatchObject({ body: "old-chunk" });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("caches a successful navigation as the app shell", async () => {
@@ -383,9 +412,10 @@ describe("service worker", () => {
     );
   });
 
-  it("drops only previous janosik caches on activate", async () => {
+  it("drops only the older janosik caches on activate", async () => {
     caches = createCaches({
       [VERSION]: {},
+      "janosik-older": { "/assets/old-0.js": response("stale") },
       "janosik-oldbuild": { "/assets/old-1.js": response("stale") },
       "unrelated-app-cache": { "/keep": response("keep") },
     });
@@ -393,8 +423,10 @@ describe("service worker", () => {
 
     await dispatch("activate");
 
+    // The newest previous deploy is the lazy-chunk fallback (TASK-151, C5);
+    // anything older goes, so storage stays bounded.
     expect([...caches.store.keys()].sort()).toEqual(
-      [VERSION, "unrelated-app-cache"].sort(),
+      [VERSION, "janosik-oldbuild", "unrelated-app-cache"].sort(),
     );
     expect(self.clients.claim).toHaveBeenCalled();
   });

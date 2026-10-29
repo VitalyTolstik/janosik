@@ -1622,7 +1622,7 @@ TASK-36 и TASK-37.)*
 | 79 | TASK-148 `retention-and-indexes` ✅ | `main` | §7.14: индексы `deletedAt/expiresAt/dueDate`, sweeps Board/Activity/audit/shares/exports, retry очередей | **Выполнено:** индексы purge/TTL/due (`CONCURRENTLY`-скрипт `db:indexes` + миграция `IF NOT EXISTS`); sweep целых `Board` (доска+фид+лог+шары+блобы), `Activity`, `AdminAuditLog` (`AUDIT_RETENTION_DAYS=365`), отозванных шар (24 ч), `.tmp-*` по grace; `exports`/`media` бросают ошибку пока есть попытки (BullMQ retry); retention-opts у Job Scheduler; GDPR-erase удаляет `DataExport`/бандлы; тесты на каждый sweep. См. §7.14 |
 | 80 | TASK-149 `admin-consistency` ✅ | `main` | §7.14: admin-мутации через команды, `attachmentCount`, импорт батч/атомарность | **Выполнено:** archive/delete/restore карточек и колонок (включая bulk) идут через `CommandsService.apply` от owner — версия, SSE и каскад; `DELETE_CARD`/`DELETE_COLUMN` больше не рвут `CardLabel` (restore пересобирает `labelIds`/чек-листы); бейдж вложений пересчитывается на delete/restore/erase и на revive карточки; импорт — одна транзакция с явным `timeout`, `createMany`-батчи; тесты. См. §7.14 |
 | 81 | TASK-150 `ui-render-perf` ✅ | `main` | §7.14: per-key members, drag strategy, `linkSignature`, CardDialog, focus-diff, анимации | **Выполнено:** `MembersStore` — per-user/per-board подписки (directory reload не ререндерит карточки); dnd `MeasuringStrategy.WhileDragging`/`BeforeDragging`; `linkSignature` кэшируется по снапшоту (WeakMap); заголовок карточки — локальный черновик с тихим коммитом по blur/close (ввод не ререндерит MDXEditor); focus-diff по `updatedAt`/`archivedAt` вместо JSON всей доски; входная анимация только у новых карточек + `prefers-reduced-motion`; тесты изоляции рендера. См. §7.14 |
-| 82 | TASK-151 `pwa-stream-recovery` | `feature/TASK-151-pwa-stream-recovery` | §7.14: SW не убивает старый деплой, SSE-watchdog, 404 доски, `APP_BASE`, restore | деплой/обрыв не ломают доску. См. §7.14 |
+| 82 | TASK-151 `pwa-stream-recovery` ✅ | `main` | §7.14: SW не убивает старый деплой, SSE-watchdog, 404 доски, `APP_BASE`, restore | **Выполнено:** SW ждёт `SKIP_WAITING` (баннер «новая версия» + reload) и хранит прошлый кэш как fallback для старых lazy-chunk; watchdog 90 с без кадров → abort+reconnect; 404 стрима → доска убирается; `cardHref` через `APP_BASE` (`/app/…`); restore бэкапа в server-режиме отключён; compact error boundary на `CardDialog`; тесты. См. §7.14 |
 | 83 | TASK-152 `ui-a11y-polish` | `feature/TASK-152-ui-a11y-polish` | §7.14: tab-order зон, drag-handle/AT, lightbox focus, due-тик, локали | keyboard-only; ru/en. См. §7.14 |
 | 84 | TASK-153 `config-and-observability` | `feature/TASK-153-config-and-observability` | §7.14: `connection_limit`/Postgres, кэш OpsSettings, low-баги, slow-query/requestId | пул и логи под контролем. См. §7.14 |
 | 85 | TASK-154 `mcp-perf-bench` | `feature/TASK-154-mcp-perf-bench` | §7.15: бенч «API напрямую vs MCP», профиль MCP-сервера, точечные оптимизации (keep-alive, меньше read-modify-write, ленивый рендер, батч-тулы) | воспроизводимые цифры латентности/запросов/CPU + вердикт и улучшения без регрессий. См. §7.15 |
@@ -3192,6 +3192,20 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   стрим переподключается; удалённая доска уходит; ссылки на `/app/`; restore не
   дублирует.
 - **Зависимости:** нет.
+- **Выполнено (2026-10-29):** C5 — `install` больше не делает безусловный
+  `skipWaiting`: новый воркер ждёт, страница показывает баннер `UpdatePrompt`
+  («доступна новая версия» → `SKIP_WAITING` → reload). `activate` удаляет только
+  старые кэши, оставляя самый свежий прошлый; cache-first отдаёт статический
+  ассет из прошлого кэша, если в текущем его нет — открытая старая вкладка после
+  деплоя находит свой lazy-chunk, а не `index.html`. C12 — watchdog в
+  `BoardRealtime`: 90 с без кадров (сервер шлёт keep-alive каждые 25 с) →
+  `abort` и reconnect; порог переопределяем `stallMs` в тестах. C13 — фатальный
+  `404` стрима теперь `onAccessRevoked` (доска уходит из списка, не висит).
+  C11 — `ErrorBoundary compact` вокруг `CardDialog`: падение диалога не уносит
+  всё приложение. C9 — `cardHref` строится через `appPath` (`/app/board/…`).
+  C15 — restore бэкапа в server-режиме отключён с пояснением (он POST'ил бы
+  копии как новые доски). Тесты: SW (ожидание update, fallback прошлого кэша,
+  аккуратный activate), watchdog, parity i18n. ui 878 зелёные.
 
 #### TASK-152 — `ui-a11y-polish` · Клавиатура, фокус, локали
 

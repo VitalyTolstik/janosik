@@ -214,6 +214,42 @@ describe("BoardRealtime", () => {
     realtime.stop();
   });
 
+  it("aborts a half-open stream and reconnects (TASK-151, C12)", async () => {
+    const signals: AbortSignal[] = [];
+    const open = vi.fn(
+      (_boardId: string, _since: number, signal: AbortSignal) => {
+        signals.push(signal);
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            // No frames arrive and the connection never reports an error —
+            // exactly the half-open state a fetch reader hangs in.
+            signal.addEventListener("abort", () =>
+              controller.error(new Error("aborted")),
+            );
+          },
+        });
+        return Promise.resolve(stream);
+      },
+    );
+    const realtime = new BoardRealtime({
+      open,
+      onEvent: () => undefined,
+      getSince: () => 0,
+      retryDelayMs: () => 0,
+      stallMs: 20,
+    });
+
+    realtime.watch("b-1");
+    await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(signals[0].aborted).toBe(true), {
+      timeout: 1_000,
+    });
+    await vi.waitFor(() => expect(signals.length).toBeGreaterThan(1), {
+      timeout: 1_000,
+    });
+    realtime.stop();
+  });
+
   it("reports connect/disconnect around each stream", async () => {
     const events: string[] = [];
     const realtime = new BoardRealtime({

@@ -30,6 +30,11 @@ const RELOAD_DELAY_MS = 400;
 
 interface ErrorBoundaryProps {
   children: ReactNode;
+  /**
+   * Inline fallback for a subtree (the card dialog, TASK-151/C11): a crash
+   * there must not replace the whole app with the reset screen.
+   */
+  compact?: boolean;
 }
 
 interface ErrorBoundaryState {
@@ -55,6 +60,7 @@ export class ErrorBoundary extends Component<
 
   render() {
     if (this.state.error !== null) {
+      if (this.props.compact === true) return <CompactFallback />;
       return (
         <ErrorFallback
           confirmingReset={this.state.confirmingReset}
@@ -66,6 +72,25 @@ export class ErrorBoundary extends Component<
     }
     return this.props.children;
   }
+}
+
+/** Small, self-contained fallback for a section/dialog subtree. */
+function CompactFallback() {
+  return (
+    <div
+      role="alert"
+      data-testid="error-compact"
+      className="m-auto flex max-w-xs flex-col items-center gap-3 rounded-xl border border-border/70 bg-card p-5 text-center text-sm shadow-lg"
+    >
+      <p className="text-muted-foreground">
+        This section hit an unexpected error.
+      </p>
+      <Button onClick={() => window.location.reload()}>
+        <RotateCcw className="h-4 w-4" />
+        Reload
+      </Button>
+    </div>
+  );
 }
 
 /**

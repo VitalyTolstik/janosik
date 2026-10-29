@@ -92,33 +92,64 @@ self.addEventListener("install", (event) => {
       .then((cache) => cache.addAll([APP_SHELL_URL, ...PRECACHE_ASSETS]))
       .catch(() => {
         /* first run offline — runtime caching still applies */
-      })
-      /*
-       * Unconditional on purpose: an update applies as soon as the new
-       * worker installs, without an "update available" prompt (out of
-       * scope). Tradeoff: a tab left open across a deploy may briefly mix
-       * the old shell with new assets.
-       */
-      .then(() => self.skipWaiting()),
+      }),
+    // No unconditional `skipWaiting` (TASK-151, C5): a deploy used to take
+    // over open tabs at once, and an old tab asking for its lazy chunk got
+    // the new deploy's `index.html` (200) instead of the chunk → SyntaxError
+    // → the whole app crashed. The page decides when to apply the update
+    // (`{ type: "SKIP_WAITING" }`); the previous cache stays readable below,
+    // so even an old tab that was claimed keeps its chunks.
   );
+});
+
+/** Apply a waiting update on the page's request. */
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter(
-              (key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_VERSION,
-            )
+      .then((keys) => {
+        const stale = keys.filter(
+          (key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_VERSION,
+        );
+        // Keep the newest previous deploy's cache as the chunk fallback and
+        // drop anything older, so storage stays bounded across deploys.
+        const keep = stale.slice(-1);
+        return Promise.all(
+          stale
+            .filter((key) => !keep.includes(key))
             .map((key) => caches.delete(key)),
-        ),
-      )
+        );
+      })
       .then(() => self.clients.claim()),
   );
 });
+
+/** Static shell asset from this deploy or the kept previous one. */
+function matchShellAsset(request) {
+  return caches.open(CACHE_VERSION).then((cache) =>
+    cache.match(request).then((cached) => {
+      if (cached) return cached;
+      return caches
+        .keys()
+        .then((keys) =>
+          Promise.all(
+            keys
+              .filter(
+                (key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_VERSION,
+              )
+              .map((key) =>
+                caches.open(key).then((older) => older.match(request)),
+              ),
+          ),
+        )
+        .then((hits) => hits.find((hit) => hit !== undefined) ?? null);
+    }),
+  );
+}
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
@@ -157,7 +188,7 @@ self.addEventListener("fetch", (event) => {
 
   event.respondWith(
     caches.open(CACHE_VERSION).then((cache) =>
-      cache.match(request).then((cached) => {
+      matchShellAsset(request).then((cached) => {
         if (cached) return cached;
         return fetch(request)
           .then((response) => {

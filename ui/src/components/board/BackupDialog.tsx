@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
+import { isApiEnabled } from "@/api/client";
 import { formatBackupTimestamp } from "@/utils/backup-timestamp";
 import {
   createBackup,
@@ -51,6 +52,9 @@ function BackupContent() {
   const hour12 = useHour12();
   const toast = useToast();
   const { boards, importBoards } = useBoard();
+  // Server mode has no local board list to replace: "restore" would POST the
+  // backup as *new* boards and duplicate everything (TASK-151, C15).
+  const serverMode = isApiEnabled();
   const [backups, setBackups] = useState<BackupMeta[] | null>(null);
   const [confirmRestoreId, setConfirmRestoreId] = useState<number | null>(null);
 
@@ -69,6 +73,10 @@ function BackupContent() {
   }, [refresh]);
 
   const handleRestore = async (id: number) => {
+    if (serverMode) {
+      toast.error(t("data.restoreServerMode"));
+      return;
+    }
     try {
       const restored = await loadBackup(id);
       if (!restored) {
@@ -168,6 +176,10 @@ function BackupContent() {
                         size="icon"
                         className="h-6 w-6 text-muted-foreground hover:text-foreground"
                         aria-label={t("data.restore")}
+                        title={
+                          serverMode ? t("data.restoreServerMode") : undefined
+                        }
+                        disabled={serverMode}
                         onClick={() => setConfirmRestoreId(backup.id)}
                       >
                         <RotateCcw className="h-3.5 w-3.5" />

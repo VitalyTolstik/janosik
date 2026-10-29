@@ -90,6 +90,8 @@ export interface RealtimeOptions {
   getSince: () => number;
   /** Backoff before attempt N (default 1s, 2s, 4s… capped at 30s). */
   retryDelayMs?: (attempt: number) => number;
+  /** Silence before a stream is presumed half-open (default `SSE_STALL_MS`). */
+  stallMs?: number;
   /** A stream opened: the caller starts its presence heartbeat. */
   onConnected?: (boardId: string) => void;
   /** The stream dropped (or stopped): the heartbeat pauses with it. */
@@ -107,6 +109,15 @@ export interface RealtimeOptions {
 /** First retry delay; doubles per attempt up to `MAX_RETRY_MS`. */
 const BASE_RETRY_MS = 1_000;
 const MAX_RETRY_MS = 30_000;
+
+/**
+ * How long a stream may be silent before it is presumed half-open
+ * (TASK-151, C12). The server sends a keep-alive every 25 s
+ * (`sse-timing.ts`), so three missed ones mean the TCP connection died
+ * without an error — a state a browser never reports and the read never
+ * returns from.
+ */
+export const SSE_STALL_MS = 90_000;
 
 export class BoardRealtime {
   private boardId: string | null = null;
@@ -179,11 +190,26 @@ export class BoardRealtime {
         this.clientIdRetries = 0;
         connected = true;
         this.options.onConnected?.(boardId);
-        for await (const event of parseEventStream(stream)) {
-          if (this.stopped || this.boardId !== boardId) return;
-          this.options.onEvent(event);
+        // Watchdog: every delivered frame (commands and the 25 s keep-alive)
+        // refreshes the clock; a half-open stream aborts and reconnects.
+        let lastFrameAt = Date.now();
+        const stallMs = this.options.stallMs ?? SSE_STALL_MS;
+        const watchdog = setInterval(
+          () => {
+            if (Date.now() - lastFrameAt > stallMs) controller.abort();
+          },
+          Math.min(stallMs, 15_000),
+        );
+        try {
+          for await (const event of parseEventStream(stream)) {
+            lastFrameAt = Date.now();
+            if (this.stopped || this.boardId !== boardId) return;
+            this.options.onEvent(event);
+          }
+          // Clean end (server restart, proxy timeout): reconnect at once.
+        } finally {
+          clearInterval(watchdog);
         }
-        // Clean end (server restart, proxy timeout): reconnect at once.
       } catch (error) {
         if (this.stopped || this.boardId !== boardId) return;
         // A taken tab id is recoverable: mint a fresh one and rejoin, rather
@@ -700,7 +726,10 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
       // layer so the app drops to login instead of following a dead stream
       // forever (the refresh already failed inside `openBoardEvents`).
       else if (status === 401) api.onAuthLost?.();
-      // 404 is board-level and has its own path.
+      // TASK-151 (C13): a 404 means the board itself is gone (deleted) — drop
+      // it from the switcher and clear the open board instead of following a
+      // dead stream and showing a "hanging" board.
+      else if (status === 404) host.onAccessRevoked(boardId);
     },
     onClientIdTaken: () => {
       // Someone else holds our tab id: take a new one and rejoin. Not a

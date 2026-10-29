@@ -1,5 +1,7 @@
 import type { MouseEvent } from "react";
 
+import { appPath } from "./app-path";
+
 /**
  * Middle-click / modifier-click card opening (the browser affordances the
  * board surfaces lacked): every card-like element on the board, calendar
@@ -22,7 +24,9 @@ import type { MouseEvent } from "react";
 
 /** The deep link that opens a board with the card dialog up. */
 export function cardHref(boardId: string, cardId: string): string {
-  return `/board/${boardId}?card=${cardId}`;
+  // Site-root-relative (TASK-151, C9): a new tab must land on `/app/…`, not
+  // `/board/…` (which nginx answers with the marketing site / 404).
+  return appPath(`board/${boardId}?card=${cardId}`);
 }
 
 /** True when the click already carries the browser's own open-in-new-tab intent. */

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -29,6 +29,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { routes } from "@/routes";
 import { useI18n } from "@/i18n";
 import { APP_BASE } from "@/utils/app-path";
+import { UPDATE_EVENT, applyServiceWorkerUpdate } from "@/pwa/register-sw";
 
 /**
  * The master panel lives on its own route tree and its own chunk: regular
@@ -224,6 +225,45 @@ function RouteSplash() {
   );
 }
 
+/**
+ * "A new version is ready" banner (TASK-151, C5). The service worker now
+ * waits instead of seizing open tabs; the user decides when to apply it.
+ */
+function UpdatePrompt() {
+  const { t } = useI18n();
+  const [available, setAvailable] = useState(false);
+  useEffect(() => {
+    const onUpdate = () => setAvailable(true);
+    window.addEventListener(UPDATE_EVENT, onUpdate);
+    return () => window.removeEventListener(UPDATE_EVENT, onUpdate);
+  }, []);
+  if (!available) return null;
+  return (
+    <div
+      role="status"
+      data-testid="update-prompt"
+      className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-2.5 text-sm shadow-xl"
+    >
+      <span>{t("app.updateAvailable")}</span>
+      <button
+        type="button"
+        onClick={applyServiceWorkerUpdate}
+        className="inline-flex h-8 items-center rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+      >
+        {t("app.updateReload")}
+      </button>
+      <button
+        type="button"
+        aria-label={t("common.dismissNotification")}
+        onClick={() => setAvailable(false)}
+        className="text-muted-foreground transition-colors hover:text-foreground"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   // First paint is done — drop the preflight kill-switch style (which
   // forced transition:none to avoid a theme-flash) and mark the document
@@ -265,6 +305,7 @@ export default function App() {
                   </BrowserRouter>
                 </TooltipProvider>
               </ErrorBoundary>
+              <UpdatePrompt />
             </ToastProvider>
           </I18nProvider>
         </BoardGlassProvider>
