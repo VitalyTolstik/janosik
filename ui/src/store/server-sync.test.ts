@@ -99,6 +99,68 @@ describe("ServerSync", () => {
     expect(results.every((outcome) => outcome.ok)).toBe(true);
   });
 
+  it("merges coalesced quiet patches by field (C2)", async () => {
+    vi.useFakeTimers();
+    const sent: Array<Record<string, unknown>> = [];
+    const sync = new ServerSync({
+      send: async (_boardId, request) => {
+        sent.push(request.action as unknown as Record<string, unknown>);
+        return okResponse();
+      },
+    });
+
+    const pending = Promise.all([
+      sync.enqueue("b-1", {
+        type: "UPDATE_CARD",
+        cardId: "c-1",
+        description: "Mine",
+        quiet: true,
+        at: 1,
+        commandId: "cd-desc",
+      }),
+      sync.enqueue("b-1", {
+        type: "UPDATE_CARD",
+        cardId: "c-1",
+        title: "New title",
+        quiet: true,
+        at: 2,
+        commandId: "cd-title",
+      }),
+    ]);
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(sent).toHaveLength(1);
+    // Both fields survive; the newest identity/clock fields win.
+    expect(sent[0]).toMatchObject({
+      title: "New title",
+      description: "Mine",
+      commandId: "cd-title",
+      at: 2,
+    });
+    expect((await pending).every((outcome) => outcome.ok)).toBe(true);
+  });
+
+  it("reports a failed coalesced send to every merged waiter", async () => {
+    vi.useFakeTimers();
+    const sync = new ServerSync({
+      send: async () => {
+        throw new ApiError(0, null);
+      },
+    });
+
+    const pending = Promise.all([
+      sync.enqueue("b-1", quietEdit("cd-1", "a")),
+      sync.enqueue("b-1", quietEdit("cd-2", "ab")),
+    ]);
+    await vi.advanceTimersByTimeAsync(400);
+    const results = await pending;
+    expect(
+      results.every(
+        (outcome) => !outcome.ok && outcome.failure.kind === "offline",
+      ),
+    ).toBe(true);
+  });
+
   it("flushes a pending quiet edit before the next command of that board", async () => {
     vi.useFakeTimers();
     const sent: string[] = [];

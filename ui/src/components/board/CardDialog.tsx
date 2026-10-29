@@ -82,6 +82,14 @@ interface CardDialogProps {
 /** Idle gap after the last keystroke that stamps the final `updatedAt`. */
 const QUIET_TOUCH_DELAY_MS = 800;
 
+/**
+ * Description drafts held back because someone else changed the card while
+ * they were being typed (C3). Kept per card, outside the component, so
+ * closing or switching the dialog never overwrites the other writer's newer
+ * text and reopening the card can ask again. Cleared when the user decides.
+ */
+const conflictedDrafts = new Map<string, string>();
+
 /** Four rows of text-sm plus the textarea padding: past this the title scrolls. */
 const TITLE_MAX_HEIGHT = 100;
 
@@ -182,13 +190,27 @@ export function CardDialog({
     conflict: false,
     epoch: 0,
   });
+  // Draft restored from `conflictedDrafts` when this card is reopened with
+  // an unresolved conflict; the editor shows it instead of the stored text
+  // so «Keep mine» still commits what the user typed.
+  const [heldDraft, setHeldDraft] = useState<string | null>(null);
   if (descriptionSync.key !== descriptionKey) {
-    // Another card (or the dialog reopened): start from what is stored.
+    // Another card (or the dialog reopened): start from what is stored —
+    // unless an unresolved conflict draft was kept for this card (C3), in
+    // which case ask again with the user's text restored.
+    const held = descriptionKey
+      ? conflictedDrafts.get(descriptionKey)
+      : undefined;
+    const heldConflicts = held !== undefined && held !== liveDescription;
+    if (held !== undefined && !heldConflicts) {
+      conflictedDrafts.delete(descriptionKey);
+    }
+    setHeldDraft(heldConflicts && held !== undefined ? held : null);
     setDescriptionSync({
       key: descriptionKey,
-      seen: liveDescription,
-      dirty: false,
-      conflict: false,
+      seen: heldConflicts && held !== undefined ? held : liveDescription,
+      dirty: heldConflicts,
+      conflict: heldConflicts,
       epoch: descriptionSync.epoch + 1,
     });
   } else if (
@@ -206,24 +228,50 @@ export function CardDialog({
     );
   }
 
-  const flushStagedDescription = useCallback(() => {
-    const staged = descriptionDraftRef.current;
-    if (!staged) return;
-    descriptionDraftRef.current = null;
-    // Committed by this dialog: the store's new text is not a foreign one.
-    setDescriptionSync((prev) => ({
-      ...prev,
-      seen: staged.value,
-      dirty: false,
-      conflict: false,
-    }));
-    updateCard(staged.cardId, { description: staged.value }, { quiet: true });
-    scheduleTouch(staged.cardId);
-  }, [updateCard]);
+  const flushStagedDescription = useCallback(
+    (force = false) => {
+      const staged = descriptionDraftRef.current;
+      if (!staged) return;
+      if (!force && conflictedDrafts.has(staged.cardId)) {
+        // Unresolved conflict: never overwrite the other writer's newer text
+        // on blur, close, card switch or pagehide (C3). Keep the draft with
+        // the card so reopening it can ask again.
+        conflictedDrafts.set(staged.cardId, staged.value);
+        descriptionDraftRef.current = null;
+        return;
+      }
+      conflictedDrafts.delete(staged.cardId);
+      descriptionDraftRef.current = null;
+      setHeldDraft(null);
+      // Committed by this dialog: the store's new text is not a foreign one.
+      setDescriptionSync((prev) => ({
+        ...prev,
+        seen: staged.value,
+        dirty: false,
+        conflict: false,
+      }));
+      updateCard(
+        staged.cardId,
+        { description: staged.value },
+        {
+          quiet: true,
+        },
+      );
+      scheduleTouch(staged.cardId);
+    },
+    [updateCard],
+  );
   const flushDescriptionRef = useRef(flushStagedDescription);
   useEffect(() => {
     flushDescriptionRef.current = flushStagedDescription;
   }, [flushStagedDescription]);
+  // A conflict detected while typing is sealed into the per-card store, so a
+  // close/switch (which unmounts the editor) cannot drop it (C3).
+  useEffect(() => {
+    if (!descriptionSync.conflict) return;
+    const staged = descriptionDraftRef.current;
+    if (staged !== null) conflictedDrafts.set(staged.cardId, staged.value);
+  }, [descriptionSync.conflict, descriptionSync.epoch, descriptionSync.dirty]);
   // U-3: the provider flushes the draft before the tab hides or unloads and
   // before logout — typing that never blurred must not be lost.
   useEffect(
@@ -233,6 +281,8 @@ export function CardDialog({
   /** Conflict notice: drop my draft and show the stored description. */
   const reloadDescription = () => {
     descriptionDraftRef.current = null;
+    if (cardId) conflictedDrafts.delete(cardId);
+    setHeldDraft(null);
     setDescriptionSync((prev) => ({
       ...prev,
       seen: liveDescription,
@@ -243,6 +293,10 @@ export function CardDialog({
   };
   /** Conflict notice: my draft wins — commit it now, knowingly. */
   const keepMyDescription = () => {
+    if (descriptionDraftRef.current === null && heldDraft !== null && cardId) {
+      // A draft restored from a previous opening of this dialog.
+      descriptionDraftRef.current = { cardId, value: heldDraft };
+    }
     if (descriptionDraftRef.current === null) {
       setDescriptionSync((prev) => ({
         ...prev,
@@ -251,7 +305,7 @@ export function CardDialog({
       }));
       return;
     }
-    flushStagedDescription();
+    flushStagedDescription(true);
   };
   // Paste-embed (Jira-style): every pasted file uploads as a real card
   // attachment AND embeds into the description at the cursor — an image
@@ -547,9 +601,14 @@ export function CardDialog({
                   <DescriptionEditor
                     ref={descriptionEditorRef}
                     key={`${card.id}:${overflowTick}:${descriptionSync.epoch}`}
-                    value={card.description ?? ""}
+                    value={
+                      descriptionSync.conflict && heldDraft !== null
+                        ? heldDraft
+                        : (card.description ?? "")
+                    }
                     readOnly={readOnly}
                     onChange={(description) => {
+                      const clamped = description.slice(0, LIMITS.description);
                       if (description.length > LIMITS.description) {
                         if (!overLimitRef.current) {
                           overLimitRef.current = true;
@@ -557,23 +616,28 @@ export function CardDialog({
                             t("limits.exceeded", { limit: LIMITS.description }),
                           );
                         }
+                        if (descriptionSync.conflict) {
+                          // Unresolved conflict: stage the clamped text and
+                          // never commit behind the other writer's back.
+                          descriptionDraftRef.current = {
+                            cardId: card.id,
+                            value: clamped,
+                          };
+                          conflictedDrafts.set(card.id, clamped);
+                          return;
+                        }
                         // Oversized pastes clamp immediately — this path
                         // still commits right away, staging stays empty.
                         descriptionDraftRef.current = null;
                         setDescriptionSync((prev) => ({
                           ...prev,
-                          seen: description.slice(0, LIMITS.description),
+                          seen: clamped,
                           dirty: false,
                           conflict: false,
                         }));
                         updateCard(
                           card.id,
-                          {
-                            description: description.slice(
-                              0,
-                              LIMITS.description,
-                            ),
-                          },
+                          { description: clamped },
                           { quiet: true },
                         );
                         scheduleTouch(card.id);
@@ -587,6 +651,9 @@ export function CardDialog({
                         cardId: card.id,
                         value: description,
                       };
+                      if (descriptionSync.conflict) {
+                        conflictedDrafts.set(card.id, description);
+                      }
                       if (!descriptionSync.dirty) {
                         setDescriptionSync((prev) =>
                           prev.dirty ? prev : { ...prev, dirty: true },

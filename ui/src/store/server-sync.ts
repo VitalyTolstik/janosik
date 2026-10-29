@@ -14,11 +14,11 @@ import { ApiError } from "@/api/client";
  * flight at a time), so the server applies the same sequence the user saw.
  *
  * Quiet live edits (`UPDATE_CARD {quiet:true}`, one per keystroke) are
- * coalesced per card: only the newest patch is sent, after a short idle
- * window or as soon as anything else for the board (a move, undo, refetch)
- * needs a consistent server state. Superseded patches resolve as success —
- * their text never left the client and the coalesced undo step in the
- * history already covers the whole burst.
+ * coalesced per card: their patches are merged field by field, so a title
+ * and a description typed in the same window both survive, and sent as one
+ * after a short idle window or as soon as anything else for the board (a
+ * move, undo, refetch) needs a consistent server state. The waiters resolve
+ * with the coalesced send's outcome.
  */
 
 /** Why a command did not land on the server. */
@@ -64,6 +64,25 @@ function quietKey(boardId: string, action: BoardAction): string {
   return `${boardId}:${cardId}`;
 }
 
+/**
+ * Merge a newer quiet `UPDATE_CARD` patch into the one already coalescing
+ * for the same card, field by field. A description committed on blur and a
+ * title typed within the next 400 ms must both reach the server — replacing
+ * the whole patch would silently drop the field the newer one does not set
+ * (C2). Only keys the newer patch actually set override; identity and clock
+ * fields (`commandId`, `at`, `activityIds`) always take the newest value.
+ */
+function mergeQuietPatch(
+  previous: BoardAction,
+  next: BoardAction,
+): BoardAction {
+  const merged: Record<string, unknown> = { ...previous };
+  for (const [key, value] of Object.entries(next)) {
+    if (value !== undefined) merged[key] = value;
+  }
+  return merged as unknown as BoardAction;
+}
+
 export class ServerSync {
   private readonly chains = new Map<string, Promise<unknown>>();
   private readonly busy = new Map<string, number>();
@@ -75,8 +94,8 @@ export class ServerSync {
   constructor(private readonly options: ServerSyncOptions) {}
 
   /**
-   * Queue one command. Resolves when the server has answered (or the command
-   * was superseded by a newer quiet patch for the same card).
+   * Queue one command. Resolves when the server has answered — for a quiet
+   * edit, when the coalesced patch it was merged into has been answered.
    */
   enqueue(
     boardId: string,
@@ -150,7 +169,13 @@ export class ServerSync {
    */
   dispose(): void {
     this.disposed = true;
-    for (const entry of this.quiet.values()) clearTimeout(entry.timer);
+    for (const entry of this.quiet.values()) {
+      clearTimeout(entry.timer);
+      // The queue is going away; tell every waiter instead of leaving its
+      // promise pending forever.
+      for (const waiter of entry.waiters)
+        waiter({ ok: false, failure: { kind: "offline" } });
+    }
     this.quiet.clear();
   }
 
@@ -167,11 +192,12 @@ export class ServerSync {
       const key = quietKey(boardId, action);
       const existing = this.quiet.get(key);
       if (existing !== undefined) {
-        // Supersede: the newest patch wins, the older waiters are done.
+        // Merge field by field rather than replace: a title typed while a
+        // description committed in the same window both reach the server
+        // (C2). The waiters keep waiting — they resolve with the coalesced
+        // send's real outcome once their fields are covered by it.
         clearTimeout(existing.timer);
-        for (const waiter of existing.waiters)
-          waiter({ ok: true, versions: {}, seq: 0 });
-        existing.action = action;
+        existing.action = mergeQuietPatch(existing.action, action);
         existing.waiters.push(resolve);
         existing.timer = this.scheduleFlush(key);
         return;

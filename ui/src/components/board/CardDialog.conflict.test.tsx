@@ -139,6 +139,33 @@ describe("CardDialog description vs. changes made elsewhere (U-6)", () => {
     );
   });
 
+  it("keeps the draft per card when closed with an unresolved conflict (C3)", async () => {
+    const { dialog, editor } = await openEditor();
+    fireEvent.change(editor, { target: { value: "Mine" } });
+    fireEvent.click(screen.getByTestId("external-edit"));
+    await within(dialog).findByTestId("card-description-conflict");
+
+    // Closing the dialog must not overwrite theirs with the pending draft.
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(stored()).toBe("Theirs");
+
+    // Reopening asks again and still has my draft to keep.
+    fireEvent.click(screen.getByText(TITLE));
+    const reopened = await screen.findByRole("dialog");
+    const notice = await within(reopened).findByTestId(
+      "card-description-conflict",
+    );
+    const restored = (await within(reopened).findByLabelText(
+      "Description",
+    )) as HTMLTextAreaElement;
+    expect(restored.value).toBe("Mine");
+    fireEvent.click(
+      within(notice).getByTestId("card-description-conflict-keep"),
+    );
+    expect(stored()).toBe("Mine");
+  });
+
   it("«Reload» drops my draft and shows the stored text", async () => {
     const { dialog, editor } = await openEditor();
     fireEvent.change(editor, { target: { value: "Mine" } });
