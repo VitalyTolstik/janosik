@@ -20,7 +20,7 @@ interface Frame {
 }
 
 /**
- * Backend review hardening (FINAL_REVIEW §2): the trust boundaries a swarm
+ * Backend review hardening (review 2026-10-28, §2): the trust boundaries a swarm
  * of untrusted agents leans on, over real HTTP.
  *
  * - B-2 a personal API token is not the whole account;

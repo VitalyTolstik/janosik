@@ -26,8 +26,5 @@ backend/data
 *.md
 !README.md
 ROADMAP*.md
-REVIEW-TASKS.md
-ALL_AUDIT.md
-LAST_COMMIT_AUDIT.md
 AGENT.md
 docs
