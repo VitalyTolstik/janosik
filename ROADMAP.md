@@ -1618,7 +1618,7 @@ TASK-36 и TASK-37.)*
 | 75 | TASK-144 `ui-edit-coalescing` ✅ | `main` | §7.14: слияние quiet-патчей по полям; не коммитить описание при неразрешённом конфликте | **Выполнено:** quiet-патчи сливаются по полям (title+description в одном окне не теряются); конфликтное описание не коммитится на blur/close/switch/pagehide, черновик держится за карточкой и переопрашивается при открытии; тесты server-sync и CardDialog. См. §7.14 |
 | 76 | TASK-145 `presence-consistency` ✅ | `main` | §7.14: топология presence (1/несколько нод), presence-epoch + resync, rejoin по TTL, `avatarPath`, `clientId` до Observable | **Выполнено:** presence — только локально (без Redis-фан-аута → нет ложных `leave` на 2 нодах); `epoch` в кадрах + keepalive + reconnect при расхождении; ping `410` → rejoin; `avatarPath` в сравнении; `clientId` проверяется до Observable; CRLF-парсер; ростер чистится на смене доски; тесты. **Остаётся:** общий presence-store в Redis для сходимости ростера на нескольких нодах (отдельная задача). См. §7.14 |
 | 77 | TASK-146 `resource-limits` ✅ | `main` | §7.14: кэпы SSE/сессий, `ifMatchVersions`, upload-квоты, bounded share-throttle | **Выполнено:** SSE-кэпы instance/user/board (`503` + `Retry-After`); `ifMatchVersions` ≤100 и батч-чтение версий (≤1 запрос на тип); upload-rate 60/мин на юзера (`429`); share-throttle ограничен по размеру + валидация формы токена; тесты. **Остаётся:** temp-file uploads → **TASK-155**; Redis-лимитер шары на несколько нод. См. §7.14 |
-| 78 | TASK-147 `security-hardening` | `feature/TASK-147-security-hardening` | §7.14: `/health`, read-only impersonation, expiry/assignee-leak, bull-board allowlist, `COOKIE_SECURE`, CIDR/TOTP/логи | e2e на каждую дыру. См. §7.14 |
+| 78 | TASK-147 `security-hardening` ✅ | `main` | §7.14: `/health`, read-only impersonation, expiry/assignee-leak, bull-board allowlist, `COOKIE_SECURE`, CIDR/TOTP/логи | **Выполнено:** `/health` — liveness без I/O, `/health/ready` — readiness с кэшем ~2 с и single-flight; impersonation-токен read-only (safe-методы + presence-ping, прочие записи и `/users/me/tokens` → `403`); единый предикат активного членства в `listBoards`/`listMembers`/дайджестах/напоминаниях + drop assignee на restore/import; bull-board за тем же IP-allowlist; `COOKIE_SECURE=true` по умолчанию (compose/.env/docs); CIDR с валидацией префикса и IPv6 (+ отказ при сохранении); TOTP в lockout + защита от replay; тела писем не логируются в production. e2e на каждую дыру; тесты. См. §7.14 |
 | 79 | TASK-148 `retention-and-indexes` | `feature/TASK-148-retention-and-indexes` | §7.14: индексы `deletedAt/expiresAt/dueDate`, sweeps Board/Activity/audit/shares/exports, retry очередей | нет роста БД/Redis/диска. См. §7.14 |
 | 80 | TASK-149 `admin-consistency` | `feature/TASK-149-admin-consistency` | §7.14: admin-мутации через команды, `attachmentCount`, импорт батч/атомарность | нет orphan-карточек. См. §7.14 |
 | 81 | TASK-150 `ui-render-perf` | `feature/TASK-150-ui-render-perf` | §7.14: per-key members, drag strategy, `linkSignature`, CardDialog, focus-diff, анимации | нет лишних полных рендеров. См. §7.14 |
@@ -3047,6 +3047,23 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 - **DoD:** e2e на read-only impersonation, expiry-leak, assignee-non-member;
   allowlist у дашборда; secure-cookie по умолчанию.
 - **Зависимости:** нет.
+- **Выполнено (2026-10-29):** B2 — `GET /health` стал liveness без I/O,
+  `GET /health/ready` — readiness (DB+Redis) с кэшем ~2 с и single-flight;
+  healthcheck образа/compose переведён на `/health/ready`. B3 — `JwtAuthGuard`
+  применяет политику read-only impersonation (`imp`): safe-методы + presence-ping
+  проходят, записи и `/users/me/tokens` → `403 code: impersonation_read_only`
+  (e2e в `admin.e2e-spec`). B4/B5 — единый предикат `activeMembershipWhere`
+  (`common/membership.ts`) в `listBoards`, `listMembers`, дайджестах и
+  напоминаниях (batch-запрос); assignee снимается на `RESTORE_CARD`/import, если
+  он не активный участник (e2e `security-hardening.e2e-spec`). B6 — `queueDashboardOwner`
+  применяет тот же IP-allowlist к bull-board. B13 — `COOKIE_SECURE` по умолчанию
+  `true` (compose + `.env.example` + self-hosting доки), HTTP-триал задаёт `false`
+  явно. B17 — CIDR с проверкой префикса и поддержкой IPv6 (BigInt), сохранение
+  невалидных записей → `400`. B18 — неверный TOTP идёт в тот же lockout, что и
+  пароль, а принятый шаг запоминается (replay отклоняется). B19 — в production
+  лог писем не содержит тела/кодов. Тесты: unit 249, e2e 284.
+- **Остаётся:** общий presence-store в Redis (TASK-145) — не в объёме этой задачи;
+  per-node TOTP-replay и IP-лимитер шары (см. TASK-146) остаются per-process.
 
 #### TASK-148 — `retention-and-indexes` · Очистка, индексы, очереди не копятся
 
