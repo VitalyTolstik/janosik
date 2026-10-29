@@ -85,7 +85,7 @@ function seedBoard() {
 
 /** Drives the dialog's open card and exposes both cards' `updatedAt`. */
 function Harness() {
-  const { board } = useBoard();
+  const { board, updateCard } = useBoard();
   const [cardId, setCardId] = useState<string | null>(null);
   return (
     <>
@@ -98,6 +98,14 @@ function Harness() {
       <button data-testid="close" onClick={() => setCardId(null)}>
         close
       </button>
+      <button
+        data-testid="rename-a-elsewhere"
+        onClick={() =>
+          updateCard("card-a", { title: "Theirs" }, { quiet: true })
+        }
+      >
+        rename a elsewhere
+      </button>
       <CardDialog
         cardId={cardId}
         open={cardId !== null}
@@ -105,6 +113,7 @@ function Harness() {
           if (!open) setCardId(null);
         }}
       />
+      <span data-testid="title-a">{board?.cards["card-a"]?.title}</span>
       <span data-testid="stamp-a">{board?.cards["card-a"]?.updatedAt}</span>
       <span data-testid="stamp-b">{board?.cards["card-b"]?.updatedAt}</span>
     </>
@@ -198,5 +207,21 @@ describe("CardDialog quiet touch debounce (B-3)", () => {
 
     expect(stampA()).not.toBe("1");
     expect(stampB()).toBe("1");
+  });
+
+  it("resyncs a foreign rename and never clobbers it on blur (TASK-156)", () => {
+    renderHarness();
+    fireEvent.click(screen.getByTestId("open-a"));
+    editTitle("Mine");
+    fireEvent.click(screen.getByTestId("rename-a-elsewhere"));
+
+    const dialog = screen.getByRole("dialog");
+    within(dialog).getByTestId("card-title-conflict");
+
+    fireEvent.blur(screen.getByLabelText("Title"));
+    expect(screen.getByTestId("title-a").textContent).toBe("Theirs");
+
+    fireEvent.click(within(dialog).getByTestId("card-title-conflict-keep"));
+    expect(screen.getByTestId("title-a").textContent).toBe("Mine");
   });
 });

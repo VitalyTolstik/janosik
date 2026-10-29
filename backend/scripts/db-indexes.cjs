@@ -34,6 +34,11 @@ const STATEMENTS = [
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "BoardMember_expiresAt_idx" ON "BoardMember"("expiresAt")`,
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Activity_createdAt_idx" ON "Activity"("createdAt")`,
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "ReminderSent_dueDate_idx" ON "ReminderSent"("dueDate")`,
+  // TASK-156: the code sweeps filtered an unindexed column pair.
+  `CREATE INDEX CONCURRENTLY IF NOT EXISTS "EmailVerificationCode_expiresAt_idx" ON "EmailVerificationCode"("expiresAt")`,
+  `CREATE INDEX CONCURRENTLY IF NOT EXISTS "EmailVerificationCode_consumedAt_idx" ON "EmailVerificationCode"("consumedAt")`,
+  `CREATE INDEX CONCURRENTLY IF NOT EXISTS "EmailChangeCode_expiresAt_idx" ON "EmailChangeCode"("expiresAt")`,
+  `CREATE INDEX CONCURRENTLY IF NOT EXISTS "EmailChangeCode_consumedAt_idx" ON "EmailChangeCode"("consumedAt")`,
 ];
 
 (async () => {
@@ -42,6 +47,22 @@ const STATEMENTS = [
     for (const sql of STATEMENTS) {
       const name = sql.match(/"(\w+)" ON/)[1];
       const started = Date.now();
+      // An interrupted CONCURRENTLY build leaves the index present but
+      // `indisvalid = false`; `IF NOT EXISTS` would keep it forever
+      // (TASK-156). Drop that husk and rebuild.
+      const existing = await prisma.$queryRawUnsafe(
+        `SELECT i.indisvalid AS valid
+           FROM pg_class c
+           JOIN pg_index i ON i.indexrelid = c.oid
+          WHERE c.relname = $1`,
+        name,
+      );
+      if (existing.length > 0 && existing[0].valid === false) {
+        console.log(`drop invalid ${name}`);
+        await prisma.$executeRawUnsafe(
+          `DROP INDEX CONCURRENTLY IF EXISTS "${name}"`,
+        );
+      }
       await prisma.$executeRawUnsafe(sql);
       console.log(`ok ${name} (${Date.now() - started} ms)`);
     }

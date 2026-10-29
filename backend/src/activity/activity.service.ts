@@ -12,6 +12,11 @@ const DEFAULT_LIMIT = 50;
 /** Upper bound for `?limit=` — a page is a page, not an export. */
 const MAX_LIMIT = 100;
 
+/** ECMAScript's Date range (ms). */
+const MAX_DATE_MS = 8.64e15;
+/** PostgreSQL `bigint` upper bound (the `Command.seq` column). */
+const MAX_SEQ = "9223372036854775807";
+
 /**
  * Activity feeds (§7.4, TASK-28).
  *
@@ -294,14 +299,20 @@ function parseCursor(raw: string): Cursor {
     throw new BadRequestException("cursor is malformed");
   }
   const at = Number(match[1]);
-  if (!Number.isSafeInteger(at)) {
+  if (!Number.isSafeInteger(at) || at < 0 || at > MAX_DATE_MS) {
     throw new BadRequestException("cursor is malformed");
   }
   const source = match[2] as "c" | "a";
   const key = match[3];
   // A command cursor's key is a `BigInt` seq — a non-numeric key must be a
-  // 400 here, not a `BigInt()` SyntaxError (500) inside the query (TASK-153).
-  if (source === "c" && !/^\d+$/.test(key)) {
+  // 400 here, not a `BigInt()` SyntaxError (500) inside the query (TASK-153),
+  // and a value past `bigint` range would be a database error (TASK-156).
+  if (
+    source === "c" &&
+    (!/^\d+$/.test(key) ||
+      key.length > MAX_SEQ.length ||
+      (key.length === MAX_SEQ.length && key > MAX_SEQ))
+  ) {
     throw new BadRequestException("cursor is malformed");
   }
   return { at, source, key };

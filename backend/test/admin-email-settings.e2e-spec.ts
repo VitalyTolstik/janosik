@@ -6,6 +6,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "email-owner@example.com";
 const OWNER_PASSWORD = "owner correct horse battery";
@@ -38,12 +39,7 @@ describe("Admin email settings (e2e)", () => {
     await app.init();
     prisma = app.get(PrismaService);
 
-    await prisma.adminAuditLog.deleteMany();
-    await prisma.adminRefreshToken.deleteMany();
-    await prisma.adminUser.deleteMany();
-    await prisma.emailSettings.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.user.deleteMany();
+    await wipeAll(prisma);
 
     await prisma.adminUser.createMany({
       data: [

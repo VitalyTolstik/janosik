@@ -120,6 +120,11 @@ export class CommentsService {
           where: { id },
         });
         if (existing && existing.cardId === cardId) {
+          // Same idempotency key from a different author is a collision, not
+          // a replay (TASK-156).
+          if (existing.authorId !== authorId) {
+            throw new ConflictException("Comment idempotency key is in use");
+          }
           return toCommentDto(existing);
         }
       }
@@ -303,7 +308,7 @@ function parseCursor(raw: string): CommentCursor {
     throw new BadRequestException("cursor is malformed");
   }
   const at = Number(match[1]);
-  if (!Number.isSafeInteger(at)) {
+  if (!Number.isSafeInteger(at) || at < 0 || at > 8.64e15) {
     throw new BadRequestException("cursor is malformed");
   }
   return { at, id: match[2] };

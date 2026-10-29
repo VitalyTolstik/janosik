@@ -107,23 +107,49 @@ self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
+const META_CACHE = "janosik-meta";
+const ACTIVE_KEY = self.location.origin + BASE + "__active__";
+
+/** The cache name the currently active deploy recorded (TASK-156). */
+function readActiveVersion() {
+  return caches
+    .open(META_CACHE)
+    .then((cache) => cache.match(ACTIVE_KEY))
+    .then((response) => (response ? response.text() : null))
+    .catch(() => null);
+}
+
+function markActiveVersion() {
+  return caches
+    .open(META_CACHE)
+    .then((cache) => cache.put(ACTIVE_KEY, new Response(CACHE_VERSION)));
+}
+
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) => {
+    Promise.all([readActiveVersion(), caches.keys()])
+      .then(([active, keys]) => {
         const stale = keys.filter(
-          (key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_VERSION,
+          (key) =>
+            key !== META_CACHE &&
+            key.startsWith(CACHE_PREFIX) &&
+            key !== CACHE_VERSION,
         );
-        // Keep the newest previous deploy's cache as the chunk fallback and
-        // drop anything older, so storage stays bounded across deploys.
-        const keep = stale.slice(-1);
+        // Keep the cache that belonged to the previously *active* deploy
+        // (TASK-156): the alphabetical/cache-key order used to let an
+        // unactivated worker's cache evict the chunks an open old tab needs.
+        const keep = new Set(
+          active !== null && stale.includes(active)
+            ? [active]
+            : stale.slice(-1),
+        );
         return Promise.all(
           stale
-            .filter((key) => !keep.includes(key))
+            .filter((key) => !keep.has(key))
             .map((key) => caches.delete(key)),
         );
       })
+      .then(() => markActiveVersion())
       .then(() => self.clients.claim()),
   );
 });
@@ -133,13 +159,21 @@ function matchShellAsset(request) {
   return caches.open(CACHE_VERSION).then((cache) =>
     cache.match(request).then((cached) => {
       if (cached) return cached;
+      // Previous deploy's cache is only a fallback for content-hashed build
+      // output (TASK-156): serving an old manifest/icons while online would
+      // pin the old icon set forever.
+      const url = new URL(request.url);
+      if (!url.pathname.startsWith(BASE + "assets/")) return null;
       return caches
         .keys()
         .then((keys) =>
           Promise.all(
             keys
               .filter(
-                (key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_VERSION,
+                (key) =>
+                  key !== META_CACHE &&
+                  key.startsWith(CACHE_PREFIX) &&
+                  key !== CACHE_VERSION,
               )
               .map((key) =>
                 caches.open(key).then((older) => older.match(request)),
@@ -192,9 +226,19 @@ self.addEventListener("fetch", (event) => {
         if (cached) return cached;
         return fetch(request)
           .then((response) => {
-            if (response.ok) {
-              event.waitUntil(cache.put(request, response.clone()));
+            if (!response.ok) return response;
+            // A half-deployed server (or a proxy) may answer a missing lazy
+            // chunk with the SPA's `index.html` and status 200. Caching that
+            // as JavaScript crashed the tab on the next import; refuse it
+            // instead of pinning it (TASK-156).
+            const type = response.headers?.get?.("Content-Type") ?? "";
+            if (
+              url.pathname.startsWith(BASE + "assets/") &&
+              type.toLowerCase().includes("text/html")
+            ) {
+              return offlineResponse();
             }
+            event.waitUntil(cache.put(request, response.clone()));
             return response;
           })
           .catch(() => offlineResponse());

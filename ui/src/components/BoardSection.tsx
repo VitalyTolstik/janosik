@@ -203,8 +203,9 @@ export function BoardSection() {
         </div>
       )}
 
-      {/* A crash inside the dialog is contained here (TASK-151, C11). */}
-      <ErrorBoundary compact>
+      {/* A crash inside the dialog is contained here (TASK-151, C11) and resets
+          for the next card (TASK-156) instead of pinning the fallback. */}
+      <ErrorBoundary compact resetKey={openCardId ?? "closed"}>
         <CardDialog
           cardId={openCardId}
           open={openCardId !== null}

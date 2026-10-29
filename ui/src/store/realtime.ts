@@ -404,6 +404,8 @@ export interface RealtimeHost {
   ) => void;
   /** The caller lost access to the board (TASK-36). */
   onAccessRevoked: (boardId: string) => void;
+  /** The stream says the board no longer exists; verify before dropping it. */
+  onBoardGone?: (boardId: string) => void;
   /** A non-command activity frame — a comment (TASK-37). */
   onActivity: (event: ActivitySseEvent) => void;
   /** Someone else changed these entities: raise the attribution ring. */
@@ -726,10 +728,13 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
       // layer so the app drops to login instead of following a dead stream
       // forever (the refresh already failed inside `openBoardEvents`).
       else if (status === 401) api.onAuthLost?.();
-      // TASK-151 (C13): a 404 means the board itself is gone (deleted) — drop
-      // it from the switcher and clear the open board instead of following a
-      // dead stream and showing a "hanging" board.
-      else if (status === 404) host.onAccessRevoked(boardId);
+      // TASK-151 (C13): a 404 used to mean "board deleted" and dropped it at
+      // once. A proxy or a half-finished deploy can answer 404 transiently, so
+      // the host re-reads the board before forgetting it (TASK-156); a 410 is
+      // the same story for a live share.
+      else if (status === 404 || status === 410) {
+        host.onBoardGone?.(boardId);
+      }
     },
     onClientIdTaken: () => {
       // Someone else holds our tab id: take a new one and rejoin. Not a

@@ -26,6 +26,7 @@ type OpsRow = Awaited<ReturnType<PrismaService["opsSettings"]["findUnique"]>>;
 @Injectable()
 export class OpsSettingsService {
   private cached: { row: OpsRow; at: number } | null = null;
+  private generation = 0;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -33,15 +34,21 @@ export class OpsSettingsService {
     if (this.cached !== null && Date.now() - this.cached.at < CACHE_TTL_MS) {
       return this.cached.row;
     }
+    const generation = this.generation;
     const row = await this.prisma.opsSettings.findUnique({
       where: { id: SINGLETON },
     });
-    this.cached = { row, at: Date.now() };
+    // A panel write may have invalidated while this read was in flight; an
+    // older snapshot must not overwrite the fresh cache (TASK-156).
+    if (generation === this.generation) {
+      this.cached = { row, at: Date.now() };
+    }
     return row;
   }
 
   /** Drop the cached singleton after a panel write (same process). */
   invalidate(): void {
+    this.generation += 1;
     this.cached = null;
   }
 

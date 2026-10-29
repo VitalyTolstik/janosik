@@ -186,7 +186,21 @@ export function openImageLightbox(
   src: string,
   options: { revokeOnClose?: boolean; alt?: string } = {},
 ): void {
-  if (document.getElementById("attachment-lightbox")) return;
+  const existing = document.getElementById("attachment-lightbox");
+  if (existing !== null) {
+    // Already open (TASK-156): a fresh URL minted for a second click is not
+    // shown and must not leak; revoke it unless it is the displayed blob.
+    const shown = existing.querySelector("img")?.getAttribute("src");
+    if (
+      options.revokeOnClose === true &&
+      src.startsWith("blob:") &&
+      shown !== src
+    ) {
+      URL.revokeObjectURL(src);
+      blobUrlOwners.delete(src);
+    }
+    return;
+  }
   const previouslyFocused =
     document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -226,7 +240,7 @@ export function openImageLightbox(
       URL.revokeObjectURL(src);
       blobUrlOwners.delete(src);
     }
-    previouslyFocused?.focus();
+    if (previouslyFocused?.isConnected === true) previouslyFocused.focus();
   };
   // Capture phase + stopPropagation: Escape, Tab and pointerdown must never
   // reach the Radix layers of the dialog underneath — they would dismiss

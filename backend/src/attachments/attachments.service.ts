@@ -161,96 +161,109 @@ export class AttachmentsService {
     await this.storage.ensureDirs();
     // Move the already-validated temp file into the blob tree (same
     // filesystem, atomic) instead of copying a 25 MB buffer from RAM.
-    await rename(file.path, this.storage.attachmentPath(storedName));
+    const storedPath = this.storage.attachmentPath(storedName);
+    let committed = false;
+    try {
+      await rename(file.path, storedPath);
 
-    // TASK-50: videos take the "ужиматор" route — the upload is playable
-    // immediately; the background job swaps the blob for a compact MP4.
-    // The `video_transcode` flag (TASK-61) can switch it off per-user/globally.
-    const transcodeStatus =
-      mimeType.startsWith("video/") &&
-      (await this.flags.isEnabled("video_transcode", user.id))
-        ? "pending"
-        : "none";
+      // TASK-50: videos take the "ужиматор" route — the upload is playable
+      // immediately; the background job swaps the blob for a compact MP4.
+      // The `video_transcode` flag (TASK-61) can switch it off per-user/globally.
+      const transcodeStatus =
+        mimeType.startsWith("video/") &&
+        (await this.flags.isEnabled("video_transcode", user.id))
+          ? "pending"
+          : "none";
 
-    // TASK-70: images get a thumbnail, videos a poster — generated in the
-    // background (queue `media`), never blocking the upload.
-    const derivativeStatus =
-      mimeType.startsWith("image/") || mimeType.startsWith("video/")
-        ? "pending"
-        : "none";
+      // TASK-70: images get a thumbnail, videos a poster — generated in the
+      // background (queue `media`), never blocking the upload.
+      const derivativeStatus =
+        mimeType.startsWith("image/") || mimeType.startsWith("video/")
+          ? "pending"
+          : "none";
 
-    const now = new Date();
-    // Inline media (pasted into the description/comment body) skip the
-    // card-face counter, the activity row and the SSE frame: nothing in
-    // the attachment UI changes, only the body markdown references them.
-    const created = await this.boardWrite.run(
-      card.column.boardId,
-      async (tx) => {
-        // Authoritative cap under the board lock (TASK-100): two concurrent
-        // uploads would otherwise both pass the pre-check. Counts inline too,
-        // so pasted media cannot bypass the per-card budget (TASK-108).
-        const concurrent = await tx.attachment.count({
-          where: { cardId, deletedAt: null },
-        });
-        if (concurrent >= LIMITS.attachmentsPerCard) {
-          throw new BadRequestException({
-            message: `Card must hold at most ${LIMITS.attachmentsPerCard} attachments`,
-            field: "file",
+      const now = new Date();
+      // Inline media (pasted into the description/comment body) skip the
+      // card-face counter, the activity row and the SSE frame: nothing in
+      // the attachment UI changes, only the body markdown references them.
+      const created = await this.boardWrite.run(
+        card.column.boardId,
+        async (tx) => {
+          // Authoritative cap under the board lock (TASK-100): two concurrent
+          // uploads would otherwise both pass the pre-check. Counts inline too,
+          // so pasted media cannot bypass the per-card budget (TASK-108).
+          const concurrent = await tx.attachment.count({
+            where: { cardId, deletedAt: null },
           });
-        }
-        const row = await tx.attachment.create({
-          data: {
-            id: randomUUID(),
-            cardId,
-            boardId: card.column.boardId,
-            fileName,
-            storedName,
-            mimeType,
-            sizeBytes: file.size,
-            uploadedById: user.id,
-            isInline,
-            transcodeStatus,
-            derivativeStatus,
-            createdAt: now,
-          },
-        });
-        if (!isInline) {
-          await tx.card.update({
-            where: { id: cardId },
-            data: { attachmentCount: { increment: 1 } },
-          });
-          const activity = await tx.activity.create({
+          if (concurrent >= LIMITS.attachmentsPerCard) {
+            throw new BadRequestException({
+              message: `Card must hold at most ${LIMITS.attachmentsPerCard} attachments`,
+              field: "file",
+            });
+          }
+          const row = await tx.attachment.create({
             data: {
-              boardId: card.column.boardId,
+              id: randomUUID(),
               cardId,
-              type: "attachment_added",
-              actorId: user.id,
-              details: { attachmentId: row.id, fileName },
+              boardId: card.column.boardId,
+              fileName,
+              storedName,
+              mimeType,
+              sizeBytes: file.size,
+              uploadedById: user.id,
+              isInline,
+              transcodeStatus,
+              derivativeStatus,
+              createdAt: now,
             },
           });
-          return { row, activityId: activity.id };
-        }
-        return { row, activityId: null };
-      },
-    );
+          if (!isInline) {
+            await tx.card.update({
+              where: { id: cardId },
+              data: { attachmentCount: { increment: 1 } },
+            });
+            const activity = await tx.activity.create({
+              data: {
+                boardId: card.column.boardId,
+                cardId,
+                type: "attachment_added",
+                actorId: user.id,
+                details: { attachmentId: row.id, fileName },
+              },
+            });
+            return { row, activityId: activity.id };
+          }
+          return { row, activityId: null };
+        },
+      );
 
-    if (created.activityId === null) {
+      // The row (and its blob) are now the attachment; only failures before
+      // this point may reclaim the moved file (TASK-156).
+      committed = true;
+
+      if (created.activityId === null) {
+        if (transcodeStatus === "pending")
+          this.transcode.enqueue(created.row.id);
+        if (derivativeStatus === "pending") this.media.enqueue(created.row.id);
+        return toAttachmentDto(created.row);
+      }
+
       if (transcodeStatus === "pending") this.transcode.enqueue(created.row.id);
       if (derivativeStatus === "pending") this.media.enqueue(created.row.id);
+      this.publish(
+        card.column.boardId,
+        cardId,
+        created.activityId,
+        user.id,
+        "attachment_added",
+        created.row.id,
+      );
       return toAttachmentDto(created.row);
+    } finally {
+      if (!committed) {
+        await this.storage.remove(storedPath).catch(() => undefined);
+      }
     }
-
-    if (transcodeStatus === "pending") this.transcode.enqueue(created.row.id);
-    if (derivativeStatus === "pending") this.media.enqueue(created.row.id);
-    this.publish(
-      card.column.boardId,
-      cardId,
-      created.activityId,
-      user.id,
-      "attachment_added",
-      created.row.id,
-    );
-    return toAttachmentDto(created.row);
   }
 
   async list(cardId: string, createdUpTo?: Date): Promise<AttachmentDto[]> {

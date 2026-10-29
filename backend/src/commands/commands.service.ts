@@ -186,11 +186,14 @@ export class CommandsService {
     boardId: string,
     actorId: string,
     dto: CreateCommandDto,
+    options: { allowOversize?: boolean } = {},
   ): Promise<CommandResponse> {
     // An oversized action is refused before anything else runs (TASK-30.2):
     // the writers would happily persist megabytes of snapshot/activity ids.
+    // Internal admin restores may exceed it (RESTORE_COLUMN carries a whole
+    // column's snapshot, TASK-156); the caller is already trusted.
     const bytes = Buffer.byteLength(JSON.stringify(dto.action), "utf8");
-    if (bytes > MAX_COMMAND_BYTES) {
+    if (options.allowOversize !== true && bytes > MAX_COMMAND_BYTES) {
       throw new PayloadTooLargeException({
         message: `Command is too large (${bytes} bytes, max ${MAX_COMMAND_BYTES})`,
         field: "action",

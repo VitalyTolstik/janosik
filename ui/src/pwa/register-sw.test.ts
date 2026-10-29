@@ -20,7 +20,7 @@ describe("registerServiceWorker", () => {
   it("no-ops in development", () => {
     setEnv({ PROD: false, DEV: true });
     const register = vi.fn();
-    nav.serviceWorker = { register };
+    nav.serviceWorker = { register, addEventListener: vi.fn() };
 
     registerServiceWorker();
 
@@ -36,7 +36,7 @@ describe("registerServiceWorker", () => {
   it("registers /sw.js in production", () => {
     setEnv({ PROD: true, DEV: false });
     const register = vi.fn().mockResolvedValue(undefined);
-    nav.serviceWorker = { register };
+    nav.serviceWorker = { register, addEventListener: vi.fn() };
 
     registerServiceWorker();
 
@@ -46,7 +46,7 @@ describe("registerServiceWorker", () => {
   it("swallows registration failures", () => {
     setEnv({ PROD: true, DEV: false });
     const register = vi.fn().mockRejectedValue(new Error("insecure context"));
-    nav.serviceWorker = { register };
+    nav.serviceWorker = { register, addEventListener: vi.fn() };
 
     expect(() => registerServiceWorker()).not.toThrow();
   });

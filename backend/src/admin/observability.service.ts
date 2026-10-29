@@ -10,6 +10,7 @@ import { MailQueueService } from "@/mailer/mail-queue.service";
 import { BroadcastQueueService } from "@/ops/broadcast-queue.service";
 import { MaintenanceQueueService } from "@/ops/maintenance-queue.service";
 import { CommsSchedulerService } from "@/ops/comms-scheduler.service";
+import { OpsSettingsService } from "@/ops/ops-settings.service";
 import { DemoService } from "./demo.service";
 import type { QueueStats } from "@/ops/queue-core";
 import { DemoQueueService } from "./demo-queue.service";
@@ -65,6 +66,7 @@ export class ObservabilityService {
     private readonly broadcast: BroadcastQueueService,
     private readonly maintenance: MaintenanceQueueService,
     private readonly comms: CommsSchedulerService,
+    private readonly ops: OpsSettingsService,
   ) {}
 
   async snapshot(): Promise<AdminObservabilityDto> {
@@ -216,13 +218,15 @@ export class ObservabilityService {
       ok: true,
       detail: `${this.realtime.activeBoards} board channels`,
     });
-    const maintenance = await this.prisma.opsSettings
-      .findUnique({ where: { id: "singleton" } })
-      .catch(() => null);
+    // Read through the cached singleton (TASK-156) — the panel probe must
+    // not become another unindexed read on the hot path.
+    const maintenance = await this.ops
+      .maintenance()
+      .catch(() => ({ mode: false, message: null }));
     checks.push({
       name: "maintenance",
       ok: true,
-      detail: maintenance?.maintenanceMode ? "ON" : "off",
+      detail: maintenance.mode ? "ON" : "off",
     });
     return checks;
   }

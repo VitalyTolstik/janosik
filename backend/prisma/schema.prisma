@@ -101,6 +101,8 @@ model EmailChangeCode {
   createdAt  DateTime  @default(now())
 
   @@index([userId])
+  @@index([expiresAt])
+  @@index([consumedAt])
 }
 
 // Registration email confirmation (TASK-53): the same discipline as the
@@ -118,6 +120,8 @@ model EmailVerificationCode {
   createdAt  DateTime  @default(now())
 
   @@index([userId])
+  @@index([expiresAt])
+  @@index([consumedAt])
 }
 
 // OAuth login (TASK-54) — one row per external provider (the id IS the
@@ -189,8 +193,11 @@ model Board {
 model BoardShare {
   id                 String    @id @default(cuid())
   token              String    @unique // 128-bit base64url
-  board              Board     @relation(fields: [boardId], references: [id])
-  boardId            String
+  // Snapshot shares deliberately outlive their source board (TASK-58,
+  // TASK-156): deleting the board detaches the frozen copy instead of
+  // cascading it away. Live shares are revoked before the board goes.
+  board              Board?    @relation(fields: [boardId], references: [id], onDelete: SetNull)
+  boardId            String?
   mode               String    @default("snapshot") // snapshot | live
   snapshot           Json? // the frozen BoardEnvelope (null for live)
   snapshotVersion    Int? // board seq at snapshot time ("taken at")

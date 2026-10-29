@@ -374,6 +374,9 @@ export const ADMIN_AUDIT_ACTIONS = [
   "attachment.delete",
   "entity.restored",
   "entity.bulk_deleted",
+  "entity.bulk_restored",
+  "entity.bulk_archived",
+  "entity.bulk_unarchived",
   "session.revoke",
   "token.revoke",
   "comment.delete",
@@ -1061,7 +1064,8 @@ export interface AdminDemoStartRequest {
 export interface AdminShareRowDto {
   id: string;
   token: string;
-  boardId: string;
+  /** Null for a snapshot share whose source board was purged (TASK-156). */
+  boardId: string | null;
   boardTitle: string | null;
   /** Whether the source board still exists (a live share dies with it). */
   boardDeleted: boolean;

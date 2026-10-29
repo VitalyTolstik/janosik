@@ -4,7 +4,6 @@ import {
   DragOverlay,
   getFirstCollision,
   KeyboardSensor,
-  MeasuringStrategy,
   MouseSensor,
   pointerWithin,
   rectIntersection,
@@ -105,10 +104,6 @@ const TOUCH_SENSOR_OPTIONS = {
  * action frame, which is the cost the load test saw on 2400 cards.
  */
 const NO_SENSORS: ReturnType<typeof useSensors> = [];
-const MEASURING = {
-  droppable: { strategy: MeasuringStrategy.WhileDragging },
-  dragging: { strategy: MeasuringStrategy.BeforeDragging },
-} as const;
 
 interface DndBoardProps {
   /** Per-column card ids with a filter applied — overrides each column's
@@ -655,7 +650,6 @@ export function DndBoard({
     <DndContext
       sensors={isFiltering || readOnly ? NO_SENSORS : sensors}
       collisionDetection={collisionDetectionStrategy}
-      measuring={MEASURING}
       accessibility={accessibility}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}

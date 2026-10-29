@@ -85,6 +85,16 @@ const jwtSecret = makeValidator((v) => {
   return v;
 });
 
+// TASK-156: the pool cap must be a whole, non-negative number (`0` means
+// "leave Prisma's default alone").
+const nonNegativeInt = makeValidator((v) => {
+  const parsed = Number(v);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error("must be a non-negative integer");
+  }
+  return parsed;
+});
+
 export const env = cleanEnv(process.env, {
   NODE_ENV: str({
     desc: "Runtime environment; jest sets this to 'test' automatically",
@@ -103,7 +113,7 @@ export const env = cleanEnv(process.env, {
   // TASK-153 (B14): Prisma's default pool is sized from the CPU count (~33 on
   // a 16-vCPU node); with a few replicas that alone can exhaust
   // `max_connections=100`. Cap it explicitly unless the URL says otherwise.
-  DB_CONNECTION_LIMIT: num({
+  DB_CONNECTION_LIMIT: nonNegativeInt({
     desc: "Prisma pool size per process (0 = Prisma default)",
     default: 10,
     example: "10",

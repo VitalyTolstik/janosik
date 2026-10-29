@@ -261,22 +261,55 @@ export class MaintenanceService {
         }),
       async (rows) => {
         const ids = rows.map((row) => row.id);
-        const cards = await this.prisma.card.findMany({
-          where: { column: { boardId: { in: ids } } },
-          select: { id: true },
-        });
-        const cardIds = cards.map((card) => card.id);
-        const blobs =
-          cardIds.length === 0
-            ? []
-            : await this.prisma.attachment.findMany({
-                where: { cardId: { in: cardIds } },
-                select: {
-                  storedName: true,
-                  thumbnailName: true,
-                  posterName: true,
-                },
-              });
+        // Purge the cards in bounded pages (TASK-156): a single huge board
+        // used to load every card/attachment at once and delete them in one
+        // transaction — unbounded memory, bind-parameter blow-ups and a long
+        // lock. Each page is its own small transaction.
+        for (;;) {
+          const cards = await this.prisma.card.findMany({
+            where: { column: { boardId: { in: ids } } },
+            select: { id: true },
+            take: PURGE_CHUNK,
+          });
+          if (cards.length === 0) break;
+          const cardIds = cards.map((card) => card.id);
+          const blobs = await this.prisma.attachment.findMany({
+            where: { cardId: { in: cardIds } },
+            select: {
+              storedName: true,
+              thumbnailName: true,
+              posterName: true,
+            },
+          });
+          await this.prisma.$transaction([
+            this.prisma.checklistItem.deleteMany({
+              where: { checklist: { cardId: { in: cardIds } } },
+            }),
+            this.prisma.checklist.deleteMany({
+              where: { cardId: { in: cardIds } },
+            }),
+            this.prisma.cardLabel.deleteMany({
+              where: { cardId: { in: cardIds } },
+            }),
+            this.prisma.cardLink.deleteMany({
+              where: {
+                OR: [
+                  { fromCardId: { in: cardIds } },
+                  { toCardId: { in: cardIds } },
+                ],
+              },
+            }),
+            this.prisma.comment.deleteMany({
+              where: { cardId: { in: cardIds } },
+            }),
+            this.prisma.attachment.deleteMany({
+              where: { cardId: { in: cardIds } },
+            }),
+            this.prisma.card.deleteMany({ where: { id: { in: cardIds } } }),
+          ]);
+          await this.removeBlobs(blobs);
+          if (cards.length < PURGE_CHUNK) break;
+        }
         const results = await this.prisma.$transaction([
           this.prisma.checklistItem.deleteMany({
             where: {
@@ -303,15 +336,16 @@ export class MaintenanceService {
           this.prisma.label.deleteMany({ where: { boardId: { in: ids } } }),
           this.prisma.activity.deleteMany({ where: { boardId: { in: ids } } }),
           this.prisma.command.deleteMany({ where: { boardId: { in: ids } } }),
+          // Snapshot shares are detached by the FK (`SET NULL`) and keep
+          // serving; only a live share dies with its board (TASK-156).
           this.prisma.boardShare.deleteMany({
-            where: { boardId: { in: ids } },
+            where: { boardId: { in: ids }, mode: "live" },
           }),
           this.prisma.boardMember.deleteMany({
             where: { boardId: { in: ids } },
           }),
           this.prisma.board.deleteMany({ where: { id: { in: ids } } }),
         ]);
-        await this.removeBlobs(blobs);
         return results[results.length - 1].count;
       },
     );
@@ -363,19 +397,44 @@ export class MaintenanceService {
   /** Expired or consumed verification / email-change codes. */
   async sweepCodes(): Promise<number> {
     const now = new Date();
-    const [verify, change] = await this.prisma.$transaction([
-      this.prisma.emailVerificationCode.deleteMany({
-        where: {
-          OR: [{ expiresAt: { lt: now } }, { consumedAt: { not: null } }],
-        },
-      }),
-      this.prisma.emailChangeCode.deleteMany({
-        where: {
-          OR: [{ expiresAt: { lt: now } }, { consumedAt: { not: null } }],
-        },
-      }),
-    ]);
-    return verify.count + change.count;
+    const staleVerify = {
+      OR: [{ expiresAt: { lt: now } }, { consumedAt: { not: null } }],
+    };
+    const staleChange = {
+      OR: [{ expiresAt: { lt: now } }, { consumedAt: { not: null } }],
+    };
+    let removed = 0;
+    // Bounded pages (TASK-156): one `deleteMany` over a large table is a long
+    // transaction and a spike on the write path.
+    removed += await this.purgeChunks(
+      (take) =>
+        this.prisma.emailVerificationCode.findMany({
+          where: staleVerify,
+          select: { id: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.emailVerificationCode.deleteMany({
+            where: { id: { in: rows.map((row) => row.id) } },
+          })
+        ).count,
+    );
+    removed += await this.purgeChunks(
+      (take) =>
+        this.prisma.emailChangeCode.findMany({
+          where: staleChange,
+          select: { id: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.emailChangeCode.deleteMany({
+            where: { id: { in: rows.map((row) => row.id) } },
+          })
+        ).count,
+    );
+    return removed;
   }
 
   /** Dead sessions: expired or long-revoked refresh tokens (user + admin). */
@@ -431,23 +490,28 @@ export class MaintenanceService {
 
   /** Expired background data exports (TASK-71): files + rows. */
   async sweepExports(): Promise<number> {
-    const stale = await this.prisma.dataExport.findMany({
-      where: { expiresAt: { lt: new Date() } },
-      select: { id: true, storedName: true },
-    });
-    for (const row of stale) {
-      if (row.storedName) {
-        await this.storage
-          .remove(this.storage.attachmentPath(row.storedName))
-          .catch(() => undefined);
-      }
-    }
-    if (stale.length > 0) {
-      await this.prisma.dataExport.deleteMany({
-        where: { id: { in: stale.map((row) => row.id) } },
-      });
-    }
-    return stale.length;
+    return this.purgeChunks(
+      (take) =>
+        this.prisma.dataExport.findMany({
+          where: { expiresAt: { lt: new Date() } },
+          select: { id: true, storedName: true },
+          take,
+        }),
+      async (rows) => {
+        for (const row of rows) {
+          if (row.storedName) {
+            await this.storage
+              .remove(this.storage.attachmentPath(row.storedName))
+              .catch(() => undefined);
+          }
+        }
+        return (
+          await this.prisma.dataExport.deleteMany({
+            where: { id: { in: rows.map((row) => row.id) } },
+          })
+        ).count;
+      },
+    );
   }
 
   /**
@@ -460,10 +524,21 @@ export class MaintenanceService {
   async sweepCommands(): Promise<number> {
     const days = await this.retentionDays();
     const cutoff = new Date(Date.now() - days * 86_400_000);
-    const result = await this.prisma.command.deleteMany({
-      where: { createdAt: { lt: cutoff } },
-    });
-    return result.count;
+    const stale = { createdAt: { lt: cutoff } };
+    return this.purgeChunks(
+      (take) =>
+        this.prisma.command.findMany({
+          where: stale,
+          select: { id: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.command.deleteMany({
+            where: { id: { in: rows.map((row) => row.id) } },
+          })
+        ).count,
+    );
   }
 
   /**
@@ -488,10 +563,21 @@ export class MaintenanceService {
   async sweepActivity(): Promise<number> {
     const days = await this.retentionDays();
     const cutoff = new Date(Date.now() - days * 86_400_000);
-    const result = await this.prisma.activity.deleteMany({
-      where: { createdAt: { lt: cutoff } },
-    });
-    return result.count;
+    const stale = { createdAt: { lt: cutoff } };
+    return this.purgeChunks(
+      (take) =>
+        this.prisma.activity.findMany({
+          where: stale,
+          select: { id: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.activity.deleteMany({
+            where: { id: { in: rows.map((row) => row.id) } },
+          })
+        ).count,
+    );
   }
 
   /**
@@ -501,10 +587,21 @@ export class MaintenanceService {
    */
   async sweepAudit(): Promise<number> {
     const cutoff = new Date(Date.now() - env.AUDIT_RETENTION_DAYS * 86_400_000);
-    const result = await this.prisma.adminAuditLog.deleteMany({
-      where: { createdAt: { lt: cutoff } },
-    });
-    return result.count;
+    const stale = { createdAt: { lt: cutoff } };
+    return this.purgeChunks(
+      (take) =>
+        this.prisma.adminAuditLog.findMany({
+          where: stale,
+          select: { id: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.adminAuditLog.deleteMany({
+            where: { id: { in: rows.map((row) => row.id) } },
+          })
+        ).count,
+    );
   }
 
   /**

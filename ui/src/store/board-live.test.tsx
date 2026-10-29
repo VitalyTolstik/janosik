@@ -298,8 +298,9 @@ describe("MembersStore", () => {
     ]);
     expect(store.get("b-1", "u-alice")).toBe(before);
     expect(aliceKey).toHaveBeenCalledTimes(1);
-    // The roster still reloads (views that keep their own list reload on it).
-    expect(roster).toHaveBeenCalledTimes(2);
+    // A no-op reload is quiet for every subscriber (TASK-156).
+    expect(roster).toHaveBeenCalledTimes(1);
+    expect(store.getVersion()).toBeGreaterThan(0);
   });
 });
 

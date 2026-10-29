@@ -937,10 +937,15 @@ export class AdminService {
     if (!owner) {
       throw new BadRequestException("Board has no owner to act for");
     }
-    const response = await this.commands.apply(boardId, owner.user.id, {
-      commandId: randomUUID(),
-      action: { ...action, boardId, at: Date.now() },
-    });
+    const response = await this.commands.apply(
+      boardId,
+      owner.user.id,
+      {
+        commandId: randomUUID(),
+        action: { ...action, boardId, at: Date.now() },
+      },
+      { allowOversize: true },
+    );
     return { response, actorEmail: owner.user.email };
   }
 
@@ -2219,19 +2224,116 @@ export class AdminService {
     action: "delete" | "restore" | "archive" | "unarchive",
     admin: AdminPrincipal,
   ): Promise<AdminBulkResultDto> {
+    // Restores replay saved `position`s, so ids must be applied in board
+    // order (columns by index, cards by column then index, …) — the request
+    // order `[C, B, A]` otherwise restored as `[A, C, B]` (TASK-156).
+    const ordered =
+      action === "restore" ? await this.orderedForRestore(entity, ids) : ids;
     let affected = 0;
-    for (const id of ids) {
-      if (action === "delete") await this.setDeletedAt(entity, id, new Date());
-      else if (action === "restore") await this.setDeletedAt(entity, id, null);
-      else if (action === "archive") await this.setArchived(entity, id, true);
-      else await this.setArchived(entity, id, false);
-      affected += 1;
+    const failed: string[] = [];
+    for (const id of ordered) {
+      try {
+        if (action === "delete")
+          await this.setDeletedAt(entity, id, new Date());
+        else if (action === "restore")
+          await this.setDeletedAt(entity, id, null);
+        else if (action === "archive") await this.setArchived(entity, id, true);
+        else await this.setArchived(entity, id, false);
+        affected += 1;
+      } catch {
+        // Partial bulk is expected (a card whose column is still deleted, a
+        // stale id). Keep going and record the refusal in the audit trail.
+        failed.push(id);
+      }
     }
-    await this.audit(admin, "entity.bulk_deleted", entity, null, {
+    const auditAction: AdminAuditAction =
+      action === "delete"
+        ? "entity.bulk_deleted"
+        : action === "restore"
+          ? "entity.bulk_restored"
+          : action === "archive"
+            ? "entity.bulk_archived"
+            : "entity.bulk_unarchived";
+    await this.audit(admin, auditAction, entity, null, {
       action,
       count: affected,
+      ...(failed.length > 0 ? { failed } : {}),
     });
     return { affected };
+  }
+
+  /** Ids in the order their saved positions must be replayed (TASK-156). */
+  private async orderedForRestore(
+    entity: string,
+    ids: string[],
+  ): Promise<string[]> {
+    if (ids.length < 2) return ids;
+    switch (entity) {
+      case "columns": {
+        const rows = await this.prisma.column.findMany({
+          where: { id: { in: ids } },
+          select: { id: true },
+          orderBy: [{ boardId: "asc" }, { position: "asc" }],
+        });
+        return rows.map((row) => row.id);
+      }
+      case "cards": {
+        const rows = await this.prisma.card.findMany({
+          where: { id: { in: ids } },
+          select: {
+            id: true,
+            position: true,
+            column: { select: { position: true, boardId: true } },
+          },
+        });
+        return rows
+          .sort(
+            (a, b) =>
+              a.column.boardId.localeCompare(b.column.boardId) ||
+              a.column.position - b.column.position ||
+              a.position - b.position,
+          )
+          .map((row) => row.id);
+      }
+      case "checklists": {
+        const rows = await this.prisma.checklist.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, position: true, cardId: true },
+          orderBy: [{ cardId: "asc" }, { position: "asc" }],
+        });
+        return rows.map((row) => row.id);
+      }
+      case "checklistItems": {
+        const rows = await this.prisma.checklistItem.findMany({
+          where: { id: { in: ids } },
+          select: { id: true },
+          orderBy: [{ checklistId: "asc" }, { position: "asc" }],
+        });
+        return rows.map((row) => row.id);
+      }
+      case "labels": {
+        const rows = await this.prisma.label.findMany({
+          where: { id: { in: ids } },
+          select: { id: true },
+          orderBy: [{ boardId: "asc" }, { position: "asc" }],
+        });
+        return rows.map((row) => row.id);
+      }
+      case "cardLinks": {
+        const rows = await this.prisma.cardLink.findMany({
+          where: { id: { in: ids } },
+          select: { id: true },
+          orderBy: [
+            { boardId: "asc" },
+            { fromCardId: "asc" },
+            { position: "asc" },
+          ],
+        });
+        return rows.map((row) => row.id);
+      }
+      default:
+        return ids;
+    }
   }
 
   /** Maps an entity name to its table update for `deletedAt`-style columns. */
@@ -2246,12 +2348,57 @@ export class AdminService {
           await this.boards.deleteBoard(id);
           return;
         }
-        await this.boardWrite.run(id, (tx) =>
-          tx.board.update({
+        // Full subtree restore (TASK-156): undo the exact cascade
+        // `deleteBoard` performed. Children deleted individually before the
+        // board went down carry a different stamp and stay deleted. Live
+        // shares revoked by the board delete are revived; snapshot shares
+        // were never touched.
+        await this.boardWrite.run(id, async (tx) => {
+          const board = await tx.board.findUnique({
+            where: { id },
+            select: { deletedAt: true },
+          });
+          if (!board) throw new NotFoundException("Board not found");
+          const stamp = board.deletedAt;
+          if (stamp !== null) {
+            const stale = { deletedAt: stamp } as const;
+            await tx.checklistItem.updateMany({
+              where: {
+                ...stale,
+                checklist: { card: { column: { boardId: id } } },
+              },
+              data: { deletedAt: null, version: { increment: 1 } },
+            });
+            await tx.checklist.updateMany({
+              where: { ...stale, card: { column: { boardId: id } } },
+              data: { deletedAt: null, version: { increment: 1 } },
+            });
+            await tx.cardLink.updateMany({
+              where: { boardId: id, ...stale },
+              data: { deletedAt: null },
+            });
+            await tx.card.updateMany({
+              where: { ...stale, column: { boardId: id } },
+              data: { deletedAt: null, version: { increment: 1 } },
+            });
+            await tx.column.updateMany({
+              where: { boardId: id, ...stale },
+              data: { deletedAt: null, version: { increment: 1 } },
+            });
+            await tx.label.updateMany({
+              where: { boardId: id, ...stale },
+              data: { deletedAt: null, version: { increment: 1 } },
+            });
+            await tx.boardShare.updateMany({
+              where: { boardId: id, revokedAt: stamp },
+              data: { revokedAt: null },
+            });
+          }
+          await tx.board.update({
             where: { id },
             data: { deletedAt: null, version: { increment: 1 } },
-          }),
-        );
+          });
+        });
         return;
       }
       case "cards": {

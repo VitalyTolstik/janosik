@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { CalendarClock } from "lucide-react";
 
 import {
@@ -17,6 +17,7 @@ import {
 } from "@/i18n";
 import { dueStatus, type DueStatus } from "@/utils/due-date";
 import { formatTimeOfDay } from "@/utils/time";
+import { getClockNow, subscribeClock } from "@/utils/clock";
 
 /** Typed key per due status (N-6) — removes the redundant `as DueStatus`. */
 const DUE_STATUS_KEYS = {
@@ -39,24 +40,10 @@ export function DueBadge({ dueDate }: DueBadgeProps) {
   const { t, lang } = useI18n();
   const hour12 = useHour12();
   // TASK-152 (C19): the classification is clock-dependent — a card becomes
-  // overdue without any board change. Tick once a minute and whenever the
-  // tab regains focus/visibility, so the badge cannot stay stale.
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const bump = () => setTick((value) => value + 1);
-    const interval = window.setInterval(bump, 60_000);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") bump();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", bump);
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", bump);
-    };
-  }, []);
-  const status = dueStatus(dueDate, Date.now());
+  // overdue without any board change. A shared minute tick plus
+  // focus/visibility updates every badge without per-card timers (TASK-156).
+  const now = useSyncExternalStore(subscribeClock, getClockNow);
+  const status = dueStatus(dueDate, now);
   const due = new Date(dueDate);
   const dueTime = formatTime(formatTimeOfDay(due), lang, hour12);
 

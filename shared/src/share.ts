@@ -57,7 +57,8 @@ export interface PublicBoardMemberDto {
 export interface BoardShareDto {
   id: string;
   token: string;
-  boardId: string;
+  /** Null once the source board is gone (a detached snapshot share). */
+  boardId: string | null;
   boardTitle: string | null;
   mode: BoardShareMode;
   title: string | null;

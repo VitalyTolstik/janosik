@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { NextFunction, Request, Response } from "express";
+import { env } from "@/config/env";
 
 /**
  * Per-request trace context (TASK-153). An incident report carries the
@@ -24,8 +25,12 @@ export function requestContext(
   next: NextFunction,
 ): void {
   const incoming = req.headers[REQUEST_ID_HEADER];
+  // A caller-supplied id is only trusted behind a configured proxy/tracing
+  // hop (TASK-156); otherwise anyone could poison the correlation id.
   const id =
-    typeof incoming === "string" && /^[A-Za-z0-9._-]{1,64}$/.test(incoming)
+    env.TRUST_PROXY > 0 &&
+    typeof incoming === "string" &&
+    /^[A-Za-z0-9._-]{1,64}$/.test(incoming)
       ? incoming
       : randomUUID();
   res.setHeader(REQUEST_ID_HEADER, id);

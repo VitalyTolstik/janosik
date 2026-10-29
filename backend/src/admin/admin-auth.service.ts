@@ -207,8 +207,12 @@ export class AdminAuthService {
       data: { revokedAt: new Date() },
     });
     if (rotated.count === 0) {
-      await this.revokeAllSessions(stored.adminId);
-      throw new UnauthorizedException("Refresh token reuse detected");
+      // Same sub-second concurrent-refresh race as the user contour
+      // (TASK-156): reject this loser without nuking every session.
+      this.logger.log(
+        `Concurrent admin refresh race for ${stored.adminId} — rejecting without session revocation`,
+      );
+      throw new UnauthorizedException("Refresh token race detected");
     }
     return this.startSession(stored.admin, context);
   }

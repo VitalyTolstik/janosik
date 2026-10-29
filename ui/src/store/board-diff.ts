@@ -59,10 +59,13 @@ function changedCards(local: Board, server: Board): string[] {
     // undo-relevant writer bumps it (text, labels, checklists, links, cover,
     // archive). An equal stamp therefore proves the entity is unchanged, so
     // the focus refetch no longer deep-compares every card on the board.
+    // Label-only changes moved `labelIds` without bumping `updatedAt`
+    // (TASK-156), so the fast path also compares that array.
     if (
       fresh === undefined ||
       card.updatedAt !== fresh.updatedAt ||
-      card.archivedAt !== fresh.archivedAt
+      card.archivedAt !== fresh.archivedAt ||
+      !same(card.labelIds, fresh.labelIds)
     ) {
       ids.push(id);
     }

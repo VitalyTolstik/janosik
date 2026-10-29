@@ -22,11 +22,16 @@ import { appPath } from "./app-path";
  * user activation in every evergreen browser, so no popup blocker trip.
  */
 
+/** The router-relative deep link (for `navigate` and `appShareUrl`). */
+export function cardPath(boardId: string, cardId: string): string {
+  return `/board/${boardId}?card=${cardId}`;
+}
+
 /** The deep link that opens a board with the card dialog up. */
 export function cardHref(boardId: string, cardId: string): string {
   // Site-root-relative (TASK-151, C9): a new tab must land on `/app/…`, not
   // `/board/…` (which nginx answers with the marketing site / 404).
-  return appPath(`board/${boardId}?card=${cardId}`);
+  return appPath(cardPath(boardId, cardId));
 }
 
 /** True when the click already carries the browser's own open-in-new-tab intent. */

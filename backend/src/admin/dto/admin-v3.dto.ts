@@ -16,6 +16,7 @@ import {
   registerDecorator,
   type ValidationOptions,
 } from "class-validator";
+import { MAINTENANCE_JOBS } from "@/ops/maintenance.service";
 
 /**
  * TASK-112: `Record<string, boolean> | null`. `@IsObject()` alone would let
@@ -146,24 +147,12 @@ export class AdminUpdateOpsDto {
   reminderLeadHours?: number | null;
 }
 
-const MAINTENANCE_JOBS = [
-  "all",
-  "purge-soft-deleted",
-  "sweep-codes",
-  "sweep-tokens",
-  "sweep-shares",
-  "sweep-invitations",
-  "sweep-exports",
-  "sweep-commands",
-  "sweep-reminders",
-  "sweep-activity",
-  "sweep-audit",
-  "sweep-orphan-blobs",
-] as const;
+// One source of truth with `MaintenanceService` (TASK-156).
+const MAINTENANCE_JOB_CHOICES = ["all", ...MAINTENANCE_JOBS] as const;
 
 export class AdminMaintenanceRunDto {
-  @IsIn(MAINTENANCE_JOBS)
-  job!: (typeof MAINTENANCE_JOBS)[number];
+  @IsIn(MAINTENANCE_JOB_CHOICES)
+  job!: (typeof MAINTENANCE_JOB_CHOICES)[number];
 }
 
 export class AdminCreateAnnouncementDto {

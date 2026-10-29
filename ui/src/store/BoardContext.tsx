@@ -23,7 +23,7 @@ import {
   type ColumnSortBy,
   type UpdateCardAction,
 } from "@janosik/shared";
-import { api, isApiEnabled } from "@/api/client";
+import { api, ApiError, isApiEnabled } from "@/api/client";
 import {
   BoardLiveProvider,
   cardIdsTouchedBy,
@@ -1131,7 +1131,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
    * so a revoked *only* board is replaced explicitly.
    */
   const revokeBoard = useCallback(
-    (boardId: string) => {
+    (boardId: string, reason: "access" | "deleted" = "access") => {
       apply({ type: "REMOVE_BOARD", boardId });
       if (stateRef.current.some((board) => board.id === boardId)) {
         apply({
@@ -1146,7 +1146,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         const { [boardId]: _removed, ...rest } = prev;
         return rest;
       });
-      toast.error(t("board.accessRevoked"));
+      toast.error(
+        t(reason === "deleted" ? "board.deleted" : "board.accessRevoked"),
+      );
       // If the caller was viewing the board that just vanished, move them to
       // another active board (or the empty state) instead of leaving them on
       // a dead URL — the 404 route is only for genuinely unknown ids.
@@ -1180,13 +1182,43 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     [revokeBoard],
   );
 
+  /**
+   * The stream answered 404/410: re-read the board first (TASK-156). A
+   * transient proxy 404 must not wipe a healthy local board; only a
+   * confirmed absence drops it.
+   */
+  const onBoardGone = useCallback(
+    (boardId: string) => {
+      void api
+        .getBoardSnapshot(boardId)
+        .then(() => refetchBoard(boardId, true))
+        .catch((error: unknown) => {
+          if (
+            error instanceof ApiError &&
+            (error.status === 404 || error.status === 410)
+          ) {
+            revokeBoard(boardId, "deleted");
+          }
+        });
+    },
+    [refetchBoard, revokeBoard],
+  );
+
   // The realtime bridge is created once and outlives many renders: it calls
   // these through a ref, so a language switch or a navigation is seen by
   // the next frame instead of the closure of the first render (U-5).
-  const realtimeHandlersRef = useRef({ onMembershipChange, onAccessRevoked });
+  const realtimeHandlersRef = useRef({
+    onMembershipChange,
+    onAccessRevoked,
+    onBoardGone,
+  });
   useEffect(() => {
-    realtimeHandlersRef.current = { onMembershipChange, onAccessRevoked };
-  }, [onMembershipChange, onAccessRevoked]);
+    realtimeHandlersRef.current = {
+      onMembershipChange,
+      onAccessRevoked,
+      onBoardGone,
+    };
+  }, [onMembershipChange, onAccessRevoked, onBoardGone]);
 
   useEffect(() => {
     if (!serverMode) return;
@@ -1241,6 +1273,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           realtimeHandlersRef.current.onMembershipChange(id, userId, change),
         onAccessRevoked: (id) =>
           realtimeHandlersRef.current.onAccessRevoked(id),
+        onBoardGone: (id) => realtimeHandlersRef.current.onBoardGone(id),
         onActivity: (event) => {
           live.activity.publish(event);
           // A comment is a change of the card face as well: the commenter

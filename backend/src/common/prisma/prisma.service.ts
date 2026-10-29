@@ -40,9 +40,10 @@ export class PrismaService
         },
       },
       // TASK-153: slow queries are logged (and a request id travels with them
-      // through the request context) instead of silently happening. Query
-      // events are always subscribed; the listener filters by `SLOW_QUERY_MS`.
-      log: [{ emit: "event", level: "query" }],
+      // through the request context) instead of silently happening. `0`
+      // disables the event subscription entirely (TASK-156) — `>= 0` used to
+      // log every query.
+      log: env.SLOW_QUERY_MS > 0 ? [{ emit: "event", level: "query" }] : [],
     });
     // The constructor's conditional log config widens Prisma's event typing,
     // so the listener signature is stated here instead of inferred.
@@ -51,7 +52,7 @@ export class PrismaService
       listener: (event: Prisma.QueryEvent) => void,
     ) => void;
     onQuery("query", (event) => {
-      if (event.duration >= env.SLOW_QUERY_MS) {
+      if (env.SLOW_QUERY_MS > 0 && event.duration >= env.SLOW_QUERY_MS) {
         const requestId = currentRequestId();
         this.logger.warn(
           `slow query ${event.duration} ms${

@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import type { Board } from "@janosik/shared";
 
+/** Rows per `createMany` (TASK-156). */
+const IMPORT_CHUNK = 1_000;
+
 /**
  * Persist a normalized frontend `Board` (from an import envelope) into the
  * §7.3 tables.
@@ -145,7 +148,9 @@ export async function persistBoard(
     });
 
     let labelPosition = 0;
-    for (const oldLabelId of card.labelIds) {
+    // A hand-edited envelope may repeat a label; the composite PK would abort
+    // the whole import (TASK-156).
+    for (const oldLabelId of new Set(card.labelIds)) {
       const labelId = labelIdMap.get(oldLabelId);
       if (!labelId) continue;
       labelRows.push({ cardId: id, labelId, position: labelPosition++ });
@@ -173,13 +178,16 @@ export async function persistBoard(
     }
   }
 
-  if (cardRows.length > 0) await tx.card.createMany({ data: cardRows });
-  if (labelRows.length > 0) await tx.cardLabel.createMany({ data: labelRows });
-  if (checklistRows.length > 0) {
-    await tx.checklist.createMany({ data: checklistRows });
-  }
-  if (itemRows.length > 0)
-    await tx.checklistItem.createMany({ data: itemRows });
+  // Bounded inserts (TASK-156): a single `createMany` for a 2400-card envelope
+  // can exceed Postgres' 65 535 bind-parameter limit. `position` was computed
+  // above, so chunking only changes the number of round-trips.
+  await insertChunks((data) => tx.card.createMany({ data }), cardRows);
+  await insertChunks((data) => tx.cardLabel.createMany({ data }), labelRows);
+  await insertChunks(
+    (data) => tx.checklist.createMany({ data }),
+    checklistRows,
+  );
+  await insertChunks((data) => tx.checklistItem.createMany({ data }), itemRows);
 
   // Card links (TASK-46) in a second pass: both endpoints are rewritten to
   // the fresh ids. A row whose target is not in the envelope's cards map is
@@ -205,11 +213,18 @@ export async function persistBoard(
       });
     }
   }
-  if (linkRows.length > 0) {
-    await tx.cardLink.createMany({ data: linkRows });
-  }
+  await insertChunks((data) => tx.cardLink.createMany({ data }), linkRows);
 
   return created.id;
+}
+
+async function insertChunks<T>(
+  insert: (rows: T[]) => Promise<unknown>,
+  rows: T[],
+): Promise<void> {
+  for (let index = 0; index < rows.length; index += IMPORT_CHUNK) {
+    await insert(rows.slice(index, index + IMPORT_CHUNK));
+  }
 }
 
 async function createPlaceholderColumn(

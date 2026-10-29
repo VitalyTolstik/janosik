@@ -72,7 +72,7 @@ import { cn } from "@/lib/utils";
 import { useBoardActions, useBoardState } from "@/store/BoardContext";
 import { useBoardMembersList } from "@/store/board-live";
 import { userLabel } from "@/utils/avatar";
-import { cardHref } from "@/utils/card-nav";
+import { cardPath } from "@/utils/card-nav";
 import { PRIORITY_META, PRIORITY_ORDER } from "@/utils/priority";
 import {
   LINK_TYPE_OPTIONS,
@@ -175,7 +175,7 @@ function CardContextMenuBody({
 
   const copyLink = useCallback(() => {
     if (!board) return;
-    const url = appShareUrl(cardHref(board.id, cardId));
+    const url = appShareUrl(cardPath(board.id, cardId));
     void navigator.clipboard
       ?.writeText(url)
       .then(() => toast.success(t("card.linkCopied")));
@@ -342,7 +342,7 @@ function CardContextMenuBody({
       <ContextMenuItem
         onClick={() =>
           window.open(
-            appShareUrl(cardHref(boardId, cardId)),
+            appShareUrl(cardPath(boardId, cardId)),
             "_blank",
             "noopener,noreferrer",
           )

@@ -239,6 +239,7 @@ export class MembersStore {
   private version = 0;
   private readonly listeners = new Set<() => void>();
   private readonly boardListeners = new Map<string, Set<() => void>>();
+  private readonly boardVersions = new Map<string, number>();
   private readonly userListeners = new Map<string, Set<() => void>>();
 
   set(boardId: string, members: readonly BoardMemberDto[]): void {
@@ -254,7 +255,6 @@ export class MembersStore {
       );
     }
     this.byBoard.set(boardId, byUser);
-    this.version += 1;
 
     // Notify only the keys whose profile actually changed. A directory load
     // that only touches other users leaves this card's render untouched.
@@ -265,6 +265,10 @@ export class MembersStore {
     for (const userId of previous?.keys() ?? []) {
       if (!byUser.has(userId)) touchedUsers.add(userId);
     }
+    // A no-op reload must not wake every board-level subscriber (TASK-156).
+    if (touchedUsers.size === 0) return;
+    this.version += 1;
+    this.boardVersions.set(boardId, this.getBoardVersion(boardId) + 1);
     for (const userId of touchedUsers) {
       this.notify(this.userListeners, `${boardId}:${userId}`);
     }
@@ -289,6 +293,9 @@ export class MembersStore {
     const boards = [...this.byBoard.keys()];
     this.byBoard.clear();
     this.version += 1;
+    for (const boardId of boards) {
+      this.boardVersions.set(boardId, this.getBoardVersion(boardId) + 1);
+    }
     for (const boardId of boards) this.notify(this.boardListeners, boardId);
     for (const key of [...this.userListeners.keys()]) {
       this.notify(this.userListeners, key);
@@ -322,6 +329,10 @@ export class MembersStore {
 
   /** Snapshot for `useSyncExternalStore`: a counter, not the map itself. */
   getVersion = (): number => this.version;
+
+  /** Per-board counter, so one board's roster load does not wake another. */
+  getBoardVersion = (boardId: string | undefined): number =>
+    boardId === undefined ? 0 : (this.boardVersions.get(boardId) ?? 0);
 
   private add(
     map: Map<string, Set<() => void>>,
@@ -503,7 +514,7 @@ export function useBoardMembersList(
     (listener: () => void) => members.subscribeBoard(boardId, listener),
     [members, boardId],
   );
-  useSyncExternalStore(subscribe, members.getVersion);
+  useSyncExternalStore(subscribe, () => members.getBoardVersion(boardId));
   return members.list(boardId);
 }
 

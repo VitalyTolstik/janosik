@@ -1627,7 +1627,7 @@ TASK-36 и TASK-37.)*
 | 84 | TASK-153 `config-and-observability` ✅ | `main` | §7.14: `connection_limit`/Postgres, кэш OpsSettings, low-баги, slow-query/requestId | **Выполнено:** `DB_CONNECTION_LIMIT` (в DSN, если не задан) + `shared_buffers`/`work_mem`/`max_connections` в compose; кэш `OpsSettings` 15 с с инвалидацией (guard больше не ходит в БД на каждый запрос); счётчик карточек без архива/удалённых колонок, фид приглашений без истёкших, битые seq-курсоры → 400, idempotency коммента проверяет автора, admin refresh с grace 60 с, `notifyDigest` в API/UI; slow-query лог с `X-Request-Id` (AsyncLocalStorage); `CONCURRENTLY` уже закрыт в 148. Тесты. См. §7.14 |
 | 85 | TASK-154 `mcp-perf-bench` | `feature/TASK-154-mcp-perf-bench` | §7.16: бенч «API напрямую vs MCP», профиль MCP-сервера, точечные оптимизации (keep-alive, меньше read-modify-write, ленивый рендер, батч-тулы) | воспроизводимые цифры латентности/запросов/CPU + вердикт и улучшения без регрессий. См. §7.16 |
 | 86 | TASK-155 `upload-hardening` ✅ | `main` | §7.14: multer `diskStorage` → temp-файл → sniff первых байт → `rename` в место; `rm` в `finally`; sweep `.tmp-*` | **Выполнено:** `tempUploadStorage` (multer disk → `.tmp-<uuid><ext>` в blob-root); `UploadedBlob.path`; MIME по префиксу 4 КБ; `rename` после проверок; `rm` в `finally` на всех путях (вложения и аватар); транскод/деривативы по id; `.tmp` sweep из TASK-148. e2e загрузок/транскода/шары зелёные. См. §7.14 |
-| 87 | TASK-156 `review-fixes` | `feature/TASK-156-review-fixes` | §7.15: правки по итогам семи независимых ревью TASK-148/149/150/151/152/153/155 (блокеры, средние, low, тесты) | одна волна блокеров → зелёные полные гейты → волна 2 → волна 3; без изменения публичного API, кроме `notifyDigest`/шаринга. См. §7.15 |
+| 87 | TASK-156 `review-fixes` ✅ | `main` | §7.15: правки по итогам семи независимых ревью TASK-148/149/150/151/152/153/155 (блокеры, средние, low, тесты) | **Выполнено:** subtree-restore доски с memberships и без воскрешения ранее удалённых чек-листов; snapshot несёт links/lastActorId/attachmentCount; единый `APP_BASE`; `controllerchange` во всех вкладках + отказ кэшировать HTML как JS; сборка финального блоба при ошибке после `rename`; ресинк/конфликт draft заголовка; page-purge доски; минуты не закрывают пикер; чанкированные sweeps и индексы кодов; сортировка bulk restore и audit по элементам; oversight-limit для внутренних restore; чанки импорта; P2028→503; a11y/dnd/lightbox/DueBadge; detached snapshot-шары; кэш ops-settings и границы курсоров. Гейты: unit 273, e2e 292, ui 888, shared 431; lint 0 errors, format/build/size/site зелёные. См. §7.15 |
 
 > **TASK-38a/38b выполнены (2026-10-26).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -3325,6 +3325,25 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   неограниченные sweeps и неполные low-фиксы. Публичные контракты (REST/SSE,
   формат экспорта) не меняются, кроме уже добавленного `notifyDigest` и
   поведения снапшот-шары.
+
+- **Выполнено (2026-10-29):** волны 1–2 закрыты одним коммитом на `main`.
+  Доска восстанавливается целым поддеревом (дети с меткой операции,
+  memberships сохранены, live-шары сняты и возвращены); `DELETE_CARD`/
+  `DELETE_COLUMN` больше не перestamp-ят ранее удалённые чек-листы; snapshot
+  несёт links/lastActorId/attachmentCount; `APP_BASE` идемпотентен,
+  `cardHref` не удваивается; все вкладки перезагружаются по
+  `controllerchange`, а 200-HTML на `/assets/*` не кэшируется; финальный блоб
+  удаляется при отказе после `rename`; draft заголовка пересинкивается и не
+  затирает чужой rename; purge доски идёт страницами; стрелки минут не
+  подтверждают время; sweep-коды индексированы и чанкированы (как activity/
+  audit/commands/exports), invalid index от `CONCURRENTLY` чинится скриптом;
+  bulk restore сортируется, аудит per-action с `failed`; внутренние
+  `RESTORE_*` не упираются в `MAX_COMMAND_BYTES`; импорт чанкуется и дедупит
+  метки, P2028 → 503; закрыты a11y/dnd/lightbox/DueBadge-замечания; snapshot-
+  шары переживают purge (nullable `BoardShare.boardId`, `SET NULL`); кэш
+  ops-settings защищён generation-guard, курсоры ограничены; общий
+  `wipeAll()` для e2e. Гейты: unit 273, e2e 292, ui 888, shared 431, lint 0
+  errors, format/build backend/ui/site/size зелёные.
 
 ##### Волна 1 — блокеры (чинить до всего остального)
 

@@ -31,14 +31,20 @@ interface FakeResponse {
   ok: boolean;
   status: number;
   body: string;
+  headers?: FakeHeaders;
   clone: () => FakeResponse;
 }
 
-function response(body: string, status = 200): FakeResponse {
+function response(
+  body: string,
+  status = 200,
+  responseHeaders?: FakeHeaders,
+): FakeResponse {
   const res: FakeResponse = {
     ok: status >= 200 && status < 300,
     status,
     body,
+    headers: responseHeaders,
     clone: () => res,
   };
   return res;
@@ -400,6 +406,22 @@ describe("service worker", () => {
     ).toBe(false);
   });
 
+  it("refuses a 200 HTML answer for a missing lazy chunk (TASK-156)", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(
+        response("<html>", 200, headers({ "Content-Type": "text/html" })),
+      );
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", asset);
+
+    expect(result).toMatchObject({ status: 503, body: "Offline" });
+    expect(caches.store.get(VERSION)?.has(`${ORIGIN}${ENTRY_ASSET}`)).toBe(
+      false,
+    );
+  });
+
   it("falls back to the offline response when an asset fetch rejects", async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error("offline"));
     const { dispatch } = loadWorker(caches.api, fetchImpl);
@@ -424,9 +446,15 @@ describe("service worker", () => {
     await dispatch("activate");
 
     // The newest previous deploy is the lazy-chunk fallback (TASK-151, C5);
-    // anything older goes, so storage stays bounded.
+    // anything older goes, so storage stays bounded. The meta cache records
+    // which deploy is active (TASK-156).
     expect([...caches.store.keys()].sort()).toEqual(
-      [VERSION, "janosik-oldbuild", "unrelated-app-cache"].sort(),
+      [
+        VERSION,
+        "janosik-meta",
+        "janosik-oldbuild",
+        "unrelated-app-cache",
+      ].sort(),
     );
     expect(self.clients.claim).toHaveBeenCalled();
   });

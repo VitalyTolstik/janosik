@@ -6,6 +6,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "queues-owner@example.com";
 const OWNER_PASSWORD = "owner correct horse battery";
@@ -33,12 +34,7 @@ describe("Admin queues (e2e)", () => {
     await app.init();
     prisma = app.get(PrismaService);
 
-    await prisma.adminAuditLog.deleteMany();
-    await prisma.adminRefreshToken.deleteMany();
-    await prisma.adminUser.deleteMany();
-    await prisma.dataExport.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.user.deleteMany();
+    await wipeAll(prisma);
 
     await prisma.adminUser.create({
       data: {

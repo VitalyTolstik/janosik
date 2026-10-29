@@ -100,6 +100,12 @@ describe("changedEntityIds", () => {
     expect(changedEntityIds(board(), server)).toEqual(["c-2"]);
   });
 
+  it("reports a label-only card change with an equal updatedAt (TASK-156)", () => {
+    const server = board();
+    server.cards["c-1"] = card({ labelIds: ["l-1"] });
+    expect(changedEntityIds(board(), server)).toEqual(["c-1"]);
+  });
+
   it("reports a label whose color changed", () => {
     const label: Label = { id: "l-1", name: "Bug", color: "red" };
     const local = board({ labels: [label] });

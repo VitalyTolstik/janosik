@@ -1,23 +1,36 @@
-import type {
-  Card,
-  CardCover,
-  CardPriority,
-  Checklist,
-  Column,
-  CoverColor,
-  CoverGradient,
+import {
+  COVER_COLORS,
+  COVER_GRADIENTS,
+  isCardLinkType,
+  type Card,
+  type CardCover,
+  type CardLink,
+  type CardPriority,
+  type Checklist,
+  type Column,
+  type CoverColor,
+  type CoverGradient,
 } from "@janosik/shared";
 import type { PrismaService } from "@/common/prisma/prisma.service";
 
 const CARD_INCLUDE = {
-  labels: { orderBy: { position: "asc" as const }, select: { labelId: true } },
+  labels: {
+    where: { label: { deletedAt: null } },
+    orderBy: { position: "asc" as const },
+    select: { labelId: true },
+  },
+  linksFrom: {
+    where: { deletedAt: null },
+    orderBy: [{ position: "asc" as const }, { id: "asc" as const }],
+    select: { id: true, type: true, toCardId: true },
+  },
   checklists: {
     orderBy: { position: "asc" as const },
     include: {
       items: { orderBy: { position: "asc" as const } },
     },
   },
-} as const;
+};
 
 type CardRow = {
   id: string;
@@ -34,7 +47,10 @@ type CardRow = {
   columnId: string;
   createdAt: Date;
   updatedAt: Date;
+  lastActorId: string | null;
+  attachmentCount: number;
   labels: Array<{ labelId: string }>;
+  linksFrom: Array<{ id: string; type: string; toCardId: string }>;
   checklists: Array<{
     id: string;
     title: string;
@@ -76,11 +92,27 @@ function toCardSnapshot(row: CardRow): Card {
         })),
     }));
 
+  const links: CardLink[] = row.linksFrom
+    .filter((link) => isCardLinkType(link.type))
+    .map((link) => ({
+      id: link.id,
+      type: link.type as CardLink["type"],
+      targetCardId: link.toCardId,
+    }));
+
   const cover: CardCover | undefined = (() => {
-    if (row.coverType === "color" && row.coverValue !== null) {
+    if (
+      row.coverType === "color" &&
+      row.coverValue !== null &&
+      (COVER_COLORS as readonly string[]).includes(row.coverValue)
+    ) {
       return { type: "color", value: row.coverValue as CoverColor };
     }
-    if (row.coverType === "gradient" && row.coverValue !== null) {
+    if (
+      row.coverType === "gradient" &&
+      row.coverValue !== null &&
+      (COVER_GRADIENTS as readonly string[]).includes(row.coverValue)
+    ) {
       return { type: "gradient", value: row.coverValue as CoverGradient };
     }
     return undefined;
@@ -98,8 +130,13 @@ function toCardSnapshot(row: CardRow): Card {
     ...(row.assigneeId !== null ? { assigneeId: row.assigneeId } : {}),
     ...(cover !== undefined ? { cover } : {}),
     labelIds: row.labels.map((label) => label.labelId),
+    ...(links.length > 0 ? { links } : {}),
     createdAt: row.createdAt.getTime(),
     updatedAt: row.updatedAt.getTime(),
+    ...(row.lastActorId !== null ? { lastActorId: row.lastActorId } : {}),
+    ...(row.attachmentCount > 0
+      ? { attachmentCount: row.attachmentCount }
+      : {}),
     ...(row.archivedAt !== null
       ? { archivedAt: row.archivedAt.getTime() }
       : {}),

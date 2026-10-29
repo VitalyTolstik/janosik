@@ -6,8 +6,8 @@ import {
 } from "./request-context";
 
 /**
- * TASK-153: an incident is traced by the id echoed in `X-Request-Id`; a valid
- * caller-supplied id is kept, anything else is replaced.
+ * TASK-153: an incident is traced by the id echoed in `X-Request-Id`; a
+ * caller-supplied id is only trusted behind a configured proxy (TASK-156).
  */
 describe("requestContext", () => {
   function run(headers: Record<string, string> = {}) {
@@ -28,9 +28,10 @@ describe("requestContext", () => {
     expect(setHeader).toHaveBeenCalledWith(REQUEST_ID_HEADER, inside);
   });
 
-  it("accepts a sane caller id and rejects a garbage one", () => {
-    expect(run({ [REQUEST_ID_HEADER]: "trace-123" }).inside).toBe("trace-123");
-    expect(run({ [REQUEST_ID_HEADER]: "bad id!" }).inside).not.toBe("bad id!");
+  it("ignores a caller-supplied id unless a trusted proxy is configured", () => {
+    const { inside } = run({ [REQUEST_ID_HEADER]: "trace-123" });
+    expect(inside).not.toBe("trace-123");
+    expect(inside).toBeDefined();
   });
 
   it("has no id outside a request", () => {

@@ -101,6 +101,9 @@ describe("card keyboard access", () => {
       fireEvent.keyDown(handle, { key: " ", code: "Space" });
     });
     expect(open).not.toHaveBeenCalled();
-    expect(handle).toHaveAttribute("aria-pressed", "true");
+    // A group must not carry `aria-pressed` (TASK-156); the drag state is
+    // exposed through dnd-kit's `aria-roledescription` instead.
+    expect(handle).not.toHaveAttribute("aria-pressed");
+    expect(handle).toHaveAttribute("aria-roledescription", "sortable");
   });
 });

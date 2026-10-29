@@ -1,5 +1,6 @@
 import {
   lazy,
+  memo,
   Suspense,
   useCallback,
   useEffect,
@@ -36,6 +37,8 @@ const DescriptionEditor = lazy(() =>
     default: m.DescriptionEditor,
   })),
 );
+// Keystrokes in the title used to re-render the WYSIWYG editor (TASK-156).
+const MemoDescriptionEditor = memo(DescriptionEditor);
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { useToast } from "@/components/Toast";
 import { LimitCounter } from "@/components/ui/limit-counter";
@@ -102,6 +105,9 @@ const TITLE_COMMIT_DELAY_MS = 400;
  */
 const conflictedDrafts = new Map<string, string>();
 
+/** Title drafts withheld by the same rule (TASK-156). */
+const heldTitles = new Map<string, string>();
+
 /** The module-map key for one card's conflict draft. */
 function conflictedKey(boardId: string, cardId: string): string {
   return `${boardId}:${cardId}`;
@@ -140,6 +146,9 @@ export function CardDialog({
   // optional in the store; an empty id only happens before a board loads,
   // when this dialog is not really open.
   const boardId = board?.id ?? "";
+  // Declared before the handlers so event callbacks can reference it without
+  // a temporal-dead-zone access (TASK-156).
+  const card = board && cardId ? board.cards[cardId] : undefined;
   const { t, lang } = useI18n();
   const hour12 = useHour12();
   const toast = useToast();
@@ -348,7 +357,7 @@ export function CardDialog({
   // Capture phase: the editor's own paste handlers must not see the files.
   const descriptionEditorRef = useRef<DescriptionEditorHandle | null>(null);
   const onDescriptionPaste = (event: React.ClipboardEvent) => {
-    if (readOnly) return;
+    if (readOnly || !card) return;
     const files = Array.from(event.clipboardData?.files ?? []);
     if (files.length === 0) return;
     event.preventDefault();
@@ -404,51 +413,121 @@ export function CardDialog({
   const titleDraftRef = useRef("");
   const titleTargetRef = useRef<string | null>(null);
   const titleTimerRef = useRef<number | null>(null);
+  // What the draft was based on (TASK-156): a stored title that differs from
+  // it while the user is typing is a foreign rename, not our own echo.
+  const titleSeenRef = useRef("");
+  const titleDirtyRef = useRef(false);
+  const titleConflictRef = useRef(false);
+  const [titleConflict, setTitleConflict] = useState(false);
   const updateCardRef = useRef(updateCard);
   useEffect(() => {
     updateCardRef.current = updateCard;
   }, [updateCard]);
-  const flushTitle = useCallback(() => {
-    if (titleTimerRef.current !== null) {
-      window.clearTimeout(titleTimerRef.current);
-      titleTimerRef.current = null;
-    }
-    const target = titleTargetRef.current;
-    titleTargetRef.current = null;
-    if (!target) return;
-    const value = titleDraftRef.current;
-    updateCardRef.current(target, { title: value }, { quiet: true });
-    // The idle gap already played the debounce role; stamp now so "updated"
-    // and the undo precondition line up with the write.
-    touchCardRef.current(target);
-  }, []);
+  const flushTitle = useCallback(
+    (force = false) => {
+      if (titleTimerRef.current !== null) {
+        window.clearTimeout(titleTimerRef.current);
+        titleTimerRef.current = null;
+      }
+      const target = titleTargetRef.current;
+      titleTargetRef.current = null;
+      if (!target) return;
+      const value = titleDraftRef.current;
+      if (!force && titleConflictRef.current) {
+        // Never overwrite the other writer's newer title on blur/close.
+        heldTitles.set(conflictedKey(boardId, target), value);
+        return;
+      }
+      heldTitles.delete(conflictedKey(boardId, target));
+      titleSeenRef.current = value;
+      titleDirtyRef.current = false;
+      titleConflictRef.current = false;
+      setTitleConflict(false);
+      updateCardRef.current(target, { title: value }, { quiet: true });
+      // The idle gap already played the debounce role; stamp now so "updated"
+      // and the undo precondition line up with the write. A pending description
+      // touch would otherwise stamp the card a second time for the same burst.
+      if (touchTimerRef.current !== null) {
+        window.clearTimeout(touchTimerRef.current);
+        touchTimerRef.current = null;
+      }
+      touchCardRef.current(target);
+    },
+    [boardId],
+  );
   const flushTitleRef = useRef(flushTitle);
   useEffect(() => {
     flushTitleRef.current = flushTitle;
   }, [flushTitle]);
-  useEffect(() => {
-    if (!cardId) return;
-    const stored = board?.cards[cardId]?.title ?? "";
-    titleDraftRef.current = stored;
-    titleTargetRef.current = null;
-    if (titleTimerRef.current !== null) {
-      window.clearTimeout(titleTimerRef.current);
-      titleTimerRef.current = null;
-    }
-    setTitleDraft(stored);
-    // The draft deliberately survives store rewrites; only a card/board
-    // switch reseeds it (TASK-150, C8).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardId, open, board?.id]);
+  // Closing/switching unmounts the field without a blur — commit here (but
+  // never over an unresolved foreign rename).
   useEffect(
     () => () => {
       flushTitleRef.current();
     },
     [cardId, open],
   );
+  useEffect(() => {
+    if (!cardId) return;
+    const key = conflictedKey(boardId, cardId);
+    const stored = board?.cards[cardId]?.title ?? "";
+    const held = heldTitles.get(key);
+    titleSeenRef.current = stored;
+    titleDirtyRef.current = held !== undefined;
+    titleTargetRef.current = held !== undefined ? cardId : null;
+    titleConflictRef.current = held !== undefined;
+    setTitleConflict(held !== undefined);
+    if (titleTimerRef.current !== null) {
+      window.clearTimeout(titleTimerRef.current);
+      titleTimerRef.current = null;
+    }
+    titleDraftRef.current = held ?? stored;
+    setTitleDraft(held ?? stored);
+    // Only a card/board switch reseeds; live writes are handled by the
+    // external-change effect below so a draft is never lost to a re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardId, open, board?.id]);
+  // A stored title that moved away from the draft's base is a foreign rename.
+  useEffect(() => {
+    if (!cardId || !open) return;
+    const stored = board?.cards[cardId]?.title;
+    if (stored === undefined || stored === titleSeenRef.current) return;
+    if (!titleDirtyRef.current && !titleConflictRef.current) {
+      titleSeenRef.current = stored;
+      titleDraftRef.current = stored;
+      setTitleDraft(stored);
+      return;
+    }
+    // Keep the local text and stop the timer; the user chooses reload/keep.
+    if (titleTimerRef.current !== null) {
+      window.clearTimeout(titleTimerRef.current);
+      titleTimerRef.current = null;
+    }
+    titleConflictRef.current = true;
+    setTitleConflict(true);
+  }, [board?.cards, cardId, open]);
+  const reloadTitle = () => {
+    if (!cardId) return;
+    const stored = board?.cards[cardId]?.title ?? "";
+    heldTitles.delete(conflictedKey(boardId, cardId));
+    titleSeenRef.current = stored;
+    titleDraftRef.current = stored;
+    titleDirtyRef.current = false;
+    titleConflictRef.current = false;
+    setTitleConflict(false);
+    setTitleDraft(stored);
+  };
+  const keepMyTitle = () => {
+    if (!cardId) return;
+    titleTargetRef.current = cardId;
+    titleConflictRef.current = false;
+    setTitleConflict(false);
+    flushTitleRef.current(true);
+  };
   const onTitleChange = (value: string) => {
     if (readOnly || !cardId) return;
     titleDraftRef.current = value;
+    titleDirtyRef.current = true;
     titleTargetRef.current = cardId;
     setTitleDraft(value);
     if (titleTimerRef.current !== null) {
@@ -468,6 +547,66 @@ export function CardDialog({
     el.style.overflowY = el.scrollHeight > TITLE_MAX_HEIGHT ? "auto" : "hidden";
   }, [cardId, open, titleText]);
 
+  // The editor is memoized, so its `onChange` must keep one identity for the
+  // whole card session (TASK-156): the latest closure is read through a ref.
+  const descriptionChangeRef = useRef<(description: string) => void>(() => {});
+  const onDescriptionChange = useCallback((description: string) => {
+    descriptionChangeRef.current(description);
+  }, []);
+  const commitDescriptionChange = (description: string): void => {
+    if (!card) return;
+    const clamped = description.slice(0, LIMITS.description);
+    if (description.length > LIMITS.description) {
+      if (!overLimitRef.current) {
+        overLimitRef.current = true;
+        toast.error(t("limits.exceeded", { limit: LIMITS.description }));
+      }
+      if (descriptionSync.conflict) {
+        // Unresolved conflict: stage the clamped text and never commit behind
+        // the other writer's back.
+        descriptionDraftRef.current = {
+          cardId: card.id,
+          value: clamped,
+        };
+        conflictedDrafts.set(conflictedKey(boardId, card.id), clamped);
+        return;
+      }
+      // Oversized pastes clamp immediately — this path still commits right
+      // away, staging stays empty.
+      descriptionDraftRef.current = null;
+      setDescriptionSync((prev) => ({
+        ...prev,
+        seen: clamped,
+        dirty: false,
+        conflict: false,
+      }));
+      updateCard(card.id, { description: clamped }, { quiet: true });
+      scheduleTouch(card.id);
+      setOverflowTick((n) => n + 1);
+      return;
+    }
+    overLimitRef.current = false;
+    // Stage only: one UPDATE_CARD lands on blur / card switch / dialog close,
+    // not one per pause in typing.
+    descriptionDraftRef.current = {
+      cardId: card.id,
+      value: description,
+    };
+    if (descriptionSync.conflict) {
+      conflictedDrafts.set(conflictedKey(boardId, card.id), description);
+    }
+    if (!descriptionSync.dirty) {
+      setDescriptionSync((prev) =>
+        prev.dirty ? prev : { ...prev, dirty: true },
+      );
+    }
+  };
+  // Ref writes are effect-only (TASK-156): the memoized editor sees the
+  // latest handler from the next render without a new `onChange` identity.
+  useEffect(() => {
+    descriptionChangeRef.current = commitDescriptionChange;
+  });
+
   if (!board || !cardId) {
     // Dialog stays closed when there's nothing to show.
     return (
@@ -482,7 +621,6 @@ export function CardDialog({
     );
   }
 
-  const card = board.cards[cardId];
   // Card may have been deleted while the dialog was open.
   if (!card) {
     return (
@@ -620,6 +758,37 @@ export function CardDialog({
                 limit={LIMITS.cardTitle}
                 testId="card-title-counter"
               />
+              {titleConflict && !readOnly ? (
+                <div
+                  role="alert"
+                  data-testid="card-title-conflict"
+                  className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-foreground"
+                >
+                  <span className="min-w-0 flex-1">
+                    {t("card.titleConflict")}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    data-testid="card-title-conflict-reload"
+                    onClick={reloadTitle}
+                  >
+                    {t("card.descriptionConflictReload")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7"
+                    data-testid="card-title-conflict-keep"
+                    onClick={keepMyTitle}
+                  >
+                    {t("card.descriptionConflictKeep")}
+                  </Button>
+                </div>
+              ) : null}
             </div>
 
             {/* Attribution line: directly under the title (owner's layout),
@@ -691,7 +860,7 @@ export function CardDialog({
                   }}
                   onPasteCapture={onDescriptionPaste}
                 >
-                  <DescriptionEditor
+                  <MemoDescriptionEditor
                     ref={descriptionEditorRef}
                     key={`${card.id}:${overflowTick}:${descriptionSync.epoch}`}
                     value={
@@ -700,65 +869,7 @@ export function CardDialog({
                         : (card.description ?? "")
                     }
                     readOnly={readOnly}
-                    onChange={(description) => {
-                      const clamped = description.slice(0, LIMITS.description);
-                      if (description.length > LIMITS.description) {
-                        if (!overLimitRef.current) {
-                          overLimitRef.current = true;
-                          toast.error(
-                            t("limits.exceeded", { limit: LIMITS.description }),
-                          );
-                        }
-                        if (descriptionSync.conflict) {
-                          // Unresolved conflict: stage the clamped text and
-                          // never commit behind the other writer's back.
-                          descriptionDraftRef.current = {
-                            cardId: card.id,
-                            value: clamped,
-                          };
-                          conflictedDrafts.set(
-                            conflictedKey(boardId, card.id),
-                            clamped,
-                          );
-                          return;
-                        }
-                        // Oversized pastes clamp immediately — this path
-                        // still commits right away, staging stays empty.
-                        descriptionDraftRef.current = null;
-                        setDescriptionSync((prev) => ({
-                          ...prev,
-                          seen: clamped,
-                          dirty: false,
-                          conflict: false,
-                        }));
-                        updateCard(
-                          card.id,
-                          { description: clamped },
-                          { quiet: true },
-                        );
-                        scheduleTouch(card.id);
-                        setOverflowTick((n) => n + 1);
-                        return;
-                      }
-                      overLimitRef.current = false;
-                      // Stage only: one UPDATE_CARD lands on blur / card
-                      // switch / dialog close, not one per pause in typing.
-                      descriptionDraftRef.current = {
-                        cardId: card.id,
-                        value: description,
-                      };
-                      if (descriptionSync.conflict) {
-                        conflictedDrafts.set(
-                          conflictedKey(boardId, card.id),
-                          description,
-                        );
-                      }
-                      if (!descriptionSync.dirty) {
-                        setDescriptionSync((prev) =>
-                          prev.dirty ? prev : { ...prev, dirty: true },
-                        );
-                      }
-                    }}
+                    onChange={onDescriptionChange}
                     placeholder={t("card.descriptionPlaceholder")}
                   />
                 </div>

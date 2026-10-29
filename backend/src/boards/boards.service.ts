@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { Role, Prisma } from "@prisma/client";
 import type {
@@ -14,7 +15,10 @@ import type {
 } from "@janosik/shared";
 import { parseExport, serializeExport } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
-import { BoardWriteService } from "@/common/board-write.service";
+import {
+  BoardWriteService,
+  isTransactionTimeout,
+} from "@/common/board-write.service";
 import { activeMembershipWhere } from "@/common/membership";
 import { RealtimeService } from "@/realtime/realtime.service";
 import {
@@ -195,34 +199,41 @@ export class BoardsService {
   /**
    * Soft-delete a board and cascade the flag to its children (§7.0).
    *
-   * Chosen semantics for members: memberships are hard-deleted (they carry
-   * no `deletedAt` in §7.3 and mean nothing once the board is gone), while
-   * columns/cards/labels/checklists/items keep their rows with `deletedAt`
-   * set, so the 30-day purge job can reclaim them.
+   * Only **live** children are stamped (TASK-156): a checklist the user
+   * removed before the board went down must stay deleted for the 30-day
+   * window, otherwise an admin restore would resurrect it. Memberships are
+   * deliberately kept (they are inert while `Board.deletedAt` is set and are
+   * the only record of who may see a restored board); the purge job reclaims
+   * them with the rest of the subtree.
    */
   async deleteBoard(boardId: string): Promise<void> {
     await this.boardWrite.run(boardId, async (tx) => {
       const now = new Date();
 
       const cards = await tx.card.findMany({
-        where: { column: { boardId } },
+        where: { column: { boardId }, deletedAt: null },
         select: { id: true },
       });
       const cardIds = cards.map((card) => card.id);
-      const checklists = await tx.checklist.findMany({
-        where: { cardId: { in: cardIds } },
-        select: { id: true },
-      });
+      const checklists =
+        cardIds.length === 0
+          ? []
+          : await tx.checklist.findMany({
+              where: { cardId: { in: cardIds }, deletedAt: null },
+              select: { id: true },
+            });
       const checklistIds = checklists.map((checklist) => checklist.id);
 
-      await tx.checklistItem.updateMany({
-        where: { checklistId: { in: checklistIds } },
-        data: { deletedAt: now },
-      });
-      await tx.checklist.updateMany({
-        where: { id: { in: checklistIds } },
-        data: { deletedAt: now },
-      });
+      if (checklistIds.length > 0) {
+        await tx.checklistItem.updateMany({
+          where: { checklistId: { in: checklistIds }, deletedAt: null },
+          data: { deletedAt: now },
+        });
+        await tx.checklist.updateMany({
+          where: { id: { in: checklistIds } },
+          data: { deletedAt: now },
+        });
+      }
       // Card links (TASK-46) carry `deletedAt` like every other child and
       // must be flagged with them, or the purge job would leave the rows
       // behind after the board itself is gone.
@@ -230,16 +241,18 @@ export class BoardsService {
         where: { boardId, deletedAt: null },
         data: { deletedAt: now },
       });
-      await tx.card.updateMany({
-        where: { id: { in: cardIds } },
-        data: { deletedAt: now },
-      });
+      if (cardIds.length > 0) {
+        await tx.card.updateMany({
+          where: { id: { in: cardIds } },
+          data: { deletedAt: now },
+        });
+      }
       await tx.column.updateMany({
-        where: { boardId },
+        where: { boardId, deletedAt: null },
         data: { deletedAt: now },
       });
       await tx.label.updateMany({
-        where: { boardId },
+        where: { boardId, deletedAt: null },
         data: { deletedAt: now },
       });
       // A live share of a deleted board is dead by definition — revoke it so
@@ -254,7 +267,6 @@ export class BoardsService {
         where: { id: boardId },
         data: { deletedAt: now },
       });
-      await tx.boardMember.deleteMany({ where: { boardId } });
     });
   }
 
@@ -324,8 +336,20 @@ export class BoardsService {
         });
         if (existing) {
           if (existing.acceptedAt === null) {
-            // A repeat invite of a pending invitee is an idempotent no-op —
-            // a 409 here would tell the inviter the account exists.
+            // An expired pending invite is invisible in the feed but still
+            // blocks a fresh one until the sweep (TASK-156): revive the row
+            // with the new role/TTL instead of a silent no-op.
+            if (
+              existing.expiresAt !== null &&
+              existing.expiresAt.getTime() <= Date.now()
+            ) {
+              await tx.boardMember.update({
+                where: { id: existing.id },
+                data: { role: dto.role, expiresAt, invitedById: actorId },
+              });
+            }
+            // A repeat invite of a still-pending invitee is an idempotent
+            // no-op — a 409 here would tell the inviter the account exists.
             return null;
           }
           throw new ConflictException("User is already a board member");
@@ -520,16 +544,26 @@ export class BoardsService {
     if (boards.length === 0) {
       throw new BadRequestException("The envelope contains no boards");
     }
-    const createdIds = await this.prisma.$transaction(
-      async (tx) => {
-        const ids: string[] = [];
-        for (const board of boards) {
-          ids.push(await persistBoard(tx, board, userId));
-        }
-        return ids;
-      },
-      { timeout: IMPORT_TIMEOUT_MS, maxWait: 10_000 },
-    );
+    let createdIds: string[];
+    try {
+      createdIds = await this.prisma.$transaction(
+        async (tx) => {
+          const ids: string[] = [];
+          for (const board of boards) {
+            ids.push(await persistBoard(tx, board, userId));
+          }
+          return ids;
+        },
+        { timeout: IMPORT_TIMEOUT_MS, maxWait: 10_000 },
+      );
+    } catch (error) {
+      // A large envelope can outlive the budget; that is a retryable overload,
+      // not a 500 (TASK-156).
+      if (isTransactionTimeout(error)) {
+        throw new ServiceUnavailableException("Import timed out; please retry");
+      }
+      throw error;
+    }
     return Promise.all(createdIds.map((id) => this.getAggregate(id)));
   }
 

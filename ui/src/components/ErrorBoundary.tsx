@@ -35,6 +35,11 @@ interface ErrorBoundaryProps {
    * there must not replace the whole app with the reset screen.
    */
   compact?: boolean;
+  /**
+   * Reset the boundary when this value changes (TASK-156): a compact
+   * fallback must not stay pinned for the next card/dialog.
+   */
+  resetKey?: unknown;
 }
 
 interface ErrorBoundaryState {
@@ -56,6 +61,15 @@ export class ErrorBoundary extends Component<
     // The technical details stay in the console only — the fallback screen
     // never exposes the raw error to end users.
     console.error("Janosik crashed:", error, info.componentStack);
+  }
+
+  componentDidUpdate(prevProps: ErrorBoundaryProps): void {
+    if (
+      this.state.error !== null &&
+      prevProps.resetKey !== this.props.resetKey
+    ) {
+      this.setState({ error: null, confirmingReset: false });
+    }
   }
 
   render() {

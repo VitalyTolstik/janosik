@@ -18,6 +18,7 @@ import {
   cookieValue,
   findCookie,
 } from "./support/cookies";
+import { wipeAll } from "./support/wipe";
 
 const ADMIN_EMAIL = "master@example.com";
 const ADMIN_PASSWORD = "master correct horse battery";
@@ -51,27 +52,8 @@ describe("Admin API (e2e)", () => {
     await app.init();
     prisma = app.get(PrismaService);
 
-    // FK-safe cleanup of the tables this spec touches.
-    await prisma.adminAuditLog.deleteMany();
-    await prisma.adminRefreshToken.deleteMany();
-    await prisma.adminUser.deleteMany();
-    await prisma.comment.deleteMany();
-    await prisma.activity.deleteMany();
-    await prisma.command.deleteMany();
-    await prisma.checklistItem.deleteMany();
-    await prisma.checklist.deleteMany();
-    await prisma.attachment.deleteMany();
-    await prisma.cardLink.deleteMany();
-    await prisma.cardLabel.deleteMany();
-    await prisma.card.deleteMany();
-    await prisma.column.deleteMany();
-    await prisma.label.deleteMany();
-    await prisma.boardMember.deleteMany();
-    await prisma.boardShare.deleteMany();
-    await prisma.board.deleteMany();
-    await prisma.apiToken.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.user.deleteMany();
+    // FK-safe cleanup of every table (TASK-156).
+    await wipeAll(prisma);
 
     const admin = await prisma.adminUser.create({
       data: {
@@ -946,6 +928,234 @@ describe("Admin API (e2e)", () => {
           (entry: { id: string }) => entry.id === "cascade-column",
         ).cardIds,
       ).toEqual(["cascade-card"]);
+    });
+
+    it("replays bulk restores in position order (TASK-156)", async () => {
+      const board = await prisma.board.create({
+        data: { title: "Bulk order board" },
+      });
+      await prisma.boardMember.create({
+        data: {
+          boardId: board.id,
+          userId,
+          role: "ADMIN",
+          acceptedAt: new Date(),
+        },
+      });
+      await prisma.column.create({
+        data: {
+          id: "bulk-column",
+          boardId: board.id,
+          title: "Ordered",
+          position: 0,
+        },
+      });
+      for (const [position, id] of ["bulk-a", "bulk-b", "bulk-c"].entries()) {
+        await prisma.card.create({
+          data: { id, columnId: "bulk-column", title: id, position },
+        });
+      }
+
+      await server()
+        .post("/api/v1/admin/entities/cards/bulk")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          ids: ["bulk-c", "bulk-b", "bulk-a"],
+          action: "delete",
+        })
+        .expect(201);
+
+      await server()
+        .post("/api/v1/admin/entities/cards/bulk")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          ids: ["bulk-c", "bulk-b", "bulk-a"],
+          action: "restore",
+        })
+        .expect(201);
+
+      const content = await server()
+        .get(`/api/v1/admin/boards/${board.id}/content`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(
+        content.body.columns.find(
+          (entry: { id: string }) => entry.id === "bulk-column",
+        ).cardIds,
+      ).toEqual(["bulk-a", "bulk-b", "bulk-c"]);
+    });
+
+    it("restores a whole board subtree and its members (TASK-156)", async () => {
+      const board = await prisma.board.create({
+        data: { title: "Full restore board" },
+      });
+      await prisma.boardMember.create({
+        data: {
+          boardId: board.id,
+          userId,
+          role: "ADMIN",
+          acceptedAt: new Date(),
+        },
+      });
+      await prisma.label.create({
+        data: {
+          id: "full-label",
+          boardId: board.id,
+          name: "Priority",
+          color: "red",
+        },
+      });
+      await prisma.column.create({
+        data: {
+          id: "full-column",
+          boardId: board.id,
+          title: "Column",
+          position: 0,
+        },
+      });
+      await prisma.card.create({
+        data: {
+          id: "full-card",
+          columnId: "full-column",
+          title: "Card",
+          position: 0,
+        },
+      });
+      await prisma.card.create({
+        data: {
+          id: "full-target",
+          columnId: "full-column",
+          title: "Target",
+          position: 1,
+        },
+      });
+      await prisma.checklist.create({
+        data: {
+          id: "full-checklist",
+          cardId: "full-card",
+          title: "List",
+          position: 0,
+        },
+      });
+      await prisma.checklistItem.create({
+        data: {
+          id: "full-kept",
+          checklistId: "full-checklist",
+          text: "kept",
+          position: 0,
+        },
+      });
+      // Deleted by the user before the board delete: the board restore must
+      // not resurrect it (TASK-156).
+      await prisma.checklistItem.create({
+        data: {
+          id: "full-gone",
+          checklistId: "full-checklist",
+          text: "gone",
+          position: 1,
+          deletedAt: new Date(1),
+        },
+      });
+      await prisma.cardLink.create({
+        data: {
+          id: "full-link",
+          boardId: board.id,
+          fromCardId: "full-card",
+          toCardId: "full-target",
+          type: "blocks",
+          position: 0,
+        },
+      });
+      const live = await prisma.boardShare.create({
+        data: {
+          token: "full-live",
+          boardId: board.id,
+          mode: "live",
+          createdBy: userId,
+        },
+      });
+      const snapshot = await prisma.boardShare.create({
+        data: {
+          token: "full-snapshot",
+          boardId: board.id,
+          mode: "snapshot",
+          createdBy: userId,
+          snapshot: { envelope: { boards: [] }, members: [] },
+        },
+      });
+
+      await server()
+        .post("/api/v1/admin/entities/boards/bulk")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ ids: [board.id], action: "delete" })
+        .expect(201);
+
+      expect(
+        await prisma.boardMember.count({ where: { boardId: board.id } }),
+      ).toBe(1);
+      expect(
+        (await prisma.board.findUniqueOrThrow({ where: { id: board.id } }))
+          .deletedAt,
+      ).not.toBeNull();
+
+      await server()
+        .post(`/api/v1/admin/entities/boards/${board.id}/restore`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+
+      const restoredBoard = await prisma.board.findUniqueOrThrow({
+        where: { id: board.id },
+      });
+      expect(restoredBoard.deletedAt).toBeNull();
+      const restoredCard = await prisma.card.findUniqueOrThrow({
+        where: { id: "full-card" },
+      });
+      expect(restoredCard.deletedAt).toBeNull();
+      expect(
+        await prisma.checklistItem.findUniqueOrThrow({
+          where: { id: "full-kept" },
+        }),
+      ).toMatchObject({ deletedAt: null });
+      expect(
+        (
+          await prisma.checklistItem.findUniqueOrThrow({
+            where: { id: "full-gone" },
+          })
+        ).deletedAt,
+      ).not.toBeNull();
+      expect(
+        (await prisma.label.findUniqueOrThrow({ where: { id: "full-label" } }))
+          .deletedAt,
+      ).toBeNull();
+      expect(
+        (
+          await prisma.boardShare.findUniqueOrThrow({
+            where: { id: live.id },
+          })
+        ).revokedAt,
+      ).toBeNull();
+      expect(
+        (
+          await prisma.boardShare.findUniqueOrThrow({
+            where: { id: snapshot.id },
+          })
+        ).revokedAt,
+      ).toBeNull();
+
+      const content = await server()
+        .get(`/api/v1/admin/boards/${board.id}/content`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      const card = content.body.cards["full-card"];
+      expect(card).toBeDefined();
+      expect(card.links).toEqual([
+        { id: "full-link", type: "blocks", targetCardId: "full-target" },
+      ]);
+      expect(
+        content.body.columns.find(
+          (entry: { id: string }) => entry.id === "full-column",
+        ).cardIds,
+      ).toEqual(["full-card", "full-target"]);
     });
 
     it("keeps the attachment badge exact through delete and restore (TASK-149)", async () => {

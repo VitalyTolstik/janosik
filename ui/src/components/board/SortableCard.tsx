@@ -85,6 +85,10 @@ function SortableCardView({
       // announced (TASK-152, C17). Keep focusability/keys and the
       // `aria-roledescription="sortable"` token, expose a group instead.
       role="group"
+      // dnd-kit's draggable attributes also carry `aria-pressed`, which is
+      // invalid on a group (TASK-156); a title gives the group its name.
+      aria-pressed={undefined}
+      aria-label={card.title}
       onKeyDown={(event) => {
         // dnd-kit's keyboard activator (Space) first; Enter on the focused
         // card itself opens it — never a drag (a11y). Keys typed into the

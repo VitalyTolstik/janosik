@@ -509,12 +509,12 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       let itemIds: string[] = [];
       if (activeIds.length > 0) {
         const checklists = await tx.checklist.findMany({
-          where: { cardId: { in: activeIds } },
+          where: { cardId: { in: activeIds }, deletedAt: null },
           select: { id: true },
         });
         checklistIds = checklists.map((checklist) => checklist.id);
         const items = await tx.checklistItem.findMany({
-          where: { checklistId: { in: checklistIds } },
+          where: { checklistId: { in: checklistIds }, deletedAt: null },
           select: { id: true },
         });
         itemIds = items.map((item) => item.id);
@@ -533,6 +533,21 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           data: { deletedAt: now, updatedAt: now, version: { increment: 1 } },
         });
       }
+      // Archived cards were never in `column.cardIds`, so the reducer keeps
+      // them untouched; in the DB they still reference this column and would
+      // block its purge forever. Repoint them at the invisible orphan column
+      // (TASK-156).
+      const orphanId = await ensureOrphanColumn(tx, boardId, ctx.at);
+      // Raw SQL: `Card.updatedAt` is `@updatedAt`, and a Prisma update would
+      // stamp the archived card with the wall clock — the reducer keeps it
+      // byte-identical (TASK-156).
+      await tx.$executeRaw`
+        UPDATE "Card"
+        SET "columnId" = ${orphanId}
+        WHERE "columnId" = ${action.columnId}
+          AND "archivedAt" IS NOT NULL
+          AND "deletedAt" IS NULL
+      `;
       await tx.column.update({
         where: { id: action.columnId },
         data: { deletedAt: now, updatedAt: now, version: { increment: 1 } },
@@ -642,12 +657,12 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       const card = cardOf(before, action.cardId);
       if (!card) return [boardTouch];
       const checklists = await tx.checklist.findMany({
-        where: { cardId: card.id },
+        where: { cardId: card.id, deletedAt: null },
         select: { id: true },
       });
       const checklistIds = checklists.map((c) => c.id);
       const items = await tx.checklistItem.findMany({
-        where: { checklistId: { in: checklistIds } },
+        where: { checklistId: { in: checklistIds }, deletedAt: null },
         select: { id: true },
       });
       const itemIds = items.map((item) => item.id);

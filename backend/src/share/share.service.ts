@@ -120,7 +120,9 @@ export class ShareService {
     if (row.mode !== "snapshot") {
       throw new BadRequestException("Only a snapshot share can be refreshed");
     }
-    const { payload, version } = await this.captureSnapshot(row.boardId);
+    const { payload, version } = await this.captureSnapshot(
+      this.boardIdOf(row),
+    );
     const updated = await this.prisma.boardShare.update({
       where: { id: shareId },
       data: {
@@ -240,15 +242,16 @@ export class ShareService {
       };
     }
 
-    await this.assertBoardAlive(share.boardId);
-    const { board, seq } = await this.boards.getAggregateWithSeq(share.boardId);
+    const boardId = this.boardIdOf(share);
+    await this.assertBoardAlive(boardId);
+    const { board, seq } = await this.boards.getAggregateWithSeq(boardId);
     return {
       mode: "live",
       title: share.title,
       takenAt: null,
       board,
       seq,
-      members: await this.publicMembers(share.boardId),
+      members: await this.publicMembers(boardId),
       includeComments: share.includeComments,
       includeAttachments: share.includeAttachments,
     };
@@ -260,7 +263,11 @@ export class ShareService {
       throw new NotFoundException("Not found");
     }
     const board = await this.prisma.board.findFirst({
-      where: { id: share.boardId, deletedAt: null, archivedAt: null },
+      where: {
+        id: this.boardIdOf(share),
+        deletedAt: null,
+        archivedAt: null,
+      },
       select: { id: true },
     });
     if (!board) {
@@ -325,7 +332,7 @@ export class ShareService {
       const payload = this.parseSnapshot(share);
       return renderBoardPng(payload.envelope.boards[0]);
     }
-    return renderBoardPng(await this.loadLiveBoard(share.boardId));
+    return renderBoardPng(await this.loadLiveBoard(this.boardIdOf(share)));
   }
 
   // ------------------------------------------------------------ internals
@@ -434,7 +441,7 @@ export class ShareService {
       where: {
         id: cardId,
         deletedAt: null,
-        column: { boardId: share.boardId },
+        column: { boardId: share.boardId ?? "" },
       },
       select: { id: true },
     });
@@ -464,6 +471,14 @@ export class ShareService {
       throw new BadRequestException("expiresAt must be in the future");
     }
     return parsed;
+  }
+
+  /** The source board, or 410 for a snapshot detached by a board purge. */
+  private boardIdOf(row: ShareRow): string {
+    if (row.boardId === null) {
+      throw new GoneException("The shared board no longer exists");
+    }
+    return row.boardId;
   }
 
   private toDto(row: ShareRow, boardTitle?: string | null): BoardShareDto {

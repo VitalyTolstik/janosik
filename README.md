@@ -254,6 +254,8 @@ Environment variables (see `.env.example` for the full annotated list):
 | `DB_CONNECTION_LIMIT` | `10` | Prisma pool size per API process (keeps replicas under `max_connections`) |
 | `SLOW_QUERY_MS` | `200` | Log Prisma queries slower than this (0 = off) |
 | `POSTGRES_SHARED_BUFFERS` | `256MB` | Postgres `shared_buffers` for the bundled container |
+| `POSTGRES_WORK_MEM` | `8MB` | Postgres `work_mem` for the bundled container |
+| `POSTGRES_MAX_CONNECTIONS` | `100` | Postgres `max_connections` for the bundled container |
 
 To build the image from a checkout instead of pulling, uncomment `build: .`
 in `docker-compose.yml`. For a TLS-terminating proxy in front, keep

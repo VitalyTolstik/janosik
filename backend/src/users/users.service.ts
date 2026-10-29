@@ -44,7 +44,9 @@ export class UsersService {
     if (dto.avatarColor !== undefined) {
       data.avatarColor = dto.avatarColor;
     }
-    if (dto.notifyDigest !== undefined) {
+    // `@IsOptional` lets `null` through; Prisma would then reject the column
+    // as a non-boolean (TASK-156). Only a real boolean is a preference.
+    if (typeof dto.notifyDigest === "boolean") {
       data.notifyDigest = dto.notifyDigest;
     }
     const user = await this.prisma.user.update({ where: { id: userId }, data });
@@ -111,37 +113,49 @@ export class UsersService {
     // (derived from the extension) matches the real bytes.
     const ext = extensionForMime(sniffed) ?? ".png";
     const storedName = this.storage.storedName(`avatar${ext}`);
+    const storedPath = this.storage.avatarPath(storedName);
     // Validate-then-move: the temp file lands in the avatar tree atomically;
     // the caller's `finally` removes the temp on every exit path.
-    await rename(file.path, this.storage.avatarPath(storedName));
+    await rename(file.path, storedPath);
 
-    const user = await this.prisma.user.update({
-      where: { id: userId },
-      data: { avatarPath: storedName },
-    });
-    if (previous.avatarPath) {
-      await this.storage.remove(this.storage.avatarPath(previous.avatarPath));
-    }
-
-    const fresh = toAuthUser(user);
-    this.presence.updateUser(userId, {
-      displayName: fresh.displayName,
-      avatarColor: fresh.avatarColor,
-      avatarPath: fresh.avatarPath,
-    });
-    const boards = await this.prisma.boardMember.findMany({
-      where: { userId, acceptedAt: { not: null } },
-      select: { boardId: true },
-    });
-    for (const { boardId } of boards) {
-      this.realtime.publish(boardId, {
-        type: "membership",
-        boardId,
-        userId,
-        change: "updated",
+    let committed = false;
+    try {
+      const user = await this.prisma.user.update({
+        where: { id: userId },
+        data: { avatarPath: storedName },
       });
+      // The row points at the blob now — a later step (presence, board
+      // fan-out) must not reclaim it (TASK-156).
+      committed = true;
+
+      if (previous.avatarPath) {
+        await this.storage.remove(this.storage.avatarPath(previous.avatarPath));
+      }
+
+      const fresh = toAuthUser(user);
+      this.presence.updateUser(userId, {
+        displayName: fresh.displayName,
+        avatarColor: fresh.avatarColor,
+        avatarPath: fresh.avatarPath,
+      });
+      const boards = await this.prisma.boardMember.findMany({
+        where: { userId, acceptedAt: { not: null } },
+        select: { boardId: true },
+      });
+      for (const { boardId } of boards) {
+        this.realtime.publish(boardId, {
+          type: "membership",
+          boardId,
+          userId,
+          change: "updated",
+        });
+      }
+      return fresh;
+    } finally {
+      if (!committed) {
+        await this.storage.remove(storedPath).catch(() => undefined);
+      }
     }
-    return fresh;
   }
 
   /** Resolve the stored avatar blob for streaming (404 when absent). */

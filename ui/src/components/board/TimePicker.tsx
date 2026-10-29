@@ -36,11 +36,14 @@ function Column({
   options,
   selected,
   onSelect,
+  onActivate,
   label,
 }: {
   options: { value: number; label: string; suffix?: string }[];
   selected: number;
   onSelect: (value: number) => void;
+  /** Click / Enter / Space only — arrows must not confirm (TASK-156). */
+  onActivate?: (value: number) => void;
   label: string;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -112,7 +115,10 @@ function Column({
           // Roving tabindex: only the selected option is Tab-reachable.
           tabIndex={value === selected ? 0 : -1}
           data-value={value}
-          onClick={() => onSelect(value)}
+          onClick={() => {
+            onSelect(value);
+            onActivate?.(value);
+          }}
           className={cn(
             "flex h-8 w-full snap-center items-center justify-center gap-1 rounded-sm px-2 text-sm tabular-nums whitespace-nowrap transition-colors",
             value === selected
@@ -211,10 +217,8 @@ export function TimePickerPanel({
       <Column
         options={MINUTES.map((m) => ({ value: m, label: pad2(m) }))}
         selected={minute}
-        onSelect={(m) => {
-          onChange(composeTime(hour, m));
-          onConfirm?.();
-        }}
+        onSelect={(m) => onChange(composeTime(hour, m))}
+        onActivate={() => onConfirm?.()}
         label={t("dueDate.minutesLabel")}
       />
     </div>

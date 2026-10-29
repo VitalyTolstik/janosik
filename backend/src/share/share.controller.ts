@@ -6,6 +6,7 @@ import {
   HttpException,
   Logger,
   MethodNotAllowedException,
+  NotFoundException,
   MessageEvent,
   Param,
   Post,
@@ -88,18 +89,23 @@ export class ShareController {
     // A public link must not open unbounded long-lived streams either
     // (TASK-146 follow-up). Anonymous, so only the instance/per-board caps
     // apply — the per-user cap would throttle a popular share.
-    const admission = this.realtime.reserveSubscriber(share.boardId, null);
+    const boardId = share.boardId;
+    if (boardId === null) {
+      throw new NotFoundException("Not found");
+    }
+    const admission = this.realtime.reserveSubscriber(boardId, null);
     if (!admission.ok) {
       res?.setHeader("Retry-After", "5");
       throw new ServiceUnavailableException({
         message: `Too many live streams (${admission.reason} limit ${admission.limit})`,
       });
     }
-    return this.stream(share, sinceSeq, admission.release);
+    return this.stream(share, boardId, sinceSeq, admission.release);
   }
 
   private stream(
     share: BoardShare,
+    boardId: string,
     since: number,
     release: () => void,
   ): Observable<MessageEvent> {
@@ -111,13 +117,13 @@ export class ShareController {
       };
       const sequencer = new CommandStreamSequencer(
         this.commands,
-        share.boardId,
+        boardId,
         since,
         (event) => send(event as unknown as object),
         (error) => subscriber.error(error),
       );
 
-      const live = this.realtime.watch(share.boardId).subscribe((event) => {
+      const live = this.realtime.watch(boardId).subscribe((event) => {
         // No identities on the public contour: presence and membership never
         // leave the building.
         if (event.type === "presence" || event.type === "membership") return;

@@ -129,6 +129,8 @@ interface OptionRowProps {
   selected: boolean;
   onSelect: () => void;
   children: React.ReactNode;
+  /** Marks a row that only toggles a calendar, not a real filter value. */
+  calendarToggle?: boolean;
 }
 
 /**
@@ -164,16 +166,26 @@ function handleRadioGroupKeys(event: ReactKeyboardEvent<HTMLDivElement>): void {
   if (!next) return;
   event.preventDefault();
   next.focus();
-  next.click();
+  // A calendar toggle is opened by click/Enter, not by merely arrowing over
+  // it (TASK-156).
+  if (next.dataset.calendarToggle === undefined) next.click();
 }
 
 /** Radio-style row (single-choice facets: due status, creation window). */
-function OptionRow({ selected, onSelect, children }: OptionRowProps) {
+function OptionRow({
+  selected,
+  onSelect,
+  children,
+  calendarToggle,
+}: OptionRowProps) {
   return (
     <button
       type="button"
       role="radio"
       aria-checked={selected}
+      // Roving tabindex (TASK-156): one Tab stop per radiogroup.
+      tabIndex={selected ? 0 : -1}
+      data-calendar-toggle={calendarToggle ? "" : undefined}
       onClick={onSelect}
       className={cn(
         "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover",
@@ -393,6 +405,7 @@ export function FilterBar({
                     type="button"
                     role="radio"
                     aria-checked={filter.labelMatch === mode}
+                    tabIndex={filter.labelMatch === mode ? 0 : -1}
                     onClick={() => onChange({ ...filter, labelMatch: mode })}
                     className={cn(
                       "rounded px-2 py-0.5 text-xs transition-colors",
@@ -551,6 +564,7 @@ export function FilterBar({
               <OptionRow
                 selected={filter.createdOn !== null}
                 onSelect={() => setDayCalendarOpen((open) => !open)}
+                calendarToggle
               >
                 <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
                 {filter.createdOn

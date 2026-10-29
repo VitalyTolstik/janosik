@@ -259,6 +259,9 @@ function ColumnViewBody({
           )}
           {...(readOnly ? {} : attributes)}
           {...(readOnly ? {} : listeners)}
+          role="group"
+          aria-pressed={undefined}
+          aria-label={column.title}
           title={readOnly ? undefined : t("column.dragHint")}
         >
           <h3

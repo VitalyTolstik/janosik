@@ -8,6 +8,12 @@ function makePrisma(): PrismaService {
     findMany: jest.fn().mockResolvedValue([]),
     deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
   });
+  const sweepable = (count: number) => ({
+    findMany: jest
+      .fn()
+      .mockResolvedValue(count > 0 ? [{ id: `row-${count}` }] : []),
+    deleteMany: jest.fn().mockResolvedValue({ count }),
+  });
   return {
     attachment: purgeable(),
     comment: purgeable(),
@@ -19,17 +25,15 @@ function makePrisma(): PrismaService {
     column: purgeable(),
     label: purgeable(),
     board: purgeable(),
-    activity: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-    adminAuditLog: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    activity: sweepable(0),
+    adminAuditLog: sweepable(0),
     $transaction: jest.fn(async (arg: unknown) =>
       typeof arg === "function"
         ? (arg as (t: unknown) => unknown)({})
         : Promise.all(arg as unknown[]),
     ),
-    emailVerificationCode: {
-      deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
-    },
-    emailChangeCode: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    emailVerificationCode: sweepable(2),
+    emailChangeCode: sweepable(1),
     refreshToken: { deleteMany: jest.fn().mockResolvedValue({ count: 4 }) },
     adminRefreshToken: {
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -41,7 +45,7 @@ function makePrisma(): PrismaService {
       findMany: jest.fn().mockResolvedValue([]),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
-    command: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    command: sweepable(0),
     reminderSent: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
   } as unknown as PrismaService;
 }
@@ -82,6 +86,7 @@ describe("MaintenanceService", () => {
     (prisma.dataExport.findMany as jest.Mock).mockResolvedValue([
       { id: "exp-1", storedName: "export-1.json" },
     ]);
+    (prisma.dataExport.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
     const service = new MaintenanceService(prisma, storageMock, opsMock);
     const removed = await service.sweepExports();
     expect(removed).toBe(1);
@@ -167,11 +172,12 @@ describe("MaintenanceService", () => {
 
   it("trims the command log to the retention window (TASK-84)", async () => {
     const prisma = makePrisma();
+    (prisma.command.findMany as jest.Mock).mockResolvedValue([{ id: "cmd-1" }]);
     (prisma.command.deleteMany as jest.Mock).mockResolvedValue({ count: 7 });
     const service = new MaintenanceService(prisma, storageMock, opsMock);
     const removed = await service.sweepCommands();
     expect(removed).toBe(7);
-    const call = (prisma.command.deleteMany as jest.Mock).mock.calls[0][0] as {
+    const call = (prisma.command.findMany as jest.Mock).mock.calls[0][0] as {
       where: { createdAt: { lt: Date } };
     };
     expect(call.where.createdAt.lt).toBeInstanceOf(Date);
@@ -207,7 +213,7 @@ describe("MaintenanceService", () => {
       where: { boardId: { in: ["b1"] } },
     });
     expect(prisma.boardShare.deleteMany).toHaveBeenCalledWith({
-      where: { boardId: { in: ["b1"] } },
+      where: { boardId: { in: ["b1"] }, mode: "live" },
     });
     expect(prisma.activity.deleteMany).toHaveBeenCalledWith({
       where: { boardId: { in: ["b1"] } },
@@ -236,13 +242,14 @@ describe("MaintenanceService", () => {
 
   it("trims the activity feed to the retention window (TASK-148)", async () => {
     const prisma = makePrisma();
+    (prisma.activity.findMany as jest.Mock).mockResolvedValue([{ id: "a-1" }]);
     (prisma.activity.deleteMany as jest.Mock).mockResolvedValue({ count: 9 });
     const service = new MaintenanceService(prisma, storageMock, opsMock);
 
     const removed = await service.sweepActivity();
 
     expect(removed).toBe(9);
-    const call = (prisma.activity.deleteMany as jest.Mock).mock.calls[0][0] as {
+    const call = (prisma.activity.findMany as jest.Mock).mock.calls[0][0] as {
       where: { createdAt: { lt: Date } };
     };
     expect(call.where.createdAt.lt).toBeInstanceOf(Date);
@@ -250,6 +257,9 @@ describe("MaintenanceService", () => {
 
   it("trims the admin audit log on its own window (TASK-148)", async () => {
     const prisma = makePrisma();
+    (prisma.adminAuditLog.findMany as jest.Mock).mockResolvedValue([
+      { id: "audit-1" },
+    ]);
     (prisma.adminAuditLog.deleteMany as jest.Mock).mockResolvedValue({
       count: 4,
     });
@@ -258,7 +268,7 @@ describe("MaintenanceService", () => {
     const removed = await service.sweepAudit();
 
     expect(removed).toBe(4);
-    const call = (prisma.adminAuditLog.deleteMany as jest.Mock).mock
+    const call = (prisma.adminAuditLog.findMany as jest.Mock).mock
       .calls[0][0] as { where: { createdAt: { lt: Date } } };
     expect(call.where.createdAt.lt).toBeInstanceOf(Date);
   });

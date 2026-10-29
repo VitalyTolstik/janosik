@@ -11,6 +11,9 @@ export const APP_BASE = import.meta.env.BASE_URL;
  * rather than through the router.
  */
 export function appPath(path: string): string {
+  // Idempotent (TASK-156): callers sometimes pass a link already built by
+  // `cardHref`, and doubling the base produced `/app/app/board/…`.
+  if (APP_BASE !== "/" && path.startsWith(APP_BASE)) return path;
   return APP_BASE + path.replace(/^\/+/, "");
 }
 
