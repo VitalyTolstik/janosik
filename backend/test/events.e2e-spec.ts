@@ -7,6 +7,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { RealtimeService } from "@/realtime/realtime.service";
 
 const OWNER_EMAIL = "events-owner@example.com";
 const MEMBER_EMAIL = "events-member@example.com";
@@ -675,12 +676,17 @@ describe("Board events SSE (e2e)", () => {
     expect(pending.status).toBe(403);
   });
 
-  it("rejects a garbage since value", async () => {
+  it("rejects a garbage since value without leaking an SSE slot", async () => {
+    const realtime = app.get(RealtimeService);
+    const before = realtime.subscriberCount;
     const res = await fetch(`${baseUrl}/boards/${boardId}/events?since=hello`, {
       headers: auth(ownerToken),
     });
     expect(res.status).toBe(400);
     await res.body?.cancel().catch(() => undefined);
+    // The admission is taken before the Observable exists; a throw after it
+    // used to leak the slot forever (TASK-147 follow-up).
+    expect(realtime.subscriberCount).toBe(before);
   });
 
   it("announces an accepted invitation on the board's streams", async () => {

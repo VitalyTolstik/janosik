@@ -211,32 +211,32 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
     return this.publisher !== null;
   }
 
-  /** Registers/unregisters an SSE consumer for the counters above. */
-  trackSubscription(): () => void {
-    this.subscribers += 1;
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      this.subscribers = Math.max(0, this.subscribers - 1);
-    };
-  }
-
   /**
    * Reserve an SSE slot for `userId` on `boardId`, or report which cap was
    * hit (TASK-146). The caller refuses the stream with `503` + `Retry-After`
    * and must call `release` when the stream tears down. Counters are
    * per-process, so a multi-node deployment allows each cap per node.
+   *
+   * A public share stream passes `userId = null`: it is anonymous, so the
+   * per-user cap does not apply (`SSE_MAX_PER_USER` must not throttle a
+   * popular link); the instance and per-board caps still do.
    */
-  reserveSubscriber(boardId: string, userId: string): SubscriberAdmission {
-    const userCount = this.limitByUser.get(userId) ?? 0;
+  reserveSubscriber(
+    boardId: string,
+    userId: string | null,
+  ): SubscriberAdmission {
+    const userCount = userId === null ? 0 : (this.limitByUser.get(userId) ?? 0);
     if (
       env.SSE_MAX_CONNECTIONS > 0 &&
       this.subscribers >= env.SSE_MAX_CONNECTIONS
     ) {
       return { ok: false, reason: "instance", limit: env.SSE_MAX_CONNECTIONS };
     }
-    if (env.SSE_MAX_PER_USER > 0 && userCount >= env.SSE_MAX_PER_USER) {
+    if (
+      userId !== null &&
+      env.SSE_MAX_PER_USER > 0 &&
+      userCount >= env.SSE_MAX_PER_USER
+    ) {
       return { ok: false, reason: "user", limit: env.SSE_MAX_PER_USER };
     }
     const boardCount = this.limitByBoard.get(boardId) ?? 0;
@@ -244,7 +244,7 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
       return { ok: false, reason: "board", limit: env.SSE_MAX_PER_BOARD };
     }
     this.subscribers += 1;
-    this.limitByUser.set(userId, userCount + 1);
+    if (userId !== null) this.limitByUser.set(userId, userCount + 1);
     this.limitByBoard.set(boardId, boardCount + 1);
     let released = false;
     return {
@@ -253,7 +253,7 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
         if (released) return;
         released = true;
         this.subscribers = Math.max(0, this.subscribers - 1);
-        this.decrement(this.limitByUser, userId);
+        if (userId !== null) this.decrement(this.limitByUser, userId);
         this.decrement(this.limitByBoard, boardId);
       },
     };

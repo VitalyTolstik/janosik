@@ -66,6 +66,12 @@ export class ShareThrottlerGuard implements CanActivate {
     if (bucket.count > limit) {
       throw new ThrottlerException();
     }
+    // Refresh the insertion order so eviction is true LRU (TASK-147
+    // follow-up): without this an actively-hit bucket keeps its old position
+    // and is the first evicted when the table fills, silently resetting the
+    // limit of a legitimate, popular link.
+    this.buckets.delete(key);
+    this.buckets.set(key, bucket);
     return true;
   }
 
@@ -73,8 +79,9 @@ export class ShareThrottlerGuard implements CanActivate {
     for (const [key, bucket] of this.buckets) {
       if (bucket.resetAt <= now) this.buckets.delete(key);
     }
-    // Still full: drop the oldest inserted entries (Map preserves order) to
-    // make room, so the table can never exceed MAX_BUCKETS.
+    // Still full: drop the least-recently-used entries (Map preserves
+    // insertion order and hits re-insert, see `canActivate`) to make room, so
+    // the table can never exceed MAX_BUCKETS.
     while (this.buckets.size >= MAX_BUCKETS) {
       const oldest = this.buckets.keys().next().value;
       if (oldest === undefined) break;

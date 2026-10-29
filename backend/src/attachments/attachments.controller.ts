@@ -27,6 +27,7 @@ import { AttachmentsService } from "./attachments.service";
 import type { UploadedBlob } from "./attachments.service";
 import { MediaService } from "./media.service";
 import { StorageService } from "./storage.service";
+import { UploadRateGuard } from "./upload-rate.guard";
 
 /**
  * Card file attachments (TASK-47). REST like the comments (§7.6.1) — the
@@ -47,6 +48,9 @@ export class AttachmentsController {
    *  description/comment): hidden from the list, no counter/activity. */
   @Post("cards/:cardId/attachments")
   @BoardRoles("ADMIN", "MEMBER")
+  // The upload budget runs before the multipart body is read (TASK-147
+  // follow-up): a guard, not a service check, is what bounds peak memory.
+  @UseGuards(UploadRateGuard)
   @UseInterceptors(
     FileInterceptor("file", {
       limits: { files: 1, fileSize: LIMITS.attachmentSize },

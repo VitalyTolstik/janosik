@@ -11,6 +11,7 @@ import {
   Post,
   Query,
   Res,
+  ServiceUnavailableException,
   Sse,
   UseGuards,
 } from "@nestjs/common";
@@ -79,11 +80,29 @@ export class ShareController {
   events(
     @CurrentShare() share: BoardShare,
     @Query("since") since?: string,
+    @Res({ passthrough: true }) res?: Response,
   ): Observable<MessageEvent> {
-    return this.stream(share, parseSince(since));
+    // Parse before reserving: a bad `since` 400s without leaking the slot
+    // (TASK-147 follow-up).
+    const sinceSeq = parseSince(since);
+    // A public link must not open unbounded long-lived streams either
+    // (TASK-146 follow-up). Anonymous, so only the instance/per-board caps
+    // apply — the per-user cap would throttle a popular share.
+    const admission = this.realtime.reserveSubscriber(share.boardId, null);
+    if (!admission.ok) {
+      res?.setHeader("Retry-After", "5");
+      throw new ServiceUnavailableException({
+        message: `Too many live streams (${admission.reason} limit ${admission.limit})`,
+      });
+    }
+    return this.stream(share, sinceSeq, admission.release);
   }
 
-  private stream(share: BoardShare, since: number): Observable<MessageEvent> {
+  private stream(
+    share: BoardShare,
+    since: number,
+    release: () => void,
+  ): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
       const send = (data: object | string): void => {
         if (!subscriber.closed) {
@@ -126,6 +145,7 @@ export class ShareController {
         sequencer.close();
         live.unsubscribe();
         clearInterval(keepAlive);
+        release();
       };
     });
   }

@@ -13,6 +13,7 @@ import { StorageService } from "./storage.service";
 import { TranscodeProcessor } from "./transcode.processor";
 import { TRANSCODE_QUEUE, TranscodeService } from "./transcode.service";
 import { MEDIA_QUEUE } from "./media.service";
+import { UploadRateGuard } from "./upload-rate.guard";
 
 /** Card file attachments (TASK-47): upload/stream/delete on local disk.
  * TASK-50 adds the background video transcode ("ужиматор"); TASK-66 moves
@@ -35,6 +36,7 @@ import { MEDIA_QUEUE } from "./media.service";
     TranscodeService,
     MediaService,
     CardAccessGuard,
+    UploadRateGuard,
     ...(queuesEnabled ? [TranscodeProcessor, MediaProcessor] : []),
   ],
   exports: [AttachmentsService, StorageService, TranscodeService, MediaService],

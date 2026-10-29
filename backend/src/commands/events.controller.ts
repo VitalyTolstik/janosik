@@ -83,12 +83,14 @@ export class EventsController {
       // mid-subscribe (which would leak the subscription tracking, A9).
       this.presence.assertClientAvailable(id, clientId, user.id);
     }
+    // Parse the resume point *before* reserving a slot: `parseSince` can throw
+    // a 400, and a throw after the reservation would leak the slot forever
+    // (the teardown that releases it only exists inside the Observable,
+    // TASK-147 follow-up).
+    const sinceSeq = parseSince(since);
     // Admit the stream or refuse it politely (TASK-146): a per-instance,
     // per-user and per-board ceiling instead of an unbounded memory draw.
-    const admission = this.realtime.reserveSubscriber(
-      id,
-      user?.id ?? "anonymous",
-    );
+    const admission = this.realtime.reserveSubscriber(id, user?.id ?? null);
     if (!admission.ok) {
       res?.setHeader("Retry-After", "5");
       throw new ServiceUnavailableException({
@@ -97,7 +99,7 @@ export class EventsController {
     }
     return this.stream(
       id,
-      parseSince(since),
+      sinceSeq,
       clientId,
       presenceEnabled,
       admission.release,

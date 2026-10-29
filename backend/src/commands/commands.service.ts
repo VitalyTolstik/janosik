@@ -210,6 +210,11 @@ export class CommandsService {
       });
     }
     assertDatesInRange(validation.action);
+    // TASK-147 follow-up: the `ifMatchVersions` cap is enforced HERE, before
+    // `boardWrite.run` takes the per-board queue and the advisory lock — an
+    // oversized map must be a cheap 400, not 5 MB serialized through the
+    // board writer (the in-transaction check stays as defence in depth).
+    this.assertIfMatchVersionsSize(dto.ifMatchVersions);
     // Identity of the request for the idempotency check below — taken before
     // the clamp, so an honest retry (same body, later wall clock) still
     // matches the stored command.
@@ -643,6 +648,26 @@ export class CommandsService {
   }
 
   /**
+   * The precondition map's size ceiling, checked *before* the board lock
+   * (TASK-147 follow-up). Kept separate so the boundary is testable without a
+   * transaction: an oversized `ifMatchVersions` is a cheap `400`, never a
+   * multi-megabyte request that reaches the board writer.
+   */
+  private assertIfMatchVersionsSize(
+    preconditions: Record<string, number> | undefined,
+  ): void {
+    if (
+      preconditions !== undefined &&
+      Object.keys(preconditions).length > MAX_IF_MATCH_VERSIONS
+    ) {
+      throw new BadRequestException({
+        message: `Too many ifMatchVersions keys (max ${MAX_IF_MATCH_VERSIONS})`,
+        field: "ifMatchVersions",
+      });
+    }
+  }
+
+  /**
    * Enforce the per-entity preconditions from `CommandRequest.ifMatchVersions`
    * (TASK-29 §7.0): undo of a text edit must not clobber a foreign edit, so
    * every `touch` key the client sends must still hold the version it last
@@ -659,15 +684,6 @@ export class CommandsService {
   ): Promise<void> {
     if (!preconditions) return;
     const entries = Object.entries(preconditions);
-    // An unbounded map would run one query per key *inside the board's
-    // advisory lock* — a cheap board-wide DoS (B1). The client never sends
-    // more than a handful; anything past the cap is a bug or an attack.
-    if (entries.length > MAX_IF_MATCH_VERSIONS) {
-      throw new BadRequestException({
-        message: `Too many ifMatchVersions keys (max ${MAX_IF_MATCH_VERSIONS})`,
-        field: "ifMatchVersions",
-      });
-    }
     // Validate every key and value before touching the database, then read
     // the versions in one batch per entity type instead of per key.
     const wanted = new Map<string, Map<string, number>>();

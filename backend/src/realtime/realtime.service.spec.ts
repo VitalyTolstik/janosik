@@ -52,4 +52,19 @@ describe("RealtimeService.reserveSubscriber", () => {
     expect(realtime.reserveSubscriber("b2", "u2").ok).toBe(true);
     expect(realtime.subscriberCount).toBe(2);
   });
+
+  it("exempts anonymous (public share) streams from the per-user cap", () => {
+    const realtime = new RealtimeService();
+    const releases: Array<() => void> = [];
+    // Well past SSE_MAX_PER_USER (32): a popular share link must not be
+    // throttled as if it were one user.
+    for (let index = 0; index < 40; index += 1) {
+      const admission = realtime.reserveSubscriber("b1", null);
+      expect(admission.ok).toBe(true);
+      if (admission.ok) releases.push(admission.release);
+    }
+    expect(realtime.subscriberCount).toBe(40);
+    for (const release of releases) release();
+    expect(realtime.subscriberCount).toBe(0);
+  });
 });
