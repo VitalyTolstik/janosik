@@ -1615,9 +1615,9 @@ TASK-36 и TASK-37.)*
 | 72.2 | TASK-143 `presence-deltas` ✅ | `main` | §7.13: presence дельтами — `sync` на connect, `join`/`leave`/`update` дальше, без 30-секундного broadcast ростера; `?presence=0` для агентских потоков | **Выполнено:** 3000 SSE без OOM (703 MB, было падение); 1600 коннектов 1464→463 MB; backend 280 / ui 866 / shared 431 тестов зелёные. См. §7.13 |
 | 73 | TASK-140 `realtime-resilience` | `feature/TASK-140-realtime-resilience` | §7.13: устойчивость SSE — heap-лимит, лимит соединений на инстанс с вежливым отказом вместо OOM, масштабирование нод | перегруз не роняет процесс; лимит и heap настраиваются env; доки self-hosting описывают масштаб. См. §7.13 |
 | 74 | TASK-141 `scale-caches-config` | `feature/TASK-141-scale-caches-config` | §7.13: TTL-кэш live-share и admin-метрик, `shared_buffers` в self-host compose | live-share и метрики читаются из кэша (RPS ×N), конфиг БД задокументирован. См. §7.13 |
-| 75 | TASK-144 `ui-edit-coalescing` | `feature/TASK-144-ui-edit-coalescing` | §7.14: слияние quiet-патчей по полям; не коммитить описание при неразрешённом конфликте | нет молчаливых потерь правок; тесты. См. §7.14 |
-| 76 | TASK-145 `presence-consistency` | `feature/TASK-145-presence-consistency` | §7.14: топология presence (1/несколько нод), presence-epoch + resync, rejoin по TTL, `avatarPath`, `clientId` до Observable | ростер сходится; TTL не теряет юзера. См. §7.14 |
-| 77 | TASK-146 `resource-limits` | `feature/TASK-146-resource-limits` | §7.14: кэпы SSE/сессий, `ifMatchVersions`, upload-квоты, bounded share-throttle | вежливый отказ вместо DoS. См. §7.14 |
+| 75 | TASK-144 `ui-edit-coalescing` ✅ | `main` | §7.14: слияние quiet-патчей по полям; не коммитить описание при неразрешённом конфликте | **Выполнено:** quiet-патчи сливаются по полям (title+description в одном окне не теряются); конфликтное описание не коммитится на blur/close/switch/pagehide, черновик держится за карточкой и переопрашивается при открытии; тесты server-sync и CardDialog. См. §7.14 |
+| 76 | TASK-145 `presence-consistency` ✅ | `main` | §7.14: топология presence (1/несколько нод), presence-epoch + resync, rejoin по TTL, `avatarPath`, `clientId` до Observable | **Выполнено:** presence — только локально (без Redis-фан-аута → нет ложных `leave` на 2 нодах); `epoch` в кадрах + keepalive + reconnect при расхождении; ping `410` → rejoin; `avatarPath` в сравнении; `clientId` проверяется до Observable; CRLF-парсер; ростер чистится на смене доски; тесты. **Остаётся:** общий presence-store в Redis для сходимости ростера на нескольких нодах (отдельная задача). См. §7.14 |
+| 77 | TASK-146 `resource-limits` ✅ | `main` | §7.14: кэпы SSE/сессий, `ifMatchVersions`, upload-квоты, bounded share-throttle | **Выполнено:** SSE-кэпы instance/user/board (`503` + `Retry-After`); `ifMatchVersions` ≤100 и батч-чтение версий (≤1 запрос на тип); upload-rate 60/мин на юзера (`429`); share-throttle ограничен по размеру + валидация формы токена; тесты. **Остаётся:** temp-file uploads → **TASK-155**; Redis-лимитер шары на несколько нод. См. §7.14 |
 | 78 | TASK-147 `security-hardening` | `feature/TASK-147-security-hardening` | §7.14: `/health`, read-only impersonation, expiry/assignee-leak, bull-board allowlist, `COOKIE_SECURE`, CIDR/TOTP/логи | e2e на каждую дыру. См. §7.14 |
 | 79 | TASK-148 `retention-and-indexes` | `feature/TASK-148-retention-and-indexes` | §7.14: индексы `deletedAt/expiresAt/dueDate`, sweeps Board/Activity/audit/shares/exports, retry очередей | нет роста БД/Redis/диска. См. §7.14 |
 | 80 | TASK-149 `admin-consistency` | `feature/TASK-149-admin-consistency` | §7.14: admin-мутации через команды, `attachmentCount`, импорт батч/атомарность | нет orphan-карточек. См. §7.14 |
@@ -1626,6 +1626,7 @@ TASK-36 и TASK-37.)*
 | 83 | TASK-152 `ui-a11y-polish` | `feature/TASK-152-ui-a11y-polish` | §7.14: tab-order зон, drag-handle/AT, lightbox focus, due-тик, локали | keyboard-only; ru/en. См. §7.14 |
 | 84 | TASK-153 `config-and-observability` | `feature/TASK-153-config-and-observability` | §7.14: `connection_limit`/Postgres, кэш OpsSettings, low-баги, slow-query/requestId | пул и логи под контролем. См. §7.14 |
 | 85 | TASK-154 `mcp-perf-bench` | `feature/TASK-154-mcp-perf-bench` | §7.15: бенч «API напрямую vs MCP», профиль MCP-сервера, точечные оптимизации (keep-alive, меньше read-modify-write, ленивый рендер, батч-тулы) | воспроизводимые цифры латентности/запросов/CPU + вердикт и улучшения без регрессий. См. §7.15 |
+| 86 | TASK-155 `upload-hardening` | `feature/TASK-155-upload-hardening` | §7.14: multer `diskStorage` → temp-файл → sniff первых байт → `rename` в место; `rm` в `finally`; sweep `.tmp-*` | RSS не растёт на N×25 MB; ни одного `.tmp-*` после ошибок; MIME/шара/транскод не сломаны; e2e зелёные. См. §7.14 |
 
 > **TASK-38a/38b выполнены (2026-10-26).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -2944,7 +2945,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 ---
 
-### 7.14. Аудит 2026-10-29 — найденные дыры (TASK-144…153)
+### 7.14. Аудит 2026-10-29 — найденные дыры (TASK-144…155)
 
 > **Зачем.** Три независимых аудита (realtime/scale, backend/DB/queues/security,
 > frontend/UI) после нагрузочного теста дали ~50 находок. Полный свод с
@@ -2966,6 +2967,12 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 - **DoD:** «описание → сразу заголовок» не теряет ни одного поля (сервер + reload);
   закрытие диалога с конфликтом не затирает чужой текст; тесты зелёные.
 - **Зависимости:** нет.
+- **Выполнено (2026-10-29):** `ServerSync` сливает quiet-`UPDATE_CARD` по полям
+  (title+description в одном окне оба уходят), waiter'ы резолвятся исходом
+  коалесцированного отправления; `CardDialog` не коммитит описание при
+  неразрешённом конфликте (черновик в per-card `Map`, восстановление при
+  открытии, «Keep mine»/«Reload» его чистят). Тесты: `server-sync.test.ts`,
+  `CardDialog.conflict.test.tsx`.
 
 #### TASK-145 — `presence-consistency` · Presence не врёт и самовосстанавливается
 
@@ -2984,6 +2991,20 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   ложных `leave`; тесты на `presence=0`, `avatarPath`, touch-miss/rejoin и
   two-node.
 - **Зависимости:** TASK-143 (есть), TASK-74.
+- **Выполнено (2026-10-29):** топология решена как **присутствие per-node** —
+  presence публикуется через `RealtimeService.publishLocal`, а не в Redis, поэтому
+  на 2 нодах нет ложных `leave` (каждая нода показывает своих; полная сходимость —
+  см. «Остаётся»). Кадры presence несут `epoch`; keep-alive возвращает
+  `presenceEpoch`, при расхождении клиент переподключается и получает свежий `sync`
+  (A2). `ping` отдаёт `410` при пропавшей сессии → rejoin (A3). `samePresence`
+  сравнивает `avatarPath` (A6). `clientId` валидируется до `Observable` (A9). SSE
+  парсится по `/\r?\n\r?\n/` (A10). Ростер чистится на смене доски/stop (A8),
+  heartbeat не глушится поздним teardown (A11). `sync` переиспользует ростер из
+  `join` (A5). Тесты: `presence.service.spec` (+epoch/локальность/`assertClientAvailable`),
+  `events.e2e-spec` (ping `410`), ui `realtime`/`board-live`.
+- **Остаётся:** общий presence-store в Redis (HSET/Lua) для сходимости ростера на
+  нескольких нодах — сейчас многонодный режим нельзя включать с ожиданием полного
+  presence (нода пишет warning при `usingRedis`).
 
 #### TASK-146 — `resource-limits` · Кэпы на SSE, команды, загрузки, шары
 
@@ -2997,6 +3018,17 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 - **DoD:** перегруз > лимита — вежливый отказ, процесс жив; большая
   `ifMatchVersions` — `400` без блокировки доски; квоты работают; тесты.
 - **Зависимости:** TASK-140 (пересекается по кэпу соединений).
+- **Выполнено (2026-10-29):** SSE-лимиты `SSE_MAX_CONNECTIONS` /
+  `SSE_MAX_PER_USER` / `SSE_MAX_PER_BOARD` (`0` = без лимита) через
+  `RealtimeService.reserveSubscriber`, отказ `503` + `Retry-After` (A4);
+  `ifMatchVersions` ≤ 100 ключей и батч-чтение версий `entityVersions` — не
+  больше одного запроса на тип, без N+1 под advisory-lock (B1);
+  `UPLOAD_RATE_LIMIT` (60/мин на юзера, `429`) + существующий cap
+  `attachmentsPerCard` (B20, частично); `ShareThrottlerGuard` ограничен
+  `MAX_BUCKETS` + валидирует форму токена (B23). Тесты: `realtime.service.spec`,
+  `commands-board-level.e2e-spec`, `attachments`/`board-share` e2e.
+- **Остаётся:** temp-file uploads — вынесено в **TASK-155**; Redis-лимитер шары
+  на несколько нод (сейчас лимит per-process, на N нодах ×N).
 
 #### TASK-147 — `security-hardening` · Auth, доступ, секреты
 
@@ -3109,9 +3141,33 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   `max_connections`; low-пункты закрыты тестами; инцидент трассируется по id.
 - **Зависимости:** нет.
 
+#### TASK-155 — `upload-hardening` · Загрузки через временный файл, а не RAM
+
+- **Зачем:** B20 (остаток TASK-146). `multer` держит до `LIMITS.attachmentSize`
+  (25 MB) **на запрос в памяти** (`memoryStorage` → `file.buffer`), затем
+  `AttachmentsService` пишет буфер на диск. Пик RAM = число одновременных
+  загрузок × 25 MB, а rate-limit считает штуки в минуту, не конкурентность: пачка
+  параллельных загрузок на маленьком VPS — риск OOM. `.tmp-*`-дисциплина и sweep
+  уже есть (B22, `storage.service.ts`) — их и надо задействовать.
+- **Что:**
+  1. `multer.diskStorage` в отдельный temp-каталог (`.tmp-*`); лимиты
+     `files:1`/`fileSize` сохранить;
+  2. `UploadedBlob` — путь вместо буфера; MIME определять по **первым байтам
+     файла** (читать ограниченный префикс, не весь файл), сохраняя текущую политику
+     allowlist/signature (TASK-76);
+  3. перенос temp → `storage.attachmentPath` через `rename` **после** проверок;
+     `rm(temp, { force: true })` в `finally` на любом отказе/ошибке;
+  4. видео-транскод (`transcode`/`media`) получает путь, а не буфер;
+  5. брошенные temp-файлы подчищает тот же sweep, что и `.tmp-*` (grace).
+- **DoD:** при ~20 одновременных загрузках по 25 MB RSS API не растёт на ~500 MB
+  (замер до/после в PR); после ошибок/отмен не остаётся `.tmp-*`; MIME/signature,
+  публичная шара и транскод не сломаны; unit + e2e загрузок/деривативов зелёные.
+- **Зависимости:** TASK-146 (лимиты, ✅), TASK-76 (MIME-sniff), B22 (`.tmp` sweep).
+
 > Порядок внедрения (рекомендация): **144 → 145/146 → 147 → 148 → 150/151 →
-> 149/152/153**. Первые две — потери данных и целостность realtime (их видно
-> пользователю), дальше безопасность и ресурсы, потом перф/полировка.
+> 149/152/153**; **155** — после 146. Первые две — потери данных и целостность
+> realtime (их видно пользователю), дальше безопасность и ресурсы, потом
+> перф/полировка.
 
 ---
 
