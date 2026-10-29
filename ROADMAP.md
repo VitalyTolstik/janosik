@@ -1625,8 +1625,9 @@ TASK-36 и TASK-37.)*
 | 82 | TASK-151 `pwa-stream-recovery` ✅ | `main` | §7.14: SW не убивает старый деплой, SSE-watchdog, 404 доски, `APP_BASE`, restore | **Выполнено:** SW ждёт `SKIP_WAITING` (баннер «новая версия» + reload) и хранит прошлый кэш как fallback для старых lazy-chunk; watchdog 90 с без кадров → abort+reconnect; 404 стрима → доска убирается; `cardHref` через `APP_BASE` (`/app/…`); restore бэкапа в server-режиме отключён; compact error boundary на `CardDialog`; тесты. См. §7.14 |
 | 83 | TASK-152 `ui-a11y-polish` ✅ | `main` | §7.14: tab-order зон, drag-handle/AT, lightbox focus, due-тик, локали | **Выполнено:** зоны вставки `tabIndex=-1` (из tab-порядка ушли ~2400 стопов); карточка — `role="group"` вместо вложенной `button`, локализованные dnd-анонсы и инструкция; listbox времени и radiogroup фильтров ходят стрелками (roving tabindex); lightbox — focus-trap, `alt`, revoke blob, возврат фокуса; бейдж срока пересчитывается по таймеру/фокусу; `common.close` в диалогах; закрытие карточки удаляет только `card` из URL; тесты. См. §7.14 |
 | 84 | TASK-153 `config-and-observability` ✅ | `main` | §7.14: `connection_limit`/Postgres, кэш OpsSettings, low-баги, slow-query/requestId | **Выполнено:** `DB_CONNECTION_LIMIT` (в DSN, если не задан) + `shared_buffers`/`work_mem`/`max_connections` в compose; кэш `OpsSettings` 15 с с инвалидацией (guard больше не ходит в БД на каждый запрос); счётчик карточек без архива/удалённых колонок, фид приглашений без истёкших, битые seq-курсоры → 400, idempotency коммента проверяет автора, admin refresh с grace 60 с, `notifyDigest` в API/UI; slow-query лог с `X-Request-Id` (AsyncLocalStorage); `CONCURRENTLY` уже закрыт в 148. Тесты. См. §7.14 |
-| 85 | TASK-154 `mcp-perf-bench` | `feature/TASK-154-mcp-perf-bench` | §7.15: бенч «API напрямую vs MCP», профиль MCP-сервера, точечные оптимизации (keep-alive, меньше read-modify-write, ленивый рендер, батч-тулы) | воспроизводимые цифры латентности/запросов/CPU + вердикт и улучшения без регрессий. См. §7.15 |
+| 85 | TASK-154 `mcp-perf-bench` | `feature/TASK-154-mcp-perf-bench` | §7.16: бенч «API напрямую vs MCP», профиль MCP-сервера, точечные оптимизации (keep-alive, меньше read-modify-write, ленивый рендер, батч-тулы) | воспроизводимые цифры латентности/запросов/CPU + вердикт и улучшения без регрессий. См. §7.16 |
 | 86 | TASK-155 `upload-hardening` ✅ | `main` | §7.14: multer `diskStorage` → temp-файл → sniff первых байт → `rename` в место; `rm` в `finally`; sweep `.tmp-*` | **Выполнено:** `tempUploadStorage` (multer disk → `.tmp-<uuid><ext>` в blob-root); `UploadedBlob.path`; MIME по префиксу 4 КБ; `rename` после проверок; `rm` в `finally` на всех путях (вложения и аватар); транскод/деривативы по id; `.tmp` sweep из TASK-148. e2e загрузок/транскода/шары зелёные. См. §7.14 |
+| 87 | TASK-156 `review-fixes` | `feature/TASK-156-review-fixes` | §7.15: правки по итогам семи независимых ревью TASK-148/149/150/151/152/153/155 (блокеры, средние, low, тесты) | одна волна блокеров → зелёные полные гейты → волна 2 → волна 3; без изменения публичного API, кроме `notifyDigest`/шаринга. См. §7.15 |
 
 > **TASK-38a/38b выполнены (2026-10-26).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -3307,7 +3308,265 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 ---
 
-### 7.15. Производительность MCP (TASK-154)
+### 7.15. Ревью 2026-10-29 — правки по семи таскам (TASK-156)
+
+> **Зачем.** После закрытия TASK-148…155 каждая таска ушла на отдельное
+> read-only ревью (семь потоков, по одному на таску). Проверялись: корректность
+> инвариантов, регрессии поведения, отказные пути, безопасность, память/локи и
+> достаточность тестов. Ниже — единая задача на все правки: один PR/ветка,
+> три волны по цене ошибки. Пункты, помеченные **[проверено]**, подтверждены
+> чтением кода или целевым прогоном.
+
+#### TASK-156 — `review-fixes` · Правки по итогам ревью
+
+- **Зачем:** ревью подтвердило, что заявленные в TASK-149/150/151/155 свойства
+  местами не достигнуты (restore доски, «ввод не рендерит редактор», деплой
+  старой вкладки, очистка финального блоба), а TASK-148/153 оставили
+  неограниченные sweeps и неполные low-фиксы. Публичные контракты (REST/SSE,
+  формат экспорта) не меняются, кроме уже добавленного `notifyDigest` и
+  поведения снапшот-шары.
+
+##### Волна 1 — блокеры (чинить до всего остального)
+
+1. **[проверено] 149 / high — restore доски пустой и без участников.**
+   `admin.service.ts:2246–2253` + `boards.service.ts:203–258`: админский
+   «delete» каскадит `deletedAt` на детей и **hard-deletes `BoardMember`**, а
+   «restore» только снимает флаг с `Board`. Итог: доска возвращается пустой,
+   без владельца и не видна в `listBoards`. Фикс: либо полноценный
+   subtree-restore (memberships/владелец + clean children), либо не каскадить
+   membership на пути админского soft-delete. e2e: delete→restore заполненной
+   доски.
+
+2. **[проверено] 149 / high — удаление перestamp-ит ранее удалённые чек-листы.**
+   `command-writers.ts:511–527, 644–660` обновляют `deletedAt` у **всех**
+   чек-листов/пунктов карточки, включая удалённые ранее; `sameOp()` в
+   `admin-snapshots.ts:64–76` принимает их за часть текущей операции → restore
+   воскрешает удалённое. Фикс: писать только `deletedAt: null`. Тесты:
+   «удалить пункт/чек-лист → удалить карточку/колонку → restore: остаётся
+   удалённым».
+
+3. **[проверено] 149 / high — snapshot ≠ reducer после restore.**
+   `admin-snapshots.ts:12–17, 89–106`: снимок не содержит `links`,
+   `lastActorId`, `attachmentCount`, а `upsertCard`/`cardUpdateData`
+   (`command-writers.ts:224–242`) не пишут links и attachmentCount из payload.
+   Агрегат после restore содержит links и бейдж, `boardReducer` — нет; это
+   расхождение командного контракта. Фикс: включить live-links по
+   `position`, `lastActorId` и точный `attachmentCount` в snapshot и
+   использовать их в writer (или задокументированный repair). Контрактный
+   тест: admin-snapshot → `boardReducer` == aggregate.
+
+4. **[проверено] 151 / high — двойной `APP_BASE` (`/app/app/board/…`).**
+   `card-nav.ts:29` возвращает `/app/board/…`, но
+   `CardContextMenu.tsx:178,345` пропускает его через `appShareUrl()`, которая
+   снова добавляет `APP_BASE` (`app-path.ts:13–19`). Ломает «Copy link» и
+   «Open in new tab» на self-host. Фикс: добавить router-relative
+   `cardPath()` и строить `appShareUrl(cardPath(...))`; `cardHref()` оставить
+   только для `data-card-href`/`window.open`; сделать `appPath`
+   идемпотентным (`startsWith(APP_BASE)`). Тест с `BASE_URL="/app/"`.
+
+5. **[проверено] 151 / high — обновление одной вкладки захватывает все.**
+   `sw.js:127` делает `clients.claim()` на `activate`, а
+   `applyServiceWorkerUpdate` (`register-sw.ts:47–54`) сразу перезагружает
+   только текущую вкладку. Остальные вкладки продолжают старый бандл без
+   `controllerchange`-релоада → тот же SyntaxError. Фикс: слушать
+   `controllerchange` во всех клиентах с one-shot guard, либо не
+   `claim()`-ить при обновлении (только при первой установке).
+
+6. **[проверено] 151 / high — fallback не спасает никогда не кэшированный chunk.**
+   Старая вкладка просит `assets/editor-OLD.js`; его нет ни в текущем, ни в
+   прошлом кэше (lazy chunk не открывали до деплоя) → SPA-fallback отдаёт
+   `index.html` (200), код кэширует его как JS (`sw.js:195–198`) → падение.
+   Фикс: для `/assets/*` принимать только `response.ok` **и** не-`text/html`
+   (`Content-Type`), иначе 503/без кэша; в приложении ловить ошибки dynamic
+   import и показывать баннер обновления. Тест: 200 HTML на `.js` не кэшируется.
+
+7. **[проверено] 155 / high — финальный блоб остаётся при ошибке после `rename`.**
+   `attachments.service.ts:164` переносит temp в blob-tree, затем
+   `flags.isEnabled` (`:171`) и `boardWrite.run` (`:186`) могут бросить (реальный
+   триггер — проигранная гонка квоты `:192–200`). `finally` (`:89`) удаляет
+   только старый temp-путь, поэтому до ~25 MB × N остаются до orphan sweep.
+   То же у аватара (`users.service.ts:116–118`). Фикс: `storedPath` +
+   `committed`; в `finally` при `moved && !committed` — `storage.remove(storedPath)`.
+
+8. **[проверено] 150 / high — draft заголовка не ресинкается.**
+   `CardDialog.tsx:429–442, 449–453`: ресид только по
+   `[cardId, open, board?.id]`, поэтому чужой rename/undo/RESTORE_BOARD не
+   обновляет поле, а blur/flush безусловно пишет локальный текст поверх чужого.
+   После отклонённого `UPDATE_CARD` draft также не откатывается. Фикс: сверять
+   с `updatedAt`/сфокусированностью и dirty-состоянием, путь конфликта как у
+   описания (уведомление + «Reload»/«Keep mine»), ресид при ошибке записи.
+
+9. **[проверено] 148 / high — purge доски не ограничен чанком.**
+   `maintenance.service.ts:255–317`: чанк по доскам (≤500), но затем
+   `card.findMany`/`attachment.findMany` **без `take`** и один `$transaction`
+   на всё поддерево. Большая доска даёт огромные `in`-массивы (лимит
+   bind-параметров), долгий лок и повторный выбор в следующих чанках. Фикс:
+   удалять карточки/детей пачками по `PURGE_CHUNK` (переиспользовать
+   `purgeChunks` по card id), либо чанковать внутри доски.
+
+10. **[проверено] 152 / high — стрелки в минутах закрывают пикер.**
+    `TimePicker.tsx:81–95` вызывает `onSelect` для обеих колонок, а
+    `onSelect` минут вызывает `onConfirm()` (`:214–217`) → `setTimeOpen(false)`
+    в `CardDueDate.tsx:85`. Фикс: стрелки только меняют значение/фокус;
+    подтверждение — Enter, click или blur.
+
+##### Волна 2 — средние
+
+11. **148 / medium — снапшот-шары не должны умирать с доской.**
+    `maintenance.service.ts:306–308` удаляет все `BoardShare`, хотя `schema.prisma`
+    и `share.service.ts` гарантируют, что `mode: "snapshot"` переживает удаление
+    источника. Нужно решение: nullable `BoardShare.boardId` + `onDelete: SetNull`
+    (или отдельная таблица снапшотов), при purge доски удалять только `live`.
+12. **148 / medium — `sweep-codes` без индексов.** `EmailVerificationCode`/
+    `EmailChangeCode` имеют только `@@index([userId])`; добавить
+    `expiresAt`/`consumedAt` в схему, миграцию и `db:indexes.cjs`.
+13. **148 / medium — `IF NOT EXISTS` не чинит invalid index.** Прерванный
+    `CREATE INDEX CONCURRENTLY` оставляет `indisvalid = false`; скрипт и
+    миграция считают индекс существующим. Фикс: проверять `pg_index.indisvalid`
+    и `DROP INDEX CONCURRENTLY` + повтор, либо падать с понятной ошибкой.
+14. **148 / medium — прочие sweeps без чанков.** `sweepExports` грузит все
+    строки и удаляет файлы последовательно; `sweepActivity`/`sweepAudit`/
+    `sweepCommands` — один `deleteMany`; `sweepOrphanBlobs` грузит все вложения.
+    Применить `purgeChunks`/пагинацию.
+15. **149 / medium — bulk restore зависит от порядка.** `bulkEntity`
+    (`admin.service.ts:2216–2234`) переигрывает сохранённые `position` по одному
+    в порядке id; `[C,B,A]` даёт `[A,C,B]`. Фикс: сортировать restore по
+    `(boardId, columnId, position)` / `column.position` до применения.
+16. **149 / medium — bulk частичный и без аудита при сбое.** Один id = одна
+    транзакция; падение посередине оставляет часть изменений без
+    `entity.bulk_deleted` (и имя действия неверно для restore/archive).
+    Фикс: audit на каждый элемент / in `finally`, action-specific имя, вернуть
+    частичный результат.
+17. **149 / medium — `RESTORE_COLUMN` упирается в `MAX_COMMAND_BYTES` (2 MiB).**
+    `admin-snapshots.ts:169` пакует все карточки колонки в один action; 200
+    карточек с большими описаниями → 413 и «не восстановить». Фикс: поднять
+    лимит для внутренних restore или восстанавливать чанками
+    (`RESTORE_COLUMN` → `RESTORE_COLUMN_CARDS`/по карточке).
+18. **149 / medium — import `createMany` без чанков и дедупа.** Один
+    `createMany` на сущность может превысить 65 535 bind-параметров; дубли в
+    `labelIds` бьют composite PK `CardLabel`. Фикс: `createMany` пачками
+    (≈1 000) и дедуп `labelIds`.
+19. **149 / low — timeout импорта → 500.** `boards.service.ts:518–533` не
+    маппит `isTransactionTimeout` (P2028) в `503`.
+20. **149 / low — snapshot может нести удалённую метку/битую обложку.**
+    `admin-snapshots.ts:79–87, 100`: фильтровать live-метки доски; неизвестные
+    `cover` игнорировать, а не кастовать вслепую.
+21. **149 / low — архивные карточки в удалённой колонке мешают purge.**
+    `DELETE_COLUMN` оставляет их с `columnId` на soft-deleted колонку; sweep
+    колонки ждёт `cards: none` → колонка не чистится. Решить явно (переносить
+    в orphan/помечать) и покрыть тестом.
+22. **150 / medium — заявленный выигрыш C8 не достигнут.** `DescriptionEditor` —
+    un-memoized `forwardRef`, рендерится inline (`CardDialog.tsx:694–763`);
+    `setTitleDraft` на каждый символ ререндерит диалог. Нужно memo/split
+    редактора со стабильным `onChange` и render-probe в тесте.
+23. **150 / medium — мёртвый ключ `dragging: { strategy: BeforeDragging }`.**
+    В `MeasuringConfiguration` есть только `draggable`/`droppable`/`dragOverlay`;
+    `MEASURING` передан переменной, поэтому excess-property check не сработал.
+    Удалить ключ или использовать `dragOverlay`.
+24. **150 / low–medium — focus-diff пропускает label-only изменения.**
+    `DELETE_LABEL`/`RESTORE_LABEL` меняют `card.labelIds` без bump
+    `updatedAt`; fast path в `board-diff.ts` перестаёт помечать undo dead.
+    Добавить дешёвое сравнение `labelIds` (или версии в агрегате).
+25. **150 / low — `MembersStore` шумит на no-op reload.** `set()` всегда
+    уведомляет board-роутер и глобальный version, хотя `touchedUsers` пуст;
+    `useBoardMembersList` использует глобальный `getVersion`. Пропускать
+    уведомления при пустом `touchedUsers`, завести per-board snapshot.
+26. **150 / low — двойной `TOUCH_CARD` за сессию.** `flushTitle` вызывает
+    `touchCard` напрямую и не чистит `touchTimerRef`; продублировать через
+    `scheduleTouch`/взаимный сброс таймеров.
+27. **151 / medium — keep-selection не гарантирует кэш прошлого активного деплоя.**
+    `stale.slice(-1)` полагается на порядок `caches.keys()`; кэш
+    неактивированного воркера может вытеснить нужный. Хранить последний
+    активированный `CACHE_VERSION` в метаданных или не удалять кэши, пока есть
+    живые клиенты.
+28. **151 / medium — прошлый кэш пиннит не-hashed файлы.** `matchShellAsset`
+    применяется и к `manifest`/icons → при онлайне отдаётся старый манифест.
+    Fallback только для `/assets/`; остальное network-first.
+29. **151 / medium — баннер обновления одноразовый.** `CustomEvent` может
+    уйти до подписки; `registration.installing` не проверяется; нет
+    `registration.update()`/поллинга. Проверять `installing`/`waiting` на
+    mount, слушать `statechange`, обновлять на focus/visibility.
+30. **151 / medium — compact boundary не сбрасывается.** После падения
+    `CardDialog` fallback висит для всех следующих карточек. `key={openCardId}`,
+    закрытие из fallback, опционально `resetKeys`.
+31. **151 / medium — 404 трактуется как перманентное удаление.** `onAccessRevoked`
+    удаляет доску из хранилища и тостит «нет доступа»; транзиентный 404 от
+    прокси/неполного деплоя теряет запись. Перечитывать список и удалять только
+    при реальном отсутствии; отдельный текст «доска удалена». Обработать 410.
+32. **152 / medium — `role="group"` без имени.** dnd-обёртка карточки
+    фокусируема и ведёт себя как контрол, но не имеет accessible name; на
+    drag эмитится `aria-pressed`, невалидный для group. Добавить
+    `aria-label={card.title}`, не эмитить `aria-pressed`; в идеале — отдельный
+    drag-handle.
+33. **152 / medium — хедер колонки остался `role="button"` вокруг меню.**
+    `ColumnView.tsx:254–261`; применить тот же фикс/handle.
+34. **152 / medium — у радио нет roving tabindex.** `FilterBar.tsx:171–187`:
+    все `role="radio"` остаются в tab-порядке. `tabIndex={selected?0:-1}` и
+    тест на tab-порядок. Стрелки на «On date» не должны кликать календарь
+    (`:166–167, 551–559`).
+35. **152 / low–medium — `DueBadge` плодит таймеры.** Один `setInterval` + два
+    слушателя на каждый бейдж (2400 карточек → тысячи таймеров). Общий тикер
+    через провайдер/модуль; тест на focus/visibility и cleanup.
+36. **152 / low — восстановление фокуса в detached узел.** Проверять
+    `isConnected` перед `focus()`; не терять свежий blob, если overlay уже
+    открыт (`openImageLightbox` рано выходит).
+37. **153 / medium — истёкшее приглашение блокирует реинвайт.**
+    `boards.service.ts:326–330` возвращает 201-no-op, не проверяя `expiresAt`,
+    а фид его уже скрывает → реинвайт «молча ничего» до sweep. В транзакции
+    обновлять `role`/`expiresAt`/`invitedById` (или delete+create).
+38. **153 / medium — admin concurrent refresh всё ещё revoke-all.**
+    `admin-auth.service.ts:205–211`: при `rotated.count === 0` нужно логировать
+    гонку и отдавать 401 **без** `revokeAllSessions` (как user-контур
+    `auth.service.ts:218–222`).
+39. **153 / medium — `SLOW_QUERY_MS=0` инвертирован.** `prisma.service.ts:45,54`:
+    `duration >= 0` → логируется всё; плюс `log`-события включены всегда.
+    Проверять `> 0` и не включать event-лог при 0.
+40. **153 / low — P2002-путь коммента не сверяет автора.**
+    `comments.service.ts:112–125`: добавить `existing.authorId === authorId` в
+    catch, иначе вернуть 409.
+41. **153 / low — `notifyDigest: null` → Prisma 500.** `IsOptional` пропускает
+    `null`; писать только `typeof === "boolean"` (или `ValidateIf`).
+42. **153 / low — cache может затереться in-flight чтением.**
+    `ops-settings.service.ts:32–39`: сид из результата `upsert` или generation
+    guard перед записью устаревшего чтения.
+43. **153 / low — курсоры всё ещё 500 на границах.** Ограничить `at` ≤
+    `8.64e15`, seq ≤ `9223372036854775807` (19 цифр), иначе 400.
+44. **153 / low — `X-Request-Id` спуффится и почти не трассируется.** Либо
+    минтить всегда/доверять только trusted proxy, либо добавить
+    exception/access-лог с id. `observability.service.ts:219–225` должен читать
+    через кэш `OpsSettingsService`.
+45. **153 / low — неполные e2e-wipe.** `admin`, `admin-queues`,
+    `admin-email-settings` чистят `user` без FK-графа → suite остаётся
+    order-dependent. Завести общий `wipeAll()`.
+
+##### Волна 3 — мелочи, тесты и доки
+
+46. `MAINTENANCE_JOBS` дублируется в `ops/maintenance.service.ts` и
+    `admin/dto/admin-v3.dto.ts` — импортировать один список.
+47. В `backend/.env.example` нет `AUDIT_RETENTION_DAYS`, `DB_CONNECTION_LIMIT`,
+    `SLOW_QUERY_MS`, `POSTGRES_*`; в README нет `POSTGRES_WORK_MEM`/
+    `POSTGRES_MAX_CONNECTIONS`.
+48. `DB_CONNECTION_LIMIT` принимает нецелые/отрицательные значения —
+    валидировать (0 — документированный «как у Prisma»).
+49. Тесты: `.tmp`/финальный блоб после 400/413/отмены/квоты; SW «200 HTML на
+    `.js` не кэшируется»; `cardHref` с `/app/`; announcements en/ru;
+    `RESTORE_*` контракт (snapshot→reducer==aggregate); board delete→restore;
+    bulk restore в обратном порядке; label-only focus-diff; `linkSignature`
+    (инвалидация по новому снапшоту); `DueBadge` focus/visibility + cleanup;
+    server-mode BackupDialog.
+50. Замер RSS для 155 (~20 × 25 MB) и запись в `docs/PERF-BASELINE.md`.
+
+- **DoD:** все пункты волн 1–2 закрыты; полные гейты (unit, e2e, ui, shared,
+  lint, format, build backend/ui/site, size) зелёные; новые тесты из волны 3
+  покрывают каждый блокер; публичный REST/SSE-контракт не сломан; экспорт/
+  импорт и публичная шара по-прежнему работают; после отказных сценариев в
+  blob-root нет ни `.tmp-*`, ни новых осиротевших блобов.
+- **Зависимости:** TASK-148…155 (✅ на `main`), TASK-139 для перф-замеров UI.
+- **Порядок:** волна 1 → полные гейты → волна 2 → волна 3 → один PR.
+
+---
+
+### 7.16. Производительность MCP (TASK-154)
 
 > **Зачем.** Замеры §7.13 и `docs/PERF-BASELINE.md` сняты **напрямую по HTTP/SSE**
 > — это правильно для ёмкости сервера. Но агенты работают не так: они ходят через
