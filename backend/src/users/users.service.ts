@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { writeFile } from "node:fs/promises";
+import { rename, rm } from "node:fs/promises";
 
 import type { AuthUser } from "@/auth/auth.types";
 import { toAuthUser } from "@/auth/auth-user.mapper";
@@ -18,6 +18,7 @@ import {
   StorageService,
 } from "@/attachments/storage.service";
 import type { UploadedBlob } from "@/attachments/attachments.service";
+import { readFilePrefix } from "@/attachments/upload-storage";
 import { LIMITS } from "@janosik/shared";
 import type { UpdateProfileDto } from "./dto/update-profile.dto";
 
@@ -59,7 +60,24 @@ export class UsersService {
    * face without a reconnect.
    */
   async uploadAvatar(userId: string, file?: UploadedBlob): Promise<AuthUser> {
-    if (!file || file.size <= 0) {
+    if (!file || typeof file.path !== "string" || file.path.length === 0) {
+      throw new BadRequestException({
+        message: "File is required",
+        field: "file",
+      });
+    }
+    try {
+      return await this.persistAvatar(userId, file);
+    } finally {
+      await rm(file.path, { force: true }).catch(() => undefined);
+    }
+  }
+
+  private async persistAvatar(
+    userId: string,
+    file: UploadedBlob,
+  ): Promise<AuthUser> {
+    if (file.size <= 0) {
       throw new BadRequestException({
         message: "File is required",
         field: "file",
@@ -72,8 +90,9 @@ export class UsersService {
       });
     }
     // TASK-76: trust the bytes, not the multipart header. A real PNG/JPEG/
-    // GIF/WebP passes; HTML or text dressed as an image does not.
-    const sniffed = sniffMime(file.buffer);
+    // GIF/WebP passes; HTML or text dressed as an image does not. Only a
+    // bounded prefix is read (TASK-155).
+    const sniffed = sniffMime(await readFilePrefix(file.path));
     if (sniffed === null || !AVATAR_MIME_ALLOWLIST.test(sniffed)) {
       throw new BadRequestException({
         message: "Avatar must be a PNG, JPEG, GIF or WebP image",
@@ -92,7 +111,9 @@ export class UsersService {
     // (derived from the extension) matches the real bytes.
     const ext = extensionForMime(sniffed) ?? ".png";
     const storedName = this.storage.storedName(`avatar${ext}`);
-    await writeFile(this.storage.avatarPath(storedName), file.buffer);
+    // Validate-then-move: the temp file lands in the avatar tree atomically;
+    // the caller's `finally` removes the temp on every exit path.
+    await rename(file.path, this.storage.avatarPath(storedName));
 
     const user = await this.prisma.user.update({
       where: { id: userId },

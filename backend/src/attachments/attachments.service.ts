@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { rename, rm } from "node:fs/promises";
 
 import {
   BadRequestException,
@@ -25,13 +25,15 @@ import {
 import { MediaService } from "./media.service";
 import { TranscodeService } from "./transcode.service";
 import { UploadLimiter } from "./upload-limiter";
+import { readFilePrefix } from "./upload-storage";
 
-/** Express multer file shape used by the controller. */
+/** Express multer file shape used by the controller (disk storage). */
 export interface UploadedBlob {
   originalname: string;
   mimetype: string;
   size: number;
-  buffer: Buffer;
+  /** Path of the `.tmp-*` scratch file multer streamed the body into. */
+  path: string;
 }
 
 /**
@@ -73,8 +75,28 @@ export class AttachmentsService {
     file: UploadedBlob,
     isInline = false,
   ): Promise<AttachmentDto> {
-    // The rate is checked by `UploadRateGuard`, before multer reads the body.
-    if (!file || file.size <= 0) {
+    // multer streamed the body to a `.tmp-*` file (TASK-155). Every exit path
+    // removes it; a successful upload renamed it into the blob tree already.
+    if (!file || typeof file.path !== "string" || file.path.length === 0) {
+      throw new BadRequestException({
+        message: "File is required",
+        field: "file",
+      });
+    }
+    try {
+      return await this.persist(cardId, user, file, isInline);
+    } finally {
+      await rm(file.path, { force: true }).catch(() => undefined);
+    }
+  }
+
+  private async persist(
+    cardId: string,
+    user: AuthUser,
+    file: UploadedBlob,
+    isInline = false,
+  ): Promise<AttachmentDto> {
+    if (file.size <= 0) {
       throw new BadRequestException({
         message: "File is required",
         field: "file",
@@ -93,10 +115,11 @@ export class AttachmentsService {
       });
     }
     // The declared multipart type is a hint, never the truth (TASK-76):
-    // detect the real family from the bytes and store *that*. A client that
+    // detect the real family from the first bytes and store *that* — a
+    // limited prefix, never the whole file (TASK-155). A client that
     // declares an image/video/archive but uploads unrecognizable bytes (HTML
     // dressed as a PNG) is refused.
-    const sniffed = sniffMime(file.buffer);
+    const sniffed = sniffMime(await readFilePrefix(file.path));
     let mimeType: string;
     if (sniffed !== null) {
       if (!ATTACHMENT_MIME_ALLOWLIST.test(sniffed)) {
@@ -136,7 +159,9 @@ export class AttachmentsService {
     const fileName = this.storage.sanitizeFileName(file.originalname);
     const storedName = this.storage.storedName(fileName);
     await this.storage.ensureDirs();
-    await writeFile(this.storage.attachmentPath(storedName), file.buffer);
+    // Move the already-validated temp file into the blob tree (same
+    // filesystem, atomic) instead of copying a 25 MB buffer from RAM.
+    await rename(file.path, this.storage.attachmentPath(storedName));
 
     // TASK-50: videos take the "ужиматор" route — the upload is playable
     // immediately; the background job swaps the blob for a compact MP4.

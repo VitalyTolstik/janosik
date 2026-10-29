@@ -1626,7 +1626,7 @@ TASK-36 и TASK-37.)*
 | 83 | TASK-152 `ui-a11y-polish` ✅ | `main` | §7.14: tab-order зон, drag-handle/AT, lightbox focus, due-тик, локали | **Выполнено:** зоны вставки `tabIndex=-1` (из tab-порядка ушли ~2400 стопов); карточка — `role="group"` вместо вложенной `button`, локализованные dnd-анонсы и инструкция; listbox времени и radiogroup фильтров ходят стрелками (roving tabindex); lightbox — focus-trap, `alt`, revoke blob, возврат фокуса; бейдж срока пересчитывается по таймеру/фокусу; `common.close` в диалогах; закрытие карточки удаляет только `card` из URL; тесты. См. §7.14 |
 | 84 | TASK-153 `config-and-observability` ✅ | `main` | §7.14: `connection_limit`/Postgres, кэш OpsSettings, low-баги, slow-query/requestId | **Выполнено:** `DB_CONNECTION_LIMIT` (в DSN, если не задан) + `shared_buffers`/`work_mem`/`max_connections` в compose; кэш `OpsSettings` 15 с с инвалидацией (guard больше не ходит в БД на каждый запрос); счётчик карточек без архива/удалённых колонок, фид приглашений без истёкших, битые seq-курсоры → 400, idempotency коммента проверяет автора, admin refresh с grace 60 с, `notifyDigest` в API/UI; slow-query лог с `X-Request-Id` (AsyncLocalStorage); `CONCURRENTLY` уже закрыт в 148. Тесты. См. §7.14 |
 | 85 | TASK-154 `mcp-perf-bench` | `feature/TASK-154-mcp-perf-bench` | §7.15: бенч «API напрямую vs MCP», профиль MCP-сервера, точечные оптимизации (keep-alive, меньше read-modify-write, ленивый рендер, батч-тулы) | воспроизводимые цифры латентности/запросов/CPU + вердикт и улучшения без регрессий. См. §7.15 |
-| 86 | TASK-155 `upload-hardening` | `feature/TASK-155-upload-hardening` | §7.14: multer `diskStorage` → temp-файл → sniff первых байт → `rename` в место; `rm` в `finally`; sweep `.tmp-*` | RSS не растёт на N×25 MB; ни одного `.tmp-*` после ошибок; MIME/шара/транскод не сломаны; e2e зелёные. См. §7.14 |
+| 86 | TASK-155 `upload-hardening` ✅ | `main` | §7.14: multer `diskStorage` → temp-файл → sniff первых байт → `rename` в место; `rm` в `finally`; sweep `.tmp-*` | **Выполнено:** `tempUploadStorage` (multer disk → `.tmp-<uuid><ext>` в blob-root); `UploadedBlob.path`; MIME по префиксу 4 КБ; `rename` после проверок; `rm` в `finally` на всех путях (вложения и аватар); транскод/деривативы по id; `.tmp` sweep из TASK-148. e2e загрузок/транскода/шары зелёные. См. §7.14 |
 
 > **TASK-38a/38b выполнены (2026-10-26).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -3288,6 +3288,17 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   (замер до/после в PR); после ошибок/отмен не остаётся `.tmp-*`; MIME/signature,
   публичная шара и транскод не сломаны; unit + e2e загрузок/деривативов зелёные.
 - **Зависимости:** TASK-146 (лимиты, ✅), TASK-76 (MIME-sniff), B22 (`.tmp` sweep).
+- **Выполнено (2026-10-29):** `attachments/upload-storage.ts` — multer
+  `diskStorage` пишет тело запроса в `<blob root>/.tmp-<uuid><ext>` (каталог
+  создаётся на месте; из клиентского имени остаётся только короткое безопасное
+  расширение). `UploadedBlob` теперь несёт `path` вместо `buffer`; MIME
+  определяется по префиксу 4 КБ (`readFilePrefix`), allowlist/signature
+  (TASK-76) сохранены. Вложения и аватар делают `rename` в blob-tree **после**
+  всех проверок и квот; `rm(temp, { force: true })` в `finally` на любом
+  отказе/отмене (дополнительно временные файлы собирает `.tmp-*` sweep из
+  TASK-148). Транскод/деривативы, как и раньше, ходят по id вложения. e2e
+  загрузок, транскода, деривативов и публичной шары зелёные; после прогона
+  `.tmp-*` в blob-root не остаётся.
 
 > Порядок внедрения (рекомендация): **144 → 145/146 → 147 → 148 → 150/151 →
 > 149/152/153**; **155** — после 146. Первые две — потери данных и целостность

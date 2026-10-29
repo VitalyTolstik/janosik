@@ -26,6 +26,7 @@ import {
   StorageService,
 } from "@/attachments/storage.service";
 import type { UploadedBlob } from "@/attachments/attachments.service";
+import { tempUploadStorage } from "@/attachments/upload-storage";
 import { CreateUserTokenDto } from "./dto/create-user-token.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 import { UsersService } from "./users.service";
@@ -58,6 +59,7 @@ export class UsersController {
   @Patch("me/avatar")
   @UseInterceptors(
     FileInterceptor("file", {
+      storage: tempUploadStorage,
       limits: { files: 1, fileSize: 2_097_152 },
     }),
   )

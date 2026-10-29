@@ -28,6 +28,7 @@ import type { UploadedBlob } from "./attachments.service";
 import { MediaService } from "./media.service";
 import { StorageService } from "./storage.service";
 import { UploadRateGuard } from "./upload-rate.guard";
+import { tempUploadStorage } from "./upload-storage";
 
 /**
  * Card file attachments (TASK-47). REST like the comments (§7.6.1) — the
@@ -53,6 +54,7 @@ export class AttachmentsController {
   @UseGuards(UploadRateGuard)
   @UseInterceptors(
     FileInterceptor("file", {
+      storage: tempUploadStorage,
       limits: { files: 1, fileSize: LIMITS.attachmentSize },
     }),
   )
