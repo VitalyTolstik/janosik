@@ -10,6 +10,7 @@ import type {
   Board,
   BoardAction,
   BoardMemberDto,
+  PresenceSseEvent,
   PresenceUser,
 } from "@janosik/shared";
 
@@ -56,6 +57,34 @@ export class PresenceStore {
     const previous = this.byBoard.get(boardId);
     if (previous && samePresence(previous, users)) return;
     this.byBoard.set(boardId, [...users]);
+    this.emit();
+  }
+
+  /**
+   * Apply a presence event (TASK-36): `sync` replaces the roster, while
+   * `join`/`leave`/`update` mutate it in place. Deltas keep the per-event
+   * cost O(1) instead of re-shipping the whole roster to every client.
+   */
+  apply(boardId: string, event: PresenceSseEvent): void {
+    if (event.op === "sync") {
+      this.set(boardId, event.users);
+      return;
+    }
+    const current = this.byBoard.get(boardId) ?? [];
+    let next: PresenceUser[];
+    if (event.op === "leave") {
+      next = current.filter((user) => user.id !== event.userId);
+    } else {
+      const index = current.findIndex((user) => user.id === event.user.id);
+      next =
+        index === -1
+          ? [...current, event.user]
+          : current.map((user) =>
+              user.id === event.user.id ? event.user : user,
+            );
+    }
+    if (samePresence(current, next)) return;
+    this.byBoard.set(boardId, next);
     this.emit();
   }
 

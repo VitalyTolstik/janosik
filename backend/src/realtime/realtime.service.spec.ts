@@ -17,7 +17,7 @@ describe("RealtimeService.watch", () => {
 
   it("does not resurrect a released channel on publish", () => {
     const realtime = new RealtimeService();
-    realtime.publish("b1", { type: "presence", users: [] });
+    realtime.publish("b1", { type: "presence", op: "sync", users: [] });
     expect(realtime.activeBoards).toBe(0);
   });
 });

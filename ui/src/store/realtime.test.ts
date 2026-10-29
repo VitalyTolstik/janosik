@@ -220,6 +220,7 @@ describe("presence bridge", () => {
 
   const PRESENCE: PresenceSseEvent = {
     type: "presence",
+    op: "sync",
     users: [
       { id: "u-2", displayName: "Boris", avatarColor: null, avatarPath: null },
     ],
@@ -245,7 +246,7 @@ describe("presence bridge", () => {
       setBaseline: vi.fn(),
       apply: vi.fn(),
       markForeign: vi.fn(),
-      setPresence: vi.fn(),
+      applyPresence: vi.fn(),
       flagForeign: vi.fn(),
       isBusy: () => false,
       getUserId: () => "me",
@@ -300,10 +301,7 @@ describe("presence bridge", () => {
     bridge.watch("b-1");
 
     await vi.waitFor(() =>
-      expect(bridgeHost.setPresence).toHaveBeenCalledWith(
-        "b-1",
-        PRESENCE.users,
-      ),
+      expect(bridgeHost.applyPresence).toHaveBeenCalledWith("b-1", PRESENCE),
     );
     expect(bridgeHost.apply).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -471,7 +469,7 @@ describe("createRealtimeBridge own-echo and resync (U-1, U-7)", () => {
         baseline.set(id, Math.max(baseline.get(id) ?? 0, seq)),
       apply: vi.fn(),
       markForeign: vi.fn(),
-      setPresence: vi.fn(),
+      applyPresence: vi.fn(),
       flagForeign: vi.fn(),
       isBusy: () => false,
       getUserId: () => "me",

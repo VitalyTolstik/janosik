@@ -21,7 +21,19 @@ interface SseFrame {
   actorId?: string;
   action?: { type: string };
   touches?: string[];
-  users?: { id: string; displayName: string; avatarColor: string | null }[];
+  op?: "sync" | "join" | "leave" | "update";
+  user?: {
+    id: string;
+    displayName: string;
+    avatarColor: string | null;
+    avatarPath: string | null;
+  };
+  users?: {
+    id: string;
+    displayName: string;
+    avatarColor: string | null;
+    avatarPath: string | null;
+  }[];
   boardId?: string;
   userId?: string;
   change?: string;
@@ -462,13 +474,14 @@ describe("Board events SSE (e2e)", () => {
     expect(frames[0].touches).toContain(`card:card-gap`);
   }, 20_000);
 
-  it("broadcasts presence: join, dedup across tabs, leave", async () => {
+  it("broadcasts presence deltas: sync on connect, join/leave per user", async () => {
     const baseline = await boardSeq(ownerToken);
     const owner1 = openReader(
       await openStream(ownerToken, baseline, "tab-owner-1"),
     );
-    const first = await owner1.next(1, "presence");
-    expect(first[0].users).toEqual([
+    const firstSync = await owner1.next(1, "presence");
+    expect(firstSync[0].op).toBe("sync");
+    expect(firstSync[0].users).toEqual([
       {
         id: ownerId,
         displayName: "Owner",
@@ -480,37 +493,36 @@ describe("Board events SSE (e2e)", () => {
     const memberStream = openReader(
       await openStream(memberToken, baseline, "tab-member-1"),
     );
-    const memberSees = await memberStream.next(1, "presence");
-    expect(memberSees[0].users?.map((user) => user.id)).toEqual([
+    // The new stream gets the full roster once…
+    const memberSync = await memberStream.next(1, "presence");
+    expect(memberSync[0].op).toBe("sync");
+    expect(memberSync[0].users?.map((user) => user.id)).toEqual([
       ownerId,
       memberId,
     ]);
-    const ownerSees = await owner1.next(1, "presence");
-    expect(ownerSees[0].users?.map((user) => user.id)).toEqual([
-      ownerId,
-      memberId,
-    ]);
+    // …while the existing stream only receives a small `join` delta.
+    const ownerSeesJoin = await owner1.next(1, "presence");
+    expect(ownerSeesJoin[0].op).toBe("join");
+    expect(ownerSeesJoin[0].user).toMatchObject({ id: memberId });
 
-    // A second tab of the same user broadcasts again but lists them once.
+    // A second tab of the same user syncs itself but does not re-announce
+    // the user — no `join` reaches the other streams.
     const owner2 = openReader(
       await openStream(ownerToken, baseline, "tab-owner-2"),
     );
-    const owner2Sees = await owner2.next(1, "presence");
-    expect(owner2Sees[0].users?.map((user) => user.id)).toEqual([
-      ownerId,
-      memberId,
-    ]);
-    const memberAgain = await memberStream.next(1, "presence");
-    expect(memberAgain[0].users?.map((user) => user.id)).toEqual([
+    const owner2Sync = await owner2.next(1, "presence");
+    expect(owner2Sync[0].op).toBe("sync");
+    expect(owner2Sync[0].users?.map((user) => user.id)).toEqual([
       ownerId,
       memberId,
     ]);
 
-    // Closing one tab keeps the user on the roster; the last one removes them.
+    // Closing one tab keeps the user present; the last one publishes `leave`.
     await owner1.close();
     await owner2.close();
     const afterLeave = await memberStream.next(1, "presence");
-    expect(afterLeave[0].users?.map((user) => user.id)).toEqual([memberId]);
+    expect(afterLeave[0].op).toBe("leave");
+    expect(afterLeave[0].userId).toBe(ownerId);
     await memberStream.close();
   }, 30_000);
 
@@ -556,16 +568,19 @@ describe("Board events SSE (e2e)", () => {
       .send({ displayName: "Renamed Owner", avatarColor: "teal" })
       .expect(200);
 
-    // The roster is rewritten in place — no reconnect — for both sides.
-    const ownerRoster = await ownerStream.next(1, "presence");
-    expect(ownerRoster[0].users).toContainEqual({
+    // A small `update` delta is published to both sides — no reconnect, no
+    // full-roster copy.
+    const ownerUpdate = await ownerStream.next(1, "presence");
+    expect(ownerUpdate[0].op).toBe("update");
+    expect(ownerUpdate[0].user).toEqual({
       id: ownerId,
       displayName: "Renamed Owner",
       avatarColor: "teal",
       avatarPath: null,
     });
-    const memberRoster = await memberStream.next(1, "presence");
-    expect(memberRoster[0].users).toContainEqual({
+    const memberUpdate = await memberStream.next(1, "presence");
+    expect(memberUpdate[0].op).toBe("update");
+    expect(memberUpdate[0].user).toEqual({
       id: ownerId,
       displayName: "Renamed Owner",
       avatarColor: "teal",

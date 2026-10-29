@@ -281,7 +281,7 @@ export class FakeServer {
 
   /** Push a presence roster to every open stream of the board (TASK-36). */
   publishPresence(boardId: string, users: PresenceUser[]): void {
-    const event: PresenceSseEvent = { type: "presence", users };
+    const event: PresenceSseEvent = { type: "presence", op: "sync", users };
     const frame = encodeEvent(event);
     for (const controller of this.eventStreams.get(boardId) ?? []) {
       try {
@@ -753,7 +753,11 @@ export class FakeServer {
         }
         if (this.initialPresence.length > 0) {
           controller.enqueue(
-            encodeEvent({ type: "presence", users: this.initialPresence }),
+            encodeEvent({
+              type: "presence",
+              op: "sync",
+              users: this.initialPresence,
+            }),
           );
         }
         const streams = this.eventStreams.get(boardId) ?? new Set();

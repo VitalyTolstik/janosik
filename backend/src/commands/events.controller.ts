@@ -63,18 +63,30 @@ export class EventsController {
     @Param("id") id: string,
     @Query("since") since?: string,
     @Query("client") client?: string,
+    @Query("presence") presence?: string,
     @CurrentUser() user?: AuthUser,
     @CurrentPrincipal() principal?: AuthPrincipal,
   ): Observable<MessageEvent> {
     const clientId =
       client !== undefined && CLIENT_ID.test(client) ? client : randomUUID();
-    return this.stream(id, parseSince(since), clientId, user, principal);
+    // `?presence=0` opts a stream out of presence entirely (agent/CI viewers):
+    // it neither joins the roster nor receives presence frames.
+    const presenceEnabled = presence !== "0" && presence !== "false";
+    return this.stream(
+      id,
+      parseSince(since),
+      clientId,
+      presenceEnabled,
+      user,
+      principal,
+    );
   }
 
   private stream(
     boardId: string,
     since: number,
     clientId: string,
+    presenceEnabled: boolean,
     user?: AuthUser,
     principal?: AuthPrincipal,
   ): Observable<MessageEvent> {
@@ -93,9 +105,24 @@ export class EventsController {
         (error) => subscriber.error(error),
       );
 
+      // Register presence *before* subscribing: the `join` delta goes to the
+      // other live streams, while this one receives a full `sync` below. So a
+      // reconnect never misses anyone, and K joins cost K small frames instead
+      // of K full-roster copies to everyone (the O(N²) memory blow-up).
+      const presenceToken =
+        presenceEnabled && user
+          ? this.presence.join(boardId, clientId, {
+              id: user.id,
+              displayName: user.displayName,
+              email: user.email,
+              avatarColor: user.avatarColor,
+              avatarPath: user.avatarPath,
+            })
+          : null;
+
       const live = this.realtime.watch(boardId).subscribe((event) => {
         if (event.type === "presence") {
-          send(event as unknown as object);
+          if (presenceEnabled) send(event as unknown as object);
           return;
         }
         // A membership change (TASK-36): every subscriber refreshes its
@@ -123,19 +150,14 @@ export class EventsController {
         sequencer.offer(event as InternalCommandEvent);
       });
 
-      // Join after subscribing so this connection sees its own roster: the
-      // first presence frame of a stream is "you are here, with N others".
-      // The returned token scopes the teardown to *this* connection so a
-      // reconnect is not undone by the previous stream's late leave.
-      const presenceToken = user
-        ? this.presence.join(boardId, clientId, {
-            id: user.id,
-            displayName: user.displayName,
-            email: user.email,
-            avatarColor: user.avatarColor,
-            avatarPath: user.avatarPath,
-          })
-        : null;
+      // This stream's one-time full roster: "you are here, with N others".
+      if (presenceToken !== null) {
+        send({
+          type: "presence",
+          op: "sync",
+          users: this.presence.roster(boardId),
+        });
+      }
 
       sequencer.start();
 
@@ -152,7 +174,7 @@ export class EventsController {
         clearInterval(keepAlive);
         releaseTracking();
         if (presenceToken !== null) {
-          this.presence.leave(boardId, clientId, presenceToken);
+          this.presence.leave(boardId, clientId, presenceToken.token);
         }
       };
     });

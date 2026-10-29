@@ -1213,7 +1213,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           seqsRef.current.set(id, Math.max(seqsRef.current.get(id) ?? 0, seq)),
         apply,
         markForeign,
-        setPresence: (id, users) => live.presence.set(id, users),
+        applyPresence: (id, event) => live.presence.apply(id, event),
         flagForeign: (id, actorId, ids) => {
           // Only someone else's change earns the ring; another tab of mine
           // is the same author and the card face stays anonymous.

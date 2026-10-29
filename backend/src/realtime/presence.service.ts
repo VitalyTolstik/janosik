@@ -5,11 +5,13 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import type { PresenceUser, UserAvatarColor } from "@janosik/shared";
+import type {
+  BoardSseEvent,
+  PresenceSseEvent,
+  PresenceUser,
+  UserAvatarColor,
+} from "@janosik/shared";
 import { RealtimeService } from "./realtime.service";
-
-/** How often the roster is re-broadcast, so clients can reconcile. */
-export const PRESENCE_HEARTBEAT_MS = 30_000;
 
 /**
  * A connection counts as gone after this long without a touch (TASK-36).
@@ -44,14 +46,26 @@ interface PresenceSession extends PresenceIdentity {
   token: string;
 }
 
+/** What `join` hands the stream: its teardown token and the full roster. */
+export interface PresenceJoinResult {
+  token: string;
+  roster: PresenceUser[];
+}
+
 /**
  * Who is connected to a board right now (TASK-36).
  *
  * The registry is in-memory like the fan-out itself: one SSE session per
  * `clientId` (stable per browser tab, reused across reconnects so a network
  * blip never flickers an avatar), deduplicated by user for the roster.
- * Changes and a 30-second heartbeat are published as `presence` events on
- * the board channel; a sweep drops sessions the client stopped refreshing.
+ *
+ * Presence is published as **deltas**, not as a repeated full roster: `join`
+ * when a user's first session appears, `leave` when their last one goes, and
+ * `update` when their public identity changes. The full roster is sent once,
+ * to the stream that just connected (`sync`) — the same shape every mature
+ * presence system uses (Yjs awareness, Ably, Pusher, Supabase). Broadcasting
+ * the whole roster to everyone on every change is O(N²) (O(N³) during a mass
+ * join) and was the source of the realtime memory blow-up.
  *
  * `presence` events deliberately carry no `seq`: they are ephemeral state,
  * not part of the command log, so they bypass the delta/dedupe machinery.
@@ -61,23 +75,16 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
   private readonly boards = new Map<string, Map<string, PresenceSession>>();
   private nextOrder = 1;
   private sweepTimer: NodeJS.Timeout | undefined;
-  private heartbeatTimer: NodeJS.Timeout | undefined;
 
   constructor(private readonly realtime: RealtimeService) {}
 
   onModuleInit(): void {
     this.sweepTimer = setInterval(() => this.sweep(), PRESENCE_SWEEP_MS);
-    this.heartbeatTimer = setInterval(
-      () => this.heartbeat(),
-      PRESENCE_HEARTBEAT_MS,
-    );
     this.sweepTimer.unref?.();
-    this.heartbeatTimer.unref?.();
   }
 
   onModuleDestroy(): void {
     if (this.sweepTimer) clearInterval(this.sweepTimer);
-    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.boards.clear();
   }
 
@@ -88,20 +95,28 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
     return total;
   }
 
-  /** Register a connection and broadcast the roster. Always published, so
-   * the fresh connection receives the current roster as its first frame —
-   * duplicate roster frames are cheap, a missing one is a bug. Returns the
-   * connection token the teardown must present to `leave`.
+  /**
+   * Register a connection. Returns the teardown token and the roster the
+   * caller sends to this stream as its one-time `sync`.
    *
    * A `clientId` already held by *another* user is refused (TASK-102): the
    * id comes from the query string, so without this check anyone could claim
-   * (and evict) someone else's presence slot. */
-  join(boardId: string, clientId: string, user: PresenceIdentity): string {
+   * (and evict) someone else's presence slot.
+   *
+   * `join` is published only when this is the user's **first** live session:
+   * a second tab of the same person does not re-announce them.
+   */
+  join(
+    boardId: string,
+    clientId: string,
+    user: PresenceIdentity,
+  ): PresenceJoinResult {
     const sessions = this.sessions(boardId);
     const previous = sessions.get(clientId);
     if (previous && previous.id !== user.id) {
       throw new ForbiddenException("clientId belongs to another session");
     }
+    const wasPresent = this.hasUser(sessions, user.id);
     const token = randomUUID();
     sessions.set(clientId, {
       ...user,
@@ -109,31 +124,47 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
       seenAt: Date.now(),
       token,
     });
-    this.broadcast(boardId);
-    return token;
+    if (!wasPresent) {
+      const session = sessions.get(clientId);
+      if (session) {
+        this.publish(boardId, {
+          type: "presence",
+          op: "join",
+          user: toPresenceUser(session),
+        });
+      }
+    }
+    return { token, roster: this.roster(boardId) };
   }
 
-  /** Drop a connection; the roster is re-broadcast when a user left it. The
-   *  `token` guards the reconnect race (TASK-102): a stale teardown whose
-   *  token no longer matches the live session is ignored. */
+  /**
+   * Drop a connection. The `token` guards the reconnect race (TASK-102): a
+   * stale teardown whose token no longer matches the live session is ignored.
+   * `leave` is published only when the user has no other live session.
+   */
   leave(boardId: string, clientId: string, token?: string): void {
     const sessions = this.boards.get(boardId);
     if (!sessions) return;
     const current = sessions.get(clientId);
     if (!current) return;
     if (token !== undefined && current.token !== token) return;
-    const before = this.userIds(sessions);
     sessions.delete(clientId);
-    if (!sameUsers(before, this.userIds(sessions))) this.broadcast(boardId);
+    if (!this.hasUser(sessions, current.id)) {
+      this.publish(boardId, {
+        type: "presence",
+        op: "leave",
+        userId: current.id,
+      });
+    }
     if (sessions.size === 0) this.boards.delete(boardId);
   }
 
   /**
    * Rewrite the public identity of every live session of one user and
-   * re-broadcast each board that actually changed (TASK-36.1). Sessions are
-   * captured at join, so without this a rename or a new avatar color would
-   * stay invisible to everyone — including the users' own other tabs — until
-   * they reconnect.
+   * publish one `update` per board that actually changed (TASK-36.1).
+   * Sessions are captured at join, so without this a rename or a new avatar
+   * would stay invisible to everyone — including the user's own other tabs —
+   * until they reconnect.
    */
   updateUser(
     userId: string,
@@ -146,14 +177,18 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
   ): void {
     for (const [boardId, sessions] of this.boards) {
       let changed = false;
+      let representative: PresenceSession | undefined;
       for (const session of sessions.values()) {
         if (session.id !== userId) continue;
+        representative = session;
         if (
           (patch.displayName !== undefined &&
             session.displayName !== patch.displayName) ||
           (patch.email !== undefined && session.email !== patch.email) ||
           (patch.avatarColor !== undefined &&
-            session.avatarColor !== patch.avatarColor)
+            session.avatarColor !== patch.avatarColor) ||
+          (patch.avatarPath !== undefined &&
+            session.avatarPath !== patch.avatarPath)
         ) {
           changed = true;
         }
@@ -162,8 +197,16 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
         if (patch.email !== undefined) session.email = patch.email;
         if (patch.avatarColor !== undefined)
           session.avatarColor = patch.avatarColor;
+        if (patch.avatarPath !== undefined)
+          session.avatarPath = patch.avatarPath;
       }
-      if (changed) this.broadcast(boardId);
+      if (changed && representative) {
+        this.publish(boardId, {
+          type: "presence",
+          op: "update",
+          user: toPresenceUser(representative),
+        });
+      }
     }
   }
 
@@ -189,45 +232,45 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
     }
     return [...byUser.values()]
       .sort((a, b) => a.order - b.order)
-      .map((session) => ({
-        id: session.id,
-        displayName: session.displayName?.trim() || session.email,
-        avatarColor: session.avatarColor,
-        avatarPath: session.avatarPath,
-      }));
+      .map(toPresenceUser);
   }
 
-  /** Publish the current roster of one board. */
-  broadcast(boardId: string): void {
-    this.realtime.publish(boardId, {
-      type: "presence",
-      users: this.roster(boardId),
-    });
-  }
-
-  /** Re-broadcast every board that has connections (the 30 s heartbeat). */
-  heartbeat(now = Date.now()): void {
-    for (const boardId of this.boards.keys()) {
-      if (this.hasFresh(boardId, now)) this.broadcast(boardId);
-    }
-  }
-
-  /** Drop sessions that stopped heartbeating and broadcast affected boards. */
+  /** Drop sessions that stopped heartbeating and publish one `leave` per user
+   *  that fully disappeared. Boards nobody is on release their map. */
   sweep(now = Date.now()): void {
     for (const [boardId, sessions] of this.boards) {
-      const before = this.userIds(sessions);
-      let dropped = false;
+      const gone = new Set<string>();
       for (const [clientId, session] of sessions) {
         if (now - session.seenAt > PRESENCE_TTL_MS) {
           sessions.delete(clientId);
-          dropped = true;
+          gone.add(session.id);
         }
       }
-      if (dropped && !sameUsers(before, this.userIds(sessions))) {
-        this.broadcast(boardId);
+      for (const userId of gone) {
+        if (!this.hasUser(sessions, userId)) {
+          this.publish(boardId, {
+            type: "presence",
+            op: "leave",
+            userId,
+          });
+        }
       }
       if (sessions.size === 0) this.boards.delete(boardId);
     }
+  }
+
+  private publish(boardId: string, event: PresenceSseEvent): void {
+    this.realtime.publish(boardId, event as BoardSseEvent);
+  }
+
+  private hasUser(
+    sessions: Map<string, PresenceSession>,
+    userId: string,
+  ): boolean {
+    for (const session of sessions.values()) {
+      if (session.id === userId) return true;
+    }
+    return false;
   }
 
   private sessions(boardId: string): Map<string, PresenceSession> {
@@ -238,22 +281,14 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
     }
     return sessions;
   }
-
-  private userIds(sessions: Map<string, PresenceSession>): string[] {
-    return [...new Set([...sessions.values()].map((s) => s.id))].sort();
-  }
-
-  private hasFresh(boardId: string, now: number): boolean {
-    const sessions = this.boards.get(boardId);
-    if (!sessions) return false;
-    for (const session of sessions.values()) {
-      if (now - session.seenAt <= PRESENCE_TTL_MS) return true;
-    }
-    return false;
-  }
 }
 
-/** Set equality over the two sorted user-id lists. */
-function sameUsers(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((id, index) => id === b[index]);
+/** The wire identity of a presence session (email stays server-side). */
+function toPresenceUser(session: PresenceIdentity): PresenceUser {
+  return {
+    id: session.id,
+    displayName: session.displayName?.trim() || session.email,
+    avatarColor: session.avatarColor,
+    avatarPath: session.avatarPath,
+  };
 }

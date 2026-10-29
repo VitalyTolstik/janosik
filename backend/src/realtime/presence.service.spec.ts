@@ -17,6 +17,19 @@ const bob = {
   avatarPath: null,
 };
 
+const aliceWire = {
+  id: "u-alice",
+  displayName: "Alice",
+  avatarColor: "blue",
+  avatarPath: null,
+};
+const bobWire = {
+  id: "u-bob",
+  displayName: "bob@x.io",
+  avatarColor: null,
+  avatarPath: null,
+};
+
 /** Presence frames published to one board, in order. */
 function collector(realtime: RealtimeService, boardId = "b1") {
   const seen: PresenceSseEvent[] = [];
@@ -41,55 +54,26 @@ describe("PresenceService", () => {
     jest.useRealTimers();
   });
 
-  it("broadcasts the roster on join and deduplicates users across tabs", () => {
+  it("publishes a join delta for the first session; dedups tabs; syncs the roster", () => {
     const seen = collector(realtime);
 
-    presence.join("b1", "client-alice-1", alice);
+    const first = presence.join("b1", "client-alice-1", alice);
+    expect(first.roster).toEqual([aliceWire]);
+    expect(seen).toEqual([{ type: "presence", op: "join", user: aliceWire }]);
+
+    // A second tab of the same user must not re-announce them, but its
+    // sync still lists the user exactly once.
+    const second = presence.join("b1", "client-alice-2", alice);
+    expect(second.roster).toEqual([aliceWire]);
     expect(seen).toHaveLength(1);
-    expect(seen[0]).toEqual({
-      type: "presence",
-      users: [
-        {
-          id: "u-alice",
-          displayName: "Alice",
-          avatarColor: "blue",
-          avatarPath: null,
-        },
-      ],
-    });
 
-    // A second tab broadcasts again — the fresh connection needs the
-    // current roster — but the user still appears exactly once.
-    presence.join("b1", "client-alice-2", alice);
+    const bobJoin = presence.join("b1", "client-bob-1", bob);
+    expect(bobJoin.roster).toEqual([aliceWire, bobWire]);
     expect(seen).toHaveLength(2);
-    expect(seen[1].users).toEqual([
-      {
-        id: "u-alice",
-        displayName: "Alice",
-        avatarColor: "blue",
-        avatarPath: null,
-      },
-    ]);
-
-    presence.join("b1", "client-bob-1", bob);
-    expect(seen).toHaveLength(3);
-    expect(seen[2].users).toEqual([
-      {
-        id: "u-alice",
-        displayName: "Alice",
-        avatarColor: "blue",
-        avatarPath: null,
-      },
-      {
-        id: "u-bob",
-        displayName: "bob@x.io",
-        avatarColor: null,
-        avatarPath: null,
-      },
-    ]);
+    expect(seen[1]).toEqual({ type: "presence", op: "join", user: bobWire });
   });
 
-  it("keeps the user while another tab lives, broadcasts when the last leaves", () => {
+  it("publishes leave only when the last session of a user goes away", () => {
     const seen = collector(realtime);
     presence.join("b1", "a1", alice);
     presence.join("b1", "a2", alice);
@@ -97,18 +81,12 @@ describe("PresenceService", () => {
 
     presence.leave("b1", "a1");
     expect(seen).toHaveLength(0);
-    expect(presence.roster("b1")).toEqual([
-      {
-        id: "u-alice",
-        displayName: "Alice",
-        avatarColor: "blue",
-        avatarPath: null,
-      },
-    ]);
+    expect(presence.roster("b1")).toEqual([aliceWire]);
 
     presence.leave("b1", "a2");
-    expect(seen).toHaveLength(1);
-    expect(seen[0].users).toEqual([]);
+    expect(seen).toEqual([
+      { type: "presence", op: "leave", userId: "u-alice" },
+    ]);
     expect(presence.roster("b1")).toEqual([]);
   });
 
@@ -119,22 +97,12 @@ describe("PresenceService", () => {
     presence.join("b1", "b1", { ...bob, displayName: "Bobby" });
 
     expect(presence.roster("b1")).toEqual([
-      {
-        id: "u-bob",
-        displayName: "Bobby",
-        avatarColor: null,
-        avatarPath: null,
-      },
-      {
-        id: "u-alice",
-        displayName: "Alice",
-        avatarColor: "blue",
-        avatarPath: null,
-      },
+      { ...bobWire, displayName: "Bobby" },
+      aliceWire,
     ]);
   });
 
-  it("rewrites a user's identity on every live board, silently on no-ops", () => {
+  it("publishes update on an identity change, per board; silent on no-ops", () => {
     const b1 = collector(realtime, "b1");
     const b2 = collector(realtime, "b2");
     presence.join("b1", "a1", alice);
@@ -147,30 +115,14 @@ describe("PresenceService", () => {
       displayName: "Alicia",
       avatarColor: "pink",
     });
-    expect(b1).toHaveLength(1);
-    expect(b1[0].users).toEqual([
-      {
-        id: "u-alice",
-        displayName: "Alicia",
-        avatarColor: "pink",
-        avatarPath: null,
-      },
-      {
-        id: "u-bob",
-        displayName: "bob@x.io",
-        avatarColor: null,
-        avatarPath: null,
-      },
-    ]);
-    expect(b2).toHaveLength(1);
-    expect(b2[0].users).toEqual([
-      {
-        id: "u-alice",
-        displayName: "Alicia",
-        avatarColor: "pink",
-        avatarPath: null,
-      },
-    ]);
+    const aliciaWire = {
+      id: "u-alice",
+      displayName: "Alicia",
+      avatarColor: "pink",
+      avatarPath: null,
+    };
+    expect(b1).toEqual([{ type: "presence", op: "update", user: aliciaWire }]);
+    expect(b2).toEqual([{ type: "presence", op: "update", user: aliciaWire }]);
 
     // A user with no sessions and an unchanged patch stay silent.
     b1.length = 0;
@@ -181,7 +133,7 @@ describe("PresenceService", () => {
     expect(b2).toHaveLength(0);
   });
 
-  it("touch refreshes the TTL, sweep drops stale sessions and broadcasts", () => {
+  it("touch refreshes the TTL; sweep publishes a leave per vanished user", () => {
     const seen = collector(realtime);
     const t0 = Date.now();
     presence.join("b1", "a1", alice);
@@ -198,43 +150,33 @@ describe("PresenceService", () => {
     expect(seen).toHaveLength(0);
     expect(presence.roster("b1")).toHaveLength(2);
 
+    // At one TTL only bob (never touched) is stale; alice was refreshed.
     presence.sweep(t0 + PRESENCE_TTL_MS + 1);
-    expect(seen).toHaveLength(1);
-    expect(seen[0].users).toEqual([
-      {
-        id: "u-alice",
-        displayName: "Alice",
-        avatarColor: "blue",
-        avatarPath: null,
-      },
-    ]);
+    expect(seen).toEqual([{ type: "presence", op: "leave", userId: "u-bob" }]);
+    expect(presence.roster("b1")).toEqual([aliceWire]);
 
-    presence.sweep(t0 + PRESENCE_TTL_MS * 3);
-    expect(seen).toHaveLength(2);
-    expect(seen[1].users).toEqual([]);
+    // Another TTL later alice is stale too.
+    presence.sweep(t0 + PRESENCE_TTL_MS * 2);
+    expect(seen.at(-1)).toEqual({
+      type: "presence",
+      op: "leave",
+      userId: "u-alice",
+    });
     expect(presence.roster("b1")).toEqual([]);
   });
 
   it("refuses a clientId already held by another user (TASK-102)", () => {
     presence.join("b1", "shared", alice);
     expect(() => presence.join("b1", "shared", bob)).toThrow();
-    // The rightful owner keeps the slot.
-    expect(presence.roster("b1")).toEqual([
-      {
-        id: "u-alice",
-        displayName: "Alice",
-        avatarColor: "blue",
-        avatarPath: null,
-      },
-    ]);
+    expect(presence.roster("b1")).toEqual([aliceWire]);
   });
 
   it("ignores a stale teardown after a reconnect (TASK-102)", () => {
     const first = presence.join("b1", "a1", alice);
     const second = presence.join("b1", "a1", alice);
-    presence.leave("b1", "a1", first);
+    presence.leave("b1", "a1", first.token);
     expect(presence.roster("b1")).toHaveLength(1);
-    presence.leave("b1", "a1", second);
+    presence.leave("b1", "a1", second.token);
     expect(presence.roster("b1")).toHaveLength(0);
   });
 
@@ -242,29 +184,5 @@ describe("PresenceService", () => {
     presence.join("b1", "a1", alice);
     expect(presence.touch("b1", "a1", "u-bob")).toBe(false);
     expect(presence.touch("b1", "a1", "u-alice")).toBe(true);
-  });
-
-  it("heartbeat re-broadcasts only boards with fresh connections", () => {
-    const seen = collector(realtime);
-    const other = collector(realtime, "b2");
-    presence.join("b1", "a1", alice);
-    seen.length = 0;
-
-    presence.heartbeat();
-    expect(seen).toHaveLength(1);
-    expect(seen[0].users).toEqual([
-      {
-        id: "u-alice",
-        displayName: "Alice",
-        avatarColor: "blue",
-        avatarPath: null,
-      },
-    ]);
-    expect(other).toHaveLength(0);
-
-    presence.sweep(Date.now() + PRESENCE_TTL_MS + 1);
-    seen.length = 0;
-    presence.heartbeat();
-    expect(seen).toHaveLength(0);
   });
 });

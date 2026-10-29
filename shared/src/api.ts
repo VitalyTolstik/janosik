@@ -109,11 +109,19 @@ export interface PresenceUser {
   avatarPath: string | null;
 }
 
-/** Server-sent event listing the users currently on the board (TASK-36). */
-export interface PresenceSseEvent {
-  type: "presence";
-  users: PresenceUser[];
-}
+/**
+ * Presence is a delta stream (TASK-36), not a repeated full roster:
+ * - `sync`  — the complete roster, sent once when a stream connects;
+ * - `join`  — a user's first live session on the board appeared;
+ * - `leave` — their last live session went away;
+ * - `update`— their public identity changed.
+ * K clients joining is O(K) small frames, not O(K²) roster copies.
+ */
+export type PresenceSseEvent =
+  | { type: "presence"; op: "sync"; users: PresenceUser[] }
+  | { type: "presence"; op: "join"; user: PresenceUser }
+  | { type: "presence"; op: "leave"; userId: string }
+  | { type: "presence"; op: "update"; user: PresenceUser };
 
 /** What happened to a user's membership of a board (TASK-36). */
 export type MembershipChange = "accepted" | "updated" | "removed";

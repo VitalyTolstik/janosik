@@ -4,7 +4,7 @@ import type {
   BoardSseEvent,
   CommandSseEvent,
   MembershipChange,
-  PresenceUser,
+  PresenceSseEvent,
 } from "@janosik/shared";
 import { ApiError, api, apiBaseUrl } from "@/api/client";
 
@@ -300,8 +300,8 @@ export interface RealtimeHost {
   setBaseline: (boardId: string, seq: number) => void;
   apply: (action: BoardAction) => void;
   markForeign: (boardId: string, ids: readonly string[]) => void;
-  /** The server's roster for the active board (TASK-36). */
-  setPresence: (boardId: string, users: PresenceUser[]) => void;
+  /** Apply a presence delta/sync to the active board's roster (TASK-36). */
+  applyPresence: (boardId: string, event: PresenceSseEvent) => void;
   /** The board's member directory changed (TASK-36). */
   onMembershipChange: (
     boardId: string,
@@ -516,10 +516,11 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
 
   const handle = (event: BoardSseEvent): void => {
     // Presence is ephemeral state, not a command: no seq, no baseline, no
-    // deferral — the roster simply replaces the previous one (TASK-36).
+    // deferral. `sync` replaces the roster; `join`/`leave`/`update` mutate it
+    // in place (TASK-36).
     if (event.type === "presence") {
       const boardId = host.getActiveBoardId();
-      if (boardId !== undefined) host.setPresence(boardId, event.users);
+      if (boardId !== undefined) host.applyPresence(boardId, event);
       return;
     }
     // A membership change (TASK-36): the caller's own removal also ends the
