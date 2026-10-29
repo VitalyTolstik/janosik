@@ -245,6 +245,11 @@ compose stack fills the ones it needs from `.env`.
 | `COOKIE_SECURE` | `true` (compose default) | Force the `Secure` cookie attribute. Keep `true` behind HTTPS; set `false` only for a plain-HTTP trial (the app then refuses to boot with it on). Choices are empty (auto: on in production), `true`, `false`. |
 | `PURGE_AFTER_DAYS` | `30` | Delete soft-deleted rows older than this many days. Used when the panel has no retention setting. |
 | `AUDIT_RETENTION_DAYS` | `365` | Delete master audit-log rows older than this many days (accountability keeps a longer window). |
+| `DB_CONNECTION_LIMIT` | `10` | Prisma pool size per API process. Keep `replicas × this` under `POSTGRES_MAX_CONNECTIONS`. |
+| `SLOW_QUERY_MS` | `200` | Prisma queries at or above this duration are logged with the request id. `0` disables it. |
+| `POSTGRES_SHARED_BUFFERS` | `256MB` | `shared_buffers` of the bundled Postgres container. |
+| `POSTGRES_WORK_MEM` | `8MB` | `work_mem` of the bundled Postgres container. |
+| `POSTGRES_MAX_CONNECTIONS` | `100` | `max_connections` of the bundled Postgres container. |
 | `SHARE_RATE_LIMIT` | `240` | Public share requests per minute, per token. |
 | `SHARE_OG_RATE_LIMIT` | `60` | Public share OG preview requests per minute, per token. |
 | `SMTP_HOST` | empty | SMTP host. Unset means emails are written to the log, never sent. |

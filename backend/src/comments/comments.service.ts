@@ -70,7 +70,10 @@ export class CommentsService {
     if (id !== undefined) {
       const existing = await this.prisma.comment.findUnique({ where: { id } });
       if (existing) {
-        if (existing.cardId !== cardId) {
+        // TASK-153: the replay must belong to the caller. Without the author
+        // check any member could probe another author's key and be handed
+        // that comment back.
+        if (existing.cardId !== cardId || existing.authorId !== authorId) {
           throw new ConflictException("commandId already used");
         }
         return toCommentDto(existing);

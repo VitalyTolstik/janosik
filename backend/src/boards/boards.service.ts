@@ -83,11 +83,17 @@ export class BoardsService {
       const [groups, columns] = await Promise.all([
         this.prisma.card.groupBy({
           by: ["columnId"],
-          where: { column: { boardId: { in: boardIds } }, deletedAt: null },
+          where: {
+            // TASK-153: the counter is the number of cards a view can show —
+            // archived cards and cards of a soft-deleted column are not it.
+            column: { boardId: { in: boardIds }, deletedAt: null },
+            deletedAt: null,
+            archivedAt: null,
+          },
           _count: { _all: true },
         }),
         this.prisma.column.findMany({
-          where: { boardId: { in: boardIds } },
+          where: { boardId: { in: boardIds }, deletedAt: null },
           select: { id: true, boardId: true },
         }),
       ]);

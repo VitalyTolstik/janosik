@@ -1624,7 +1624,7 @@ TASK-36 и TASK-37.)*
 | 81 | TASK-150 `ui-render-perf` ✅ | `main` | §7.14: per-key members, drag strategy, `linkSignature`, CardDialog, focus-diff, анимации | **Выполнено:** `MembersStore` — per-user/per-board подписки (directory reload не ререндерит карточки); dnd `MeasuringStrategy.WhileDragging`/`BeforeDragging`; `linkSignature` кэшируется по снапшоту (WeakMap); заголовок карточки — локальный черновик с тихим коммитом по blur/close (ввод не ререндерит MDXEditor); focus-diff по `updatedAt`/`archivedAt` вместо JSON всей доски; входная анимация только у новых карточек + `prefers-reduced-motion`; тесты изоляции рендера. См. §7.14 |
 | 82 | TASK-151 `pwa-stream-recovery` ✅ | `main` | §7.14: SW не убивает старый деплой, SSE-watchdog, 404 доски, `APP_BASE`, restore | **Выполнено:** SW ждёт `SKIP_WAITING` (баннер «новая версия» + reload) и хранит прошлый кэш как fallback для старых lazy-chunk; watchdog 90 с без кадров → abort+reconnect; 404 стрима → доска убирается; `cardHref` через `APP_BASE` (`/app/…`); restore бэкапа в server-режиме отключён; compact error boundary на `CardDialog`; тесты. См. §7.14 |
 | 83 | TASK-152 `ui-a11y-polish` ✅ | `main` | §7.14: tab-order зон, drag-handle/AT, lightbox focus, due-тик, локали | **Выполнено:** зоны вставки `tabIndex=-1` (из tab-порядка ушли ~2400 стопов); карточка — `role="group"` вместо вложенной `button`, локализованные dnd-анонсы и инструкция; listbox времени и radiogroup фильтров ходят стрелками (roving tabindex); lightbox — focus-trap, `alt`, revoke blob, возврат фокуса; бейдж срока пересчитывается по таймеру/фокусу; `common.close` в диалогах; закрытие карточки удаляет только `card` из URL; тесты. См. §7.14 |
-| 84 | TASK-153 `config-and-observability` | `feature/TASK-153-config-and-observability` | §7.14: `connection_limit`/Postgres, кэш OpsSettings, low-баги, slow-query/requestId | пул и логи под контролем. См. §7.14 |
+| 84 | TASK-153 `config-and-observability` ✅ | `main` | §7.14: `connection_limit`/Postgres, кэш OpsSettings, low-баги, slow-query/requestId | **Выполнено:** `DB_CONNECTION_LIMIT` (в DSN, если не задан) + `shared_buffers`/`work_mem`/`max_connections` в compose; кэш `OpsSettings` 15 с с инвалидацией (guard больше не ходит в БД на каждый запрос); счётчик карточек без архива/удалённых колонок, фид приглашений без истёкших, битые seq-курсоры → 400, idempotency коммента проверяет автора, admin refresh с grace 60 с, `notifyDigest` в API/UI; slow-query лог с `X-Request-Id` (AsyncLocalStorage); `CONCURRENTLY` уже закрыт в 148. Тесты. См. §7.14 |
 | 85 | TASK-154 `mcp-perf-bench` | `feature/TASK-154-mcp-perf-bench` | §7.15: бенч «API напрямую vs MCP», профиль MCP-сервера, точечные оптимизации (keep-alive, меньше read-modify-write, ленивый рендер, батч-тулы) | воспроизводимые цифры латентности/запросов/CPU + вердикт и улучшения без регрессий. См. §7.15 |
 | 86 | TASK-155 `upload-hardening` | `feature/TASK-155-upload-hardening` | §7.14: multer `diskStorage` → temp-файл → sniff первых байт → `rename` в место; `rm` в `finally`; sweep `.tmp-*` | RSS не растёт на N×25 MB; ни одного `.tmp-*` после ошибок; MIME/шара/транскод не сломаны; e2e зелёные. См. §7.14 |
 
@@ -3252,6 +3252,19 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 - **DoD:** нет DB-запроса maintenance на каждый запрос; пул не выедает
   `max_connections`; low-пункты закрыты тестами; инцидент трассируется по id.
 - **Зависимости:** нет.
+- **Выполнено (2026-10-29):** B14 — `DB_CONNECTION_LIMIT` (по умолчанию 10)
+  добавляется в DSN, если там нет `connection_limit`; compose задаёт
+  `shared_buffers`/`work_mem`/`max_connections` через env. B15 — `OpsSettings`
+  кэшируется на 15 с, `update()` инвалидирует; `MaintenanceGuard` больше не
+  делает запрос на каждый запрос (unit: два чтения — один запрос). Low: счётчик
+  карточек в `/boards` исключает архивные и карточки удалённых колонок; фид
+  приглашений скрывает истёкшие (accept всё так же 409); `cursor=<t>:c:<nonce>`
+  → 400, а не `BigInt` 500; повтор `commandId` коммента от другого автора → 409;
+  admin refresh получил grace 60 с (повтор в окне — гонка, не угон); `notifyDigest`
+  доступен в `PATCH /users/me` и чекбоксом в аккаунте. Наблюдаемость: middleware
+  `X-Request-Id` (AsyncLocalStorage) + Prisma slow-query warn (`SLOW_QUERY_MS`,
+  по умолчанию 200 мс) с id запроса. `CONCURRENTLY` для операционных индексов
+  закрыт ещё в TASK-148 (`db:indexes`). Тесты: unit 271, e2e 290, ui 882.
 
 #### TASK-155 — `upload-hardening` · Загрузки через временный файл, а не RAM
 

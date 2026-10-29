@@ -41,6 +41,7 @@ async function wipe(db: PrismaService): Promise<void> {
   await db.label.deleteMany();
   await db.boardMember.deleteMany();
   await db.board.deleteMany();
+  await db.apiToken.deleteMany();
   await db.refreshToken.deleteMany();
   await db.user.deleteMany();
 }

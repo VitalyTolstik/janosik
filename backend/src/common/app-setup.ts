@@ -8,6 +8,7 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import { env } from "@/config/env";
 import { inlineScriptHashes } from "./csp";
+import { requestContext } from "./request-context";
 
 /** JSON body cap for every route that is not import/commands. */
 export const DEFAULT_JSON_LIMIT = "256kb";
@@ -25,6 +26,9 @@ const LARGE_BODY_ROUTE =
  * against exactly the middleware stack production uses.
  */
 export function setupApp(app: INestApplication): void {
+  // Trace context first (TASK-153): every later middleware, guard and query
+  // runs with the request id available for logs.
+  app.use(requestContext);
   // Reverse-proxy trust (TASK-91): with N trusted hops Express resolves
   // `req.ip` from the rightmost X-Forwarded-For entry it can vouch for, so
   // the throttler, the IP allowlist and the audit log see the real client.

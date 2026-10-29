@@ -36,7 +36,14 @@ export class InvitationsService {
   async listForUser(userId: string): Promise<BoardInvitationDto[]> {
     if (!(await this.isVerified(userId))) return [];
     const invitations = await this.prisma.boardMember.findMany({
-      where: { userId, acceptedAt: null, board: { deletedAt: null } },
+      where: {
+        userId,
+        acceptedAt: null,
+        board: { deletedAt: null },
+        // TASK-153: a lapsed invitation is not actionable and must not sit
+        // in the feed until the sweep gets to it.
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
       include: {
         board: { select: { title: true } },
         invitedBy: { select: { displayName: true, email: true } },

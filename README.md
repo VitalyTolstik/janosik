@@ -251,6 +251,9 @@ Environment variables (see `.env.example` for the full annotated list):
 | `SMTP_*` | unset | Outgoing email. Unset = log mode; in production codes are withheld from the log, so configure SMTP to deliver them. |
 | `PURGE_AFTER_DAYS` | `30` | Retention for the hourly soft-delete sweep |
 | `AUDIT_RETENTION_DAYS` | `365` | Retention for the master audit trail (separate, longer window) |
+| `DB_CONNECTION_LIMIT` | `10` | Prisma pool size per API process (keeps replicas under `max_connections`) |
+| `SLOW_QUERY_MS` | `200` | Log Prisma queries slower than this (0 = off) |
+| `POSTGRES_SHARED_BUFFERS` | `256MB` | Postgres `shared_buffers` for the bundled container |
 
 To build the image from a checkout instead of pulling, uncomment `build: .`
 in `docker-compose.yml`. For a TLS-terminating proxy in front, keep

@@ -25,6 +25,14 @@ import type { AdminPrincipal, AdminSessionResult } from "./admin.types";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * A revoked refresh token presented again within this window is a lost
+ * rotation race (frozen tab, dropped response), not theft — same rule as the
+ * user contour (TASK-153). Revoking every master session for that is a
+ * self-inflicted lockout.
+ */
+export const ADMIN_REFRESH_REUSE_GRACE_MS = 60_000;
+
+/**
  * Master-account sessions (§7.4, TASK-36) — the same rotation/anti-reuse
  * discipline as user auth, with three extra hardenings:
  *
@@ -150,6 +158,15 @@ export class AdminAuthService {
       throw new UnauthorizedException("Invalid refresh token");
     }
     if (stored.revokedAt) {
+      const revokedAgo = Date.now() - stored.revokedAt.getTime();
+      if (revokedAgo <= ADMIN_REFRESH_REUSE_GRACE_MS) {
+        this.logger.log(
+          `Admin refresh race for ${stored.adminId} (revoked ${Math.round(
+            revokedAgo / 1000,
+          )}s ago) — rejecting without revoking all sessions`,
+        );
+        throw new UnauthorizedException("Refresh token race detected");
+      }
       await this.revokeAllSessions(stored.adminId);
       await this.prisma.adminAuditLog.create({
         data: {

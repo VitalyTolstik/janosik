@@ -213,12 +213,31 @@ describe("Invitations API (e2e)", () => {
       .set(auth(ownerToken))
       .send({ email: INVITEE_EMAIL, role: "VIEWER", expiresAt: future })
       .expect(201);
-    const [invitation] = await listInvitations(inviteeToken);
+    const invitation = await prisma.boardMember.findFirstOrThrow({
+      where: { boardId, acceptedAt: null },
+    });
 
     await server()
       .post(`/api/v1/invitations/${invitation.id}/accept`)
       .set(auth(inviteeToken))
       .expect(409);
+    expect(await invitationsFor(inviteeToken, boardId)).toHaveLength(0);
+  });
+
+  it("hides a lapsed invitation from the feed (TASK-153)", async () => {
+    const boardId = await createBoard("Lapsed feed board");
+    await server()
+      .post(`/api/v1/boards/${boardId}/members`)
+      .set(auth(ownerToken))
+      .send({
+        email: INVITEE_EMAIL,
+        role: "VIEWER",
+        expiresAt: new Date(Date.now() - 1000).toISOString(),
+      })
+      .expect(201);
+
+    // Not actionable, so it must not sit in the invitee's feed until the
+    // maintenance sweep happens to delete it.
     expect(await invitationsFor(inviteeToken, boardId)).toHaveLength(0);
   });
 
@@ -256,13 +275,22 @@ describe("Invitations API (e2e)", () => {
   });
 
   async function wipe(db: PrismaService): Promise<void> {
+    await db.command.deleteMany();
     await db.activity.deleteMany();
+    await db.comment.deleteMany();
+    await db.checklistItem.deleteMany();
+    await db.checklist.deleteMany();
+    await db.attachment.deleteMany();
+    await db.cardLink.deleteMany();
+    await db.cardLabel.deleteMany();
+    await db.card.deleteMany();
+    await db.column.deleteMany();
+    await db.label.deleteMany();
     await db.boardMember.deleteMany();
     await db.boardShare.deleteMany();
     await db.board.deleteMany();
     await db.apiToken.deleteMany();
     await db.refreshToken.deleteMany();
-    await db.attachment.deleteMany();
     await db.user.deleteMany();
   }
 });

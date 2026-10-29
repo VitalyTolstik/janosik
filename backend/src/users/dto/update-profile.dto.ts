@@ -1,4 +1,10 @@
-import { IsIn, IsOptional, IsString, MaxLength } from "class-validator";
+import {
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from "class-validator";
 import {
   DISPLAY_NAME_MAX,
   USER_AVATAR_COLORS,
@@ -19,4 +25,9 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsIn(USER_AVATAR_COLORS)
   avatarColor?: UserAvatarColor | null;
+
+  /** Opt out of scheduled digests/reminders (TASK-153). */
+  @IsOptional()
+  @IsBoolean()
+  notifyDigest?: boolean;
 }

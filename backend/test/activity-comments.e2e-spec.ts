@@ -348,6 +348,12 @@ describe("Activity & comments API (e2e)", () => {
         .get(`/api/v1/boards/${boardId}/activity?cursor=1:c:1&limit=2`)
         .set(auth(adminToken))
         .expect(200);
+      // A command cursor's key is a numeric seq — a text key must be a 400,
+      // not a BigInt() SyntaxError surfacing as 500 (TASK-153).
+      await server()
+        .get(`/api/v1/boards/${boardId}/activity?cursor=1:c:not-a-seq`)
+        .set(auth(adminToken))
+        .expect(400);
     });
   });
 
@@ -565,6 +571,24 @@ describe("Activity & comments API (e2e)", () => {
         .set(auth(memberToken))
         .expect(200);
       expect((page.body as CommentPage).items).toHaveLength(1);
+    });
+
+    it("refuses another author's commandId (TASK-153)", async () => {
+      const { cardId } = await boardWithCard("Comment key scope", "ck");
+      const commandId = randomUUID();
+      await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(memberToken))
+        .send({ text: "Mine", commandId })
+        .expect(201);
+
+      // The key belongs to that author alone; a probe by another member is a
+      // conflict, not a replay of someone else's comment.
+      await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(adminToken))
+        .send({ text: "Mine", commandId })
+        .expect(409);
     });
 
     it("lets only the author delete and only writers comment", async () => {

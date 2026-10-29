@@ -32,6 +32,8 @@ export function ProfileSection() {
   const [color, setColor] = useState<UserAvatarColor | null>(
     user?.avatarColor ?? null,
   );
+  // TASK-153: the documented digest opt-out was unreachable from the UI.
+  const [digest, setDigest] = useState(user?.notifyDigest ?? true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [changingEmail, setChangingEmail] = useState(false);
@@ -41,7 +43,9 @@ export function ProfileSection() {
 
   const trimmed = name.trim();
   const dirty =
-    trimmed !== (user.displayName ?? "") || color !== user.avatarColor;
+    trimmed !== (user.displayName ?? "") ||
+    color !== user.avatarColor ||
+    digest !== (user.notifyDigest ?? true);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -51,6 +55,7 @@ export function ProfileSection() {
       const next = await api.updateProfile({
         displayName: trimmed === "" ? null : trimmed,
         avatarColor: color,
+        notifyDigest: digest,
       });
       updateUser(next);
       setName(next.displayName ?? "");
@@ -211,6 +216,22 @@ export function ProfileSection() {
             {t("account.profile.nameHint", { max: DISPLAY_NAME_MAX })}
           </p>
         </div>
+
+        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            data-testid="account-notify-digest"
+            className="mt-0.5 h-3.5 w-3.5 rounded border-border"
+            checked={digest}
+            onChange={(event) => setDigest(event.target.checked)}
+          />
+          <span>
+            {t("account.profile.digest")}
+            <span className="block text-[11px] text-muted-foreground/80">
+              {t("account.profile.digestHint")}
+            </span>
+          </span>
+        </label>
 
         <div className="space-y-1.5">
           <label

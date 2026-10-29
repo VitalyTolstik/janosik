@@ -56,6 +56,8 @@
   "account.profile.colorAuto": "Automatic color",
   "account.profile.colorLabel": "Avatar color",
   "account.profile.description": "How teammates see you on boards and in the activity feed.",
+  "account.profile.digest": "Send scheduled digests and due reminders",
+  "account.profile.digestHint": "Turn off to stop the summary e-mails; board activity stays unaffected.",
   "account.profile.emailHint": "Your sign-in address. Changing it requires verification.",
   "account.profile.emailLabel": "Email",
   "account.profile.nameHint": "Up to {{max}} characters — shown on cards, in the feed and in the presence stack.",

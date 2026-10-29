@@ -297,7 +297,14 @@ function parseCursor(raw: string): Cursor {
   if (!Number.isSafeInteger(at)) {
     throw new BadRequestException("cursor is malformed");
   }
-  return { at, source: match[2] as "c" | "a", key: match[3] };
+  const source = match[2] as "c" | "a";
+  const key = match[3];
+  // A command cursor's key is a `BigInt` seq — a non-numeric key must be a
+  // 400 here, not a `BigInt()` SyntaxError (500) inside the query (TASK-153).
+  if (source === "c" && !/^\d+$/.test(key)) {
+    throw new BadRequestException("cursor is malformed");
+  }
+  return { at, source, key };
 }
 
 function parseLimit(raw: string | undefined): number {

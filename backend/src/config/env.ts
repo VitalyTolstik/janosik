@@ -100,6 +100,20 @@ export const env = cleanEnv(process.env, {
     desc: "PostgreSQL connection string used by Prisma",
     example: "postgresql://user:password@localhost:5433/janosik",
   }),
+  // TASK-153 (B14): Prisma's default pool is sized from the CPU count (~33 on
+  // a 16-vCPU node); with a few replicas that alone can exhaust
+  // `max_connections=100`. Cap it explicitly unless the URL says otherwise.
+  DB_CONNECTION_LIMIT: num({
+    desc: "Prisma pool size per process (0 = Prisma default)",
+    default: 10,
+    example: "10",
+  }),
+  // Queries at or above this duration are logged as warnings; 0 disables it.
+  SLOW_QUERY_MS: num({
+    desc: "Log Prisma queries slower than this (0 = off)",
+    default: 200,
+    example: "200",
+  }),
   TEST_DATABASE_URL: str({
     desc: "PostgreSQL connection string for e2e runs; when set, test runs use it instead of DATABASE_URL",
     default: "",

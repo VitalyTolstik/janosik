@@ -95,7 +95,7 @@ describe("AccountDialog (TASK-36.1)", () => {
       expect(server.requests).toContainEqual({
         method: "PATCH",
         path: "/api/v1/users/me",
-        body: { displayName: "Vera", avatarColor: "teal" },
+        body: { displayName: "Vera", avatarColor: "teal", notifyDigest: true },
       }),
     );
     expect(server.account.displayName).toBe("Vera");

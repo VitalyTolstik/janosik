@@ -43,6 +43,9 @@ export class UsersService {
     if (dto.avatarColor !== undefined) {
       data.avatarColor = dto.avatarColor;
     }
+    if (dto.notifyDigest !== undefined) {
+      data.notifyDigest = dto.notifyDigest;
+    }
     const user = await this.prisma.user.update({ where: { id: userId }, data });
     const fresh = toAuthUser(user);
     await this.announceProfile(userId, dto, fresh);

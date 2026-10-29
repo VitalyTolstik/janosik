@@ -56,6 +56,8 @@
   "account.profile.colorAuto": "Автоматический цвет",
   "account.profile.colorLabel": "Цвет аватара",
   "account.profile.description": "Как вас видят коллеги на досках и в ленте активности.",
+  "account.profile.digest": "Присылать дайджесты и напоминания о сроках",
+  "account.profile.digestHint": "Выключите, чтобы не получать сводные письма; активность на досках не меняется.",
   "account.profile.emailHint": "Адрес для входа. Смена требует подтверждения по email.",
   "account.profile.emailLabel": "Email",
   "account.profile.nameHint": "До {{max}} символов — показывается на карточках, в ленте и в стопке присутствия.",

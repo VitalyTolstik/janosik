@@ -380,6 +380,11 @@ export interface AuthUserDto {
   avatarColor: UserAvatarColor | null;
   /** Stored avatar image name (TASK-47); `null` → render the initials. */
   avatarPath: string | null;
+  /**
+   * Opt-out of scheduled digests/reminders (TASK-153): the documented
+   * account setting is now reachable through `PATCH /users/me`.
+   */
+  notifyDigest?: boolean;
   /** Unix ms of account creation — "member since" in the account panel. */
   createdAt: number;
   /**
@@ -445,6 +450,8 @@ export interface UpdateProfileRequest {
   displayName?: string | null;
   /** `null` restores the id-hash default color. */
   avatarColor?: UserAvatarColor | null;
+  /** Opt out of scheduled digests/reminders (TASK-153). */
+  notifyDigest?: boolean;
 }
 
 /** Body of `POST /users/me/password` (TASK-36.1). */

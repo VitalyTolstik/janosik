@@ -14,6 +14,9 @@ export function toAuthUser(user: User): AuthUser {
     displayName: user.displayName,
     avatarColor: (user.avatarColor as UserAvatarColor | null) ?? null,
     avatarPath: user.avatarPath,
+    // TASK-153: the account digest opt-out reaches the client; the default
+    // (on) is omitted like every other optional field.
+    ...(user.notifyDigest ? {} : { notifyDigest: false }),
     createdAt: user.createdAt.getTime(),
     // TASK-53: null → the address is not confirmed yet, the UI shows the
     // verification gate instead of the boards.

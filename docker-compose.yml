@@ -32,6 +32,8 @@ services:
       UI_BASE: /app/
       UPLOAD_DIR: /data/uploads
       DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
+      DB_CONNECTION_LIMIT: ${DB_CONNECTION_LIMIT:-10}
+      SLOW_QUERY_MS: ${SLOW_QUERY_MS:-200}
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (openssl rand -hex 32)}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
@@ -78,6 +80,17 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+    # TASK-153 (B14): the stock container starts with 16 MB shared buffers
+    # and 4 MB work_mem, so every aggregation round-trips to disk. Sized for a
+    # small self-host by default; raise with the env knobs on a bigger box.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-256MB}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-8MB}
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s

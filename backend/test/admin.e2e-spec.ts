@@ -526,14 +526,30 @@ describe("Admin API (e2e)", () => {
     const freshCookie = cookieValue(rotated, ADMIN_REFRESH_COOKIE);
     expect(freshCookie).not.toBe(stolenCookie);
 
-    // The old cookie is now a theft signal: reuse kills every session.
+    // Reuse moments after the rotation is a lost race, not theft (TASK-153):
+    // the old cookie is refused but the fresh session survives.
+    await server()
+      .post("/api/v1/admin/auth/refresh")
+      .set("Cookie", `${ADMIN_REFRESH_COOKIE}=${stolenCookie}`)
+      .expect(401);
+    const withinGrace = await server()
+      .post("/api/v1/admin/auth/refresh")
+      .set("Cookie", `${ADMIN_REFRESH_COOKIE}=${freshCookie}`)
+      .expect(200);
+    const newerCookie = cookieValue(withinGrace, ADMIN_REFRESH_COOKIE);
+
+    // Beyond the grace window the same reuse kills every session.
+    await prisma.adminRefreshToken.updateMany({
+      where: { adminId, revokedAt: { not: null } },
+      data: { revokedAt: new Date(Date.now() - 2 * 60_000) },
+    });
     await server()
       .post("/api/v1/admin/auth/refresh")
       .set("Cookie", `${ADMIN_REFRESH_COOKIE}=${stolenCookie}`)
       .expect(401);
     await server()
       .post("/api/v1/admin/auth/refresh")
-      .set("Cookie", `${ADMIN_REFRESH_COOKIE}=${freshCookie}`)
+      .set("Cookie", `${ADMIN_REFRESH_COOKIE}=${newerCookie}`)
       .expect(401);
 
     const audit = await prisma.adminAuditLog.findFirst({
