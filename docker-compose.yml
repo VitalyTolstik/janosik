@@ -46,6 +46,10 @@ services:
       # you put nginx/Caddy/Traefik in front, so rate limits and the audit log
       # see the real client IP.
       TRUST_PROXY: ${TRUST_PROXY:-0}
+      # Retention: soft-deleted rows (and whole boards) older than the first
+      # window are purged; the master audit trail keeps a longer one (TASK-148).
+      PURGE_AFTER_DAYS: ${PURGE_AFTER_DAYS:-30}
+      AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-365}
       # Optional: Redis-backed queues are on via REDIS_URL above; the dashboard
       # is OWNER-only and off unless enabled.
       QUEUES_DASHBOARD: ${QUEUES_DASHBOARD:-false}

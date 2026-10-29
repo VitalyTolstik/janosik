@@ -201,6 +201,13 @@ export const env = cleanEnv(process.env, {
     default: 30,
     example: "30",
   }),
+  // TASK-148: the master audit trail is trimmed on its own, longer window —
+  // accountability wants history, not unbounded growth.
+  AUDIT_RETENTION_DAYS: num({
+    desc: "Delete admin audit-log rows older than this many days",
+    default: 365,
+    example: "365",
+  }),
   // Per-token budget of the public share contour (requests/min). Keys by the
   // share token, not the IP, so one hammered link is bounded regardless of
   // how many readers hit it. The OG preview is heavier, hence a tighter one.

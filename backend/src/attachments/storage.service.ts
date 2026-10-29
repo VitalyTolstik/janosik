@@ -325,6 +325,41 @@ export class StorageService {
   }
 
   /**
+   * Abandoned `.tmp-*` scratch files (TASK-148, B22). They are excluded from
+   * `listBlobs` on purpose (a temp is never referenced), so the orphan sweep
+   * could not see them; a killed encoder or a SIGKILLed worker then left them
+   * on disk forever. Returns each with its `mtimeMs` so the sweep can spare a
+   * temp that is still being written.
+   */
+  async listTempBlobs(): Promise<
+    Array<{ name: string; absPath: string; mtimeMs: number }>
+  > {
+    const out: Array<{ name: string; absPath: string; mtimeMs: number }> = [];
+    const scan = async (dir: string): Promise<void> => {
+      let entries: import("node:fs").Dirent[] = [];
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.startsWith(".tmp-")) continue;
+        const absPath = path.join(dir, entry.name);
+        let mtimeMs: number;
+        try {
+          mtimeMs = (await stat(absPath)).mtimeMs;
+        } catch {
+          continue;
+        }
+        out.push({ name: entry.name, absPath, mtimeMs });
+      }
+    };
+    await scan(this.root);
+    await scan(this.avatarRoot);
+    return out;
+  }
+
+  /**
    * Every stored blob (TASK-68 orphan sweep): files in the root plus avatars
    * in their subfolder, each with its `mtimeMs` so the sweep can spare
    * freshly written blobs (TASK-77 — a row may not be committed yet).

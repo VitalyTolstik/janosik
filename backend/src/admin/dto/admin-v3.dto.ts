@@ -154,6 +154,10 @@ const MAINTENANCE_JOBS = [
   "sweep-shares",
   "sweep-invitations",
   "sweep-exports",
+  "sweep-commands",
+  "sweep-reminders",
+  "sweep-activity",
+  "sweep-audit",
   "sweep-orphan-blobs",
 ] as const;
 

@@ -18,6 +18,9 @@ function makePrisma(): PrismaService {
     card: purgeable(),
     column: purgeable(),
     label: purgeable(),
+    board: purgeable(),
+    activity: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    adminAuditLog: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     $transaction: jest.fn(async (arg: unknown) =>
       typeof arg === "function"
         ? (arg as (t: unknown) => unknown)({})
@@ -47,6 +50,7 @@ const storageMock = {
   attachmentPath: (name: string) => `/blobs/${name}`,
   remove: jest.fn().mockResolvedValue(undefined),
   listBlobs: jest.fn().mockResolvedValue([]),
+  listTempBlobs: jest.fn().mockResolvedValue([]),
 } as unknown as StorageService;
 
 const opsMock = {
@@ -60,6 +64,7 @@ describe("MaintenanceService", () => {
   beforeEach(() => {
     jest.resetAllMocks();
     (storageMock.listBlobs as jest.Mock).mockResolvedValue([]);
+    (storageMock.listTempBlobs as jest.Mock).mockResolvedValue([]);
     (storageMock.remove as jest.Mock).mockResolvedValue(undefined);
   });
 
@@ -170,5 +175,114 @@ describe("MaintenanceService", () => {
       where: { createdAt: { lt: Date } };
     };
     expect(call.where.createdAt.lt).toBeInstanceOf(Date);
+  });
+
+  it("purges stale boards with their rows, feed, log, shares and blobs (TASK-148)", async () => {
+    const prisma = makePrisma();
+    (prisma.board.findMany as jest.Mock).mockResolvedValue([{ id: "b1" }]);
+    (prisma.board.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
+    // The per-card passes have nothing left; only the board chunk sees rows.
+    (prisma.card.findMany as jest.Mock).mockImplementation(
+      async (args: { where: { column?: unknown } }) =>
+        args.where.column ? [{ id: "c1" }] : [],
+    );
+    (prisma.attachment.findMany as jest.Mock).mockImplementation(
+      async (args: { where: { cardId?: unknown } }) =>
+        args.where.cardId
+          ? [
+              {
+                storedName: "gone.bin",
+                thumbnailName: "t.jpg",
+                posterName: null,
+              },
+            ]
+          : [],
+    );
+    const service = new MaintenanceService(prisma, storageMock, opsMock);
+
+    const removed = await service.purgeSoftDeleted();
+
+    expect(removed).toBe(1);
+    expect(prisma.command.deleteMany).toHaveBeenCalledWith({
+      where: { boardId: { in: ["b1"] } },
+    });
+    expect(prisma.boardShare.deleteMany).toHaveBeenCalledWith({
+      where: { boardId: { in: ["b1"] } },
+    });
+    expect(prisma.activity.deleteMany).toHaveBeenCalledWith({
+      where: { boardId: { in: ["b1"] } },
+    });
+    expect(storageMock.remove).toHaveBeenCalledWith("/blobs/gone.bin");
+    expect(storageMock.remove).toHaveBeenCalledWith("/blobs/t.jpg");
+  });
+
+  it("deletes expired and long-revoked board shares (TASK-148)", async () => {
+    const prisma = makePrisma();
+    (prisma.boardShare.deleteMany as jest.Mock).mockResolvedValue({ count: 2 });
+    const service = new MaintenanceService(prisma, storageMock, opsMock);
+
+    const removed = await service.sweepShares();
+
+    expect(removed).toBe(2);
+    const where = (prisma.boardShare.deleteMany as jest.Mock).mock.calls[0][0]
+      .where as { OR: Array<Record<string, unknown>> };
+    expect(where.OR[0]).toEqual({
+      expiresAt: { not: null, lt: expect.any(Date) },
+    });
+    expect(where.OR[1]).toEqual({
+      revokedAt: { not: null, lt: expect.any(Date) },
+    });
+  });
+
+  it("trims the activity feed to the retention window (TASK-148)", async () => {
+    const prisma = makePrisma();
+    (prisma.activity.deleteMany as jest.Mock).mockResolvedValue({ count: 9 });
+    const service = new MaintenanceService(prisma, storageMock, opsMock);
+
+    const removed = await service.sweepActivity();
+
+    expect(removed).toBe(9);
+    const call = (prisma.activity.deleteMany as jest.Mock).mock.calls[0][0] as {
+      where: { createdAt: { lt: Date } };
+    };
+    expect(call.where.createdAt.lt).toBeInstanceOf(Date);
+  });
+
+  it("trims the admin audit log on its own window (TASK-148)", async () => {
+    const prisma = makePrisma();
+    (prisma.adminAuditLog.deleteMany as jest.Mock).mockResolvedValue({
+      count: 4,
+    });
+    const service = new MaintenanceService(prisma, storageMock, opsMock);
+
+    const removed = await service.sweepAudit();
+
+    expect(removed).toBe(4);
+    const call = (prisma.adminAuditLog.deleteMany as jest.Mock).mock
+      .calls[0][0] as { where: { createdAt: { lt: Date } } };
+    expect(call.where.createdAt.lt).toBeInstanceOf(Date);
+  });
+
+  it("removes abandoned .tmp- blobs but spares fresh ones (TASK-148)", async () => {
+    const prisma = makePrisma();
+    (storageMock.listTempBlobs as jest.Mock).mockResolvedValue([
+      {
+        name: ".tmp-old.jpg",
+        absPath: "/blobs/.tmp-old.jpg",
+        mtimeMs: LONG_AGO,
+      },
+      {
+        name: ".tmp-live.jpg",
+        absPath: "/blobs/.tmp-live.jpg",
+        mtimeMs: Date.now(),
+      },
+    ]);
+    const service = new MaintenanceService(prisma, storageMock, opsMock);
+
+    const removed = await service.sweepOrphanBlobs();
+
+    expect(removed).toBe(1);
+    expect(storageMock.remove).toHaveBeenCalledWith("/blobs/.tmp-old.jpg");
+    expect(storageMock.remove).not.toHaveBeenCalledWith("/blobs/.tmp-live.jpg");
   });
 });

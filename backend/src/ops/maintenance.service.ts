@@ -21,6 +21,8 @@ export const MAINTENANCE_JOBS = [
   "sweep-exports",
   "sweep-commands",
   "sweep-reminders",
+  "sweep-activity",
+  "sweep-audit",
   "sweep-orphan-blobs",
 ] as const;
 
@@ -87,6 +89,10 @@ export class MaintenanceService {
         return this.sweepCommands();
       case "sweep-reminders":
         return this.sweepReminders();
+      case "sweep-activity":
+        return this.sweepActivity();
+      case "sweep-audit":
+        return this.sweepAudit();
       case "sweep-orphan-blobs":
         return this.sweepOrphanBlobs();
       default:
@@ -242,6 +248,73 @@ export class MaintenanceService {
         where: { ...stale, cards: { none: {} } },
       })
     ).count;
+    // Boards last: a deleted board keeps its row (and its feed/log/shares)
+    // until the window passes, then the whole subtree goes — cards and their
+    // blobs were already reclaimed by the passes above, but a chunk retried
+    // after a crash may still find children, so delete them here too.
+    count += await this.purgeChunks(
+      (take) =>
+        this.prisma.board.findMany({
+          where: stale,
+          select: { id: true },
+          take,
+        }),
+      async (rows) => {
+        const ids = rows.map((row) => row.id);
+        const cards = await this.prisma.card.findMany({
+          where: { column: { boardId: { in: ids } } },
+          select: { id: true },
+        });
+        const cardIds = cards.map((card) => card.id);
+        const blobs =
+          cardIds.length === 0
+            ? []
+            : await this.prisma.attachment.findMany({
+                where: { cardId: { in: cardIds } },
+                select: {
+                  storedName: true,
+                  thumbnailName: true,
+                  posterName: true,
+                },
+              });
+        const results = await this.prisma.$transaction([
+          this.prisma.checklistItem.deleteMany({
+            where: {
+              checklist: { card: { column: { boardId: { in: ids } } } },
+            },
+          }),
+          this.prisma.checklist.deleteMany({
+            where: { card: { column: { boardId: { in: ids } } } },
+          }),
+          this.prisma.cardLabel.deleteMany({
+            where: { card: { column: { boardId: { in: ids } } } },
+          }),
+          this.prisma.cardLink.deleteMany({ where: { boardId: { in: ids } } }),
+          this.prisma.comment.deleteMany({
+            where: { card: { column: { boardId: { in: ids } } } },
+          }),
+          this.prisma.attachment.deleteMany({
+            where: { card: { column: { boardId: { in: ids } } } },
+          }),
+          this.prisma.card.deleteMany({
+            where: { column: { boardId: { in: ids } } },
+          }),
+          this.prisma.column.deleteMany({ where: { boardId: { in: ids } } }),
+          this.prisma.label.deleteMany({ where: { boardId: { in: ids } } }),
+          this.prisma.activity.deleteMany({ where: { boardId: { in: ids } } }),
+          this.prisma.command.deleteMany({ where: { boardId: { in: ids } } }),
+          this.prisma.boardShare.deleteMany({
+            where: { boardId: { in: ids } },
+          }),
+          this.prisma.boardMember.deleteMany({
+            where: { boardId: { in: ids } },
+          }),
+          this.prisma.board.deleteMany({ where: { id: { in: ids } } }),
+        ]);
+        await this.removeBlobs(blobs);
+        return results[results.length - 1].count;
+      },
+    );
     return count;
   }
 
@@ -330,10 +403,17 @@ export class MaintenanceService {
     return user.count + admin.count;
   }
 
-  /** Board shares past their TTL (live shares have no expiry and stay). */
+  /** Board shares past their TTL or long revoked (TASK-148 covers revokes). */
   async sweepShares(): Promise<number> {
+    const now = new Date();
+    const revokedBefore = new Date(now.getTime() - 86_400_000);
     const result = await this.prisma.boardShare.deleteMany({
-      where: { expiresAt: { not: null, lt: new Date() } },
+      where: {
+        OR: [
+          { expiresAt: { not: null, lt: now } },
+          { revokedAt: { not: null, lt: revokedBefore } },
+        ],
+      },
     });
     return result.count;
   }
@@ -401,8 +481,36 @@ export class MaintenanceService {
   }
 
   /**
+   * Keeps the board feed inside the retention window (TASK-148, B9). Membership
+   * and comment events used to be kept forever; past the window the command
+   * log they mirror is gone anyway, so the row adds only storage.
+   */
+  async sweepActivity(): Promise<number> {
+    const days = await this.retentionDays();
+    const cutoff = new Date(Date.now() - days * 86_400_000);
+    const result = await this.prisma.activity.deleteMany({
+      where: { createdAt: { lt: cutoff } },
+    });
+    return result.count;
+  }
+
+  /**
+   * Trims the master audit trail after a longer, separate window (TASK-148,
+   * B9): accountability wants history, but not unbounded growth. Default one
+   * year (`AUDIT_RETENTION_DAYS`).
+   */
+  async sweepAudit(): Promise<number> {
+    const cutoff = new Date(Date.now() - env.AUDIT_RETENTION_DAYS * 86_400_000);
+    const result = await this.prisma.adminAuditLog.deleteMany({
+      where: { createdAt: { lt: cutoff } },
+    });
+    return result.count;
+  }
+
+  /**
    * Blobs no row points at anymore (failed uploads, missed deletes), older
-   * than the grace window (TASK-77).
+   * than the grace window (TASK-77), plus the `.tmp-*` scratch files ffmpeg
+   * leaves behind when a derive/encode is killed (TASK-107/OOM, TASK-148).
    */
   async sweepOrphanBlobs(): Promise<number> {
     const [attachments, users, exports] = await Promise.all([
@@ -437,6 +545,14 @@ export class MaintenanceService {
     let removed = 0;
     for (const blob of blobs) {
       if (referenced.has(blob.name)) continue;
+      if (blob.mtimeMs > cutoff) continue;
+      await this.storage.remove(blob.absPath);
+      removed += 1;
+    }
+    // TASK-148 (B22): the scan above skips `.tmp-*`; those are pure scratch.
+    // A live transcode/media run touches its temp within the grace window, so
+    // only truly abandoned ones go.
+    for (const blob of await this.storage.listTempBlobs()) {
       if (blob.mtimeMs > cutoff) continue;
       await this.storage.remove(blob.absPath);
       removed += 1;
