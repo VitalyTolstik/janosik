@@ -165,6 +165,7 @@ const en = {
   "admin.bulk.restore": "Restore selected",
   "admin.bulk.confirm.title": "Delete {count} rows?",
   "admin.bulk.confirm.body": "This cannot be undone for the selected rows.",
+  "admin.bulk.partial": "{count} refused — kept selected for retry.",
 
   "admin.boardDetail.member.add": "Add member",
   "admin.boardDetail.member.email": "User email",
@@ -1095,6 +1096,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.bulk.restore": "Восстановить выбранные",
   "admin.bulk.confirm.title": "Удалить {count} строк?",
   "admin.bulk.confirm.body": "Для выбранных строк это необратимо.",
+  "admin.bulk.partial": "Отказано: {count} — оставлены выбранными для повтора.",
 
   "admin.boardDetail.member.add": "Добавить участника",
   "admin.boardDetail.member.email": "Email пользователя",

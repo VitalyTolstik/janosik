@@ -127,6 +127,11 @@ export class CommentsService {
           }
           return toCommentDto(existing);
         }
+        // The id exists but on another card: a collision, not a retry. A raw
+        // P2002 here used to surface as a 500 (review follow-up).
+        if (existing) {
+          throw new ConflictException("Comment idempotency key is in use");
+        }
       }
       throw error;
     }

@@ -243,9 +243,17 @@ export function EntityPage<E extends AdminEntity>({
     const ids = visibleIds.filter((id) => selected.has(id));
     if (ids.length === 0) return;
     try {
-      await adminApi.bulkEntity(config.entity, ids, action);
-      toast.success(label);
-      setSelected(new Set());
+      const result = await adminApi.bulkEntity(config.entity, ids, action);
+      const failed = result.failed?.length ?? 0;
+      if (failed > 0) {
+        // Keep the refused ids selected so support can inspect or retry them
+        // instead of hunting for the rows again (TASK-156 review).
+        toast.error(t("admin.bulk.partial", { count: failed }));
+        setSelected(new Set(result.failed ?? []));
+      } else {
+        toast.success(label);
+        setSelected(new Set());
+      }
       list.reload();
     } catch {
       toast.error(t("admin.common.actionFailed"));

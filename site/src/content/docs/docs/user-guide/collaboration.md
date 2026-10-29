@@ -79,9 +79,11 @@ Choose a mode:
 
 - `Live` follows the board as it changes.
 - `Snapshot` is a frozen copy captured now, which only you can refresh. A
-  snapshot survives the board's deletion. Its comments and attachments are
-  frozen too: comments and files added after the capture do not appear until
-  you refresh it.
+  snapshot's board content and member list survive the board's deletion. Its
+  comments and attachments are frozen too: comments and files added after the
+  capture do not appear until you refresh it. They are stored with the source
+  board, so they also stop being available once the source board is purged
+  (30 days after deletion); refresh or copy anything you need before then.
 
 Each link can include `Comments` and `Attachments`, and can be given an
 expiry: `Never`, 1 hour, 24 hours, one week or about a month. Optionally give

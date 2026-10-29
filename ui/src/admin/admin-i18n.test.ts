@@ -23,6 +23,7 @@ describe("admin i18n", () => {
       "admin.boards.title",
       "admin.log.title",
       "admin.audit.title",
+      "admin.bulk.partial",
     ] as const;
     for (const key of keys) {
       expect(adminMessage(key, "ru")).not.toBe(adminMessage(key, "en"));

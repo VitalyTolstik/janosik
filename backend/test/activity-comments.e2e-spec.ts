@@ -602,6 +602,37 @@ describe("Activity & comments API (e2e)", () => {
         .expect(409);
     });
 
+    it("refuses a commandId already used on another card (TASK-156)", async () => {
+      const { boardId, cardId } = await boardWithCard(
+        "Comment card scope",
+        "cc",
+      );
+      const otherCardId = "card-cc-other";
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: otherCardId,
+          columnId: "col-cc",
+          title: "Other card",
+          atIndex: 1,
+        }),
+      );
+      const commandId = randomUUID();
+      await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(memberToken))
+        .send({ text: "Only here", commandId })
+        .expect(201);
+
+      // Same author, same key, different card: a collision, not a replay.
+      await server()
+        .post(`/api/v1/cards/${otherCardId}/comments`)
+        .set(auth(memberToken))
+        .send({ text: "Only here", commandId })
+        .expect(409);
+    });
+
     it("lets only the author delete and only writers comment", async () => {
       const { cardId } = await boardWithCard("Comment roles board", "cr");
       const created = await server()

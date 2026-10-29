@@ -108,6 +108,20 @@ const conflictedDrafts = new Map<string, string>();
 /** Title drafts withheld by the same rule (TASK-156). */
 const heldTitles = new Map<string, string>();
 
+/** Keep the module-level draft maps bounded (review follow-up). */
+const MAX_HELD_DRAFTS = 50;
+function rememberDraft(
+  drafts: Map<string, string>,
+  key: string,
+  value: string,
+): void {
+  if (!drafts.has(key) && drafts.size >= MAX_HELD_DRAFTS) {
+    const oldest = drafts.keys().next().value;
+    if (oldest !== undefined) drafts.delete(oldest);
+  }
+  drafts.set(key, value);
+}
+
 /** The module-map key for one card's conflict draft. */
 function conflictedKey(boardId: string, cardId: string): string {
   return `${boardId}:${cardId}`;
@@ -269,7 +283,8 @@ export function CardDialog({
         // Unresolved conflict: never overwrite the other writer's newer text
         // on blur, close, card switch or pagehide (C3). Keep the draft with
         // the card so reopening it can ask again.
-        conflictedDrafts.set(
+        rememberDraft(
+          conflictedDrafts,
           conflictedKey(boardId, staged.cardId),
           staged.value,
         );
@@ -307,7 +322,11 @@ export function CardDialog({
     if (!descriptionSync.conflict) return;
     const staged = descriptionDraftRef.current;
     if (staged !== null) {
-      conflictedDrafts.set(conflictedKey(boardId, staged.cardId), staged.value);
+      rememberDraft(
+        conflictedDrafts,
+        conflictedKey(boardId, staged.cardId),
+        staged.value,
+      );
     }
   }, [
     descriptionSync.conflict,
@@ -435,7 +454,7 @@ export function CardDialog({
       const value = titleDraftRef.current;
       if (!force && titleConflictRef.current) {
         // Never overwrite the other writer's newer title on blur/close.
-        heldTitles.set(conflictedKey(boardId, target), value);
+        rememberDraft(heldTitles, conflictedKey(boardId, target), value);
         return;
       }
       heldTitles.delete(conflictedKey(boardId, target));
@@ -568,7 +587,11 @@ export function CardDialog({
           cardId: card.id,
           value: clamped,
         };
-        conflictedDrafts.set(conflictedKey(boardId, card.id), clamped);
+        rememberDraft(
+          conflictedDrafts,
+          conflictedKey(boardId, card.id),
+          clamped,
+        );
         return;
       }
       // Oversized pastes clamp immediately — this path still commits right
@@ -593,7 +616,11 @@ export function CardDialog({
       value: description,
     };
     if (descriptionSync.conflict) {
-      conflictedDrafts.set(conflictedKey(boardId, card.id), description);
+      rememberDraft(
+        conflictedDrafts,
+        conflictedKey(boardId, card.id),
+        description,
+      );
     }
     if (!descriptionSync.dirty) {
       setDescriptionSync((prev) =>
