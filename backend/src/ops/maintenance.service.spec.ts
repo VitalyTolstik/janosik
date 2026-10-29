@@ -1,7 +1,7 @@
 import type { PrismaService } from "@/common/prisma/prisma.service";
 import type { StorageService } from "@/attachments/storage.service";
 import type { OpsSettingsService } from "./ops-settings.service";
-import { MaintenanceService } from "./maintenance.service";
+import { MaintenanceService, PURGE_CHUNK } from "./maintenance.service";
 
 function makePrisma(): PrismaService {
   const purgeable = () => ({
@@ -204,22 +204,88 @@ describe("MaintenanceService", () => {
             ]
           : [],
     );
+    (prisma.activity.findMany as jest.Mock).mockResolvedValue([
+      { id: "act-1" },
+    ]);
+    (prisma.activity.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
+    (prisma.command.findMany as jest.Mock).mockResolvedValue([{ id: "cmd-1" }]);
+    (prisma.command.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
     const service = new MaintenanceService(prisma, storageMock, opsMock);
 
     const removed = await service.purgeSoftDeleted();
 
     expect(removed).toBe(1);
+    // The feed and log go in pages by row id before the final transaction
+    // (TASK-156), not as one boardId batch inside it.
     expect(prisma.command.deleteMany).toHaveBeenCalledWith({
-      where: { boardId: { in: ["b1"] } },
+      where: { id: { in: ["cmd-1"] } },
     });
     expect(prisma.boardShare.deleteMany).toHaveBeenCalledWith({
       where: { boardId: { in: ["b1"] }, mode: "live" },
     });
     expect(prisma.activity.deleteMany).toHaveBeenCalledWith({
-      where: { boardId: { in: ["b1"] } },
+      where: { id: { in: ["act-1"] } },
     });
     expect(storageMock.remove).toHaveBeenCalledWith("/blobs/gone.bin");
     expect(storageMock.remove).toHaveBeenCalledWith("/blobs/t.jpg");
+  });
+
+  it("purges a stale board's feed and command log in bounded pages before the final board transaction (TASK-156)", async () => {
+    const prisma = makePrisma();
+    const ids = (n: number, prefix: string) =>
+      Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}` }));
+    (prisma.board.findMany as jest.Mock).mockResolvedValue([{ id: "b1" }]);
+    (prisma.board.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
+    // The earlier passes reclaimed the cards; the board chunk only has
+    // feed/log work — a full PURGE_CHUNK page, then a short one.
+    (prisma.activity.findMany as jest.Mock)
+      .mockResolvedValueOnce(ids(PURGE_CHUNK, "act-a"))
+      .mockResolvedValueOnce(ids(120, "act-b"));
+    (prisma.activity.deleteMany as jest.Mock)
+      .mockResolvedValueOnce({ count: PURGE_CHUNK })
+      .mockResolvedValueOnce({ count: 120 });
+    (prisma.command.findMany as jest.Mock)
+      .mockResolvedValueOnce(ids(PURGE_CHUNK, "cmd-a"))
+      .mockResolvedValueOnce(ids(40, "cmd-b"));
+    (prisma.command.deleteMany as jest.Mock)
+      .mockResolvedValueOnce({ count: PURGE_CHUNK })
+      .mockResolvedValueOnce({ count: 40 });
+    const service = new MaintenanceService(prisma, storageMock, opsMock);
+
+    const removed = await service.purgeSoftDeleted();
+
+    // The board itself is deleted exactly once, by the final transaction.
+    expect(removed).toBe(1);
+    expect(prisma.board.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ["b1"] } },
+    });
+    // Feed and log go as two pages by row id — never one unbounded
+    // boardId batch inside the transaction.
+    expect(
+      (prisma.activity.deleteMany as jest.Mock).mock.calls.map(
+        (call) => call[0].where.id.in.length,
+      ),
+    ).toEqual([PURGE_CHUNK, 120]);
+    expect(
+      (prisma.activity.deleteMany as jest.Mock).mock.calls.every(
+        (call) => call[0].where.boardId === undefined,
+      ),
+    ).toBe(true);
+    expect(
+      (prisma.command.deleteMany as jest.Mock).mock.calls.map(
+        (call) => call[0].where.id.in.length,
+      ),
+    ).toEqual([PURGE_CHUNK, 40]);
+    // Each page is read with a take bound and a boardId filter.
+    expect((prisma.activity.findMany as jest.Mock).mock.calls).toHaveLength(2);
+    expect((prisma.activity.findMany as jest.Mock).mock.calls[0][0]).toEqual({
+      where: { boardId: { in: ["b1"] } },
+      select: { id: true },
+      take: PURGE_CHUNK,
+    });
+    // The card pages found nothing, so the only transaction left is the
+    // small final one that deletes the subtree tail and the board.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 
   it("deletes expired and long-revoked board shares (TASK-148)", async () => {
@@ -237,7 +303,37 @@ describe("MaintenanceService", () => {
     });
     expect(where.OR[1]).toEqual({
       revokedAt: { not: null, lt: expect.any(Date) },
+      OR: [{ boardId: null }, { board: { deletedAt: null } }],
     });
+  });
+
+  it("keeps a revoked share while its board is soft-deleted inside the restore window (TASK-156)", async () => {
+    const prisma = makePrisma();
+    (prisma.boardShare.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
+    const service = new MaintenanceService(prisma, storageMock, opsMock);
+
+    const removed = await service.sweepShares();
+
+    // A long-revoked share on a live board still goes; a share revoked by
+    // the board delete (source soft-deleted, restorable for the retention
+    // window) must survive, or a day-2..30 restore silently loses it.
+    expect(removed).toBe(1);
+    const revoked = (prisma.boardShare.deleteMany as jest.Mock).mock.calls[0][0]
+      .where.OR[1] as {
+      revokedAt: unknown;
+      OR: Array<Record<string, unknown>>;
+    };
+    expect(revoked.revokedAt).toEqual({
+      not: null,
+      lt: expect.any(Date),
+    });
+    // The clause may only match shares whose source board is live/archived
+    // (deletedAt null) or detached by the purge (boardId null) — never one
+    // hanging on a soft-deleted, still restorable board.
+    expect(revoked.OR).toEqual([
+      { boardId: null },
+      { board: { deletedAt: null } },
+    ]);
   });
 
   it("trims the activity feed to the retention window (TASK-148)", async () => {

@@ -251,7 +251,9 @@ export class MaintenanceService {
     // Boards last: a deleted board keeps its row (and its feed/log/shares)
     // until the window passes, then the whole subtree goes — cards and their
     // blobs were already reclaimed by the passes above, but a chunk retried
-    // after a crash may still find children, so delete them here too.
+    // after a crash may still find children, so delete them here too. The
+    // feed and command log are paged away first so the final transaction
+    // stays small (TASK-156).
     count += await this.purgeChunks(
       (take) =>
         this.prisma.board.findMany({
@@ -310,6 +312,45 @@ export class MaintenanceService {
           await this.removeBlobs(blobs);
           if (cards.length < PURGE_CHUNK) break;
         }
+        // Feed and command log in bounded pages (TASK-156): the final
+        // transaction below used to delete every `Activity`/`Command` row
+        // of up to PURGE_CHUNK boards in one batch with no `take` — a huge
+        // board meant a long transaction, P2028, and a BullMQ retry loop
+        // that never drained, so the board and its memberships never went.
+        // Pages delete by row id (the sweep pattern), so a crash mid-run
+        // just re-pages on the next attempt; the transaction then finds an
+        // empty feed/log and stays FK-safe.
+        await this.purgeChunks(
+          (take) =>
+            this.prisma.activity.findMany({
+              where: { boardId: { in: ids } },
+              select: { id: true },
+              take,
+            }),
+          async (page) =>
+            (
+              await this.prisma.activity.deleteMany({
+                where: { id: { in: page.map((row) => row.id) } },
+              })
+            ).count,
+        );
+        await this.purgeChunks(
+          (take) =>
+            this.prisma.command.findMany({
+              where: { boardId: { in: ids } },
+              select: { id: true },
+              take,
+            }),
+          async (page) =>
+            (
+              await this.prisma.command.deleteMany({
+                where: { id: { in: page.map((row) => row.id) } },
+              })
+            ).count,
+        );
+        // Small final transaction: the feed and log are already paged away,
+        // so only the child rows a retried chunk may still find, the live
+        // shares, the memberships and the board itself remain.
         const results = await this.prisma.$transaction([
           this.prisma.checklistItem.deleteMany({
             where: {
@@ -334,8 +375,6 @@ export class MaintenanceService {
           }),
           this.prisma.column.deleteMany({ where: { boardId: { in: ids } } }),
           this.prisma.label.deleteMany({ where: { boardId: { in: ids } } }),
-          this.prisma.activity.deleteMany({ where: { boardId: { in: ids } } }),
-          this.prisma.command.deleteMany({ where: { boardId: { in: ids } } }),
           // Snapshot shares are detached by the FK (`SET NULL`) and keep
           // serving; only a live share dies with its board (TASK-156).
           this.prisma.boardShare.deleteMany({
@@ -462,7 +501,17 @@ export class MaintenanceService {
     return user.count + admin.count;
   }
 
-  /** Board shares past their TTL or long revoked (TASK-148 covers revokes). */
+  /**
+   * Board shares past their TTL or long revoked (TASK-148 covers revokes).
+   *
+   * TASK-156: a revoked share is kept while its source board is soft-deleted
+   * — the board can still be restored inside the retention window (default
+   * 30 d) and the restore revives exactly the shares the board delete
+   * revoked, so sweeping them at 24 h would make a day-2..30 restore
+   * silently lose its live share. Only shares on a live/archived board (a
+   * normal manual revoke) or detached from a purged board are removed; the
+   * board purge itself deletes the live shares it kills.
+   */
   async sweepShares(): Promise<number> {
     const now = new Date();
     const revokedBefore = new Date(now.getTime() - 86_400_000);
@@ -470,7 +519,13 @@ export class MaintenanceService {
       where: {
         OR: [
           { expiresAt: { not: null, lt: now } },
-          { revokedAt: { not: null, lt: revokedBefore } },
+          {
+            revokedAt: { not: null, lt: revokedBefore },
+            // Live/archived source board, or none at all (detached by the
+            // board purge's `SET NULL`); a soft-deleted, still restorable
+            // board keeps the share.
+            OR: [{ boardId: null }, { board: { deletedAt: null } }],
+          },
         ],
       },
     });
