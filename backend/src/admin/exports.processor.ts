@@ -17,7 +17,10 @@ export class ExportsProcessor extends WorkerHost {
   }
 
   async process(job: Job<ExportsJob>): Promise<unknown> {
-    await this.exports.build(job.data.exportId);
+    await this.exports.build(job.data.exportId, {
+      attemptsMade: job.attemptsMade,
+      attempts: job.opts.attempts ?? 1,
+    });
     return { exportId: job.data.exportId };
   }
 }

@@ -143,8 +143,17 @@ export class MediaService implements OnModuleInit {
       .finally(() => this.queued.delete(attachmentId));
   }
 
-  /** Generate the derivatives for one attachment (shared by both backends). */
-  async process(attachmentId: string): Promise<void> {
+  /**
+   * Generate the derivatives for one attachment (shared by both backends).
+   *
+   * TASK-148 (B21): a rejection must reach BullMQ or `attempts: 3` never
+   * fires; while attempts remain the row stays `pending` (so the next run's
+   * guard does not no-op) and only the final attempt settles on `failed`.
+   */
+  async process(
+    attachmentId: string,
+    retry?: { attemptsMade: number; attempts: number },
+  ): Promise<void> {
     const row = await this.prisma.attachment.findFirst({
       where: { id: attachmentId, deletedAt: null },
       select: {
@@ -223,16 +232,21 @@ export class MediaService implements OnModuleInit {
       this.processed += 1;
       this.publish(row);
     } catch (error) {
-      await this.prisma.attachment.updateMany({
-        where: { id: row.id, deletedAt: null },
-        data: { derivativeStatus: "failed" },
-      });
-      this.failed += 1;
+      const willRetry =
+        retry !== undefined && retry.attemptsMade + 1 < retry.attempts;
+      if (!willRetry) {
+        await this.prisma.attachment.updateMany({
+          where: { id: row.id, deletedAt: null },
+          data: { derivativeStatus: "failed" },
+        });
+        this.failed += 1;
+      }
       this.logger.warn(
-        `Derive of ${row.id} failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Derive of ${row.id} failed (attempt ${(retry?.attemptsMade ?? 0) + 1}${
+          retry ? `/${retry.attempts}` : ""
+        }): ${error instanceof Error ? error.message : String(error)}`,
       );
+      throw error;
     }
   }
 

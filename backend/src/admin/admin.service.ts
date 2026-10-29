@@ -1848,11 +1848,19 @@ export class AdminService {
       where: { uploadedById: userId },
       select: { storedName: true, thumbnailName: true, posterName: true },
     });
+    // TASK-148 (B12): an erase must take the user's GDPR bundles with it.
+    // Rows hold `userId` with no FK, so deleting the user left the export
+    // rows and their `.json` artifacts downloadable for the full 7-day TTL.
+    const exports = await this.prisma.dataExport.findMany({
+      where: { userId },
+      select: { storedName: true },
+    });
     await this.prisma.$transaction(async (tx) => {
       await tx.emailVerificationCode.deleteMany({ where: { userId } });
       await tx.emailChangeCode.deleteMany({ where: { userId } });
       await tx.refreshToken.deleteMany({ where: { userId } });
       await tx.apiToken.deleteMany({ where: { userId } });
+      await tx.dataExport.deleteMany({ where: { userId } });
       await tx.attachment.deleteMany({ where: { uploadedById: userId } });
       await tx.comment.deleteMany({ where: { authorId: userId } });
       await tx.activity.deleteMany({ where: { actorId: userId } });
@@ -1883,8 +1891,16 @@ export class AdminService {
         }
       }
     }
+    for (const row of exports) {
+      if (row.storedName) {
+        await this.storage
+          .remove(this.storage.attachmentPath(row.storedName))
+          .catch(() => undefined);
+      }
+    }
     await this.audit(admin, "user.delete", "user", userId, {
       email: user.email,
+      exports: exports.length,
     });
     return { status: "ok" };
   }

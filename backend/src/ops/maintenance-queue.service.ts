@@ -94,7 +94,13 @@ export class MaintenanceQueueService implements OnModuleInit {
       await this.queue.upsertJobScheduler(
         MAINTENANCE_SCHEDULER_ID,
         { every: minutes * 60_000 },
-        { name: MAINTENANCE_JOB, data: { job: "all" } },
+        {
+          name: MAINTENANCE_JOB,
+          data: { job: "all" },
+          // TASK-148 (B7): without retention opts every fired job stayed in
+          // Redis forever. A sweep is cheap to re-run — keep a small window.
+          opts: { removeOnComplete: 100, removeOnFail: 100 },
+        },
       );
       return;
     }

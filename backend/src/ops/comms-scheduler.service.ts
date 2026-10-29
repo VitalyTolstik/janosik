@@ -141,7 +141,13 @@ export class CommsSchedulerService implements OnModuleInit {
     await queue.upsertJobScheduler(
       id,
       { every: hours * 3_600_000 },
-      { name: COMMS_JOB, data: { kind } },
+      {
+        name: COMMS_JOB,
+        data: { kind },
+        // TASK-148 (B7): bound the completed/failed history the scheduler
+        // leaves in Redis; each fired letter job used to stay forever.
+        opts: { removeOnComplete: 100, removeOnFail: 100 },
+      },
     );
   }
 

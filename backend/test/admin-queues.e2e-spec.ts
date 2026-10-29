@@ -105,6 +105,24 @@ describe("Admin queues (e2e)", () => {
     expect(list.body.length).toBeGreaterThan(0);
   });
 
+  it("erases a user's data exports on GDPR delete (TASK-148)", async () => {
+    await server()
+      .post(`/api/v1/admin/users/${userId}/export`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(201);
+    expect(
+      await prisma.dataExport.count({ where: { userId } }),
+    ).toBeGreaterThan(0);
+
+    await server()
+      .delete(`/api/v1/admin/users/${userId}`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(200);
+
+    // The rows and their artifacts must not outlive the erased account.
+    expect(await prisma.dataExport.count({ where: { userId } })).toBe(0);
+  });
+
   it("404s the queue ticket while the dashboard is disabled", async () => {
     await server()
       .post("/api/v1/admin/queue-ticket")

@@ -124,8 +124,19 @@ export class ExportsService {
     await this.drain();
   }
 
-  /** Builds the bundle and stores the artifact (worker entry point). */
-  async build(exportId: string): Promise<void> {
+  /**
+   * Builds the bundle and stores the artifact (worker entry point).
+   *
+   * TASK-148 (B21): BullMQ retries only when the job *throws*. The old code
+   * swallowed every error and wrote `failed`, so `attempts: 3` never fired —
+   * a transient DB/disk hiccup dead-lettered the export permanently. While
+   * attempts remain, leave the row `pending` and rethrow; settle on `failed`
+   * only for the final attempt (or the inline path, which never retries).
+   */
+  async build(
+    exportId: string,
+    retry?: { attemptsMade: number; attempts: number },
+  ): Promise<void> {
     const row = await this.prisma.dataExport.findUnique({
       where: { id: exportId },
     });
@@ -148,14 +159,23 @@ export class ExportsService {
         },
       });
     } catch (error) {
-      await this.prisma.dataExport.update({
-        where: { id: exportId },
-        data: {
-          status: "failed",
-          error: error instanceof Error ? error.message : "unknown",
-        },
-      });
-      this.logger.warn(`Export ${exportId} failed: ${String(error)}`);
+      const willRetry =
+        retry !== undefined && retry.attemptsMade + 1 < retry.attempts;
+      if (!willRetry) {
+        await this.prisma.dataExport.update({
+          where: { id: exportId },
+          data: {
+            status: "failed",
+            error: error instanceof Error ? error.message : "unknown",
+          },
+        });
+      }
+      this.logger.warn(
+        `Export ${exportId} failed (attempt ${(retry?.attemptsMade ?? 0) + 1}${
+          retry ? `/${retry.attempts}` : ""
+        }): ${String(error)}`,
+      );
+      throw error;
     }
   }
 
@@ -215,7 +235,11 @@ export class ExportsService {
     try {
       while (this.pending.length > 0) {
         const exportId = this.pending.shift();
-        if (exportId) await this.build(exportId);
+        if (exportId) {
+          // `build` rethrows so BullMQ can retry; the in-process queue has no
+          // retry, so the row is already settled on `failed` — just drain on.
+          await this.build(exportId).catch(() => undefined);
+        }
       }
     } finally {
       this.draining = false;

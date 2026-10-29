@@ -14,7 +14,10 @@ export class MediaProcessor extends WorkerHost {
   }
 
   async process(job: Job<MediaJob>): Promise<unknown> {
-    await this.media.process(job.data.attachmentId);
+    await this.media.process(job.data.attachmentId, {
+      attemptsMade: job.attemptsMade,
+      attempts: job.opts.attempts ?? 1,
+    });
     return { attachmentId: job.data.attachmentId };
   }
 }
