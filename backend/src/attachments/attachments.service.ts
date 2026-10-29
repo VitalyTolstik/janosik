@@ -4,6 +4,8 @@ import { writeFile } from "node:fs/promises";
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -11,6 +13,7 @@ import type { AttachmentDto } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 
 import type { AuthUser } from "@/auth/auth.types";
+import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
@@ -40,6 +43,12 @@ export interface UploadedBlob {
  */
 @Injectable()
 export class AttachmentsService {
+  /** Per-user upload budget (TASK-146): a bounded, fixed 60 s window. */
+  private readonly uploadWindows = new Map<
+    string,
+    { count: number; resetAt: number }
+  >();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly boardWrite: BoardWriteService,
@@ -50,12 +59,46 @@ export class AttachmentsService {
     private readonly flags: FeatureFlagsService,
   ) {}
 
+  /**
+   * Bounded per-user upload budget (TASK-146). Refuses the Nth+1 upload in a
+   * 60 s window with `429`; the table is capped so a user-id flood cannot
+   * grow it without bound.
+   */
+  private assertUploadRate(userId: string): void {
+    const limit = env.UPLOAD_RATE_LIMIT;
+    if (limit <= 0) return;
+    const now = Date.now();
+    const bucket = this.uploadWindows.get(userId);
+    if (bucket === undefined || bucket.resetAt <= now) {
+      if (this.uploadWindows.size >= 10_000) {
+        for (const [key, entry] of this.uploadWindows) {
+          if (entry.resetAt <= now) this.uploadWindows.delete(key);
+        }
+        while (this.uploadWindows.size >= 10_000) {
+          const oldest = this.uploadWindows.keys().next().value;
+          if (oldest === undefined) break;
+          this.uploadWindows.delete(oldest);
+        }
+      }
+      this.uploadWindows.set(userId, { count: 1, resetAt: now + 60_000 });
+      return;
+    }
+    bucket.count += 1;
+    if (bucket.count > limit) {
+      throw new HttpException(
+        { message: "Too many uploads, try again shortly", field: "file" },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
   async create(
     cardId: string,
     user: AuthUser,
     file: UploadedBlob,
     isInline = false,
   ): Promise<AttachmentDto> {
+    this.assertUploadRate(user.id);
     if (!file || file.size <= 0) {
       throw new BadRequestException({
         message: "File is required",

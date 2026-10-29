@@ -77,6 +77,18 @@ describe("parseEventStream", () => {
     expect(events).toEqual([COMMAND]);
   });
 
+  it("splits frames on CRLF separators (A10)", async () => {
+    const events = await drain(
+      streamOf([
+        `data: ${JSON.stringify({ ...COMMAND, seq: 1 })}\r\n\r\n`,
+        `data: ${JSON.stringify({ ...COMMAND, seq: 2 })}\r\n\r\n`,
+      ]),
+    );
+    expect(
+      events.map((event) => (event.type === "command" ? event.seq : 0)),
+    ).toEqual([1, 2]);
+  });
+
   it("joins multi-line data and tolerates CRLF", async () => {
     expect(parseBlock('data: {"a":\r\ndata: 1}')).toEqual({ a: 1 });
     expect(parseBlock("data: {not json}")).toBeNull();
@@ -172,6 +184,27 @@ describe("BoardRealtime", () => {
     await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(1));
     realtime.wakeNow();
     await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(2));
+    realtime.stop();
+  });
+
+  it("reconnect() reopens without the backoff (TASK-145)", async () => {
+    const opens: string[] = [];
+    const realtime = new BoardRealtime({
+      open: (boardId) => {
+        opens.push(boardId);
+        return Promise.resolve(streamOf([]));
+      },
+      onEvent: () => undefined,
+      getSince: () => 0,
+      retryDelayMs: () => 60_000,
+    });
+
+    realtime.watch("b-1");
+    await vi.waitFor(() => expect(opens.length).toBe(1));
+    // The stream ended; the loop is now in its 60 s backoff.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    realtime.reconnect();
+    await vi.waitFor(() => expect(opens.length).toBe(2), { timeout: 1_000 });
     realtime.stop();
   });
 

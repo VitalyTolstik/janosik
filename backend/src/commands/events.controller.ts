@@ -4,9 +4,12 @@ import {
   MessageEvent,
   Param,
   Query,
+  Res,
+  ServiceUnavailableException,
   Sse,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { randomUUID } from "node:crypto";
 import { Observable } from "rxjs";
 import type { AuthPrincipal } from "@/auth/auth-principal";
@@ -15,6 +18,7 @@ import type { AuthUser } from "@/auth/auth.types";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { MembershipGuard } from "@/common/membership.guard";
 import { PresenceService } from "@/realtime/presence.service";
+import type { PresenceJoinResult } from "@/realtime/presence.service";
 import {
   type InternalCommandEvent,
   RealtimeService,
@@ -66,17 +70,37 @@ export class EventsController {
     @Query("presence") presence?: string,
     @CurrentUser() user?: AuthUser,
     @CurrentPrincipal() principal?: AuthPrincipal,
+    @Res({ passthrough: true }) res?: Response,
   ): Observable<MessageEvent> {
     const clientId =
       client !== undefined && CLIENT_ID.test(client) ? client : randomUUID();
     // `?presence=0` opts a stream out of presence entirely (agent/CI viewers):
     // it neither joins the roster nor receives presence frames.
     const presenceEnabled = presence !== "0" && presence !== "false";
+    if (presenceEnabled && user !== undefined) {
+      // A `clientId` held by another user is refused *before* the stream
+      // opens, so the answer is a clean 403 rather than an error thrown
+      // mid-subscribe (which would leak the subscription tracking, A9).
+      this.presence.assertClientAvailable(id, clientId, user.id);
+    }
+    // Admit the stream or refuse it politely (TASK-146): a per-instance,
+    // per-user and per-board ceiling instead of an unbounded memory draw.
+    const admission = this.realtime.reserveSubscriber(
+      id,
+      user?.id ?? "anonymous",
+    );
+    if (!admission.ok) {
+      res?.setHeader("Retry-After", "5");
+      throw new ServiceUnavailableException({
+        message: `Too many live streams (${admission.reason} limit ${admission.limit})`,
+      });
+    }
     return this.stream(
       id,
       parseSince(since),
       clientId,
       presenceEnabled,
+      admission.release,
       user,
       principal,
     );
@@ -87,11 +111,11 @@ export class EventsController {
     since: number,
     clientId: string,
     presenceEnabled: boolean,
+    releaseTracking: () => void,
     user?: AuthUser,
     principal?: AuthPrincipal,
   ): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
-      const releaseTracking = this.realtime.trackSubscription();
       const send = (data: object | string): void => {
         if (!subscriber.closed) {
           subscriber.next({ data } as MessageEvent);
@@ -109,16 +133,25 @@ export class EventsController {
       // other live streams, while this one receives a full `sync` below. So a
       // reconnect never misses anyone, and K joins cost K small frames instead
       // of K full-roster copies to everyone (the O(N²) memory blow-up).
-      const presenceToken =
-        presenceEnabled && user
-          ? this.presence.join(boardId, clientId, {
-              id: user.id,
-              displayName: user.displayName,
-              email: user.email,
-              avatarColor: user.avatarColor,
-              avatarPath: user.avatarPath,
-            })
-          : null;
+      let presenceToken: PresenceJoinResult | null = null;
+      if (presenceEnabled && user) {
+        try {
+          presenceToken = this.presence.join(boardId, clientId, {
+            id: user.id,
+            displayName: user.displayName,
+            email: user.email,
+            avatarColor: user.avatarColor,
+            avatarPath: user.avatarPath,
+          });
+        } catch (error) {
+          // Lost a race for `clientId` after the pre-check in `events()`:
+          // release the tracking we took and end with the real error instead
+          // of leaking it (A9).
+          releaseTracking();
+          subscriber.error(error);
+          return;
+        }
+      }
 
       const live = this.realtime.watch(boardId).subscribe((event) => {
         if (event.type === "presence") {
@@ -151,18 +184,29 @@ export class EventsController {
       });
 
       // This stream's one-time full roster: "you are here, with N others".
+      // Reuse the roster `join` just built instead of scanning again (A5).
       if (presenceToken !== null) {
         send({
           type: "presence",
           op: "sync",
-          users: this.presence.roster(boardId),
+          users: presenceToken.roster,
+          epoch: this.presence.epochOf(boardId),
         });
       }
 
       sequencer.start();
 
       const keepAlive = setInterval(() => {
-        send("ping");
+        // The frame's presence epoch lets a client that missed a delta
+        // notice it and reconnect for a fresh `sync` (TASK-145).
+        send(
+          presenceToken !== null
+            ? {
+                type: "keepalive",
+                presenceEpoch: this.presence.epochOf(boardId),
+              }
+            : { type: "keepalive" },
+        );
         void this.tick(boardId, user, principal, sequencer).then((allowed) => {
           if (!allowed && !subscriber.closed) subscriber.complete();
         });

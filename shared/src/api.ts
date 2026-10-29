@@ -118,10 +118,21 @@ export interface PresenceUser {
  * K clients joining is O(K) small frames, not O(K²) roster copies.
  */
 export type PresenceSseEvent =
-  | { type: "presence"; op: "sync"; users: PresenceUser[] }
-  | { type: "presence"; op: "join"; user: PresenceUser }
-  | { type: "presence"; op: "leave"; userId: string }
-  | { type: "presence"; op: "update"; user: PresenceUser };
+  | { type: "presence"; op: "sync"; users: PresenceUser[]; epoch?: number }
+  | { type: "presence"; op: "join"; user: PresenceUser; epoch?: number }
+  | { type: "presence"; op: "leave"; userId: string; epoch?: number }
+  | { type: "presence"; op: "update"; user: PresenceUser; epoch?: number };
+
+/**
+ * Periodic stream keep-alive (TASK-145). Carries the board's current
+ * presence `epoch` (when presence is enabled): a client whose last applied
+ * presence epoch does not match has missed a delta — it reconnects to get a
+ * fresh `sync` instead of trusting a silently incomplete roster.
+ */
+export interface KeepAliveSseEvent {
+  type: "keepalive";
+  presenceEpoch?: number;
+}
 
 /** What happened to a user's membership of a board (TASK-36). */
 export type MembershipChange = "accepted" | "updated" | "removed";
@@ -165,6 +176,7 @@ export type BoardSseEvent =
   | PresenceSseEvent
   | ActivitySseEvent
   | MembershipSseEvent
+  | KeepAliveSseEvent
   | ResyncSseEvent;
 
 /**

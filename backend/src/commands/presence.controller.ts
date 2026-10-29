@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  GoneException,
   HttpCode,
   Param,
   Post,
@@ -17,8 +18,11 @@ import { PresencePingDto } from "./dto/presence-ping.dto";
  *
  * The SSE stream has no back channel, so the tab proves liveness with a
  * small authenticated ping every 25 s; a session that stops pinging is
- * swept after 60 s. Unknown ids are accepted and ignored: the server never
- * conjures a session out of a ping, only refreshes one the stream opened.
+ * swept after 60 s. A ping never conjures a session — it only refreshes one
+ * the stream opened. A ping for a session that is gone answers `410`: the
+ * client reopens the stream and rejoins instead of silently disappearing
+ * (TASK-145) — a backgrounded tab throttled past the TTL would otherwise
+ * stay invisible until a manual reload.
  */
 @Controller("boards/:id/presence")
 export class PresenceController {
@@ -33,6 +37,8 @@ export class PresenceController {
     @CurrentUser() user: AuthUser,
   ): void {
     // A ping only refreshes a session this user actually owns (TASK-102).
-    this.presence.touch(id, dto.clientId, user.id);
+    if (!this.presence.touch(id, dto.clientId, user.id)) {
+      throw new GoneException("presence session expired");
+    }
   }
 }

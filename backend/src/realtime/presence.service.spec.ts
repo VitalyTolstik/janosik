@@ -59,7 +59,9 @@ describe("PresenceService", () => {
 
     const first = presence.join("b1", "client-alice-1", alice);
     expect(first.roster).toEqual([aliceWire]);
-    expect(seen).toEqual([{ type: "presence", op: "join", user: aliceWire }]);
+    expect(seen).toEqual([
+      { type: "presence", op: "join", user: aliceWire, epoch: 1 },
+    ]);
 
     // A second tab of the same user must not re-announce them, but its
     // sync still lists the user exactly once.
@@ -70,7 +72,12 @@ describe("PresenceService", () => {
     const bobJoin = presence.join("b1", "client-bob-1", bob);
     expect(bobJoin.roster).toEqual([aliceWire, bobWire]);
     expect(seen).toHaveLength(2);
-    expect(seen[1]).toEqual({ type: "presence", op: "join", user: bobWire });
+    expect(seen[1]).toEqual({
+      type: "presence",
+      op: "join",
+      user: bobWire,
+      epoch: 2,
+    });
   });
 
   it("publishes leave only when the last session of a user goes away", () => {
@@ -85,7 +92,7 @@ describe("PresenceService", () => {
 
     presence.leave("b1", "a2");
     expect(seen).toEqual([
-      { type: "presence", op: "leave", userId: "u-alice" },
+      { type: "presence", op: "leave", userId: "u-alice", epoch: 2 },
     ]);
     expect(presence.roster("b1")).toEqual([]);
   });
@@ -121,8 +128,12 @@ describe("PresenceService", () => {
       avatarColor: "pink",
       avatarPath: null,
     };
-    expect(b1).toEqual([{ type: "presence", op: "update", user: aliciaWire }]);
-    expect(b2).toEqual([{ type: "presence", op: "update", user: aliciaWire }]);
+    expect(b1).toEqual([
+      { type: "presence", op: "update", user: aliciaWire, epoch: 3 },
+    ]);
+    expect(b2).toEqual([
+      { type: "presence", op: "update", user: aliciaWire, epoch: 2 },
+    ]);
 
     // A user with no sessions and an unchanged patch stay silent.
     b1.length = 0;
@@ -152,7 +163,9 @@ describe("PresenceService", () => {
 
     // At one TTL only bob (never touched) is stale; alice was refreshed.
     presence.sweep(t0 + PRESENCE_TTL_MS + 1);
-    expect(seen).toEqual([{ type: "presence", op: "leave", userId: "u-bob" }]);
+    expect(seen).toEqual([
+      { type: "presence", op: "leave", userId: "u-bob", epoch: 3 },
+    ]);
     expect(presence.roster("b1")).toEqual([aliceWire]);
 
     // Another TTL later alice is stale too.
@@ -161,6 +174,7 @@ describe("PresenceService", () => {
       type: "presence",
       op: "leave",
       userId: "u-alice",
+      epoch: 4,
     });
     expect(presence.roster("b1")).toEqual([]);
   });
@@ -184,5 +198,43 @@ describe("PresenceService", () => {
     presence.join("b1", "a1", alice);
     expect(presence.touch("b1", "a1", "u-bob")).toBe(false);
     expect(presence.touch("b1", "a1", "u-alice")).toBe(true);
+  });
+
+  it("tracks a per-board epoch and stamps every delta (TASK-145)", () => {
+    expect(presence.epochOf("b1")).toBe(0);
+    presence.join("b1", "a1", alice);
+    expect(presence.epochOf("b1")).toBe(1);
+    // A second tab of the same user is not a change.
+    presence.join("b1", "a2", alice);
+    expect(presence.epochOf("b1")).toBe(1);
+    // Closing one of two tabs is not a leave either.
+    presence.leave("b1", "a2");
+    expect(presence.epochOf("b1")).toBe(1);
+    // The last tab going away is.
+    presence.leave("b1", "a1");
+    expect(presence.epochOf("b1")).toBe(2);
+    expect(presence.epochOf("b2")).toBe(0);
+  });
+
+  it("publishes presence locally only, never via the Redis fan-out (A1)", () => {
+    const local = jest.spyOn(realtime, "publishLocal");
+    const remote = jest.spyOn(realtime, "publish");
+    presence.join("b1", "a1", alice);
+    presence.leave("b1", "a1");
+    expect(local).toHaveBeenCalled();
+    expect(remote).not.toHaveBeenCalled();
+  });
+
+  it("exposes a pre-stream clientId check (A9)", () => {
+    presence.join("b1", "shared", alice);
+    expect(() =>
+      presence.assertClientAvailable("b1", "shared", "u-bob"),
+    ).toThrow();
+    expect(() =>
+      presence.assertClientAvailable("b1", "shared", "u-alice"),
+    ).not.toThrow();
+    expect(() =>
+      presence.assertClientAvailable("b1", "free", "u-bob"),
+    ).not.toThrow();
   });
 });

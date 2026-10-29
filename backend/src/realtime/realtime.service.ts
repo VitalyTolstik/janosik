@@ -20,6 +20,11 @@ import { env } from "@/config/env";
  */
 export type InternalCommandEvent = CommandSseEvent & { prevSeq?: number };
 
+/** Outcome of the SSE admission check (TASK-146). */
+export type SubscriberAdmission =
+  | { ok: true; release: () => void }
+  | { ok: false; reason: "instance" | "user" | "board"; limit: number };
+
 /** Redis publish retries before the frame is given up on (B-4). */
 const PUBLISH_ATTEMPTS = 3;
 const PUBLISH_RETRY_MS = 250;
@@ -42,6 +47,9 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   /** Live subscriber count per board (TASK-102): at zero the channel and its
    *  Redis subscription are torn down, so neither leaks with board count. */
   private readonly refCounts = new Map<string, number>();
+  /** Admission counters for the SSE caps (TASK-146). */
+  private readonly limitByUser = new Map<string, number>();
+  private readonly limitByBoard = new Map<string, number>();
   private subscribers = 0;
   private publisher: Redis | null = null;
   private subscriber: Redis | null = null;
@@ -91,9 +99,7 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   /** Push one committed event to every subscriber of the board (all nodes). */
   publish(boardId: string, event: BoardSseEvent): void {
     // Local first (this node's subscribers), then Redis for the others.
-    // `get` (not `channel`) — publishing to a board nobody listens to must
-    // not resurrect a channel that was just released (TASK-102).
-    this.channels.get(boardId)?.next(event);
+    this.publishLocal(boardId, event);
     if (this.publisher !== null) {
       void this.publishRemote(
         boardId,
@@ -101,6 +107,19 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
         1,
       );
     }
+  }
+
+  /**
+   * Deliver an event to this node's subscribers only, never to Redis
+   * (TASK-145). Presence uses this: its registry is in-process, so a roster
+   * delta computed here is only valid for streams on this node — fanning it
+   * out would make other nodes publish `leave` for users they cannot see.
+   * Multi-node presence needs a shared store (tracked in the roadmap).
+   */
+  publishLocal(boardId: string, event: BoardSseEvent): void {
+    // `get` (not `channel`) — publishing to a board nobody listens to must
+    // not resurrect a channel that was just released (TASK-102).
+    this.channels.get(boardId)?.next(event);
   }
 
   /**
@@ -201,6 +220,49 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
       released = true;
       this.subscribers = Math.max(0, this.subscribers - 1);
     };
+  }
+
+  /**
+   * Reserve an SSE slot for `userId` on `boardId`, or report which cap was
+   * hit (TASK-146). The caller refuses the stream with `503` + `Retry-After`
+   * and must call `release` when the stream tears down. Counters are
+   * per-process, so a multi-node deployment allows each cap per node.
+   */
+  reserveSubscriber(boardId: string, userId: string): SubscriberAdmission {
+    const userCount = this.limitByUser.get(userId) ?? 0;
+    if (
+      env.SSE_MAX_CONNECTIONS > 0 &&
+      this.subscribers >= env.SSE_MAX_CONNECTIONS
+    ) {
+      return { ok: false, reason: "instance", limit: env.SSE_MAX_CONNECTIONS };
+    }
+    if (env.SSE_MAX_PER_USER > 0 && userCount >= env.SSE_MAX_PER_USER) {
+      return { ok: false, reason: "user", limit: env.SSE_MAX_PER_USER };
+    }
+    const boardCount = this.limitByBoard.get(boardId) ?? 0;
+    if (env.SSE_MAX_PER_BOARD > 0 && boardCount >= env.SSE_MAX_PER_BOARD) {
+      return { ok: false, reason: "board", limit: env.SSE_MAX_PER_BOARD };
+    }
+    this.subscribers += 1;
+    this.limitByUser.set(userId, userCount + 1);
+    this.limitByBoard.set(boardId, boardCount + 1);
+    let released = false;
+    return {
+      ok: true,
+      release: () => {
+        if (released) return;
+        released = true;
+        this.subscribers = Math.max(0, this.subscribers - 1);
+        this.decrement(this.limitByUser, userId);
+        this.decrement(this.limitByBoard, boardId);
+      },
+    };
+  }
+
+  private decrement(map: Map<string, number>, key: string): void {
+    const next = (map.get(key) ?? 1) - 1;
+    if (next <= 0) map.delete(key);
+    else map.set(key, next);
   }
 
   private ensureSubscribed(boardId: string): void {

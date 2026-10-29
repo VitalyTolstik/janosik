@@ -394,6 +394,28 @@ describe("Board-level commands (e2e)", () => {
       }).expect(400);
       expect(fractional.body.field).toBe("ifMatchVersions");
     });
+
+    it("caps an oversized ifMatchVersions map with 400 before the lock (B1)", async () => {
+      const boardId = await createBoard("Precondition cap board");
+      const oversized: Record<string, number> = {};
+      for (let index = 0; index <= 100; index += 1) {
+        oversized[`card:c-${index}`] = 1;
+      }
+      const rejected = await postCommand(
+        boardId,
+        scoped(boardId, { type: "RENAME_BOARD", title: "Capped" }),
+        adminToken,
+        { ifMatchVersions: oversized },
+      ).expect(400);
+      expect(rejected.body.field).toBe("ifMatchVersions");
+
+      // The board accepts a normal command right after the refusal.
+      const ok = await apply(
+        boardId,
+        scoped(boardId, { type: "RENAME_BOARD", title: "Still works" }),
+      );
+      expect(ok.seq).toBeGreaterThan(0);
+    });
   });
 
   describe("idempotency", () => {

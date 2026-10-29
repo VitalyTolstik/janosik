@@ -68,6 +68,12 @@ if (process.env.NODE_ENV === "test") {
   process.env.QUEUES_DASHBOARD = "false";
 }
 
+// Upload-rate limiting (TASK-146) stays effectively off in tests: the suite
+// uploads many files with one account and a real 60/min budget would flake.
+if (process.env.NODE_ENV === "test") {
+  process.env.UPLOAD_RATE_LIMIT = "100000";
+}
+
 // envalid 8 has no per-var validate option — a custom validator gives
 // JWT_SECRET a clean fail-fast instead of a passport stack trace later.
 const jwtSecret = makeValidator((v) => {
@@ -206,6 +212,30 @@ export const env = cleanEnv(process.env, {
   SHARE_OG_RATE_LIMIT: num({
     desc: "Public share OG preview requests per minute, per token",
     default: SHARE_LIMITS.ogRateLimitPerMinute,
+    example: "60",
+  }),
+  // Live-stream admission caps (TASK-146): a ceiling on concurrent SSE
+  // connections per instance, per user and per board. One VIEWER opening
+  // thousands of streams is otherwise an unbounded memory draw. 0 = unlimited.
+  SSE_MAX_CONNECTIONS: num({
+    desc: "Max concurrent SSE connections per instance (0 = unlimited)",
+    default: 5000,
+    example: "5000",
+  }),
+  SSE_MAX_PER_USER: num({
+    desc: "Max concurrent SSE connections per user (0 = unlimited)",
+    default: 32,
+    example: "32",
+  }),
+  SSE_MAX_PER_BOARD: num({
+    desc: "Max concurrent SSE connections per board (0 = unlimited; a swarm may legitimately hold many)",
+    default: 0,
+    example: "0",
+  }),
+  // Attachment uploads per minute per user (TASK-146). 0 = unlimited.
+  UPLOAD_RATE_LIMIT: num({
+    desc: "Attachment uploads per minute per user (0 = unlimited)",
+    default: 60,
     example: "60",
   }),
   // Mail (TASK-51): every var is optional — without SMTP_HOST the mailer

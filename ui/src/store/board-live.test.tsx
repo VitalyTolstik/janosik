@@ -164,6 +164,24 @@ describe("PresenceStore", () => {
     store.clear();
     expect(listener).toHaveBeenCalledTimes(3);
   });
+
+  it("treats an avatar-image change as a real update (A6)", () => {
+    const store = new PresenceStore();
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.set("b-1", [alice]);
+    expect(listener).toHaveBeenCalledTimes(1);
+    // Same name and color, only the stored avatar image changed: the update
+    // must not be dropped as "identical".
+    store.apply("b-1", {
+      type: "presence",
+      op: "update",
+      user: { ...alice, avatarPath: "avatars/u-alice-2.png" },
+    });
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(store.get("b-1")[0]?.avatarPath).toBe("avatars/u-alice-2.png");
+  });
 });
 
 describe("AttributionStore", () => {

@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
@@ -72,7 +73,16 @@ export interface PresenceJoinResult {
  */
 @Injectable()
 export class PresenceService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(PresenceService.name);
   private readonly boards = new Map<string, Map<string, PresenceSession>>();
+  /**
+   * Per-board monotonic counter (TASK-145): every published delta bumps it,
+   * and each frame carries it. The client compares it with the keep-alive's
+   * `presenceEpoch`; a mismatch means a delta was missed (or the stream was
+   * built from a stale roster), so it reconnects for a fresh `sync`.
+   */
+  private readonly epochs = new Map<string, number>();
+  private warnedMultiNode = false;
   private nextOrder = 1;
   private sweepTimer: NodeJS.Timeout | undefined;
 
@@ -96,6 +106,23 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Throws when `clientId` is already held by another user. Called before
+   * the SSE Observable is built (TASK-145): the refusal then surfaces as a
+   * real 403 before any bytes of the stream, instead of an error thrown
+   * mid-subscribe that leaks the subscription tracking.
+   */
+  assertClientAvailable(
+    boardId: string,
+    clientId: string,
+    userId: string,
+  ): void {
+    const previous = this.boards.get(boardId)?.get(clientId);
+    if (previous && previous.id !== userId) {
+      throw new ForbiddenException("clientId belongs to another session");
+    }
+  }
+
+  /**
    * Register a connection. Returns the teardown token and the roster the
    * caller sends to this stream as its one-time `sync`.
    *
@@ -111,6 +138,7 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
     clientId: string,
     user: PresenceIdentity,
   ): PresenceJoinResult {
+    this.warnIfMultiNode();
     const sessions = this.sessions(boardId);
     const previous = sessions.get(clientId);
     if (previous && previous.id !== user.id) {
@@ -259,8 +287,31 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** The board's current presence epoch (0 before anyone ever joined). */
+  epochOf(boardId: string): number {
+    return this.epochs.get(boardId) ?? 0;
+  }
+
   private publish(boardId: string, event: PresenceSseEvent): void {
-    this.realtime.publish(boardId, event as BoardSseEvent);
+    const epoch = (this.epochs.get(boardId) ?? 0) + 1;
+    this.epochs.set(boardId, epoch);
+    // Local only: the registry is per-node (TASK-145). Fanning a roster delta
+    // out over Redis would make other nodes act on users they cannot see.
+    this.realtime.publishLocal(boardId, { ...event, epoch } as BoardSseEvent);
+  }
+
+  /**
+   * Presence is stored in-process, so a deployment that fans events out over
+   * Redis (more than one node) can only ever show its own users. Say so once,
+   * loudly, instead of silently presenting an incomplete roster as the truth.
+   */
+  private warnIfMultiNode(): void {
+    if (this.warnedMultiNode || !this.realtime.usingRedis) return;
+    this.warnedMultiNode = true;
+    this.logger.warn(
+      "Presence is per-node: a multi-node deployment sees only the users " +
+        "connected to each node (TASK-145; a shared presence store is needed).",
+    );
   }
 
   private hasUser(

@@ -7,6 +7,17 @@ import { env } from "@/config/env";
 const WINDOW_MS = 60_000;
 
 /**
+ * Hard ceiling on tracked buckets (B23). Without it a flood of distinct —
+ * especially invalid — tokens creates one bucket each and the map grows
+ * without bound. Past the cap expired buckets go first, then the oldest
+ * inserted (its window is the closest to resetting).
+ */
+const MAX_BUCKETS = 10_000;
+
+/** Shape of a real share token; anything else is keyed by IP instead. */
+const TOKEN_SHAPE = /^[A-Za-z0-9_-]{16,128}$/;
+
+/**
  * Per-token rate limit for the public share contour (TASK-58, §7.9.4).
  *
  * The global throttler (TASK-57) keys by client IP, so one popular link could
@@ -16,6 +27,10 @@ const WINDOW_MS = 60_000;
  * subclass — the base class resolves its tracker through a shared
  * `commonOptions` object, so a subclass override is silently ignored once the
  * global guard has initialized it.
+ *
+ * Malformed tokens never get their own bucket (an invalid path is keyed by
+ * IP), and the table is capped (B23). Per-node budgets still multiply by the
+ * number of nodes; a Redis-backed limiter would unify them.
  *
  * The OG preview (heavier to render) gets the tighter `SHARE_OG_RATE_LIMIT`.
  */
@@ -32,7 +47,7 @@ export class ShareThrottlerGuard implements CanActivate {
       .getRequest<Request & { params: Record<string, string> }>();
     const token = request.params?.token;
     const key =
-      typeof token === "string" && token.length > 0
+      typeof token === "string" && TOKEN_SHAPE.test(token)
         ? `share:${token}`
         : `share-ip:${String(request.ip ?? "unknown")}`;
     const limit =
@@ -41,9 +56,9 @@ export class ShareThrottlerGuard implements CanActivate {
         : env.SHARE_RATE_LIMIT;
 
     const now = Date.now();
-    if (this.buckets.size > 10_000) this.prune(now);
     const bucket = this.buckets.get(key);
     if (bucket === undefined || bucket.resetAt <= now) {
+      if (this.buckets.size >= MAX_BUCKETS) this.evict(now);
       this.buckets.set(key, { count: 1, resetAt: now + WINDOW_MS });
       return true;
     }
@@ -54,9 +69,16 @@ export class ShareThrottlerGuard implements CanActivate {
     return true;
   }
 
-  private prune(now: number): void {
+  private evict(now: number): void {
     for (const [key, bucket] of this.buckets) {
       if (bucket.resetAt <= now) this.buckets.delete(key);
+    }
+    // Still full: drop the oldest inserted entries (Map preserves order) to
+    // make room, so the table can never exceed MAX_BUCKETS.
+    while (this.buckets.size >= MAX_BUCKETS) {
+      const oldest = this.buckets.keys().next().value;
+      if (oldest === undefined) break;
+      this.buckets.delete(oldest);
     }
   }
 }

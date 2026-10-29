@@ -37,10 +37,12 @@ export async function* parseEventStream(
       if (done) return;
       buffer += decoder.decode(value, { stream: true });
       for (;;) {
-        const separator = buffer.indexOf("\n\n");
-        if (separator === -1) break;
-        const block = buffer.slice(0, separator);
-        buffer = buffer.slice(separator + 2);
+        // Accept both `\n\n` and a proxy's `\r\n\r\n` (A10): SSE frames may
+        // legally end either way.
+        const match = /\r?\n\r?\n/.exec(buffer);
+        if (match === null) break;
+        const block = buffer.slice(0, match.index);
+        buffer = buffer.slice(match.index + match[0].length);
         const event = parseBlock(block);
         if (event !== null) yield event;
       }
@@ -106,6 +108,18 @@ export class BoardRealtime {
     this.boardId = boardId;
     this.stopped = false;
     void this.run(boardId);
+  }
+
+  /**
+   * Reopen the stream at once (TASK-145): a presence epoch gap or a swept
+   * session means the current stream's view is incomplete, and only a fresh
+   * connection (which re-joins and re-`sync`s) repairs it. Resets the
+   * backoff so the reconnect is immediate, not after a long pause.
+   */
+  reconnect(): void {
+    this.attempt = 0;
+    this.controller?.abort();
+    this.wakeNow();
   }
 
   /** Skip the backoff wait (the network came back). */
@@ -201,11 +215,13 @@ export function createClientId(): string {
   return `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** `POST /boards/:id/presence` — refresh the tab's presence TTL (TASK-36). */
+/** `POST /boards/:id/presence` — refresh the tab's presence TTL (TASK-36).
+ *  Resolves with the response status so the caller can react to a `410`
+ *  (the session was swept) by rejoining (TASK-145). */
 export async function pingPresence(
   boardId: string,
   clientId: string,
-): Promise<void> {
+): Promise<number> {
   const send = (): Promise<Response> => {
     const token = api.getAccessToken();
     return fetch(
@@ -221,11 +237,12 @@ export async function pingPresence(
       },
     ).catch(() => new Response(null, { status: 0 }));
   };
-  const response = await send();
+  let response = await send();
   if (response.status === 401) {
     await api.refreshSession().catch(() => null);
-    await send();
+    response = await send();
   }
+  return response.status;
 }
 
 /**
@@ -383,6 +400,8 @@ export const IDLE_SNAPSHOT_MS = 5 * 60_000;
 export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
   /** Highest seq this client committed itself (per board). */
   const ownSeq = new Map<string, number>();
+  /** Last presence epoch applied to the active board (TASK-145). */
+  let presenceEpoch: number | undefined;
   /** Events that arrived while commands were in flight, in arrival order. */
   const deferred = new Map<string, CommandSseEvent[]>();
   /**
@@ -517,10 +536,24 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
   const handle = (event: BoardSseEvent): void => {
     // Presence is ephemeral state, not a command: no seq, no baseline, no
     // deferral. `sync` replaces the roster; `join`/`leave`/`update` mutate it
-    // in place (TASK-36).
+    // in place (TASK-36). Every frame carries the board's presence epoch.
     if (event.type === "presence") {
+      if (event.epoch !== undefined) presenceEpoch = event.epoch;
       const boardId = host.getActiveBoardId();
       if (boardId !== undefined) host.applyPresence(boardId, event);
+      return;
+    }
+    // Keep-alive (TASK-145): an epoch ahead of ours means a presence delta
+    // was missed; reopening the stream yields a fresh `sync` rather than
+    // leaving an incomplete roster on screen.
+    if (event.type === "keepalive") {
+      if (
+        event.presenceEpoch !== undefined &&
+        presenceEpoch !== undefined &&
+        event.presenceEpoch !== presenceEpoch
+      ) {
+        connection.reconnect();
+      }
       return;
     }
     // A membership change (TASK-36): the caller's own removal also ends the
@@ -569,19 +602,28 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
 
   // Presence heartbeat: the stream is one-way, so the tab refreshes its
   // session every 20 s (`PresenceService` sweeps at 60 s) and there is no
-  // stale "online" dot to trust. Best effort — a failed ping only means the
-  // next one, or the reconnect, will refresh the session.
+  // stale "online" dot to trust. A `410` means the session was swept while
+  // we were throttled (A3): the stream is reopened to rejoin.
   let pingTimer: ReturnType<typeof setInterval> | null = null;
-  const ping = (): void => {
-    const boardId = host.getActiveBoardId();
-    if (boardId !== undefined) void pingPresence(boardId, clientId);
+  let pingBoard: string | null = null;
+  const ping = (boardId: string | null): void => {
+    const target = boardId ?? host.getActiveBoardId();
+    if (target === undefined || target === null) return;
+    void pingPresence(target, clientId).then((status) => {
+      if (status === 410) connection.reconnect();
+    });
   };
-  const startPing = (): void => {
+  const startPing = (boardId: string): void => {
+    pingBoard = boardId;
     if (pingTimer !== null) return;
-    ping();
-    pingTimer = setInterval(ping, PRESENCE_PING_MS);
+    ping(boardId);
+    pingTimer = setInterval(() => ping(pingBoard), PRESENCE_PING_MS);
   };
-  const stopPing = (): void => {
+  const stopPing = (boardId?: string): void => {
+    // A late `onDisconnected` of a board we already left must not stop the
+    // heartbeat of the board we switched to (A11).
+    if (boardId !== undefined && pingBoard !== boardId) return;
+    pingBoard = null;
     if (pingTimer !== null) clearInterval(pingTimer);
     pingTimer = null;
   };
@@ -594,7 +636,7 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
     onDisconnected: (boardId) => {
       // Live up to this moment: the idle clock starts now.
       host.markSynced(boardId);
-      stopPing();
+      stopPing(boardId);
     },
     onFatal: (boardId, status) => {
       // A 403 from the stream is the membership check: the account is no
@@ -615,17 +657,28 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
   const onOnline = (): void => connection.wakeNow();
   const onVisible = (): void => {
     // A background tab throttles timers: coming back is a fresh heartbeat.
-    if (document.visibilityState === "visible") ping();
+    if (document.visibilityState === "visible") ping(pingBoard);
   };
   window.addEventListener("online", onOnline);
   document.addEventListener("visibilitychange", onVisible);
 
   /** The board a deferred (snapshot-first) `watch` is waiting to open. */
   let pendingWatch: string | null = null;
+  /** The board this bridge currently shows presence for. */
+  let watching: string | null = null;
+
+  const dropPresence = (boardId: string): void => {
+    // The roster of a board we are leaving is stale: clear it instead of
+    // leaving an "everyone online" list behind (A8).
+    host.applyPresence(boardId, { type: "presence", op: "sync", users: [] });
+    presenceEpoch = undefined;
+  };
 
   return {
     watch: (boardId) => {
       if (pendingWatch === boardId) return;
+      if (watching !== null && watching !== boardId) dropPresence(watching);
+      watching = boardId;
       pendingWatch = null;
       // A board that has been idle for a while has a long backlog: replaying
       // it event by event costs one reducer pass and one render per event,
@@ -650,6 +703,8 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
     },
     stop: () => {
       pendingWatch = null;
+      if (watching !== null) dropPresence(watching);
+      watching = null;
       stopPing();
       connection.stop();
     },
@@ -661,6 +716,8 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
     },
     dispose: () => {
       pendingWatch = null;
+      if (watching !== null) dropPresence(watching);
+      watching = null;
       window.removeEventListener("online", onOnline);
       document.removeEventListener("visibilitychange", onVisible);
       stopPing();

@@ -634,7 +634,20 @@ export class CommandsService {
     currentVersion: number,
   ): Promise<void> {
     if (!preconditions) return;
-    for (const [key, expected] of Object.entries(preconditions)) {
+    const entries = Object.entries(preconditions);
+    // An unbounded map would run one query per key *inside the board's
+    // advisory lock* — a cheap board-wide DoS (B1). The client never sends
+    // more than a handful; anything past the cap is a bug or an attack.
+    if (entries.length > MAX_IF_MATCH_VERSIONS) {
+      throw new BadRequestException({
+        message: `Too many ifMatchVersions keys (max ${MAX_IF_MATCH_VERSIONS})`,
+        field: "ifMatchVersions",
+      });
+    }
+    // Validate every key and value before touching the database, then read
+    // the versions in one batch per entity type instead of per key.
+    const wanted = new Map<string, Map<string, number>>();
+    for (const [key, expected] of entries) {
       if (!Number.isInteger(expected) || expected < 0) {
         throw new BadRequestException({
           message: `Invalid ifMatchVersions value for ${key}: must be an integer >= 0`,
@@ -651,12 +664,24 @@ export class CommandsService {
           field: "ifMatchVersions",
         });
       }
-      const actual = await entityVersion(tx, boardId, match[1], match[2]);
-      if (actual === null || actual !== expected) {
-        throw new ConflictException({
-          conflict: "version",
-          currentVersion,
-        } satisfies ConflictError);
+      let ids = wanted.get(match[1]);
+      if (ids === undefined) {
+        ids = new Map();
+        wanted.set(match[1], ids);
+      }
+      ids.set(match[2], expected);
+    }
+    const versions = await entityVersions(tx, boardId, wanted);
+    for (const [entity, expectations] of wanted) {
+      const actual = versions.get(entity);
+      for (const [id, expected] of expectations) {
+        const value = actual?.get(id) ?? null;
+        if (value === null || value !== expected) {
+          throw new ConflictException({
+            conflict: "version",
+            currentVersion,
+          } satisfies ConflictError);
+        }
       }
     }
   }
@@ -805,58 +830,90 @@ function stableStringify(value: unknown): string {
   });
 }
 
+/** Upper bound on the `ifMatchVersions` map a single command may carry (B1). */
+const MAX_IF_MATCH_VERSIONS = 100;
+
 /**
- * Current `version` of one `touch` target (`board:<id>`, `card:<id>`, …), or
- * `null` when no such row exists *on this board* (soft-deleted rows keep
- * theirs, exactly like `collectVersions` reports them). Scoped to the board
- * so `ifMatchVersions` cannot be used as a version oracle for entities on
- * boards the caller is not a member of — a foreign id simply reads as absent.
+ * Current `version` of every `touch` target the command pins, grouped by
+ * entity type and fetched in at most one query per type (B1). Scoped to the
+ * board so `ifMatchVersions` cannot be used as a version oracle for entities
+ * on boards the caller is not a member of — a foreign id reads as absent.
  */
-async function entityVersion(
+async function entityVersions(
   tx: Prisma.TransactionClient,
   boardId: string,
-  entity: string,
-  id: string,
-): Promise<number | null> {
-  const select = { version: true } as const;
-  switch (entity) {
-    case "board": {
-      // `board:` keys were already pinned to `boardId` by the caller.
-      const row = await tx.board.findFirst({ where: { id }, select });
-      return row?.version ?? null;
-    }
-    case "column": {
-      const row = await tx.column.findFirst({ where: { id, boardId }, select });
-      return row?.version ?? null;
-    }
-    case "card": {
-      const row = await tx.card.findFirst({
-        where: { id, column: { boardId } },
-        select,
-      });
-      return row?.version ?? null;
-    }
-    case "label": {
-      const row = await tx.label.findFirst({ where: { id, boardId }, select });
-      return row?.version ?? null;
-    }
-    case "checklist": {
-      const row = await tx.checklist.findFirst({
-        where: { id, card: { column: { boardId } } },
-        select,
-      });
-      return row?.version ?? null;
-    }
-    case "checklistItem": {
-      const row = await tx.checklistItem.findFirst({
-        where: { id, checklist: { card: { column: { boardId } } } },
-        select,
-      });
-      return row?.version ?? null;
-    }
-    default:
-      return null;
+  wanted: Map<string, Map<string, number>>,
+): Promise<Map<string, Map<string, number>>> {
+  const out = new Map<string, Map<string, number>>();
+  const select = { id: true, version: true } as const;
+  const put = (
+    entity: string,
+    rows: Array<{ id: string; version: number }>,
+  ): void => {
+    const map = new Map<string, number>();
+    for (const row of rows) map.set(row.id, row.version);
+    out.set(entity, map);
+  };
+  const idsOf = (entity: string): string[] => [
+    ...(wanted.get(entity)?.keys() ?? []),
+  ];
+
+  if (wanted.has("board")) {
+    const row = await tx.board.findFirst({ where: { id: boardId }, select });
+    put("board", row ? [row] : []);
   }
+  if (wanted.has("column")) {
+    put(
+      "column",
+      await tx.column.findMany({
+        where: { boardId, id: { in: idsOf("column") } },
+        select,
+      }),
+    );
+  }
+  if (wanted.has("card")) {
+    put(
+      "card",
+      await tx.card.findMany({
+        where: { column: { boardId }, id: { in: idsOf("card") } },
+        select,
+      }),
+    );
+  }
+  if (wanted.has("label")) {
+    put(
+      "label",
+      await tx.label.findMany({
+        where: { boardId, id: { in: idsOf("label") } },
+        select,
+      }),
+    );
+  }
+  if (wanted.has("checklist")) {
+    put(
+      "checklist",
+      await tx.checklist.findMany({
+        where: {
+          card: { column: { boardId } },
+          id: { in: idsOf("checklist") },
+        },
+        select,
+      }),
+    );
+  }
+  if (wanted.has("checklistItem")) {
+    put(
+      "checklistItem",
+      await tx.checklistItem.findMany({
+        where: {
+          checklist: { card: { column: { boardId } } },
+          id: { in: idsOf("checklistItem") },
+        },
+        select,
+      }),
+    );
+  }
+  return out;
 }
 
 /**

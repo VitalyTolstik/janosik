@@ -254,6 +254,7 @@ describe("Board events SSE (e2e)", () => {
             const payload = line.slice(5).trim();
             if (payload === "ping") continue;
             const frame = JSON.parse(payload) as SseFrame;
+            if (frame.type === "keepalive") continue;
             if (frame.type === type) frames.push(frame);
             else pending.push(frame);
           }
@@ -618,12 +619,14 @@ describe("Board events SSE (e2e)", () => {
       .send({ clientId: "ping-client-1" })
       .expect(204);
 
-    // Unknown sessions are no-ops: a ping never conjures a presence entry.
+    // A ping for a session the stream never opened — or one already swept —
+    // is `410`: the client reopens the stream and rejoins (TASK-145). It
+    // still never conjures a presence entry.
     await server()
       .post(`/api/v1/boards/${boardId}/presence`)
       .set(auth(ownerToken))
       .send({ clientId: "unknown-session-1" })
-      .expect(204);
+      .expect(410);
 
     // The id shape is validated strictly.
     await server()

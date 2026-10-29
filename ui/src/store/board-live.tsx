@@ -43,7 +43,10 @@ function samePresence(a: PresenceUser[], b: readonly PresenceUser[]): boolean {
       (user, i) =>
         user.id === b[i].id &&
         user.displayName === b[i].displayName &&
-        user.avatarColor === b[i].avatarColor,
+        user.avatarColor === b[i].avatarColor &&
+        // A changed avatar image is a visible change too (A6): without this
+        // an `update` that only swaps `avatarPath` is dropped as "identical".
+        user.avatarPath === b[i].avatarPath,
     )
   );
 }
