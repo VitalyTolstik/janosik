@@ -16,6 +16,7 @@
     "lint": "eslint .",
     "prisma:generate": "prisma generate",
     "prisma:deploy": "prisma migrate deploy",
+    "db:indexes": "node scripts/db-indexes.cjs",
     "admin:create": "node scripts/admin-cli.cjs create",
     "admin:passwd": "node scripts/admin-cli.cjs passwd",
     "admin:list": "node scripts/admin-cli.cjs list",

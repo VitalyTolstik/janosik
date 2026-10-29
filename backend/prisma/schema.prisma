@@ -20,28 +20,28 @@ datasource db {
 }
 
 model User {
-  id              String    @id @default(cuid())
-  email           String    @unique
+  id              String                  @id @default(cuid())
+  email           String                  @unique
   // Nullable (TASK-54): OAuth-only accounts have no local password — login
   // rejects them until one is adopted via the password change.
   passwordHash    String?
   displayName     String?
-  avatarColor String? // USER_AVATAR_COLORS key (TASK-36.1); null → id-hash default
-  avatarPath String? // TASK-47 stored avatar image name; null → initials
-  disabledAt DateTime? // master block (TASK-36); login/refresh → 403
+  avatarColor     String? // USER_AVATAR_COLORS key (TASK-36.1); null → id-hash default
+  avatarPath      String? // TASK-47 stored avatar image name; null → initials
+  disabledAt      DateTime? // master block (TASK-36); login/refresh → 403
   emailVerifiedAt DateTime? // TASK-53; null → the address is not confirmed yet
   // TASK-72: opt-out for scheduled digests/reminders (default on).
-  notifyDigest Boolean @default(true)
-  createdAt DateTime @default(now())
+  notifyDigest    Boolean                 @default(true)
+  createdAt       DateTime                @default(now())
   memberships     BoardMember[]
-  invitedMembers  BoardMember[] @relation("BoardMemberInviter")
+  invitedMembers  BoardMember[]           @relation("BoardMemberInviter")
   activity        Activity[]
   comments        Comment[]
   apiTokens       ApiToken[]
   commands        Command[]
   refreshTokens   RefreshToken[]
   attachments     Attachment[]
-  assignedCards   Card[]        @relation("CardAssignee")
+  assignedCards   Card[]                  @relation("CardAssignee")
   emailChanges    EmailChangeCode[]
   verifications   EmailVerificationCode[]
 }
@@ -60,6 +60,8 @@ model RefreshToken {
   userAgent String?
 
   @@index([userId, createdAt])
+  @@index([expiresAt]) // dead-session sweep (TASK-148)
+  @@index([revokedAt]) // dead-session sweep (TASK-148)
 }
 
 // Email change (TASK-51) — double opt-in: the user proves the current
@@ -173,6 +175,8 @@ model Board {
   activity   Activity[]
   commands   Command[]
   shares     BoardShare[]
+
+  @@index([deletedAt]) // board purge sweep (TASK-148)
 }
 
 // Public read-only board link (TASK-58, §7.9). A share is its own entity —
@@ -202,6 +206,8 @@ model BoardShare {
 
   @@index([boardId])
   @@index([createdBy])
+  @@index([expiresAt]) // TTL sweep (TASK-148)
+  @@index([revokedAt]) // revoked-share sweep (TASK-148)
 }
 
 model BoardMember {
@@ -223,6 +229,7 @@ model BoardMember {
   @@unique([boardId, userId])
   @@index([userId]) // "my boards"
   @@index([userId, acceptedAt]) // pending invitation feed
+  @@index([expiresAt]) // lapsed-invitation sweep (TASK-148)
 }
 
 enum Role {
@@ -295,6 +302,7 @@ model Column {
   cards     Card[]
 
   @@index([boardId, position])
+  @@index([deletedAt]) // purge sweep (TASK-148)
 }
 
 model Card {
@@ -308,7 +316,7 @@ model Card {
   dueDate         DateTime?
   priority        String? // TASK-45: blocker|highest|high|medium|low|lowest (null = medium)
   assigneeId      String? // TASK-49 Jira-style assignee; null = unassigned
-  assignee        User?    @relation("CardAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assignee        User?        @relation("CardAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   archivedAt      DateTime? // TASK-18.1: card archive
   deletedAt       DateTime? // soft-delete (§7.0)
   version         Int          @default(0) // ifMatch → 409 (§7.0)
@@ -330,6 +338,7 @@ model Card {
   @@index([columnId, position])
   @@index([assigneeId]) // admin user-detail "assigned cards" (TASK-49)
   @@index([dueDate]) // scheduled due reminders (TASK-72, TASK-92)
+  @@index([deletedAt]) // purge sweep (TASK-148)
 }
 
 // Card links (TASK-46). Directional: `fromCard` holds the row and "blocks"
@@ -357,6 +366,7 @@ model CardLink {
   @@index([boardId])
   @@index([fromCardId, position])
   @@index([toCardId])
+  @@index([deletedAt]) // purge sweep (TASK-148)
 }
 
 model Label {
@@ -374,6 +384,7 @@ model Label {
   cards     CardLabel[]
 
   @@index([boardId, position])
+  @@index([deletedAt]) // purge sweep (TASK-148)
 }
 
 model CardLabel {
@@ -398,6 +409,7 @@ model Checklist {
   items     ChecklistItem[]
 
   @@index([cardId, position])
+  @@index([deletedAt]) // purge sweep (TASK-148)
 }
 
 model ChecklistItem {
@@ -411,6 +423,7 @@ model ChecklistItem {
   version     Int       @default(0) // ifMatch → 409 (text editable)
 
   @@index([checklistId, position])
+  @@index([deletedAt]) // purge sweep (TASK-148)
 }
 
 // Boundary with the Command log (decided with variant B):
@@ -435,6 +448,7 @@ model Activity {
 
   @@index([boardId, createdAt])
   @@index([cardId, createdAt])
+  @@index([createdAt]) // activity retention sweep (TASK-148)
 }
 
 model Comment {
@@ -449,6 +463,7 @@ model Comment {
   updatedAt DateTime  @updatedAt
 
   @@index([cardId, createdAt])
+  @@index([deletedAt]) // purge sweep (TASK-148)
 }
 
 // File attachments (TASK-47) — self-hosted blobs on the local disk under
@@ -457,35 +472,35 @@ model Comment {
 // `storedName` is a server-generated name — the client's `fileName` is
 // metadata only and must never be used as a filesystem path.
 model Attachment {
-  id           String    @id @default(cuid())
-  card         Card      @relation(fields: [cardId], references: [id])
-  cardId       String
-  boardId      String
-  fileName     String
-  storedName   String    @unique
-  mimeType     String
-  sizeBytes    Int // ≤ LIMITS.attachmentSize (25 MB)
-  uploadedBy   User      @relation(fields: [uploadedById], references: [id])
-  uploadedById String
+  id               String    @id @default(cuid())
+  card             Card      @relation(fields: [cardId], references: [id])
+  cardId           String
+  boardId          String
+  fileName         String
+  storedName       String    @unique
+  mimeType         String
+  sizeBytes        Int // ≤ LIMITS.attachmentSize (25 MB)
+  uploadedBy       User      @relation(fields: [uploadedById], references: [id])
+  uploadedById     String
   // Inline media (TASK-48 paste): embedded into a description/comment body
   // via its `content` URL instead of the attachment list — hidden from
   // `list()` and excluded from the card-face `attachmentCount`.
-  isInline     Boolean   @default(false)
+  isInline         Boolean   @default(false)
   // TASK-50 video "ужиматор": video uploads re-encode to a compact H.264
   // MP4 in a background job (original kept until the encode succeeds).
   // `none` — not a video (or transcode disabled), `pending` — queued/
   // running, `done` — `storedName` now points at the MP4, `failed` —
   // the original stays and plays as-is.
-  transcodeStatus String  @default("none")
+  transcodeStatus  String    @default("none")
   // TASK-70 media derivatives: an ffmpeg thumbnail for images / poster frame
   // for videos, generated in the background (`media` queue) and served by
   // `/attachments/:id/thumbnail|poster`. `derivativeStatus` mirrors the
   // transcode states (none/pending/done/failed).
   thumbnailName    String?
   posterName       String?
-  derivativeStatus String  @default("none")
-  deletedAt    DateTime? // soft-delete (§7.0)
-  createdAt    DateTime  @default(now())
+  derivativeStatus String    @default("none")
+  deletedAt        DateTime? // soft-delete (§7.0)
+  createdAt        DateTime  @default(now())
 
   @@index([cardId, createdAt])
   @@index([deletedAt]) // purge sweep (TASK-92)
@@ -507,16 +522,16 @@ model Attachment {
 // the `exports` queue, stored as a file under UPLOAD_DIR and handed out by a
 // TTL'd link instead of blocking the request.
 model DataExport {
-  id         String    @id @default(cuid())
+  id         String   @id @default(cuid())
   userId     String
   userEmail  String
-  status     String    @default("pending") // pending | ready | failed
+  status     String   @default("pending") // pending | ready | failed
   filename   String
   storedName String?
   sizeBytes  Int?
   error      String?
   createdBy  String // master email (snapshot)
-  createdAt  DateTime  @default(now())
+  createdAt  DateTime @default(now())
   expiresAt  DateTime
 
   @@index([userId])
@@ -524,17 +539,17 @@ model DataExport {
 }
 
 model AdminUser {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String
-  displayName  String?
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  displayName   String?
   // Tier of this master (TASK-36): OWNER | OPERATOR — see `enum AdminRole`.
-  role         AdminRole @default(OPERATOR)
-  failedLogins Int       @default(0) // lockout counter
-  lockedUntil  DateTime? // set after N consecutive failures
-  disabledAt   DateTime?
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
+  role          AdminRole @default(OPERATOR)
+  failedLogins  Int       @default(0) // lockout counter
+  lockedUntil   DateTime? // set after N consecutive failures
+  disabledAt    DateTime?
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
   // Master 2FA (TASK-65): a TOTP secret encrypted at rest (secret-box) and
   // the on/off switch. When `totpEnabled`, login additionally requires a
   // 6-digit code. `ipAllowlist` is a CSV of IPs/CIDRs; null = unrestricted.
@@ -559,6 +574,8 @@ model AdminRefreshToken {
   userAgent String?
 
   @@index([adminId])
+  @@index([expiresAt]) // dead-session sweep (TASK-148)
+  @@index([revokedAt]) // dead-session sweep (TASK-148)
 }
 
 // Accountability layer (§ admin panel best practices, TASK-36): every login
@@ -599,21 +616,21 @@ model FeatureFlag {
 // env default applies". `maintenanceMode` closes the user API; the rest are
 // runtime overrides the panel can set without a redeploy.
 model OpsSettings {
-  id                   String   @id // always "singleton"
-  registrationEnabled  Boolean?
-  publicSharesEnabled  Boolean?
-  maintenanceMode      Boolean  @default(false)
-  maintenanceMessage   String?
-  perUserRateLimit     Int?
-  retentionDays        Int?
+  id                         String   @id // always "singleton"
+  registrationEnabled        Boolean?
+  publicSharesEnabled        Boolean?
+  maintenanceMode            Boolean  @default(false)
+  maintenanceMessage         String?
+  perUserRateLimit           Int?
+  retentionDays              Int?
   // TASK-68: cadence of the maintenance sweeps in minutes; null = default,
   // 0 = disabled. Applied to the BullMQ Job Scheduler (or the fallback timer).
   maintenanceIntervalMinutes Int?
   // TASK-72: scheduled comms. Interval in hours; null/0 = disabled.
-  digestIntervalHours  Int?
-  reminderLeadHours    Int?
-  updatedBy            String?
-  updatedAt            DateTime @updatedAt
+  digestIntervalHours        Int?
+  reminderLeadHours          Int?
+  updatedBy                  String?
+  updatedAt                  DateTime @updatedAt
 }
 
 // Due-reminder dedupe (TASK-83). One row per (card, user, dueDate) we have
@@ -629,6 +646,7 @@ model ReminderSent {
 
   @@unique([cardId, userId, dueDate])
   @@index([sentAt])
+  @@index([dueDate]) // reminder retention sweep (TASK-148)
 }
 
 // In-app announcement / banner (TASK-62). `audience` "all" shows to every
