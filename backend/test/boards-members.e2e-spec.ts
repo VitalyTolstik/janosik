@@ -446,6 +446,36 @@ describe("Boards API (e2e)", () => {
       expect(res.body.boards[0].id).toBe(board.body.id);
     });
 
+    it("imports every board of one envelope atomically (TASK-149)", async () => {
+      const first = richEnvelope("Atomic A").boards[0];
+      const second = {
+        ...richEnvelope("Atomic B").boards[0],
+        id: "src-board-atomic-b",
+      };
+      const res = await server()
+        .post("/api/v1/boards/import")
+        .set(auth(adminToken))
+        .send({
+          app: "janosik",
+          schemaVersion: 1,
+          exportedAt: Date.now(),
+          boards: [first, second],
+        })
+        .expect(201);
+
+      expect(res.body).toHaveLength(2);
+      const ids = res.body.map((board: Board) => board.id);
+      expect(new Set(ids).size).toBe(2);
+      // Content survived the batched inserts: labels, columns and cards.
+      for (const board of res.body as Board[]) {
+        expect(board.labels.length).toBeGreaterThan(0);
+        expect(board.columns.some((column) => column.cardIds.length > 0)).toBe(
+          true,
+        );
+        expect(Object.keys(board.cards).length).toBeGreaterThan(0);
+      }
+    });
+
     it("rejects a malformed envelope with 400", async () => {
       await server()
         .post("/api/v1/boards/import")

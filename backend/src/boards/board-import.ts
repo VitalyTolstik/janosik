@@ -99,6 +99,13 @@ export async function persistBoard(
   // Fresh card ids — card links (TASK-46) are rewritten through this map
   // after every card exists (a link row needs both endpoints in the table).
   const cardIdMap = new Map<string, string>();
+  // Batching (TASK-149, B16): rows are collected and inserted with
+  // `createMany` instead of one round-trip per row — a 2400-card envelope
+  // spent most of its 5 s budget on round-trips alone.
+  const cardRows: Prisma.CardCreateManyInput[] = [];
+  const labelRows: Prisma.CardLabelCreateManyInput[] = [];
+  const checklistRows: Prisma.ChecklistCreateManyInput[] = [];
+  const itemRows: Prisma.ChecklistItemCreateManyInput[] = [];
 
   for (const [oldId, card] of Object.entries(board.cards)) {
     let columnId = columnForCard.get(oldId);
@@ -121,58 +128,58 @@ export async function persistBoard(
     // instead of failing the whole board.
     const assigneeId = card.assigneeId ?? null;
     const keptAssigneeId = assigneeId === userId ? assigneeId : null;
-    await tx.card.create({
-      data: {
-        id,
-        columnId,
-        title: card.title,
-        description: card.description ?? null,
-        coverType: card.cover?.type ?? null,
-        coverValue: card.cover?.value ?? null,
-        dueDate: card.dueDate ? new Date(card.dueDate) : null,
-        priority: card.priority ?? null,
-        assigneeId: keptAssigneeId,
-        archivedAt: card.archivedAt ? new Date(card.archivedAt) : null,
-        position: positionForCard.get(oldId) ?? 0,
-        createdAt,
-        updatedAt,
-      },
+    cardRows.push({
+      id,
+      columnId,
+      title: card.title,
+      description: card.description ?? null,
+      coverType: card.cover?.type ?? null,
+      coverValue: card.cover?.value ?? null,
+      dueDate: card.dueDate ? new Date(card.dueDate) : null,
+      priority: card.priority ?? null,
+      assigneeId: keptAssigneeId,
+      archivedAt: card.archivedAt ? new Date(card.archivedAt) : null,
+      position: positionForCard.get(oldId) ?? 0,
+      createdAt,
+      updatedAt,
     });
 
     let labelPosition = 0;
     for (const oldLabelId of card.labelIds) {
       const labelId = labelIdMap.get(oldLabelId);
       if (!labelId) continue;
-      await tx.cardLabel.create({
-        data: { cardId: id, labelId, position: labelPosition++ },
-      });
+      labelRows.push({ cardId: id, labelId, position: labelPosition++ });
     }
 
     let checklistPosition = 0;
     for (const checklist of card.checklists ?? []) {
       const checklistId = randomUUID();
-      await tx.checklist.create({
-        data: {
-          id: checklistId,
-          cardId: id,
-          title: checklist.title,
-          position: checklistPosition++,
-        },
+      checklistRows.push({
+        id: checklistId,
+        cardId: id,
+        title: checklist.title,
+        position: checklistPosition++,
       });
       let itemPosition = 0;
       for (const item of checklist.items) {
-        await tx.checklistItem.create({
-          data: {
-            id: randomUUID(),
-            checklistId,
-            text: item.text,
-            done: item.done,
-            position: itemPosition++,
-          },
+        itemRows.push({
+          id: randomUUID(),
+          checklistId,
+          text: item.text,
+          done: item.done,
+          position: itemPosition++,
         });
       }
     }
   }
+
+  if (cardRows.length > 0) await tx.card.createMany({ data: cardRows });
+  if (labelRows.length > 0) await tx.cardLabel.createMany({ data: labelRows });
+  if (checklistRows.length > 0) {
+    await tx.checklist.createMany({ data: checklistRows });
+  }
+  if (itemRows.length > 0)
+    await tx.checklistItem.createMany({ data: itemRows });
 
   // Card links (TASK-46) in a second pass: both endpoints are rewritten to
   // the fresh ids. A row whose target is not in the envelope's cards map is

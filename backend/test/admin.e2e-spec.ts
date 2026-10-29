@@ -851,6 +851,150 @@ describe("Admin API (e2e)", () => {
       expect(after.body.items[0].deletedAt).toBeGreaterThan(0);
     });
 
+    it("deletes a column's cards with it and restores the subtree (TASK-149)", async () => {
+      const board = await prisma.board.create({
+        data: { title: "Cascade board" },
+      });
+      await prisma.boardMember.create({
+        data: {
+          boardId: board.id,
+          userId,
+          role: "ADMIN",
+          acceptedAt: new Date(),
+        },
+      });
+      await prisma.column.create({
+        data: {
+          id: "cascade-column",
+          boardId: board.id,
+          title: "Cascade",
+          position: 0,
+        },
+      });
+      await prisma.card.create({
+        data: {
+          id: "cascade-card",
+          columnId: "cascade-column",
+          title: "Carried down",
+          position: 0,
+        },
+      });
+
+      await server()
+        .post("/api/v1/admin/entities/columns/bulk")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ ids: ["cascade-column"], action: "delete" })
+        .expect(201);
+
+      // B10: the old direct write left the card alive pointing at a deleted
+      // column — in `cards` but in no column. The command cascades.
+      const column = await prisma.column.findUniqueOrThrow({
+        where: { id: "cascade-column" },
+      });
+      expect(column.deletedAt).not.toBeNull();
+      const card = await prisma.card.findUniqueOrThrow({
+        where: { id: "cascade-card" },
+      });
+      expect(card.deletedAt).not.toBeNull();
+      expect(
+        await prisma.card.count({
+          where: { column: { boardId: board.id }, deletedAt: null },
+        }),
+      ).toBe(0);
+
+      await server()
+        .post("/api/v1/admin/entities/columns/cascade-column/restore")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+
+      const restored = await prisma.card.findUniqueOrThrow({
+        where: { id: "cascade-card" },
+      });
+      expect(restored.deletedAt).toBeNull();
+      expect(restored.columnId).toBe("cascade-column");
+      expect(
+        (
+          await prisma.column.findUniqueOrThrow({
+            where: { id: "cascade-column" },
+          })
+        ).deletedAt,
+      ).toBeNull();
+
+      // And the live aggregate lists the card in that column again.
+      const content = await server()
+        .get(`/api/v1/admin/boards/${board.id}/content`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(
+        content.body.columns.find(
+          (entry: { id: string }) => entry.id === "cascade-column",
+        ).cardIds,
+      ).toEqual(["cascade-card"]);
+    });
+
+    it("keeps the attachment badge exact through delete and restore (TASK-149)", async () => {
+      const board = await prisma.board.create({
+        data: { title: "Badge board" },
+      });
+      await prisma.boardMember.create({
+        data: {
+          boardId: board.id,
+          userId,
+          role: "ADMIN",
+          acceptedAt: new Date(),
+        },
+      });
+      await prisma.column.create({
+        data: {
+          id: "badge-column",
+          boardId: board.id,
+          title: "Files",
+          position: 0,
+        },
+      });
+      await prisma.card.create({
+        data: {
+          id: "badge-card",
+          columnId: "badge-column",
+          title: "Has a file",
+          position: 0,
+          attachmentCount: 1,
+        },
+      });
+      const storage = app.get(StorageService);
+      await storage.ensureDirs();
+      const storedName = "badge-probe.bin";
+      await writeFile(storage.attachmentPath(storedName), "badge-bytes");
+      const attachment = await prisma.attachment.create({
+        data: {
+          cardId: "badge-card",
+          boardId: board.id,
+          uploadedById: userId,
+          fileName: "badge.txt",
+          mimeType: "text/plain",
+          sizeBytes: 5,
+          storedName,
+        },
+      });
+
+      const badge = () =>
+        prisma.card
+          .findUniqueOrThrow({ where: { id: "badge-card" } })
+          .then((row) => row.attachmentCount);
+
+      await server()
+        .delete(`/api/v1/admin/attachments/${attachment.id}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(await badge()).toBe(0);
+
+      await server()
+        .post(`/api/v1/admin/entities/attachments/${attachment.id}/restore`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+      expect(await badge()).toBe(1);
+    });
+
     it("reports runtime and database latency on the dashboard", async () => {
       const res = await server()
         .get("/api/v1/admin/metrics")

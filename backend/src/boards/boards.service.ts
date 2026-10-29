@@ -28,6 +28,14 @@ import type { InviteMemberDto } from "./dto/invite-member.dto";
 import type { UpdateMemberDto } from "./dto/update-member.dto";
 
 /**
+ * Import timeout (TASK-149, B16). An interactive Prisma transaction defaults to
+ * 5 s; a large envelope (several boards × 2400 cards) hits that and rolls back
+ * halfway. Give it a real budget — the whole import is one transaction now, so
+ * a failure leaves *no* boards behind instead of the first N-1.
+ */
+const IMPORT_TIMEOUT_MS = 120_000;
+
+/**
  * Boards aggregate + membership + import/export (§7.4, TASK-25).
  *
  * These are aggregate-level REST operations, not reducer commands: mutations
@@ -500,22 +508,22 @@ export class BoardsService {
     return JSON.parse(serializeExport([board])) as BoardEnvelope;
   }
 
-  /**
-   * Import a board envelope: normalize leniently (clamp whatever came in
-   * past the UI) and create the board(s) with the importer as ADMIN.
-   */
+  /** Import a board envelope, atomically (TASK-149, B16). */
   async importBoards(userId: string, body: unknown): Promise<BoardAggregate[]> {
     const boards = this.parseEnvelope(body);
     if (boards.length === 0) {
       throw new BadRequestException("The envelope contains no boards");
     }
-    const createdIds: string[] = [];
-    for (const board of boards) {
-      const id = await this.prisma.$transaction((tx) =>
-        persistBoard(tx, board, userId),
-      );
-      createdIds.push(id);
-    }
+    const createdIds = await this.prisma.$transaction(
+      async (tx) => {
+        const ids: string[] = [];
+        for (const board of boards) {
+          ids.push(await persistBoard(tx, board, userId));
+        }
+        return ids;
+      },
+      { timeout: IMPORT_TIMEOUT_MS, maxWait: 10_000 },
+    );
     return Promise.all(createdIds.map((id) => this.getAggregate(id)));
   }
 

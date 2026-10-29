@@ -40,7 +40,9 @@ the board `ADMIN`. An owner email with no matching user answers `404`.
 
 With rows selected, a bar appears with `Delete selected`, `Restore selected`
 and `Clear`. A bulk delete is confirmed and cannot be undone for the selected
-rows.
+rows. Deleting a column takes its cards down with it (they are soft-deleted,
+never left pointing at a deleted column), and restoring the column brings them
+back.
 
 ## Board detail
 

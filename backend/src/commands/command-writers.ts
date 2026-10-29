@@ -217,15 +217,27 @@ async function upsertCard(
   position: number,
   actorId: string,
 ): Promise<void> {
+  // TASK-149 (B11): the denormalized attachment badge is not part of the
+  // command payload, so a revived card would otherwise come back with the
+  // stale (or default zero) count. Recompute it from the live rows and write
+  // it in the same statement — a second `update` would stamp `updatedAt`
+  // and break the aggregate/inverse equality.
+  const liveAttachments = await tx.attachment.count({
+    where: { cardId: card.id, deletedAt: null, isInline: false },
+  });
   await tx.card.upsert({
     where: { id: card.id },
-    create: cardCreateData(card, columnId, position, actorId),
+    create: {
+      ...cardCreateData(card, columnId, position, actorId),
+      attachmentCount: liveAttachments,
+    },
     update: {
       ...cardUpdateData(card, actorId),
       columnId,
       position,
       deletedAt: null,
       version: { increment: 1 },
+      attachmentCount: liveAttachments,
     },
   });
 }
@@ -514,7 +526,8 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           where: { id: { in: checklistIds } },
           data: { deletedAt: now, version: { increment: 1 } },
         });
-        await tx.cardLabel.deleteMany({ where: { cardId: { in: activeIds } } });
+        // Label links are kept (TASK-149): the card row still exists soft-
+        // deleted, and the links are what lets a restore rebuild `labelIds`.
         await tx.card.updateMany({
           where: { id: { in: activeIds } },
           data: { deletedAt: now, updatedAt: now, version: { increment: 1 } },
@@ -646,7 +659,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         where: { id: { in: checklistIds } },
         data: { deletedAt: now, version: { increment: 1 } },
       });
-      await tx.cardLabel.deleteMany({ where: { cardId: card.id } });
+      // Label links are kept (TASK-149) for the same reason as DELETE_COLUMN.
       await tx.card.update({
         where: { id: card.id },
         data: {

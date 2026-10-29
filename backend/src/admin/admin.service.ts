@@ -85,6 +85,7 @@ import type { AdminUpdateThrottleSettingsDto } from "./dto/admin-update-throttle
 import type { AdminDemoStartDto } from "./dto/admin-demo-start.dto";
 import { DemoService } from "./demo.service";
 import { ThrottleSettingsService } from "./throttle-settings.service";
+import { loadCardRestore, loadColumnRestore } from "./admin-snapshots";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** One row of the SQL per-day aggregation (B-7). */
@@ -831,12 +832,9 @@ export class AdminService {
     if (!board) {
       throw new NotFoundException("Board not found");
     }
-    await this.boardWrite.run(boardId, (tx) =>
-      tx.board.update({
-        where: { id: boardId },
-        data: { archivedAt: archived ? new Date() : null },
-      }),
-    );
+    await this.commandAsOwner(boardId, {
+      type: archived ? "ARCHIVE_BOARD" : "UNARCHIVE_BOARD",
+    });
     await this.audit(
       admin,
       archived ? "board.archive" : "board.unarchive",
@@ -918,6 +916,43 @@ export class AdminService {
       seq: response.seq,
     });
     return response;
+  }
+
+  /**
+   * Apply one board action as the board's owner (TASK-149). Moderation used to
+   * write rows directly, which skipped the version bump, the SSE frame and the
+   * app-level cascade — deleting a column that way left its cards pointing at
+   * a deleted column, i.e. alive in `cards` but in no column. Routing the same
+   * operations through the command log keeps every invariant.
+   */
+  private async commandAsOwner(
+    boardId: string,
+    action: Record<string, unknown>,
+  ): Promise<{ response: CommandResponse; actorEmail: string }> {
+    const owner = await this.prisma.boardMember.findFirst({
+      where: { boardId, role: "ADMIN", acceptedAt: { not: null } },
+      orderBy: { createdAt: "asc" },
+      select: { user: { select: { id: true, email: true } } },
+    });
+    if (!owner) {
+      throw new BadRequestException("Board has no owner to act for");
+    }
+    const response = await this.commands.apply(boardId, owner.user.id, {
+      commandId: randomUUID(),
+      action: { ...action, boardId, at: Date.now() },
+    });
+    return { response, actorEmail: owner.user.email };
+  }
+
+  /** Recompute the card-face attachment badge from the live rows (B11). */
+  private async recountCardAttachments(cardId: string): Promise<void> {
+    const live = await this.prisma.attachment.count({
+      where: { cardId, deletedAt: null, isInline: false },
+    });
+    await this.prisma.card.updateMany({
+      where: { id: cardId },
+      data: { attachmentCount: live },
+    });
   }
 
   /** One enriched board row (counters + owner) for mutation responses. */
@@ -1044,7 +1079,11 @@ export class AdminService {
     };
   }
 
-  /** Archive/restore a card — moderation, recorded in the audit log. */
+  /**
+   * Archive/restore a card — a real `ARCHIVE_CARD`/`UNARCHIVE_CARD` command
+   * (TASK-149, B10): version, SSE and the reducer's shape stay coherent, and a
+   * restored card goes back to its own column when that column still exists.
+   */
   async setCardArchived(
     cardId: string,
     archived: boolean,
@@ -1055,18 +1094,23 @@ export class AdminService {
       select: {
         id: true,
         title: true,
-        column: { select: { boardId: true } },
+        columnId: true,
+        column: { select: { boardId: true, deletedAt: true } },
       },
     });
     if (!card) {
       throw new NotFoundException("Card not found");
     }
-    await this.boardWrite.run(card.column.boardId, (tx) =>
-      tx.card.update({
-        where: { id: cardId },
-        data: { archivedAt: archived ? new Date() : null },
-      }),
-    );
+    const action: Record<string, unknown> = archived
+      ? { type: "ARCHIVE_CARD", cardId, archivedAt: Date.now() }
+      : {
+          type: "UNARCHIVE_CARD",
+          cardId,
+          ...(card.column.deletedAt === null
+            ? { columnId: card.columnId }
+            : {}),
+        };
+    await this.commandAsOwner(card.column.boardId, action);
     await this.audit(
       admin,
       archived ? "card.archive" : "card.unarchive",
@@ -1077,7 +1121,7 @@ export class AdminService {
     return { status: "ok" };
   }
 
-  /** Soft-delete a card; its children keep their rows for the purge job. */
+  /** Soft-delete a card through the command log so its children follow. */
   async deleteCard(
     cardId: string,
     admin: AdminPrincipal,
@@ -1093,19 +1137,9 @@ export class AdminService {
     if (!card) {
       throw new NotFoundException("Card not found");
     }
-    await this.boardWrite.run(card.column.boardId, async (tx) => {
-      await tx.checklistItem.updateMany({
-        where: { checklist: { cardId } },
-        data: { deletedAt: new Date() },
-      });
-      await tx.checklist.updateMany({
-        where: { cardId },
-        data: { deletedAt: new Date() },
-      });
-      await tx.card.update({
-        where: { id: cardId },
-        data: { deletedAt: new Date() },
-      });
+    await this.commandAsOwner(card.column.boardId, {
+      type: "DELETE_CARD",
+      cardId,
     });
     await this.audit(admin, "card.delete", "card", cardId, {
       title: card.title,
@@ -1846,8 +1880,16 @@ export class AdminService {
     if (!user) throw new NotFoundException("User not found");
     const blobs = await this.prisma.attachment.findMany({
       where: { uploadedById: userId },
-      select: { storedName: true, thumbnailName: true, posterName: true },
+      select: {
+        storedName: true,
+        thumbnailName: true,
+        posterName: true,
+        cardId: true,
+      },
     });
+    // TASK-149 (B11): cards that held this user's files need their badge
+    // recomputed after the rows go, or it keeps counting deleted files.
+    const affectedCards = [...new Set(blobs.map((blob) => blob.cardId))];
     // TASK-148 (B12): an erase must take the user's GDPR bundles with it.
     // Rows hold `userId` with no FK, so deleting the user left the export
     // rows and their `.json` artifacts downloadable for the full 7-day TTL.
@@ -1876,6 +1918,9 @@ export class AdminService {
       });
       await tx.user.delete({ where: { id: userId } });
     });
+    for (const cardId of affectedCards) {
+      await this.recountCardAttachments(cardId);
+    }
     for (const blob of blobs) {
       // TASK-107: the derivatives are separate blobs — erase them too, or a
       // user wipe leaves orphaned thumbnails/posters on disk.
@@ -2137,18 +2182,15 @@ export class AdminService {
       where: { id: attachmentId },
     });
     if (!row) throw new NotFoundException("Attachment not found");
-    await this.prisma.$transaction(async (tx) => {
-      await tx.attachment.update({
+    await this.boardWrite.run(row.boardId, (tx) =>
+      tx.attachment.update({
         where: { id: attachmentId },
         data: { deletedAt: new Date() },
-      });
-      if (!row.isInline) {
-        await tx.card.update({
-          where: { id: row.cardId },
-          data: { attachmentCount: { decrement: 1 } },
-        });
-      }
-    });
+      }),
+    );
+    // TASK-149 (B11): recount instead of a blind decrement — inline media
+    // and double-clicks drifted the badge (negative, then wrong forever).
+    await this.recountCardAttachments(row.cardId);
     // TASK-88: keep the blob — a soft-deleted attachment can be restored
     // (`restoreEntity`) and must stream again; the purge sweep reclaims it.
     await this.audit(admin, "attachment.delete", "attachment", attachmentId, {
@@ -2199,60 +2241,167 @@ export class AdminService {
     when: Date | null,
   ): Promise<void> {
     switch (entity) {
-      case "boards":
-        await this.prisma.board.update({
+      case "boards": {
+        if (when !== null) {
+          await this.boards.deleteBoard(id);
+          return;
+        }
+        await this.boardWrite.run(id, (tx) =>
+          tx.board.update({
+            where: { id },
+            data: { deletedAt: null, version: { increment: 1 } },
+          }),
+        );
+        return;
+      }
+      case "cards": {
+        const card = await this.prisma.card.findUnique({
           where: { id },
-          data: { deletedAt: when },
+          select: { column: { select: { boardId: true } } },
+        });
+        if (!card) throw new NotFoundException("Card not found");
+        if (when !== null) {
+          await this.commandAsOwner(card.column.boardId, {
+            type: "DELETE_CARD",
+            cardId: id,
+          });
+          return;
+        }
+        const snapshot = await loadCardRestore(this.prisma, id);
+        if (!snapshot) throw new NotFoundException("Card not found");
+        if (snapshot.columnId !== null && snapshot.columnDeleted) {
+          throw new BadRequestException(
+            "Restore the card's column before restoring the card",
+          );
+        }
+        await this.commandAsOwner(snapshot.boardId, {
+          type: "RESTORE_CARD",
+          card: snapshot.card,
+          ...(snapshot.columnId !== null
+            ? { columnId: snapshot.columnId, index: snapshot.index }
+            : {}),
         });
         return;
-      case "cards":
-        await this.prisma.card.update({
+      }
+      case "columns": {
+        const column = await this.prisma.column.findUnique({
           where: { id },
-          data: { deletedAt: when },
+          select: { boardId: true },
+        });
+        if (!column) throw new NotFoundException("Column not found");
+        if (when !== null) {
+          await this.commandAsOwner(column.boardId, {
+            type: "DELETE_COLUMN",
+            columnId: id,
+          });
+          return;
+        }
+        const snapshot = await loadColumnRestore(this.prisma, id);
+        if (!snapshot) throw new NotFoundException("Column not found");
+        await this.commandAsOwner(snapshot.boardId, {
+          type: "RESTORE_COLUMN",
+          column: snapshot.column,
+          index: snapshot.index,
+          cards: snapshot.cards,
         });
         return;
-      case "columns":
-        await this.prisma.column.update({
+      }
+      case "labels": {
+        const row = await this.prisma.label.findUnique({
           where: { id },
-          data: { deletedAt: when },
+          select: { boardId: true },
         });
+        if (!row) throw new NotFoundException("Label not found");
+        await this.boardWrite.run(row.boardId, (tx) =>
+          tx.label.update({
+            where: { id },
+            data: { deletedAt: when, version: { increment: 1 } },
+          }),
+        );
         return;
-      case "labels":
-        await this.prisma.label.update({
+      }
+      case "checklists": {
+        const row = await this.prisma.checklist.findUnique({
           where: { id },
-          data: { deletedAt: when },
+          select: {
+            card: { select: { column: { select: { boardId: true } } } },
+          },
         });
+        if (!row) throw new NotFoundException("Checklist not found");
+        await this.boardWrite.run(row.card.column.boardId, (tx) =>
+          tx.checklist.update({
+            where: { id },
+            data: { deletedAt: when, version: { increment: 1 } },
+          }),
+        );
         return;
-      case "checklists":
-        await this.prisma.checklist.update({
+      }
+      case "checklistItems": {
+        const row = await this.prisma.checklistItem.findUnique({
           where: { id },
-          data: { deletedAt: when },
+          select: {
+            checklist: {
+              select: {
+                card: { select: { column: { select: { boardId: true } } } },
+              },
+            },
+          },
         });
+        if (!row) throw new NotFoundException("Checklist item not found");
+        await this.boardWrite.run(row.checklist.card.column.boardId, (tx) =>
+          tx.checklistItem.update({
+            where: { id },
+            data: { deletedAt: when, version: { increment: 1 } },
+          }),
+        );
         return;
-      case "checklistItems":
-        await this.prisma.checklistItem.update({
+      }
+      case "cardLinks": {
+        const row = await this.prisma.cardLink.findUnique({
           where: { id },
-          data: { deletedAt: when },
+          select: { boardId: true },
         });
+        if (!row) throw new NotFoundException("Card link not found");
+        await this.boardWrite.run(row.boardId, (tx) =>
+          tx.cardLink.update({
+            where: { id },
+            data: { deletedAt: when },
+          }),
+        );
         return;
-      case "cardLinks":
-        await this.prisma.cardLink.update({
+      }
+      case "comments": {
+        const row = await this.prisma.comment.findUnique({
           where: { id },
-          data: { deletedAt: when },
+          select: {
+            card: { select: { column: { select: { boardId: true } } } },
+          },
         });
+        if (!row) throw new NotFoundException("Comment not found");
+        await this.boardWrite.run(row.card.column.boardId, (tx) =>
+          tx.comment.update({
+            where: { id },
+            data: { deletedAt: when },
+          }),
+        );
         return;
-      case "comments":
-        await this.prisma.comment.update({
+      }
+      case "attachments": {
+        const row = await this.prisma.attachment.findUnique({
           where: { id },
-          data: { deletedAt: when },
         });
+        if (!row) throw new NotFoundException("Attachment not found");
+        await this.boardWrite.run(row.boardId, (tx) =>
+          tx.attachment.update({
+            where: { id },
+            data: { deletedAt: when },
+          }),
+        );
+        // TASK-149 (B11): bulk delete/restore used to bypass the counter
+        // entirely; recount from the rows so the badge is exact either way.
+        await this.recountCardAttachments(row.cardId);
         return;
-      case "attachments":
-        await this.prisma.attachment.update({
-          where: { id },
-          data: { deletedAt: when },
-        });
-        return;
+      }
       default:
         throw new NotFoundException(
           `Entity ${entity} does not support restore`,
@@ -2265,20 +2414,39 @@ export class AdminService {
     id: string,
     archived: boolean,
   ): Promise<void> {
-    const when = archived ? new Date() : null;
     if (entity === "boards") {
-      await this.prisma.board.update({
+      const board = await this.prisma.board.findUnique({
         where: { id },
-        data: { archivedAt: when },
+        select: { id: true },
       });
-    } else if (entity === "cards") {
-      await this.prisma.card.update({
-        where: { id },
-        data: { archivedAt: when },
+      if (!board) throw new NotFoundException("Board not found");
+      await this.commandAsOwner(id, {
+        type: archived ? "ARCHIVE_BOARD" : "UNARCHIVE_BOARD",
       });
-    } else {
-      throw new NotFoundException(`Entity ${entity} does not support archive`);
+      return;
     }
+    if (entity === "cards") {
+      const card = await this.prisma.card.findUnique({
+        where: { id },
+        select: {
+          columnId: true,
+          column: { select: { boardId: true, deletedAt: true } },
+        },
+      });
+      if (!card) throw new NotFoundException("Card not found");
+      const action: Record<string, unknown> = archived
+        ? { type: "ARCHIVE_CARD", cardId: id, archivedAt: Date.now() }
+        : {
+            type: "UNARCHIVE_CARD",
+            cardId: id,
+            ...(card.column.deletedAt === null
+              ? { columnId: card.columnId }
+              : {}),
+          };
+      await this.commandAsOwner(card.column.boardId, action);
+      return;
+    }
+    throw new NotFoundException(`Entity ${entity} does not support archive`);
   }
 
   // --------------------------------------------- data/compliance (TASK-63)
