@@ -250,6 +250,7 @@ Environment variables (see `.env.example` for the full annotated list):
 | `TRUST_PROXY` | `0` | Reverse-proxy hops (set `1` behind nginx/Caddy/Traefik) |
 | `SMTP_*` | unset | Outgoing email. Unset = log mode; in production codes are withheld from the log, so configure SMTP to deliver them. |
 | `PURGE_AFTER_DAYS` | `30` | Retention for the hourly soft-delete sweep |
+| `AUDIT_RETENTION_DAYS` | `365` | Retention for the master audit trail (separate, longer window) |
 
 To build the image from a checkout instead of pulling, uncomment `build: .`
 in `docker-compose.yml`. For a TLS-terminating proxy in front, keep

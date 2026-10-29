@@ -1619,7 +1619,7 @@ TASK-36 и TASK-37.)*
 | 76 | TASK-145 `presence-consistency` ✅ | `main` | §7.14: топология presence (1/несколько нод), presence-epoch + resync, rejoin по TTL, `avatarPath`, `clientId` до Observable | **Выполнено:** presence — только локально (без Redis-фан-аута → нет ложных `leave` на 2 нодах); `epoch` в кадрах + keepalive + reconnect при расхождении; ping `410` → rejoin; `avatarPath` в сравнении; `clientId` проверяется до Observable; CRLF-парсер; ростер чистится на смене доски; тесты. **Остаётся:** общий presence-store в Redis для сходимости ростера на нескольких нодах (отдельная задача). См. §7.14 |
 | 77 | TASK-146 `resource-limits` ✅ | `main` | §7.14: кэпы SSE/сессий, `ifMatchVersions`, upload-квоты, bounded share-throttle | **Выполнено:** SSE-кэпы instance/user/board (`503` + `Retry-After`); `ifMatchVersions` ≤100 и батч-чтение версий (≤1 запрос на тип); upload-rate 60/мин на юзера (`429`); share-throttle ограничен по размеру + валидация формы токена; тесты. **Остаётся:** temp-file uploads → **TASK-155**; Redis-лимитер шары на несколько нод. См. §7.14 |
 | 78 | TASK-147 `security-hardening` ✅ | `main` | §7.14: `/health`, read-only impersonation, expiry/assignee-leak, bull-board allowlist, `COOKIE_SECURE`, CIDR/TOTP/логи | **Выполнено:** `/health` — liveness без I/O, `/health/ready` — readiness с кэшем ~2 с и single-flight; impersonation-токен read-only (safe-методы + presence-ping, прочие записи и `/users/me/tokens` → `403`); единый предикат активного членства в `listBoards`/`listMembers`/дайджестах/напоминаниях + drop assignee на restore/import; bull-board за тем же IP-allowlist; `COOKIE_SECURE=true` по умолчанию (compose/.env/docs); CIDR с валидацией префикса и IPv6 (+ отказ при сохранении); TOTP в lockout + защита от replay; тела писем не логируются в production. e2e на каждую дыру; тесты. См. §7.14 |
-| 79 | TASK-148 `retention-and-indexes` | `feature/TASK-148-retention-and-indexes` | §7.14: индексы `deletedAt/expiresAt/dueDate`, sweeps Board/Activity/audit/shares/exports, retry очередей | нет роста БД/Redis/диска. См. §7.14 |
+| 79 | TASK-148 `retention-and-indexes` ✅ | `main` | §7.14: индексы `deletedAt/expiresAt/dueDate`, sweeps Board/Activity/audit/shares/exports, retry очередей | **Выполнено:** индексы purge/TTL/due (`CONCURRENTLY`-скрипт `db:indexes` + миграция `IF NOT EXISTS`); sweep целых `Board` (доска+фид+лог+шары+блобы), `Activity`, `AdminAuditLog` (`AUDIT_RETENTION_DAYS=365`), отозванных шар (24 ч), `.tmp-*` по grace; `exports`/`media` бросают ошибку пока есть попытки (BullMQ retry); retention-opts у Job Scheduler; GDPR-erase удаляет `DataExport`/бандлы; тесты на каждый sweep. См. §7.14 |
 | 80 | TASK-149 `admin-consistency` | `feature/TASK-149-admin-consistency` | §7.14: admin-мутации через команды, `attachmentCount`, импорт батч/атомарность | нет orphan-карточек. См. §7.14 |
 | 81 | TASK-150 `ui-render-perf` | `feature/TASK-150-ui-render-perf` | §7.14: per-key members, drag strategy, `linkSignature`, CardDialog, focus-diff, анимации | нет лишних полных рендеров. См. §7.14 |
 | 82 | TASK-151 `pwa-stream-recovery` | `feature/TASK-151-pwa-stream-recovery` | §7.14: SW не убивает старый деплой, SSE-watchdog, 404 доски, `APP_BASE`, restore | деплой/обрыв не ломают доску. См. §7.14 |
@@ -3098,6 +3098,20 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 - **DoD:** maintenance на большой таблице без seq-scan; erase удаляет экспорт;
   очереди не растут; тесты на каждую sweep.
 - **Зависимости:** нет.
+- **Выполнено (2026-10-29):** B8 — миграция
+  `20261029180000_task148_retention_indexes` плюс `npm run db:indexes`
+  (`CONCURRENTLY` для больших инсталляций): `deletedAt` на Board/Column/Card/
+  CardLink/Label/Checklist/ChecklistItem/Comment, `expiresAt`/`revokedAt` у
+  RefreshToken/AdminRefreshToken/BoardShare, `expiresAt` у BoardMember,
+  `dueDate` у ReminderSent, `createdAt` у Activity. B9 — `purge-soft-deleted`
+  добивает целые доски (строки, фид, журнал, шары, блобы), новые sweeps
+  `sweep-activity` и `sweep-audit` (`AUDIT_RETENTION_DAYS`, по умолчанию 365),
+  `sweep-shares` удаляет и отозванные >24 ч. B12 — GDPR-erase удаляет
+  `DataExport` и `.json`-бандлы. B22 — `listTempBlobs()` + чистка `.tmp-*` по
+  часовому grace. B7 — `removeOnComplete/removeOnFail` в шаблоне Job Scheduler
+  (`maintenance`, `comms`). B21 — `exports`/`media` пробрасывают ошибку, пока
+  BullMQ не исчерпал `attempts`, и только тогда пишут `failed`.
+  Тесты: unit 260, e2e 285 (в т.ч. e2e на erase экспорта).
 
 #### TASK-149 — `admin-consistency` · Админка через те же инварианты
 

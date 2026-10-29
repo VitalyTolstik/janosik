@@ -112,6 +112,15 @@ no manual migration step.
    root), the entrypoint hands it to the `node` user once with `chown -R`,
    which takes a while on a large volume.
 
+   The retention indexes (soft-delete, token, share, invitation, reminder)
+   are built the same way. On a bare-metal (`npm`) deployment with a large
+   database, build them without a write lock before upgrading; the migration
+   then finds them and is instant:
+
+   ```bash
+   npm run db:indexes --workspace backend
+   ```
+
    Rollback: set `JANOSIK_TAG` back to the previous tag and run
    `docker compose up -d`. Migrations are forward-only, so if a migration
    cannot be reversed, restore the database backup you took before upgrading

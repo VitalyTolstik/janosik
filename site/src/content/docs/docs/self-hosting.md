@@ -244,6 +244,7 @@ compose stack fills the ones it needs from `.env`.
 | `ALLOW_REGISTRATION` | `true` | Open sign-up. Set `false` after your account exists. The container logs a warning at start while it is `true`. |
 | `COOKIE_SECURE` | `true` (compose default) | Force the `Secure` cookie attribute. Keep `true` behind HTTPS; set `false` only for a plain-HTTP trial (the app then refuses to boot with it on). Choices are empty (auto: on in production), `true`, `false`. |
 | `PURGE_AFTER_DAYS` | `30` | Delete soft-deleted rows older than this many days. Used when the panel has no retention setting. |
+| `AUDIT_RETENTION_DAYS` | `365` | Delete master audit-log rows older than this many days (accountability keeps a longer window). |
 | `SHARE_RATE_LIMIT` | `240` | Public share requests per minute, per token. |
 | `SHARE_OG_RATE_LIMIT` | `60` | Public share OG preview requests per minute, per token. |
 | `SMTP_HOST` | empty | SMTP host. Unset means emails are written to the log, never sent. |

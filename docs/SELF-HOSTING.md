@@ -195,6 +195,7 @@ that matter most:
 | `JANOSIK_TAG` | `latest` | Image tag to run (e.g. `v0.1.0`). |
 | `SMTP_HOST` … `SMTP_PASS` | unset | Outgoing email. Unset = **log mode**: codes are written to the server log and registration auto-verifies. |
 | `PURGE_AFTER_DAYS` | `30` | Retention for the hourly soft-delete sweep (fallback when the panel has no setting). |
+| `AUDIT_RETENTION_DAYS` | `365` | Retention for the master audit trail (separate, longer window). |
 | `QUEUES_DASHBOARD` | `false` | Bull Board queue dashboard at `/admin/queues` (OWNER only). |
 | `SETTINGS_SECRET` | derived from `JWT_SECRET` | Encrypts SMTP credentials saved in the panel. |
 
@@ -250,6 +251,18 @@ docker compose pull && docker compose up -d
 
 Migrations run automatically on container start, so no manual step is needed.
 To pin a version, set `JANOSIK_TAG=v0.1.0` in `.env`.
+
+The retention upgrade (TASK-148) adds indexes to large tables, so the first
+start after it builds them before the API is up. On an existing instance with
+a lot of data and a bare-metal (`npm`) deployment, build them without a write
+lock first and the migration then becomes a no-op:
+
+```bash
+npm run db:indexes --workspace backend
+```
+
+Compose users get the same statements inline on first start; plan that
+upgrade for a quiet window on a big instance.
 
 ### Backup
 

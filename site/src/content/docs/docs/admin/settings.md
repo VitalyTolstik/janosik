@@ -234,15 +234,17 @@ are:
 
 | Sweep | Removes |
 | --- | --- |
-| `purge-soft-deleted` | soft-deleted rows past the retention window |
+| `purge-soft-deleted` | soft-deleted rows (and whole boards) past the retention window |
 | `sweep-codes` | expired or consumed verification and email-change codes |
 | `sweep-tokens` | expired or long-revoked refresh tokens (user and admin) |
-| `sweep-shares` | board shares past their TTL |
+| `sweep-shares` | board shares past their TTL or revoked over a day ago |
 | `sweep-invitations` | lapsed pending invitations |
 | `sweep-exports` | expired background data exports and their files |
 | `sweep-commands` | command-log rows past the retention window |
 | `sweep-reminders` | stale due-reminder dedupe rows |
-| `sweep-orphan-blobs` | blobs no row points at, older than a one-hour grace window |
+| `sweep-activity` | membership/comment feed rows past the retention window |
+| `sweep-audit` | master audit-log rows older than `AUDIT_RETENTION_DAYS` |
+| `sweep-orphan-blobs` | blobs no row points at (and abandoned `.tmp-*` files), older than a one-hour grace window |
 
 When Redis is configured the sweep runs on a durable schedule; without Redis it
 runs inline and the schedule is lost on restart.
