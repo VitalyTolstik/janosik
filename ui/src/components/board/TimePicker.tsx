@@ -81,7 +81,18 @@ function Column({
 
   // Arrow/Home/End navigation (TASK-152, C17): the listbox is one tab stop
   // (roving tabindex on the selected option), arrows move the selection.
+  // Enter/Space confirm the focused option (TASK-156 review) — the same
+  // options a click offers. `preventDefault` stops the native button
+  // activation from firing a second confirming click.
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      const value = Number((event.target as HTMLElement).dataset?.value);
+      if (Number.isNaN(value)) return;
+      event.preventDefault();
+      onSelect(value);
+      onActivate?.(value);
+      return;
+    }
     let index = options.findIndex((option) => option.value === selected);
     if (event.key === "ArrowDown") index += 1;
     else if (event.key === "ArrowUp") index -= 1;
@@ -212,6 +223,7 @@ export function TimePickerPanel({
         options={hourOptions(hour12)}
         selected={hour}
         onSelect={(h) => onChange(composeTime(h, minute))}
+        onActivate={() => onConfirm?.()}
         label={t("dueDate.hoursLabel")}
       />
       <Column

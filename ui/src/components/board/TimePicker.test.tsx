@@ -48,4 +48,37 @@ describe("TimePickerPanel", () => {
     expect(onChange).toHaveBeenCalledWith("10:31");
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
+
+  it("confirms an hour on click and Enter, but not on arrows (TASK-156 review)", () => {
+    const onChange = vi.fn();
+    const onConfirm = vi.fn();
+    render(
+      <I18nProvider>
+        <TimePickerPanel
+          value="10:30"
+          onChange={onChange}
+          onConfirm={onConfirm}
+        />
+      </I18nProvider>,
+    );
+
+    // Arrows move the hour selection without confirming.
+    const hours = screen.getByRole("listbox", { name: "Hours" });
+    fireEvent.keyDown(hours, { key: "ArrowUp" });
+    expect(onChange).toHaveBeenCalledWith("09:30");
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    // Enter on the (now focused) option confirms that selection — once,
+    // not twice through the native button activation.
+    const nine = hours.querySelector<HTMLElement>('[data-value="9"]');
+    expect(nine).not.toBeNull();
+    fireEvent.keyDown(nine!, { key: "Enter" });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+
+    // A click on an hour confirms too.
+    const eleven = hours.querySelector<HTMLElement>('[data-value="11"]');
+    fireEvent.click(eleven!);
+    expect(onChange).toHaveBeenCalledWith("11:30");
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+  });
 });

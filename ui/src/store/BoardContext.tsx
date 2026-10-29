@@ -1185,13 +1185,32 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   /**
    * The stream answered 404/410: re-read the board first (TASK-156). A
    * transient proxy 404 must not wipe a healthy local board; only a
-   * confirmed absence drops it.
+   * confirmed absence drops it. When the re-read succeeds the board is
+   * alive, so the bridge is re-attached (TASK-156 review): the fatal
+   * answer already ended its stream loop, and nothing else re-watches
+   * the same board id — presence and foreign commands would otherwise
+   * stop until a board switch or reload. `watch` is a no-op while a
+   * connection for the board is healthy, so a race with a reconnect
+   * cannot double-subscribe.
    */
   const onBoardGone = useCallback(
     (boardId: string) => {
       void api
         .getBoardSnapshot(boardId)
         .then(() => refetchBoard(boardId, true))
+        .then(() => {
+          // The board was switched away from (or the provider unmounted)
+          // while the snapshot was in flight: the watch effect owns the
+          // new board; re-watching the old one would steal its stream.
+          if (
+            !aliveRef.current ||
+            routeBoardIdRef.current !== boardId ||
+            activeIdRef.current !== boardId
+          ) {
+            return;
+          }
+          realtimeRef.current?.watch(boardId);
+        })
         .catch((error: unknown) => {
           if (
             error instanceof ApiError &&

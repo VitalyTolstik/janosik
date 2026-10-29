@@ -204,8 +204,23 @@ export function BoardSection() {
       )}
 
       {/* A crash inside the dialog is contained here (TASK-151, C11) and resets
-          for the next card (TASK-156) instead of pinning the fallback. */}
-      <ErrorBoundary compact resetKey={openCardId ?? "closed"}>
+          for the next card (TASK-156) instead of pinning the fallback. The
+          fallback's Close clears the crash: the card closes (and its deep
+          link with it) so the remount starts from a closed dialog, not from
+          the same crash (TASK-156 review). */}
+      <ErrorBoundary
+        compact
+        resetKey={openCardId ?? "closed"}
+        onReset={() => {
+          closedCardRef.current = openCardId;
+          setOpenCardId(null);
+          if (searchParams.get("card")) {
+            const next = new URLSearchParams(searchParams);
+            next.delete("card");
+            setSearchParams(next, { replace: true });
+          }
+        }}
+      >
         <CardDialog
           cardId={openCardId}
           open={openCardId !== null}

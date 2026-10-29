@@ -1515,3 +1515,91 @@ describe("BoardProvider realtime review fixes (U-1…U-9)", () => {
     expect(b2).toContain("since=40");
   });
 });
+
+describe("fatal stream 404 recovery (TASK-156 review)", () => {
+  /**
+   * A fetch wrapper that answers 404 for exactly the armed paths (once
+   * each) and defers everything else to the fake server. Armed only when
+   * the test says so, so the first hydration and stream stay healthy.
+   */
+  function failingPaths(server: FakeServer) {
+    const pending: string[] = [];
+    const fail = (...paths: string[]): void => {
+      pending.push(...paths);
+    };
+    const handle = async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const url = new URL(String(input), "http://api.test");
+      const index = pending.indexOf(url.pathname);
+      if (index !== -1) {
+        pending.splice(index, 1);
+        return new Response(JSON.stringify({ message: "Not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return server.handle(input, init);
+    };
+    return { fail, handle };
+  }
+
+  it("re-attaches the stream when a transient 404 hits a live board", async () => {
+    const server = new FakeServer([seedBoard()]);
+    const flaky = failingPaths(server);
+    vi.stubGlobal("fetch", flaky.handle);
+
+    renderApp();
+    await waitReady();
+    await waitFor(() => expect(server.hasEventStream("b-1")).toBe(true));
+
+    // The stream drops; the reconnect is answered by a proxy 404 — fatal
+    // for the connection, but the snapshot re-read confirms the board is
+    // alive, so the bridge must watch it again instead of going quiet.
+    flaky.fail("/api/v1/boards/b-1/events");
+    server.closeEvents("b-1");
+
+    await waitFor(() => expect(server.hasEventStream("b-1")).toBe(true), {
+      timeout: 5_000,
+    });
+    // The board survived the transient answer…
+    expect(screen.getByTestId("title").textContent).toBe("Board");
+    expect(screen.getByTestId("board-count").textContent).toBe("1");
+    // …and the re-attached stream is live: a pushed roster still lands.
+    server.publishPresence("b-1", [
+      {
+        id: "user-2",
+        displayName: "Boris",
+        avatarColor: null,
+        avatarPath: null,
+      },
+    ]);
+    await waitFor(() =>
+      expect(screen.getByTestId("presence").textContent).toContain("Boris"),
+    );
+  });
+
+  it("still revokes the board when the snapshot confirms it is gone", async () => {
+    const server = new FakeServer([seedBoard()]);
+    const flaky = failingPaths(server);
+    vi.stubGlobal("fetch", flaky.handle);
+
+    renderApp();
+    await waitReady();
+    await waitFor(() => expect(server.hasEventStream("b-1")).toBe(true));
+
+    // The stream 404s and so does the snapshot re-read: the board really
+    // was deleted — it must leave the store, not come back as a zombie.
+    flaky.fail("/api/v1/boards/b-1/events", "/api/v1/boards/b-1");
+    server.closeEvents("b-1");
+
+    await waitFor(
+      () => expect(screen.getByTestId("board-count").textContent).toBe("0"),
+      { timeout: 5_000 },
+    );
+    // No stream is (re-)opened for the revoked board afterwards.
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    expect(server.hasEventStream("b-1")).toBe(false);
+  });
+});

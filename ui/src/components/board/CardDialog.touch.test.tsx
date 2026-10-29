@@ -16,10 +16,16 @@ import { BoardProvider, useBoard } from "@/store/BoardContext";
  */
 
 // The real MDXEditor (Lexical) needs a browser layout engine — stub it, as
-// the other CardDialog test does.
+// the other CardDialog test does. The render count is the probe for the
+// C8 guarantee (TASK-156 item 22): keystrokes in the title must never
+// re-render the (memoized) description editor.
+const { editorRenders } = vi.hoisted(() => ({ editorRenders: { count: 0 } }));
+
 vi.mock("@/components/editor/DescriptionEditor", () => {
-  return import("react").then(({ forwardRef }) => ({
-    // forwardRef: the card dialog passes a ref for paste-embedding.
+  return import("react").then(({ forwardRef, useEffect }) => ({
+    // forwardRef: the card dialog passes a ref for paste-embedding. The
+    // effect counts commits (a render the memo did not block); mutating
+    // the counter during render itself is forbidden by the compiler lint.
     DescriptionEditor: forwardRef(function MockedDescriptionEditor(
       {
         value,
@@ -30,6 +36,9 @@ vi.mock("@/components/editor/DescriptionEditor", () => {
       },
       _ref: unknown,
     ) {
+      useEffect(() => {
+        editorRenders.count += 1;
+      });
       return (
         <textarea
           aria-label="Description"
@@ -223,5 +232,32 @@ describe("CardDialog quiet touch debounce (B-3)", () => {
 
     fireEvent.click(within(dialog).getByTestId("card-title-conflict-keep"));
     expect(screen.getByTestId("title-a").textContent).toBe("Mine");
+  });
+
+  it("typing the title does not re-render the description editor (C8, TASK-156 item 22)", async () => {
+    editorRenders.count = 0;
+    renderHarness();
+    fireEvent.click(screen.getByTestId("open-a"));
+    // The lazy editor chunk resolves over microtasks — flush them (fake
+    // timers only cover setTimeout here, so async queries would hang).
+    await act(async () => {});
+    expect(screen.getByLabelText("Description")).toBeInTheDocument();
+    const mounted = editorRenders.count;
+    expect(mounted).toBe(1);
+
+    // Every keystroke re-renders the dialog (the local title draft), but
+    // the memoized editor must not follow.
+    editTitle("Card A");
+    editTitle("Card A ");
+    editTitle("Card A edited");
+    expect(editorRenders.count).toBe(mounted);
+
+    // The debounced commit rewrites the board (a new card object, a new
+    // dialog render) — the editor still must not re-render.
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(screen.getByTestId("title-a").textContent).toBe("Card A edited");
+    expect(editorRenders.count).toBe(mounted);
   });
 });

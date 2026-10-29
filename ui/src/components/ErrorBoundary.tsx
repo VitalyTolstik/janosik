@@ -40,6 +40,14 @@ interface ErrorBoundaryProps {
    * fallback must not stay pinned for the next card/dialog.
    */
   resetKey?: unknown;
+  /**
+   * The compact fallback's close action (TASK-156 review): the fallback
+   * used to be unclosable — the only way out was reloading the page.
+   * The boundary clears its error and calls this; the owner removes what
+   * crashed (BoardSection closes the card and clears its URL param).
+   * Without it the fallback keeps offering the reload only.
+   */
+  onReset?: () => void;
 }
 
 interface ErrorBoundaryState {
@@ -74,7 +82,20 @@ export class ErrorBoundary extends Component<
 
   render() {
     if (this.state.error !== null) {
-      if (this.props.compact === true) return <CompactFallback />;
+      if (this.props.compact === true) {
+        return (
+          <CompactFallback
+            onReset={
+              this.props.onReset === undefined
+                ? undefined
+                : () => {
+                    this.setState({ error: null, confirmingReset: false });
+                    this.props.onReset?.();
+                  }
+            }
+          />
+        );
+      }
       return (
         <ErrorFallback
           confirmingReset={this.state.confirmingReset}
@@ -89,7 +110,7 @@ export class ErrorBoundary extends Component<
 }
 
 /** Small, self-contained fallback for a section/dialog subtree. */
-function CompactFallback() {
+function CompactFallback({ onReset }: { onReset?: () => void }) {
   return (
     <div
       role="alert"
@@ -99,10 +120,21 @@ function CompactFallback() {
       <p className="text-muted-foreground">
         This section hit an unexpected error.
       </p>
-      <Button onClick={() => window.location.reload()}>
-        <RotateCcw className="h-4 w-4" />
-        Reload
-      </Button>
+      <div className="flex items-center justify-center gap-2">
+        {onReset !== undefined ? (
+          <Button
+            variant="outline"
+            data-testid="error-compact-close"
+            onClick={onReset}
+          >
+            Close
+          </Button>
+        ) : null}
+        <Button onClick={() => window.location.reload()}>
+          <RotateCcw className="h-4 w-4" />
+          Reload
+        </Button>
+      </div>
     </div>
   );
 }

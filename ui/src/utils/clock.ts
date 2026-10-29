@@ -28,6 +28,14 @@ function ensureRunning(): void {
 }
 
 export function subscribeClock(listener: Listener): () => void {
+  if (listeners.size === 0) {
+    // The first subscriber after a long idle must not read a stale
+    // `current` (TASK-156 review): the module may have loaded hours ago
+    // while no badge was on screen, and the first tick is a minute away.
+    // Re-stamp directly — waking the whole listener set (a `bump()`)
+    // would re-render every already-mounted badge for nothing.
+    current = Date.now();
+  }
   listeners.add(listener);
   ensureRunning();
   return () => {

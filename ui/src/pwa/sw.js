@@ -154,11 +154,31 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+/**
+ * May this response be served (and cached) for the request? For
+ * `/assets/*` the answer must be a real build artifact: a half-deployed
+ * server (or a proxy) answers a missing lazy chunk with the SPA's
+ * `index.html` and status 200, and a worker from before TASK-156 may
+ * already have pinned such an answer in a kept cache. Serving — or
+ * caching — HTML as JavaScript crashes the tab with a SyntaxError, so
+ * both the fresh answer and every cached hit must carry a plausible,
+ * non-HTML Content-Type (a missing header is refused too, TASK-156
+ * review). Manifest/icons keep the plain cache-first behaviour.
+ */
+function isUsableAsset(request, response) {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith(BASE + "assets/")) return true;
+  const type = (response.headers?.get?.("Content-Type") ?? "").toLowerCase();
+  return type !== "" && !type.includes("text/html");
+}
+
 /** Static shell asset from this deploy or the kept previous one. */
 function matchShellAsset(request) {
   return caches.open(CACHE_VERSION).then((cache) =>
     cache.match(request).then((cached) => {
-      if (cached) return cached;
+      // A poisoned entry (HTML cached as an asset by a pre-TASK-156
+      // worker) is not a hit: fall through instead of serving it.
+      if (cached && isUsableAsset(request, cached)) return cached;
       // Previous deploy's cache is only a fallback for content-hashed build
       // output (TASK-156): serving an old manifest/icons while online would
       // pin the old icon set forever.
@@ -180,7 +200,12 @@ function matchShellAsset(request) {
               ),
           ),
         )
-        .then((hits) => hits.find((hit) => hit !== undefined) ?? null);
+        .then(
+          (hits) =>
+            hits.find(
+              (hit) => hit !== undefined && isUsableAsset(request, hit),
+            ) ?? null,
+        );
     }),
   );
 }
@@ -227,15 +252,11 @@ self.addEventListener("fetch", (event) => {
         return fetch(request)
           .then((response) => {
             if (!response.ok) return response;
-            // A half-deployed server (or a proxy) may answer a missing lazy
-            // chunk with the SPA's `index.html` and status 200. Caching that
-            // as JavaScript crashed the tab on the next import; refuse it
-            // instead of pinning it (TASK-156).
-            const type = response.headers?.get?.("Content-Type") ?? "";
-            if (
-              url.pathname.startsWith(BASE + "assets/") &&
-              type.toLowerCase().includes("text/html")
-            ) {
+            // A 200 answer that is (or may be) the SPA's HTML must not be
+            // served or cached as JavaScript — refuse it instead of
+            // pinning it (TASK-156): a missing Content-Type is just as
+            // untrustworthy as an explicit text/html one.
+            if (!isUsableAsset(request, response)) {
               return offlineResponse();
             }
             event.waitUntil(cache.put(request, response.clone()));

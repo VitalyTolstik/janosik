@@ -118,3 +118,43 @@ describe("ErrorBoundary", () => {
     expect(localStorage.getItem(BOARDS_KEY)).toBeNull();
   });
 });
+
+describe("compact fallback close (TASK-156 review)", () => {
+  it("closes through onReset and remounts the children", () => {
+    let broken = true;
+    function Fickle() {
+      if (broken) throw new Error("boom");
+      return <div data-testid="recovered">fine</div>;
+    }
+    const onReset = vi.fn(() => {
+      broken = false;
+    });
+    render(
+      <ErrorBoundary compact onReset={onReset}>
+        <Fickle />
+      </ErrorBoundary>,
+    );
+
+    expect(screen.getByTestId("error-compact")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("error-compact-close"));
+
+    expect(onReset).toHaveBeenCalledTimes(1);
+    // The boundary cleared its error and the children rendered again.
+    expect(screen.getByTestId("recovered")).toBeInTheDocument();
+    expect(screen.queryByTestId("error-compact")).toBeNull();
+  });
+
+  it("keeps the reload escape hatch when no onReset is given", () => {
+    render(
+      <ErrorBoundary compact>
+        <Boom />
+      </ErrorBoundary>,
+    );
+
+    expect(screen.getByTestId("error-compact")).toBeInTheDocument();
+    // No close action without an owner-provided reset — only the reload.
+    expect(screen.queryByTestId("error-compact-close")).toBeNull();
+    expect(screen.getByRole("button", { name: "Reload" })).toBeInTheDocument();
+  });
+});

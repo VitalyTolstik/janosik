@@ -224,7 +224,11 @@ describe("service worker", () => {
     caches = createCaches({
       [VERSION]: {},
       "janosik-previous": {
-        [`${ORIGIN}${ENTRY_ASSET}`]: response("old-chunk"),
+        [`${ORIGIN}${ENTRY_ASSET}`]: response(
+          "old-chunk",
+          200,
+          headers({ "Content-Type": "application/javascript" }),
+        ),
       },
     });
     const fetchImpl = vi.fn().mockRejectedValue(new Error("offline"));
@@ -381,7 +385,11 @@ describe("service worker", () => {
   });
 
   it("serves assets cache-first and only caches successful ones", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(response("chunk"));
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(
+        response("chunk", 200, headers({ "Content-Type": "text/javascript" })),
+      );
     const { dispatch } = loadWorker(caches.api, fetchImpl);
 
     await dispatch("fetch", {
@@ -420,6 +428,74 @@ describe("service worker", () => {
     expect(caches.store.get(VERSION)?.has(`${ORIGIN}${ENTRY_ASSET}`)).toBe(
       false,
     );
+  });
+
+  it("refuses a 200 asset answer with no Content-Type (TASK-156 review)", async () => {
+    // A proxy may strip the header on the HTML fallback: a missing type is
+    // just as untrustworthy as an explicit text/html one — neither may be
+    // served or cached as JavaScript.
+    const fetchImpl = vi.fn().mockResolvedValue(response("<html>", 200));
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", asset);
+
+    expect(result).toMatchObject({ status: 503, body: "Offline" });
+    expect(caches.store.get(VERSION)?.has(`${ORIGIN}${ENTRY_ASSET}`)).toBe(
+      false,
+    );
+  });
+
+  it("does not serve an HTML entry a pre-TASK-156 cache poisoned (TASK-156 review)", async () => {
+    caches = createCaches({
+      [VERSION]: {},
+      "janosik-previous": {
+        [`${ORIGIN}${ENTRY_ASSET}`]: response(
+          "<html>",
+          200,
+          headers({ "Content-Type": "text/html" }),
+        ),
+      },
+    });
+    const fetchImpl = vi.fn().mockRejectedValue(new Error("offline"));
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", asset);
+
+    // The poisoned hit is skipped, and with the network gone the honest
+    // answer is offline — never HTML as JavaScript.
+    expect(result).toMatchObject({ status: 503, body: "Offline" });
+  });
+
+  it("falls back to the network when the kept cache holds a poisoned asset", async () => {
+    caches = createCaches({
+      [VERSION]: {},
+      "janosik-previous": {
+        [`${ORIGIN}${ENTRY_ASSET}`]: response(
+          "<html>",
+          200,
+          headers({ "Content-Type": "text/html" }),
+        ),
+      },
+    });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(
+        response(
+          "fresh-chunk",
+          200,
+          headers({ "Content-Type": "text/javascript" }),
+        ),
+      );
+    const { dispatch } = loadWorker(caches.api, fetchImpl);
+
+    const result = await dispatch("fetch", asset);
+
+    expect(result).toMatchObject({ body: "fresh-chunk" });
+    expect(fetchImpl).toHaveBeenCalledWith(asset);
+    // The good answer replaces the poison in the current deploy's cache.
+    expect(
+      caches.store.get(VERSION)?.get(`${ORIGIN}${ENTRY_ASSET}`)?.body,
+    ).toBe("fresh-chunk");
   });
 
   it("falls back to the offline response when an asset fetch rejects", async () => {
