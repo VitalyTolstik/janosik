@@ -11,6 +11,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -24,6 +25,7 @@ import { RenameColumnDialog } from "@/components/board/RenameColumnDialog";
 import { SortableCard } from "@/components/board/SortableCard";
 import { WipLimitDialog } from "@/components/board/WipLimitDialog";
 import { useCardLabels } from "@/hooks/use-card-labels";
+import { CARD_ROW_HEIGHT, useCardWindow } from "@/hooks/use-card-window";
 import { useDoubleTap } from "@/hooks/use-double-tap";
 import type { CardLinkIndex } from "@/utils/links";
 import { cn } from "@/lib/utils";
@@ -175,6 +177,24 @@ function ColumnViewBody({
     [idsKey],
   );
 
+  const count = cards.length;
+  const { scrollRef, onScroll, range, scrollToIndex } = useCardWindow(count);
+  // The inline composer is stateful; keep every card mounted while it is open
+  // so scrolling cannot unmount the editor and drop its draft (TASK-139).
+  const windowed = inlineAdd === null;
+  const rowStart = windowed ? range.start : 0;
+  const rowEnd = windowed ? range.end : count;
+  const cursorIndex = cursorCardId
+    ? cards.findIndex((card) => card.id === cursorCardId)
+    : -1;
+
+  // j/k can walk past the mounted window; scroll the column before the
+  // cursor's card is looked up for `scrollIntoView` (TASK-139).
+  useLayoutEffect(() => {
+    if (!windowed || cursorIndex < 0) return;
+    scrollToIndex(cursorIndex);
+  }, [cursorIndex, scrollToIndex, windowed]);
+
   const {
     attributes,
     listeners,
@@ -191,7 +211,6 @@ function ColumnViewBody({
     id: column.id,
   });
 
-  const count = cards.length;
   const wipLimit = column.wipLimit;
   // The visible count includes hidden-by-filter cards only when no filter
   // overrides `cardIds` — the limit is judged on the real column contents.
@@ -318,7 +337,12 @@ function ColumnViewBody({
           </span>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-2 pb-1">
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          data-testid="column-card-scroll"
+          className="flex-1 overflow-y-auto px-2 pb-1"
+        >
           {count === 0 ? (
             inlineAdd ? (
               // Empty column + opened inline composer: the composer takes
@@ -359,7 +383,16 @@ function ColumnViewBody({
                   render in every mode) — a conditional space-y here would
                   shift the whole column on drag start. */}
               <ul className="py-1">
-                {cards.map((card, i) => {
+                {/* Hidden rows keep their exact geometry as spacer <li>s:
+                    start × (zone 8 + card 92) above, the rest below. */}
+                {rowStart > 0 ? (
+                  <li
+                    aria-hidden
+                    style={{ height: rowStart * CARD_ROW_HEIGHT }}
+                  />
+                ) : null}
+                {cards.slice(rowStart, rowEnd).map((card, offset) => {
+                  const i = rowStart + offset;
                   const cardLabels = resolveLabels(card.labelIds);
                   return (
                     <Fragment key={card.id}>
@@ -411,6 +444,12 @@ function ColumnViewBody({
                     </Fragment>
                   );
                 })}
+                {rowEnd < count ? (
+                  <li
+                    aria-hidden
+                    style={{ height: (count - rowEnd) * CARD_ROW_HEIGHT }}
+                  />
+                ) : null}
                 {count > 0 && inlineAdd?.index !== count && (
                   <AddCardZone
                     index={count}

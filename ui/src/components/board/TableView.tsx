@@ -1,3 +1,4 @@
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   AlignLeft,
   Archive,
@@ -78,6 +79,18 @@ import {
 
 /** Stable empty list, so the label resolver survives a board-less render. */
 const NO_LABELS: Label[] = [];
+
+/**
+ * Row windowing (TASK-139). The full 2400-card table mounted ~49k DOM nodes,
+ * ~510 MB heap and blocked the main thread for ~1.9 s; below the threshold a
+ * table renders whole (tests, small boards) and drops none of the inline
+ * editors into a virtual window.
+ */
+const VIRTUALIZE_TABLE_FROM = 60;
+/** Estimated row height (py-2 + 20px line + border); refined by measurement. */
+const TABLE_ROW_ESTIMATE = 37;
+/** The sticky-less `<thead>` occupies this much of the scroll offset. */
+const TABLE_HEADER_OFFSET = 37;
 
 interface TableViewProps {
   /** Per-column card ids with a filter applied — overrides the stored
@@ -273,6 +286,67 @@ export function TableView({
     return [...rows].sort(cmp);
   }, [board, rows, sort, lang, assigneeNameById]);
 
+  // Row virtualizer (TASK-139): every row is a real <tr>, so the window keeps
+  // the table's own column layout and only mounts the rows around the
+  // viewport. Spacer rows preserve the scroll height; measured rows refine
+  // the estimate for the variable-height label cell.
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: sortedRows.length,
+    getScrollElement: () => tableScrollRef.current,
+    estimateSize: () => TABLE_ROW_ESTIMATE,
+    overscan: 12,
+    getItemKey: (index) => sortedRows[index]?.card.id ?? index,
+    scrollMargin: TABLE_HEADER_OFFSET,
+    initialRect: { width: 0, height: 600 },
+  });
+  const virtualizeRows = sortedRows.length > VIRTUALIZE_TABLE_FROM;
+  const virtualRows = virtualizeRows ? rowVirtualizer.getVirtualItems() : [];
+  const topSpacer = virtualRows.length
+    ? virtualRows[0].start - TABLE_HEADER_OFFSET
+    : 0;
+  const bottomSpacer = virtualRows.length
+    ? rowVirtualizer.getTotalSize() -
+      virtualRows[virtualRows.length - 1].end +
+      TABLE_HEADER_OFFSET
+    : 0;
+
+  const renderRow = (
+    { card, column }: (typeof sortedRows)[number],
+    rowIndex?: number,
+    measureRef?: (node: HTMLTableRowElement | null) => void,
+  ) => (
+    <TableRow
+      key={card.id}
+      card={card}
+      boardId={board?.id}
+      cardLabels={labelsOf(card.labelIds)}
+      columnId={column.id}
+      columnTitle={column.title}
+      columns={board?.columns ?? []}
+      labels={board?.labels ?? NO_LABELS}
+      visibleColumns={visibleColumns}
+      highlight={highlight}
+      readOnly={readOnly}
+      isEditingTitle={editingTitleId === card.id}
+      isArchiveConfirm={archiveConfirmId === card.id}
+      onOpen={onCardClick}
+      onStartTitleEdit={setEditingTitleId}
+      onSubmitTitle={submitTitleEdit}
+      onCancelTitle={cancelTitleEdit}
+      onArchiveConfirm={setArchiveConfirmId}
+      onArchive={archiveCard}
+      onMoveToColumn={moveToColumn}
+      onToggleLabel={toggleCardLabel}
+      onCreateLabel={handleCreateLabel}
+      onRenameLabel={renameLabel}
+      onRecolorLabel={setLabelColor}
+      onDeleteLabel={deleteLabel}
+      rowIndex={rowIndex}
+      measureRef={measureRef}
+    />
+  );
+
   if (!board) return null;
 
   const cycleSort = (key: SortKey) => {
@@ -363,7 +437,11 @@ export function TableView({
         </DropdownMenu>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div
+        ref={tableScrollRef}
+        data-testid="table-scroll"
+        className="flex-1 overflow-y-auto"
+      >
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-border/60">
@@ -455,7 +533,36 @@ export function TableView({
             </tr>
           </thead>
           <tbody>
-            {sortedRows.length === 0 ? (
+            {virtualizeRows ? (
+              <>
+                {topSpacer > 0 ? (
+                  <tr aria-hidden>
+                    <td
+                      colSpan={4 + optionalCount}
+                      style={{ height: topSpacer, padding: 0, border: 0 }}
+                    />
+                  </tr>
+                ) : null}
+                {virtualRows.map((virtualRow) => {
+                  const row = sortedRows[virtualRow.index];
+                  return row
+                    ? renderRow(
+                        row,
+                        virtualRow.index,
+                        rowVirtualizer.measureElement,
+                      )
+                    : null;
+                })}
+                {bottomSpacer > 0 ? (
+                  <tr aria-hidden>
+                    <td
+                      colSpan={4 + optionalCount}
+                      style={{ height: bottomSpacer, padding: 0, border: 0 }}
+                    />
+                  </tr>
+                ) : null}
+              </>
+            ) : sortedRows.length === 0 ? (
               <tr>
                 <td
                   colSpan={4 + optionalCount}
@@ -465,35 +572,7 @@ export function TableView({
                 </td>
               </tr>
             ) : (
-              sortedRows.map(({ card, column }) => (
-                <TableRow
-                  key={card.id}
-                  card={card}
-                  boardId={board?.id}
-                  cardLabels={labelsOf(card.labelIds)}
-                  columnId={column.id}
-                  columnTitle={column.title}
-                  columns={board.columns}
-                  labels={board.labels}
-                  visibleColumns={visibleColumns}
-                  highlight={highlight}
-                  readOnly={readOnly}
-                  isEditingTitle={editingTitleId === card.id}
-                  isArchiveConfirm={archiveConfirmId === card.id}
-                  onOpen={onCardClick}
-                  onStartTitleEdit={setEditingTitleId}
-                  onSubmitTitle={submitTitleEdit}
-                  onCancelTitle={cancelTitleEdit}
-                  onArchiveConfirm={setArchiveConfirmId}
-                  onArchive={archiveCard}
-                  onMoveToColumn={moveToColumn}
-                  onToggleLabel={toggleCardLabel}
-                  onCreateLabel={handleCreateLabel}
-                  onRenameLabel={renameLabel}
-                  onRecolorLabel={setLabelColor}
-                  onDeleteLabel={deleteLabel}
-                />
-              ))
+              sortedRows.map((row) => renderRow(row))
             )}
           </tbody>
         </table>
@@ -537,6 +616,10 @@ interface TableRowProps {
   onRenameLabel: (labelId: string, name: string) => void;
   onRecolorLabel: (labelId: string, color: LabelColor) => void;
   onDeleteLabel: (labelId: string) => void;
+  /** TanStack item index — only set for a windowed row. */
+  rowIndex?: number;
+  /** TanStack row measurement callback — only set for a windowed row. */
+  measureRef?: (node: HTMLTableRowElement | null) => void;
 }
 
 function TableRowBody({
@@ -564,6 +647,8 @@ function TableRowBody({
   onRenameLabel,
   onRecolorLabel,
   onDeleteLabel,
+  rowIndex,
+  measureRef,
 }: TableRowProps) {
   const { t, lang } = useI18n();
   // Attribution (TASK-36): the transient foreign highlight only — the
@@ -585,6 +670,8 @@ function TableRowBody({
       onArchive={onArchive}
     >
       <tr
+        ref={measureRef}
+        data-index={rowIndex}
         onClick={() => onOpen(card.id)}
         onAuxClick={(event) => {
           // Wheel-click (middle button) opens the card in a new tab — the
