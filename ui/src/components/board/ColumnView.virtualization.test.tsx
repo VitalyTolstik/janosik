@@ -77,7 +77,7 @@ describe("column card windowing (TASK-139)", () => {
     render(boardTree());
 
     const titles = screen.getAllByTestId("card-title");
-    expect(titles).toHaveLength(12);
+    expect(titles).toHaveLength(8);
     expect(titles[0]).toHaveTextContent("Card 0");
     expect(titles.length).toBeLessThan(CARDS);
     expect(screen.queryByText("Card 199")).toBeNull();

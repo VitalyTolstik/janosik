@@ -1,3 +1,4 @@
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   addDays,
   addMonths,
@@ -18,6 +19,7 @@ import {
   Plus,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,6 +68,20 @@ import { formatTimeOfDay } from "@/utils/time";
 /** Stable empty list, so the label resolver survives a board-less render. */
 const NO_LABELS: Label[] = [];
 
+/**
+ * Calendar list windowing (TASK-139). The month grid is already bounded (42
+ * cells, 3 chips each), but the unscheduled panel, the day panel and the week
+ * cells each render every card in the bucket — up to 2400 buttons/chips. The
+ * bench measured 2400 unscheduled buttons and 2400 week chips as the two
+ * unbounded cases; below this threshold every item mounts (tests, small
+ * boards).
+ */
+const VIRTUALIZE_CALENDAR_FROM = 50;
+/** One chip/panel row plus its 4px gap. */
+const CALENDAR_ROW_ESTIMATE = 26;
+/** Day-number row above a week cell's chips (cell padding + header). */
+const WEEK_CELL_OFFSET = 30;
+
 interface CalendarViewProps {
   /** Per-column card ids with a filter applied — overrides the stored
    *  order while the filter is active. */
@@ -82,6 +98,133 @@ interface DayEntry {
   columnId: string;
   columnTitle: string;
   labels: Label[];
+}
+
+/**
+ * Week-cell chip list (TASK-139). Week scale is the one calendar bucket
+ * that intentionally lists every card of a day; with 2400 cards on one day
+ * that was 2400 chips. Each cell has its own virtualizer over the grid's
+ * shared scroll element, so only the chips intersecting the grid viewport
+ * (plus overscan) mount.
+ */
+function WeekDayEntries({
+  entries,
+  scrollRef,
+  renderChip,
+}: {
+  entries: DayEntry[];
+  scrollRef: RefObject<HTMLDivElement>;
+  renderChip: (entry: DayEntry, withTime: boolean) => ReactNode;
+}) {
+  const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: entries.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => CALENDAR_ROW_ESTIMATE,
+    overscan: 12,
+    getItemKey: (index) => entries[index]?.card.id ?? index,
+    scrollMargin: WEEK_CELL_OFFSET,
+    initialRect: { width: 0, height: 600 },
+  });
+  if (entries.length <= VIRTUALIZE_CALENDAR_FROM) {
+    return (
+      <div className="flex flex-col gap-1">
+        {entries.map((entry) => renderChip(entry, true))}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+      data-testid="week-day-chips"
+    >
+      {virtualizer.getVirtualItems().map((virtualRow) => {
+        const entry = entries[virtualRow.index];
+        return entry ? (
+          <div
+            key={entry.card.id}
+            ref={virtualizer.measureElement}
+            data-index={virtualRow.index}
+            className="pb-1"
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              transform: `translateY(${virtualRow.start - WEEK_CELL_OFFSET}px)`,
+            }}
+          >
+            {renderChip(entry, true)}
+          </div>
+        ) : null;
+      })}
+    </div>
+  );
+}
+
+/**
+ * Day-panel card list (TASK-139): a single day can hold every card of the
+ * board, so the panel windowed its rows the same way (the panel is opened
+ * on demand, but a 2400-row popover was still a multi-second mount).
+ */
+function DayPanelEntries({
+  entries,
+  empty,
+  renderEntry,
+}: {
+  entries: DayEntry[];
+  empty: ReactNode;
+  renderEntry: (entry: DayEntry) => ReactNode;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: entries.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => CALENDAR_ROW_ESTIMATE,
+    overscan: 12,
+    getItemKey: (index) => entries[index]?.card.id ?? index,
+    initialRect: { width: 0, height: 224 },
+  });
+  const windowed = entries.length > VIRTUALIZE_CALENDAR_FROM;
+
+  return (
+    <div
+      ref={scrollRef}
+      className="mt-2 max-h-56 overflow-y-auto border-t border-border/60 pt-2"
+      data-testid="day-entries-scroll"
+    >
+      {entries.length === 0 ? (
+        empty
+      ) : windowed ? (
+        <div
+          style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const entry = entries[virtualRow.index];
+            return entry ? (
+              <div
+                key={entry.card.id}
+                ref={virtualizer.measureElement}
+                data-index={virtualRow.index}
+                className="pb-1"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                {renderEntry(entry)}
+              </div>
+            ) : null;
+          })}
+        </div>
+      ) : (
+        <div className="space-y-1">{entries.map(renderEntry)}</div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -117,6 +260,8 @@ export function CalendarView({
   const [openDayKey, setOpenDayKey] = useState<string | null>(null);
   /** Day key currently highlighted as a drag target. */
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+  /** Shared scroll container of the month/week grid (week windowing). */
+  const calendarGridRef = useRef<HTMLDivElement>(null);
 
   // Remember the scale next to the view choice (janosik-board-view style).
   useEffect(() => {
@@ -189,6 +334,22 @@ export function CalendarView({
     }
     return list;
   }, [board, filteredCardIds]);
+
+  // Unscheduled panel windowing (TASK-139): the side panel is open by
+  // default and listed every card without a due date.
+  const unscheduledScrollRef = useRef<HTMLDivElement>(null);
+  const unscheduledVirtualizer = useVirtualizer({
+    count: unscheduled.length,
+    getScrollElement: () => unscheduledScrollRef.current,
+    estimateSize: () => CALENDAR_ROW_ESTIMATE,
+    overscan: 12,
+    getItemKey: (index) => unscheduled[index]?.card.id ?? index,
+    initialRect: { width: 0, height: 600 },
+  });
+  const virtualizeUnscheduled = unscheduled.length > VIRTUALIZE_CALENDAR_FROM;
+  const unscheduledRows = virtualizeUnscheduled
+    ? unscheduledVirtualizer.getVirtualItems()
+    : [];
 
   if (!board) return null;
   const isWeek = scale === "week";
@@ -328,6 +489,89 @@ export function CalendarView({
       openCardInNewTab(boardId, cardId);
     }
   };
+
+  /** One unscheduled-panel row, shared by the plain and windowed lists. */
+  const renderUnscheduledCard = ({
+    card,
+    columnTitle,
+  }: {
+    card: Card;
+    columnTitle: string;
+  }) => (
+    <CardContextMenu
+      key={card.id}
+      cardId={card.id}
+      readOnly={readOnly}
+      onOpen={onCardClick}
+    >
+      <button
+        type="button"
+        draggable={!readOnly}
+        onDragStart={
+          readOnly ? undefined : (event) => chipDragStart(event, card.id)
+        }
+        onAuxClick={(event) => chipAuxOpen(event, card.id)}
+        title={`${columnTitle} · ${card.title}`}
+        data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
+        onClick={(event) => {
+          if (shouldLeaveToBrowser(event)) return;
+          onCardClick(card.id);
+        }}
+        className={cn(
+          "block w-full truncate rounded-md border border-border/60 bg-muted/40 px-1.5 py-1 text-left text-[11px] text-foreground/80 transition-colors hover:border-primary/50",
+          !readOnly && "cursor-grab active:cursor-grabbing",
+        )}
+      >
+        {card.title}
+      </button>
+    </CardContextMenu>
+  );
+
+  /** One day-panel row — the full-list escape hatch for capped month cells. */
+  const renderDayPanelEntry = (entry: DayEntry) => (
+    <CardContextMenu
+      key={entry.card.id}
+      cardId={entry.card.id}
+      readOnly={readOnly}
+      onOpen={onCardClick}
+    >
+      <button
+        type="button"
+        draggable={!readOnly}
+        onDragStart={
+          readOnly ? undefined : (event) => chipDragStart(event, entry.card.id)
+        }
+        onAuxClick={(event) => chipAuxOpen(event, entry.card.id)}
+        onClick={(event) => {
+          if (shouldLeaveToBrowser(event)) return;
+          event.stopPropagation();
+          onCardClick(entry.card.id);
+        }}
+        data-card-href={boardId ? cardHref(boardId, entry.card.id) : undefined}
+        title={`${entry.columnTitle} · ${entry.card.title}${entry.labels.length > 0 ? ` · ${entry.labels.map((l) => l.name).join(", ")}` : ""}`}
+        className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] text-foreground/80 transition-colors hover:bg-hover"
+      >
+        {entry.labels.length > 0 ? (
+          <span
+            className="flex w-[3px] shrink-0 self-stretch flex-col overflow-hidden rounded-full"
+            aria-hidden
+          >
+            {entry.labels.map((label) => (
+              <span
+                key={label.id}
+                className={cn("min-h-0.5 flex-1", LABEL_COLOR_DOT[label.color])}
+              />
+            ))}
+          </span>
+        ) : null}
+        <span
+          className={cn("truncate", entry.labels.length === 0 && "pl-[7px]")}
+        >
+          {entry.card.title}
+        </span>
+      </button>
+    </CardContextMenu>
+  );
 
   const renderChip = (
     { card, columnTitle, labels }: DayEntry,
@@ -539,61 +783,64 @@ export function CalendarView({
             </span>
           </button>
           {unscheduledOpen ? (
-            <div
-              className="flex-1 space-y-1 overflow-y-auto p-2"
-              data-testid="unscheduled-list"
-            >
+            <>
               {readOnly ? null : (
-                <UnscheduledComposer
-                  disabled={
-                    board.columns.length === 0 ||
-                    // Quick-add lands in the first column — dead when it
-                    // cannot take another card.
-                    isColumnFull(board.columns[0])
-                  }
-                  onCreate={createUnscheduledCard}
-                />
+                <div className="border-b border-border/60 p-2">
+                  <UnscheduledComposer
+                    disabled={
+                      board.columns.length === 0 ||
+                      // Quick-add lands in the first column — dead when it
+                      // cannot take another card.
+                      isColumnFull(board.columns[0])
+                    }
+                    onCreate={createUnscheduledCard}
+                  />
+                </div>
               )}
-              {unscheduled.length === 0 ? (
-                <p className="px-1 text-[11px] text-muted-foreground/70">
-                  {t("view.calendar.unscheduledEmpty")}
-                </p>
-              ) : (
-                unscheduled.map(({ card, columnTitle }) => (
-                  <CardContextMenu
-                    key={card.id}
-                    cardId={card.id}
-                    readOnly={readOnly}
-                    onOpen={onCardClick}
+              <div
+                ref={unscheduledScrollRef}
+                className="flex-1 overflow-y-auto p-2"
+                data-testid="unscheduled-list"
+              >
+                {unscheduled.length === 0 ? (
+                  <p className="px-1 text-[11px] text-muted-foreground/70">
+                    {t("view.calendar.unscheduledEmpty")}
+                  </p>
+                ) : virtualizeUnscheduled ? (
+                  <div
+                    style={{
+                      height: unscheduledVirtualizer.getTotalSize(),
+                      position: "relative",
+                    }}
                   >
-                    <button
-                      type="button"
-                      draggable={!readOnly}
-                      onDragStart={
-                        readOnly
-                          ? undefined
-                          : (event) => chipDragStart(event, card.id)
-                      }
-                      onAuxClick={(event) => chipAuxOpen(event, card.id)}
-                      title={`${columnTitle} · ${card.title}`}
-                      data-card-href={
-                        boardId ? cardHref(boardId, card.id) : undefined
-                      }
-                      onClick={(event) => {
-                        if (shouldLeaveToBrowser(event)) return;
-                        onCardClick(card.id);
-                      }}
-                      className={cn(
-                        "block w-full truncate rounded-md border border-border/60 bg-muted/40 px-1.5 py-1 text-left text-[11px] text-foreground/80 transition-colors hover:border-primary/50",
-                        !readOnly && "cursor-grab active:cursor-grabbing",
-                      )}
-                    >
-                      {card.title}
-                    </button>
-                  </CardContextMenu>
-                ))
-              )}
-            </div>
+                    {unscheduledRows.map((virtualRow) => {
+                      const item = unscheduled[virtualRow.index];
+                      return item ? (
+                        <div
+                          key={item.card.id}
+                          ref={unscheduledVirtualizer.measureElement}
+                          data-index={virtualRow.index}
+                          className="pb-1"
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            transform: `translateY(${virtualRow.start}px)`,
+                          }}
+                        >
+                          {renderUnscheduledCard(item)}
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {unscheduled.map(renderUnscheduledCard)}
+                  </div>
+                )}
+              </div>
+            </>
           ) : null}
         </aside>
 
@@ -609,6 +856,7 @@ export function CalendarView({
             ))}
           </div>
           <div
+            ref={calendarGridRef}
             className={cn(
               "grid grid-cols-7 overflow-y-auto",
               isWeek && "flex-1",
@@ -696,9 +944,17 @@ export function CalendarView({
                         </button>
                       ) : null}
                     </div>
-                    <div className="flex flex-col gap-1">
-                      {visible.map((entry) => renderChip(entry, isWeek))}
-                    </div>
+                    {isWeek ? (
+                      <WeekDayEntries
+                        entries={entries}
+                        scrollRef={calendarGridRef}
+                        renderChip={renderChip}
+                      />
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        {visible.map((entry) => renderChip(entry, isWeek))}
+                      </div>
+                    )}
                     {/* Fade instead of an open end — a fixed cell height
                           keeps the grid from growing with content. */}
                     {entries.length > MAX_CHIPS_PER_CELL && !isWeek ? (
@@ -731,73 +987,15 @@ export function CalendarView({
                         onCancel={() => setOpenDayKey(null)}
                       />
                     )}
-                    <div className="mt-2 max-h-56 space-y-1 overflow-y-auto border-t border-border/60 pt-2">
-                      {entries.length === 0 ? (
+                    <DayPanelEntries
+                      entries={entries}
+                      empty={
                         <p className="px-1 text-[11px] text-muted-foreground/70">
                           {t("view.calendar.dayEmpty")}
                         </p>
-                      ) : (
-                        entries.map((entry) => (
-                          <CardContextMenu
-                            key={entry.card.id}
-                            cardId={entry.card.id}
-                            readOnly={readOnly}
-                            onOpen={onCardClick}
-                          >
-                            <button
-                              type="button"
-                              draggable={!readOnly}
-                              onDragStart={
-                                readOnly
-                                  ? undefined
-                                  : (event) =>
-                                      chipDragStart(event, entry.card.id)
-                              }
-                              onAuxClick={(event) =>
-                                chipAuxOpen(event, entry.card.id)
-                              }
-                              onClick={(event) => {
-                                if (shouldLeaveToBrowser(event)) return;
-                                event.stopPropagation();
-                                onCardClick(entry.card.id);
-                              }}
-                              data-card-href={
-                                boardId
-                                  ? cardHref(boardId, entry.card.id)
-                                  : undefined
-                              }
-                              title={`${entry.columnTitle} · ${entry.card.title}${entry.labels.length > 0 ? ` · ${entry.labels.map((l) => l.name).join(", ")}` : ""}`}
-                              className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] text-foreground/80 transition-colors hover:bg-hover"
-                            >
-                              {entry.labels.length > 0 ? (
-                                <span
-                                  className="flex w-[3px] shrink-0 self-stretch flex-col overflow-hidden rounded-full"
-                                  aria-hidden
-                                >
-                                  {entry.labels.map((label) => (
-                                    <span
-                                      key={label.id}
-                                      className={cn(
-                                        "min-h-0.5 flex-1",
-                                        LABEL_COLOR_DOT[label.color],
-                                      )}
-                                    />
-                                  ))}
-                                </span>
-                              ) : null}
-                              <span
-                                className={cn(
-                                  "truncate",
-                                  entry.labels.length === 0 && "pl-[7px]",
-                                )}
-                              >
-                                {entry.card.title}
-                              </span>
-                            </button>
-                          </CardContextMenu>
-                        ))
-                      )}
-                    </div>
+                      }
+                      renderEntry={renderDayPanelEntry}
+                    />
                   </PopoverContent>
                 </Popover>
               );

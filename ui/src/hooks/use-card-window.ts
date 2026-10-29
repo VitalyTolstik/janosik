@@ -15,14 +15,16 @@ import {
 export const CARD_ROW_HEIGHT = 100;
 
 /** Rows kept mounted above and below the viewport to absorb fast scrolling. */
-const OVERSCAN = 6;
+const OVERSCAN = 4;
 
 /**
  * Height used before the column has been laid out (and in jsdom, where every
- * element reports a zero height). A little larger than a typical laptop
- * column, so the first paint never shows a blank card list.
+ * element reports a zero height). Deliberately small: the first paint renders
+ * ~8 rows per column, then the layout effect measures the real height and
+ * fills the rest — with 12 columns every extra initial row is 12 more cards
+ * on the boot path.
  */
-const INITIAL_VIEWPORT_HEIGHT = 560;
+const INITIAL_VIEWPORT_HEIGHT = 360;
 
 /** The `ul`'s 4px top padding, i.e. where the first AddCardZone starts. */
 const LIST_PADDING_TOP = 4;
