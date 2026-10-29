@@ -46,6 +46,21 @@ describe("AddCardZone", () => {
     expect(onInsert).toHaveBeenCalledWith(3);
   });
 
+  it("keeps the hover ghost out of the tab order (TASK-152, C16)", () => {
+    render(
+      <I18nProvider>
+        <ul>
+          <AddCardZone index={2} onInsert={vi.fn()} />
+        </ul>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByTestId("card-insert-2")).toHaveAttribute(
+      "tabindex",
+      "-1",
+    );
+  });
+
   it("renders an inert spacer when insertion is not allowed", () => {
     render(
       <I18nProvider>

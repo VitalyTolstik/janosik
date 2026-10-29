@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -68,6 +68,21 @@ describe("FilterBar", () => {
       ...EMPTY_FILTER,
       due: "overdue",
     });
+  });
+
+  it("moves through a radio facet with arrow keys (TASK-152, C17)", async () => {
+    const onChange = renderBar();
+    await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
+
+    const checked = screen.getByRole("radio", { name: "Any due date" });
+    checked.focus();
+    fireEvent.keyDown(checked, { key: "ArrowDown" });
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...EMPTY_FILTER,
+      due: "overdue",
+    });
+    expect(screen.getByRole("radio", { name: "Overdue" })).toHaveFocus();
   });
 
   it("toggles a label checkbox from the popover", async () => {

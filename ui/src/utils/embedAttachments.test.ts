@@ -276,6 +276,39 @@ describe("fullscreen viewer (lightbox)", () => {
       document.querySelectorAll('[data-testid="attachment-lightbox"]'),
     ).toHaveLength(1);
   });
+
+  it("traps focus, describes the image and restores the opener (TASK-152)", () => {
+    const opener = document.createElement("button");
+    opener.type = "button";
+    document.body.appendChild(opener);
+    opener.focus();
+    const revoke = vi.fn();
+    (
+      URL as unknown as { revokeObjectURL: (url: string) => void }
+    ).revokeObjectURL = revoke;
+
+    openImageLightbox("blob:focus-probe", {
+      alt: "Screenshot",
+      revokeOnClose: true,
+    });
+
+    const overlay = document.getElementById("attachment-lightbox")!;
+    const closeButton = overlay.querySelector<HTMLButtonElement>(
+      '[data-testid="attachment-lightbox-close"]',
+    )!;
+    expect(overlay.querySelector("img")?.alt).toBe("Screenshot");
+    expect(closeButton).toHaveFocus();
+
+    // Tab cannot escape the modal: focus stays on the only control.
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
+    expect(closeButton).toHaveFocus();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(document.getElementById("attachment-lightbox")).toBeNull();
+    expect(revoke).toHaveBeenCalledWith("blob:focus-probe");
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
 });
 
 describe("lightbox labels follow the UI language", () => {

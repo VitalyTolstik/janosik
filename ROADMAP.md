@@ -1623,7 +1623,7 @@ TASK-36 и TASK-37.)*
 | 80 | TASK-149 `admin-consistency` ✅ | `main` | §7.14: admin-мутации через команды, `attachmentCount`, импорт батч/атомарность | **Выполнено:** archive/delete/restore карточек и колонок (включая bulk) идут через `CommandsService.apply` от owner — версия, SSE и каскад; `DELETE_CARD`/`DELETE_COLUMN` больше не рвут `CardLabel` (restore пересобирает `labelIds`/чек-листы); бейдж вложений пересчитывается на delete/restore/erase и на revive карточки; импорт — одна транзакция с явным `timeout`, `createMany`-батчи; тесты. См. §7.14 |
 | 81 | TASK-150 `ui-render-perf` ✅ | `main` | §7.14: per-key members, drag strategy, `linkSignature`, CardDialog, focus-diff, анимации | **Выполнено:** `MembersStore` — per-user/per-board подписки (directory reload не ререндерит карточки); dnd `MeasuringStrategy.WhileDragging`/`BeforeDragging`; `linkSignature` кэшируется по снапшоту (WeakMap); заголовок карточки — локальный черновик с тихим коммитом по blur/close (ввод не ререндерит MDXEditor); focus-diff по `updatedAt`/`archivedAt` вместо JSON всей доски; входная анимация только у новых карточек + `prefers-reduced-motion`; тесты изоляции рендера. См. §7.14 |
 | 82 | TASK-151 `pwa-stream-recovery` ✅ | `main` | §7.14: SW не убивает старый деплой, SSE-watchdog, 404 доски, `APP_BASE`, restore | **Выполнено:** SW ждёт `SKIP_WAITING` (баннер «новая версия» + reload) и хранит прошлый кэш как fallback для старых lazy-chunk; watchdog 90 с без кадров → abort+reconnect; 404 стрима → доска убирается; `cardHref` через `APP_BASE` (`/app/…`); restore бэкапа в server-режиме отключён; compact error boundary на `CardDialog`; тесты. См. §7.14 |
-| 83 | TASK-152 `ui-a11y-polish` | `feature/TASK-152-ui-a11y-polish` | §7.14: tab-order зон, drag-handle/AT, lightbox focus, due-тик, локали | keyboard-only; ru/en. См. §7.14 |
+| 83 | TASK-152 `ui-a11y-polish` ✅ | `main` | §7.14: tab-order зон, drag-handle/AT, lightbox focus, due-тик, локали | **Выполнено:** зоны вставки `tabIndex=-1` (из tab-порядка ушли ~2400 стопов); карточка — `role="group"` вместо вложенной `button`, локализованные dnd-анонсы и инструкция; listbox времени и radiogroup фильтров ходят стрелками (roving tabindex); lightbox — focus-trap, `alt`, revoke blob, возврат фокуса; бейдж срока пересчитывается по таймеру/фокусу; `common.close` в диалогах; закрытие карточки удаляет только `card` из URL; тесты. См. §7.14 |
 | 84 | TASK-153 `config-and-observability` | `feature/TASK-153-config-and-observability` | §7.14: `connection_limit`/Postgres, кэш OpsSettings, low-баги, slow-query/requestId | пул и логи под контролем. См. §7.14 |
 | 85 | TASK-154 `mcp-perf-bench` | `feature/TASK-154-mcp-perf-bench` | §7.15: бенч «API напрямую vs MCP», профиль MCP-сервера, точечные оптимизации (keep-alive, меньше read-modify-write, ленивый рендер, батч-тулы) | воспроизводимые цифры латентности/запросов/CPU + вердикт и улучшения без регрессий. См. §7.15 |
 | 86 | TASK-155 `upload-hardening` | `feature/TASK-155-upload-hardening` | §7.14: multer `diskStorage` → temp-файл → sniff первых байт → `rename` в место; `rm` в `finally`; sweep `.tmp-*` | RSS не растёт на N×25 MB; ни одного `.tmp-*` после ошибок; MIME/шара/транскод не сломаны; e2e зелёные. См. §7.14 |
@@ -3222,6 +3222,21 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 - **DoD:** keyboard-only проходит доску, нет невидимого фокуса; lightbox
   запирает фокус; «просрочено» обновляется; ru/en.
 - **Зависимости:** нет.
+- **Выполнено (2026-10-29):** C16 — кнопка-призрак зоны вставки получила
+  `tabIndex={-1}`: полная доска больше не добавляет ~2400 остановок Tab.
+  C17 — dnd-kit-обёртка карточки стала `role="group"` (вместо вложенной
+  `button`; `aria-roledescription="sortable"` и клавиши сохранены), а
+  `DndContext accessibility` отдаёт локализованные анонсы start/over/end/cancel
+  и инструкцию; listbox времени — roving tabindex + стрелки/Home/End;
+  radiogroup фильтров (due/created/label-match) — стрелки с перемещением фокуса.
+  C18 — lightbox: focus-trap на кнопке закрытия, осмысленный `alt`, возврат
+  фокуса открывшему, revoke blob-URL, созданного только для просмотра.
+  C19 — `DueBadge` переклассифицируется раз в минуту и на `focus`/
+  `visibilitychange`. Локали — `<span class="sr-only">Close</span>` больше не
+  хардкод: `common.close` (en/ru). Закрытие карточки удаляет только `card` из
+  query, прочие параметры сохраняются. Тесты: tab-order зоны, стрелки фильтра,
+  тик срока, focus-trap/revoke/alt. ui 882 зелёные (один известный флейк
+  CardComments под нагрузкой).
 
 #### TASK-153 — `config-and-observability` · Конфиг БД, guard-кэш, логи
 

@@ -151,6 +151,30 @@ export function DndBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [linkSig],
   );
+  // Localized screen-reader copy for drag & drop (TASK-152, C17): dnd-kit's
+  // built-in announcements were English even in the Russian UI.
+  const accessibility = useMemo(() => {
+    const label = (type: unknown) =>
+      type === "column" ? t("a11y.item.column") : t("a11y.item.card");
+    return {
+      screenReaderInstructions: { draggable: t("a11y.instructions") },
+      announcements: {
+        onDragStart: ({
+          active,
+        }: {
+          active: { data: { current?: unknown } };
+        }) =>
+          t("a11y.dragStart", {
+            item: label(
+              (active.data.current as { type?: unknown } | null)?.type,
+            ),
+          }),
+        onDragOver: () => t("a11y.dragOver"),
+        onDragEnd: () => t("a11y.dragEnd"),
+        onDragCancel: () => t("a11y.dragCancel"),
+      },
+    };
+  }, [t]);
 
   const [draft, setDraftState] = useState<Draft | null>(null);
   // Ref mirror so event handlers always read the latest draft (state updates
@@ -632,6 +656,7 @@ export function DndBoard({
       sensors={isFiltering || readOnly ? NO_SENSORS : sensors}
       collisionDetection={collisionDetectionStrategy}
       measuring={MEASURING}
+      accessibility={accessibility}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}

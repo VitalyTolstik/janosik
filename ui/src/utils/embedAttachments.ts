@@ -178,10 +178,19 @@ export async function attachmentPosterPreviewHandler(
 /**
  * Fullscreen viewer for embedded images (Jira's lightbox): an imperative
  * overlay above every dialog — a single click anywhere, the ✕ button or
- * Escape closes it.
+ * Escape closes it. Focus is trapped on the close button and restored to the
+ * opener; a blob URL minted only for the viewer is revoked on close
+ * (TASK-152, C18).
  */
-export function openImageLightbox(src: string): void {
+export function openImageLightbox(
+  src: string,
+  options: { revokeOnClose?: boolean; alt?: string } = {},
+): void {
   if (document.getElementById("attachment-lightbox")) return;
+  const previouslyFocused =
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
   const overlay = document.createElement("div");
   overlay.id = "attachment-lightbox";
   overlay.setAttribute("data-testid", "attachment-lightbox");
@@ -204,7 +213,7 @@ export function openImageLightbox(src: string): void {
     "cursor:zoom-out;pointer-events:auto";
   const img = document.createElement("img");
   img.src = src;
-  img.alt = "";
+  img.alt = options.alt ?? defaultI18n.t("card.attachments.previewLabel");
   img.style.cssText =
     "max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;" +
     "box-shadow:var(--overlay-shadow, 0 12px 48px rgb(0 0 0 / 0.55))";
@@ -213,14 +222,26 @@ export function openImageLightbox(src: string): void {
   const close = () => {
     overlay.remove();
     document.removeEventListener("keydown", onKey, true);
+    if (options.revokeOnClose === true && src.startsWith("blob:")) {
+      URL.revokeObjectURL(src);
+      blobUrlOwners.delete(src);
+    }
+    previouslyFocused?.focus();
   };
-  // Capture phase + stopPropagation: Escape and pointerdown must never
+  // Capture phase + stopPropagation: Escape, Tab and pointerdown must never
   // reach the Radix layers of the dialog underneath — they would dismiss
-  // the card dialog instead of (or in addition to) the viewer.
+  // the card dialog instead of (or in addition to) the viewer. Tab is
+  // pinned to the close button (the only focusable control) so focus cannot
+  // escape the modal.
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
       event.stopPropagation();
       close();
+      return;
+    }
+    if (event.key === "Tab") {
+      event.preventDefault();
+      closeButton.focus();
     }
   };
   overlay.addEventListener("pointerdown", (event) => {
@@ -255,25 +276,34 @@ export function openImageLightbox(src: string): void {
     close();
   });
   overlay.appendChild(closeButton);
+  closeButton.focus();
 }
 
 /** Resolve an embedded image's blob URL (cached when already previewed). */
-function embeddedImageSrc(img: HTMLImageElement): string | Promise<string> {
+function embeddedImageSrc(img: HTMLImageElement): {
+  src: string | Promise<string>;
+  /** True when this call minted the URL (the viewer must revoke it). */
+  owned: boolean;
+} {
   const src = img.getAttribute("src") ?? "";
   if (src.startsWith("blob:")) {
-    return blobUrlOwners.has(src) ? src : "";
+    return { src: blobUrlOwners.has(src) ? src : "", owned: false };
   }
   const id = attachmentIdFromUrl(src);
-  if (!id) return "";
-  // Not resolved yet (or resolution failed): fetch a fresh blob URL.
-  return api
-    .fetchAttachment(id)
-    .then((blob) => {
-      const url = URL.createObjectURL(blob);
-      blobUrlOwners.set(url, id);
-      return url;
-    })
-    .catch(() => src);
+  if (!id) return { src: "", owned: false };
+  // Not resolved yet (or resolution failed): fetch a fresh blob URL. This
+  // one belongs to the viewer alone, so closing it revokes the blob.
+  return {
+    src: api
+      .fetchAttachment(id)
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        blobUrlOwners.set(url, id);
+        return url;
+      })
+      .catch(() => src),
+    owned: true,
+  };
 }
 
 /**
@@ -287,12 +317,17 @@ export function handleAttachmentImageOpen(
   const target = event.target as HTMLElement | null;
   const img = target?.closest?.("img");
   if (!img) return;
-  const src = embeddedImageSrc(img);
-  if (src === "") return;
+  const resolved = embeddedImageSrc(img);
+  if (resolved.src === "") return;
   event.preventDefault();
   event.stopPropagation();
-  void Promise.resolve(src)
-    .then((url) => openImageLightbox(url))
+  void Promise.resolve(resolved.src)
+    .then((url) =>
+      openImageLightbox(url, {
+        revokeOnClose: resolved.owned,
+        alt: img.alt || undefined,
+      }),
+    )
     .catch(() => undefined);
 }
 

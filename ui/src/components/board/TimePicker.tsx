@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import { Clock } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -76,11 +76,30 @@ function Column({
     return () => document.removeEventListener("wheel", onWheel);
   }, []);
 
+  // Arrow/Home/End navigation (TASK-152, C17): the listbox is one tab stop
+  // (roving tabindex on the selected option), arrows move the selection.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    let index = options.findIndex((option) => option.value === selected);
+    if (event.key === "ArrowDown") index += 1;
+    else if (event.key === "ArrowUp") index -= 1;
+    else if (event.key === "Home") index = 0;
+    else if (event.key === "End") index = options.length - 1;
+    else return;
+    event.preventDefault();
+    const next = options[(index + options.length) % options.length];
+    if (!next) return;
+    onSelect(next.value);
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-value="${next.value}"]`)
+      ?.focus();
+  };
+
   return (
     <div
       ref={listRef}
       role="listbox"
       aria-label={label}
+      onKeyDown={onKeyDown}
       className="snap-y overflow-y-auto rounded-md border border-border/60 bg-muted/30 p-1"
       style={{ height: ROWS_VISIBLE * ROW_H_PX }}
     >
@@ -90,6 +109,8 @@ function Column({
           type="button"
           role="option"
           aria-selected={value === selected}
+          // Roving tabindex: only the selected option is Tab-reachable.
+          tabIndex={value === selected ? 0 : -1}
           data-value={value}
           onClick={() => onSelect(value)}
           className={cn(

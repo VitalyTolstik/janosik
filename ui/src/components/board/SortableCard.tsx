@@ -80,6 +80,11 @@ function SortableCardView({
       }}
       {...attributes}
       {...listeners}
+      // dnd-kit marks the wrapper `role="button"`; the card face already is
+      // a button and carries its own controls, so nested buttons were
+      // announced (TASK-152, C17). Keep focusability/keys and the
+      // `aria-roledescription="sortable"` token, expose a group instead.
+      role="group"
       onKeyDown={(event) => {
         // dnd-kit's keyboard activator (Space) first; Enter on the focused
         // card itself opens it — never a drag (a11y). Keys typed into the

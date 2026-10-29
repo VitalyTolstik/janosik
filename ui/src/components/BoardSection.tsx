@@ -215,9 +215,12 @@ export function BoardSection() {
               // state update and the param cleanup cannot reopen the dialog.
               closedCardRef.current = openCardId;
               setOpenCardId(null);
-              // Drop the deep-link param so a refresh doesn't reopen the card.
+              // Drop only the deep-link param so a refresh doesn't reopen the card —
+              // other view/query params (filter, view) must survive (TASK-152).
               if (searchParams.get("card")) {
-                setSearchParams({}, { replace: true });
+                const next = new URLSearchParams(searchParams);
+                next.delete("card");
+                setSearchParams(next, { replace: true });
               }
             }
           }}

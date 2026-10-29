@@ -10,7 +10,12 @@ import {
   SlidersHorizontal,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar-lazy";
@@ -124,6 +129,42 @@ interface OptionRowProps {
   selected: boolean;
   onSelect: () => void;
   children: React.ReactNode;
+}
+
+/**
+ * Roving arrow navigation for a single-choice facet (TASK-152, C17): the
+ * radiogroup is one tab stop and arrows move the checked option.
+ */
+function handleRadioGroupKeys(event: ReactKeyboardEvent<HTMLDivElement>): void {
+  const keys = [
+    "ArrowDown",
+    "ArrowRight",
+    "ArrowUp",
+    "ArrowLeft",
+    "Home",
+    "End",
+  ];
+  if (!keys.includes(event.key)) return;
+  const radios = [
+    ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+      '[role="radio"]',
+    ),
+  ];
+  if (radios.length === 0) return;
+  const index = radios.indexOf(document.activeElement as HTMLButtonElement);
+  const from = index === -1 ? 0 : index;
+  const delta =
+    event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
+  const next =
+    event.key === "Home"
+      ? radios[0]
+      : event.key === "End"
+        ? radios[radios.length - 1]
+        : radios[(from + delta + radios.length) % radios.length];
+  if (!next) return;
+  event.preventDefault();
+  next.focus();
+  next.click();
 }
 
 /** Radio-style row (single-choice facets: due status, creation window). */
@@ -317,7 +358,11 @@ export function FilterBar({
           // the trigger and scroll the single surface instead of clipping.
           className="max-h-[var(--radix-popover-content-available-height)] w-72 overflow-y-auto overscroll-contain p-0"
         >
-          <div role="radiogroup" aria-label={t("filter.dueAria")}>
+          <div
+            role="radiogroup"
+            aria-label={t("filter.dueAria")}
+            onKeyDown={handleRadioGroupKeys}
+          >
             <FilterSection title={t("filter.due")}>
               {(["any", "overdue", "soon", "none"] as const).map((value) => (
                 <OptionRow
@@ -339,6 +384,7 @@ export function FilterBar({
               <div
                 role="radiogroup"
                 aria-label={t("filter.matchAria")}
+                onKeyDown={handleRadioGroupKeys}
                 className="flex rounded-md border border-border p-0.5"
               >
                 {(["any", "all"] as const).map((mode) => (
@@ -478,7 +524,11 @@ export function FilterBar({
             </CheckRow>
           </FilterSection>
           <FilterSection title={t("filter.created")}>
-            <div role="radiogroup" aria-label={t("filter.createdAria")}>
+            <div
+              role="radiogroup"
+              aria-label={t("filter.createdAria")}
+              onKeyDown={handleRadioGroupKeys}
+            >
               {(["any", "today", "7d", "30d"] as const).map((value) => (
                 <OptionRow
                   key={value}

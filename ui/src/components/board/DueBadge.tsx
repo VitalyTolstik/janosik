@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { CalendarClock } from "lucide-react";
 
 import {
@@ -37,7 +38,25 @@ interface DueBadgeProps {
 export function DueBadge({ dueDate }: DueBadgeProps) {
   const { t, lang } = useI18n();
   const hour12 = useHour12();
-  const status = dueStatus(dueDate);
+  // TASK-152 (C19): the classification is clock-dependent — a card becomes
+  // overdue without any board change. Tick once a minute and whenever the
+  // tab regains focus/visibility, so the badge cannot stay stale.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setTick((value) => value + 1);
+    const interval = window.setInterval(bump, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") bump();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", bump);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", bump);
+    };
+  }, []);
+  const status = dueStatus(dueDate, Date.now());
   const due = new Date(dueDate);
   const dueTime = formatTime(formatTimeOfDay(due), lang, hour12);
 

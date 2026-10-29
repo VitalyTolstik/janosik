@@ -50,6 +50,10 @@ function AddCardZoneBody({
         type="button"
         data-testid={`card-insert-${index}`}
         aria-label={t("composer.add")}
+        // Hover-only ghost (TASK-152, C16): keeping it in the tab order made
+        // every gap (~2400 on a full board) a keyboard stop. Pointer users
+        // still reach it; keyboard users create cards via the column menu.
+        tabIndex={-1}
         onClick={onInsert ? () => onInsert(index) : undefined}
         className={cn(
           "pointer-events-none flex h-8 w-full items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground opacity-0 transition-opacity duration-200 group-hover/zone:pointer-events-auto group-hover/zone:delay-150 group-hover/zone:opacity-100 hover:bg-hover/60 hover:text-foreground",
