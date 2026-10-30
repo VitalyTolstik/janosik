@@ -26,6 +26,7 @@ import {
   cardIdSchema,
   columnIdSchema,
   coverSchema,
+  detailSchema,
   idSchema,
   prioritySchema,
   responseFormatSchema,
@@ -95,6 +96,17 @@ async function applyCardFields(
       quiet,
     );
   }
+}
+
+/** Characters of a card description shown by `search_cards` in full mode. */
+const DESCRIPTION_SNIPPET = 280;
+
+/** A short prefix of a description, or null when the card has none. */
+function descriptionSnippet(description: string | undefined): string | null {
+  if (!description) return null;
+  return description.length > DESCRIPTION_SNIPPET
+    ? `${description.slice(0, DESCRIPTION_SNIPPET)}…`
+    : description;
 }
 
 /** The "not on this board" answer every card lookup shares. */
@@ -734,6 +746,13 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .boolean()
           .default(false)
           .describe("Include archived cards."),
+        detail: detailSchema
+          .default("summary")
+          .describe(
+            "Read projection: 'summary' (default) returns each card's " +
+              "identity and badges only; 'full' adds a description snippet " +
+              "(a size hint) so a 64k document does not bloat the results.",
+          ),
         limit: z
           .number()
           .int()
@@ -795,6 +814,12 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         assigneeId: card.assigneeId ?? null,
         dueDate: card.dueDate ?? null,
         archived: card.archivedAt !== undefined,
+        ...(args.detail === "full"
+          ? {
+              description: descriptionSnippet(card.description),
+              descriptionChars: card.description?.length ?? 0,
+            }
+          : {}),
       }));
       const markdown =
         results.length === 0
