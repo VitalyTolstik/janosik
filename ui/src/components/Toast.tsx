@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -52,6 +53,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextIdRef = useRef(0);
+  // Pending auto-dismiss timers. Tracked so unmount can clear them — an
+  // orphaned timer fires after the environment is torn down and `dismiss`
+  // then touches a gone `window` (`ReferenceError: window is not defined`).
+  const timersRef = useRef(new Set<number>());
 
   const dismiss = useCallback((id: number) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
@@ -61,10 +66,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (message: string, variant: ToastVariant) => {
       const id = ++nextIdRef.current;
       setToasts((prev) => [...prev, { id, message, variant }]);
-      window.setTimeout(() => dismiss(id), DISMISS_AFTER_MS);
+      const timer = window.setTimeout(() => {
+        timersRef.current.delete(timer);
+        dismiss(id);
+      }, DISMISS_AFTER_MS);
+      timersRef.current.add(timer);
     },
     [dismiss],
   );
+
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
 
   const api = useMemo<ToastApi>(
     () => ({

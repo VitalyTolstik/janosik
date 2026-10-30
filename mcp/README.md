@@ -81,7 +81,8 @@ truncated into JSON that does not parse.
 **Cards** — `janosik_create_card`, `janosik_get_card`, `janosik_update_card`,
 `janosik_move_card`, `janosik_duplicate_card`, `janosik_set_card_priority`,
 `janosik_set_card_assignee`, `janosik_set_card_due_date`,
-`janosik_set_card_cover`, `janosik_archive_card`, `janosik_unarchive_card`,
+`janosik_set_card_cover`, `janosik_claim_card`, `janosik_release_card`,
+`janosik_archive_card`, `janosik_unarchive_card`,
 `janosik_delete_card`, `janosik_search_cards`
 
 **Labels** — `janosik_list_labels`, `janosik_create_label`,

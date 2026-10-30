@@ -55,6 +55,13 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   criteria` / `Out of scope` / `Verify`), a `Definition of Done` checklist,
   typed comments (`[status]` / `[question]` / `[blocker]` / `[evidence]` /
   `[handoff]`) and reserved `agent:*` state labels.
+- **Card claims with a lease (TASK-157).** A `CLAIM_CARD` command takes a
+  temporary work lease on a card (`claimedBy` + `leaseUntil`), so a swarm of
+  agents can coordinate without two of them grabbing the same card: the server
+  refuses a claim while another member holds a live lease, and the lease
+  expires on its own, so a dead agent never leaves a card stuck. Two new MCP
+  tools (`janosik_claim_card`, `janosik_release_card`) and a history entry for
+  claims and releases.
 
 ### Security
 

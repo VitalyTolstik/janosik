@@ -3042,3 +3042,54 @@ describe("boardReducer — commands cannot corrupt the board (review S-*)", () =
     });
   });
 });
+
+describe("boardReducer — card claim (TASK-157)", () => {
+  const AT = CLOCK + 10_000;
+
+  it("claims a card with a lease and records the activity", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "CLAIM_CARD",
+      cardId: "card-1",
+      claimedBy: "agent-1",
+      leaseUntil: AT + 900_000,
+      at: AT,
+    });
+    const card = board.cards["card-1"];
+    expect(card.claimedBy).toBe("agent-1");
+    expect(card.leaseUntil).toBe(AT + 900_000);
+    expect(card.activity?.at(-1)?.type).toBe("claimed");
+  });
+
+  it("releases a claim, dropping both fields", () => {
+    const claimed = reduceBoard(freshBoard(), {
+      type: "CLAIM_CARD",
+      cardId: "card-1",
+      claimedBy: "agent-1",
+      leaseUntil: AT + 900_000,
+      at: AT,
+    });
+    const released = reduceBoard(claimed, {
+      type: "CLAIM_CARD",
+      cardId: "card-1",
+      claimedBy: null,
+      leaseUntil: null,
+      at: AT + 1000,
+    });
+    const card = released.cards["card-1"];
+    expect(card.claimedBy).toBeUndefined();
+    expect(card.leaseUntil).toBeUndefined();
+    expect(card.activity?.at(-1)?.type).toBe("claim-released");
+  });
+
+  it("is a no-op when the claim does not change", () => {
+    const board = freshBoard();
+    const same = reduceState([board], {
+      type: "CLAIM_CARD",
+      cardId: "card-1",
+      claimedBy: null,
+      leaseUntil: null,
+      at: AT,
+    })[0];
+    expect(same).toBe(board);
+  });
+});

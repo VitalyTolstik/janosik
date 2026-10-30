@@ -331,6 +331,47 @@ describe("commandDetails", () => {
     ]);
   });
 
+  it("captures the claim change with the lease expiry", () => {
+    const before = makeBoard();
+    const withClaim = makeBoard(
+      makeCard({
+        claimedBy: "agent-1",
+        leaseUntil: 1_700_000_900_000,
+      } as never),
+    );
+    const claim = {
+      ...base,
+      type: "CLAIM_CARD",
+      cardId: "card-1",
+      claimedBy: "agent-1",
+      leaseUntil: 1_700_000_900_000,
+    } as BoardAction;
+    const release = {
+      ...base,
+      type: "CLAIM_CARD",
+      cardId: "card-1",
+      claimedBy: null,
+      leaseUntil: null,
+    } as BoardAction;
+
+    expect(commandDetails(claim, before, withClaim)?.changes).toEqual([
+      { field: "claimedBy", from: null, to: "agent-1" },
+      {
+        field: "leaseUntil",
+        from: null,
+        to: new Date(1_700_000_900_000).toISOString(),
+      },
+    ]);
+    expect(commandDetails(release, withClaim, before)?.changes).toEqual([
+      { field: "claimedBy", from: "agent-1", to: null },
+      {
+        field: "leaseUntil",
+        from: new Date(1_700_000_900_000).toISOString(),
+        to: null,
+      },
+    ]);
+  });
+
   it("freezes the linked card's title on add and remove", () => {
     const target = makeCard({ id: "card-2", title: "Target card" });
     const source = makeCard({

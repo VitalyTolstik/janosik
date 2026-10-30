@@ -40,6 +40,7 @@ const ACTION_TYPES = [
   "SET_CARD_DUE_DATE",
   "SET_CARD_PRIORITY",
   "SET_CARD_ASSIGN",
+  "CLAIM_CARD",
   "SET_CARD_COVER",
   "SET_CARD_LABEL",
   "ADD_CARD_LINK",
@@ -85,6 +86,21 @@ describe("sentenceFor", () => {
   it("names a column add as a column change", () => {
     expect(sentenceFor(entry("ADD_COLUMN"), "en", false).key).toBe(
       "activity.column-added",
+    );
+  });
+
+  it("reads a claim as claimed, a release as released", () => {
+    const claimed: ActivityFeedEntry = {
+      ...entry("CLAIM_CARD"),
+      changes: [{ field: "claimedBy", from: null, to: "u-1" }],
+    };
+    const released: ActivityFeedEntry = {
+      ...entry("CLAIM_CARD"),
+      changes: [{ field: "claimedBy", from: "u-1", to: null }],
+    };
+    expect(sentenceFor(claimed, "en", false).key).toBe("activity.claimed");
+    expect(sentenceFor(released, "en", false).key).toBe(
+      "activity.claim-released",
     );
   });
 });

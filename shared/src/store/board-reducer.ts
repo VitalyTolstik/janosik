@@ -483,6 +483,22 @@ export interface SetCardAssignAction {
   assigneeId: string | null;
 }
 
+/**
+ * Atomic agent claim with a lease (TASK-157). Value-carrying (like
+ * `SET_CARD_DUE_DATE`): the claimant and the exact expiry travel in the
+ * action, so `invert()` can restore a previous claim verbatim. `claimedBy:
+ * null` releases the card. The server clamps the lease and refuses to take a
+ * lease another member still holds; the reducer only checks shape.
+ */
+export interface ClaimCardAction {
+  type: "CLAIM_CARD";
+  cardId: string;
+  /** The claiming user id, or `null` to release the claim. */
+  claimedBy: string | null;
+  /** Lease expiry (ms), or `null` when releasing. */
+  leaseUntil: number | null;
+}
+
 /** Jira-style card links (TASK-46) — the types live in `types/kanban.ts`. */
 export interface AddCardLinkAction {
   type: "ADD_CARD_LINK";
@@ -720,6 +736,7 @@ export type BoardAction =
   | BoardScoped<SetCardDueDateAction>
   | BoardScoped<SetCardPriorityAction>
   | BoardScoped<SetCardAssignAction>
+  | BoardScoped<ClaimCardAction>
   | BoardScoped<AddCardLinkAction>
   | BoardScoped<RemoveCardLinkAction>
   | BoardScoped<SetCardCoverAction>
@@ -1629,6 +1646,56 @@ function setCardAssign(
 }
 
 /**
+ * Claim a card with a lease (TASK-157), or release it (`claimedBy: null`).
+ * Value-carrying and shape-only: the expiry is exactly what the action
+ * carries, so a history replay restores it verbatim. Whether the lease is
+ * still live for *another* member — the atomic "do not steal" rule — is the
+ * server's call (`assertClaimIsFree`), not the reducer's.
+ */
+function claimCard(
+  board: Board,
+  action: BoardScoped<ClaimCardAction>,
+  options: ReduceOptions,
+): Board {
+  const target = cardOf(board, action.cardId);
+  if (!target) return board;
+  const claimedBy =
+    action.claimedBy !== null && action.claimedBy.trim() !== ""
+      ? action.claimedBy
+      : null;
+  const leaseUntil = claimedBy === null ? null : action.leaseUntil;
+  const sameClaim =
+    (target.claimedBy ?? null) === claimedBy &&
+    (target.leaseUntil ?? null) === leaseUntil;
+  if (sameClaim) return board;
+  let nextCard: Card = { ...target, updatedAt: cardStamp(action) };
+  if (claimedBy === null || leaseUntil === null) {
+    // Drop the fields entirely (optional-field convention).
+    delete nextCard.claimedBy;
+    delete nextCard.leaseUntil;
+    nextCard = appendActivity(nextCard, "claim-released", action, 0, options);
+  } else {
+    nextCard.claimedBy = claimedBy;
+    nextCard.leaseUntil = leaseUntil;
+    nextCard = appendActivity(
+      nextCard,
+      "claimed",
+      action,
+      0,
+      options,
+      String(leaseUntil),
+    );
+  }
+  return {
+    ...board,
+    cards: {
+      ...board.cards,
+      [action.cardId]: nextCard,
+    },
+  };
+}
+
+/**
  * Add a link row on the source card (TASK-46). Guards: known cards, no
  * self-link, one link per unordered pair, the source card's row cap, and —
  * for `blocks` — no cycle. Inverses step past the guards (they put back
@@ -2378,6 +2445,8 @@ export function boardReducer(
       return committed(setCardPriority(board, action, options));
     case "SET_CARD_ASSIGN":
       return committed(setCardAssign(board, action, options));
+    case "CLAIM_CARD":
+      return committed(claimCard(board, action, options));
     case "ADD_CARD_LINK":
       return committed(addCardLink(board, action, options));
     case "REMOVE_CARD_LINK":

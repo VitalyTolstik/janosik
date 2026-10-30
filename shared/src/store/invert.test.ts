@@ -297,6 +297,23 @@ const PLANS: Record<BoardAction["type"], Plan> = {
     { type: "SET_CARD_ASSIGN", cardId: "c-1", assigneeId: "user-1", at: AT },
     { type: "SET_CARD_ASSIGN", cardId: "c-2", assigneeId: "user-2", at: AT },
   ],
+  CLAIM_CARD: [
+    // Both cards start unclaimed; the inverses release them again.
+    {
+      type: "CLAIM_CARD",
+      cardId: "c-1",
+      claimedBy: "user-1",
+      leaseUntil: AT + 900_000,
+      at: AT,
+    },
+    {
+      type: "CLAIM_CARD",
+      cardId: "c-2",
+      claimedBy: "user-2",
+      leaseUntil: AT + 900_000,
+      at: AT,
+    },
+  ],
   ADD_CARD_LINK: [
     // A fresh pair (c-2 ⇄ c-3 is unlinked in the fixture).
     {

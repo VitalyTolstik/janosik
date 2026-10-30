@@ -3,6 +3,7 @@ import { isCardLinkType } from "./card-links";
 import {
   CARD_ACTIVITY_TYPES,
   CARD_PRIORITIES,
+  CLAIM_LEASE_MAX_MS,
   COVER_COLORS,
   COVER_GRADIENTS,
   LABEL_COLORS,
@@ -66,6 +67,7 @@ const CARD_STAMPED_TYPES: ReadonlySet<string> = new Set([
   "SET_CARD_DUE_DATE",
   "SET_CARD_PRIORITY",
   "SET_CARD_ASSIGN",
+  "CLAIM_CARD",
   "ADD_CARD_LINK",
   "REMOVE_CARD_LINK",
   "SET_CARD_COVER",
@@ -426,6 +428,16 @@ function validateCard(value: unknown, field: string): Json {
     "assigneeId",
     readOptionalId(card, "assigneeId", `${field}.assigneeId`),
   );
+  put(
+    out,
+    "claimedBy",
+    readOptionalId(card, "claimedBy", `${field}.claimedBy`),
+  );
+  put(
+    out,
+    "leaseUntil",
+    readOptionalTimestamp(card, "leaseUntil", `${field}.leaseUntil`),
+  );
   // Server-side denormalized columns (TASK-36, TASK-47) ride along in the
   // snapshot so an undo does not blank the avatar or attachment badge.
   put(
@@ -780,6 +792,40 @@ function parseAction(action: Json): BoardAction {
         fail("action.assigneeId", "must be null or a non-blank user id");
       } else {
         result.assigneeId = id("assigneeId");
+      }
+      break;
+    }
+    case "CLAIM_CARD": {
+      result = out();
+      result.cardId = id("cardId");
+      const at = readTimestamp(action, "at", "action.at");
+      if (action.claimedBy === null) {
+        if (action.leaseUntil !== null && action.leaseUntil !== undefined) {
+          fail("action.leaseUntil", "must be null when releasing a claim");
+        }
+        result.claimedBy = null;
+        result.leaseUntil = null;
+      } else if (
+        typeof action.claimedBy !== "string" ||
+        action.claimedBy.trim() === ""
+      ) {
+        fail("action.claimedBy", "must be null or a non-blank user id");
+      } else {
+        result.claimedBy = id("claimedBy");
+        const lease = readOptionalTimestamp(
+          action,
+          "leaseUntil",
+          "action.leaseUntil",
+        );
+        if (lease === undefined) {
+          fail("action.leaseUntil", "is required when claiming");
+        }
+        // A forward lease may not run past the cap; a past value is allowed
+        // so an inverse can restore a lapsed claim verbatim.
+        if (lease > at + CLAIM_LEASE_MAX_MS) {
+          fail("action.leaseUntil", "lease is too long");
+        }
+        result.leaseUntil = lease;
       }
       break;
     }

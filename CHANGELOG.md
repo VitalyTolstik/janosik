@@ -131,6 +131,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`Why` / `Scope` / `Acceptance criteria` / `Out of scope` / `Verify`), a
   `Definition of Done` checklist, typed comments (`[status]` / `[question]` /
   `[blocker]` / `[evidence]` / `[handoff]`) and reserved `agent:*` state labels.
+- **Card claims with a lease (TASK-157).** A `CLAIM_CARD` command takes a
+  temporary work lease on a card (`claimedBy` + `leaseUntil`) so a swarm can
+  coordinate without two agents grabbing the same card: the server refuses a
+  claim while another member holds a live lease, and the lease expires on its
+  own so a dead agent never leaves a card stuck. New MCP tools
+  `janosik_claim_card` / `janosik_release_card`, plus a history entry.
 
 ### Fixed
 

@@ -324,6 +324,8 @@ model Card {
   priority        String? // TASK-45: blocker|highest|high|medium|low|lowest (null = medium)
   assigneeId      String? // TASK-49 Jira-style assignee; null = unassigned
   assignee        User?        @relation("CardAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  claimedBy       String? // TASK-157 agent claim holder (user id); null = unclaimed
+  leaseUntil      DateTime? // TASK-157 claim lease expiry; null = unclaimed
   archivedAt      DateTime? // TASK-18.1: card archive
   deletedAt       DateTime? // soft-delete (§7.0)
   version         Int          @default(0) // ifMatch → 409 (§7.0)
@@ -344,6 +346,7 @@ model Card {
 
   @@index([columnId, position])
   @@index([assigneeId]) // admin user-detail "assigned cards" (TASK-49)
+  @@index([leaseUntil]) // lapsed-claim sweep (TASK-157)
   @@index([dueDate]) // scheduled due reminders (TASK-72, TASK-92)
   @@index([deletedAt]) // purge sweep (TASK-148)
 }

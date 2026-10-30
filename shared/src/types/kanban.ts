@@ -156,6 +156,16 @@ export interface Card {
    */
   assigneeId?: string;
   /**
+   * Agent work claim (TASK-157): the user id that currently holds the card's
+   * lease, and the lease's expiry (ms). Unlike `assigneeId` (a durable owner),
+   * a claim is a *temporary* coordination lock for a swarm — it expires on its
+   * own, so a dead agent never leaves a card stuck. Both fields are dropped
+   * when the claim is released.
+   */
+  claimedBy?: string;
+  /** Unix timestamp (ms) at which the claim above expires. Omitted when unclaimed. */
+  leaseUntil?: number;
+  /**
    * Links this card holds towards other cards (TASK-46). Omitted when the
    * card has none. A link whose target no longer exists (the target was
    * deleted) is kept — undoing the deletion revives the link, and every
@@ -211,6 +221,8 @@ export const CARD_ACTIVITY_TYPES = [
   "due-date-removed",
   "priority-set",
   "assignee-set",
+  "claimed",
+  "claim-released",
   "link-added",
   "link-removed",
   "cover-set",
@@ -231,6 +243,15 @@ export type CardActivityType = (typeof CARD_ACTIVITY_TYPES)[number];
 
 /** Upper bound of stored events per card (localStorage size guard). */
 export const MAX_CARD_ACTIVITY = 50;
+
+/**
+ * Claim lease bounds (TASK-157). A `CLAIM_CARD` lease is clamped to
+ * [1 min, 24 h]; the MCP tool defaults to 15 min. The lease is what makes a
+ * claim self-healing: once `leaseUntil` passes, the card is free again.
+ */
+export const CLAIM_LEASE_DEFAULT_MS = 15 * 60 * 1000;
+export const CLAIM_LEASE_MIN_MS = 60 * 1000;
+export const CLAIM_LEASE_MAX_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Max lengths for every free-text field, in characters. One source of

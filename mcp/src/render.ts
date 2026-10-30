@@ -32,6 +32,7 @@ function cardBadges(card: Card, labels: Map<string, Label>): string {
     parts.push(`due ${formatTimestamp(card.dueDate)}`);
   }
   if (card.assigneeId) parts.push(`@${card.assigneeId}`);
+  if (card.claimedBy) parts.push(`claimed @${card.claimedBy}`);
   if (card.labelIds.length > 0) {
     const names = card.labelIds.map((id) => labels.get(id)?.name ?? id);
     parts.push(names.join(", "));
@@ -122,6 +123,11 @@ export function renderCard(card: Card, labels: Label[]): string {
     `- priority: ${card.priority ?? DEFAULT_CARD_PRIORITY}`,
     `- due: ${formatTimestamp(card.dueDate)}`,
     `- assignee: ${card.assigneeId ?? "—"}`,
+    `- claimed: ${
+      card.claimedBy
+        ? `@${card.claimedBy} until ${formatTimestamp(card.leaseUntil)}`
+        : "—"
+    }`,
     `- labels: ${
       card.labelIds.length > 0
         ? card.labelIds.map((id) => byId.get(id)?.name ?? id).join(", ")
