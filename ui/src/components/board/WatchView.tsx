@@ -23,6 +23,14 @@ const FEED_LIMIT = 50;
 const POLL_MS = 3000;
 /** The most changed fields rendered inline (the rest stay off the line). */
 const MAX_CHANGE_LINES = 3;
+/** A feed value is a display snippet, not the whole field: cap its width. */
+const MAX_VALUE_CHARS = 120;
+
+function shorten(value: string): string {
+  return value.length > MAX_VALUE_CHARS
+    ? `${value.slice(0, MAX_VALUE_CHARS)}…`
+    : value;
+}
 
 interface WatchViewProps {
   boardId: string;
@@ -197,7 +205,7 @@ export function WatchView({ boardId }: WatchViewProps) {
 
       <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(14rem,20rem)_1fr]">
         {/* Left rail: column status + who is online. */}
-        <aside className="min-h-0 overflow-y-auto overscroll-contain border-b border-border md:border-b-0 md:border-r">
+        <aside className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain border-b border-border md:border-b-0 md:border-r">
           <Section title={t("watch.columnList")}>
             <ul data-testid="watch-column-list">
               {board.columns.map((column) => {
@@ -246,7 +254,7 @@ export function WatchView({ boardId }: WatchViewProps) {
           <div className="border-b border-border px-5 py-2 text-[11px] uppercase tracking-widest text-muted-foreground">
             {t("watch.feed")}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
             {!serverMode ? (
               <p className="px-5 py-4 text-sm text-muted-foreground/70">
                 {t("watch.feedLocal")}
@@ -256,35 +264,35 @@ export function WatchView({ boardId }: WatchViewProps) {
                 {t("watch.feedEmpty")}
               </p>
             ) : (
-              <>
-                <ol data-testid="watch-feed">
-                  {entries.map((entry) => (
-                    <WatchRow
-                      key={keyOf(entry)}
-                      entry={entry}
-                      members={membersById}
-                      cards={board.cards}
-                      lang={lang}
-                      hour12={hour12}
-                    />
-                  ))}
-                </ol>
-                {nextCursor !== null ? (
-                  <div className="px-5 py-2">
-                    <button
-                      type="button"
-                      disabled={loadingOlder}
-                      onClick={() => void loadOlder()}
-                      className="rounded-sm text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60"
-                      data-testid="watch-show-older"
-                    >
-                      {loadingOlder ? t("watch.loading") : t("watch.showOlder")}
-                    </button>
-                  </div>
-                ) : null}
-              </>
+              <ol data-testid="watch-feed">
+                {entries.map((entry) => (
+                  <WatchRow
+                    key={keyOf(entry)}
+                    entry={entry}
+                    members={membersById}
+                    cards={board.cards}
+                    lang={lang}
+                    hour12={hour12}
+                  />
+                ))}
+              </ol>
             )}
           </div>
+          {/* Paging lives in a fixed footer so it is reachable without
+              scrolling through the whole page. */}
+          {serverMode && nextCursor !== null ? (
+            <div className="border-t border-border px-5 py-2">
+              <button
+                type="button"
+                disabled={loadingOlder}
+                onClick={() => void loadOlder()}
+                className="rounded-sm text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60"
+                data-testid="watch-show-older"
+              >
+                {loadingOlder ? t("watch.loading") : t("watch.showOlder")}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </section>
@@ -412,15 +420,18 @@ function WatchRow({
       <span className="truncate text-foreground/80" title={actorName}>
         {actorName}
       </span>
-      <span className="min-w-0 text-foreground/90">
+      <span className="min-w-0 break-words text-foreground/90 [overflow-wrap:anywhere]">
         {card ? (
-          <span className="text-muted-foreground" title={card.title}>
+          <span
+            className="text-muted-foreground [overflow-wrap:anywhere]"
+            title={card.title}
+          >
             {card.title} ·{" "}
           </span>
         ) : null}
         {t(sentence.key, sentence.params)}
         {details.length > 0 ? (
-          <span className="ml-2 inline-flex flex-wrap items-baseline gap-x-2 text-[11px]">
+          <span className="ml-2 inline-flex flex-wrap items-baseline gap-x-2 text-[11px] [overflow-wrap:anywhere]">
             {details.map((detail, index) => (
               <span key={`${detail.label}-${index}`} className="min-w-0">
                 {detail.label ? (
@@ -430,13 +441,15 @@ function WatchRow({
                 ) : null}
                 {detail.from !== undefined ? (
                   <>
-                    <span className="text-danger/80 line-through">
+                    <span className="text-danger/80 line-through [overflow-wrap:anywhere]">
                       {detail.from}
                     </span>
                     <span className="mx-1 text-muted-foreground/60">→</span>
                   </>
                 ) : null}
-                <span className="text-success/90">{detail.to}</span>
+                <span className="text-success/90 [overflow-wrap:anywhere]">
+                  {detail.to}
+                </span>
               </span>
             ))}
           </span>
@@ -460,27 +473,31 @@ function detailsFor(
   const parts: DetailPart[] = [];
   for (const change of changes.slice(0, MAX_CHANGE_LINES)) {
     if (change.field === "comment") {
-      parts.push({ label: "", to: `“${change.to ?? ""}”` });
+      parts.push({ label: "", to: `“${shorten(change.to ?? "")}”` });
       continue;
     }
     parts.push({
       label: t(FIELD_KEYS[change.field] ?? "history.field.title"),
       ...(change.from !== null
         ? {
-            from: formatChangeValue(
-              change.field,
-              change.from,
-              lang,
-              hour12,
-              memberName,
+            from: shorten(
+              formatChangeValue(
+                change.field,
+                change.from,
+                lang,
+                hour12,
+                memberName,
+              ),
             ),
           }
         : {}),
-      to: formatChangeValue(change.field, change.to, lang, hour12, memberName),
+      to: shorten(
+        formatChangeValue(change.field, change.to, lang, hour12, memberName),
+      ),
     });
   }
   if (parts.length === 0 && entry.detail) {
-    parts.push({ label: "", to: entry.detail });
+    parts.push({ label: "", to: shorten(entry.detail) });
   }
   return parts;
 }
