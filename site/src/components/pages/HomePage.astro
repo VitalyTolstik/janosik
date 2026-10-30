@@ -137,6 +137,24 @@ const more: { icon: string; key: UIKey }[] = [
   },
   {
     icon: icon(
+      '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    ),
+    key: "home.more.claims",
+  },
+  {
+    icon: icon(
+      '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/>',
+    ),
+    key: "home.more.contract",
+  },
+  {
+    icon: icon(
+      '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/>',
+    ),
+    key: "home.more.attribution",
+  },
+  {
+    icon: icon(
       '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>',
     ),
     key: "home.more.share",
@@ -152,12 +170,14 @@ const swarmSteps: { title: UIKey; body: UIKey }[] = [
   { title: "home.swarm.step1.title", body: "home.swarm.step1.body" },
   { title: "home.swarm.step2.title", body: "home.swarm.step2.body" },
   { title: "home.swarm.step3.title", body: "home.swarm.step3.body" },
+  { title: "home.swarm.step4.title", body: "home.swarm.step4.body" },
 ];
 
 const swarmPoints: UIKey[] = [
   "home.swarm.point1",
   "home.swarm.point2",
   "home.swarm.point3",
+  "home.swarm.point4",
 ];
 
 // A real request/response from the command API (the same one the UI uses).
@@ -194,6 +214,8 @@ const faq: { q: UIKey; a: UIKey }[] = [
   { q: "home.faq.q4", a: "home.faq.a4" },
   { q: "home.faq.q5", a: "home.faq.a5" },
   { q: "home.faq.q6", a: "home.faq.a6" },
+  { q: "home.faq.q7", a: "home.faq.a7" },
+  { q: "home.faq.q8", a: "home.faq.a8" },
 ];
 
 // Semantic FAQ markup. Google retired FAQ rich results, so this exists to help

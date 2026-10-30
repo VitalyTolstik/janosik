@@ -11,8 +11,9 @@ files are the exceptions, and they live in [REST endpoints](/docs/api/rest/).
 
 Every command is attributed (TASK-157): a browser session records
 `actorType: "human"`, a personal API token (`jnk_…`) records `"agent"`. The
-type rides on the activity feed (`GET /boards/:id/activity`) so the history
-can tell an agent's edits from a teammate's.
+type rides on the command delta, the SSE frames and the activity feed
+(`GET /boards/:id/activity`) so the history can tell an agent's edits from a
+teammate's, and the card history marks agent entries with an "Agent" badge.
 
 ## Apply a command
 
@@ -206,6 +207,7 @@ One entry of the delta feed:
 | `seq`       | number        | the command's board sequence                                                |
 | `action`    | `BoardAction` | the committed action, exactly as applied                                    |
 | `actorId`   | string        | who issued the command                                                      |
+| `actorType` | `"human" \| "agent"` | whether a person or an agent issued it; omitted on legacy frames     |
 | `commandId` | string        | the idempotency key the command was sent with                               |
 | `touches`   | string[]      | the entities the command wrote, as touch labels; empty when nothing changed |
 
@@ -260,7 +262,7 @@ aggregate-level actions are listed at the end and are rejected.
 | Action              | Fields                                                                                    | Meaning                                                                                                                                    |
 | ------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `ADD_CARD`          | `newCardId`, `columnId`, `title`, `labelIds` string[] optional, `atIndex` number optional | Creates a card. `atIndex` is clamped to `[0, count]`; omitted appends. Only labels that exist on the board attach.                         |
-| `UPDATE_CARD`       | `cardId`, `title` optional, `description` optional, `quiet` boolean optional              | Partial patch; set only changed fields. `quiet` keeps `updatedAt` quiet for per-keystroke live edits. Empty description removes the field. |
+| `UPDATE_CARD`       | `cardId`, `title` optional, `description` optional, `quiet` boolean optional              | Partial patch; set only changed fields. `quiet` keeps `updatedAt` quiet for per-keystroke live edits. Empty description removes the field. The description is capped at `LIMITS.description` (64000). |
 | `TOUCH_CARD`        | `cardId`                                                                                  | Commits the `updatedAt` timestamp after a burst of quiet edits.                                                                            |
 | `DELETE_CARD`       | `cardId`                                                                                  | Removes the card.                                                                                                                          |
 | `ARCHIVE_CARD`      | `cardId`, `archivedAt` number optional                                                    | Archives the card; `archivedAt` defaults to `at`.                                                                                          |
@@ -270,7 +272,7 @@ aggregate-level actions are listed at the end and are rejected.
 | `SET_CARD_DUE_DATE` | `cardId`, `dueDate` number optional                                                       | Sets the due date (Unix ms); `undefined` removes the field.                                                                                |
 | `SET_CARD_PRIORITY` | `cardId`, `priority` `"blocker" \| "highest" \| "high" \| "medium" \| "low" \| "lowest"`  | Sets the priority. `"medium"` is the default and drops the field.                                                                          |
 | `SET_CARD_ASSIGN`   | `cardId`, `assigneeId` string or null                                                     | Sets the assignee; `null` or a blank id clears it. The server requires an active board member.                                             |
-| `CLAIM_CARD`        | `cardId`, `claimedBy` string or null, `leaseUntil` number or null                         | Takes a temporary work lease on the card (`claimedBy: null` releases it). Refused while another member holds a live lease — the swarm's "do not steal" rule. |
+| `CLAIM_CARD`        | `cardId`, `claimedBy` string or null, `leaseUntil` number or null                         | Takes a temporary work lease on the card (`claimedBy: null` releases it; a lapsed lease is free again). While another member holds a live lease the command answers `400` with `field: "action.claimedBy"` — the swarm's "do not steal" rule. `leaseUntil` may not run more than `CLAIM_LEASE_MAX_MS` (24 h) past `at`. |
 | `SET_CARD_TASK_SPEC`| `cardId`, `acceptanceCriteria` string[] optional, `definitionOfDone` string[] optional    | Sets the machine-readable task contract. Omit a field to leave it unchanged; an empty list clears it. Items are trimmed, de-blanked, capped at `LIMITS.taskSpecItems` (50) × `LIMITS.taskSpecItem` (500). |
 | `SET_CARD_LABEL`    | `cardId`, `labelId`, `on` boolean, `index` optional                                       | Attaches (`on: true`) or detaches a label. Absolute, not a toggle. Adding is capped at `LIMITS.labelsPerCard` (20).                        |
 | `SET_CARD_COVER`    | `cardId`, `cover` optional                                                                | Sets the cover; `undefined` removes it. A cover is `{ "type": "color", "value": ... }` or `{ "type": "gradient", "value": ... }`.          |
@@ -291,7 +293,7 @@ aggregate-level actions are listed at the end and are rejected.
 | `ADD_CHECKLIST`           | `cardId`, `newChecklistId`, `title`               | Adds a checklist. Ignored at `LIMITS.checklistsPerCard` (20) or on a duplicate id. |
 | `RENAME_CHECKLIST`        | `cardId`, `checklistId`, `title`                  | Renames a checklist.                                                               |
 | `DELETE_CHECKLIST`        | `cardId`, `checklistId`                           | Removes a checklist.                                                               |
-| `ADD_CHECKLIST_ITEM`      | `cardId`, `checklistId`, `newItemId`, `text`      | Adds an item. Ignored at `LIMITS.itemsPerChecklist` (100) or on a duplicate id.    |
+| `ADD_CHECKLIST_ITEM`      | `cardId`, `checklistId`, `newItemId`, `text`      | Adds an item. Ignored at `LIMITS.itemsPerChecklist` (100) or on a duplicate id. `text` is capped at `LIMITS.checklistItem` (500). |
 | `SET_CHECKLIST_ITEM_DONE` | `cardId`, `checklistId`, `itemId`, `done` boolean | Checks or unchecks an item. Absolute, not a toggle.                                |
 | `RENAME_CHECKLIST_ITEM`   | `cardId`, `checklistId`, `itemId`, `text`         | Renames an item.                                                                   |
 | `DELETE_CHECKLIST_ITEM`   | `cardId`, `checklistId`, `itemId`                 | Removes an item.                                                                   |

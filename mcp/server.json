@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.VitalyTolstik/janosik",
-  "description": "Drive a Janosik Kanban board from any MCP client with a personal API key.",
+  "description": "Drive a Janosik Kanban board from any MCP client: cards, leases, task specs and agent activity.",
   "repository": {
     "url": "https://github.com/VitalyTolstik/janosik",
     "source": "github"

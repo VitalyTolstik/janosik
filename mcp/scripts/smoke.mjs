@@ -30,7 +30,7 @@ const log = (label, ok, extra = "") =>
   console.log(`${ok ? "PASS" : "FAIL"} ${label}${extra ? " — " + extra : ""}`);
 
 const { tools } = await client.listTools();
-log(`listTools (${tools.length} tools)`, tools.length === 68);
+log(`listTools (${tools.length} tools)`, tools.length === 71);
 
 const call = async (name, args = {}) => {
   const res = await client.callTool({ name, arguments: args });

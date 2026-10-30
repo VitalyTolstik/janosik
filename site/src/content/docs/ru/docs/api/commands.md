@@ -11,8 +11,9 @@ description: Транспорт журнала команд, несущий ка
 
 Каждая команда атрибутируется (TASK-157): сессия браузера пишет
 `actorType: "human"`, персональный API-токен (`jnk_…`) — `"agent"`. Тип едет в
-ленте активности (`GET /boards/:id/activity`), чтобы история отличала правки
-агента от правок коллеги.
+дельте команд, кадрах SSE и ленте активности (`GET /boards/:id/activity`),
+чтобы история отличала правки агента от правок коллеги, а история карточки
+помечает записи агента значком «Агент».
 
 ## Применение команды
 
@@ -211,6 +212,7 @@ GET /api/v1/boards/:id/commands?since=<seq>
 | `seq`       | number        | порядковый номер команды на доске                                                        |
 | `action`    | `BoardAction` | зафиксированное действие, точно как применено                                            |
 | `actorId`   | string        | кто выпустил команду                                                                     |
+| `actorType` | `"human" \| "agent"` | человек или агент выпустил её; отсутствует в старых кадрах                        |
 | `commandId` | string        | ключ идемпотентности, с которым команда была отправлена                                  |
 | `touches`   | string[]      | сущности, которые записала команда, как метки касания; пусто, когда ничего не изменилось |
 
@@ -265,7 +267,7 @@ GET /api/v1/boards/:id/commands?since=<seq>
 | Действие            | Поля                                                                                                | Значение                                                                                                                                                   |
 | ------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ADD_CARD`          | `newCardId`, `columnId`, `title`, `labelIds` string[] необязательно, `atIndex` number необязательно | Создаёт карточку. `atIndex` обрезается до `[0, count]`; пропуск добавляет в конец. Прикрепляются только метки, существующие на доске.                      |
-| `UPDATE_CARD`       | `cardId`, `title` необязательно, `description` необязательно, `quiet` boolean необязательно         | Частичный патч; задавайте только изменённые поля. `quiet` держит `updatedAt` тихим для правок в реальном времени по нажатию. Пустое описание удаляет поле. |
+| `UPDATE_CARD`       | `cardId`, `title` необязательно, `description` необязательно, `quiet` boolean необязательно         | Частичный патч; задавайте только изменённые поля. `quiet` держит `updatedAt` тихим для правок в реальном времени по нажатию. Пустое описание удаляет поле. Описание ограничено `LIMITS.description` (64000). |
 | `TOUCH_CARD`        | `cardId`                                                                                            | Фиксирует временную метку `updatedAt` после серии тихих правок.                                                                                            |
 | `DELETE_CARD`       | `cardId`                                                                                            | Удаляет карточку.                                                                                                                                          |
 | `ARCHIVE_CARD`      | `cardId`, `archivedAt` number необязательно                                                         | Архивирует карточку; `archivedAt` по умолчанию `at`.                                                                                                       |
@@ -275,7 +277,7 @@ GET /api/v1/boards/:id/commands?since=<seq>
 | `SET_CARD_DUE_DATE` | `cardId`, `dueDate` number необязательно                                                            | Задаёт срок (Unix мс); `undefined` удаляет поле.                                                                                                           |
 | `SET_CARD_PRIORITY` | `cardId`, `priority` `"blocker" \| "highest" \| "high" \| "medium" \| "low" \| "lowest"`            | Задаёт приоритет. `"medium"` это значение по умолчанию, оно удаляет поле.                                                                                  |
 | `SET_CARD_ASSIGN`   | `cardId`, `assigneeId` string или null                                                              | Задаёт исполнителя; `null` или пустой id очищает. Сервер требует активного участника доски.                                                                |
-| `CLAIM_CARD`        | `cardId`, `claimedBy` string или null, `leaseUntil` number или null                                 | Берёт карточку во временный лизинг (`claimedBy: null` освобождает). Отказ, пока лизинг держит другой участник — правило роя «не отбирать».                  |
+| `CLAIM_CARD`        | `cardId`, `claimedBy` string или null, `leaseUntil` number или null                                 | Берёт карточку во временный лизинг (`claimedBy: null` освобождает; истёкший лизинг снова свободен). Пока живой лизинг держит другой участник, команда отвечает `400` с `field: "action.claimedBy"` — правило роя «не отбирать». `leaseUntil` не может уходить больше чем на `CLAIM_LEASE_MAX_MS` (24 ч) после `at`. |
 | `SET_CARD_TASK_SPEC`| `cardId`, `acceptanceCriteria` string[] необязательно, `definitionOfDone` string[] необязательно    | Задаёт машиночитаемый контракт задачи. Пропустите поле, чтобы не менять; пустой список очищает. Пункты обрезаются, пустые удаляются, лимит `LIMITS.taskSpecItems` (50) × `LIMITS.taskSpecItem` (500). |
 | `SET_CARD_LABEL`    | `cardId`, `labelId`, `on` boolean, `index` необязательно                                            | Прикрепляет (`on: true`) или открепляет метку. Абсолютно, а не переключатель. Добавление ограничено `LIMITS.labelsPerCard` (20).                           |
 | `SET_CARD_COVER`    | `cardId`, `cover` необязательно                                                                     | Задаёт обложку; `undefined` удаляет её. Обложка это `{ "type": "color", "value": ... }` или `{ "type": "gradient", "value": ... }`.                        |
@@ -296,7 +298,7 @@ GET /api/v1/boards/:id/commands?since=<seq>
 | `ADD_CHECKLIST`           | `cardId`, `newChecklistId`, `title`               | Добавляет чек-лист. Игнорируется при `LIMITS.checklistsPerCard` (20) или на дубликате id. |
 | `RENAME_CHECKLIST`        | `cardId`, `checklistId`, `title`                  | Переименовывает чек-лист.                                                                 |
 | `DELETE_CHECKLIST`        | `cardId`, `checklistId`                           | Удаляет чек-лист.                                                                         |
-| `ADD_CHECKLIST_ITEM`      | `cardId`, `checklistId`, `newItemId`, `text`      | Добавляет пункт. Игнорируется при `LIMITS.itemsPerChecklist` (100) или на дубликате id.   |
+| `ADD_CHECKLIST_ITEM`      | `cardId`, `checklistId`, `newItemId`, `text`      | Добавляет пункт. Игнорируется при `LIMITS.itemsPerChecklist` (100) или на дубликате id. `text` ограничен `LIMITS.checklistItem` (500). |
 | `SET_CHECKLIST_ITEM_DONE` | `cardId`, `checklistId`, `itemId`, `done` boolean | Отмечает или снимает отметку пункта. Абсолютно, а не переключатель.                       |
 | `RENAME_CHECKLIST_ITEM`   | `cardId`, `checklistId`, `itemId`, `text`         | Переименовывает пункт.                                                                    |
 | `DELETE_CHECKLIST_ITEM`   | `cardId`, `checklistId`, `itemId`                 | Удаляет пункт.                                                                            |

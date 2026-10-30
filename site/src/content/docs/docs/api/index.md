@@ -378,10 +378,13 @@ aggressively. A user without an avatar answers `404`.
 
 `POST /users/me/tokens` body:
 
-| Field       | Type           | Required | Constraints                                                                    |
-| ----------- | -------------- | -------- | ------------------------------------------------------------------------------ |
-| `name`      | string         | required | at most 50 characters                                                          |
-| `expiresAt` | string or null | optional | ISO-8601; must be in the future; omitted means 90 days; `null` means no expiry |
+| Field                | Type           | Required | Constraints                                                                    |
+| -------------------- | -------------- | -------- | ------------------------------------------------------------------------------ |
+| `name`               | string         | required | at most 50 characters                                                          |
+| `expiresAt`          | string or null | optional | ISO-8601; must be in the future; omitted means 90 days; `null` means no expiry |
+| `boardId`            | string or null | optional | scope to one board the owner is a member of; `null`/omitted means every board  |
+| `readOnly`           | boolean        | optional | when true every write answers `403 pat_read_only`; omitted means read/write    |
+| `rateLimitPerMinute` | integer or null | optional | 1 to 100000; `null`/omitted means no per-token limit                          |
 
 Returns `{ token, apiToken }`. The plaintext `token` appears exactly once;
 only `apiToken` metadata is returned afterwards. `GET /users/me/tokens` lists

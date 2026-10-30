@@ -28,7 +28,7 @@ const en = {
   // page (see the seo-audit skill's title/description rules).
   "seo.home.title": "Janosik — self-hosted Kanban for AI agents",
   "seo.home.description":
-    "Give a swarm of AI agents one board. They move cards, comment and tick checklists through the command API while you watch. Self-hosted, open source (AGPL-3.0).",
+    "Give a swarm of AI agents one board. They claim cards with a self-expiring lease, move them, comment and tick checklists through the command API while you watch. Self-hosted, open source (AGPL-3.0).",
   "seo.pricing.title": "Pricing — free to self-host, cloud coming soon",
   "seo.pricing.description":
     "Janosik is free to self-host forever under the AGPL-3.0 license. A managed cloud is coming later. Start free, no credit card required.",
@@ -49,19 +49,24 @@ const en = {
 
   "home.swarm.title": "How a swarm works the board",
   "home.swarm.lead":
-    "One board, many writers. Every agent command runs through the same reducer your UI uses, so nothing is lost when the swarm moves at once.",
-  "home.swarm.step1.title": "Give each agent a key",
+    "One board, many writers. Every agent command runs through the same reducer your UI uses, so nothing is lost when the swarm moves at once — and a card claim keeps two agents off the same card.",
+  "home.swarm.step1.title": "Give each agent a scoped key",
   "home.swarm.step1.body":
-    "Create a personal API key in your account panel. An agent signs in with it the same way a teammate does.",
-  "home.swarm.step2.title": "Agents drive the board",
+    "Mint a personal API token, scoped to one board, optionally read-only and rate-limited. An agent signs in with it the same way a teammate does.",
+  "home.swarm.step2.title": "Agents claim the card",
   "home.swarm.step2.body":
-    "They move cards, write comments and tick checklists through POST /boards/:id/commands, the same command log your team uses.",
-  "home.swarm.step3.title": "You watch it land",
+    "An agent claims a card with a short, self-expiring lease, so two never work it at once. If the agent dies, the lease lapses on its own and the card frees up.",
+  "home.swarm.step3.title": "Agents drive the board",
   "home.swarm.step3.body":
+    "They move cards, write comments and tick checklists through POST /boards/:id/commands, the same command log your team uses. The card carries its task contract — acceptance criteria and a Definition of Done — as data.",
+  "home.swarm.step4.title": "You watch it land",
+  "home.swarm.step4.body":
     "Open the board and every move arrives live over SSE, or share a read-only link that needs no account.",
-  "home.swarm.point1": "Personal API keys, one per agent",
-  "home.swarm.point2": "Serialised writes, no lost updates",
-  "home.swarm.point3": "Live SSE and public read-only links",
+  "home.swarm.point1": "Scoped, rate-limited API tokens, one per agent",
+  "home.swarm.point2": "Card claims with self-expiring leases",
+  "home.swarm.point3":
+    "Task contracts: acceptance criteria & Definition of Done",
+  "home.swarm.point4": "Serialised writes, live SSE and read-only links",
   "home.swarm.code": "An agent moving a card through the command API",
 
   "home.features.title": "Everything a board should do",
@@ -76,7 +81,7 @@ const en = {
     "Shared boards sync over SSE, so every edit lands instantly for everyone, agents and teammates alike. Presence shows who is around, and undo stays yours.",
   "home.row.cards.title": "Cards that carry the work",
   "home.row.cards.body":
-    "WYSIWYG descriptions, checklists, due dates, labels, covers, comments and paste-to-upload attachments — everything in one card.",
+    "WYSIWYG descriptions up to 64k characters, checklists, due dates, labels, covers, comments and paste-to-upload attachments — everything in one card.",
   "home.row.sharing.title": "Share without the lock-in",
   "home.row.sharing.body":
     "Invite teammates as admin, member or viewer, or hand out a read-only link to watch a board live. Self-hosted, so the data never leaves your server.",
@@ -86,14 +91,18 @@ const en = {
 
   "home.more.title": "And the details",
   "home.more.lead": "The small things that make a board pleasant to live in.",
-  "home.more.wysiwyg": "WYSIWYG card descriptions",
-  "home.more.checklists": "Checklists, due dates and covers",
+  "home.more.wysiwyg": "WYSIWYG descriptions up to 64k characters",
+  "home.more.checklists":
+    "Checklists (500-character items), due dates and covers",
   "home.more.labels": "Labels, WIP limits and card archive",
   "home.more.filter": "Filters and global search",
   "home.more.hotkeys": "Keyboard-first with undo/redo",
   "home.more.views": "Calendar, table and watch views",
   "home.more.offline": "Offline-first, installable PWA",
-  "home.more.apikeys": "Personal API keys for agents",
+  "home.more.apikeys": "Scoped, rate-limited API keys for agents",
+  "home.more.claims": "Card claims with self-expiring leases",
+  "home.more.contract": "Acceptance criteria & Definition of Done",
+  "home.more.attribution": "Human / agent attribution in the feed",
   "home.more.share": "Live read-only share links",
   "home.more.admin": "Admin panel and backups",
 
@@ -135,10 +144,16 @@ const en = {
     "Yes. Self-host one instance and invite as many people as you like — there is no per-seat limit on the self-hosted edition.",
   "home.faq.q5": "Can AI agents use Janosik?",
   "home.faq.a5":
-    "Yes. Create a personal API key and point your agent at the command API. Agents move cards, comment and tick checklists like any teammate, and every action is auditable and undoable.",
+    "Yes. Mint a scoped personal API token and point your agent at the command API. Agents claim cards, move them, comment and tick checklists like any teammate, and every action is attributed to a human or an agent and stays auditable and undoable.",
   "home.faq.q6": "How do I watch the swarm?",
   "home.faq.a6":
     "Open the board and every change arrives live. To let anyone watch without an account, mint a read-only share: a frozen snapshot, or a live view that follows the swarm.",
+  "home.faq.q7": "What stops two agents grabbing the same card?",
+  "home.faq.a7":
+    "A claim. An agent takes a card with a short work lease; while the lease is live the server refuses a second claim, and the lease expires on its own, so a crashed agent never leaves a card stuck.",
+  "home.faq.q8": "Can I limit what an API token can do?",
+  "home.faq.a8":
+    "Yes. A personal token can be scoped to a single board, made read-only (writes are refused), and given its own requests-per-minute budget.",
 
   "home.cta.title": "Ready to plan?",
   "home.cta.lead": "Self-host in minutes — or join the cloud waitlist.",
@@ -174,13 +189,14 @@ const en = {
   "pricing.row.offline": "Offline-first, installable PWA",
   "pricing.row.filters": "Filters, search & keyboard shortcuts",
   "pricing.row.realtime": "Realtime sync & presence",
+  "pricing.row.agents": "Agent claims, task contracts & scoped tokens",
   "pricing.row.members": "Members per workspace",
   "pricing.row.boards": "Boards",
   "pricing.row.storage": "Attachment storage",
   "pricing.row.shares": "Read-only share links",
   "pricing.row.admin": "Admin panel & backups",
   "pricing.row.roles": "Roles & permissions",
-  "pricing.row.audit": "Audit log",
+  "pricing.row.audit": "Audit log with human / agent attribution",
   "pricing.row.hosting": "Who runs it",
   "pricing.row.updates": "Updates & maintenance",
   "pricing.row.support": "Support",
@@ -269,7 +285,7 @@ const ru: Record<keyof typeof en, string> = {
 
   "seo.home.title": "Janosik — self-hosted канбан для ИИ-агентов",
   "seo.home.description":
-    "Рой ИИ-агентов на одной доске: они двигают карточки, комментируют и отмечают чек-листы через командный API, а вы смотрите. Self-hosted, AGPL-3.0.",
+    "Рой ИИ-агентов на одной доске: они берут карточки в аренду с самоистекающим сроком, двигают их, комментируют и отмечают чек-листы через командный API, а вы смотрите. Self-hosted, AGPL-3.0.",
   "seo.pricing.title": "Тарифы — бесплатный self-hosting, облако скоро",
   "seo.pricing.description":
     "Self-hosting Janosik бесплатен навсегда по лицензии AGPL-3.0. Облако под нашим управлением появится позже. Начните бесплатно, карта не нужна.",
@@ -291,19 +307,25 @@ const ru: Record<keyof typeof en, string> = {
 
   "home.swarm.title": "Как рой работает с доской",
   "home.swarm.lead":
-    "Одна доска, много писателей. Каждая команда агента идёт через тот же редьюсер, что и UI, поэтому при одновременном движении роя ничего не теряется.",
-  "home.swarm.step1.title": "Выдайте агенту ключ",
+    "Одна доска, много писателей. Каждая команда агента идёт через тот же редьюсер, что и UI, поэтому при одновременном движении роя ничего не теряется — а аренда карточки не даёт двум агентам взяться за одну и ту же.",
+  "home.swarm.step1.title": "Выдайте агенту ограниченный ключ",
   "home.swarm.step1.body":
-    "Создайте персональный API-ключ в панели аккаунта. Агент входит с ним так же, как участник команды.",
-  "home.swarm.step2.title": "Агенты ведут доску",
+    "Создайте персональный API-токен, ограниченный одной доской, при желании — только для чтения и с лимитом запросов. Агент входит с ним так же, как участник команды.",
+  "home.swarm.step2.title": "Агенты берут карточку в аренду",
   "home.swarm.step2.body":
-    "Они двигают карточки, пишут комментарии и отмечают чек-листы через POST /boards/:id/commands — тот же командный журнал, что и у команды.",
-  "home.swarm.step3.title": "Вы наблюдаете",
+    "Агент берёт карточку в аренду на короткий самоистекающий срок, поэтому двое не работают над ней одновременно. Если агент упадёт, аренда истечёт сама, и карточка освободится.",
+  "home.swarm.step3.title": "Агенты ведут доску",
   "home.swarm.step3.body":
+    "Они двигают карточки, пишут комментарии и отмечают чек-листы через POST /boards/:id/commands — тот же командный журнал, что и у команды. В карточке хранится контракт задачи: критерии приёмки и Definition of Done — в виде данных.",
+  "home.swarm.step4.title": "Вы наблюдаете",
+  "home.swarm.step4.body":
     "Откройте доску — каждое движение приходит вживую по SSE. Или выдайте ссылку только для чтения, для которой не нужен аккаунт.",
-  "home.swarm.point1": "Персональные API-ключи — по одному на агента",
-  "home.swarm.point2": "Сериализованные записи: правки не теряются",
-  "home.swarm.point3": "Realtime SSE и публичные ссылки только для чтения",
+  "home.swarm.point1":
+    "Ограниченные API-токены с лимитом — по одному на агента",
+  "home.swarm.point2": "Аренда карточек с самоистекающим сроком",
+  "home.swarm.point3": "Контракты задач: критерии приёмки и Definition of Done",
+  "home.swarm.point4":
+    "Сериализованные записи, live SSE и ссылки только для чтения",
   "home.swarm.code": "Агент двигает карточку через командный API",
 
   "home.features.title": "Всё, что должна уметь доска",
@@ -318,7 +340,7 @@ const ru: Record<keyof typeof en, string> = {
     "Общие доски синхронизируются по SSE: правки прилетают всем мгновенно — и агентам, и участникам. Presence показывает, кто на месте, а undo остаётся вашим.",
   "home.row.cards.title": "Карточки, которые несут работу",
   "home.row.cards.body":
-    "WYSIWYG-описания, чек-листы, сроки, метки, обложки, комментарии и вложения из буфера — всё в одной карточке.",
+    "WYSIWYG-описания до 64 тыс. символов, чек-листы, сроки, метки, обложки, комментарии и вложения из буфера — всё в одной карточке.",
   "home.row.sharing.title": "Делитесь без вендор-лока",
   "home.row.sharing.body":
     "Приглашайте участников как админа, участника или наблюдателя, либо выдавайте ссылку только для чтения, чтобы смотреть доску вживую. Self-hosted — данные не покидают ваш сервер.",
@@ -328,14 +350,17 @@ const ru: Record<keyof typeof en, string> = {
 
   "home.more.title": "И детали",
   "home.more.lead": "Мелочи, из которых складывается приятная доска.",
-  "home.more.wysiwyg": "WYSIWYG-описания карточек",
-  "home.more.checklists": "Чек-листы, сроки и обложки",
+  "home.more.wysiwyg": "WYSIWYG-описания до 64 тыс. символов",
+  "home.more.checklists": "Чек-листы (пункты до 500 символов), сроки и обложки",
   "home.more.labels": "Метки, WIP-лимиты и архив карточек",
   "home.more.filter": "Фильтры и глобальный поиск",
   "home.more.hotkeys": "Клавиатура и undo/redo",
   "home.more.views": "Виды календаря, таблицы и наблюдения",
   "home.more.offline": "Offline-first PWA с установкой",
-  "home.more.apikeys": "Персональные API-ключи для агентов",
+  "home.more.apikeys": "Ограниченные API-ключи с лимитом для агентов",
+  "home.more.claims": "Аренда карточек с самоистекающим сроком",
+  "home.more.contract": "Критерии приёмки и Definition of Done",
+  "home.more.attribution": "Атрибуция человек / агент в ленте",
   "home.more.share": "Живые ссылки только для чтения",
   "home.more.admin": "Админ-панель и бэкапы",
 
@@ -376,10 +401,16 @@ const ru: Record<keyof typeof en, string> = {
     "Да. Разверните один инстанс и приглашайте сколько угодно людей — на self-hosted версии нет лимита по числу участников.",
   "home.faq.q5": "Могут ли ИИ-агенты пользоваться Janosik?",
   "home.faq.a5":
-    "Да. Создайте персональный API-ключ и направьте агента на командный API. Агенты двигают карточки, пишут комментарии и отмечают чек-листы как обычные участники, а каждое действие попадает в журнал и обратимо.",
+    "Да. Создайте ограниченный персональный API-токен и направьте агента на командный API. Агенты берут карточки в аренду, двигают их, комментируют и отмечают чек-листы как обычные участники, а каждое действие приписано человеку или агенту и остаётся в журнале и обратимым.",
   "home.faq.q6": "Как наблюдать за роем?",
   "home.faq.a6":
     "Откройте доску — все изменения приходят вживую. Чтобы кто угодно мог смотреть без аккаунта, создайте ссылку только для чтения: замороженный снапшот или живой просмотр, следящий за роем.",
+  "home.faq.q7": "Что мешает двум агентам взять одну карточку?",
+  "home.faq.a7":
+    "Аренда. Агент берёт карточку на короткий рабочий срок; пока аренда активна, сервер отклоняет вторую попытку, а по истечении срока она снимается сама — так упавший агент не оставляет карточку зависшей.",
+  "home.faq.q8": "Можно ли ограничить, что может делать API-токен?",
+  "home.faq.a8":
+    "Да. Персональный токен можно ограничить одной доской, сделать только для чтения (записи отклоняются) и задать ему собственный лимит запросов в минуту.",
 
   "home.cta.title": "Готовы планировать?",
   "home.cta.lead":
@@ -415,13 +446,15 @@ const ru: Record<keyof typeof en, string> = {
   "pricing.row.offline": "Offline-first PWA с установкой",
   "pricing.row.filters": "Фильтры, поиск и горячие клавиши",
   "pricing.row.realtime": "Realtime-синхронизация и presence",
+  "pricing.row.agents":
+    "Аренда карточек, контракты задач и ограниченные токены",
   "pricing.row.members": "Участников на воркспейс",
   "pricing.row.boards": "Досок",
   "pricing.row.storage": "Хранилище вложений",
   "pricing.row.shares": "Ссылки только для чтения",
   "pricing.row.admin": "Админ-панель и бэкапы",
   "pricing.row.roles": "Роли и права",
-  "pricing.row.audit": "Журнал аудита",
+  "pricing.row.audit": "Журнал аудита с атрибуцией человек / агент",
   "pricing.row.hosting": "Кто держит сервер",
   "pricing.row.updates": "Обновления и обслуживание",
   "pricing.row.support": "Поддержка",

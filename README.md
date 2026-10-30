@@ -7,7 +7,7 @@ A premium **Kanban board** — Trello-class drag & drop with a Space Grotesk wor
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)](https://vite.dev)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38bdf8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![NestJS](https://img.shields.io/badge/NestJS-11-e0234e?logo=nestjs&logoColor=white)](https://nestjs.com)
-[![Tests](https://img.shields.io/badge/tests-992%20passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-2078%20passing-brightgreen)](#)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 
 > **Janosik** installs as a **PWA** and runs in **server mode**: accounts, shared boards and a command-log sync (`POST /boards/:id/commands`) sit on top of one pure reducer (`boardReducer`) shared by the UI and the API, with optimistic updates and undo. The reducer is offline-first by design and the **unit tests** run it with no API (data in `localStorage`); the dev and production builds always talk to the API (`VITE_API_URL`, `/api/v1` by default) and show a sign-in screen. Members UI, **realtime SSE** (everyone sees each other's edits without a reload, dropped streams catch up from `?since=`), presence and the comments UI have all landed — see [ROADMAP.md §7](./ROADMAP.md).
@@ -77,12 +77,12 @@ janosik/                        # npm workspaces root (one package-lock.json)
 - **Four board views** — Kanban, **Calendar** (drag deadlines, "unscheduled" panel, week/month, day panel), **Table** (sorting, inline editing, configurable columns) and **Watch** (a bare status plus a live activity feed for observing a swarm, with paging and a 20/50/100 page size).
 - **Card density** — a `Simplify design` toggle switches every card to a compact one-line tile (title, label dots, blocked marker, checklist progress, priority and assignee) with far fewer elements; the full face stays one click away in the card dialog.
 - **Drag & drop** — move cards within/between columns and reorder columns (`@dnd-kit`), inline Trello-style "+" zones, keyboard sensor and drag overlay.
-- **Rich card content** — WYSIWYG description (MDXEditor), checklists with progress badges, due dates with overdue/soon badges, color/gradient covers, 14-color labels.
+- **Rich card content** — WYSIWYG description (MDXEditor) that is the card's document (up to 64k characters), checklists with progress badges (items up to 500 characters), due dates with overdue/soon badges, color/gradient covers, 14-color labels, and a read-only machine-readable acceptance-criteria / definition-of-done contract.
 - **Card & board archive** — Trello-style archiving with restore (WIP-aware) and permanent delete; board archive with restore.
 - **Multi-boards** — switcher, create/rename/archive/delete, deep links `/board/:id`, global search across boards with snippets.
 - **Search & filters** — by title/description/labels, label ANY/ALL matching, due status, creation date; hotkeys `/` and `Ctrl/Cmd+K`, match counter.
 - **WIP limits** — per-column caps with counters, blocked composers/drags and toasts.
-- **Activity feed** — per-card event history (10 event types) with relative timestamps.
+- **Activity feed** — per-card event history covering every board action, with relative timestamps and an "Agent" badge on entries an agent's API token caused.
 - **Keyboard-first** — shortcut palette (`?`), `j/k` cursor navigation, `n`/`c` composers, `e`/`Enter` edit.
 - **Undo / redo** — 50-step history with coalescing, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`, `Ctrl+Y`, header buttons.
 - **PWA** — installable (manifest + icons), service worker caches the app shell and all hashed chunks, so it opens with the network cut. Writes need the network (optimistic edits roll back with a toast if the API is unreachable — there is no persistent outbox yet, so a reload drops unsynced changes); reads keep working offline from the last fetch.
@@ -90,7 +90,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 - **Realtime** — a `GET /boards/:id/events` SSE stream carries every committed command (`{type, seq, action, actorId}`) and the client replays foreign actions through the very same reducer. Edits appear in other browsers with no reload; a dropped stream resumes exactly where it stopped (`?since=`) and window focus remains the fallback. Your own commands are never applied twice, and a stale undo still refuses to clobber someone else's text.
 - **Shared boards** — a **Members (N)** dialog in the header: admins invite by email, switch roles (`ADMIN`/`MEMBER`/`VIEWER`), bound a viewer's access with an expiry date ("access expired" badge) and remove members — the last admin can never be demoted or removed. Invitations are **opt-in**: the invitee gets a badge on the header bell and accepts or declines there; nothing is shared until they accept. Everyone else sees the same member list read-only, and a `VIEWER` gets a genuinely read-only board: no drag, no composers, no menus, no inline editors, a read-only card dialog — while the server independently answers 403 to every mutation.
 - **Master panel** — a separate `/admin` area for the platform operator: metrics, all users and boards, command log, audit trail and moderation (block a user and their sessions die instantly, revoke API tokens, archive/soft-delete a board, create accounts with a one-time password). Master accounts live outside the user table, have their own login, cookie and JWT audience, and are created only by the server CLI (`npm run admin:create -w backend`); `OWNER` can add more masters, `OPERATOR` cannot. Panel tables are **schema-first**: columns are named after Prisma fields (`Board.id`, `BoardMember.userId`, `Card.columnId`, `Comment.authorId`, …), foreign keys are shown as copyable IDs (title/email only as a caption) and search matches those IDs — a row can be traced to its parents even when names are not unique.
-- **AI agents (MCP + skill)** — `@janosik/mcp` exposes the whole board to any MCP client (Claude, Cursor, VS Code, opencode, Codex) over a personal API key, and the `janosik` skill teaches the agent *how* to behave: comment at every step, fill a card so it stands on its own, move it through the columns, and — when a bug turns up — return the card with the evidence instead of burying it. Writes go through the same command log, so an agent's work is undoable, streamed live, and keeps the full history. See [Drive it from an AI agent](#drive-it-from-an-ai-agent-mcp--skill).
+- **AI agents (MCP + skill)** — `@janosik/mcp` exposes the whole board to any MCP client (Claude, Cursor, VS Code, opencode, Codex) over a personal API key, and the `janosik` skill teaches the agent *how* to behave: pick a card up under an atomic lease, fill it to the canonical agent-ready shape (description sections `Why` / `Scope` / `Acceptance criteria` / `Out of scope` / `Verify`, a `Definition of Done` checklist and typed `[status]` / `[question]` / `[blocker]` / `[evidence]` / `[handoff]` comments), move it through the columns, and — when a bug turns up — return the card with the evidence instead of burying it. An agent can write the card's machine-readable task contract (`acceptanceCriteria` + `definitionOfDone`), every command records whether a person or an agent caused it (agent entries carry an "Agent" badge), and a key can be scoped to one board, made read-only and given its own rate limit. Writes go through the same command log, so an agent's work is undoable, streamed live, and keeps the full history. See [Drive it from an AI agent](#drive-it-from-an-ai-agent-mcp--skill).
 - **Fast by construction** — code-split bundle (editor & calendar load on demand), vendor chunks with stable cache keys; first paint ~212 ms on throttled CPU.
 - **Data safety** — debounced saves, JSON export/import, automatic backups (20 snapshots, rotated), error boundary + toasts, input/collection limits everywhere.
 - **Themes & polish** — dark/light with no-flash preflight, four board backgrounds, adjustable column glass, `prefers-reduced-motion`, custom scrollbars.
@@ -116,7 +116,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 | Fonts | `@fontsource/space-grotesk` (self-hosted, no CDN) |
 | Shared | `@janosik/shared` — domain model, reducer + inverse, validation, DTO contracts (imported as TS source, no build step) |
 | Backend | NestJS 11, Prisma 6, PostgreSQL 16, JWT (`@nestjs/jwt`) + refresh rotation, argon2id, helmet, rate limiting |
-| Tests | Vitest + React Testing Library (ui 485, shared 325) + Jest + Supertest (backend 22 unit, 100 e2e against a real test DB) — 932 total |
+| Tests | Vitest + React Testing Library (ui 1000, shared 448) + Jest + Supertest (backend 318 unit, 312 e2e against a real test DB) — 2078 total |
 
 ---
 
@@ -314,7 +314,7 @@ Rules worth knowing:
 - **Email** is required and normalized to lowercase; creating a duplicate fails with a hint to use `admin:passwd`.
 - **Audit**: every create/re-key writes an `AdminAuditLog` row (`via: "cli"`), visible on the panel's **Audit** page.
 - Sign in at `http://localhost:5173/admin` (dev) or `https://your-host/admin` (self-hosted). Sign-out sits in the top-right corner.
-- What you get there: metrics with 14-day sparklines plus a runtime card (version, uptime, DB latency), all users (search, filter, create with a one-time password, block → sessions die instantly, revoke API tokens), all boards (create for an owner, archive/restore, soft-delete), all cards and comments (search + moderation), active sessions and personal API tokens with per-row revoke, the cross-board command log, and the audit trail of every master action. Tables follow the database schema (see Highlights) and search matches foreign-key IDs. The board content editor (`/admin/boards/:id/content`) creates and renames columns and cards **through the command log on behalf of the board owner**, so the board UI stays consistent.
+- What you get there: metrics with 14-day sparklines plus a runtime card (version, uptime, DB latency), all users (search, filter, create with a one-time password, block → sessions die instantly, revoke API tokens), all boards (create for an owner, archive/restore, soft-delete), all cards and comments (search + moderation), active sessions and personal API tokens (scoped to a board, read-only or rate-limited) with per-row revoke, the cross-board command log, and the audit trail of every master action. Tables follow the database schema (see Highlights) and search matches foreign-key IDs. The board content editor (`/admin/boards/:id/content`) creates and renames columns and cards **through the command log on behalf of the board owner**, so the board UI stays consistent.
 - Hardening that ships with it: argon2id hashes, 5-failed-login lockout (15 min) plus rate limiting, per-entity refresh rotation with reuse detection, response shapes that never include password/token hashes, and an audit row for every login attempt and mutation.
 
 ---
@@ -324,23 +324,30 @@ Rules worth knowing:
 Janosik is built so a swarm of AI agents can work a board alongside people. Two
 pieces make that real, and they are deliberately separate:
 
-- **`@janosik/mcp` — the tools (the "hands").** An MCP server that exposes the
-  whole board — boards, columns, cards, labels, checklists, links, comments,
-  activity and attachments (plus, opt-in, members, invitations, share links and
-  the account) — to any MCP client. It talks to your instance with a personal
-  API key (`jnk_…`) and routes every write through the same command log the UI
-  uses, so an agent's changes are undoable and stream live to everyone watching.
+- **`@janosik/mcp` — the tools (the "hands").** An MCP server (71 tools across
+  13 groups) that exposes the whole board — boards, columns, cards, labels,
+  checklists, links, comments, activity and attachments (plus, opt-in, members,
+  invitations, share links and the account) — to any MCP client. It talks to
+  your instance with a personal API key (`jnk_…`) and routes every write
+  through the same command log the UI uses, so an agent's changes are undoable
+  and stream live to everyone watching.
 - **`skills/janosik` — the behaviour (the "manners").** A playbook that tells
-  the agent *how* to work: read before writing, claim a card, fill it so it
-  stands on its own, comment at every step, move it through the columns, and —
-  when a bug turns up — move the card back with the evidence instead of marking
-  it Done.
+  the agent *how* to work: read before writing, claim a card under an atomic
+  lease, fill it to the canonical agent-ready shape (description sections, a
+  `Definition of Done` checklist, typed `[status]` / `[question]` / `[blocker]`
+  / `[evidence]` / `[handoff]` comments, reserved `agent:*` labels), move it
+  through the columns, and — when a bug turns up — move the card back with the
+  evidence instead of marking it Done.
 
 ### 1. Get an API key
 
 In the app: **Account → API keys → create** (starts with `jnk_`). Give each
 agent its **own user account and key**, so the activity feed shows who did what
-and revoking one key stops one agent.
+and revoking one key stops one agent. A key can be scoped when you create it:
+restrict it to a single board, make it **read-only** (writes answer `403
+pat_read_only`) and give it its own requests-per-minute budget (over budget
+answers `429`) — a board-scoped, read-only key is the least-privilege choice for
+a swarm.
 
 ### 2. Add the MCP server
 
@@ -375,11 +382,25 @@ configuration; it just makes the agent follow the board's conventions.
 
 ### What the agent does with it
 
-Picks up a card, comments as it goes, fills the description and checklist, moves
+Picks up a card under an **atomic lease** (`janosik_claim_card`, released with
+`janosik_release_card`): the server refuses a claim while another member still
+holds a live lease, and the lease self-expires so a dead agent never leaves a
+card stuck. It comments as it goes, fills the description and checklist, moves
 it **In Progress → Review → Done**, and on a bug moves it **back** (to Bugs /
 In Progress) with a comment describing the defect — so a reviewer sees the card
 travel forward, back and forward again, with a reason at every turn. That
 backward move plus the comment is the audit trail.
+
+The skill asks the agent to leave a card a swarm can pick up cold: description
+sections (`Why` / `Scope` / `Acceptance criteria` / `Out of scope` / `Verify`),
+a `Definition of Done` checklist, and typed comments (`[status]` / `[question]`
+/ `[blocker]` / `[evidence]` / `[handoff]`) so the thread is machine-readable
+and filterable. It can also write the card's machine-readable task contract
+(`janosik_set_card_task_spec` sets `acceptanceCriteria` + `definitionOfDone`,
+each rendered read-only in the card dialog) and tag cards with the reserved
+`agent:blocked` / `agent:needs-human` / `agent:verified` labels. Every command
+records whether a person or an agent caused it, so an agent's entries carry an
+"Agent" badge in the card history.
 
 Full guide in-repo: [mcp/README.md](./mcp/README.md) and
 [skills/janosik/SKILL.md](./skills/janosik/SKILL.md).

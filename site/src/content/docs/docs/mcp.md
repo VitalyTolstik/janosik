@@ -5,9 +5,9 @@ description: Let AI agents read and drive a board with the Janosik MCP server an
 
 The `@janosik/mcp` server exposes a board to any MCP client (Claude, Cursor,
 VS Code, opencode, Codex). An agent can list boards, read a board, and create,
-move, comment, tick, assign, link and share, using a personal API key. Writes
-go through the same command log the app uses, so they are undoable and stream
-live to anyone watching the board.
+move, comment, tick, assign, claim, link and share, using a personal API key.
+Writes go through the same command log the app uses, so they are undoable and
+stream live to anyone watching the board.
 
 ## Setup
 
@@ -120,12 +120,36 @@ the same on every card:
 - **Reserved labels** — `agent:blocked`, `agent:needs-human`, `agent:verified`,
   so a human can filter the swarm's state at a glance.
 
+### Claiming a card and the task contract
+
+Three tools let a swarm share one board without stepping on itself:
+
+- `janosik_claim_card` takes a temporary work lease on a card (the `CLAIM_CARD`
+  command, `claimedBy` + `leaseUntil`). The lease defaults to 15 minutes and is
+  clamped to between 1 minute and 24 hours. The server refuses the claim while
+  another member still holds a live lease, and a lapsed lease is free again — so
+  a dead agent never leaves a card stuck.
+- `janosik_release_card` releases the caller's lease early, so another agent can
+  pick the card up.
+- `janosik_set_card_task_spec` writes the card's machine-readable task contract:
+  `acceptanceCriteria` and `definitionOfDone`, as lists of short strings an
+  agent reads directly instead of parsing prose. Each field is independent (omit
+  it to leave it unchanged, pass an empty list to clear it), and items are
+  capped at 500 characters and 50 items. `janosik_get_card` renders the contract
+  back, and the card dialog shows it read-only.
+
 ## Permissions
 
 The key acts as the user who created it, with the same roles: an agent can
 only touch boards that user is a member of, editing needs `MEMBER`, and member
 or share management needs `ADMIN`. Revoke the key in the account panel to cut
 an agent off.
+
+A key can be scoped when you create it in **Account → API keys**: `boardId`
+restricts it to one board, `readOnly` refuses every write (`403
+pat_read_only`), and `rateLimitPerMinute` gives it its own request budget (over
+the budget answers `429`). A board-scoped, read-only key is the least-privilege
+option for a swarm.
 
 Card text and comments are written by other people and agents, so treat what
 an agent reads from a board as untrusted. Give each agent its own user account
