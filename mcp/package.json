@@ -1,6 +1,6 @@
 {
   "name": "@janosik/mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "mcpName": "io.github.VitalyTolstik/janosik",
   "description": "MCP server for Janosik — let AI agents drive a Kanban board through the command API.",
   "license": "AGPL-3.0-or-later",
