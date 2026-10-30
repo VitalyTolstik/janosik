@@ -77,6 +77,9 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   token can be scoped to one board, made read-only (writes answer
   `403 pat_read_only`) and given its own requests-per-minute budget (over the
   budget answers `429`). The account panel exposes the three options.
+- **Longer checklist items (TASK-157).** A checklist item's text limit rose
+  from 200 to 500 characters, so an agent can park a sub-prompt or an exact
+  command in an item.
 
 ### Security
 
