@@ -967,4 +967,25 @@ describe("TableView interactivity (TASK-14.1)", () => {
     expect(screen.queryByTestId("card-insert-zone-0")).toBeNull();
     expect(screen.queryByTestId("card-insert-zone-1")).toBeNull();
   });
+
+  // TASK-142: the "Simplify design" checkbox swaps the whole board to the
+  // compact card face and stores the choice like the view switcher does.
+  it("switches the board to the compact face from the density menu and persists it", async () => {
+    renderBoard();
+
+    const full = screen.getAllByTestId("card-title")[0].closest("article");
+    expect(full?.className).toContain("h-[92px]");
+
+    // Radix DropdownMenu opens on pointerdown, not click.
+    fireEvent.pointerDown(screen.getByTestId("density-menu"), { button: 0 });
+    fireEvent.click(screen.getByTestId("density-toggle"));
+
+    await waitFor(() => {
+      const compact = screen.getAllByTestId("card-title")[0].closest("article");
+      expect(compact?.className).toContain("h-12");
+      expect(compact?.className).not.toContain("h-[92px]");
+    });
+    expect(localStorage.getItem("janosik-board-density")).toBe("compact");
+    expect(document.documentElement.dataset.density).toBe("compact");
+  });
 });

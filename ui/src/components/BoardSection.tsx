@@ -8,6 +8,8 @@ import { CalendarView, TableView } from "@/components/board/views-lazy";
 import { CardDialog } from "@/components/board/CardDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ViewSwitcher, type BoardView } from "@/components/board/ViewSwitcher";
+import { BoardDensityMenu } from "@/components/board/BoardDensityMenu";
+import { useBoardDensity } from "@/hooks/use-board-density";
 import { useToast } from "@/components/Toast";
 import { ColumnGlassMenu } from "@/components/board/ColumnGlassMenu";
 import { useBoardBackground } from "@/hooks/use-board-background";
@@ -51,6 +53,9 @@ export function BoardSection() {
   const { background } = useBoardBackground();
   const [filter, setFilter] = useState<CardFilter>(EMPTY_FILTER);
   const [view, setView] = useState<BoardView>(readStoredView);
+  // Card density (TASK-142): a per-browser display preference, persisted next
+  // to the chosen view; it only affects the kanban card face.
+  const { density, setDensity } = useBoardDensity();
 
   // Remember the last chosen view across sessions (next to janosik-lang).
   useEffect(() => {
@@ -172,8 +177,13 @@ export function BoardSection() {
       </div>
       <div className="mb-3 flex items-center justify-between gap-3">
         <ViewSwitcher value={view} onChange={setView} />
-        {/* Column glass settings only make sense for the board view. */}
-        {view === "board" ? <ColumnGlassMenu /> : null}
+        {/* Board-view display controls: column glass + card density. */}
+        {view === "board" ? (
+          <div className="flex items-center gap-1">
+            <BoardDensityMenu density={density} onChange={setDensity} />
+            <ColumnGlassMenu />
+          </div>
+        ) : null}
       </div>
       {view === "board" ? (
         <DndBoard
@@ -181,6 +191,7 @@ export function BoardSection() {
           isFiltering={active}
           highlight={filter.query}
           onCardClick={handleCardClick}
+          density={density}
           readOnly={readOnly}
         />
       ) : (

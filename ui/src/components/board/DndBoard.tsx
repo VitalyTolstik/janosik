@@ -28,6 +28,7 @@ import { CardItem } from "@/components/board/CardItem";
 import { ColumnView } from "@/components/board/ColumnView";
 import { useCardLabels } from "@/hooks/use-card-labels";
 import { useCardList } from "@/hooks/use-card-list";
+import type { BoardDensity } from "@/hooks/use-board-density";
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
 import { useToast } from "@/components/Toast";
@@ -116,6 +117,8 @@ interface DndBoardProps {
   /** Fired on a card click (and the e/Enter hotkey) — the dialog itself
    *  lives in BoardSection so it works from every view. */
   onCardClick: (cardId: string) => void;
+  /** Card density (TASK-142): compact faces and a shorter window row. */
+  density?: BoardDensity;
   /** VIEWER mode (TASK-35): no drag, no composers, no add-column control. */
   readOnly?: boolean;
 }
@@ -125,6 +128,7 @@ export function DndBoard({
   isFiltering = false,
   highlight,
   onCardClick,
+  density = "full",
   readOnly = false,
 }: DndBoardProps) {
   const { board, addColumn, moveCard, moveColumn } = useBoard();
@@ -683,6 +687,7 @@ export function DndBoard({
                 highlight={highlight}
                 cursorCardId={cursorCardId}
                 onCardClick={handleCardClick}
+                density={density}
                 readOnly={readOnly}
                 canDuplicateColumn={
                   board.columns.length < LIMITS.columnsPerBoard
@@ -705,7 +710,11 @@ export function DndBoard({
       <DragOverlay>
         {activeCard ? (
           <div className="rotate-3 cursor-grabbing">
-            <CardItem card={activeCard} labels={activeLabels} />
+            <CardItem
+              card={activeCard}
+              labels={activeLabels}
+              compact={density === "compact"}
+            />
           </div>
         ) : activeColumn ? (
           <div className="w-72 rotate-2 cursor-grabbing rounded-xl border border-primary/60 bg-card/95 p-3 shadow-xl backdrop-blur-sm">

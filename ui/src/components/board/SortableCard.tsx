@@ -28,6 +28,8 @@ interface SortableCardProps {
   duplicateDisabled?: boolean;
   /** Tooltip text shown while `duplicateDisabled`. */
   duplicateDisabledReason?: string;
+  /** Compact face (TASK-142) — see `CardItem`. */
+  compact?: boolean;
   /** VIEWER mode: the card's context menu keeps read-only actions only. */
   readOnly?: boolean;
 }
@@ -49,6 +51,7 @@ function SortableCardView({
   onCardArchive,
   duplicateDisabled = false,
   duplicateDisabledReason,
+  compact = false,
   readOnly = false,
 }: SortableCardProps) {
   const {
@@ -119,6 +122,7 @@ function SortableCardView({
         onArchive={onCardArchive}
         duplicateDisabled={duplicateDisabled}
         duplicateDisabledReason={duplicateDisabledReason}
+        compact={compact}
         readOnly={readOnly}
       />
     </div>

@@ -25,7 +25,12 @@ import { RenameColumnDialog } from "@/components/board/RenameColumnDialog";
 import { SortableCard } from "@/components/board/SortableCard";
 import { WipLimitDialog } from "@/components/board/WipLimitDialog";
 import { useCardLabels } from "@/hooks/use-card-labels";
-import { CARD_ROW_HEIGHT, useCardWindow } from "@/hooks/use-card-window";
+import {
+  CARD_ROW_HEIGHT,
+  COMPACT_CARD_ROW_HEIGHT,
+  useCardWindow,
+} from "@/hooks/use-card-window";
+import type { BoardDensity } from "@/hooks/use-board-density";
 import { useDoubleTap } from "@/hooks/use-double-tap";
 import type { CardLinkIndex } from "@/utils/links";
 import { cn } from "@/lib/utils";
@@ -73,6 +78,8 @@ interface ColumnViewProps {
    * board state would undo TASK-21.4.1.
    */
   canDuplicateColumn?: boolean;
+  /** Card density (TASK-142): the compact face uses a shorter window row. */
+  density?: BoardDensity;
   /** VIEWER mode (TASK-35): static header, no menu, no composers, no drag. */
   readOnly?: boolean;
 }
@@ -101,6 +108,7 @@ function ColumnViewBody({
   highlight,
   cursorCardId,
   canDuplicateColumn = true,
+  density = "full",
   readOnly = false,
 }: ColumnViewProps) {
   const {
@@ -178,7 +186,12 @@ function ColumnViewBody({
   );
 
   const count = cards.length;
-  const { scrollRef, onScroll, range, scrollToIndex } = useCardWindow(count);
+  const compact = density === "compact";
+  const rowHeight = compact ? COMPACT_CARD_ROW_HEIGHT : CARD_ROW_HEIGHT;
+  const { scrollRef, onScroll, range, scrollToIndex } = useCardWindow(
+    count,
+    rowHeight,
+  );
   // The inline composer is stateful; keep every card mounted while it is open
   // so scrolling cannot unmount the editor and drop its draft (TASK-139).
   const windowed = inlineAdd === null;
@@ -386,10 +399,7 @@ function ColumnViewBody({
                 {/* Hidden rows keep their exact geometry as spacer <li>s:
                     start × (zone 8 + card 92) above, the rest below. */}
                 {rowStart > 0 ? (
-                  <li
-                    aria-hidden
-                    style={{ height: rowStart * CARD_ROW_HEIGHT }}
-                  />
+                  <li aria-hidden style={{ height: rowStart * rowHeight }} />
                 ) : null}
                 {cards.slice(rowStart, rowEnd).map((card, offset) => {
                   const i = rowStart + offset;
@@ -438,6 +448,7 @@ function ColumnViewBody({
                           onCardArchive={readOnly ? undefined : archiveCard}
                           duplicateDisabled={duplicateDisabled}
                           duplicateDisabledReason={duplicateDisabledReason}
+                          compact={compact}
                           readOnly={readOnly}
                         />
                       </li>
@@ -447,7 +458,7 @@ function ColumnViewBody({
                 {rowEnd < count ? (
                   <li
                     aria-hidden
-                    style={{ height: (count - rowEnd) * CARD_ROW_HEIGHT }}
+                    style={{ height: (count - rowEnd) * rowHeight }}
                   />
                 ) : null}
                 {count > 0 && inlineAdd?.index !== count && (

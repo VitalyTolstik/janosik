@@ -45,7 +45,7 @@ function board(): Board {
   };
 }
 
-function boardTree() {
+function boardTree(density?: "full" | "compact") {
   return (
     <ThemeProvider>
       <BoardBackgroundProvider>
@@ -55,7 +55,7 @@ function boardTree() {
               <MemoryRouter initialEntries={["/board/b-virtual"]}>
                 <ToastProvider>
                   <BoardProvider>
-                    <DndBoard onCardClick={() => {}} />
+                    <DndBoard onCardClick={() => {}} density={density} />
                   </BoardProvider>
                 </ToastProvider>
               </MemoryRouter>
@@ -104,5 +104,16 @@ describe("column card windowing (TASK-139)", () => {
       "data-card-cursor",
       "true",
     );
+  });
+
+  it("uses the short compact row so more cards fit the same viewport (TASK-142)", () => {
+    render(boardTree("compact"));
+
+    const first = screen.getAllByTestId("card-title")[0].closest("article");
+    expect(first?.className).toContain("h-12");
+
+    // The compact row is 56px (vs 100px), so the same 360px initial viewport
+    // mounts more rows than the full face's 8.
+    expect(screen.getAllByTestId("card-title").length).toBeGreaterThan(8);
   });
 });
