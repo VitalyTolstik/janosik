@@ -13,7 +13,7 @@
  * the poster is the fallback for `prefers-reduced-motion` and no-JS.
  */
 export type MediaVariant =
-  "board" | "realtime" | "cards" | "sharing" | "selfhost" | "swarm";
+  "board" | "realtime" | "cards" | "sharing" | "selfhost" | "swarm" | "watch";
 
 interface Props {
   /** Which mockup to draw when there is no media. */
@@ -173,6 +173,21 @@ const swarmColumns = [2, 3, 2, 1];
                 <i />
               </span>
               <span class="slot-attach" />
+            </div>
+          ) : variant === "watch" ? (
+            <div class="slot-feed">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <span class="slot-feed-row">
+                  <i
+                    class:list={[
+                      "slot-feed-dot",
+                      index === 0 && "slot-feed-dot--live",
+                    ]}
+                  />
+                  <i class="slot-line w80" />
+                  <i class="slot-diff" />
+                </span>
+              ))}
             </div>
           ) : (
             <>

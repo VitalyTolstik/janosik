@@ -6,7 +6,8 @@
 //
 // Run: node video/record/screenshots.mjs [name ...]
 // Env: STATE (default video/record/.state.json), OUT (default site/public/screens),
-//      BASE (default http://localhost:3210), API (default <BASE>/api/v1)
+//      BASE (default http://localhost:3210), API (default <BASE>/api/v1),
+//      APP_BASE (default "/app"; "" for the dev server)
 
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -19,6 +20,8 @@ const STATE = process.env.STATE ?? path.join(HERE, ".state.json");
 const OUT = process.env.OUT ?? path.join(REPO, "site", "public", "screens");
 const BASE = process.env.BASE ?? "http://localhost:3210";
 const API = process.env.API ?? `${BASE}/api/v1`;
+// UI path prefix: "/app" for the single-image build, "" for the dev server.
+const APP_BASE = process.env.APP_BASE ?? "/app";
 const WIDTH = 1440;
 const HEIGHT = 900;
 
@@ -82,7 +85,7 @@ async function newContext(browser, { auth = true, theme = "light" } = {}) {
   return context;
 }
 
-const boardUrl = () => `${BASE}/app/board/${state.boardId}`;
+const boardUrl = () => `${BASE}${APP_BASE}/board/${state.boardId}`;
 
 async function openBoard(page) {
   await page.goto(boardUrl(), { waitUntil: "load" });
@@ -101,7 +104,7 @@ const card = (page, title) => page.getByText(title, { exact: false }).first();
 
 const SHOTS = {
   async login(page) {
-    await page.goto(`${BASE}/app/`, { waitUntil: "load" });
+    await page.goto(`${BASE}${APP_BASE}/`, { waitUntil: "load" });
     await page.getByRole("heading", { name: "Sign in" }).waitFor();
     await wait(400);
     await shot(page, "login");
@@ -276,7 +279,8 @@ const SHOTS = {
 
   async shortcuts(page) {
     await openBoard(page);
-    await page.getByRole("button", { name: "Keyboard shortcuts" }).click();
+    // "?" opens the cheat sheet directly (the header's "?" is a Help menu now).
+    await page.keyboard.press("Shift+Slash");
     await wait(600);
     await shot(page, "shortcuts");
   },
@@ -294,7 +298,7 @@ const SHOTS = {
     if (!res.ok) throw new Error(`create share -> ${res.status}`);
     const share = await res.json();
     const token = share.token ?? share.shareToken;
-    await page.goto(`${BASE}/app/s/${token}`, { waitUntil: "load" });
+    await page.goto(`${BASE}${APP_BASE}/s/${token}`, { waitUntil: "load" });
     await page.getByText("Backlog", { exact: true }).first().waitFor();
     await wait(900);
     await shot(page, "public-share");

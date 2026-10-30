@@ -36,7 +36,7 @@ for (const [slug, themes] of Object.entries(manifest)) {
     const base = path.join(MEDIA, `${slug}${suffix}`);
     const start = seconds(clip.startMs);
     const end = seconds(clip.endMs);
-    const posterAt = seconds(clip.startMs + 700);
+    const posterAt = seconds(clip.posterMs ?? clip.startMs + 700);
 
     ffmpeg([
       "-ss",

@@ -45,6 +45,7 @@ const en = {
   "home.slot.sharing": "Sharing a board with a read-only link",
   "home.slot.selfhost": "Self-hosting Janosik with Docker Compose",
   "home.slot.swarm": "A swarm of AI agents moving cards across a Janosik board",
+  "home.slot.watch": "The watch view: a live activity feed of a board changing",
 
   "home.swarm.title": "How a swarm works the board",
   "home.swarm.lead":
@@ -69,7 +70,7 @@ const en = {
 
   "home.row.board.title": "Drag, drop, and see it four ways",
   "home.row.board.body":
-    "Reorder cards and columns with buttery drag & drop, then switch the same board between kanban, calendar and table. Your choice is remembered.",
+    "Reorder cards and columns with buttery drag & drop, then switch the same board between kanban, calendar, table and watch. Your choice is remembered.",
   "home.row.realtime.title": "Realtime, together",
   "home.row.realtime.body":
     "Shared boards sync over SSE, so every edit lands instantly for everyone, agents and teammates alike. Presence shows who is around, and undo stays yours.",
@@ -79,6 +80,9 @@ const en = {
   "home.row.sharing.title": "Share without the lock-in",
   "home.row.sharing.body":
     "Invite teammates as admin, member or viewer, or hand out a read-only link to watch a board live. Self-hosted, so the data never leaves your server.",
+  "home.row.watch.title": "Watch the swarm land, live",
+  "home.row.watch.body":
+    "Switch to the watch view for a bare status board — who is online, each column's count, and a live feed of every change with from → to diffs. No cards, no clutter, nothing to click by accident.",
 
   "home.more.title": "And the details",
   "home.more.lead": "The small things that make a board pleasant to live in.",
@@ -165,7 +169,7 @@ const en = {
   "pricing.cat.admin": "Admin & security",
   "pricing.cat.support": "Hosting & support",
 
-  "pricing.row.views": "Kanban, calendar & table views",
+  "pricing.row.views": "Kanban, calendar, table & watch views",
   "pricing.row.cards": "Drag & drop, rich cards, labels & covers",
   "pricing.row.offline": "Offline-first, installable PWA",
   "pricing.row.filters": "Filters, search & keyboard shortcuts",
@@ -283,6 +287,7 @@ const ru: Record<keyof typeof en, string> = {
   "home.slot.sharing": "Доступ к доске по ссылке только для чтения",
   "home.slot.selfhost": "Self-hosting Janosik через Docker Compose",
   "home.slot.swarm": "Рой ИИ-агентов двигает карточки по доске Janosik",
+  "home.slot.watch": "Вид наблюдения: живая лента активности на доске",
 
   "home.swarm.title": "Как рой работает с доской",
   "home.swarm.lead":
@@ -307,7 +312,7 @@ const ru: Record<keyof typeof en, string> = {
 
   "home.row.board.title": "Перетаскивайте и смотрите четырьмя способами",
   "home.row.board.body":
-    "Переставляйте карточки и колонки плавным drag & drop, а одну и ту же доску переключайте между канбаном, календарём и таблицей. Выбор запоминается.",
+    "Переставляйте карточки и колонки плавным drag & drop, а одну и ту же доску переключайте между канбаном, календарём, таблицей и наблюдением. Выбор запоминается.",
   "home.row.realtime.title": "Realtime — вместе",
   "home.row.realtime.body":
     "Общие доски синхронизируются по SSE: правки прилетают всем мгновенно — и агентам, и участникам. Presence показывает, кто на месте, а undo остаётся вашим.",
@@ -317,6 +322,9 @@ const ru: Record<keyof typeof en, string> = {
   "home.row.sharing.title": "Делитесь без вендор-лока",
   "home.row.sharing.body":
     "Приглашайте участников как админа, участника или наблюдателя, либо выдавайте ссылку только для чтения, чтобы смотреть доску вживую. Self-hosted — данные не покидают ваш сервер.",
+  "home.row.watch.title": "Наблюдайте, как всё происходит, вживую",
+  "home.row.watch.body":
+    "Переключитесь на вид наблюдения — лаконичная статус-доска: кто онлайн, счётчик по каждой колонке и живая лента всех изменений с диффами было → стало. Ни карточек, ни лишнего, нечего случайно нажать.",
 
   "home.more.title": "И детали",
   "home.more.lead": "Мелочи, из которых складывается приятная доска.",
@@ -402,7 +410,7 @@ const ru: Record<keyof typeof en, string> = {
   "pricing.cat.admin": "Администрирование и безопасность",
   "pricing.cat.support": "Хостинг и поддержка",
 
-  "pricing.row.views": "Виды: канбан, календарь и таблица",
+  "pricing.row.views": "Виды: канбан, календарь, таблица и наблюдение",
   "pricing.row.cards": "Drag & drop, карточки, метки и обложки",
   "pricing.row.offline": "Offline-first PWA с установкой",
   "pricing.row.filters": "Фильтры, поиск и горячие клавиши",

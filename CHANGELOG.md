@@ -39,7 +39,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   runbooks, a complete user guide, an admin-panel guide, an HTTP API reference
   with the command catalog, an FAQ and a security policy, in English and
   Russian with full-text search and a light/dark theme.
-- **Real feature clips.** The landing page's six clips are now genuine
+- **Real feature clips.** The landing page's seven clips are now genuine
   recordings of the running app (light and dark), produced by a Playwright
   pipeline in `video/record/` that seeds a demo board, records the real UI and
   the self-host terminal, and encodes mp4/webm/posters.
@@ -111,10 +111,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (cards / columns / online), a column-count and online rail, and a live
   newest-first feed of the board's activity (commands + comments), re-read on a
   short timer and on realtime frames. On a 2400-card board it mounts **zero
-  cards and ~405 DOM nodes** instead of 2 414   (compact) or 4 482 (full). The user guide gains a *Calendar, table and watch
-  views* page (en/ru) with real screenshots of both the watch view and the
-  compact cards; the README feature list, the landing copy and the docs
-  generator (`video/record/screenshots.mjs`) are updated to match.
+  cards and ~405 DOM nodes** instead of 2 414 (compact) or 4 482 (full). The
+  user guide gains a *Calendar, table and watch views* page (en/ru) with real
+  screenshots of both the watch view and the compact cards; the README feature
+  list, the landing copy and the docs generator
+  (`video/record/screenshots.mjs`) are updated to match.
+- **Watch clip on the landing page (TASK-142).** The home page gains a fifth
+  feature row for the watch view, with a real recording of it in light and dark
+  (a `feature-watch` clip from the `video/record/` pipeline: two teammates move
+  cards and comment on another tab while the feed fills on its own). The
+  user-guide watch section embeds the clip, and the pricing table and landing
+  copy now list watch as a fourth view. The recorder can grab a poster from
+  later in a scene (`posterMs`), so a clip whose opening frame is not the
+  payoff still gets a useful still.
 
 ### Fixed
 

@@ -167,6 +167,42 @@ async function sceneSharing(page) {
   await wait(500);
 }
 
+// The watch clip: a board observed, not worked. The camera sits on the watch
+// view while two teammates move cards and comment on another tab, so the live
+// feed fills and the presence roster updates on its own.
+async function sceneWatch(page, { actor }) {
+  await wait(900);
+  await view(page, "Watch");
+  await wait(1300);
+  const grace = actor("grace");
+  const leo = actor("leo");
+  await drag(
+    grace.page,
+    card(grace.page, "Bulk import from CSV"),
+    column(grace.page, "In progress"),
+    80,
+  );
+  await wait(1100);
+  await drag(
+    leo.page,
+    card(leo.page, "SAML group mapping"),
+    column(leo.page, "Review"),
+    80,
+  );
+  await wait(1200);
+  await card(grace.page, "Bulk import from CSV").click();
+  await wait(800);
+  const comment = grace.page.getByTestId("comment-input");
+  await comment.scrollIntoViewIfNeeded();
+  await comment.click();
+  await grace.page.keyboard.type("Picked this up — starting today.");
+  await wait(400);
+  await grace.page.getByTestId("comment-send").click();
+  await wait(700);
+  await grace.page.keyboard.press("Escape");
+  await wait(1300);
+}
+
 async function sceneHero(page, { actor }) {
   // Five agents keep the flow moving: they pull cards from Backlog into In
   // progress, then push them into Review, then pull the next batch. Every
@@ -240,6 +276,11 @@ const SCENES = {
   "feature-cards": { audience: [], run: sceneCards },
   "feature-realtime": { audience: ["grace"], run: sceneRealtime },
   "feature-sharing": { audience: [], run: sceneSharing },
+  "feature-watch": {
+    audience: ["grace", "leo"],
+    run: sceneWatch,
+    poster: 3400,
+  },
 };
 
 async function recordClip(browser, slug, theme, manifest) {
@@ -268,10 +309,14 @@ async function recordClip(browser, slug, theme, manifest) {
     `${slug}${theme === "dark" ? "-dark" : ""}.webm`,
   );
   renameSync(source, target);
+  const startMs = Math.max(0, sceneStart - recorded.videoStart - 250);
   manifest[slug][theme] = {
     file: path.basename(target),
-    startMs: Math.max(0, sceneStart - recorded.videoStart - 250),
+    startMs,
     endMs: sceneEnd - recorded.videoStart + 250,
+    // Where the poster is grabbed: 700 ms in by default, or `scene.poster` ms
+    // after the scene starts for clips whose opening frame is not the payoff.
+    posterMs: startMs + (scene.poster ?? 700),
   };
   console.log(`  ${slug} ${theme} -> ${path.basename(target)}`);
 }

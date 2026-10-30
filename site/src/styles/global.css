@@ -1028,6 +1028,48 @@ p {
   background: color-mix(in oklab, var(--primary) 12%, transparent);
 }
 
+/* The watch view mockup — a bare activity feed (one column, no cards). */
+.slot--watch .slot-canvas {
+  grid-template-columns: 1fr;
+}
+
+.slot-feed {
+  display: grid;
+  gap: 0.55rem;
+  align-content: start;
+  padding: 0.5rem;
+}
+
+.slot-feed-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.slot-feed-row .slot-line {
+  flex: 1;
+}
+
+.slot-feed-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--muted-foreground) 40%, transparent);
+}
+
+.slot-feed-dot--live {
+  background: var(--primary);
+}
+
+.slot-diff {
+  flex: none;
+  width: 1.6rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--success) 45%, transparent);
+}
+
 .slot-term {
   display: grid;
   gap: 0.5rem;

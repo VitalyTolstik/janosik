@@ -25,6 +25,7 @@ const clipSlug: Record<MediaVariant, string> = {
   cards: "feature-cards",
   sharing: "feature-sharing",
   selfhost: "feature-selfhost",
+  watch: "feature-watch",
 };
 
 const clip = (variant: MediaVariant) => {
@@ -77,6 +78,12 @@ const rows: {
     variant: "sharing",
     slot: "home.slot.sharing",
     flip: true,
+  },
+  {
+    title: "home.row.watch.title",
+    body: "home.row.watch.body",
+    variant: "watch",
+    slot: "home.slot.watch",
   },
 ];
 
