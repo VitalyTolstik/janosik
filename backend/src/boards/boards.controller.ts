@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -44,16 +45,27 @@ export class BoardsController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  list(@CurrentUser() user: AuthUser): Promise<BoardSummary[]> {
-    return this.boards.listBoards(user.id);
+  async list(
+    @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+  ): Promise<BoardSummary[]> {
+    const summaries = await this.boards.listBoards(user.id);
+    // A board-scoped PAT sees only its board (TASK-157).
+    const scope = principal?.tokenScope?.boardId;
+    return scope ? summaries.filter((board) => board.id === scope) : summaries;
   }
 
   @UseGuards(JwtAuthGuard)
   @Post()
   create(
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Body() dto: CreateBoardDto,
   ): Promise<BoardAggregate> {
+    // A board-scoped token cannot mint boards outside its scope (TASK-157).
+    if (principal?.tokenScope?.boardId) {
+      throw new ForbiddenException("Token is scoped to one board");
+    }
     return this.boards.createBoard(user.id, dto);
   }
 

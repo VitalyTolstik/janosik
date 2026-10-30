@@ -8,6 +8,7 @@ import {
 import { Reflector } from "@nestjs/core";
 import { Role } from "@prisma/client";
 import { ApiTokenService } from "@/auth/api-token.service";
+import type { AuthPrincipal } from "@/auth/auth-principal";
 import type { AuthUser } from "@/auth/auth.types";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -18,6 +19,7 @@ export interface GuardedRequest {
   params?: Record<string, string | undefined>;
   user?: AuthUser;
   boardMembership?: unknown;
+  auth?: AuthPrincipal;
 }
 
 /**
@@ -80,6 +82,17 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
     user: AuthUser,
     boardId: string,
   ): Promise<boolean> {
+    // Board scope (TASK-157): a token scoped to one board must not reach any
+    // other, even one its owner is a member of.
+    const tokenBoard = request.auth?.tokenScope?.boardId;
+    if (
+      tokenBoard !== undefined &&
+      tokenBoard !== null &&
+      tokenBoard !== boardId
+    ) {
+      throw new ForbiddenException("Token is scoped to another board");
+    }
+
     const board = await this.prisma.board.findFirst({
       where: { id: boardId, deletedAt: null },
       select: { id: true },

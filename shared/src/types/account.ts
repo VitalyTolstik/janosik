@@ -33,5 +33,12 @@ export const API_TOKEN_NAME_MAX = 50;
 /** How far ahead an API token may expire. */
 export const API_TOKEN_MAX_TTL_DAYS = 3650;
 
+/**
+ * Bounds of a per-token rate limit (requests per minute, TASK-157). `null`
+ * means "no per-token limit" — the global limit still applies.
+ */
+export const API_TOKEN_RATE_MIN = 1;
+export const API_TOKEN_RATE_MAX = 100_000;
+
 /** Display-name bound, shared by register/admin create/profile update. */
 export const DISPLAY_NAME_MAX = 50;

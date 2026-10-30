@@ -346,6 +346,11 @@ Every route is behind user auth (JWT or PAT), except the three token routes,
 which are [session-only](#session-only-routes): an API key can neither list
 nor create nor revoke keys.
 
+A personal API token (TASK-157) can be scoped when created: `boardId` limits
+it to one board, `readOnly: true` refuses every write (`403 pat_read_only`),
+and `rateLimitPerMinute` gives it its own request budget (over the budget
+answers `429`).
+
 | Method   | Path                    | Returns                   |
 | -------- | ----------------------- | ------------------------- |
 | `PATCH`  | `/users/me`             | `AuthUserDto`             |

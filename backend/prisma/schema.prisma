@@ -254,15 +254,20 @@ enum AdminRole {
 }
 
 model ApiToken {
-  id         String    @id @default(cuid())
-  user       User      @relation(fields: [userId], references: [id])
-  userId     String
-  name       String // "CI", "integration …"
-  tokenHash  String    @unique // shown once, only the hash is stored
-  lastUsedAt DateTime?
-  expiresAt  DateTime?
-  revokedAt  DateTime?
-  createdAt  DateTime  @default(now())
+  id                 String    @id @default(cuid())
+  user               User      @relation(fields: [userId], references: [id])
+  userId             String
+  name               String // "CI", "integration …"
+  tokenHash          String    @unique // shown once, only the hash is stored
+  // TASK-157 scopes: a token may be limited to one board and/or to reads,
+  // and carry its own request-per-minute budget. Null = no restriction.
+  boardId            String? // board this token is scoped to; null = all
+  readOnly           Boolean   @default(false) // true = reads only
+  rateLimitPerMinute Int? // per-token rate limit; null = global only
+  lastUsedAt         DateTime?
+  expiresAt          DateTime?
+  revokedAt          DateTime?
+  createdAt          DateTime  @default(now())
 
   @@index([userId])
 }

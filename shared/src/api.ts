@@ -495,6 +495,15 @@ export interface UserTokenDto {
   expiresAt: number | null;
   /** Unix ms revoke time; `null` while active/expired. */
   revokedAt: number | null;
+  /**
+   * Board the token is scoped to (TASK-157); `null` = every board its owner
+   * can access.
+   */
+  boardId: string | null;
+  /** When true the token may only read (TASK-157). */
+  readOnly: boolean;
+  /** Requests per minute this token may make; `null` = no per-token limit. */
+  rateLimitPerMinute: number | null;
 }
 
 /** Body of `POST /users/me/tokens` (TASK-36.1). */
@@ -502,6 +511,12 @@ export interface CreateUserTokenRequest {
   name: string;
   /** ISO-8601 expiry; omitted/`null` = never expires. Must be in the future. */
   expiresAt?: string | null;
+  /** Scope to one board (TASK-157); omitted/`null` = every board. */
+  boardId?: string | null;
+  /** Read-only token (TASK-157); omitted = read/write. */
+  readOnly?: boolean;
+  /** Per-token request limit per minute (TASK-157); omitted/`null` = none. */
+  rateLimitPerMinute?: number | null;
 }
 
 /** Response of `POST /users/me/tokens`: the plaintext appears exactly once. */

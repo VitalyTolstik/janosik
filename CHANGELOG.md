@@ -148,6 +148,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   whether a person (`"human"`, a browser session) or an agent (`"agent"`, a
   personal API token) caused it; the activity feed carries the type and the
   card history marks agent entries with an "Agent" badge.
+- **API-token scopes and per-token rate limit (TASK-157).** A personal API
+  token can now be scoped to a single board, made read-only (writes answer
+  `403 pat_read_only`) and given its own requests-per-minute budget (over the
+  budget answers `429`). The account panel exposes the three options and the
+  token list shows the scope.
 
 ### Fixed
 

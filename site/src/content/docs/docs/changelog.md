@@ -73,6 +73,10 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   whether a person (`"human"`, a browser session) or an agent (`"agent"`, a
   personal API token) caused it. The activity feed carries the type and the
   card history marks agent entries with an "Agent" badge.
+- **API-token scopes and per-token rate limit (TASK-157).** A personal API
+  token can be scoped to one board, made read-only (writes answer
+  `403 pat_read_only`) and given its own requests-per-minute budget (over the
+  budget answers `429`). The account panel exposes the three options.
 
 ### Security
 

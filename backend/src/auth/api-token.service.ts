@@ -8,6 +8,8 @@ import type { ApiToken } from "@prisma/client";
 import {
   API_TOKEN_MAX_TTL_DAYS,
   API_TOKEN_PREFIX,
+  API_TOKEN_RATE_MAX,
+  API_TOKEN_RATE_MIN,
   type CreateUserTokenRequest,
   type CreateUserTokenResponse,
   type UserTokenDto,
@@ -35,10 +37,22 @@ export const API_TOKEN_DEFAULT_TTL_DAYS = 90;
  */
 export const API_TOKEN_LAST_USED_RESOLUTION_MS = 60_000;
 
+/**
+ * The restrictions a PAT carries (TASK-157). `boardId: null` = every board
+ * the owner can access; `readOnly` = writes refused; `rateLimitPerMinute`
+ * `null` = no per-token budget beyond the global limit.
+ */
+export interface TokenScope {
+  boardId: string | null;
+  readOnly: boolean;
+  rateLimitPerMinute: number | null;
+}
+
 /** A PAT resolved to its owner (B-2: the token id rides along). */
 export interface AuthenticatedToken {
   user: AuthUser;
   tokenId: string;
+  scope: TokenScope;
 }
 
 /**
@@ -92,7 +106,15 @@ export class ApiTokenService {
         data: { lastUsedAt: new Date(now) },
       });
     }
-    return { user: toAuthUser(stored.user), tokenId: stored.id };
+    return {
+      user: toAuthUser(stored.user),
+      tokenId: stored.id,
+      scope: {
+        boardId: stored.boardId,
+        readOnly: stored.readOnly,
+        rateLimitPerMinute: stored.rateLimitPerMinute,
+      },
+    };
   }
 
   /**
@@ -144,16 +166,74 @@ export class ApiTokenService {
     dto: CreateUserTokenRequest,
   ): Promise<CreateUserTokenResponse> {
     const token = this.generate();
+    const scope = await this.resolveScope(userId, dto);
     const created = await this.prisma.apiToken.create({
       data: {
         userId,
         name: dto.name,
         tokenHash: this.hashToken(token),
         expiresAt: this.resolveExpiresAt(dto.expiresAt),
+        ...scope,
       },
     });
     // The plaintext leaves the server exactly here, exactly once.
     return { token, apiToken: toUserTokenDto(created) };
+  }
+
+  /**
+   * Validate the requested scope (TASK-157): a board scope must name a board
+   * the owner is an active member of (otherwise the token would be useless),
+   * and a rate limit must be a positive integer within bounds.
+   */
+  private async resolveScope(
+    userId: string,
+    dto: CreateUserTokenRequest,
+  ): Promise<{
+    boardId: string | null;
+    readOnly: boolean;
+    rateLimitPerMinute: number | null;
+  }> {
+    let boardId: string | null = null;
+    if (dto.boardId !== undefined && dto.boardId !== null) {
+      boardId = dto.boardId.trim();
+      if (boardId === "") {
+        throw new BadRequestException("boardId must not be blank");
+      }
+      const membership = await this.prisma.boardMember.findUnique({
+        where: { boardId_userId: { boardId, userId } },
+        select: { acceptedAt: true, expiresAt: true },
+      });
+      if (
+        !membership ||
+        membership.acceptedAt === null ||
+        (membership.expiresAt !== null &&
+          membership.expiresAt.getTime() <= Date.now())
+      ) {
+        throw new BadRequestException(
+          "boardId must be a board you are a member of",
+        );
+      }
+    }
+
+    let rateLimitPerMinute: number | null = null;
+    if (
+      dto.rateLimitPerMinute !== undefined &&
+      dto.rateLimitPerMinute !== null
+    ) {
+      const rate = dto.rateLimitPerMinute;
+      if (
+        !Number.isInteger(rate) ||
+        rate < API_TOKEN_RATE_MIN ||
+        rate > API_TOKEN_RATE_MAX
+      ) {
+        throw new BadRequestException(
+          `rateLimitPerMinute must be an integer ${API_TOKEN_RATE_MIN}…${API_TOKEN_RATE_MAX}`,
+        );
+      }
+      rateLimitPerMinute = rate;
+    }
+
+    return { boardId, readOnly: dto.readOnly === true, rateLimitPerMinute };
   }
 
   /** Idempotent: revoking an already-revoked token keeps the first stamp. */
@@ -204,5 +284,8 @@ function toUserTokenDto(token: ApiToken): UserTokenDto {
     lastUsedAt: token.lastUsedAt?.getTime() ?? null,
     expiresAt: token.expiresAt?.getTime() ?? null,
     revokedAt: token.revokedAt?.getTime() ?? null,
+    boardId: token.boardId,
+    readOnly: token.readOnly,
+    rateLimitPerMinute: token.rateLimitPerMinute,
   };
 }

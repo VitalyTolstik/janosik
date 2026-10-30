@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Check, ChevronDown, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 import {
   API_TOKEN_NAME_MAX,
+  API_TOKEN_RATE_MAX,
+  API_TOKEN_RATE_MIN,
+  type BoardSummary,
   type CreateUserTokenResponse,
   type UserTokenDto,
 } from "@janosik/shared";
@@ -63,6 +66,11 @@ export function ApiTokensSection() {
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [preset, setPreset] = useState<ExpiryPreset>("never");
+  // Scopes (TASK-157): board, read-only and a per-token rate limit.
+  const [boards, setBoards] = useState<BoardSummary[]>([]);
+  const [boardId, setBoardId] = useState("");
+  const [readOnly, setReadOnly] = useState(false);
+  const [rateLimit, setRateLimit] = useState("");
   const [creating, setCreating] = useState(false);
   const [reveal, setReveal] = useState<CreateUserTokenResponse | null>(null);
   const [copied, setCopied] = useState(false);
@@ -81,14 +89,35 @@ export function ApiTokensSection() {
     void load();
   }, [load]);
 
+  // The board-scope picker needs the caller's boards; load them lazily when
+  // the create dialog opens (a failure just leaves "All boards").
+  useEffect(() => {
+    if (!createOpen) return;
+    let alive = true;
+    void api
+      .listBoards()
+      .then((rows) => {
+        if (alive) setBoards(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [createOpen]);
+
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
     if (name.trim() === "" || creating) return;
     setCreating(true);
     try {
+      const rate = rateLimit.trim() === "" ? null : Number(rateLimit);
       const created = await api.createToken({
         name: name.trim(),
         expiresAt: expiryIso(preset),
+        boardId: boardId === "" ? null : boardId,
+        readOnly,
+        rateLimitPerMinute:
+          rate !== null && Number.isInteger(rate) ? rate : null,
       });
       setReveal(created);
       void load();
@@ -106,6 +135,9 @@ export function ApiTokensSection() {
       setCopied(false);
       setName("");
       setPreset("never");
+      setBoardId("");
+      setReadOnly(false);
+      setRateLimit("");
     }
   };
 
@@ -239,6 +271,55 @@ export function ApiTokensSection() {
                     </DropdownMenuRadioGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
+              </div>
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="token-board"
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  {t("account.tokens.boardLabel")}
+                </label>
+                <select
+                  id="token-board"
+                  data-testid="token-board"
+                  value={boardId}
+                  onChange={(event) => setBoardId(event.target.value)}
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="">{t("account.tokens.boardAll")}</option>
+                  {boards.map((board) => (
+                    <option key={board.id} value={board.id}>
+                      {board.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  data-testid="token-read-only"
+                  checked={readOnly}
+                  onChange={(event) => setReadOnly(event.target.checked)}
+                />
+                {t("account.tokens.readOnlyLabel")}
+              </label>
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="token-rate"
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  {t("account.tokens.rateLabel")}
+                </label>
+                <Input
+                  id="token-rate"
+                  data-testid="token-rate"
+                  type="number"
+                  min={API_TOKEN_RATE_MIN}
+                  max={API_TOKEN_RATE_MAX}
+                  value={rateLimit}
+                  placeholder={t("account.tokens.ratePlaceholder")}
+                  onChange={(event) => setRateLimit(event.target.value)}
+                />
               </div>
               <DialogFooter>
                 <Button
@@ -381,6 +462,28 @@ function TokenRow({
             : t("account.tokens.expiresOn", {
                 date: formatDateOnly(token.expiresAt, lang),
               })}
+        </p>
+        <p
+          className="flex flex-wrap gap-1.5 text-[11px] text-muted-foreground"
+          data-testid="token-scope"
+        >
+          <span className="rounded bg-muted px-1.5">
+            {token.boardId
+              ? t("account.tokens.scopeBoard")
+              : t("account.tokens.scopeAllBoards")}
+          </span>
+          {token.readOnly ? (
+            <span className="rounded bg-muted px-1.5">
+              {t("account.tokens.scopeReadOnly")}
+            </span>
+          ) : null}
+          {token.rateLimitPerMinute !== null ? (
+            <span className="rounded bg-muted px-1.5">
+              {t("account.tokens.scopeRate", {
+                rate: token.rateLimitPerMinute,
+              })}
+            </span>
+          ) : null}
         </p>
       </div>
       {token.revokedAt === null ? (
