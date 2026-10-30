@@ -48,8 +48,9 @@ export class CommentsController {
     @Param("cardId") cardId: string,
     @Query("cursor") cursor?: string,
     @Query("limit") limit?: string,
+    @Query("kind") kind?: string,
   ): Promise<CommentPage> {
-    return this.comments.list(cardId, cursor, limit);
+    return this.comments.list(cardId, cursor, limit, kind);
   }
 
   @UseGuards(CardAccessGuard)

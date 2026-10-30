@@ -18,6 +18,7 @@ import type {
   AuthUserDto,
   BoardAction,
   BoardAggregate,
+  BoardCardSearchResult,
   BoardEnvelope,
   BoardInvitationDto,
   BoardMemberDto,
@@ -25,6 +26,7 @@ import type {
   BoardShareDto,
   BoardSummary,
   CommentDto,
+  CommentKind,
   CommentPage,
   CommandRequest,
   CommandResponse,
@@ -300,6 +302,20 @@ export class JanosikClient {
     return { board, seq };
   }
 
+  /**
+   * Card ids on a board whose title, description, a checklist item or a
+   * comment contains `query` (TASK-157, D11) — the only way to reach comment
+   * text, which is not part of the board aggregate.
+   */
+  searchBoardCards(
+    boardId: string,
+    query: string,
+  ): Promise<BoardCardSearchResult> {
+    return this.request(apiPath`/boards/${boardId}/search`, {
+      query: { q: query },
+    });
+  }
+
   exportBoard(id: string): Promise<BoardEnvelope> {
     return this.request(apiPath`/boards/${id}/export`);
   }
@@ -363,16 +379,21 @@ export class JanosikClient {
     cardId: string,
     cursor?: string,
     limit?: number,
+    kind?: CommentKind,
   ): Promise<CommentPage> {
     return this.request(apiPath`/cards/${cardId}/comments`, {
-      query: { cursor, limit },
+      query: { cursor, limit, kind },
     });
   }
 
-  addComment(cardId: string, text: string): Promise<CommentDto> {
+  addComment(
+    cardId: string,
+    text: string,
+    kind?: CommentKind,
+  ): Promise<CommentDto> {
     return this.request(apiPath`/cards/${cardId}/comments`, {
       method: "POST",
-      body: { text },
+      body: { text, ...(kind ? { kind } : {}) },
     });
   }
 

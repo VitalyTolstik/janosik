@@ -15,6 +15,7 @@ import type {
   CommandRequest,
   CommandResponse,
   CommentDto,
+  CommentKind,
   CommentPage,
   CreateShareRequest,
   CreateUserTokenRequest,
@@ -25,6 +26,7 @@ import type {
   UpdateShareRequest,
   UserTokenDto,
 } from "@janosik/shared";
+import { DEFAULT_COMMENT_KIND } from "@janosik/shared";
 import { createId } from "@/utils/id";
 
 /**
@@ -627,30 +629,44 @@ export class ApiClient {
     );
   }
 
-  /** Newest-first page of a card's comments (TASK-28 REST, TASK-37 UI). */
+  /**
+   * Newest-first page of a card's comments (TASK-28 REST, TASK-37 UI).
+   * `kind` narrows the page to one comment kind (TASK-157, D10).
+   */
   listComments(
     cardId: string,
     cursor?: string,
     limit?: number,
+    kind?: CommentKind,
   ): Promise<CommentPage> {
     return this.request<CommentPage>(
-      `/cards/${encodeURIComponent(cardId)}/comments${pageQuery(cursor, limit)}`,
+      `/cards/${encodeURIComponent(cardId)}/comments${pageQuery(cursor, limit, { kind })}`,
     );
   }
 
   /**
    * Post a comment. `commandId` is the idempotency key (TASK-99) — a retry
    * with the same key returns the first comment; a fresh one is generated
-   * per call so an automatic retry never doubles the comment.
+   * per call so an automatic retry never doubles the comment. `kind`
+   * (TASK-157, D10) is the structured comment type; omitted = `note`.
    */
   createComment(
     cardId: string,
     text: string,
     commandId: string = createId(),
+    kind?: CommentKind,
   ): Promise<CommentDto> {
     return this.request<CommentDto>(
       `/cards/${encodeURIComponent(cardId)}/comments`,
-      { method: "POST", body: { text, commandId } },
+      {
+        method: "POST",
+        // The default kind is what the server assumes, so it is not sent.
+        body: {
+          text,
+          commandId,
+          ...(kind && kind !== DEFAULT_COMMENT_KIND ? { kind } : {}),
+        },
+      },
     );
   }
 
@@ -909,10 +925,17 @@ export class ApiClient {
 export const api = new ApiClient();
 
 /** Opaque cursor + bound query for the paginated endpoints. */
-function pageQuery(cursor?: string, limit?: number): string {
+function pageQuery(
+  cursor?: string,
+  limit?: number,
+  extra?: Record<string, string | undefined>,
+): string {
   const params = new URLSearchParams();
   if (cursor) params.set("cursor", cursor);
   if (limit !== undefined) params.set("limit", String(limit));
+  for (const [key, value] of Object.entries(extra ?? {})) {
+    if (value !== undefined && value !== "") params.set(key, value);
+  }
   const query = params.toString();
   return query === "" ? "" : `?${query}`;
 }

@@ -53,6 +53,7 @@ function comment(id: string): CommentDto {
     cardId: "card-1",
     authorId: "user-1",
     text: `Note ${id}`,
+    kind: "note",
     createdAt: AT,
   };
 }

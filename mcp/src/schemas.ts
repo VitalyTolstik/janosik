@@ -9,6 +9,7 @@ import { z } from "zod";
 import {
   CARD_LINK_TYPES,
   CARD_PRIORITIES,
+  COMMENT_KINDS,
   COVER_COLORS,
   COVER_GRADIENTS,
   LABEL_COLORS,
@@ -56,6 +57,13 @@ export const labelColorSchema = z
 export const prioritySchema = z
   .enum(CARD_PRIORITIES)
   .describe(`Priority, one of: ${CARD_PRIORITIES.join(", ")}.`);
+
+export const commentKindSchema = z
+  .enum(COMMENT_KINDS)
+  .describe(
+    "Comment kind (TASK-157): 'note' (default), 'status', 'question', " +
+      "'blocker', 'evidence' or 'handoff'.",
+  );
 
 export const linkTypeSchema = z
   .enum(CARD_LINK_TYPES)

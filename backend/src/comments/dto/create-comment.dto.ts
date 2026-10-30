@@ -1,11 +1,12 @@
 import {
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
 } from "class-validator";
-import { LIMITS } from "@janosik/shared";
+import { COMMENT_KINDS, LIMITS, type CommentKind } from "@janosik/shared";
 
 /** Body of `POST /cards/:id/comments` (§7.4, plain text). */
 export class CreateCommentDto {
@@ -13,6 +14,15 @@ export class CreateCommentDto {
   @IsNotEmpty()
   @MaxLength(LIMITS.comment)
   text!: string;
+
+  /**
+   * Structured kind (TASK-157, D10). Omitted = `note`, so an ordinary comment
+   * is unchanged; the swarm vocabulary (`blocker`, `question`, `handoff`, …)
+   * makes a filter a query instead of a text scan.
+   */
+  @IsOptional()
+  @IsIn(COMMENT_KINDS)
+  kind?: CommentKind;
 
   /**
    * Client idempotency key (TASK-99): a retry that reuses the key returns the

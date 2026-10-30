@@ -243,9 +243,16 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
                         cardLabelIds={hit.card.labelIds}
                       />
                       <Snippet
-                        text={hit.card.description ?? ""}
+                        text={
+                          hit.matchIn === "checklist"
+                            ? (hit.matchText ?? "")
+                            : (hit.card.description ?? "")
+                        }
                         query={query}
-                        show={hit.matchIn === "description"}
+                        show={
+                          hit.matchIn === "description" ||
+                          hit.matchIn === "checklist"
+                        }
                       />
                     </div>
                   </ResultRow>

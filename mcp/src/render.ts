@@ -15,7 +15,7 @@ import type {
   CommentDto,
   Label,
 } from "@janosik/shared";
-import { DEFAULT_CARD_PRIORITY } from "@janosik/shared";
+import { DEFAULT_CARD_PRIORITY, DEFAULT_COMMENT_KIND } from "@janosik/shared";
 
 import { bullets, code, formatTimestamp } from "./format.js";
 
@@ -196,10 +196,11 @@ export function renderComments(
   nextCursor: string | null,
 ): string {
   if (comments.length === 0) return "No comments.";
-  const lines = comments.map(
-    (comment) =>
-      `${formatTimestamp(comment.createdAt)} · ${comment.authorId} · ${code(comment.id)}\n  ${comment.text}`,
-  );
+  const lines = comments.map((comment) => {
+    const kind =
+      comment.kind !== DEFAULT_COMMENT_KIND ? ` [${comment.kind}]` : "";
+    return `${formatTimestamp(comment.createdAt)} · ${comment.authorId} · ${code(comment.id)}${kind}\n  ${comment.text}`;
+  });
   const more = nextCursor
     ? `\n\n_more: next_cursor = ${code(nextCursor)}_`
     : "";
