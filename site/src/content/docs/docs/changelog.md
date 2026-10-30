@@ -39,6 +39,10 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   and IP allowlist), and a Bull Board queue dashboard.
 - Collaboration: realtime SSE, presence and attribution, comments with history
   diffs, and board members with roles and expiring access.
+- Four board views — kanban, calendar, table and a bare **watch** view for
+  observing a swarm: a large status, a column and online rail, and a live
+  activity feed with from → to diffs and paging. A persisted "Simplify design"
+  toggle swaps the full card for a compact one-line face.
 - Backend: command log with idempotency and conflict handling, BullMQ queues
   (mail, transcode, maintenance, media, exports, comms, demo), OAuth login
   (Google and Yandex), email flows (verification, change, templates), and Redis

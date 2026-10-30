@@ -50,6 +50,10 @@ description: Четыре способа работать с теми же ка�
 монтирует ни карточек, ни drag & drop: только крупный статус и живая лента
 того, что происходит.
 
+<video controls muted loop playsinline poster="/media/feature-watch.jpg">
+  <source src="/media/feature-watch.mp4" type="video/mp4" />
+</video>
+
 ![Вид наблюдения: крупный статус, колонки и список онлайн слева и живая лента с диффами «было → стало».](/screens/watch.png)
 
 - **Статус** (сверху): всего карточек, число колонок и сколько людей (или

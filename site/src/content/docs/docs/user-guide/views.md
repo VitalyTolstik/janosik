@@ -46,6 +46,10 @@ The watch view is for **observing** a board — a swarm of agents at work, or a
 busy team — without the wall of cards. It mounts no cards and no drag & drop:
 just a large status and a live feed of what is happening.
 
+<video controls muted loop playsinline poster="/media/feature-watch.jpg">
+  <source src="/media/feature-watch.mp4" type="video/mp4" />
+</video>
+
 ![The watch view: a large status, the columns and online roster on the left, and a live activity feed with from → to diffs.](/screens/watch.png)
 
 - **Status** (top): total cards, the number of columns, and how many people (or
