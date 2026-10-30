@@ -106,6 +106,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tasks** on the main thread in either density. The choice is stored next to
   the board/calendar/table view (`janosik-board-density`), and the compact row
   height is wired through the same virtualization maths as the full face.
+- **Watch view (TASK-142).** A fourth board view for observing a swarm: no
+  cards, no drag & drop, no animations or transitions. It shows a large status
+  (cards / columns / online), a column-count and online rail, and a live
+  newest-first feed of the board's activity (commands + comments), re-read on a
+  short timer and on realtime frames. On a 2400-card board it mounts **zero
+  cards and ~405 DOM nodes** instead of 2 414 (compact) or 4 482 (full).
 
 ### Fixed
 
