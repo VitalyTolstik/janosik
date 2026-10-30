@@ -51,7 +51,12 @@ describe("Board writes under concurrency (e2e)", () => {
     }).compile();
     app = moduleRef.createNestApplication();
     setupApp(app);
-    await app.init();
+    // Bind the HTTP server before any request. supertest lazily starts a
+    // not-yet-listening server and then *closes* it once the request ends, so
+    // a burst of concurrent requests races that close and resets in-flight
+    // sockets (`read ECONNRESET`). With the server already listening,
+    // supertest reuses it and leaves it open.
+    await app.listen(0);
     prisma = app.get(PrismaService);
     await wipe(prisma);
 
