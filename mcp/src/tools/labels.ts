@@ -15,6 +15,7 @@ import { newId } from "../ids.js";
 import {
   boardIdSchema,
   cardIdSchema,
+  expectedVersionSchema,
   labelColorSchema,
   responseFormatSchema,
   idSchema,
@@ -57,17 +58,31 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
         "Create a board label with a name and colour. Returns its id.",
       inputSchema: {
         boardId: boardIdSchema,
+        labelId: idSchema
+          .optional()
+          .describe(
+            "Client id for the new label (TASK-157, E14) — a retry then " +
+              "returns the first label instead of a duplicate.",
+          ),
         name: z.string().min(1).max(LIMITS.labelName).describe("Label name."),
         color: labelColorSchema,
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, name, color }) => {
-      const id = newId();
-      await client.command(boardId, {
-        type: "ADD_LABEL",
-        label: { id, name, color },
-      });
+    async ({ boardId, labelId, name, color, expectedVersion }) => {
+      const id = labelId ?? newId();
+      await client.command(
+        boardId,
+        {
+          type: "ADD_LABEL",
+          label: { id, name, color },
+        },
+        {
+          ifMatch: expectedVersion,
+          ...(labelId ? { commandId: labelId } : {}),
+        },
+      );
       return textOnly(`Created label "${name}" (${color}) — \`${id}\`.`);
     },
   );
@@ -82,11 +97,16 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
         boardId: boardIdSchema,
         labelId: idSchema.describe("Label id."),
         name: z.string().min(1).max(LIMITS.labelName).describe("New name."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, labelId, name }) => {
-      await client.command(boardId, { type: "RENAME_LABEL", labelId, name });
+    async ({ boardId, labelId, name, expectedVersion }) => {
+      await client.command(
+        boardId,
+        { type: "RENAME_LABEL", labelId, name },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Renamed label ${labelId} to "${name}".`);
     },
   );
@@ -101,15 +121,20 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
         boardId: boardIdSchema,
         labelId: idSchema.describe("Label id."),
         color: labelColorSchema,
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, labelId, color }) => {
-      await client.command(boardId, {
-        type: "SET_LABEL_COLOR",
-        labelId,
-        color,
-      });
+    async ({ boardId, labelId, color, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "SET_LABEL_COLOR",
+          labelId,
+          color,
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Set label ${labelId} to ${color}.`);
     },
   );
@@ -123,11 +148,16 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
       inputSchema: {
         boardId: boardIdSchema,
         labelId: idSchema.describe("Label id."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, labelId }) => {
-      await client.command(boardId, { type: "DELETE_LABEL", labelId });
+    async ({ boardId, labelId, expectedVersion }) => {
+      await client.command(
+        boardId,
+        { type: "DELETE_LABEL", labelId },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Deleted label ${labelId}.`);
     },
   );
@@ -144,16 +174,21 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
         cardId: cardIdSchema,
         labelId: idSchema.describe("Label id."),
         on: z.boolean().describe("true attaches, false detaches."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, labelId, on }) => {
-      await client.command(boardId, {
-        type: "SET_CARD_LABEL",
-        cardId,
-        labelId,
-        on,
-      });
+    async ({ boardId, cardId, labelId, on, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "SET_CARD_LABEL",
+          cardId,
+          labelId,
+          on,
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(
         `${on ? "Attached" : "Detached"} label ${labelId} ${on ? "to" : "from"} card ${cardId}.`,
       );

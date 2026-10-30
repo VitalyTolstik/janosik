@@ -18,6 +18,7 @@ import {
   boardIdSchema,
   columnIdSchema,
   detailSchema,
+  expectedVersionSchema,
   responseFormatSchema,
 } from "../schemas.js";
 import { DESTRUCTIVE, READ, WRITE, defineTool } from "./helpers.js";
@@ -75,11 +76,13 @@ export function registerBoardTools(
     {
       title: "Get a Janosik board",
       description:
-        "Read a board: columns with their cards, every card's badges and the " +
-        "label set. Card and column ids returned here are what the other " +
-        "tools expect. On a large board pass columnId to read one column; " +
-        "archived cards are listed only with include_archived. Pass " +
-        "detail='summary' to skip each card's description and checklists.",
+        "Read a board: columns with their cards, every card's badges, the " +
+        "label set and the board version (`seq`). Card and column ids returned " +
+        "here are what the other tools expect; pass `seq` as a write's " +
+        "expectedVersion to refuse a write that would clobber a concurrent " +
+        "change. On a large board pass columnId to read one column; archived " +
+        "cards are listed only with include_archived. Pass detail='summary' to " +
+        "skip each card's description and checklists.",
       inputSchema: {
         boardId: boardIdSchema,
         columnId: columnIdSchema
@@ -109,11 +112,8 @@ export function registerBoardTools(
       detail,
       response_format,
     }) => {
-      const board = sliceBoard(
-        await client.getBoard(boardId),
-        columnId,
-        include_archived,
-      );
+      const { board: full, seq } = await client.getBoardWithSeq(boardId);
+      const board = sliceBoard(full, columnId, include_archived);
       if (board === null) {
         return errorResult(
           `Error: column ${columnId} is not on board ${boardId}. Call ` +
@@ -124,13 +124,13 @@ export function registerBoardTools(
       if (detail === "summary") {
         return respond(
           response_format,
-          { board: summarizeBoard(board) },
+          { board: summarizeBoard(board), seq },
           `${renderBoard(board)}\n\n_(summary: descriptions and checklists ` +
             "omitted — read a card with janosik_get_card for the full text.)_",
           hint,
         );
       }
-      return respond(response_format, { board }, renderBoard(board), hint);
+      return respond(response_format, { board, seq }, renderBoard(board), hint);
     },
   );
 
@@ -171,11 +171,16 @@ export function registerBoardTools(
           .min(1)
           .max(LIMITS.boardTitle)
           .describe("New board title."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, title }) => {
-      await client.command(boardId, { type: "RENAME_BOARD", title });
+    async ({ boardId, title, expectedVersion }) => {
+      await client.command(
+        boardId,
+        { type: "RENAME_BOARD", title },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Renamed board ${boardId} to "${title}".`);
     },
   );
@@ -188,11 +193,18 @@ export function registerBoardTools(
       description:
         "Archive a board: its data is kept but it disappears from the " +
         "normal board list. Reverse it with janosik_unarchive_board.",
-      inputSchema: { boardId: boardIdSchema },
+      inputSchema: {
+        boardId: boardIdSchema,
+        expectedVersion: expectedVersionSchema,
+      },
       annotations: WRITE,
     },
-    async ({ boardId }) => {
-      await client.command(boardId, { type: "ARCHIVE_BOARD" });
+    async ({ boardId, expectedVersion }) => {
+      await client.command(
+        boardId,
+        { type: "ARCHIVE_BOARD" },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Archived board ${boardId}.`);
     },
   );
@@ -203,11 +215,18 @@ export function registerBoardTools(
     {
       title: "Unarchive a Janosik board",
       description: "Bring an archived board back to the active list.",
-      inputSchema: { boardId: boardIdSchema },
+      inputSchema: {
+        boardId: boardIdSchema,
+        expectedVersion: expectedVersionSchema,
+      },
       annotations: WRITE,
     },
-    async ({ boardId }) => {
-      await client.command(boardId, { type: "UNARCHIVE_BOARD" });
+    async ({ boardId, expectedVersion }) => {
+      await client.command(
+        boardId,
+        { type: "UNARCHIVE_BOARD" },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Unarchived board ${boardId}.`);
     },
   );

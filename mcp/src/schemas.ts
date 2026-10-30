@@ -98,6 +98,22 @@ export const coverSchema = z
   .describe("Card cover stripe.");
 
 /**
+ * Optimistic-concurrency precondition (TASK-157, D9). The board version
+ * (`seq`, as returned by `janosik_get_board`) the caller last saw. When set,
+ * a write is refused with a version conflict if the board has changed since
+ * — so a retry never clobbers another agent's edit. Omit to write regardless.
+ */
+export const expectedVersionSchema = z
+  .number()
+  .int()
+  .min(0)
+  .optional()
+  .describe(
+    "Expected board version (seq from janosik_get_board). When set, the " +
+      "write is refused if the board changed since — re-read and retry.",
+  );
+
+/**
  * Read projection (TASK-157, E16). 'full' returns every card as stored;
  * 'summary' drops each card's description and checklists (keeping a size
  * hint), so scanning a board whose cards carry 64k documents stays small.
