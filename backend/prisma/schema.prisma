@@ -434,7 +434,7 @@ model ChecklistItem {
   id          String    @id
   checklist   Checklist @relation(fields: [checklistId], references: [id])
   checklistId String
-  text        String    @db.VarChar(200)
+  text        String    @db.VarChar(500)
   done        Boolean   @default(false)
   position    Int
   deletedAt   DateTime? // soft-delete (§7.0)

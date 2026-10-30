@@ -287,8 +287,13 @@ export const LIMITS = {
   labelName: 50,
   /** Checklist title. */
   checklistTitle: 100,
-  /** Checklist item text (add + rename). */
-  checklistItem: 200,
+  /**
+   * Checklist item text (add + rename). Raised from 200 (TASK-157): agents
+   * park sub-prompts and exact commands in an item, which does not fit 200
+   * characters; 500 keeps the checklist scannable while leaving room for a
+   * short instruction.
+   */
+  checklistItem: 500,
   /** Acceptance-criteria / definition-of-done items per card (TASK-157). */
   taskSpecItems: 50,
   /** Characters per acceptance-criteria / definition-of-done item. */

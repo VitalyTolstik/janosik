@@ -153,6 +153,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `403 pat_read_only`) and given its own requests-per-minute budget (over the
   budget answers `429`). The account panel exposes the three options and the
   token list shows the scope.
+- **Longer checklist items (TASK-157).** A checklist item's text limit rose
+  from 200 to 500 characters, so an agent can park a sub-prompt or an exact
+  command in an item without truncation.
 
 ### Fixed
 
