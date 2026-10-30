@@ -8,7 +8,7 @@
  */
 
 import type { BoardAction } from "./store/board-reducer";
-import type { Board } from "./types/kanban";
+import type { Board, CommentKind } from "./types/kanban";
 import type { UserAvatarColor } from "./types/account";
 import type { BoardExportFile } from "./utils/board-serialization";
 
@@ -343,12 +343,28 @@ export interface ActivityFeedPage {
   nextCursor: string | null;
 }
 
+/**
+ * `GET /boards/:id/search?q=` (TASK-157, D11) — the ids of cards whose title,
+ * description, a checklist item or a comment contains the query. A server
+ * search reaches text that is not in the board aggregate (comments), so the
+ * MCP search can span the whole card, not just its title and description.
+ */
+export interface BoardCardSearchResult {
+  cardIds: string[];
+}
+
 /** A card comment (plain text, TASK-28; UI in TASK-37). */
 export interface CommentDto {
   id: string;
   cardId: string;
   authorId: string;
   text: string;
+  /**
+   * Structured kind (TASK-157, D10) — `note` by default, or one of the swarm
+   * vocabulary values (`status`, `question`, `blocker`, `evidence`,
+   * `handoff`). Lets a reader filter ("only blockers") without parsing text.
+   */
+  kind: CommentKind;
   /** Unix ms. */
   createdAt: number;
 }

@@ -71,6 +71,7 @@ function comment(overrides: Partial<CommentDto> = {}): CommentDto {
     cardId: "card-1",
     authorId: "user-1",
     text: "First!",
+    kind: "note",
     createdAt: 1_700_000_000_000,
     ...overrides,
   };
@@ -162,6 +163,42 @@ describe("CardComments", () => {
       text: "Fresh take",
       commandId: expect.any(String),
     });
+  });
+
+  it("renders a kind badge for a typed comment", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ text: "Stuck on the schema", kind: "blocker" }),
+    ]);
+    renderComments(server);
+    expect(await screen.findByText("Stuck on the schema")).toBeInTheDocument();
+    expect(screen.getByTestId("comment-kind-badge")).toHaveTextContent(
+      /blocker/i,
+    );
+  });
+
+  it("sends the chosen comment kind", async () => {
+    const server = new FakeServer([seedBoard()]);
+    renderComments(server);
+    const input = await screen.findByTestId("comment-input");
+    fireEvent.change(input, { target: { value: "Blocked" } });
+    fireEvent.change(await screen.findByTestId("comment-kind"), {
+      target: { value: "blocker" },
+    });
+    fireEvent.click(screen.getByTestId("comment-send"));
+    await waitFor(() =>
+      expect(
+        server.requests.find(
+          (request) =>
+            request.method === "POST" &&
+            request.path === "/api/v1/cards/card-1/comments",
+        )?.body,
+      ).toEqual({
+        text: "Blocked",
+        commandId: expect.any(String),
+        kind: "blocker",
+      }),
+    );
   });
 
   it("submits with Ctrl/Cmd+Enter and keeps plain Enter harmless", async () => {

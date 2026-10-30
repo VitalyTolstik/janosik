@@ -682,6 +682,99 @@ describe("Activity & comments API (e2e)", () => {
     });
   });
 
+  describe("comment kinds and board search (TASK-157)", () => {
+    it("defaults to note, stores a kind, filters by it and rejects an unknown one", async () => {
+      const { cardId } = await boardWithCard("Kind board", "kd");
+      const note = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(adminToken))
+        .send({ text: "just a note" })
+        .expect(201);
+      expect(note.body.kind).toBe("note");
+
+      const blocker = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(adminToken))
+        .send({ text: "stuck", kind: "blocker" })
+        .expect(201);
+      expect(blocker.body.kind).toBe("blocker");
+
+      const onlyBlockers = await server()
+        .get(`/api/v1/cards/${cardId}/comments?kind=blocker`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(onlyBlockers.body.items).toHaveLength(1);
+      expect(onlyBlockers.body.items[0].kind).toBe("blocker");
+
+      await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(adminToken))
+        .send({ text: "huh", kind: "nonsense" })
+        .expect(400);
+      await server()
+        .get(`/api/v1/cards/${cardId}/comments?kind=nonsense`)
+        .set(auth(adminToken))
+        .expect(400);
+    });
+
+    it("searches a board across title, checklist item and comment text", async () => {
+      const { boardId, cardId } = await boardWithCard("Search board", "sr");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CHECKLIST",
+          cardId,
+          newChecklistId: "cl-sr",
+          title: "DoD",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId,
+          checklistId: "cl-sr",
+          newItemId: "item-sr",
+          text: "run the widget migration",
+        }),
+      );
+      await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(adminToken))
+        .send({ text: "the widget is flaky" })
+        .expect(201);
+
+      const byTitle = await server()
+        .get(`/api/v1/boards/${boardId}/search?q=card`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect(byTitle.body.cardIds).toContain(cardId);
+
+      const byChecklist = await server()
+        .get(`/api/v1/boards/${boardId}/search?q=widget%20migration`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect(byChecklist.body.cardIds).toContain(cardId);
+
+      const byComment = await server()
+        .get(`/api/v1/boards/${boardId}/search?q=flaky`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect(byComment.body.cardIds).toContain(cardId);
+
+      const miss = await server()
+        .get(`/api/v1/boards/${boardId}/search?q=zzzznope`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect(miss.body.cardIds).toEqual([]);
+
+      await server()
+        .get(`/api/v1/boards/${boardId}/search?q=card`)
+        .set(auth(strangerToken))
+        .expect(403);
+    });
+  });
+
   describe("delta catch-up", () => {
     it("returns only commands newer than since — no aggregate refetch needed", async () => {
       const { boardId } = await boardWithCard("Delta board", "dl");

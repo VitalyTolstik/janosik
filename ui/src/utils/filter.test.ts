@@ -483,6 +483,35 @@ describe("query semantics (title + description + label names)", () => {
       matchesCardFilter(c, { ...EMPTY_FILTER, query: "backend" }, NOW, labels),
     ).toBe(false);
   });
+
+  it("matches a checklist item (TASK-157, D11)", () => {
+    const withChecklist: Card = {
+      ...card("c3", "Release", []),
+      checklists: [
+        {
+          id: "cl1",
+          title: "DoD",
+          items: [{ id: "i1", text: "run the widget migration", done: false }],
+        },
+      ],
+    };
+    expect(
+      matchesCardFilter(
+        withChecklist,
+        { ...EMPTY_FILTER, query: "widget migration" },
+        NOW,
+        labels,
+      ),
+    ).toBe(true);
+    expect(
+      matchesCardFilter(
+        withChecklist,
+        { ...EMPTY_FILTER, query: "absent" },
+        NOW,
+        labels,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("searchBoards", () => {
@@ -577,6 +606,34 @@ describe("searchBoards", () => {
     expect(
       boardHits.some((h) => h.kind === "board" && h.boardId === "b2"),
     ).toBe(true);
+  });
+
+  it("finds a card by a checklist item and reports the matching text (TASK-157, D11)", () => {
+    const board: Board = {
+      ...activeBoard,
+      columns: [
+        { id: "col1", title: "To do", cardIds: ["c5"], createdAt: NOW },
+      ],
+      cards: {
+        c5: {
+          ...card("c5", "Release", []),
+          checklists: [
+            {
+              id: "cl1",
+              title: "DoD",
+              items: [
+                { id: "i1", text: "run the widget migration", done: false },
+              ],
+            },
+          ],
+        },
+      },
+    };
+    const hits = searchBoards([board], "widget migration");
+    expect(hits).toHaveLength(1);
+    if (hits[0].kind !== "card") return;
+    expect(hits[0].matchIn).toBe("checklist");
+    expect(hits[0].matchText).toBe("run the widget migration");
   });
 
   it("returns nothing for an empty query", () => {

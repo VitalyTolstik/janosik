@@ -9,6 +9,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Res,
   UseGuards,
 } from "@nestjs/common";
@@ -16,6 +17,7 @@ import type { Response } from "express";
 import { Role } from "@prisma/client";
 import type {
   BoardAggregate,
+  BoardCardSearchResult,
   BoardEnvelope,
   BoardMemberDto,
   BoardSummary,
@@ -89,6 +91,15 @@ export class BoardsController {
     // stream exactly after it (TASK-30); the body stays the plain aggregate.
     res.setHeader("X-Board-Seq", String(seq));
     return board;
+  }
+
+  @UseGuards(MembershipGuard)
+  @Get(":id/search")
+  search(
+    @Param("id") id: string,
+    @Query("q") q?: string,
+  ): Promise<BoardCardSearchResult> {
+    return this.boards.searchCards(id, q ?? "");
   }
 
   @UseGuards(MembershipGuard)

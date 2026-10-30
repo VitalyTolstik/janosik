@@ -477,6 +477,7 @@ model Comment {
   author    User      @relation(fields: [authorId], references: [id])
   authorId  String
   text      String    @db.Text // LIMITS.comment (10000) — plain text
+  kind      String    @default("note") // TASK-157 (D10): note|status|question|blocker|evidence|handoff
   deletedAt DateTime? // soft-delete (§7.0)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

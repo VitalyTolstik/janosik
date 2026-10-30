@@ -189,11 +189,24 @@ function cardTextMatches(card: Card, labels: Label[], query: string): boolean {
   if (needle === "") return false;
   if (card.title.toLowerCase().includes(needle)) return true;
   if (card.description?.toLowerCase().includes(needle)) return true;
+  // Checklist items are searchable too (TASK-157, D11) — agents park exact
+  // commands there, and a human looks for them the same way.
+  if (checklistMatch(card, needle) !== null) return true;
   return card.labelIds.some((id) =>
     labels.some(
       (label) => label.id === id && label.name.toLowerCase().includes(needle),
     ),
   );
+}
+
+/** The first checklist-item text containing `needle`, or null. */
+function checklistMatch(card: Card, needle: string): string | null {
+  for (const list of card.checklists ?? []) {
+    for (const item of list.items) {
+      if (item.text.toLowerCase().includes(needle)) return item.text;
+    }
+  }
+  return null;
 }
 
 /** Whether a single card passes the filter (AND across facets). */
@@ -307,7 +320,9 @@ export interface CardSearchHit {
   boardLabels: Label[];
   card: Card;
   /** Where the query matched, drives the UI (snippet vs title highlight). */
-  matchIn: "title" | "description" | "label";
+  matchIn: "title" | "description" | "label" | "checklist";
+  /** The matching checklist-item text, when `matchIn` is "checklist". */
+  matchText?: string;
 }
 
 /** A board whose title matched — secondary group of the results. */
@@ -320,8 +335,13 @@ export interface BoardSearchHit {
 
 export type SearchHit = CardSearchHit | BoardSearchHit;
 
-/** Field priority for ranking: title beats description beats label. */
-const MATCH_FIELD_ORDER = ["title", "description", "label"] as const;
+/** Field priority for ranking: title beats description beats label/checklist. */
+const MATCH_FIELD_ORDER = [
+  "title",
+  "description",
+  "label",
+  "checklist",
+] as const;
 
 /**
  * Search every board's cards (and board titles) for a query.
@@ -369,9 +389,13 @@ export function searchBoards(boards: Board[], query: string): SearchHit[] {
             return card.labelIds.some(
               (id) => labelName.get(id)?.includes(needle) ?? false,
             );
+          case "checklist":
+            return checklistMatch(card, needle) !== null;
         }
       });
       if (!matched) return null;
+      const matchText =
+        matched === "checklist" ? (checklistMatch(card, needle) ?? "") : "";
       return {
         kind: "card",
         boardId: board.id,
@@ -382,6 +406,7 @@ export function searchBoards(boards: Board[], query: string): SearchHit[] {
         boardLabels: board.labels,
         card,
         matchIn: matched,
+        ...(matched === "checklist" ? { matchText } : {}),
       };
     };
     for (const column of board.columns) {

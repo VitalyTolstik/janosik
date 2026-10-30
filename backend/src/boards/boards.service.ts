@@ -9,12 +9,13 @@ import { Role, Prisma } from "@prisma/client";
 import type {
   ActorType,
   BoardAggregate,
+  BoardCardSearchResult,
   BoardEnvelope,
   BoardMemberDto,
   BoardState,
   BoardSummary,
 } from "@janosik/shared";
-import { parseExport, serializeExport } from "@janosik/shared";
+import { LIMITS, parseExport, serializeExport } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import {
   BoardWriteService,
@@ -159,6 +160,57 @@ export class BoardsService {
   async getAggregate(boardId: string): Promise<BoardAggregate> {
     const snapshot = await this.getAggregateWithSeq(boardId);
     return snapshot.board;
+  }
+
+  /**
+   * Cards on a board whose title, description, a checklist item or a comment
+   * matches `q` (case-insensitive substring). Comments live outside the board
+   * aggregate, so this is the only way the MCP search can span the whole card
+   * (TASK-157, D11). Scoped to the board the guard already resolved.
+   */
+  async searchCards(
+    boardId: string,
+    q: string,
+  ): Promise<BoardCardSearchResult> {
+    const query = q.trim();
+    if (query.length === 0) return { cardIds: [] };
+    if (query.length > LIMITS.query) {
+      throw new BadRequestException(
+        `q is too long (max ${LIMITS.query} characters)`,
+      );
+    }
+    const contains = { contains: query, mode: "insensitive" as const };
+    const [cards, checklistItems, comments] = await Promise.all([
+      this.prisma.card.findMany({
+        where: {
+          column: { boardId },
+          deletedAt: null,
+          OR: [{ title: contains }, { description: contains }],
+        },
+        select: { id: true },
+      }),
+      this.prisma.checklistItem.findMany({
+        where: {
+          text: contains,
+          deletedAt: null,
+          checklist: { card: { column: { boardId }, deletedAt: null } },
+        },
+        select: { checklist: { select: { cardId: true } } },
+      }),
+      this.prisma.comment.findMany({
+        where: {
+          text: contains,
+          deletedAt: null,
+          card: { column: { boardId }, deletedAt: null },
+        },
+        select: { cardId: true },
+      }),
+    ]);
+    const ids = new Set<string>();
+    for (const card of cards) ids.add(card.id);
+    for (const item of checklistItems) ids.add(item.checklist.cardId);
+    for (const comment of comments) ids.add(comment.cardId);
+    return { cardIds: [...ids] };
   }
 
   /**

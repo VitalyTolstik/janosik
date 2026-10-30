@@ -291,6 +291,7 @@ export class ShareService {
       cardId,
       cursor,
       limit,
+      undefined,
       this.snapshotCutoff(share),
     );
   }

@@ -253,6 +253,27 @@ export type CardActivityType = (typeof CARD_ACTIVITY_TYPES)[number];
 export const MAX_CARD_ACTIVITY = 50;
 
 /**
+ * Comment kinds (TASK-157, D10). Layer 0 taught agents to type comments with
+ * a `[status]`-style prefix so a swarm could tell a blocker from a note; this
+ * is the same vocabulary as structured data, so a filter ("only blockers or
+ * questions") is a query, not a text scan. `note` is the default, so an
+ * ordinary comment is unchanged.
+ */
+export const COMMENT_KINDS = [
+  "note",
+  "status",
+  "question",
+  "blocker",
+  "evidence",
+  "handoff",
+] as const;
+
+export type CommentKind = (typeof COMMENT_KINDS)[number];
+
+/** The kind every comment has when none is given. */
+export const DEFAULT_COMMENT_KIND: CommentKind = "note";
+
+/**
  * Claim lease bounds (TASK-157). A `CLAIM_CARD` lease is clamped to
  * [1 min, 24 h]; the MCP tool defaults to 15 min. The lease is what makes a
  * claim self-healing: once `leaseUntil` passes, the card is free again.

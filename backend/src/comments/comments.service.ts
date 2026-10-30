@@ -7,7 +7,14 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { Comment } from "@prisma/client";
-import type { ActorType, CommentDto, CommentPage } from "@janosik/shared";
+import {
+  COMMENT_KINDS,
+  DEFAULT_COMMENT_KIND,
+  type ActorType,
+  type CommentDto,
+  type CommentKind,
+  type CommentPage,
+} from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
@@ -85,7 +92,13 @@ export class CommentsService {
     try {
       created = await this.boardWrite.run(boardId, async (tx) => {
         const comment = await tx.comment.create({
-          data: { ...(id !== undefined ? { id } : {}), cardId, authorId, text },
+          data: {
+            ...(id !== undefined ? { id } : {}),
+            cardId,
+            authorId,
+            text,
+            kind: dto.kind ?? DEFAULT_COMMENT_KIND,
+          },
         });
         // The comment changes the card face as well (TASK-36 attribution):
         // the commenter becomes `Card.lastActorId`, so a reload seeds the
@@ -154,14 +167,17 @@ export class CommentsService {
     cardId: string,
     cursorRaw?: string,
     limitRaw?: string,
+    kindRaw?: string,
     createdUpTo?: Date,
   ): Promise<CommentPage> {
     const limit = parseLimit(limitRaw);
     const cursor = cursorRaw ? parseCursor(cursorRaw) : null;
+    const kind = parseKind(kindRaw);
     const rows = await this.prisma.comment.findMany({
       where: {
         cardId,
         deletedAt: null,
+        ...(kind ? { kind } : {}),
         // Snapshot shares freeze the conversation at capture time too.
         ...(createdUpTo ? { createdAt: { lte: createdUpTo } } : {}),
         ...(cursor
@@ -305,6 +321,7 @@ function toCommentDto(comment: Comment): CommentDto {
     cardId: comment.cardId,
     authorId: comment.authorId,
     text: comment.text,
+    kind: comment.kind as CommentKind,
     createdAt: comment.createdAt.getTime(),
   };
 }
@@ -333,4 +350,15 @@ function parseLimit(raw: string | undefined): number {
     throw new BadRequestException(`limit must be an integer 1…${MAX_LIMIT}`);
   }
   return limit;
+}
+
+/** Validate the `?kind=` filter; an unknown kind is a 400, not a silent no-op. */
+function parseKind(raw: string | undefined): CommentKind | undefined {
+  if (raw === undefined || raw === "") return undefined;
+  if (!(COMMENT_KINDS as readonly string[]).includes(raw)) {
+    throw new BadRequestException(
+      `kind must be one of: ${COMMENT_KINDS.join(", ")}`,
+    );
+  }
+  return raw as CommentKind;
 }

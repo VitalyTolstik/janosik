@@ -768,17 +768,21 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       const boards = args.boardId
         ? [await client.getBoard(args.boardId)]
         : await loadBoards(client);
-      const needle = args.query?.toLowerCase();
+      const needle = args.query?.trim().toLowerCase();
+      // Comment text is not in the board aggregate, so a query also asks the
+      // server which cards match (TASK-157, D11). Best-effort: an older
+      // instance without the search route falls back to title/description/
+      // checklist matching below.
+      const serverText =
+        needle && args.query
+          ? await loadTextMatches(client, boards, args.query.trim())
+          : new Map<string, Set<string>>();
       const matches: Array<{ board: Board; card: Card; column: string }> = [];
-      const matchesFilters = (card: Card): boolean =>
+      const matchesFilters = (card: Card, boardId: string): boolean =>
         !(args.labelId && !card.labelIds.includes(args.labelId)) &&
         !(args.priority && (card.priority ?? "medium") !== args.priority) &&
         !(args.assigneeId && card.assigneeId !== args.assigneeId) &&
-        !(
-          needle &&
-          !card.title.toLowerCase().includes(needle) &&
-          !(card.description?.toLowerCase().includes(needle) ?? false)
-        );
+        (!needle || matchesText(card, boardId, needle, serverText));
 
       // A labelled break stops the whole scan once `limit` is reached, not
       // just the innermost loop.
@@ -786,7 +790,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         for (const column of board.columns) {
           for (const cardId of column.cardIds) {
             const card = board.cards[cardId];
-            if (!card || !matchesFilters(card)) continue;
+            if (!card || !matchesFilters(card, board.id)) continue;
             matches.push({ board, card, column: column.title });
             if (matches.length >= args.limit) break search;
           }
@@ -795,7 +799,10 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         // only reachable through the card map.
         if (args.include_archived) {
           for (const card of Object.values(board.cards)) {
-            if (card.archivedAt === undefined || !matchesFilters(card)) {
+            if (
+              card.archivedAt === undefined ||
+              !matchesFilters(card, board.id)
+            ) {
               continue;
             }
             matches.push({ board, card, column: "(archived)" });
@@ -855,3 +862,50 @@ async function loadBoards(client: JanosikClient): Promise<Board[]> {
 
 /** Boards read in parallel by a cross-board search. */
 const SEARCH_CONCURRENCY = 4;
+
+/** Whether a card's title, description or a checklist item contains `needle`. */
+function matchesText(
+  card: Card,
+  boardId: string,
+  needle: string,
+  serverText: Map<string, Set<string>>,
+): boolean {
+  if (card.title.toLowerCase().includes(needle)) return true;
+  if (card.description?.toLowerCase().includes(needle)) return true;
+  if (
+    card.checklists?.some((list) =>
+      list.items.some((item) => item.text.toLowerCase().includes(needle)),
+    )
+  ) {
+    return true;
+  }
+  return serverText.get(boardId)?.has(card.id) ?? false;
+}
+
+/**
+ * Ask each board which of its cards match `query` (title, description,
+ * checklist item or comment). Boards are queried a few at a time; a board
+ * whose search route is unavailable (an older instance) is skipped, leaving
+ * the client-side match to stand in.
+ */
+async function loadTextMatches(
+  client: JanosikClient,
+  boards: Board[],
+  query: string,
+): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  for (let i = 0; i < boards.length; i += SEARCH_CONCURRENCY) {
+    const batch = boards.slice(i, i + SEARCH_CONCURRENCY);
+    await Promise.all(
+      batch.map(async (board) => {
+        try {
+          const result = await client.searchBoardCards(board.id, query);
+          out.set(board.id, new Set(result.cardIds));
+        } catch {
+          /* older instance: no server search, the client-side match stands in */
+        }
+      }),
+    );
+  }
+  return out;
+}

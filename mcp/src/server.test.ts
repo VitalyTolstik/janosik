@@ -40,7 +40,7 @@ function board(cards: Record<string, unknown> = {}) {
     id: "b1",
     title: "Alpha",
     columns: [
-      { id: "col1", title: "Todo", cardIds: ["k1"], createdAt: 1 },
+      { id: "col1", title: "Todo", cardIds: ["k1", "k2"], createdAt: 1 },
       { id: "col2", title: "Done", cardIds: [], createdAt: 1 },
     ],
     cards: {
@@ -51,6 +51,22 @@ function board(cards: Record<string, unknown> = {}) {
         labelIds: [],
         createdAt: 1,
         updatedAt: 1,
+      },
+      k2: {
+        id: "k2",
+        title: "Widget task",
+        labelIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+        checklists: [
+          {
+            id: "cl1",
+            title: "DoD",
+            items: [
+              { id: "i1", text: "run the widget migration", done: false },
+            ],
+          },
+        ],
       },
       k9: {
         id: "k9",
@@ -68,7 +84,12 @@ function board(cards: Record<string, unknown> = {}) {
   };
 }
 
-function fakeApi(path: string, method: string, body: unknown): Response {
+function fakeApi(
+  path: string,
+  method: string,
+  body: unknown,
+  searchParams: URLSearchParams,
+): Response {
   if (path === "/boards" && method === "GET") {
     return respond([
       {
@@ -129,6 +150,28 @@ function fakeApi(path: string, method: string, body: unknown): Response {
         return respond({ seq: ++boardSeq, versions: { "board:b1": 2 } });
     }
   }
+  const commentMatch = /^\/cards\/([^/]+)\/comments$/.exec(path);
+  if (commentMatch && method === "POST") {
+    const request = body as { text: string; kind?: string };
+    return respond(
+      {
+        id: "cm1",
+        cardId: commentMatch[1],
+        authorId: "u1",
+        text: request.text,
+        kind: request.kind ?? "note",
+        createdAt: 1,
+      },
+      201,
+    );
+  }
+  const searchMatch = /^\/boards\/([^/]+)\/search$/.exec(path);
+  if (searchMatch && method === "GET") {
+    // Only a comment-only match is modelled; everything else falls through
+    // to the client-side title/description/checklist match.
+    const q = searchParams.get("q") ?? "";
+    return respond({ cardIds: q === "incomment" ? ["k1"] : [] });
+  }
   return respond({ message: "not found" }, 404);
 }
 
@@ -169,7 +212,12 @@ beforeEach(() => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ path: url.pathname.replace("/api/v1", ""), method, body });
     return Promise.resolve(
-      fakeApi(url.pathname.replace("/api/v1", ""), method, body),
+      fakeApi(
+        url.pathname.replace("/api/v1", ""),
+        method,
+        body,
+        url.searchParams,
+      ),
     );
   });
 });
@@ -477,6 +525,41 @@ describe("janosik MCP server", () => {
       .results;
     expect(results).toHaveLength(1);
     expect(results[0]).not.toHaveProperty("description");
+    await client.close();
+  });
+
+  it("posts a typed comment", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_add_comment",
+      arguments: { cardId: "k1", text: "stuck", kind: "blocker" },
+    });
+    expect(result.isError).toBeFalsy();
+    const call = calls.find(
+      (entry) => entry.path === "/cards/k1/comments" && entry.method === "POST",
+    );
+    expect(call?.body).toMatchObject({ text: "stuck", kind: "blocker" });
+    expect(firstText(result)).toMatch(/blocker/);
+    await client.close();
+  });
+
+  it("finds a card by a checklist item", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_search_cards",
+      arguments: { boardId: "b1", query: "widget migration" },
+    });
+    expect(result.structuredContent).toMatchObject({ results: [{ id: "k2" }] });
+    await client.close();
+  });
+
+  it("includes cards whose comments match the query", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_search_cards",
+      arguments: { boardId: "b1", query: "incomment" },
+    });
+    expect(result.structuredContent).toMatchObject({ results: [{ id: "k1" }] });
     await client.close();
   });
 });

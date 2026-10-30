@@ -17,6 +17,7 @@ import {
   type CommandResponse,
   type CommandSseEvent,
   type CommentDto,
+  type CommentKind,
   type CreateUserTokenRequest,
   type CreateUserTokenResponse,
   type MembershipChange,
@@ -664,18 +665,23 @@ export class FakeServer {
     if (commentsMatch !== null) {
       const cardId = commentsMatch[1];
       if (method === "GET") {
-        return json(
-          200,
-          this.pageOf(this.commentsByCard.get(cardId) ?? [], searchParams),
-        );
+        const kind = searchParams.get("kind");
+        const list = this.commentsByCard.get(cardId) ?? [];
+        const filtered =
+          kind !== null ? list.filter((c) => c.kind === kind) : list;
+        return json(200, this.pageOf(filtered, searchParams));
       }
       if (method === "POST") {
-        const { text } = (body ?? {}) as { text?: string };
+        const { text, kind } = (body ?? {}) as {
+          text?: string;
+          kind?: CommentKind;
+        };
         const comment: CommentDto = {
           id: `comment-${++this.commentCounter}`,
           cardId,
           authorId: this.account.id,
           text: text ?? "",
+          kind: kind ?? "note",
           createdAt: Date.now(),
         };
         const list = this.commentsByCard.get(cardId) ?? [];

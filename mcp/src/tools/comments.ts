@@ -13,6 +13,7 @@ import { respond, textOnly } from "../format.js";
 import { renderComments } from "../render.js";
 import {
   cardIdSchema,
+  commentKindSchema,
   pageSchema,
   responseFormatSchema,
   idSchema,
@@ -27,16 +28,20 @@ export function registerCommentTools(server: McpServer, client: JanosikClient) {
       title: "List card comments",
       description:
         "List a card's comments, newest first. Page with the returned " +
-        "next_cursor.",
+        "next_cursor. Pass kind to read only one kind (e.g. blockers or " +
+        "questions).",
       inputSchema: {
         cardId: cardIdSchema,
         ...pageSchema.shape,
+        kind: commentKindSchema
+          .optional()
+          .describe("Only comments of this kind (default: every kind)."),
         response_format: responseFormatSchema,
       },
       annotations: READ,
     },
-    async ({ cardId, cursor, limit, response_format }) => {
-      const page = await client.listComments(cardId, cursor, limit);
+    async ({ cardId, cursor, limit, kind, response_format }) => {
+      const page = await client.listComments(cardId, cursor, limit, kind);
       return respond(
         response_format,
         { comments: page.items, next_cursor: page.nextCursor },
@@ -50,7 +55,10 @@ export function registerCommentTools(server: McpServer, client: JanosikClient) {
     "janosik_add_comment",
     {
       title: "Add a comment",
-      description: "Post a comment on a card.",
+      description:
+        "Post a comment on a card. Set kind to label it for the swarm " +
+        "(status, question, blocker, evidence, handoff); omit it for a plain " +
+        "note.",
       inputSchema: {
         cardId: cardIdSchema,
         text: z
@@ -58,12 +66,17 @@ export function registerCommentTools(server: McpServer, client: JanosikClient) {
           .min(1)
           .max(LIMITS.comment)
           .describe("Comment text (markdown)."),
+        kind: commentKindSchema
+          .optional()
+          .describe("Comment kind (default: note)."),
       },
       annotations: WRITE,
     },
-    async ({ cardId, text }) => {
-      const comment = await client.addComment(cardId, text);
-      return textOnly(`Added comment \`${comment.id}\` on card ${cardId}.`);
+    async ({ cardId, text, kind }) => {
+      const comment = await client.addComment(cardId, text, kind);
+      return textOnly(
+        `Added ${kind ?? "note"} comment \`${comment.id}\` on card ${cardId}.`,
+      );
     },
   );
 

@@ -4,8 +4,9 @@ import type {
   ActivitySseEvent,
   AuthUserDto,
   CommentDto,
+  CommentKind,
 } from "@janosik/shared";
-import { LIMITS } from "@janosik/shared";
+import { COMMENT_KINDS, DEFAULT_COMMENT_KIND, LIMITS } from "@janosik/shared";
 
 import { api, isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
@@ -70,6 +71,9 @@ export function CardComments({
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [draft, setDraft] = useState("");
+  // Structured comment kind (TASK-157, D10) — a swarm vocabulary the reader
+  // can filter on. The human composer defaults to a plain note.
+  const [kind, setKind] = useState<CommentKind>(DEFAULT_COMMENT_KIND);
   const [sending, setSending] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<CommentDto | null>(null);
   // The editor owns its state between mounts (like the description), so a
@@ -144,19 +148,22 @@ export function CardComments({
     if (!canSend || user === null) return;
     const text = trimmed;
     const tempId = `pending-${createId()}`;
+    const sentKind = kind;
     const optimistic: CommentDto = {
       id: tempId,
       cardId,
       authorId: user.id,
       text,
+      kind: sentKind,
       createdAt: Date.now(),
     };
     setItems((prev) => [optimistic, ...prev]);
     setDraft("");
+    setKind(DEFAULT_COMMENT_KIND);
     setEditorNonce((nonce) => nonce + 1);
     setSending(true);
     try {
-      const saved = await api.createComment(cardId, text);
+      const saved = await api.createComment(cardId, text, undefined, sentKind);
       setItems((prev) => [
         saved,
         ...prev.filter(
@@ -166,6 +173,7 @@ export function CardComments({
     } catch {
       setItems((prev) => prev.filter((comment) => comment.id !== tempId));
       setDraft(text);
+      setKind(sentKind);
       setEditorNonce((nonce) => nonce + 1);
       toast.error(t("comment.sendError"));
     } finally {
@@ -175,6 +183,7 @@ export function CardComments({
 
   const handleCancel = () => {
     setDraft("");
+    setKind(DEFAULT_COMMENT_KIND);
     setEditorNonce((nonce) => nonce + 1);
   };
 
@@ -215,6 +224,8 @@ export function CardComments({
           sending={sending}
           canSend={canSend}
           editorNonce={editorNonce}
+          kind={kind}
+          onKindChange={setKind}
           onDraftChange={setDraft}
           onSubmit={() => void handleSend()}
           onCancel={handleCancel}
@@ -282,9 +293,20 @@ interface CommentComposerProps {
   canSend: boolean;
   /** Bumped by the parent to reset the editor (send/cancel/error paths). */
   editorNonce: number;
+  /** Structured comment kind (TASK-157, D10). */
+  kind: CommentKind;
+  onKindChange: (kind: CommentKind) => void;
   onDraftChange: (value: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
+}
+
+/** A human-readable label for a comment kind. */
+function kindLabel(
+  kind: CommentKind,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
+  return t(`comment.kind.${kind}`);
 }
 
 /**
@@ -300,6 +322,8 @@ function CommentComposer({
   sending,
   canSend,
   editorNonce,
+  kind,
+  onKindChange,
   onDraftChange,
   onSubmit,
   onCancel,
@@ -341,6 +365,26 @@ function CommentComposer({
         </Suspense>
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
+            <label className="sr-only" htmlFor="comment-kind">
+              {t("comment.kindLabel")}
+            </label>
+            <select
+              id="comment-kind"
+              data-testid="comment-kind"
+              aria-label={t("comment.kindLabel")}
+              value={kind}
+              disabled={sending}
+              onChange={(event) =>
+                onKindChange(event.target.value as CommentKind)
+              }
+              className="h-8 rounded-md border border-border bg-background px-2 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+            >
+              {COMMENT_KINDS.map((option) => (
+                <option key={option} value={option}>
+                  {kindLabel(option, t)}
+                </option>
+              ))}
+            </select>
             <Button
               variant="premium"
               size="sm"
@@ -438,6 +482,14 @@ function CommentRow({
             {/* eslint-disable-next-line react-hooks/purity -- relative time is refreshed every render on purpose */}
             {formatRelative(comment.createdAt, lang, Date.now(), hour12)}
           </time>
+          {comment.kind !== DEFAULT_COMMENT_KIND ? (
+            <span
+              data-testid="comment-kind-badge"
+              className="shrink-0 rounded-full border border-border/70 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              {kindLabel(comment.kind, t)}
+            </span>
+          ) : null}
           {own && !readOnly && !pending ? (
             <button
               type="button"
