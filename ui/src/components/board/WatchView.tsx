@@ -17,14 +17,16 @@ import {
 import { FIELD_KEYS, formatChangeValue, sentenceFor } from "@/utils/activity";
 import { userLabel } from "@/utils/avatar";
 
-/** Newest-first page size of the watch feed (server max is 100). */
-const FEED_LIMIT = 50;
-/** How often the feed is re-read; commands have no per-event SSE push. */
+/** Entries per page of the watch feed (server max is 100). */
+const PAGE_SIZE = 50;
+/** How often the newest page is re-read; commands have no SSE frame. */
 const POLL_MS = 3000;
 /** The most changed fields rendered inline (the rest stay off the line). */
 const MAX_CHANGE_LINES = 3;
 /** A feed value is a display snippet, not the whole field: cap its width. */
 const MAX_VALUE_CHARS = 120;
+/** Page buttons kept around the current one before an ellipsis. */
+const PAGE_WINDOW = 2;
 
 function shorten(value: string): string {
   return value.length > MAX_VALUE_CHARS
@@ -43,14 +45,12 @@ interface WatchViewProps {
  * feed of what happened on the board, so a person can watch a swarm work
  * without the wall of cards.
  *
- * The feed merges the command log with activity rows through
- * `GET /boards/:id/activity`; commands have no dedicated SSE frame, so the
- * view re-reads the newest page on a timer and immediately on a comment frame
- * or a settled own command. Each line carries the Jira-style `from → to` diff
- * frozen at command time (the same snapshot the card History renders), so a
- * move or an edit reads as more than "someone did something". Older entries
- * page in with a plain "Show older" button. Presence and the column counts
- * ride the normal realtime stream.
+ * The feed is `GET /boards/:id/activity` (commands + comments) and carries the
+ * Jira-style `from → to` snapshot the card History renders, so a move or an
+ * edit reads as more than "someone did something". The API pages by opaque
+ * cursor, not by offset, so the numbered pager walks the cursor chain and
+ * caches each page; page 1 keeps refreshing live, older pages stay put.
+ * Presence and the column counts ride the normal realtime stream.
  */
 export function WatchView({ boardId }: WatchViewProps) {
   const { board } = useBoard();
@@ -61,63 +61,122 @@ export function WatchView({ boardId }: WatchViewProps) {
   const { activity, commits } = useBoardLive();
   const serverMode = isApiEnabled();
 
-  const [entries, setEntries] = useState<ActivityFeedEntry[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const inFlight = useRef(false);
-  // The cursor after the oldest *loaded* page; `undefined` = never loaded.
-  const cursorRef = useRef<string | null | undefined>(undefined);
+  const [items, setItems] = useState<ActivityFeedEntry[]>([]);
+  const [page, setPage] = useState(0);
+  const [maxPage, setMaxPage] = useState(0);
+  const [atEnd, setAtEnd] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
 
+  // Cursor that fetches a given page (page 0 has none). A missing entry means
+  // the page is not reachable yet — the chain is discovered by walking.
+  const cursorByPage = useRef(new Map<number, string | null>([[0, null]]));
+  const pageCache = useRef(new Map<number, ActivityFeedEntry[]>());
+  const atEndRef = useRef(false);
+  const pageRef = useRef(0);
+  const inFlight = useRef(false);
+  // Mirror the page for the stable poll callback without reading a ref in
+  // render (react-hooks/refs).
+  useEffect(() => {
+    pageRef.current = page;
+  }, [page]);
+
+  /** Fetch (and cache) one page, discovering the next page's cursor. */
+  const fetchPage = useCallback(
+    async (index: number): Promise<ActivityFeedEntry[] | null> => {
+      const cached = pageCache.current.get(index);
+      if (cached !== undefined) return cached;
+      if (!cursorByPage.current.has(index)) return null;
+      const cursor = cursorByPage.current.get(index) ?? undefined;
+      const result = await api.boardActivity(boardId, cursor, pageSize);
+      pageCache.current.set(index, result.items);
+      if (result.nextCursor === null) {
+        atEndRef.current = true;
+        setAtEnd(true);
+      } else {
+        cursorByPage.current.set(index + 1, result.nextCursor);
+        setMaxPage(Math.max(...cursorByPage.current.keys()));
+      }
+      return result.items;
+    },
+    [boardId, pageSize],
+  );
+
+  const goToPage = useCallback(
+    async (target: number) => {
+      if (target < 0 || loading) return;
+      setLoading(true);
+      try {
+        // Walk the cursor chain until the target page is reachable.
+        let index = 0;
+        while (index < target) {
+          if (!cursorByPage.current.has(index + 1)) {
+            if (atEndRef.current) break;
+            await fetchPage(index);
+            if (atEndRef.current) break;
+          }
+          index += 1;
+        }
+        const targetItems = await fetchPage(target);
+        if (targetItems === null) return; // beyond the last page
+        setItems(targetItems);
+        setPage(target);
+      } catch {
+        /* keep the current page; the next click retries */
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetchPage, loading],
+  );
+
+  /** Load page 0 at `size` and reset the cursor chain to it. */
+  const loadFirst = useCallback(
+    async (size: number) => {
+      const result = await api.boardActivity(boardId, undefined, size);
+      pageCache.current.clear();
+      pageCache.current.set(0, result.items);
+      cursorByPage.current.clear();
+      cursorByPage.current.set(0, null);
+      atEndRef.current = result.nextCursor === null;
+      setAtEnd(result.nextCursor === null);
+      if (result.nextCursor !== null) {
+        cursorByPage.current.set(1, result.nextCursor);
+      }
+      setMaxPage(Math.max(...cursorByPage.current.keys()));
+      setItems(result.items);
+      setPage(0);
+      pageRef.current = 0;
+    },
+    [boardId],
+  );
+
+  // The newest page stays live; when the user pages into history, polling
+  // pauses (their page must not shift under them).
   const refreshNewest = useCallback(async () => {
-    if (!serverMode || inFlight.current) return;
+    if (!serverMode || inFlight.current || pageRef.current !== 0) return;
     inFlight.current = true;
     try {
-      const page = await api.boardActivity(boardId, undefined, FEED_LIMIT);
-      setEntries((prev) => {
-        const seen = new Set(prev.map(keyOf));
-        const fresh = page.items.filter((entry) => !seen.has(keyOf(entry)));
-        return fresh.length === 0 ? prev : [...fresh, ...prev];
-      });
-      if (cursorRef.current === undefined) {
-        cursorRef.current = page.nextCursor;
-        setNextCursor(page.nextCursor);
-      }
+      await loadFirst(pageSize);
     } catch {
       /* best effort — the next tick retries */
     } finally {
       inFlight.current = false;
     }
-  }, [boardId, serverMode]);
+  }, [loadFirst, pageSize, serverMode]);
 
-  const loadOlder = useCallback(async () => {
-    if (
-      !serverMode ||
-      loadingOlder ||
-      cursorRef.current === undefined ||
-      cursorRef.current === null
-    ) {
-      return;
-    }
-    setLoadingOlder(true);
-    try {
-      const page = await api.boardActivity(
-        boardId,
-        cursorRef.current,
-        FEED_LIMIT,
-      );
-      setEntries((prev) => {
-        const seen = new Set(prev.map(keyOf));
-        const older = page.items.filter((entry) => !seen.has(keyOf(entry)));
-        return older.length === 0 ? prev : [...prev, ...older];
-      });
-      cursorRef.current = page.nextCursor;
-      setNextCursor(page.nextCursor);
-    } catch {
-      /* keep the button; the next press retries */
-    } finally {
-      setLoadingOlder(false);
-    }
-  }, [boardId, loadingOlder, serverMode]);
+  /** Change the page size and jump back to the live first page. */
+  const selectPageSize = useCallback(
+    (size: number) => {
+      if (size === pageSize) return;
+      setPageSize(size);
+      setLoading(true);
+      void loadFirst(size)
+        .catch(() => undefined)
+        .finally(() => setLoading(false));
+    },
+    [loadFirst, pageSize],
+  );
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the page lands after the await, not synchronously
@@ -168,16 +227,17 @@ export function WatchView({ boardId }: WatchViewProps) {
     0,
   );
   const totalCards = Math.max(cardCount, Object.keys(board.cards).length);
+  const lastPage = atEnd ? maxPage : maxPage + 1;
 
   return (
     <section
       data-watch
       data-testid="watch-view"
-      className="flex min-h-0 flex-1 flex-col overflow-hidden border border-border font-mono"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden border border-muted-foreground/40 font-mono"
     >
       {/* Big status header: the whole point of the view. The board name is
           already in the top bar, so it is not repeated here. */}
-      <header className="flex flex-wrap items-baseline gap-x-8 gap-y-2 border-b border-border px-5 py-4">
+      <header className="flex flex-wrap items-baseline gap-x-8 gap-y-2 border-b border-muted-foreground/40 px-5 py-4">
         <h2 className="text-xs uppercase tracking-widest text-muted-foreground">
           {t("watch.title")}
         </h2>
@@ -198,14 +258,20 @@ export function WatchView({ boardId }: WatchViewProps) {
             testId="watch-online"
           />
         </div>
-        <span className="ml-auto text-xs uppercase tracking-widest text-muted-foreground">
+        <span
+          className={
+            serverMode
+              ? "ml-auto text-xs font-semibold uppercase tracking-widest text-danger"
+              : "ml-auto text-xs uppercase tracking-widest text-muted-foreground"
+          }
+        >
           {serverMode ? t("watch.live") : t("watch.local")}
         </span>
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(14rem,20rem)_1fr]">
         {/* Left rail: column status + who is online. */}
-        <aside className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain border-b border-border md:border-b-0 md:border-r">
+        <aside className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain border-b border-muted-foreground/30 md:border-b-0 md:border-r">
           <Section title={t("watch.columnList")}>
             <ul data-testid="watch-column-list">
               {board.columns.map((column) => {
@@ -213,7 +279,7 @@ export function WatchView({ boardId }: WatchViewProps) {
                 return (
                   <li
                     key={column.id}
-                    className="flex items-baseline justify-between gap-3 border-b border-border/60 py-1.5 text-sm last:border-b-0"
+                    className="flex items-baseline justify-between gap-3 border-b border-muted-foreground/30 py-1.5 text-sm last:border-b-0"
                   >
                     <span className="min-w-0 truncate text-foreground/90">
                       {column.title}
@@ -239,7 +305,7 @@ export function WatchView({ boardId }: WatchViewProps) {
                 {presence.map((user) => (
                   <li
                     key={user.id}
-                    className="truncate border-b border-border/60 py-1.5 text-sm text-foreground/90 last:border-b-0"
+                    className="truncate border-b border-muted-foreground/30 py-1.5 text-sm text-foreground/90 last:border-b-0"
                   >
                     {user.displayName || user.id}
                   </li>
@@ -249,9 +315,9 @@ export function WatchView({ boardId }: WatchViewProps) {
           </Section>
         </aside>
 
-        {/* Right pane: the live feed. */}
+        {/* Right pane: the paged live feed. */}
         <div className="flex min-h-0 flex-col">
-          <div className="border-b border-border px-5 py-2 text-[11px] uppercase tracking-widest text-muted-foreground">
+          <div className="border-b border-muted-foreground/40 px-5 py-2 text-[11px] uppercase tracking-widest text-muted-foreground">
             {t("watch.feed")}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
@@ -259,13 +325,13 @@ export function WatchView({ boardId }: WatchViewProps) {
               <p className="px-5 py-4 text-sm text-muted-foreground/70">
                 {t("watch.feedLocal")}
               </p>
-            ) : entries.length === 0 ? (
+            ) : items.length === 0 ? (
               <p className="px-5 py-4 text-sm text-muted-foreground/70">
                 {t("watch.feedEmpty")}
               </p>
             ) : (
               <ol data-testid="watch-feed">
-                {entries.map((entry) => (
+                {items.filter(hasStory).map((entry) => (
                   <WatchRow
                     key={keyOf(entry)}
                     entry={entry}
@@ -278,20 +344,16 @@ export function WatchView({ boardId }: WatchViewProps) {
               </ol>
             )}
           </div>
-          {/* Paging lives in a fixed footer so it is reachable without
-              scrolling through the whole page. */}
-          {serverMode && nextCursor !== null ? (
-            <div className="border-t border-border px-5 py-2">
-              <button
-                type="button"
-                disabled={loadingOlder}
-                onClick={() => void loadOlder()}
-                className="rounded-sm text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60"
-                data-testid="watch-show-older"
-              >
-                {loadingOlder ? t("watch.loading") : t("watch.showOlder")}
-              </button>
-            </div>
+          {serverMode ? (
+            <Pager
+              page={page}
+              lastPage={lastPage}
+              atEnd={atEnd}
+              loading={loading}
+              pageSize={pageSize}
+              onGo={(target) => void goToPage(target)}
+              onPageSize={selectPageSize}
+            />
           ) : null}
         </div>
       </div>
@@ -302,6 +364,164 @@ export function WatchView({ boardId }: WatchViewProps) {
 /** Stable per-entry key: a command id and an activity id never share a space. */
 function keyOf(entry: ActivityFeedEntry): string {
   return `${entry.source}:${entry.id}`;
+}
+
+/**
+ * Does this entry say anything? `TOUCH_CARD` only stamps `updatedAt` after an
+ * edit session, and an `UPDATE_CARD` with no captured diff would read as a
+ * bare "Updated the card" — both are noise on a watch wall. Everything else
+ * (creates, moves, comments, archive, links) carries a story.
+ */
+function hasStory(entry: ActivityFeedEntry): boolean {
+  if (entry.type === "TOUCH_CARD") return false;
+  if (entry.type === "UPDATE_CARD") {
+    const changes = (entry.changes ?? []).filter(
+      (change) => change.field !== "checklistItemDone",
+    );
+    return changes.length > 0 || Boolean(entry.detail);
+  }
+  return true;
+}
+
+/** The page numbers to show: a window around the current page plus the ends. */
+function pageNumbers(page: number, lastPage: number): (number | "gap")[] {
+  const total = lastPage + 1; // 1-based count of known pages
+  if (total <= 2 * PAGE_WINDOW + 3) {
+    return Array.from({ length: total }, (_, index) => index);
+  }
+  const out: (number | "gap")[] = [];
+  const from = Math.max(1, page - PAGE_WINDOW);
+  const to = Math.min(lastPage - 1, page + PAGE_WINDOW);
+  out.push(0);
+  if (from > 1) out.push("gap");
+  for (let index = from; index <= to; index += 1) out.push(index);
+  if (to < lastPage - 1) out.push("gap");
+  out.push(lastPage);
+  return out;
+}
+
+function Pager({
+  page,
+  lastPage,
+  atEnd,
+  loading,
+  pageSize,
+  onGo,
+  onPageSize,
+}: {
+  page: number;
+  lastPage: number;
+  atEnd: boolean;
+  loading: boolean;
+  pageSize: number;
+  onGo: (target: number) => void;
+  onPageSize: (size: number) => void;
+}) {
+  const { t } = useI18n();
+  const canNext = !atEnd || page < lastPage;
+  return (
+    <nav
+      aria-label={t("watch.feed")}
+      data-testid="watch-pager"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-muted-foreground/40 px-5 py-2 text-xs"
+    >
+      <div className="flex items-center gap-1">
+        <PageButton
+          label={t("watch.prev")}
+          disabled={page === 0 || loading}
+          onClick={() => onGo(page - 1)}
+          testId="watch-prev"
+        />
+        {pageNumbers(page, lastPage).map((entry, index) =>
+          entry === "gap" ? (
+            <span
+              key={`gap-${index}`}
+              className="px-1 text-muted-foreground/60"
+              aria-hidden
+            >
+              …
+            </span>
+          ) : (
+            <button
+              key={entry}
+              type="button"
+              disabled={loading}
+              aria-current={entry === page ? "page" : undefined}
+              aria-label={t("watch.page", { page: String(entry + 1) })}
+              onClick={() => onGo(entry)}
+              data-testid={`watch-page-${entry + 1}`}
+              className={
+                entry === page
+                  ? "h-6 min-w-6 rounded-sm border border-primary/50 px-1.5 tabular-nums text-foreground"
+                  : "h-6 min-w-6 rounded-sm border border-transparent px-1.5 tabular-nums text-muted-foreground hover:border-border hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60"
+              }
+            >
+              {entry + 1}
+            </button>
+          ),
+        )}
+        <PageButton
+          label={t("watch.next")}
+          disabled={!canNext || loading}
+          onClick={() => onGo(page + 1)}
+          testId="watch-next"
+        />
+        {loading ? (
+          <span className="ml-1 text-muted-foreground">
+            {t("watch.loading")}
+          </span>
+        ) : null}
+      </div>
+      <span
+        role="group"
+        aria-label={t("watch.perPage")}
+        className="ml-auto flex items-center gap-1 whitespace-nowrap text-muted-foreground"
+      >
+        {t("watch.perPage")}
+        {[20, 50, 100].map((size) => (
+          <button
+            key={size}
+            type="button"
+            disabled={loading}
+            aria-pressed={pageSize === size}
+            onClick={() => onPageSize(size)}
+            data-testid={`watch-page-size-${size}`}
+            className={
+              pageSize === size
+                ? "h-6 min-w-7 rounded-sm border border-primary/50 px-1.5 tabular-nums text-foreground"
+                : "h-6 min-w-7 rounded-sm border border-transparent px-1.5 tabular-nums text-muted-foreground hover:border-border hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60"
+            }
+          >
+            {size}
+          </button>
+        ))}
+      </span>
+    </nav>
+  );
+}
+
+function PageButton({
+  label,
+  disabled,
+  onClick,
+  testId,
+}: {
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+  testId: string;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      data-testid={testId}
+      className="h-6 rounded-sm border border-border px-1.5 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-40"
+    >
+      {label}
+    </button>
+  );
 }
 
 function Stat({
@@ -392,12 +612,7 @@ function WatchRow({
     : entry.type === "SET_CARD_ASSIGN"
       ? (entry.changes?.[0]?.to ?? null)
       : entry.detail || null;
-  const assigneeName =
-    assigneeTo === null
-      ? null
-      : assigneeTo === ""
-        ? ""
-        : memberName(assigneeTo);
+  const assigneeName = assigneeTo === null ? null : memberName(assigneeTo);
 
   const sentence = sentenceFor(entry, lang, hour12, assigneeName);
   const details = detailsFor(entry, t, memberName, lang, hour12);
@@ -409,7 +624,7 @@ function WatchRow({
   return (
     <li
       data-testid="watch-entry"
-      className="grid grid-cols-[7.5rem_minmax(6rem,10rem)_1fr] gap-3 border-b border-border/50 px-5 py-1.5 text-sm last:border-b-0"
+      className="grid grid-cols-[7.5rem_minmax(6rem,10rem)_1fr] divide-x divide-muted-foreground/40 border-b border-muted-foreground/40 px-5 py-1.5 text-sm last:border-b-0 [&>*]:px-2 [&>*:first-child]:pl-0 [&>*:last-child]:pr-0"
     >
       <time
         className="whitespace-nowrap tabular-nums text-muted-foreground"

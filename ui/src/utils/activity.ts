@@ -39,6 +39,7 @@ const LOCAL_KEYS = {
 
 /** Server command types → catalog keys (special cases resolved per entry). */
 const COMMAND_KEYS: Record<string, MessageKey> = {
+  ADD_CARD: "activity.created",
   CREATE_CARD: "activity.created",
   UPDATE_CARD: "history.updated",
   MOVE_CARD: "activity.moved",
@@ -58,7 +59,41 @@ const COMMAND_KEYS: Record<string, MessageKey> = {
   DELETE_CHECKLIST_ITEM: "activity.checklist-item-removed",
   ARCHIVE_CARD: "activity.archived",
   UNARCHIVE_CARD: "activity.unarchived",
+  DELETE_CARD: "activity.deleted",
   DUPLICATE_CARD: "activity.created",
+  // Bookkeeping only (filtered out of the watch feed); the card history still
+  // shows it.
+  TOUCH_CARD: "history.updated",
+  // Labels.
+  ADD_LABEL: "activity.label-created",
+  RENAME_LABEL: "activity.label-renamed",
+  SET_LABEL_COLOR: "activity.label-color",
+  DELETE_LABEL: "activity.label-deleted",
+  // Board- and column-level commands (no card): without these they fell back
+  // to the card-centric "Updated the card".
+  ADD_COLUMN: "activity.column-added",
+  DUPLICATE_COLUMN: "activity.column-added",
+  RENAME_COLUMN: "activity.column-renamed",
+  DELETE_COLUMN: "activity.column-removed",
+  MOVE_COLUMN: "activity.column-moved",
+  SORT_COLUMN: "activity.column-sorted",
+  SET_COLUMN_CARD_ORDER: "activity.column-reordered",
+  SET_COLUMN_WIP_LIMIT: "activity.column-updated",
+  ARCHIVE_COLUMN_CARDS: "activity.column-archived",
+  RENAME_BOARD: "activity.board-renamed",
+  ARCHIVE_BOARD: "activity.board-archived",
+  UNARCHIVE_BOARD: "activity.board-unarchived",
+  ADD_BOARD: "activity.board-created",
+  REMOVE_BOARD: "activity.board-deleted",
+  IMPORT_BOARDS: "activity.board-imported",
+  // Restores (undo / admin): rare, but they still deserve a sentence.
+  RESTORE_CARD: "activity.restored",
+  RESTORE_COLUMN: "activity.column-restored",
+  RESTORE_COLUMN_CARDS: "activity.column-restored",
+  RESTORE_LABEL: "activity.label-restored",
+  RESTORE_CHECKLIST: "activity.checklist-restored",
+  RESTORE_CHECKLIST_ITEM: "activity.checklist-item-restored",
+  RESTORE_BOARD: "activity.board-restored",
 };
 
 /** Field label keys for the "from → to" lines. */
@@ -203,7 +238,7 @@ export function sentenceFor(
   }
 
   return {
-    key: COMMAND_KEYS[entry.type] ?? "history.updated",
+    key: COMMAND_KEYS[entry.type] ?? "activity.changed",
     params: { detail: entry.detail ?? "" },
   };
 }
