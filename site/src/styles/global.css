@@ -154,14 +154,43 @@ button {
  * Typography
  * ------------------------------------------------------------------------- */
 
+/* A single, descending heading ramp from the brand type tokens, so h1 > h2 >
+ * h3 > h4 holds everywhere. Component overrides below only ever scale a level
+ * within its slot, never invert the order. */
 h1,
 h2,
-h3 {
+h3,
+h4 {
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: -0.02em;
   /* Even out headline wraps so the last line never strands a single word. */
   text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--janosik-type-h1-size);
+  line-height: var(--janosik-type-h1-line);
+  letter-spacing: var(--janosik-type-h1-tracking);
+}
+
+h2 {
+  font-size: var(--janosik-type-h2-size);
+  line-height: var(--janosik-type-h2-line);
+  letter-spacing: var(--janosik-type-h2-tracking);
+}
+
+h3 {
+  font-size: var(--janosik-type-h3-size);
+  line-height: var(--janosik-type-h3-line);
+  letter-spacing: var(--janosik-type-h3-tracking);
+}
+
+h4 {
+  font-size: var(--janosik-type-lead-size);
+  line-height: var(--janosik-type-lead-line);
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 p {
@@ -392,7 +421,94 @@ p {
   overflow: hidden;
 }
 
+/* Starfall: a faint, always-moving shower of shooting stars behind the hero.
+ * Pure CSS — no pointer, no JS. Each star is a short gradient streak that
+ * travels down-left on a long, staggered loop; the hero's overflow clips it.
+ * Under reduced motion the streaks are hidden, leaving a calm background. */
+.hero-stars {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.hero-star {
+  position: absolute;
+  width: 130px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--primary) 70%, white),
+    transparent
+  );
+  opacity: 0;
+  animation: hero-starfall var(--dur, 7s) linear infinite;
+  animation-delay: var(--delay, 0s);
+  will-change: transform, opacity;
+}
+
+.hero-star:nth-child(1) {
+  top: 6%;
+  left: 82%;
+  --dur: 6.5s;
+  --delay: 0s;
+}
+.hero-star:nth-child(2) {
+  top: 20%;
+  left: 94%;
+  --dur: 8.2s;
+  --delay: 1.7s;
+}
+.hero-star:nth-child(3) {
+  top: 38%;
+  left: 70%;
+  --dur: 7.4s;
+  --delay: 3.5s;
+}
+.hero-star:nth-child(4) {
+  top: 12%;
+  left: 58%;
+  --dur: 9s;
+  --delay: 5.2s;
+}
+.hero-star:nth-child(5) {
+  top: 32%;
+  left: 88%;
+  --dur: 6.8s;
+  --delay: 7.1s;
+}
+
+@keyframes hero-starfall {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(-45deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.85;
+  }
+  55% {
+    opacity: 0.85;
+  }
+  75% {
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(-55vw, 55vh, 0) rotate(-45deg);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-star {
+    display: none;
+  }
+}
+
 .hero-grid {
+  position: relative;
+  z-index: 1;
   display: grid;
   gap: clamp(2.5rem, 6vw, 4.5rem);
   align-items: center;
@@ -462,8 +578,8 @@ p {
 }
 
 .feature-row-copy h3 {
-  font-size: clamp(1.5rem, 3vw, 2rem);
-  line-height: 1.2;
+  font-size: clamp(1.35rem, 2.6vw, 1.75rem);
+  line-height: 1.25;
 }
 
 .feature-row-copy p {
