@@ -118,6 +118,45 @@ function cardNotFound(cardId: string, boardId: string) {
   );
 }
 
+/**
+ * The Definition-of-Done gate (TASK-157, D12): why a card may not enter the
+ * Done column, or null when it may. A card without a task contract (no
+ * `definitionOfDone` task spec and no `Definition of Done` checklist) is not
+ * gated — the rule only binds cards that claim a contract.
+ */
+async function dodBlock(
+  client: JanosikClient,
+  card: Card,
+): Promise<string | null> {
+  const dodChecklist = card.checklists?.find((list) =>
+    /^definition of done$/i.test(list.title.trim()),
+  );
+  const hasContract =
+    (card.definitionOfDone?.length ?? 0) > 0 || dodChecklist !== undefined;
+  if (!hasContract) return null;
+  const unchecked = dodChecklist?.items.filter((item) => !item.done) ?? [];
+  if (unchecked.length > 0) {
+    return (
+      `Error: card ${card.id}'s Definition of Done still has ` +
+      `${unchecked.length} unchecked item(s). Tick them with ` +
+      "janosik_set_checklist_item_done before moving the card to Done."
+    );
+  }
+  const evidence = await client.listComments(
+    card.id,
+    undefined,
+    100,
+    "evidence",
+  );
+  if (evidence.items.length === 0) {
+    return (
+      `Error: card ${card.id} has no evidence comment. Post one with ` +
+      'janosik_add_comment (kind="evidence") before moving the card to Done.'
+    );
+  }
+  return null;
+}
+
 export function registerCardTools(server: McpServer, client: JanosikClient) {
   defineTool(
     server,
@@ -374,6 +413,25 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, cardId, toColumnId, position, expectedVersion }) => {
+      // Definition-of-Done gate (TASK-157, D12). The board's *last* column is
+      // its "Done" column (the same heuristic the OG image uses); a card that
+      // carries a task contract may only enter it once its `Definition of
+      // Done` checklist is fully ticked and it has an evidence comment. This
+      // is the anti-"green fence built from lies" rule — a swarm cannot mark
+      // work done on its own say-so.
+      const before = await client.getBoard(boardId);
+      const origin = findCardLocation(before, cardId);
+      if (origin === null) return cardNotFound(cardId, boardId);
+      const destinationId = toColumnId ?? origin.column.id;
+      const doneColumnId = before.columns.at(-1)?.id;
+      if (
+        destinationId === doneColumnId &&
+        destinationId !== origin.column.id
+      ) {
+        const block = await dodBlock(client, before.cards[cardId]!);
+        if (block !== null) return errorResult(block);
+      }
+
       // The source column/index come from the read, and `ifMatch` refuses
       // the move if another writer changed the board in between (the read
       // is then retried), so a concurrent move can never act on stale

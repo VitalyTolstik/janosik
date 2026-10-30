@@ -40,7 +40,12 @@ function board(cards: Record<string, unknown> = {}) {
     id: "b1",
     title: "Alpha",
     columns: [
-      { id: "col1", title: "Todo", cardIds: ["k1", "k2"], createdAt: 1 },
+      {
+        id: "col1",
+        title: "Todo",
+        cardIds: ["k1", "k2", "k3", "k4"],
+        createdAt: 1,
+      },
       { id: "col2", title: "Done", cardIds: [], createdAt: 1 },
     ],
     cards: {
@@ -65,6 +70,34 @@ function board(cards: Record<string, unknown> = {}) {
             items: [
               { id: "i1", text: "run the widget migration", done: false },
             ],
+          },
+        ],
+      },
+      k3: {
+        id: "k3",
+        title: "Contract card",
+        labelIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+        checklists: [
+          {
+            id: "cl3",
+            title: "Definition of Done",
+            items: [{ id: "i3", text: "ship it", done: false }],
+          },
+        ],
+      },
+      k4: {
+        id: "k4",
+        title: "Done contract",
+        labelIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+        checklists: [
+          {
+            id: "cl4",
+            title: "Definition of Done",
+            items: [{ id: "i4", text: "ship it", done: true }],
           },
         ],
       },
@@ -151,6 +184,10 @@ function fakeApi(
     }
   }
   const commentMatch = /^\/cards\/([^/]+)\/comments$/.exec(path);
+  if (commentMatch && method === "GET") {
+    // No seeded comments: the DoD gate finds no evidence.
+    return respond({ items: [], nextCursor: null });
+  }
   if (commentMatch && method === "POST") {
     const request = body as { text: string; kind?: string };
     return respond(
@@ -627,6 +664,41 @@ describe("janosik MCP server", () => {
           (call.body as { action: { newCardId: string } }).action.newCardId,
       ),
     ).toEqual(["my-card", "my-card"]);
+    await client.close();
+  });
+
+  it("refuses to move a card into Done with an unticked Definition of Done", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_move_card",
+      arguments: { boardId: "b1", cardId: "k3", toColumnId: "col2" },
+    });
+    expect(result.isError).toBe(true);
+    expect(firstText(result)).toMatch(/Definition of Done/i);
+    expect(calls.some((call) => call.path === "/boards/b1/commands")).toBe(
+      false,
+    );
+    await client.close();
+  });
+
+  it("refuses to move a card into Done without an evidence comment", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_move_card",
+      arguments: { boardId: "b1", cardId: "k4", toColumnId: "col2" },
+    });
+    expect(result.isError).toBe(true);
+    expect(firstText(result)).toMatch(/evidence/i);
+    await client.close();
+  });
+
+  it("moves a card without a task contract into Done", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_move_card",
+      arguments: { boardId: "b1", cardId: "k1", toColumnId: "col2" },
+    });
+    expect(result.isError).toBeFalsy();
     await client.close();
   });
 });
