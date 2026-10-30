@@ -49,17 +49,18 @@ The right side holds the tools:
 - The **search box** filters the cards on the current board; the `Filters`
   button opens faceted filters (due date, labels, priority, assignee, links,
   created).
-- The **view switcher** picks how the board is drawn: `Board`, `Calendar` or
-  `Table`.
-- The **column appearance** menu (board view only) sets column transparency
-  and blur.
+- The **view switcher** picks how the board is drawn: `Board`, `Calendar`,
+  `Table` or `Watch`.
+- In the board view, the **display** menu next to the switcher sets the card
+  size (`Simplify design`) and the **column appearance** (transparency and
+  blur).
 
 ## Where to go next
 
 - [Boards, columns and cards](boards/) — the board surface: creating and
   managing boards and columns, adding and moving cards.
-- [Calendar and table views](views/) — the two alternative projections of the
-  same cards.
+- [Calendar, table and watch views](views/) — the alternative projections of
+  the same cards, including the bare watch view and the compact card size.
 - [Card details and the quick menu](cards/) — everything inside a card and
   the right-click quick menu.
 - [Collaboration, sharing and search](collaboration/) — members, realtime

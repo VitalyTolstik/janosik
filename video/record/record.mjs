@@ -19,6 +19,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const STATE = process.env.STATE ?? path.join(HERE, ".state.json");
 const OUT = process.env.OUT ?? path.join(HERE, "out");
 const BASE = process.env.BASE ?? "http://localhost:3210";
+// UI path prefix: "/app" for the single-image build, "" for the dev server.
+const APP_BASE = process.env.APP_BASE ?? "/app";
 const WIDTH = 1280;
 const HEIGHT = 800;
 
@@ -60,7 +62,9 @@ async function openBoard(browser, key, theme, { record, zoom }) {
   }, theme);
   const videoStart = Date.now();
   const page = await context.newPage();
-  await page.goto(`${BASE}/app/board/${state.boardId}`, { waitUntil: "load" });
+  await page.goto(`${BASE}${APP_BASE}/board/${state.boardId}`, {
+    waitUntil: "load",
+  });
   await page.getByText("Backlog", { exact: true }).first().waitFor();
   if (zoom) {
     await page.evaluate(`document.documentElement.style.zoom = "${zoom}"`);
@@ -127,6 +131,8 @@ async function sceneBoard(page) {
     await page.keyboard.press("Enter");
   }
   await wait(800);
+  await view(page, "Watch");
+  await wait(1400);
   await view(page, "Board");
   await wait(900);
 }

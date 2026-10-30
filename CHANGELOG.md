@@ -111,7 +111,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (cards / columns / online), a column-count and online rail, and a live
   newest-first feed of the board's activity (commands + comments), re-read on a
   short timer and on realtime frames. On a 2400-card board it mounts **zero
-  cards and ~405 DOM nodes** instead of 2 414 (compact) or 4 482 (full).
+  cards and ~405 DOM nodes** instead of 2 414   (compact) or 4 482 (full). The user guide gains a *Calendar, table and watch
+  views* page (en/ru) with real screenshots of both the watch view and the
+  compact cards; the README feature list, the landing copy and the docs
+  generator (`video/record/screenshots.mjs`) are updated to match.
 
 ### Fixed
 

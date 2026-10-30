@@ -187,7 +187,7 @@ describe("WatchView (TASK-142)", () => {
     expect(feed).toHaveTextContent("Looks good");
   });
 
-  it("pages older entries through the Show older button", async () => {
+  it("pages the feed with numbered page buttons", async () => {
     hoisted.enabled.value = true;
     const now = Date.now();
     hoisted.boardActivity.mockImplementation(
@@ -199,7 +199,7 @@ describe("WatchView (TASK-142)", () => {
                 source: "command",
                 id: "c-new",
                 at: now,
-                type: "UPDATE_CARD",
+                type: "CREATE_CARD",
                 actorId: "u-1",
                 cardId: "card-1",
               },
@@ -213,7 +213,7 @@ describe("WatchView (TASK-142)", () => {
               source: "command",
               id: "c-old",
               at: now - 60_000,
-              type: "UPDATE_CARD",
+              type: "CREATE_CARD",
               actorId: "u-2",
               cardId: "card-2",
             },
@@ -225,14 +225,106 @@ describe("WatchView (TASK-142)", () => {
 
     renderWatch();
 
-    const button = await screen.findByTestId("watch-show-older");
-    expect(screen.getAllByTestId("watch-entry")).toHaveLength(1);
+    // Page 1 is live and the chain exposes a page 2.
+    expect(await screen.findByTestId("watch-page-2")).toBeInTheDocument();
+    expect(screen.getByTestId("watch-feed")).toHaveTextContent("Fix layout");
+    expect(screen.getByTestId("watch-prev")).toBeDisabled();
 
-    fireEvent.click(button);
+    fireEvent.click(screen.getByTestId("watch-page-2"));
 
     await waitFor(() =>
-      expect(screen.getAllByTestId("watch-entry")).toHaveLength(2),
+      expect(screen.getByTestId("watch-feed")).toHaveTextContent("Retry SSE"),
     );
-    expect(screen.queryByTestId("watch-show-older")).toBeNull();
+    expect(screen.getByTestId("watch-page-2")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    // The last page disables Next.
+    expect(screen.getByTestId("watch-next")).toBeDisabled();
+  });
+
+  it("changes the page size and refetches the first page", async () => {
+    hoisted.enabled.value = true;
+    hoisted.boardActivity.mockResolvedValue({ items: [], nextCursor: null });
+
+    renderWatch();
+    await waitFor(() => expect(hoisted.boardActivity).toHaveBeenCalled());
+    hoisted.boardActivity.mockClear();
+
+    fireEvent.click(screen.getByTestId("watch-page-size-20"));
+
+    await waitFor(() =>
+      expect(hoisted.boardActivity).toHaveBeenCalledWith(
+        BOARD_ID,
+        undefined,
+        20,
+      ),
+    );
+  });
+
+  it("hides entries with no story (TOUCH_CARD, bare UPDATE_CARD)", async () => {
+    hoisted.enabled.value = true;
+    const now = Date.now();
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "command",
+          id: "t-1",
+          at: now,
+          type: "TOUCH_CARD",
+          actorId: "u-1",
+          cardId: "card-1",
+        },
+        {
+          source: "command",
+          id: "u-1",
+          at: now - 1,
+          type: "UPDATE_CARD",
+          actorId: "u-1",
+          cardId: "card-1",
+        },
+        {
+          source: "command",
+          id: "c-1",
+          at: now - 2,
+          type: "CREATE_CARD",
+          actorId: "u-1",
+          cardId: "card-2",
+        },
+      ],
+      nextCursor: null,
+    });
+
+    renderWatch();
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("watch-entry")).toHaveLength(1),
+    );
+    expect(screen.getByTestId("watch-feed")).toHaveTextContent("Retry SSE");
+  });
+
+  it("labels board-level commands instead of the card fallback", async () => {
+    hoisted.enabled.value = true;
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "command",
+          id: "col-1",
+          at: Date.now(),
+          type: "ADD_COLUMN",
+          actorId: "u-1",
+        },
+      ],
+      nextCursor: null,
+    });
+
+    renderWatch();
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("watch-entry")).toHaveLength(1),
+    );
+    expect(screen.getByTestId("watch-feed")).toHaveTextContent(
+      "Added a column",
+    );
   });
 });

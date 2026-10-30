@@ -7,7 +7,7 @@ A premium **Kanban board** — Trello-class drag & drop with a Space Grotesk wor
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)](https://vite.dev)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38bdf8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![NestJS](https://img.shields.io/badge/NestJS-11-e0234e?logo=nestjs&logoColor=white)](https://nestjs.com)
-[![Tests](https://img.shields.io/badge/tests-932%20passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-992%20passing-brightgreen)](#)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 
 > **Janosik** installs as a **PWA** and runs in **server mode**: accounts, shared boards and a command-log sync (`POST /boards/:id/commands`) sit on top of one pure reducer (`boardReducer`) shared by the UI and the API, with optimistic updates and undo. The reducer is offline-first by design and the **unit tests** run it with no API (data in `localStorage`); the dev and production builds always talk to the API (`VITE_API_URL`, `/api/v1` by default) and show a sign-in screen. Members UI, **realtime SSE** (everyone sees each other's edits without a reload, dropped streams catch up from `?since=`), presence and the comments UI have all landed — see [ROADMAP.md §7](./ROADMAP.md).
@@ -20,7 +20,7 @@ This is an **npm-workspaces monorepo**. Three packages, one `npm install` at the
 
 | Workspace | npm name | What it is | How it runs |
 | --- | --- | --- | --- |
-| **`ui/`** | `@janosik/ui` | The **frontend**: the whole single-page app — board/calendar/table views, drag & drop, card dialog, search, settings, i18n, PWA service worker, the login screen and the `/admin` master panel. It talks to the backend over `fetch`. | Vite dev server (`npm run dev`) or is served as static files from `ui/dist` |
+| **`ui/`** | `@janosik/ui` | The **frontend**: the whole single-page app — board/calendar/table/watch views, drag & drop, card dialog, search, settings, i18n, PWA service worker, the login screen and the `/admin` master panel. It talks to the backend over `fetch`. | Vite dev server (`npm run dev`) or is served as static files from `ui/dist` |
 | **`shared/`** | `@janosik/shared` | A **TypeScript library with no build step and no runtime of its own**: the domain model (`Board`/`Column`/`Card`/`Label`), the pure `boardReducer` (the single implementation of every board operation), its inverse for undo, command validation, export/import serialization, storage keys — plus the **typed API contracts** (user and admin DTOs). | Nothing to run. `ui` and `backend` import its `.ts` sources directly through aliases, so client and server literally share the same types and the same reducer logic |
 | **`backend/`** | `@janosik/backend` | The **server**: a NestJS API on PostgreSQL — auth (JWT + refresh rotation + argon2id), boards/members, the command log that persists UI actions, comments/activity, and the isolated master-admin contour (`/api/v1/admin/*`). | Node process (`npm run build:backend` + `npm run start -w backend`); dev DB via Docker Compose |
 
@@ -74,7 +74,8 @@ janosik/                        # npm workspaces root (one package-lock.json)
 
 ## Highlights
 
-- **Three board views** — Kanban, **Calendar** (drag deadlines, "unscheduled" panel, week/month, day panel) and **Table** (sorting, inline editing, configurable columns).
+- **Four board views** — Kanban, **Calendar** (drag deadlines, "unscheduled" panel, week/month, day panel), **Table** (sorting, inline editing, configurable columns) and **Watch** (a bare status plus a live activity feed for observing a swarm, with paging and a 20/50/100 page size).
+- **Card density** — a `Simplify design` toggle switches every card to a compact one-line tile (title, label dots, blocked marker, checklist progress, priority and assignee) with far fewer elements; the full face stays one click away in the card dialog.
 - **Drag & drop** — move cards within/between columns and reorder columns (`@dnd-kit`), inline Trello-style "+" zones, keyboard sensor and drag overlay.
 - **Rich card content** — WYSIWYG description (MDXEditor), checklists with progress badges, due dates with overdue/soon badges, color/gradient covers, 14-color labels.
 - **Card & board archive** — Trello-style archiving with restore (WIP-aware) and permanent delete; board archive with restore.
@@ -426,7 +427,7 @@ ui/
 │  ├─ api/                  # fetch client (tokens, auth-lost callback, keepalive commands)
 │  ├─ auth/                 # AuthContext (session, login/register/logout)
 │  ├─ components/
-│  │  ├─ board/             # Columns, cards, card dialog, filters, views (board/calendar/table)
+│  │  ├─ board/             # Columns, cards, card dialog, filters, views (board/calendar/table/watch)
 │  │  ├─ auth/              # LoginPage, logout confirmation
 │  │  ├─ account/           # personal panel: profile, password, API keys, preferences
 │  │  ├─ editor/            # MDXEditor description editor (plugins, code blocks, i18n)

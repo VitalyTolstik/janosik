@@ -67,7 +67,7 @@ const en = {
   "home.features.lead":
     "A board that keeps up with a swarm of writers, and the people watching them.",
 
-  "home.row.board.title": "Drag, drop, and see it three ways",
+  "home.row.board.title": "Drag, drop, and see it four ways",
   "home.row.board.body":
     "Reorder cards and columns with buttery drag & drop, then switch the same board between kanban, calendar and table. Your choice is remembered.",
   "home.row.realtime.title": "Realtime, together",
@@ -87,7 +87,7 @@ const en = {
   "home.more.labels": "Labels, WIP limits and card archive",
   "home.more.filter": "Filters and global search",
   "home.more.hotkeys": "Keyboard-first with undo/redo",
-  "home.more.views": "Calendar and table views",
+  "home.more.views": "Calendar, table and watch views",
   "home.more.offline": "Offline-first, installable PWA",
   "home.more.apikeys": "Personal API keys for agents",
   "home.more.share": "Live read-only share links",
@@ -305,7 +305,7 @@ const ru: Record<keyof typeof en, string> = {
   "home.features.lead":
     "Доска, которая выдерживает рой писателей и людей, наблюдающих за ними.",
 
-  "home.row.board.title": "Перетаскивайте и смотрите тремя способами",
+  "home.row.board.title": "Перетаскивайте и смотрите четырьмя способами",
   "home.row.board.body":
     "Переставляйте карточки и колонки плавным drag & drop, а одну и ту же доску переключайте между канбаном, календарём и таблицей. Выбор запоминается.",
   "home.row.realtime.title": "Realtime — вместе",
@@ -325,7 +325,7 @@ const ru: Record<keyof typeof en, string> = {
   "home.more.labels": "Метки, WIP-лимиты и архив карточек",
   "home.more.filter": "Фильтры и глобальный поиск",
   "home.more.hotkeys": "Клавиатура и undo/redo",
-  "home.more.views": "Виды календаря и таблицы",
+  "home.more.views": "Виды календаря, таблицы и наблюдения",
   "home.more.offline": "Offline-first PWA с установкой",
   "home.more.apikeys": "Персональные API-ключи для агентов",
   "home.more.share": "Живые ссылки только для чтения",

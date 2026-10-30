@@ -185,6 +185,27 @@ const SHOTS = {
     await shot(page, "table");
   },
 
+  async watch(page) {
+    await openBoard(page);
+    await page
+      .getByRole("group", { name: "View" })
+      .getByRole("button", { name: "Watch" })
+      .click();
+    await wait(1200);
+    await shot(page, "watch");
+  },
+
+  async "card-density"(page) {
+    await openBoard(page);
+    await page.evaluate(() =>
+      localStorage.setItem("janosik-board-density", "compact"),
+    );
+    await page.reload({ waitUntil: "load" });
+    await page.getByText("Backlog", { exact: true }).first().waitFor();
+    await wait(700);
+    await shot(page, "card-density");
+  },
+
   async filters(page) {
     await openBoard(page);
     await page.getByRole("button", { name: "Filter cards" }).click();
