@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Injectable,
 } from "@nestjs/common";
+import type { TokenScope } from "./api-token.service";
 
 /**
  * How the caller of a user-contour route authenticated (B-2). Kept on the
@@ -18,6 +19,8 @@ export interface AuthPrincipal {
   via: "jwt" | "pat";
   /** `ApiToken.id` of the presenting token — set only when `via === "pat"`. */
   apiTokenId?: string;
+  /** Scope of the presenting PAT (TASK-157) — set only when `via === "pat"`. */
+  tokenScope?: TokenScope;
   /**
    * `AdminUser.id` from the access token's `imp` claim when a master
    * impersonates this user (TASK-59); `null` for ordinary sessions and PATs.

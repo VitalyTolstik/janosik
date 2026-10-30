@@ -21,6 +21,9 @@ const prismaMock = {
     update: jest.fn(),
     updateMany: jest.fn(),
   },
+  boardMember: {
+    findUnique: jest.fn(),
+  },
 } as unknown as PrismaService & {
   apiToken: Record<
     | "findUnique"
@@ -31,6 +34,7 @@ const prismaMock = {
     | "updateMany",
     jest.Mock
   >;
+  boardMember: Record<"findUnique", jest.Mock>;
 };
 
 const sha256 = (value: string): string =>
@@ -55,6 +59,9 @@ const makeToken = (overrides: Partial<ApiToken> = {}): ApiToken => ({
   userId: "user-1",
   name: "CI",
   tokenHash: "hash",
+  boardId: null,
+  readOnly: false,
+  rateLimitPerMinute: null,
   lastUsedAt: null,
   expiresAt: null,
   revokedAt: null,
@@ -197,6 +204,9 @@ describe("ApiTokenService", () => {
           lastUsedAt: new Date("2026-09-02T00:00:00Z").getTime(),
           expiresAt: new Date("2027-09-01T00:00:00Z").getTime(),
           revokedAt: new Date("2026-09-03T00:00:00Z").getTime(),
+          boardId: null,
+          readOnly: false,
+          rateLimitPerMinute: null,
         },
       ]);
     });
@@ -265,6 +275,43 @@ describe("ApiTokenService", () => {
       ).rejects.toBeInstanceOf(BadRequestException);
       await expect(
         service.create("user-1", { name: "Far", expiresAt: tooFar }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.apiToken.create).not.toHaveBeenCalled();
+    });
+
+    it("stores read-only and a rate limit (TASK-157)", async () => {
+      prismaMock.apiToken.create.mockImplementation(
+        async ({ data }: { data: Partial<ApiToken> }) => makeToken(data),
+      );
+
+      const result = await service.create("user-1", {
+        name: "Agent",
+        expiresAt: null,
+        readOnly: true,
+        rateLimitPerMinute: 120,
+      });
+
+      expect(result.apiToken.readOnly).toBe(true);
+      expect(result.apiToken.rateLimitPerMinute).toBe(120);
+      expect(prismaMock.apiToken.create.mock.calls[0][0].data).toMatchObject({
+        readOnly: true,
+        rateLimitPerMinute: 120,
+        boardId: null,
+      });
+    });
+
+    it("rejects a board scope the owner is not a member of", async () => {
+      prismaMock.boardMember.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.create("user-1", { name: "Scoped", boardId: "board-9" }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.apiToken.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects an out-of-range rate limit", async () => {
+      await expect(
+        service.create("user-1", { name: "Fast", rateLimitPerMinute: 0 }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.apiToken.create).not.toHaveBeenCalled();
     });

@@ -540,6 +540,9 @@ export class FakeServer {
             ? null
             : new Date(request.expiresAt).getTime(),
         revokedAt: null,
+        boardId: request.boardId ?? null,
+        readOnly: request.readOnly === true,
+        rateLimitPerMinute: request.rateLimitPerMinute ?? null,
       };
       this.apiTokens.unshift(apiToken);
       const response: CreateUserTokenResponse = {

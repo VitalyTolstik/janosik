@@ -241,6 +241,9 @@ describe("Users API (e2e)", () => {
         lastUsedAt: null,
         expiresAt: null,
         revokedAt: null,
+        boardId: null,
+        readOnly: false,
+        rateLimitPerMinute: null,
       });
       pat = body.token;
       tokenId = body.apiToken.id;

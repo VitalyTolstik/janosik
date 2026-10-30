@@ -70,7 +70,13 @@ describe("ApiTokensSection (TASK-36.1)", () => {
     expect(server.requests).toContainEqual({
       method: "POST",
       path: "/api/v1/users/me/tokens",
-      body: { name: "CI pipeline", expiresAt: null },
+      body: {
+        name: "CI pipeline",
+        expiresAt: null,
+        boardId: null,
+        readOnly: false,
+        rateLimitPerMinute: null,
+      },
     });
 
     await userEvent.click(screen.getByTestId("token-copy"));
@@ -108,6 +114,31 @@ describe("ApiTokensSection (TASK-36.1)", () => {
     expect(new Date(body.expiresAt).getTime()).toBeGreaterThan(Date.now());
   });
 
+  it("sends read-only and a rate limit (TASK-157)", async () => {
+    const server = new FakeServer();
+    renderTokens(server);
+
+    await screen.findByText("No API keys yet");
+    await userEvent.click(screen.getByTestId("token-create"));
+    await userEvent.type(screen.getByTestId("token-name"), "Agent");
+    await userEvent.click(screen.getByTestId("token-read-only"));
+    await userEvent.type(screen.getByTestId("token-rate"), "120");
+    await userEvent.click(screen.getByTestId("token-create-submit"));
+
+    await screen.findByTestId("token-reveal");
+    expect(server.requests).toContainEqual({
+      method: "POST",
+      path: "/api/v1/users/me/tokens",
+      body: {
+        name: "Agent",
+        expiresAt: null,
+        boardId: null,
+        readOnly: true,
+        rateLimitPerMinute: 120,
+      },
+    });
+  });
+
   it("revokes only after the confirmation", async () => {
     const server = new FakeServer();
     server.apiTokens.push({
@@ -117,6 +148,9 @@ describe("ApiTokensSection (TASK-36.1)", () => {
       lastUsedAt: null,
       expiresAt: null,
       revokedAt: null,
+      boardId: null,
+      readOnly: false,
+      rateLimitPerMinute: null,
     });
     renderTokens(server);
 
