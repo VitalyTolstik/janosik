@@ -262,6 +262,23 @@ npm run dev                             # UI :5173 (/api проксируетс�
 **запущенного API**. Поведение агента задаёт скилл `skills/janosik`. Сборка —
 `npm run build:mcp`; подробности в `README.md` и `mcp/README.md`.
 
+### Agent-ready карточка (TASK-157, Слой 0)
+
+Формат карточки, который рой агентов читает без человека (конвенции, без
+схемы; источник — скилл `skills/janosik`):
+
+- **Описание по секциям:** `## Why` → `## Scope` → `## Acceptance criteria`
+  (чек-боксы) → `## Out of scope` → `## Verify` (точная команда/проверка).
+- **Чек-лист `Definition of Done`** — пункты «сделано, когда…»; карточка
+  Done только когда все отмечены (неотмеченные объясняются комментарием).
+- **Типизированные комментарии** с префиксом-видом: `[status]`, `[question]`,
+  `[blocker]`, `[evidence]`, `[handoff]` — тред становится машиночитаемым.
+- **Зарезервированные метки состояния:** `agent:blocked`, `agent:needs-human`,
+  `agent:verified` — фильтр «что делает рой» одним взглядом.
+
+Схема и команды (claim с лизингом, `acceptanceCriteria`/`definitionOfDone`,
+`actorType`) — в TASK-157 §7.17.
+
 ## Команды (monorepo, после TASK-22)
 
 Репозиторий — npm workspaces: `ui/` (фронт), `shared/` (`@janosik/shared`,
@@ -462,7 +479,7 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   рисует дифф «было → стало», посимвольные `UPDATE_CARD` сворачиваются в
   `ui/src/utils/history-fold.ts`. Комментарии REST:
   `POST/GET /cards/:id/comments`, `DELETE /comments/:id` (только автор,
-  `LIMITS.comment` = 2000, soft-delete); запись дополнительно публикует
+  `LIMITS.comment` = 10000, soft-delete); запись дополнительно публикует
   SSE-кадр `type:"activity"`. Доступ — `CardAccessGuard` (card/comment →
   board). UI: секция Activity последней в диалоге, сегментные табы
   Comments/History в стиле переключателя видов доски (`CardActivity`); 

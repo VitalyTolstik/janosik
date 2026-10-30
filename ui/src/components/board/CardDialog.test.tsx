@@ -290,7 +290,9 @@ describe("CardDialog input limits (TASK-20)", () => {
     // …and a beautiful error explains what happened.
     expect(
       await screen.findByText(
-        /Too long — the limit is 10000 characters. The text was trimmed./,
+        new RegExp(
+          `Too long — the limit is ${LIMITS.description} characters. The text was trimmed.`,
+        ),
       ),
     ).toBeInTheDocument();
   });

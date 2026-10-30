@@ -106,6 +106,20 @@ The skill references the tools by name and needs no configuration. It ships in
 the repository under `skills/janosik/` (behaviour in `SKILL.md`, plus
 `references/templates.md` and `references/recipes.md`).
 
+### The agent-ready card
+
+The skill asks an agent to leave a card a swarm can pick up cold — one shape,
+the same on every card:
+
+- **Description sections** — `## Why`, `## Scope`, `## Acceptance criteria`
+  (checkboxes), `## Out of scope`, `## Verify` (the exact check that proves it).
+- **A `Definition of Done` checklist** — the card is Done only when every item
+  is ticked; an unticked one is explained in a comment, never dropped.
+- **Typed comments** — each starts with `[status]`, `[question]`, `[blocker]`,
+  `[evidence]` or `[handoff]`, so the thread is machine-readable and filterable.
+- **Reserved labels** — `agent:blocked`, `agent:needs-human`, `agent:verified`,
+  so a human can filter the swarm's state at a glance.
+
 ## Permissions
 
 The key acts as the user who created it, with the same roles: an agent can

@@ -245,8 +245,15 @@ export const LIMITS = {
   columnTitle: 100,
   /** Card title (composer + dialog). */
   cardTitle: 300,
-  /** Card description markdown (MDXEditor). */
-  description: 10000,
+  /**
+   * Card description markdown (MDXEditor). Raised from 10k (TASK-157): 10k was
+   * a leftover of the 5 MB localStorage budget of local/offline mode, which
+   * server mode does not use — `BoardContext` skips local persistence when a
+   * backend is configured, so the cap no longer protects anything there. 64k is
+   * ~128 KB of Cyrillic UTF-8, well under the 2 MB `MAX_COMMAND_BYTES` a single
+   * `UPDATE_CARD` may carry; the description is the card's document.
+   */
+  description: 64000,
   /** Label name (create + rename). */
   labelName: 50,
   /** Checklist title. */
@@ -254,9 +261,9 @@ export const LIMITS = {
   /** Checklist item text (add + rename). */
   checklistItem: 200,
   /**
-   * Card comment (plain text, TASK-28 REST / TASK-37 UI). Owner call:
-   * Jira keeps far more, but 10k mirrors the description and keeps
-   * payloads/feeds sane.
+   * Card comment (plain text, TASK-28 REST / TASK-37 UI). Owner call: Jira
+   * keeps far more, but 10k keeps payloads and comment feeds sane — the card's
+   * document is the description (64k), the thread stays a conversation.
    */
   comment: 10000,
   /** Ephemeral search/filter queries (board filter, ⌘K, switcher). */

@@ -11,7 +11,7 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { I18nProvider } from "@/i18n";
 import { routes } from "@/routes";
 import { BoardProvider, useBoardActions } from "@/store/BoardContext";
-import type { BoardState } from "@janosik/shared";
+import { LIMITS, type BoardState } from "@janosik/shared";
 
 /**
  * Data-safety banner (TASK-21.2). The ways stored data can be lost
@@ -182,8 +182,8 @@ describe("DataSafetyBanner", () => {
 /**
  * TASK-21.5: a write that succeeds but lands past 80% of the assumed
  * localStorage quota raises the quota-warning banner. The seed crosses the
- * 4 MiB threshold honestly: ~450 cards with 10000-character descriptions
- * (the `LIMITS.description` maximum) serialize to ~4.5 MB.
+ * 4 MiB threshold honestly: 75 cards with `LIMITS.description`-long
+ * descriptions (the field maximum, 64k since TASK-157) serialize to ~4.8 MB.
  */
 function bigWorkspace(): BoardState {
   const columns: BoardState[number]["columns"] = [0, 1, 2].map((c) => ({
@@ -193,12 +193,12 @@ function bigWorkspace(): BoardState {
     createdAt: 0,
   }));
   const cards: BoardState[number]["cards"] = {};
-  for (let i = 0; i < 450; i += 1) {
+  for (let i = 0; i < 75; i += 1) {
     const id = `card-${i}`;
     cards[id] = {
       id,
       title: "Card",
-      description: "x".repeat(10000),
+      description: "x".repeat(LIMITS.description),
       labelIds: [],
       createdAt: 0,
       updatedAt: 0,

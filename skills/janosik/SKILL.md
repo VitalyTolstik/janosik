@@ -107,6 +107,53 @@ Progress", make the card self-contained:
 Copy-ready templates for each card type live in
 [references/templates.md](references/templates.md).
 
+## The agent-ready card (the canonical format)
+
+A card a swarm can pick up cold follows one shape. It costs a minute to write
+and saves every later agent a re-read.
+
+**Description sections**, in this order:
+
+```
+## Why
+The problem, and for whom. The paragraph that survives a re-read.
+
+## Scope
+What changes and where — files, areas, endpoints. Enough to start.
+
+## Acceptance criteria
+- [ ] the observable outcome
+- [ ] the second one
+
+## Out of scope
+What this card deliberately does not do, so nobody gold-plates it.
+
+## Verify
+The exact check that proves it: `npm test -w ui`, a curl, a link, a number.
+```
+
+**A `Definition of Done` checklist.** Put the "done when" list in a checklist
+whose title is exactly `Definition of Done`. Its progress bar is the card's
+truth: a card is Done only when every item is ticked — an unticked one is
+explained in a comment, never silently dropped.
+
+**Typed comments.** Start every comment with a bracketed kind, so the thread is
+machine-readable and filterable:
+
+| Kind | For |
+| --- | --- |
+| `[status]` | picking up, a step done, a plan change |
+| `[question]` | a decision you need from a human or another agent |
+| `[blocker]` | something stopped you; the card should move back |
+| `[evidence]` | the proof — a commit, a test, a number, a screenshot |
+| `[handoff]` | a short summary when you pass the card on: the next agent reads this plus the description, not the whole thread |
+
+**Reserved state labels.** Beyond the board's own labels, three reserved ones let
+anyone filter the swarm at a glance — `agent:blocked` (stuck, needs help),
+`agent:needs-human` (a human decision is required), `agent:verified` (checked and
+trusted). Set them with `janosik_set_card_label`; add the missing ones to the
+board once with the board's own label set.
+
 ## Work in the open: comment as you go
 
 This is the rule people ask for most, and the one agents skip. **Every
@@ -114,9 +161,9 @@ meaningful step gets a comment.** Not a log of every keystroke — a short,
 structured note at each turn:
 
 ```
-**Plan** — Split the export into a query and a formatter; add a CSV test.
-**Progress** — Query done, formatter in progress; blocked on the date format.
-**Result** — Shipped in `#482`; export matches the fixture. Checklist complete.
+[status] Plan — split the export into a query and a formatter; add a CSV test.
+[status] Query done, formatter in progress; blocked on the date format.
+[evidence] Shipped in `#482`; export matches the fixture. DoD complete.
 ```
 
 Use `janosik_add_comment`. Why it matters: the comment thread *is* the card's
@@ -169,7 +216,7 @@ Before you move a card to **Review** or **Done**:
 - every checklist item is ticked, or the unticked ones are explained in a
   comment;
 - the description reflects what was actually built, not what was planned;
-- there is a **Result** comment with evidence — a commit, a passing test, a
+- there is an `[evidence]` comment — a commit, a passing test, a
   screenshot, a measurement. "Done" without evidence is a claim, not a fact.
 
 Then move it to **Review** (`janosik_move_card`) and comment that it is ready,
