@@ -17,6 +17,12 @@ export default defineConfig({
   test: {
     // vmThreads boots jsdom once for the whole run instead of per file.
     pool: "vmThreads",
+    // CI runners are small (2 vCPU / 7 GB) and isolate spawns a fresh worker
+    // per file; with a large suite that can exhaust the runner's worker/thread
+    // budget and kill a worker mid-start ("Worker exited unexpectedly"). Run
+    // one file at a time on CI — the coverage union is identical, only wall
+    // time changes. Locally the parallel default stays.
+    maxWorkers: process.env.CI ? 1 : undefined,
     environment: "jsdom",
     globals: true,
     // Lazy chunks (calendar, editor) plus userEvent can exceed the 5s
