@@ -52,7 +52,12 @@ describe("Commands API (e2e)", () => {
     }).compile();
     app = moduleRef.createNestApplication();
     setupApp(app);
-    await app.init();
+    // Bind the HTTP server before any request. supertest lazily starts a
+    // not-yet-listening server and then *closes* it once the request ends, so
+    // the concurrent CAS burst below races that close and resets an in-flight
+    // socket (`read ECONNRESET`). With the server already listening,
+    // supertest reuses it and leaves it open.
+    await app.listen(0);
     prisma = app.get(PrismaService);
     await wipe(prisma);
 
