@@ -62,16 +62,23 @@ without clashing.
 A typical run:
 
 1. `janosik_list_boards` to find a board.
-2. `janosik_get_board` to read its columns, cards and labels (pass `columnId`
-   on a large board).
-3. Focused tools to act, for example `janosik_create_card` then
+2. `janosik_get_board` to read its columns, cards, labels and the board version
+   (`seq`); pass `columnId` on a large board, or `detail: "summary"` to skip
+   each card's description and checklists.
+3. `janosik_list_ready_cards` to find work (unassigned, unclaimed and unblocked,
+   most urgent first) — or `janosik_wait_for_work` to block until one appears
+   instead of polling.
+4. Focused tools to act, for example `janosik_create_card` then
    `janosik_move_card` and `janosik_add_comment`.
 
 A write that changes nothing (for example an id that is not on the board)
 comes back as an error, so an agent never mistakes it for success. Tools that
 compute a write from a read retry when another agent changed the board in
-between, and `janosik_update_card` accepts `expectedDescription` to edit
-shared text only if nobody changed it since.
+between. Any write accepts `expectedVersion` (the board `seq` from
+`janosik_get_board`): pass it and the write is refused if the board changed
+since, instead of silently overwriting another agent's edit. Create tools take a
+client id (`cardId`, `checklistId`, …) reused as the idempotency key, so a
+retried call returns the first entity rather than a duplicate.
 
 ## The skill: teach the agent how to work
 
@@ -115,8 +122,9 @@ the same on every card:
   (checkboxes), `## Out of scope`, `## Verify` (the exact check that proves it).
 - **A `Definition of Done` checklist** — the card is Done only when every item
   is ticked; an unticked one is explained in a comment, never dropped.
-- **Typed comments** — each starts with `[status]`, `[question]`, `[blocker]`,
-  `[evidence]` or `[handoff]`, so the thread is machine-readable and filterable.
+- **Typed comments** — each carries a structured `kind` (`status`, `question`,
+  `blocker`, `evidence`, `handoff`; omit it for a plain note), so the thread is
+  machine-readable and filterable — `janosik_list_comments` filters by `kind`.
 - **Reserved labels** — `agent:blocked`, `agent:needs-human`, `agent:verified`,
   so a human can filter the swarm's state at a glance.
 
@@ -137,6 +145,18 @@ Three tools let a swarm share one board without stepping on itself:
   it to leave it unchanged, pass an empty list to clear it), and items are
   capped at 500 characters and 50 items. `janosik_get_card` renders the contract
   back, and the card dialog shows it read-only.
+
+### Ready to work, and the Definition-of-Done gate
+
+- `janosik_list_ready_cards` returns the cards an agent can pick up now: in the
+  board's first (Backlog) column, unassigned, not under a live claim and not
+  blocked by another card, most urgent first. `janosik_wait_for_work` blocks
+  until one appears (or a timeout passes), so idle agents make one call instead
+  of polling.
+- `janosik_move_card` refuses to move a card into the board's last (Done) column
+  while its `Definition of Done` checklist has unticked items or it has no
+  `evidence` comment — the anti-"green fence" rule. Tick the items and post the
+  evidence; do not force the move.
 
 ## Permissions
 

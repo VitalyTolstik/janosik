@@ -90,7 +90,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 - **Realtime** — a `GET /boards/:id/events` SSE stream carries every committed command (`{type, seq, action, actorId}`) and the client replays foreign actions through the very same reducer. Edits appear in other browsers with no reload; a dropped stream resumes exactly where it stopped (`?since=`) and window focus remains the fallback. Your own commands are never applied twice, and a stale undo still refuses to clobber someone else's text.
 - **Shared boards** — a **Members (N)** dialog in the header: admins invite by email, switch roles (`ADMIN`/`MEMBER`/`VIEWER`), bound a viewer's access with an expiry date ("access expired" badge) and remove members — the last admin can never be demoted or removed. Invitations are **opt-in**: the invitee gets a badge on the header bell and accepts or declines there; nothing is shared until they accept. Everyone else sees the same member list read-only, and a `VIEWER` gets a genuinely read-only board: no drag, no composers, no menus, no inline editors, a read-only card dialog — while the server independently answers 403 to every mutation.
 - **Master panel** — a separate `/admin` area for the platform operator: metrics, all users and boards, command log, audit trail and moderation (block a user and their sessions die instantly, revoke API tokens, archive/soft-delete a board, create accounts with a one-time password). Master accounts live outside the user table, have their own login, cookie and JWT audience, and are created only by the server CLI (`npm run admin:create -w backend`); `OWNER` can add more masters, `OPERATOR` cannot. Panel tables are **schema-first**: columns are named after Prisma fields (`Board.id`, `BoardMember.userId`, `Card.columnId`, `Comment.authorId`, …), foreign keys are shown as copyable IDs (title/email only as a caption) and search matches those IDs — a row can be traced to its parents even when names are not unique.
-- **AI agents (MCP + skill)** — `@janosik/mcp` exposes the whole board to any MCP client (Claude, Cursor, VS Code, opencode, Codex) over a personal API key, and the `janosik` skill teaches the agent *how* to behave: pick a card up under an atomic lease, fill it to the canonical agent-ready shape (description sections `Why` / `Scope` / `Acceptance criteria` / `Out of scope` / `Verify`, a `Definition of Done` checklist and typed `[status]` / `[question]` / `[blocker]` / `[evidence]` / `[handoff]` comments), move it through the columns, and — when a bug turns up — return the card with the evidence instead of burying it. An agent can write the card's machine-readable task contract (`acceptanceCriteria` + `definitionOfDone`), every command records whether a person or an agent caused it (agent entries carry an "Agent" badge), and a key can be scoped to one board, made read-only and given its own rate limit. Writes go through the same command log, so an agent's work is undoable, streamed live, and keeps the full history. See [Drive it from an AI agent](#drive-it-from-an-ai-agent-mcp--skill).
+- **AI agents (MCP + skill)** — `@janosik/mcp` exposes the whole board to any MCP client (Claude, Cursor, VS Code, opencode, Codex) over a personal API key, and the `janosik` skill teaches the agent *how* to behave: pick a card up under an atomic lease, fill it to the canonical agent-ready shape (description sections `Why` / `Scope` / `Acceptance criteria` / `Out of scope` / `Verify`, a `Definition of Done` checklist and typed comments (a structured `kind`: `status` / `question` / `blocker` / `evidence` / `handoff`)), move it through the columns, and — when a bug turns up — return the card with the evidence instead of burying it. An agent can write the card's machine-readable task contract (`acceptanceCriteria` + `definitionOfDone`), every command records whether a person or an agent caused it (agent entries carry an "Agent" badge), and a key can be scoped to one board, made read-only and given its own rate limit. Writes go through the same command log, so an agent's work is undoable, streamed live, and keeps the full history. See [Drive it from an AI agent](#drive-it-from-an-ai-agent-mcp--skill).
 - **Fast by construction** — code-split bundle (editor & calendar load on demand), vendor chunks with stable cache keys; first paint ~212 ms on throttled CPU.
 - **Data safety** — debounced saves, JSON export/import, automatic backups (20 snapshots, rotated), error boundary + toasts, input/collection limits everywhere.
 - **Themes & polish** — dark/light with no-flash preflight, four board backgrounds, adjustable column glass, `prefers-reduced-motion`, custom scrollbars.
@@ -334,8 +334,8 @@ pieces make that real, and they are deliberately separate:
 - **`skills/janosik` — the behaviour (the "manners").** A playbook that tells
   the agent *how* to work: read before writing, claim a card under an atomic
   lease, fill it to the canonical agent-ready shape (description sections, a
-  `Definition of Done` checklist, typed `[status]` / `[question]` / `[blocker]`
-  / `[evidence]` / `[handoff]` comments, reserved `agent:*` labels), move it
+  `Definition of Done` checklist, typed comments (a structured `kind`), reserved
+  `agent:*` labels), move it
   through the columns, and — when a bug turns up — move the card back with the
   evidence instead of marking it Done.
 
@@ -393,8 +393,9 @@ backward move plus the comment is the audit trail.
 
 The skill asks the agent to leave a card a swarm can pick up cold: description
 sections (`Why` / `Scope` / `Acceptance criteria` / `Out of scope` / `Verify`),
-a `Definition of Done` checklist, and typed comments (`[status]` / `[question]`
-/ `[blocker]` / `[evidence]` / `[handoff]`) so the thread is machine-readable
+a `Definition of Done` checklist, and typed comments (a structured `kind`:
+`status` / `question` / `blocker` / `evidence` / `handoff`) so the thread is
+machine-readable
 and filterable. It can also write the card's machine-readable task contract
 (`janosik_set_card_task_spec` sets `acceptanceCriteria` + `definitionOfDone`,
 each rendered read-only in the card dialog) and tag cards with the reserved
