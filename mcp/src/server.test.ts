@@ -148,6 +148,22 @@ function fakeApi(
     big.columns[0]!.cardIds = Object.keys(cards);
     return respond({ ...big, id: "b2" }, 200, { "X-Board-Seq": "1" });
   }
+  if (path === "/boards/b3" && method === "GET") {
+    // An empty Backlog: nothing is ready to work.
+    return respond(
+      {
+        id: "b3",
+        title: "Empty",
+        columns: [{ id: "col1", title: "Backlog", cardIds: [], createdAt: 1 }],
+        cards: {},
+        labels: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      200,
+      { "X-Board-Seq": "1" },
+    );
+  }
   if (path === "/boards/b1/members" && method === "GET") {
     return respond([{ userId: "u1", role: "ADMIN" }]);
   }
@@ -267,7 +283,7 @@ describe("janosik MCP server", () => {
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
     // Pinned exactly so a dropped or renamed tool fails loudly.
-    expect(names.length).toBe(71);
+    expect(names.length).toBe(73);
     expect(names).toContain("janosik_list_boards");
     expect(names).toContain("janosik_create_card");
     expect(names).toContain("janosik_claim_card");
@@ -699,6 +715,39 @@ describe("janosik MCP server", () => {
       arguments: { boardId: "b1", cardId: "k1", toColumnId: "col2" },
     });
     expect(result.isError).toBeFalsy();
+    await client.close();
+  });
+
+  it("lists the cards ready to work", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_list_ready_cards",
+      arguments: { boardId: "b1" },
+    });
+    const results = (
+      result.structuredContent as { results: Array<{ id: string }> }
+    ).results;
+    expect(results.map((entry) => entry.id)).toContain("k1");
+    await client.close();
+  });
+
+  it("waits for work and returns a ready card", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_wait_for_work",
+      arguments: { boardId: "b1", timeoutMs: 1000 },
+    });
+    expect(result.structuredContent).toMatchObject({ card: { id: "k1" } });
+    await client.close();
+  });
+
+  it("times out when no card is ready", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_wait_for_work",
+      arguments: { boardId: "b3", timeoutMs: 0 },
+    });
+    expect(result.structuredContent).toMatchObject({ card: null });
     await client.close();
   });
 });

@@ -54,7 +54,7 @@ export interface BoardSummary {
 }
 
 /** Ids of every card that a live `blocks` link points at (TASK-46). */
-function blockedIds(board: Board): Set<string> {
+export function blockedIds(board: Board): Set<string> {
   const blocked = new Set<string>();
   for (const card of Object.values(board.cards)) {
     if (card.archivedAt !== undefined || !card.links) continue;
