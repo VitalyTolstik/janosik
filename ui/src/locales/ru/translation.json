@@ -771,6 +771,8 @@
   "watch.nobody": "Никого нет онлайн",
   "watch.online": "онлайн",
   "watch.onlineList": "Онлайн",
+  "watch.showOlder": "Показать старые",
+  "watch.loading": "Загрузка…",
   "watch.title": "Живой статус",
   "view.table.activity": "Активность",
   "view.table.assignee": "Исполнитель",

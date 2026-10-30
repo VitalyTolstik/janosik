@@ -61,6 +61,49 @@ const COMMAND_KEYS: Record<string, MessageKey> = {
   DUPLICATE_CARD: "activity.created",
 };
 
+/** Field label keys for the "from → to" lines. */
+export const FIELD_KEYS: Record<string, MessageKey> = {
+  title: "history.field.title",
+  description: "history.field.description",
+  dueDate: "history.field.dueDate",
+  priority: "history.field.priority",
+  assignee: "history.field.assignee",
+  link: "history.field.link",
+  column: "history.field.column",
+  label: "history.field.label",
+  checklist: "history.field.checklist",
+  checklistItem: "history.field.checklistItem",
+  comment: "history.field.comment",
+  cover: "history.field.cover",
+};
+
+/**
+ * One side of a `from → to` diff rendered as display text: dates and
+ * priorities are localized, an assignee is resolved to a name by the caller,
+ * and `null` reads as an em dash. Shared by the card History and the Watch
+ * feed so both render the same values.
+ */
+export function formatChangeValue(
+  field: string,
+  value: string | null,
+  lang: "en" | "ru",
+  hour12: boolean,
+  memberName?: (userId: string) => string,
+): string {
+  if (value === null) return "—";
+  if (field === "dueDate") {
+    const at = Date.parse(value);
+    if (Number.isFinite(at)) return formatDate(at, lang, hour12);
+  }
+  if (field === "priority" && CARD_PRIORITIES.includes(value as CardPriority)) {
+    return priorityLabel(value as CardPriority, lang);
+  }
+  if (field === "assignee") {
+    return memberName ? memberName(value) : value;
+  }
+  return value;
+}
+
 /** The sentence for one entry: special cases first, maps as fallback. */
 export function sentenceFor(
   entry: ActivityFeedEntry,

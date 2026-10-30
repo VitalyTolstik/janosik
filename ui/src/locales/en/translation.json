@@ -755,6 +755,8 @@
   "watch.nobody": "Nobody is online",
   "watch.online": "online",
   "watch.onlineList": "Online",
+  "watch.showOlder": "Show older",
+  "watch.loading": "Loading…",
   "watch.title": "Live status",
   "view.table.activity": "Activity",
   "view.table.assignee": "Assignee",

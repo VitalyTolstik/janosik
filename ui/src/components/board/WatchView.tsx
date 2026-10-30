@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { ActivityFeedEntry, BoardMemberDto } from "@janosik/shared";
+import type {
+  ActivityChange,
+  ActivityFeedEntry,
+  BoardMemberDto,
+} from "@janosik/shared";
 
 import { api, isApiEnabled } from "@/api/client";
 import { useHour12, useI18n } from "@/i18n";
@@ -10,13 +14,15 @@ import {
   useBoardMembersList,
   useBoardPresence,
 } from "@/store/board-live";
-import { sentenceFor } from "@/utils/activity";
+import { FIELD_KEYS, formatChangeValue, sentenceFor } from "@/utils/activity";
 import { userLabel } from "@/utils/avatar";
 
 /** Newest-first page size of the watch feed (server max is 100). */
 const FEED_LIMIT = 50;
 /** How often the feed is re-read; commands have no per-event SSE push. */
 const POLL_MS = 3000;
+/** The most changed fields rendered inline (the rest stay off the line). */
+const MAX_CHANGE_LINES = 3;
 
 interface WatchViewProps {
   boardId: string;
@@ -32,8 +38,11 @@ interface WatchViewProps {
  * The feed merges the command log with activity rows through
  * `GET /boards/:id/activity`; commands have no dedicated SSE frame, so the
  * view re-reads the newest page on a timer and immediately on a comment frame
- * or a settled own command. Presence and the column counts ride the normal
- * realtime stream.
+ * or a settled own command. Each line carries the Jira-style `from → to` diff
+ * frozen at command time (the same snapshot the card History renders), so a
+ * move or an edit reads as more than "someone did something". Older entries
+ * page in with a plain "Show older" button. Presence and the column counts
+ * ride the normal realtime stream.
  */
 export function WatchView({ boardId }: WatchViewProps) {
   const { board } = useBoard();
@@ -45,21 +54,26 @@ export function WatchView({ boardId }: WatchViewProps) {
   const serverMode = isApiEnabled();
 
   const [entries, setEntries] = useState<ActivityFeedEntry[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const inFlight = useRef(false);
+  // The cursor after the oldest *loaded* page; `undefined` = never loaded.
+  const cursorRef = useRef<string | null | undefined>(undefined);
 
-  const load = useCallback(async () => {
+  const refreshNewest = useCallback(async () => {
     if (!serverMode || inFlight.current) return;
     inFlight.current = true;
     try {
       const page = await api.boardActivity(boardId, undefined, FEED_LIMIT);
-      setEntries((prev) =>
-        // The poll usually returns the same head; skip the state churn.
-        prev.length === page.items.length &&
-        prev[0]?.id === page.items[0]?.id &&
-        prev[0]?.source === page.items[0]?.source
-          ? prev
-          : page.items,
-      );
+      setEntries((prev) => {
+        const seen = new Set(prev.map(keyOf));
+        const fresh = page.items.filter((entry) => !seen.has(keyOf(entry)));
+        return fresh.length === 0 ? prev : [...fresh, ...prev];
+      });
+      if (cursorRef.current === undefined) {
+        cursorRef.current = page.nextCursor;
+        setNextCursor(page.nextCursor);
+      }
     } catch {
       /* best effort — the next tick retries */
     } finally {
@@ -67,41 +81,71 @@ export function WatchView({ boardId }: WatchViewProps) {
     }
   }, [boardId, serverMode]);
 
+  const loadOlder = useCallback(async () => {
+    if (
+      !serverMode ||
+      loadingOlder ||
+      cursorRef.current === undefined ||
+      cursorRef.current === null
+    ) {
+      return;
+    }
+    setLoadingOlder(true);
+    try {
+      const page = await api.boardActivity(
+        boardId,
+        cursorRef.current,
+        FEED_LIMIT,
+      );
+      setEntries((prev) => {
+        const seen = new Set(prev.map(keyOf));
+        const older = page.items.filter((entry) => !seen.has(keyOf(entry)));
+        return older.length === 0 ? prev : [...prev, ...older];
+      });
+      cursorRef.current = page.nextCursor;
+      setNextCursor(page.nextCursor);
+    } catch {
+      /* keep the button; the next press retries */
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [boardId, loadingOlder, serverMode]);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the page lands after the await, not synchronously
-    void load();
-  }, [load]);
+    void refreshNewest();
+  }, [refreshNewest]);
 
   useEffect(() => {
     if (!serverMode) return;
     const timer = window.setInterval(() => {
-      if (!document.hidden) void load();
+      if (!document.hidden) void refreshNewest();
     }, POLL_MS);
     const onVisible = () => {
-      if (!document.hidden) void load();
+      if (!document.hidden) void refreshNewest();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [load, serverMode]);
+  }, [refreshNewest, serverMode]);
 
   // A comment frame and our own settled commands are the moments the feed can
   // change sooner than the poll.
   useEffect(() => {
     if (!serverMode) return;
     const offActivity = activity.subscribe((event) => {
-      if (event.boardId === boardId) void load();
+      if (event.boardId === boardId) void refreshNewest();
     });
     const offCommits = commits.subscribe((id) => {
-      if (id === boardId) void load();
+      if (id === boardId) void refreshNewest();
     });
     return () => {
       offActivity();
       offCommits();
     };
-  }, [activity, commits, boardId, load, serverMode]);
+  }, [activity, commits, boardId, refreshNewest, serverMode]);
 
   const membersById = useMemo(() => {
     const map = new Map<string, BoardMemberDto>();
@@ -212,24 +256,44 @@ export function WatchView({ boardId }: WatchViewProps) {
                 {t("watch.feedEmpty")}
               </p>
             ) : (
-              <ol data-testid="watch-feed">
-                {entries.map((entry) => (
-                  <WatchRow
-                    key={`${entry.source}:${entry.id}`}
-                    entry={entry}
-                    members={membersById}
-                    cards={board.cards}
-                    lang={lang}
-                    hour12={hour12}
-                  />
-                ))}
-              </ol>
+              <>
+                <ol data-testid="watch-feed">
+                  {entries.map((entry) => (
+                    <WatchRow
+                      key={keyOf(entry)}
+                      entry={entry}
+                      members={membersById}
+                      cards={board.cards}
+                      lang={lang}
+                      hour12={hour12}
+                    />
+                  ))}
+                </ol>
+                {nextCursor !== null ? (
+                  <div className="px-5 py-2">
+                    <button
+                      type="button"
+                      disabled={loadingOlder}
+                      onClick={() => void loadOlder()}
+                      className="rounded-sm text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60"
+                      data-testid="watch-show-older"
+                    >
+                      {loadingOlder ? t("watch.loading") : t("watch.showOlder")}
+                    </button>
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
         </div>
       </div>
     </section>
   );
+}
+
+/** Stable per-entry key: a command id and an activity id never share a space. */
+function keyOf(entry: ActivityFeedEntry): string {
+  return `${entry.source}:${entry.id}`;
 }
 
 function Stat({
@@ -273,9 +337,19 @@ function Section({
   );
 }
 
+interface DetailPart {
+  /** Field name (already localized); empty for a comment/detail-only part. */
+  label: string;
+  /** Absent for a creation/comment (nothing to strike through). */
+  from?: string;
+  to: string;
+}
+
+type Translate = ReturnType<typeof useI18n>["t"];
+
 /**
- * One feed line. Plain text only — no buttons, no avatars, no diffs: the
- * watch view is for reading, not editing.
+ * One feed line: time, actor, action sentence and the inline diff. Plain
+ * text only — no buttons, no avatars, no nested diffs.
  */
 function WatchRow({
   entry,
@@ -298,6 +372,11 @@ function WatchRow({
 
   const card = entry.cardId ? cards[entry.cardId] : undefined;
 
+  const memberName = (userId: string) => {
+    const member = members.get(userId);
+    return userLabel(member?.displayName ?? null, member?.email ?? userId);
+  };
+
   const isAssigneeEntry =
     entry.type === "SET_CARD_ASSIGN" || entry.type === "assignee-set";
   const assigneeTo = !isAssigneeEntry
@@ -305,18 +384,15 @@ function WatchRow({
     : entry.type === "SET_CARD_ASSIGN"
       ? (entry.changes?.[0]?.to ?? null)
       : entry.detail || null;
-  const assigneeMember = assigneeTo ? members.get(assigneeTo) : undefined;
   const assigneeName =
     assigneeTo === null
       ? null
       : assigneeTo === ""
         ? ""
-        : userLabel(
-            assigneeMember?.displayName ?? null,
-            assigneeMember?.email ?? assigneeTo,
-          );
+        : memberName(assigneeTo);
 
   const sentence = sentenceFor(entry, lang, hour12, assigneeName);
+  const details = detailsFor(entry, t, memberName, lang, hour12);
   const clock = new Date(entry.at).toLocaleTimeString(
     lang === "ru" ? "ru-RU" : "en-US",
     { hour12, hour: "2-digit", minute: "2-digit", second: "2-digit" },
@@ -333,13 +409,78 @@ function WatchRow({
       >
         {clock}
       </time>
-      <span className="truncate text-foreground/80">{actorName}</span>
-      <span className="min-w-0 truncate text-foreground/90">
+      <span className="truncate text-foreground/80" title={actorName}>
+        {actorName}
+      </span>
+      <span className="min-w-0 text-foreground/90">
         {card ? (
-          <span className="text-muted-foreground">{card.title} · </span>
+          <span className="text-muted-foreground" title={card.title}>
+            {card.title} ·{" "}
+          </span>
         ) : null}
         {t(sentence.key, sentence.params)}
+        {details.length > 0 ? (
+          <span className="ml-2 inline-flex flex-wrap items-baseline gap-x-2 text-[11px]">
+            {details.map((detail, index) => (
+              <span key={`${detail.label}-${index}`} className="min-w-0">
+                {detail.label ? (
+                  <span className="text-muted-foreground">
+                    {detail.label}:{" "}
+                  </span>
+                ) : null}
+                {detail.from !== undefined ? (
+                  <>
+                    <span className="text-danger/80 line-through">
+                      {detail.from}
+                    </span>
+                    <span className="mx-1 text-muted-foreground/60">→</span>
+                  </>
+                ) : null}
+                <span className="text-success/90">{detail.to}</span>
+              </span>
+            ))}
+          </span>
+        ) : null}
       </span>
     </li>
   );
+}
+
+/** The inline diff of one entry, or a single fallback `detail` part. */
+function detailsFor(
+  entry: ActivityFeedEntry,
+  t: Translate,
+  memberName: (userId: string) => string,
+  lang: "en" | "ru",
+  hour12: boolean,
+): DetailPart[] {
+  const changes: ActivityChange[] = (entry.changes ?? []).filter(
+    (change) => change.field !== "checklistItemDone",
+  );
+  const parts: DetailPart[] = [];
+  for (const change of changes.slice(0, MAX_CHANGE_LINES)) {
+    if (change.field === "comment") {
+      parts.push({ label: "", to: `“${change.to ?? ""}”` });
+      continue;
+    }
+    parts.push({
+      label: t(FIELD_KEYS[change.field] ?? "history.field.title"),
+      ...(change.from !== null
+        ? {
+            from: formatChangeValue(
+              change.field,
+              change.from,
+              lang,
+              hour12,
+              memberName,
+            ),
+          }
+        : {}),
+      to: formatChangeValue(change.field, change.to, lang, hour12, memberName),
+    });
+  }
+  if (parts.length === 0 && entry.detail) {
+    parts.push({ label: "", to: entry.detail });
+  }
+  return parts;
 }

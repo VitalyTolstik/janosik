@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WatchView } from "@/components/board/WatchView";
@@ -142,7 +142,7 @@ describe("WatchView (TASK-142)", () => {
     expect(screen.queryByTestId("watch-feed")).toBeNull();
   });
 
-  it("renders the live feed with actor, card title and sentence", async () => {
+  it("renders the live feed with actor, card title and inline diff", async () => {
     hoisted.enabled.value = true;
     const now = Date.now();
     hoisted.boardActivity.mockResolvedValue({
@@ -155,6 +155,7 @@ describe("WatchView (TASK-142)", () => {
           type: "MOVE_CARD",
           actorId: "u-1",
           cardId: "card-1",
+          changes: [{ field: "column", from: "To do", to: "In progress" }],
         },
         {
           source: "activity",
@@ -163,6 +164,7 @@ describe("WatchView (TASK-142)", () => {
           type: "comment_added",
           actorId: "u-2",
           cardId: "card-2",
+          changes: [{ field: "comment", from: null, to: "Looks good" }],
         },
       ],
       nextCursor: null,
@@ -178,5 +180,59 @@ describe("WatchView (TASK-142)", () => {
     expect(feed).toHaveTextContent("Grace");
     expect(feed).toHaveTextContent("Fix layout");
     expect(feed).toHaveTextContent("Retry SSE");
+    // The Jira-style from → to diff, not just "someone moved a card".
+    expect(feed).toHaveTextContent("To do");
+    expect(feed).toHaveTextContent("In progress");
+    // A comment renders its text in quotes.
+    expect(feed).toHaveTextContent("Looks good");
+  });
+
+  it("pages older entries through the Show older button", async () => {
+    hoisted.enabled.value = true;
+    const now = Date.now();
+    hoisted.boardActivity.mockImplementation(
+      async (_boardId: string, cursor?: string) => {
+        if (!cursor) {
+          return {
+            items: [
+              {
+                source: "command",
+                id: "c-new",
+                at: now,
+                type: "UPDATE_CARD",
+                actorId: "u-1",
+                cardId: "card-1",
+              },
+            ],
+            nextCursor: "cur-1",
+          };
+        }
+        return {
+          items: [
+            {
+              source: "command",
+              id: "c-old",
+              at: now - 60_000,
+              type: "UPDATE_CARD",
+              actorId: "u-2",
+              cardId: "card-2",
+            },
+          ],
+          nextCursor: null,
+        };
+      },
+    );
+
+    renderWatch();
+
+    const button = await screen.findByTestId("watch-show-older");
+    expect(screen.getAllByTestId("watch-entry")).toHaveLength(1);
+
+    fireEvent.click(button);
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("watch-entry")).toHaveLength(2),
+    );
+    expect(screen.queryByTestId("watch-show-older")).toBeNull();
   });
 });

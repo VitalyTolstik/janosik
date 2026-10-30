@@ -16,37 +16,15 @@ import { UserAvatar } from "@/components/ui/user-avatar";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
-import {
-  formatDate,
-  formatRelative,
-  useHour12,
-  useI18n,
-  type MessageKey,
-} from "@/i18n";
+import { formatDate, formatRelative, useHour12, useI18n } from "@/i18n";
 import { useBoardLive, useBoardMember } from "@/store/board-live";
-import { sentenceFor } from "@/utils/activity";
+import { FIELD_KEYS, sentenceFor } from "@/utils/activity";
 import { userLabel } from "@/utils/avatar";
 import { diffSides, type DiffSegment } from "@/utils/diff-words";
 import { foldHistory } from "@/utils/history-fold";
 
 /** Newest-first page size of the history feed. */
 const PAGE_SIZE = 50;
-
-/** Field label keys for the "from → to" lines. */
-const FIELD_KEYS: Record<string, MessageKey> = {
-  title: "history.field.title",
-  description: "history.field.description",
-  dueDate: "history.field.dueDate",
-  priority: "history.field.priority",
-  assignee: "history.field.assignee",
-  link: "history.field.link",
-  column: "history.field.column",
-  label: "history.field.label",
-  checklist: "history.field.checklist",
-  checklistItem: "history.field.checklistItem",
-  comment: "history.field.comment",
-  cover: "history.field.cover",
-};
 
 interface CardHistoryProps {
   cardId: string;
