@@ -1,7 +1,7 @@
 # `@janosik/video` — feature clips
 
 The landing page's feature clips: one clip per media slot on the home page
-(the hero, four feature rows and the self-host band). Two pipelines can produce
+(the hero, five feature rows and the self-host band). Two pipelines can produce
 them.
 
 **Recording pipeline (current source of truth).** Real screen recordings of the
@@ -94,9 +94,13 @@ record/
 | `feature-realtime` | `realtime` |
 | `feature-cards` | `cards` |
 | `feature-sharing` | `sharing` |
+| `feature-watch` | `watch` |
 | `feature-selfhost` | `selfhost` (open-source band) |
 
 Each clip is 1280×800 (16:10) and loops: its last frame returns to the first.
+
+`feature-watch` is recorded only (there is no Remotion composition for it), so
+the recording pipeline is the only source for that slot.
 
 ## Theme
 
