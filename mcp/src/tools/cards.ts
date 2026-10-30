@@ -8,9 +8,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import {
+  CARD_PRIORITIES,
   CLAIM_LEASE_DEFAULT_MS,
   CLAIM_LEASE_MAX_MS,
   CLAIM_LEASE_MIN_MS,
+  DEFAULT_CARD_PRIORITY,
   LIMITS,
   type Board,
   type Card,
@@ -20,6 +22,7 @@ import { describeError } from "../errors.js";
 import { errorResult, respond, textOnly } from "../format.js";
 import { newId } from "../ids.js";
 import { findCardLocation } from "../locate.js";
+import { blockedIds } from "../project.js";
 import { renderCard } from "../render.js";
 import {
   boardIdSchema,
@@ -999,6 +1002,158 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       return respond(args.response_format, { results }, markdown);
     },
   );
+
+  defineTool(
+    server,
+    "janosik_list_ready_cards",
+    {
+      title: "List cards ready to work",
+      description:
+        "Cards an agent can pick up right now: in the board's first " +
+        "(Backlog) column, unassigned, not under a live claim and not " +
+        "blocked by another card. Sorted by priority (most urgent first). " +
+        "Reads one board, or every board the user can access when boardId is " +
+        "omitted.",
+      inputSchema: {
+        boardId: boardIdSchema.optional().describe("Limit to one board."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .default(30)
+          .describe("Max results."),
+        response_format: responseFormatSchema,
+      },
+      annotations: READ,
+    },
+    async (args) => {
+      const boards = args.boardId
+        ? [await client.getBoard(args.boardId)]
+        : await loadBoards(client);
+      const ready = readyCards(boards, Date.now()).slice(0, args.limit);
+      const results = ready.map(({ board, card, column }) => ({
+        id: card.id,
+        title: card.title,
+        boardId: board.id,
+        boardTitle: board.title,
+        column,
+        priority: card.priority ?? DEFAULT_CARD_PRIORITY,
+        descriptionChars: card.description?.length ?? 0,
+      }));
+      const markdown =
+        results.length === 0
+          ? "No cards are ready to work."
+          : `# ${results.length} card(s) ready\n\n${results
+              .map(
+                (card) =>
+                  `- ${card.title} — ${card.boardTitle} › ${card.column} — ${card.priority} — \`${card.id}\``,
+              )
+              .join("\n")}`;
+      return respond(args.response_format, { results }, markdown);
+    },
+  );
+
+  defineTool(
+    server,
+    "janosik_wait_for_work",
+    {
+      title: "Wait for a ready card",
+      description:
+        "Block until a card is ready to work (see janosik_list_ready_cards) " +
+        "or the timeout passes, so an idle agent makes one call instead of " +
+        "polling. Returns the ready card, or null on timeout.",
+      inputSchema: {
+        boardId: boardIdSchema.optional().describe("Limit to one board."),
+        timeoutMs: z
+          .number()
+          .int()
+          .min(0)
+          .max(300_000)
+          .default(30_000)
+          .describe("How long to wait, in ms (max 5 min)."),
+        pollMs: z
+          .number()
+          .int()
+          .min(250)
+          .max(30_000)
+          .default(5_000)
+          .describe("How often to re-check, in ms."),
+        response_format: responseFormatSchema,
+      },
+      annotations: READ,
+    },
+    async ({ boardId, timeoutMs, pollMs, response_format }) => {
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        const boards = boardId
+          ? [await client.getBoard(boardId)]
+          : await loadBoards(client);
+        const [first] = readyCards(boards, Date.now());
+        if (first) {
+          const result = {
+            id: first.card.id,
+            title: first.card.title,
+            boardId: first.board.id,
+            boardTitle: first.board.title,
+            column: first.column,
+            priority: first.card.priority ?? DEFAULT_CARD_PRIORITY,
+          };
+          return respond(
+            response_format,
+            { card: result },
+            `# Work available\n\n- ${result.title} — ${result.boardTitle} › ${result.column} — \`${result.id}\``,
+          );
+        }
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+          return respond(
+            response_format,
+            { card: null },
+            "No card became ready before the timeout.",
+          );
+        }
+        await sleep(Math.min(pollMs, remaining));
+      }
+    },
+  );
+}
+
+/** Cards ready to pick up, in priority order (TASK-157, E15). */
+function readyCards(
+  boards: Board[],
+  now: number,
+): Array<{ board: Board; card: Card; column: string }> {
+  const out: Array<{ board: Board; card: Card; column: string }> = [];
+  for (const board of boards) {
+    const backlog = board.columns[0];
+    if (!backlog) continue;
+    const blocked = blockedIds(board);
+    for (const cardId of backlog.cardIds) {
+      const card = board.cards[cardId];
+      if (!card) continue;
+      if (card.assigneeId !== undefined) continue;
+      if (card.claimedBy !== undefined && (card.leaseUntil ?? 0) > now)
+        continue;
+      if (blocked.has(card.id)) continue;
+      out.push({ board, card, column: backlog.title });
+    }
+  }
+  // Stable sort keeps board/column order within a priority band.
+  out.sort(
+    (a, b) => priorityRank(a.card.priority) - priorityRank(b.card.priority),
+  );
+  return out;
+}
+
+/** Most-urgent-first rank of a card's priority. */
+function priorityRank(priority: Card["priority"]): number {
+  const index = CARD_PRIORITIES.indexOf(priority ?? DEFAULT_CARD_PRIORITY);
+  return index === -1 ? CARD_PRIORITIES.length : index;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
