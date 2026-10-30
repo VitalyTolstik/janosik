@@ -355,6 +355,22 @@ function build(before: Board, action: BoardAction): BoardAction | null {
       };
     }
 
+    case "SET_CARD_TASK_SPEC": {
+      const card = cardOf(before, action.cardId);
+      if (!card) return null;
+      // Both fields travel back verbatim; an empty list is how the reducer
+      // spells "no task spec", so a field that was absent is cleared again.
+      return {
+        ...head,
+        type: "SET_CARD_TASK_SPEC",
+        cardId: card.id,
+        acceptanceCriteria: card.acceptanceCriteria ?? [],
+        definitionOfDone: card.definitionOfDone ?? [],
+        cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
+      };
+    }
+
     case "ADD_CARD_LINK": {
       const card = cardOf(before, action.cardId);
       if (!card) return null;

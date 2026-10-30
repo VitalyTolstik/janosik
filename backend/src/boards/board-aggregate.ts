@@ -190,6 +190,13 @@ function toCard(
     // unclaimed. Display data resolves client-side like the assignee.
     ...(card.claimedBy ? { claimedBy: card.claimedBy } : {}),
     ...(card.leaseUntil ? { leaseUntil: card.leaseUntil.getTime() } : {}),
+    // Task contract (TASK-157): omitted when empty (optional-field rule).
+    ...(card.acceptanceCriteria && card.acceptanceCriteria.length > 0
+      ? { acceptanceCriteria: [...card.acceptanceCriteria] }
+      : {}),
+    ...(card.definitionOfDone && card.definitionOfDone.length > 0
+      ? { definitionOfDone: [...card.definitionOfDone] }
+      : {}),
     ...(links && links.length > 0 ? { links } : {}),
     ...(card.coverType && card.coverValue
       ? {

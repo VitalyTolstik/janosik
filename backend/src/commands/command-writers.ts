@@ -64,6 +64,7 @@ type CardAction = Extract<
       | "SET_CARD_PRIORITY"
       | "SET_CARD_ASSIGN"
       | "CLAIM_CARD"
+      | "SET_CARD_TASK_SPEC"
       | "SET_CARD_COVER"
       | "ARCHIVE_CARD"
       | "UNARCHIVE_CARD"
@@ -187,6 +188,8 @@ function cardCreateData(
     claimedBy: card.claimedBy ?? null,
     leaseUntil:
       card.leaseUntil !== undefined ? new Date(card.leaseUntil) : null,
+    acceptanceCriteria: card.acceptanceCriteria ?? [],
+    definitionOfDone: card.definitionOfDone ?? [],
     archivedAt:
       card.archivedAt !== undefined ? new Date(card.archivedAt) : null,
     createdAt: new Date(card.createdAt),
@@ -210,6 +213,8 @@ function cardUpdateData(
     claimedBy: card.claimedBy ?? null,
     leaseUntil:
       card.leaseUntil !== undefined ? new Date(card.leaseUntil) : null,
+    acceptanceCriteria: card.acceptanceCriteria ?? [],
+    definitionOfDone: card.definitionOfDone ?? [],
     archivedAt:
       card.archivedAt !== undefined ? new Date(card.archivedAt) : null,
     updatedAt: new Date(card.updatedAt),
@@ -651,6 +656,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     case "SET_CARD_PRIORITY":
     case "SET_CARD_ASSIGN":
     case "CLAIM_CARD":
+    case "SET_CARD_TASK_SPEC":
     case "SET_CARD_COVER":
     case "ARCHIVE_CARD":
     case "UNARCHIVE_CARD":
@@ -1196,6 +1202,7 @@ async function writeCardAction(
     case "SET_CARD_PRIORITY":
     case "SET_CARD_ASSIGN":
     case "CLAIM_CARD":
+    case "SET_CARD_TASK_SPEC":
     case "SET_CARD_COVER": {
       await tx.card.update({
         where: { id: card.id },
@@ -1211,6 +1218,8 @@ async function writeCardAction(
           claimedBy: card.claimedBy ?? null,
           leaseUntil:
             card.leaseUntil !== undefined ? new Date(card.leaseUntil) : null,
+          acceptanceCriteria: card.acceptanceCriteria ?? [],
+          definitionOfDone: card.definitionOfDone ?? [],
           updatedAt: new Date(card.updatedAt),
           version: { increment: 1 },
         },

@@ -311,6 +311,40 @@ export function commandDetails(
       return changes.length > 0 ? { changes } : null;
     }
 
+    case "SET_CARD_TASK_SPEC": {
+      const from = cardOf(before, action.cardId);
+      const to = cardOf(after, action.cardId);
+      if (!from || !to) return null;
+      const changes: ActivityChange[] = [];
+      // A list reads as its items joined inline; an empty (or cleared) list
+      // is `null` — the same "—" the rest of the feed uses.
+      const render = (list: string[] | undefined): string | null =>
+        list && list.length > 0 ? clip(list.join("; ")) : null;
+      if (
+        action.acceptanceCriteria !== undefined &&
+        (from.acceptanceCriteria ?? []).join("; ") !==
+          (to.acceptanceCriteria ?? []).join("; ")
+      ) {
+        changes.push({
+          field: "acceptanceCriteria",
+          from: render(from.acceptanceCriteria),
+          to: render(to.acceptanceCriteria),
+        });
+      }
+      if (
+        action.definitionOfDone !== undefined &&
+        (from.definitionOfDone ?? []).join("; ") !==
+          (to.definitionOfDone ?? []).join("; ")
+      ) {
+        changes.push({
+          field: "definitionOfDone",
+          from: render(from.definitionOfDone),
+          to: render(to.definitionOfDone),
+        });
+      }
+      return changes.length > 0 ? { changes } : null;
+    }
+
     case "ADD_CARD_LINK":
     case "REMOVE_CARD_LINK": {
       // The readable half is the target card's title, frozen while the

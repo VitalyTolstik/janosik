@@ -326,6 +326,8 @@ model Card {
   assignee        User?        @relation("CardAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   claimedBy       String? // TASK-157 agent claim holder (user id); null = unclaimed
   leaseUntil      DateTime? // TASK-157 claim lease expiry; null = unclaimed
+  acceptanceCriteria String[] // TASK-157 machine-readable task contract (empty = unset)
+  definitionOfDone   String[] // TASK-157 machine-readable task contract (empty = unset)
   archivedAt      DateTime? // TASK-18.1: card archive
   deletedAt       DateTime? // soft-delete (§7.0)
   version         Int          @default(0) // ifMatch → 409 (§7.0)

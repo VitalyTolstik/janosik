@@ -256,7 +256,7 @@ npm run dev                             # UI :5173 (/api проксируетс�
 
 ### MCP (`mcp/`, `@janosik/mcp`)
 
-Отдельный MCP-сервер отдаёт доску агенту (70 tools) по персональному API-ключу.
+Отдельный MCP-сервер отдаёт доску агенту (71 tools) по персональному API-ключу.
 Нужны `JANOSIK_URL` (origin инстанса, напр. `http://localhost:3000`) и
 `JANOSIK_TOKEN` (`jnk_…`; создаётся в UI: Account → API keys). Требует
 **запущенного API**. Поведение агента задаёт скилл `skills/janosik`. Сборка —

@@ -139,6 +139,15 @@ export function renderCard(card: Card, labels: Label[]): string {
   if (card.archivedAt !== undefined) lines.push("- archived: yes");
   if (card.description) lines.push("", "## Description", "", card.description);
 
+  if (card.acceptanceCriteria && card.acceptanceCriteria.length > 0) {
+    lines.push("", "## Acceptance criteria");
+    lines.push(bullets(card.acceptanceCriteria));
+  }
+  if (card.definitionOfDone && card.definitionOfDone.length > 0) {
+    lines.push("", "## Definition of done");
+    lines.push(bullets(card.definitionOfDone));
+  }
+
   if (card.checklists && card.checklists.length > 0) {
     lines.push("", "## Checklists");
     for (const list of card.checklists) {

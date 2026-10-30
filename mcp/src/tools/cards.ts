@@ -530,6 +530,55 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
 
   defineTool(
     server,
+    "janosik_set_card_task_spec",
+    {
+      title: "Set a card's task spec",
+      description:
+        "Set the card's machine-readable task contract (TASK-157): the " +
+        "acceptance criteria and/or the definition of done, as lists of " +
+        "short strings an agent reads directly instead of parsing prose. " +
+        "Omit a field to leave it unchanged; pass an empty list to clear it.",
+      inputSchema: {
+        boardId: boardIdSchema,
+        cardId: cardIdSchema,
+        acceptanceCriteria: z
+          .array(z.string().max(LIMITS.taskSpecItem))
+          .max(LIMITS.taskSpecItems)
+          .optional()
+          .describe("Acceptance criteria items. An empty list clears it."),
+        definitionOfDone: z
+          .array(z.string().max(LIMITS.taskSpecItem))
+          .max(LIMITS.taskSpecItems)
+          .optional()
+          .describe("Definition-of-done items. An empty list clears it."),
+      },
+      annotations: WRITE,
+    },
+    async ({ boardId, cardId, acceptanceCriteria, definitionOfDone }) => {
+      if (acceptanceCriteria === undefined && definitionOfDone === undefined) {
+        return errorResult(
+          "Error: pass acceptanceCriteria and/or definitionOfDone.",
+        );
+      }
+      await client.command(boardId, {
+        type: "SET_CARD_TASK_SPEC",
+        cardId,
+        ...(acceptanceCriteria !== undefined ? { acceptanceCriteria } : {}),
+        ...(definitionOfDone !== undefined ? { definitionOfDone } : {}),
+      });
+      const parts: string[] = [];
+      if (acceptanceCriteria !== undefined) {
+        parts.push(`${acceptanceCriteria.length} acceptance criteria`);
+      }
+      if (definitionOfDone !== undefined) {
+        parts.push(`${definitionOfDone.length} definition-of-done items`);
+      }
+      return textOnly(`Set ${parts.join(" and ")} on card ${cardId}.`);
+    },
+  );
+
+  defineTool(
+    server,
     "janosik_set_card_due_date",
     {
       title: "Set a card due date",

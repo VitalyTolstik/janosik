@@ -137,6 +137,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   claim while another member holds a live lease, and the lease expires on its
   own so a dead agent never leaves a card stuck. New MCP tools
   `janosik_claim_card` / `janosik_release_card`, plus a history entry.
+- **Machine-readable task contract (TASK-157).** A `SET_CARD_TASK_SPEC`
+  command sets a card's `acceptanceCriteria` and `definitionOfDone` as lists
+  of short strings an agent reads directly instead of parsing prose; each
+  field is independent (omit to leave it, pass an empty list to clear it) and
+  the items are trimmed, de-blanked, clamped and capped. The MCP tool
+  `janosik_set_card_task_spec` writes it, `janosik_get_card` renders it, and
+  the card dialog shows it read-only.
 
 ### Fixed
 

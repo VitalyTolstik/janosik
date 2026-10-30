@@ -138,6 +138,41 @@ function toLeaseUntil(value: unknown): number | undefined {
 }
 
 /**
+ * Task-spec list sanitizer (TASK-157): keep the string entries, trim them,
+ * drop the blank ones, clamp each to `taskSpecItem` and cap the count at
+ * `taskSpecItems`. An empty result is `undefined` (optional-field rule), so
+ * a hand-edited import with a stray `[]` does not leave a dead key behind.
+ */
+function toTaskSpecList(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return undefined;
+  const items = value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== "")
+    .map((entry) => clampText(entry, LIMITS.taskSpecItem))
+    .slice(0, LIMITS.taskSpecItems);
+  return items.length > 0 ? items : undefined;
+}
+
+/**
+ * True when a stored task-spec list is already in the current shape —
+ * `undefined` or a non-empty list of non-blank strings within the bounds —
+ * so `normalizeBoards` can skip rebuilding the card.
+ */
+function isTaskSpecCurrent(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  if (value.length === 0 || value.length > LIMITS.taskSpecItems) return false;
+  return value.every(
+    (entry) =>
+      typeof entry === "string" &&
+      entry.trim() !== "" &&
+      entry.length <= LIMITS.taskSpecItem,
+  );
+}
+
+/**
  * Card links (TASK-46): only well-formed rows survive — string id, known
  * type, non-blank target — capped to `linksPerCard`. A target that does
  * not exist on this board is *kept*: the link is dangling, not garbage
@@ -273,6 +308,8 @@ function normalizeCard(card: LegacyCard): Card {
     assigneeId,
     claimedBy,
     leaseUntil,
+    acceptanceCriteria,
+    definitionOfDone,
     links,
     cover,
     activity,
@@ -311,6 +348,8 @@ function normalizeCard(card: LegacyCard): Card {
     assigneeId: toAssigneeId(assigneeId),
     claimedBy: hasClaim ? cleanClaimedBy : undefined,
     leaseUntil: hasClaim ? cleanLeaseUntil : undefined,
+    acceptanceCriteria: toTaskSpecList(acceptanceCriteria),
+    definitionOfDone: toTaskSpecList(definitionOfDone),
     links: toLinks(links),
     cover: toCover(cover),
     activity: toActivity(activity),
@@ -432,6 +471,8 @@ export function normalizeBoards(state: BoardState): BoardState {
         if (!Array.isArray(legacy.labelIds)) return true;
         if (!isChecklistsCurrent(legacy.checklists)) return true;
         if (!isDueDateCurrent(legacy.dueDate)) return true;
+        if (!isTaskSpecCurrent(card.acceptanceCriteria)) return true;
+        if (!isTaskSpecCurrent(card.definitionOfDone)) return true;
         if (!isCoverCurrent(legacy.cover)) return true;
         return !isActivityCurrent(legacy.activity);
       });
