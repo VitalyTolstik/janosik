@@ -128,5 +128,5 @@ Escape снимает курсор.
 
 ## Дальше
 
-- [Виды календаря и таблицы](/ru/docs/user-guide/views/)
+- [Виды календаря, таблицы и наблюдения](/ru/docs/user-guide/views/)
 - [Детали карточки и быстрое меню](/ru/docs/user-guide/cards/)

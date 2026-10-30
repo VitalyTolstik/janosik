@@ -2912,8 +2912,17 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
     колонок идут по обычному SSE; пауза при `document.hidden`. Замер на 2400 карточек: **0 карточек
     в DOM, ~405 узлов всего** (против 2 414 у компакта и 4 482 у полного), фильтр-панель и меню
     плотности скрыты. См. `docs/PERF-BASELINE.md`.
-  - **Гейты:** ui 938 тестов (было 918), lint 0 errors / 57 warnings, `tsc -b`, build и size-limit
-    зелёные.
+  - **Документация:** пользовательский гайд — страница «Виды календаря, таблицы и наблюдения»
+    (en/ru) с реальными скринами watch-вида и компактных карточек
+    (`site/public/screens/watch.png`, `card-density.png`; генерируются
+    `video/record/screenshots.mjs`); README (список фич, счётчик тестов),
+    маркетинговый сайт (`home.row.board.title`, `home.more.views`) и ссылки в
+    user-guide обновлены. Заодно лента watch и карточная история читают имя
+    колонки/метки/доски: `commandDetails` пишет снапшот для команд колонок,
+    меток, `DELETE_CARD`, `RENAME_BOARD` и `RESTORE_*`, а фронт маппит все типы
+    `BoardAction` (`utils/activity.ts`, тест на 50 типов).
+  - **Гейты:** ui 992 теста (было 918), backend unit 310, site 61, lint 0 errors / 57 warnings,
+    `tsc -b`, build, size-limit, `astro check` и сборка сайта — зелёные.
 
 #### TASK-143 — `presence-deltas` · Presence без O(N²) ✅
 
