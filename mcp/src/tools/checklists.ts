@@ -10,7 +10,12 @@ import { z } from "zod";
 import type { JanosikClient } from "../client.js";
 import { textOnly } from "../format.js";
 import { newId } from "../ids.js";
-import { boardIdSchema, cardIdSchema, idSchema } from "../schemas.js";
+import {
+  boardIdSchema,
+  cardIdSchema,
+  expectedVersionSchema,
+  idSchema,
+} from "../schemas.js";
 import { DESTRUCTIVE, WRITE, defineTool } from "./helpers.js";
 
 const checklistIdSchema = idSchema.describe("Checklist id.");
@@ -30,22 +35,36 @@ export function registerChecklistTools(
       inputSchema: {
         boardId: boardIdSchema,
         cardId: cardIdSchema,
+        checklistId: idSchema
+          .optional()
+          .describe(
+            "Client id for the new checklist (TASK-157, E14) — a retry then " +
+              "returns the first checklist instead of a duplicate.",
+          ),
         title: z
           .string()
           .min(1)
           .max(LIMITS.checklistTitle)
           .describe("Checklist title."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, title }) => {
-      const newChecklistId = newId();
-      await client.command(boardId, {
-        type: "ADD_CHECKLIST",
-        cardId,
-        newChecklistId,
-        title,
-      });
+    async ({ boardId, cardId, checklistId, title, expectedVersion }) => {
+      const newChecklistId = checklistId ?? newId();
+      await client.command(
+        boardId,
+        {
+          type: "ADD_CHECKLIST",
+          cardId,
+          newChecklistId,
+          title,
+        },
+        {
+          ifMatch: expectedVersion,
+          ...(checklistId ? { commandId: checklistId } : {}),
+        },
+      );
       return textOnly(`Added checklist "${title}" — \`${newChecklistId}\`.`);
     },
   );
@@ -65,16 +84,21 @@ export function registerChecklistTools(
           .min(1)
           .max(LIMITS.checklistTitle)
           .describe("New title."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, checklistId, title }) => {
-      await client.command(boardId, {
-        type: "RENAME_CHECKLIST",
-        cardId,
-        checklistId,
-        title,
-      });
+    async ({ boardId, cardId, checklistId, title, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "RENAME_CHECKLIST",
+          cardId,
+          checklistId,
+          title,
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Renamed checklist ${checklistId}.`);
     },
   );
@@ -89,23 +113,34 @@ export function registerChecklistTools(
         boardId: boardIdSchema,
         cardId: cardIdSchema,
         checklistId: checklistIdSchema,
+        itemId: idSchema
+          .optional()
+          .describe(
+            "Client id for the new item (TASK-157, E14) — a retry then " +
+              "returns the first item instead of a duplicate.",
+          ),
         text: z
           .string()
           .min(1)
           .max(LIMITS.checklistItem)
           .describe("Item text."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, checklistId, text }) => {
-      const newItemId = newId();
-      await client.command(boardId, {
-        type: "ADD_CHECKLIST_ITEM",
-        cardId,
-        checklistId,
-        newItemId,
-        text,
-      });
+    async ({ boardId, cardId, checklistId, itemId, text, expectedVersion }) => {
+      const newItemId = itemId ?? newId();
+      await client.command(
+        boardId,
+        {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId,
+          checklistId,
+          newItemId,
+          text,
+        },
+        { ifMatch: expectedVersion, ...(itemId ? { commandId: itemId } : {}) },
+      );
       return textOnly(`Added item "${text}" — \`${newItemId}\`.`);
     },
   );
@@ -122,17 +157,22 @@ export function registerChecklistTools(
         checklistId: checklistIdSchema,
         itemId: itemIdSchema,
         done: z.boolean().describe("true checks the item, false unchecks it."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, checklistId, itemId, done }) => {
-      await client.command(boardId, {
-        type: "SET_CHECKLIST_ITEM_DONE",
-        cardId,
-        checklistId,
-        itemId,
-        done,
-      });
+    async ({ boardId, cardId, checklistId, itemId, done, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "SET_CHECKLIST_ITEM_DONE",
+          cardId,
+          checklistId,
+          itemId,
+          done,
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`${done ? "Checked" : "Unchecked"} item ${itemId}.`);
     },
   );
@@ -153,17 +193,22 @@ export function registerChecklistTools(
           .min(1)
           .max(LIMITS.checklistItem)
           .describe("New item text."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, checklistId, itemId, text }) => {
-      await client.command(boardId, {
-        type: "RENAME_CHECKLIST_ITEM",
-        cardId,
-        checklistId,
-        itemId,
-        text,
-      });
+    async ({ boardId, cardId, checklistId, itemId, text, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "RENAME_CHECKLIST_ITEM",
+          cardId,
+          checklistId,
+          itemId,
+          text,
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Renamed item ${itemId}.`);
     },
   );
@@ -179,16 +224,21 @@ export function registerChecklistTools(
         cardId: cardIdSchema,
         checklistId: checklistIdSchema,
         itemId: itemIdSchema,
+        expectedVersion: expectedVersionSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, cardId, checklistId, itemId }) => {
-      await client.command(boardId, {
-        type: "DELETE_CHECKLIST_ITEM",
-        cardId,
-        checklistId,
-        itemId,
-      });
+    async ({ boardId, cardId, checklistId, itemId, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "DELETE_CHECKLIST_ITEM",
+          cardId,
+          checklistId,
+          itemId,
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Deleted item ${itemId}.`);
     },
   );
@@ -203,15 +253,20 @@ export function registerChecklistTools(
         boardId: boardIdSchema,
         cardId: cardIdSchema,
         checklistId: checklistIdSchema,
+        expectedVersion: expectedVersionSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, cardId, checklistId }) => {
-      await client.command(boardId, {
-        type: "DELETE_CHECKLIST",
-        cardId,
-        checklistId,
-      });
+    async ({ boardId, cardId, checklistId, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "DELETE_CHECKLIST",
+          cardId,
+          checklistId,
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Deleted checklist ${checklistId}.`);
     },
   );

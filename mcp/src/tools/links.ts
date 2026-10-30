@@ -12,6 +12,7 @@ import { newId } from "../ids.js";
 import {
   boardIdSchema,
   cardIdSchema,
+  expectedVersionSchema,
   idSchema,
   linkTypeSchema,
 } from "../schemas.js";
@@ -32,18 +33,23 @@ export function registerLinkTools(server: McpServer, client: JanosikClient) {
         cardId: cardIdSchema.describe("The source card the link is stored on."),
         targetCardId: idSchema.describe("The card on the other end."),
         linkType: linkTypeSchema,
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, targetCardId, linkType }) => {
+    async ({ boardId, cardId, targetCardId, linkType, expectedVersion }) => {
       const linkId = newId();
-      await client.command(boardId, {
-        type: "ADD_CARD_LINK",
-        cardId,
-        linkId,
-        targetCardId,
-        linkType,
-      });
+      await client.command(
+        boardId,
+        {
+          type: "ADD_CARD_LINK",
+          cardId,
+          linkId,
+          targetCardId,
+          linkType,
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(
         `Linked card ${cardId} --${linkType}--> ${targetCardId}.`,
       );
@@ -65,31 +71,37 @@ export function registerLinkTools(server: McpServer, client: JanosikClient) {
         linkType: linkTypeSchema
           .optional()
           .describe("Type, when the pair has more than one relation."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, cardId, targetCardId, linkType }) => {
-      const link = await client.commandOnFreshBoard(boardId, (board) => {
-        const card = Object.hasOwn(board.cards, cardId)
-          ? board.cards[cardId]
-          : undefined;
-        const found = card?.links?.find(
-          (entry) =>
-            entry.targetCardId === targetCardId &&
-            (linkType === undefined || entry.type === linkType),
-        );
-        if (!found) return null;
-        return {
-          action: {
-            type: "REMOVE_CARD_LINK",
-            cardId,
-            linkId: found.id,
-            targetCardId: found.targetCardId,
-            linkType: found.type,
-          },
-          result: found,
-        };
-      });
+    async ({ boardId, cardId, targetCardId, linkType, expectedVersion }) => {
+      const link = await client.commandOnFreshBoard(
+        boardId,
+        (board) => {
+          const card = Object.hasOwn(board.cards, cardId)
+            ? board.cards[cardId]
+            : undefined;
+          const found = card?.links?.find(
+            (entry) =>
+              entry.targetCardId === targetCardId &&
+              (linkType === undefined || entry.type === linkType),
+          );
+          if (!found) return null;
+          return {
+            action: {
+              type: "REMOVE_CARD_LINK",
+              cardId,
+              linkId: found.id,
+              targetCardId: found.targetCardId,
+              linkType: found.type,
+            },
+            result: found,
+          };
+        },
+        3,
+        expectedVersion,
+      );
       if (!link) {
         return errorResult(
           `Error: no link from ${cardId} to ${targetCardId} was found on the ` +

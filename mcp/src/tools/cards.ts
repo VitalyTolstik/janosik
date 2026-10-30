@@ -27,6 +27,7 @@ import {
   columnIdSchema,
   coverSchema,
   detailSchema,
+  expectedVersionSchema,
   idSchema,
   prioritySchema,
   responseFormatSchema,
@@ -130,6 +131,12 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       inputSchema: {
         boardId: boardIdSchema,
         columnId: columnIdSchema,
+        cardId: idSchema
+          .optional()
+          .describe(
+            "Client id for the new card (TASK-157, E14). Pass a stable id so " +
+              "a retried call returns the first card instead of a duplicate.",
+          ),
         title: z.string().min(1).max(LIMITS.cardTitle).describe("Card title."),
         description: z
           .string()
@@ -157,12 +164,14 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .describe(
             "Zero-based insert position in the column (defaults to the end).",
           ),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
     async ({
       boardId,
       columnId,
+      cardId,
       title,
       labelIds,
       position,
@@ -170,6 +179,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       priority,
       assigneeId,
       dueDate,
+      expectedVersion,
     }) => {
       // Validate everything the follow-up commands need first: once ADD_CARD
       // lands, a failure would leave a card the agent does not know about,
@@ -185,15 +195,23 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         }
       }
 
-      const newCardId = newId();
-      await client.command(boardId, {
-        type: "ADD_CARD",
-        newCardId,
-        columnId,
-        title,
-        ...(labelIds ? { labelIds } : {}),
-        ...(position !== undefined ? { atIndex: position } : {}),
-      });
+      const newCardId = cardId ?? newId();
+      await client.command(
+        boardId,
+        {
+          type: "ADD_CARD",
+          newCardId,
+          columnId,
+          title,
+          ...(labelIds ? { labelIds } : {}),
+          ...(position !== undefined ? { atIndex: position } : {}),
+        },
+        // A client id doubles as the idempotency key, so a retry is a no-op.
+        {
+          ifMatch: expectedVersion,
+          ...(cardId ? { commandId: cardId } : {}),
+        },
+      );
       try {
         await applyCardFields(client, boardId, newCardId, {
           ...(description !== undefined ? { description } : {}),
@@ -279,10 +297,18 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
             "Compare-and-set: the description as you last read it. The write " +
               "is refused if the card's description differs now.",
           ),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, title, description, expectedDescription }) => {
+    async ({
+      boardId,
+      cardId,
+      title,
+      description,
+      expectedDescription,
+      expectedVersion,
+    }) => {
       const patch = {
         type: "UPDATE_CARD" as const,
         cardId,
@@ -290,20 +316,25 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         ...(description !== undefined ? { description } : {}),
       };
       if (expectedDescription === undefined) {
-        await client.command(boardId, patch);
+        await client.command(boardId, patch, { ifMatch: expectedVersion });
         return textOnly(`Updated card ${cardId}.`);
       }
       // `ifMatch` pins the write to the board state the comparison ran on.
-      const outcome = await client.commandOnFreshBoard(boardId, (board) => {
-        const card = Object.hasOwn(board.cards, cardId)
-          ? board.cards[cardId]
-          : undefined;
-        if (!card) return null;
-        if ((card.description ?? "") !== expectedDescription) {
-          return { result: "stale" };
-        }
-        return { action: patch, result: "ok" };
-      });
+      const outcome = await client.commandOnFreshBoard(
+        boardId,
+        (board) => {
+          const card = Object.hasOwn(board.cards, cardId)
+            ? board.cards[cardId]
+            : undefined;
+          if (!card) return null;
+          if ((card.description ?? "") !== expectedDescription) {
+            return { result: "stale" };
+          }
+          return { action: patch, result: "ok" };
+        },
+        3,
+        expectedVersion,
+      );
       if (outcome === null) return cardNotFound(cardId, boardId);
       if (outcome === "stale") {
         return errorResult(
@@ -338,45 +369,51 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .min(0)
           .optional()
           .describe("Zero-based insert position in the destination column."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, toColumnId, position }) => {
+    async ({ boardId, cardId, toColumnId, position, expectedVersion }) => {
       // The source column/index come from the read, and `ifMatch` refuses
       // the move if another writer changed the board in between (the read
       // is then retried), so a concurrent move can never act on stale
       // coordinates.
       let missingColumn: string | null = null;
-      const moved = await client.commandOnFreshBoard(boardId, (board) => {
-        const location = findCardLocation(board, cardId);
-        if (!location) return null;
-        const destinationId = toColumnId ?? location.column.id;
-        const destination = board.columns.find(
-          (column) => column.id === destinationId,
-        );
-        if (!destination) {
-          missingColumn = destinationId;
-          return null;
-        }
-        // Within one column the card's own slot does not count.
-        const slots =
-          destination.id === location.column.id
-            ? destination.cardIds.length - 1
-            : destination.cardIds.length;
-        const toIndex =
-          position !== undefined ? Math.min(position, slots) : slots;
-        return {
-          action: {
-            type: "MOVE_CARD",
-            cardId,
-            fromColumnId: location.column.id,
-            fromIndex: location.index,
-            toColumnId: destinationId,
-            toIndex,
-          },
-          result: { title: destination.title, toIndex },
-        };
-      });
+      const moved = await client.commandOnFreshBoard(
+        boardId,
+        (board) => {
+          const location = findCardLocation(board, cardId);
+          if (!location) return null;
+          const destinationId = toColumnId ?? location.column.id;
+          const destination = board.columns.find(
+            (column) => column.id === destinationId,
+          );
+          if (!destination) {
+            missingColumn = destinationId;
+            return null;
+          }
+          // Within one column the card's own slot does not count.
+          const slots =
+            destination.id === location.column.id
+              ? destination.cardIds.length - 1
+              : destination.cardIds.length;
+          const toIndex =
+            position !== undefined ? Math.min(position, slots) : slots;
+          return {
+            action: {
+              type: "MOVE_CARD",
+              cardId,
+              fromColumnId: location.column.id,
+              fromIndex: location.index,
+              toColumnId: destinationId,
+              toIndex,
+            },
+            result: { title: destination.title, toIndex },
+          };
+        },
+        3,
+        expectedVersion,
+      );
       if (missingColumn !== null) {
         return errorResult(
           `Error: column ${missingColumn} is not on board ${boardId}. ` +
@@ -406,17 +443,22 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .max(LIMITS.cardTitle)
           .optional()
           .describe("Title for the copy."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, title }) => {
+    async ({ boardId, cardId, title, expectedVersion }) => {
       const newCardId = newId();
-      await client.command(boardId, {
-        type: "DUPLICATE_CARD",
-        cardId,
-        newCardId,
-        ...(title !== undefined ? { title } : {}),
-      });
+      await client.command(
+        boardId,
+        {
+          type: "DUPLICATE_CARD",
+          cardId,
+          newCardId,
+          ...(title !== undefined ? { title } : {}),
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Duplicated card ${cardId} — \`${newCardId}\`.`);
     },
   );
@@ -431,15 +473,20 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         boardId: boardIdSchema,
         cardId: cardIdSchema,
         priority: prioritySchema,
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, priority }) => {
-      await client.command(boardId, {
-        type: "SET_CARD_PRIORITY",
-        cardId,
-        priority,
-      });
+    async ({ boardId, cardId, priority, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "SET_CARD_PRIORITY",
+          cardId,
+          priority,
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Set priority ${priority} on card ${cardId}.`);
     },
   );
@@ -458,15 +505,20 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         assigneeId: idSchema
           .nullable()
           .describe("Member user id, or null to unassign."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, assigneeId }) => {
-      await client.command(boardId, {
-        type: "SET_CARD_ASSIGN",
-        cardId,
-        assigneeId,
-      });
+    async ({ boardId, cardId, assigneeId, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "SET_CARD_ASSIGN",
+          cardId,
+          assigneeId,
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(
         assigneeId
           ? `Assigned card ${cardId} to ${assigneeId}.`
@@ -496,22 +548,27 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .describe(
             "Lease length in ms (default 15 min, clamped to [1 min, 24 h]).",
           ),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, leaseMs }) => {
+    async ({ boardId, cardId, leaseMs, expectedVersion }) => {
       const user = await client.whoami();
       const duration = Math.min(
         Math.max(leaseMs ?? CLAIM_LEASE_DEFAULT_MS, CLAIM_LEASE_MIN_MS),
         CLAIM_LEASE_MAX_MS,
       );
       const leaseUntil = Date.now() + duration;
-      await client.command(boardId, {
-        type: "CLAIM_CARD",
-        cardId,
-        claimedBy: user.id,
-        leaseUntil,
-      });
+      await client.command(
+        boardId,
+        {
+          type: "CLAIM_CARD",
+          cardId,
+          claimedBy: user.id,
+          leaseUntil,
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(
         `Claimed card ${cardId} until ${new Date(leaseUntil).toISOString()}.`,
       );
@@ -526,16 +583,24 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       description:
         "Release your work lease on a card, or clear a lapsed one, so " +
         "another agent can pick it up.",
-      inputSchema: { boardId: boardIdSchema, cardId: cardIdSchema },
+      inputSchema: {
+        boardId: boardIdSchema,
+        cardId: cardIdSchema,
+        expectedVersion: expectedVersionSchema,
+      },
       annotations: WRITE,
     },
-    async ({ boardId, cardId }) => {
-      await client.command(boardId, {
-        type: "CLAIM_CARD",
-        cardId,
-        claimedBy: null,
-        leaseUntil: null,
-      });
+    async ({ boardId, cardId, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "CLAIM_CARD",
+          cardId,
+          claimedBy: null,
+          leaseUntil: null,
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Released card ${cardId}.`);
     },
   );
@@ -563,21 +628,32 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .max(LIMITS.taskSpecItems)
           .optional()
           .describe("Definition-of-done items. An empty list clears it."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, acceptanceCriteria, definitionOfDone }) => {
+    async ({
+      boardId,
+      cardId,
+      acceptanceCriteria,
+      definitionOfDone,
+      expectedVersion,
+    }) => {
       if (acceptanceCriteria === undefined && definitionOfDone === undefined) {
         return errorResult(
           "Error: pass acceptanceCriteria and/or definitionOfDone.",
         );
       }
-      await client.command(boardId, {
-        type: "SET_CARD_TASK_SPEC",
-        cardId,
-        ...(acceptanceCriteria !== undefined ? { acceptanceCriteria } : {}),
-        ...(definitionOfDone !== undefined ? { definitionOfDone } : {}),
-      });
+      await client.command(
+        boardId,
+        {
+          type: "SET_CARD_TASK_SPEC",
+          cardId,
+          ...(acceptanceCriteria !== undefined ? { acceptanceCriteria } : {}),
+          ...(definitionOfDone !== undefined ? { definitionOfDone } : {}),
+        },
+        { ifMatch: expectedVersion },
+      );
       const parts: string[] = [];
       if (acceptanceCriteria !== undefined) {
         parts.push(`${acceptanceCriteria.length} acceptance criteria`);
@@ -602,16 +678,21 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .string()
           .nullable()
           .describe("ISO-8601 date/time, or null to clear the due date."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, dueDate }) => {
+    async ({ boardId, cardId, dueDate, expectedVersion }) => {
       const ms = parseDueDate(dueDate);
-      await client.command(boardId, {
-        type: "SET_CARD_DUE_DATE",
-        cardId,
-        ...(ms !== undefined ? { dueDate: ms } : {}),
-      });
+      await client.command(
+        boardId,
+        {
+          type: "SET_CARD_DUE_DATE",
+          cardId,
+          ...(ms !== undefined ? { dueDate: ms } : {}),
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(
         ms !== undefined
           ? `Set due date ${new Date(ms).toISOString()} on card ${cardId}.`
@@ -632,15 +713,20 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         boardId: boardIdSchema,
         cardId: cardIdSchema,
         cover: coverSchema.nullable().describe("Cover, or null to remove it."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, cover }) => {
-      await client.command(boardId, {
-        type: "SET_CARD_COVER",
-        cardId,
-        ...(cover ? { cover } : {}),
-      });
+    async ({ boardId, cardId, cover, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "SET_CARD_COVER",
+          cardId,
+          ...(cover ? { cover } : {}),
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(
         cover
           ? `Set cover on card ${cardId}.`
@@ -660,11 +746,16 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       inputSchema: {
         boardId: boardIdSchema,
         cardId: cardIdSchema,
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId }) => {
-      await client.command(boardId, { type: "ARCHIVE_CARD", cardId });
+    async ({ boardId, cardId, expectedVersion }) => {
+      await client.command(
+        boardId,
+        { type: "ARCHIVE_CARD", cardId },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Archived card ${cardId}.`);
     },
   );
@@ -686,16 +777,21 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .min(0)
           .optional()
           .describe("Zero-based insert position."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, columnId, position }) => {
-      await client.command(boardId, {
-        type: "UNARCHIVE_CARD",
-        cardId,
-        ...(columnId !== undefined ? { columnId } : {}),
-        ...(position !== undefined ? { index: position } : {}),
-      });
+    async ({ boardId, cardId, columnId, position, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "UNARCHIVE_CARD",
+          cardId,
+          ...(columnId !== undefined ? { columnId } : {}),
+          ...(position !== undefined ? { index: position } : {}),
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Unarchived card ${cardId}.`);
     },
   );
@@ -711,11 +807,16 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       inputSchema: {
         boardId: boardIdSchema,
         cardId: cardIdSchema,
+        expectedVersion: expectedVersionSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, cardId }) => {
-      await client.command(boardId, { type: "DELETE_CARD", cardId });
+    async ({ boardId, cardId, expectedVersion }) => {
+      await client.command(
+        boardId,
+        { type: "DELETE_CARD", cardId },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Deleted card ${cardId}.`);
     },
   );

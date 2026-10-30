@@ -11,7 +11,11 @@ import type { JanosikClient } from "../client.js";
 import { errorResult, textOnly } from "../format.js";
 import { newId } from "../ids.js";
 import { findColumnIndex } from "../locate.js";
-import { boardIdSchema, columnIdSchema } from "../schemas.js";
+import {
+  boardIdSchema,
+  columnIdSchema,
+  expectedVersionSchema,
+} from "../schemas.js";
 import { DESTRUCTIVE, WRITE, defineTool } from "./helpers.js";
 
 /** The "not on this board" answer every column lookup shares. */
@@ -39,21 +43,35 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         "bounded number of them.",
       inputSchema: {
         boardId: boardIdSchema,
+        columnId: columnIdSchema
+          .optional()
+          .describe(
+            "Client id for the new column (TASK-157, E14) — a retry then " +
+              "returns the first column instead of a duplicate.",
+          ),
         title: z
           .string()
           .min(1)
           .max(LIMITS.columnTitle)
           .describe("Column title."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, title }) => {
-      const newColumnId = newId();
-      await client.command(boardId, {
-        type: "ADD_COLUMN",
-        newColumnId,
-        title,
-      });
+    async ({ boardId, columnId, title, expectedVersion }) => {
+      const newColumnId = columnId ?? newId();
+      await client.command(
+        boardId,
+        {
+          type: "ADD_COLUMN",
+          newColumnId,
+          title,
+        },
+        {
+          ifMatch: expectedVersion,
+          ...(columnId ? { commandId: columnId } : {}),
+        },
+      );
       return textOnly(`Created column "${title}" — \`${newColumnId}\`.`);
     },
   );
@@ -72,11 +90,16 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
           .min(1)
           .max(LIMITS.columnTitle)
           .describe("New column title."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, columnId, title }) => {
-      await client.command(boardId, { type: "RENAME_COLUMN", columnId, title });
+    async ({ boardId, columnId, title, expectedVersion }) => {
+      await client.command(
+        boardId,
+        { type: "RENAME_COLUMN", columnId, title },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Renamed column ${columnId} to "${title}".`);
     },
   );
@@ -93,21 +116,32 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         boardId: boardIdSchema,
         columnId: columnIdSchema,
         position: positionSchema,
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, columnId, position }) => {
+    async ({ boardId, columnId, position, expectedVersion }) => {
       // Indexes come from the read; `ifMatch` refuses them if the board
       // changed in between (and the read is retried).
-      const toIndex = await client.commandOnFreshBoard(boardId, (board) => {
-        const fromIndex = findColumnIndex(board, columnId);
-        if (fromIndex === -1) return null;
-        const target = Math.min(position, board.columns.length - 1);
-        return {
-          action: { type: "MOVE_COLUMN", columnId, fromIndex, toIndex: target },
-          result: target,
-        };
-      });
+      const toIndex = await client.commandOnFreshBoard(
+        boardId,
+        (board) => {
+          const fromIndex = findColumnIndex(board, columnId);
+          if (fromIndex === -1) return null;
+          const target = Math.min(position, board.columns.length - 1);
+          return {
+            action: {
+              type: "MOVE_COLUMN",
+              columnId,
+              fromIndex,
+              toIndex: target,
+            },
+            result: target,
+          };
+        },
+        3,
+        expectedVersion,
+      );
       if (toIndex === null) return columnNotFound(columnId, boardId);
       return textOnly(`Moved column ${columnId} to position ${toIndex}.`);
     },
@@ -129,27 +163,33 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
           .max(LIMITS.columnTitle)
           .optional()
           .describe("Title for the copy (defaults to the source title)."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, columnId, title }) => {
+    async ({ boardId, columnId, title, expectedVersion }) => {
       // One fresh id per source card: the count must match the column as the
       // server sees it, so the read is pinned with `ifMatch`.
-      const copy = await client.commandOnFreshBoard(boardId, (board) => {
-        const source = board.columns.find((column) => column.id === columnId);
-        if (!source) return null;
-        const newColumnId = newId();
-        return {
-          action: {
-            type: "DUPLICATE_COLUMN",
-            columnId,
-            newColumnId,
-            newCardIds: source.cardIds.map(() => newId()),
-            ...(title !== undefined ? { title } : {}),
-          },
-          result: { newColumnId, source },
-        };
-      });
+      const copy = await client.commandOnFreshBoard(
+        boardId,
+        (board) => {
+          const source = board.columns.find((column) => column.id === columnId);
+          if (!source) return null;
+          const newColumnId = newId();
+          return {
+            action: {
+              type: "DUPLICATE_COLUMN",
+              columnId,
+              newColumnId,
+              newCardIds: source.cardIds.map(() => newId()),
+              ...(title !== undefined ? { title } : {}),
+            },
+            result: { newColumnId, source },
+          };
+        },
+        3,
+        expectedVersion,
+      );
       if (copy === null) return columnNotFound(columnId, boardId);
       return textOnly(
         `Duplicated column "${copy.source.title}" (${copy.source.cardIds.length} card(s)) — \`${copy.newColumnId}\`.`,
@@ -169,11 +209,16 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         boardId: boardIdSchema,
         columnId: columnIdSchema,
         sortBy: z.enum(["createdAt", "dueDate", "title"]).describe("Sort key."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, columnId, sortBy }) => {
-      await client.command(boardId, { type: "SORT_COLUMN", columnId, sortBy });
+    async ({ boardId, columnId, sortBy, expectedVersion }) => {
+      await client.command(
+        boardId,
+        { type: "SORT_COLUMN", columnId, sortBy },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Sorted column ${columnId} by ${sortBy}.`);
     },
   );
@@ -196,15 +241,20 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
           .max(99)
           .optional()
           .describe("Max cards allowed, or omit to remove the limit."),
+        expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, columnId, wipLimit }) => {
-      await client.command(boardId, {
-        type: "SET_COLUMN_WIP_LIMIT",
-        columnId,
-        ...(wipLimit !== undefined ? { wipLimit } : {}),
-      });
+    async ({ boardId, columnId, wipLimit, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "SET_COLUMN_WIP_LIMIT",
+          columnId,
+          ...(wipLimit !== undefined ? { wipLimit } : {}),
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(
         wipLimit !== undefined
           ? `Set WIP limit ${wipLimit} on column ${columnId}.`
@@ -224,14 +274,19 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
       inputSchema: {
         boardId: boardIdSchema,
         columnId: columnIdSchema,
+        expectedVersion: expectedVersionSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, columnId }) => {
-      await client.command(boardId, {
-        type: "ARCHIVE_COLUMN_CARDS",
-        columnId,
-      });
+    async ({ boardId, columnId, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "ARCHIVE_COLUMN_CARDS",
+          columnId,
+        },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Archived every card in column ${columnId}.`);
     },
   );
@@ -248,11 +303,16 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
       inputSchema: {
         boardId: boardIdSchema,
         columnId: columnIdSchema,
+        expectedVersion: expectedVersionSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, columnId }) => {
-      await client.command(boardId, { type: "DELETE_COLUMN", columnId });
+    async ({ boardId, columnId, expectedVersion }) => {
+      await client.command(
+        boardId,
+        { type: "DELETE_COLUMN", columnId },
+        { ifMatch: expectedVersion },
+      );
       return textOnly(`Deleted column ${columnId}.`);
     },
   );

@@ -562,4 +562,71 @@ describe("janosik MCP server", () => {
     expect(result.structuredContent).toMatchObject({ results: [{ id: "k1" }] });
     await client.close();
   });
+
+  it("returns the board version so a write can pin it", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_get_board",
+      arguments: { boardId: "b1", response_format: "json" },
+    });
+    expect(result.structuredContent).toMatchObject({ seq: boardSeq });
+    await client.close();
+  });
+
+  it("pins a write to expectedVersion as an ifMatch precondition", async () => {
+    const client = await connect();
+    // The fake advances `boardSeq` as it applies, so capture it first.
+    const version = boardSeq;
+    await client.callTool({
+      name: "janosik_set_card_priority",
+      arguments: {
+        boardId: "b1",
+        cardId: "k1",
+        priority: "high",
+        expectedVersion: version,
+      },
+    });
+    const write = calls.find((call) => call.path === "/boards/b1/commands");
+    expect((write?.body as { ifMatch?: number }).ifMatch).toBe(version);
+    await client.close();
+  });
+
+  it("refuses a write pinned to a stale version", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_set_card_priority",
+      arguments: {
+        boardId: "b1",
+        cardId: "k1",
+        priority: "high",
+        expectedVersion: boardSeq - 1,
+      },
+    });
+    expect(result.isError).toBe(true);
+    await client.close();
+  });
+
+  it("reuses a client id as the idempotency key on a create retry", async () => {
+    const client = await connect();
+    const args = {
+      boardId: "b1",
+      columnId: "col1",
+      cardId: "my-card",
+      title: "Stable",
+    };
+    await client.callTool({ name: "janosik_create_card", arguments: args });
+    await client.callTool({ name: "janosik_create_card", arguments: args });
+    const writes = calls.filter((call) => call.path === "/boards/b1/commands");
+    expect(writes).toHaveLength(2);
+    expect(
+      writes.map((call) => (call.body as { commandId: string }).commandId),
+    ).toEqual(["my-card", "my-card"]);
+    expect(
+      writes.map(
+        (call) =>
+          (call.body as { action: { newCardId: string } }).action.newCardId,
+      ),
+    ).toEqual(["my-card", "my-card"]);
+    await client.close();
+  });
 });

@@ -67,6 +67,13 @@ export interface CommandOptions {
   ifMatch?: number;
   ifMatchVersions?: Record<string, number>;
   /**
+   * Pin the idempotency key (TASK-157, E14). A create tool passes the
+   * client-supplied entity id here, so re-issuing the same call (an agent
+   * retry) reuses the key and the server returns the first result instead of
+   * minting a duplicate.
+   */
+  commandId?: string;
+  /**
    * Accept a command the server applied as a no-op. By default an empty
    * `versions` map (nothing changed: an unknown id, or the value was already
    * set) is reported as a {@link NoChangeError}, so an agent never reads
@@ -199,7 +206,7 @@ export class JanosikClient {
     opts: CommandOptions = {},
   ): Promise<CommandResponse> {
     const request: CommandRequest = {
-      commandId: newCommandId(),
+      commandId: opts.commandId ?? newCommandId(),
       action: { ...action, boardId, at: Date.now() } as BoardAction,
       ...(opts.ifMatch !== undefined ? { ifMatch: opts.ifMatch } : {}),
       ...(opts.ifMatchVersions
@@ -241,19 +248,28 @@ export class JanosikClient {
    * `build` returns `null` when the read shows the command cannot apply (an
    * unknown card or column), or a plan without an `action` to stop with a
    * result and send nothing (a failed compare-and-set).
+   *
+   * `expectedVersion` (TASK-157, D9) pins the write to a board version the
+   * caller saw: when set, the command carries it as `ifMatch` and is sent
+   * exactly once — a mismatch is a version conflict the caller must resolve
+   * by re-reading, not a retry.
    */
   async commandOnFreshBoard<R>(
     boardId: string,
     build: (board: Board) => { action?: CommandAction; result: R } | null,
     attempts = 3,
+    expectedVersion?: number,
   ): Promise<R | null> {
+    const maxAttempts = expectedVersion !== undefined ? 1 : attempts;
     for (let attempt = 1; ; attempt += 1) {
       const { board, seq } = await this.getBoardWithSeq(boardId);
       const plan = build(board);
       if (plan === null) return null;
       if (plan.action === undefined) return plan.result;
       try {
-        await this.command(boardId, plan.action, { ifMatch: seq });
+        await this.command(boardId, plan.action, {
+          ifMatch: expectedVersion ?? seq,
+        });
         return plan.result;
       } catch (error) {
         const stale =
@@ -261,7 +277,7 @@ export class JanosikClient {
           error.status === 409 &&
           (error.body as { conflict?: string } | undefined)?.conflict ===
             "version";
-        if (!stale || attempt >= attempts) throw error;
+        if (!stale || attempt >= maxAttempts) throw error;
       }
     }
   }
