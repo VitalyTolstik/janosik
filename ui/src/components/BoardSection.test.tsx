@@ -988,4 +988,22 @@ describe("TableView interactivity (TASK-14.1)", () => {
     expect(localStorage.getItem("janosik-board-density")).toBe("compact");
     expect(document.documentElement.dataset.density).toBe("compact");
   });
+
+  // TASK-142: the bare watch view — status + feed, no cards, no filter bar —
+  // is a fourth tab and persists like the others.
+  it("switches to the watch view and remembers it", async () => {
+    renderBoard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Watch" }));
+    const view = await screen.findByTestId(
+      "watch-view",
+      {},
+      { timeout: 15_000 },
+    );
+    expect(view).toBeInTheDocument();
+    // No cards and the filter toolbar is hidden in the bare watch view.
+    expect(view.querySelectorAll("article")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /Filters/i })).toBeNull();
+    expect(localStorage.getItem("janosik-board-view")).toBe("watch");
+  });
 });

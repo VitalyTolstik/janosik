@@ -1,19 +1,20 @@
-import { CalendarDays, KanbanSquare, Table2 } from "lucide-react";
+import { CalendarDays, Eye, KanbanSquare, Table2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 
-/** The three projections of the same board data (TASK-14). */
-export type BoardView = "board" | "calendar" | "table";
+/** The projections of the same board data (TASK-14, watch TASK-142). */
+export type BoardView = "board" | "calendar" | "table" | "watch";
 
 const VIEWS: {
   id: BoardView;
   icon: typeof KanbanSquare;
-  labelKey: "view.board" | "view.calendar" | "view.table";
+  labelKey: "view.board" | "view.calendar" | "view.table" | "view.watch";
 }[] = [
   { id: "board", icon: KanbanSquare, labelKey: "view.board" },
   { id: "calendar", icon: CalendarDays, labelKey: "view.calendar" },
   { id: "table", icon: Table2, labelKey: "view.table" },
+  { id: "watch", icon: Eye, labelKey: "view.watch" },
 ];
 
 interface ViewSwitcherProps {

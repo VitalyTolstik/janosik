@@ -16,6 +16,11 @@ const TableViewImpl = React.lazy(() =>
     default: m.TableView,
   })),
 );
+const WatchViewImpl = React.lazy(() =>
+  import("@/components/board/WatchView").then((m) => ({
+    default: m.WatchView,
+  })),
+);
 
 type CalendarViewComponent =
   typeof import("@/components/board/CalendarView").CalendarView;
@@ -24,6 +29,10 @@ type CalendarViewProps = Parameters<CalendarViewComponent>[0];
 type TableViewComponent =
   typeof import("@/components/board/TableView").TableView;
 type TableViewProps = Parameters<TableViewComponent>[0];
+
+type WatchViewComponent =
+  typeof import("@/components/board/WatchView").WatchView;
+type WatchViewProps = Parameters<WatchViewComponent>[0];
 
 /**
  * Drop-in lazy replacements for `CalendarView` / `TableView`. While a chunk
@@ -54,4 +63,13 @@ function TableView(props: TableViewProps) {
   );
 }
 
-export { CalendarView, TableView };
+function WatchView(props: WatchViewProps) {
+  // The watch view is deliberately bare: no pulsing skeleton either.
+  return (
+    <React.Suspense fallback={<div className="min-h-0 flex-1 bg-muted/20" />}>
+      <WatchViewImpl {...props} />
+    </React.Suspense>
+  );
+}
+
+export { CalendarView, TableView, WatchView };
