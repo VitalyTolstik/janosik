@@ -244,8 +244,17 @@ jobs:
 
       # No `--provenance`: it needs a *public* source repository (the repo is
       # private for now). Add it back when the repo goes public.
+      #
+      # Idempotent: re-running the tag (for example to retry the registry step
+      # below) must not fail on an already-published version.
       - name: Publish to npm
-        run: npm publish -w mcp --access public
+        run: |
+          version="$(node -p "require('./mcp/package.json').version")"
+          if npm view "@janosik/mcp@${version}" version >/dev/null 2>&1; then
+            echo "@janosik/mcp@${version} is already on npm — skipping publish."
+          else
+            npm publish -w mcp --access public
+          fi
 
       - name: Install mcp-publisher
         run: |
@@ -261,7 +270,7 @@ jobs:
       - name: Publish to the MCP Registry
         working-directory: mcp
         run: |
-          for attempt in 1 2 3 4 5 6; do
+          for attempt in $(seq 1 12); do
             if mcp-publisher publish; then exit 0; fi
             echo "registry not ready yet (attempt $attempt), waiting 30s…"
             sleep 30
