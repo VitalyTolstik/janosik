@@ -93,6 +93,142 @@ describe("commandDetails", () => {
     });
   });
 
+  it("names the column on add, rename and delete", () => {
+    const before = makeBoard();
+    const added = makeBoard();
+    added.columns = [
+      ...before.columns,
+      { id: "col-3", title: "Design", cardIds: [], createdAt: AT },
+    ];
+    expect(
+      commandDetails(
+        {
+          ...base,
+          type: "ADD_COLUMN",
+          newColumnId: "col-3",
+          title: "Design",
+        } as BoardAction,
+        before,
+        added,
+      ),
+    ).toEqual({ changes: [{ field: "column", from: null, to: "Design" }] });
+
+    const renamed = makeBoard();
+    renamed.columns = [
+      { id: "col-1", title: "Backlog", cardIds: ["card-1"], createdAt: AT },
+      { id: "col-2", title: "Done", cardIds: [], createdAt: AT },
+    ];
+    expect(
+      commandDetails(
+        {
+          ...base,
+          type: "RENAME_COLUMN",
+          columnId: "col-1",
+          title: "Backlog",
+        } as BoardAction,
+        before,
+        renamed,
+      ),
+    ).toEqual({ changes: [{ field: "column", from: "Todo", to: "Backlog" }] });
+
+    expect(
+      commandDetails(
+        { ...base, type: "DELETE_COLUMN", columnId: "col-1" } as BoardAction,
+        before,
+        makeBoard(),
+      ),
+    ).toEqual({ changes: [{ field: "column", from: "Todo", to: null }] });
+  });
+
+  it("captures a board rename", () => {
+    const before = makeBoard();
+    const after = { ...makeBoard(), title: "New board" };
+    expect(
+      commandDetails(
+        { ...base, type: "RENAME_BOARD", title: "New board" } as BoardAction,
+        before,
+        after,
+      ),
+    ).toEqual({
+      changes: [{ field: "title", from: "Board", to: "New board" }],
+    });
+  });
+
+  it("names labels on create, rename, colour and delete", () => {
+    const before = makeBoard();
+    const withLabel = makeBoard();
+    withLabel.labels = [
+      ...before.labels,
+      { id: "label-3", name: "Design", color: "fuchsia" },
+    ];
+    expect(
+      commandDetails(
+        {
+          ...base,
+          type: "ADD_LABEL",
+          label: { id: "label-3", name: "Design", color: "fuchsia" },
+        } as BoardAction,
+        before,
+        withLabel,
+      ),
+    ).toEqual({ changes: [{ field: "label", from: null, to: "Design" }] });
+
+    const renamed = makeBoard();
+    renamed.labels = [
+      { id: "label-1", name: "Defect", color: "red" },
+      { id: "label-2", name: "Feature", color: "blue" },
+    ];
+    expect(
+      commandDetails(
+        {
+          ...base,
+          type: "RENAME_LABEL",
+          labelId: "label-1",
+          name: "Defect",
+        } as BoardAction,
+        before,
+        renamed,
+      ),
+    ).toEqual({ changes: [{ field: "label", from: "Bug", to: "Defect" }] });
+
+    const recolored = makeBoard();
+    recolored.labels = [
+      { id: "label-1", name: "Bug", color: "orange" },
+      { id: "label-2", name: "Feature", color: "blue" },
+    ];
+    expect(
+      commandDetails(
+        {
+          ...base,
+          type: "SET_LABEL_COLOR",
+          labelId: "label-1",
+          color: "orange",
+        } as BoardAction,
+        before,
+        recolored,
+      ),
+    ).toEqual({ changes: [{ field: "label", from: "red", to: "orange" }] });
+
+    expect(
+      commandDetails(
+        { ...base, type: "DELETE_LABEL", labelId: "label-1" } as BoardAction,
+        before,
+        makeBoard(),
+      ),
+    ).toEqual({ changes: [{ field: "label", from: "Bug", to: null }] });
+  });
+
+  it("names a deleted card", () => {
+    const before = makeBoard();
+    expect(
+      commandDetails(
+        { ...base, type: "DELETE_CARD", cardId: "card-1" } as BoardAction,
+        before,
+        before,
+      ),
+    ).toEqual({ detail: "Old title" });
+  });
+
   it("names the label on attach and detach", () => {
     const before = makeBoard();
     const after = makeBoard(makeCard({ labelIds: ["label-1"] }));

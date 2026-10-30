@@ -109,6 +109,128 @@ export function commandDetails(
       };
     }
 
+    // Board- and column-level commands have no card to hang a diff on, but
+    // they still deserve the name they touched (the watch feed reads it back).
+    case "ADD_COLUMN":
+      return {
+        changes: [{ field: "column", from: null, to: clip(action.title) }],
+      };
+
+    case "DUPLICATE_COLUMN": {
+      const to =
+        after.columns.find((column) => column.id === action.newColumnId)
+          ?.title ?? null;
+      return { changes: [{ field: "column", from: null, to: clip(to) }] };
+    }
+
+    case "RENAME_COLUMN": {
+      const from =
+        before.columns.find((column) => column.id === action.columnId)?.title ??
+        null;
+      const to =
+        after.columns.find((column) => column.id === action.columnId)?.title ??
+        null;
+      if (from === to) return null;
+      return { changes: [{ field: "column", from: clip(from), to: clip(to) }] };
+    }
+
+    case "DELETE_COLUMN": {
+      const from =
+        before.columns.find((column) => column.id === action.columnId)?.title ??
+        null;
+      return { changes: [{ field: "column", from: clip(from), to: null }] };
+    }
+
+    case "RENAME_BOARD":
+      return {
+        changes: [
+          { field: "title", from: clip(before.title), to: clip(action.title) },
+        ],
+      };
+
+    // Column commands that are not a value diff still name the column.
+    case "MOVE_COLUMN":
+    case "SORT_COLUMN":
+    case "SET_COLUMN_CARD_ORDER":
+    case "ARCHIVE_COLUMN_CARDS": {
+      const title =
+        after.columns.find((column) => column.id === action.columnId)?.title ??
+        before.columns.find((column) => column.id === action.columnId)?.title ??
+        null;
+      return { detail: clip(title) ?? undefined };
+    }
+
+    case "SET_COLUMN_WIP_LIMIT": {
+      const title =
+        after.columns.find((column) => column.id === action.columnId)?.title ??
+        null;
+      return { detail: clip(title) ?? undefined };
+    }
+
+    case "DUPLICATE_CARD": {
+      const title = cardOf(after, action.newCardId)?.title ?? null;
+      return { detail: clip(title) ?? undefined };
+    }
+
+    case "ADD_LABEL":
+      return {
+        changes: [{ field: "label", from: null, to: clip(action.label.name) }],
+      };
+
+    case "RENAME_LABEL": {
+      const from = labelName(before, action.labelId);
+      if (from === action.name) return null;
+      return {
+        changes: [{ field: "label", from: clip(from), to: clip(action.name) }],
+      };
+    }
+
+    case "SET_LABEL_COLOR": {
+      const from =
+        before.labels.find((label) => label.id === action.labelId)?.color ??
+        null;
+      const to =
+        after.labels.find((label) => label.id === action.labelId)?.color ??
+        action.color;
+      if (from === to) return null;
+      return { changes: [{ field: "label", from, to }] };
+    }
+
+    case "DELETE_LABEL": {
+      const from = labelName(before, action.labelId);
+      return { changes: [{ field: "label", from: clip(from), to: null }] };
+    }
+
+    case "DELETE_CARD": {
+      const title = cardOf(before, action.cardId)?.title ?? null;
+      return { detail: clip(title) ?? undefined };
+    }
+
+    case "RESTORE_CARD":
+      return { detail: clip(action.card.title) ?? undefined };
+
+    case "RESTORE_COLUMN":
+    case "RESTORE_COLUMN_CARDS": {
+      const title =
+        action.type === "RESTORE_COLUMN"
+          ? action.column.title
+          : (before.columns.find((column) => column.id === action.columnId)
+              ?.title ?? null);
+      return { detail: clip(title) ?? undefined };
+    }
+
+    case "RESTORE_LABEL":
+      return { detail: clip(action.label.name) ?? undefined };
+
+    case "RESTORE_CHECKLIST":
+      return { detail: clip(action.checklist.title) ?? undefined };
+
+    case "RESTORE_CHECKLIST_ITEM":
+      return { detail: clip(action.item.text) ?? undefined };
+
+    case "RESTORE_BOARD":
+      return { detail: clip(action.board.title) ?? undefined };
+
     case "SET_CARD_LABEL": {
       const name =
         labelName(after, action.labelId) ?? labelName(before, action.labelId);
