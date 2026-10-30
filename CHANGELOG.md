@@ -97,6 +97,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Large-board rendering (TASK-139).** A full board no longer mounts every
+  card: kanban columns, table rows and the calendar's unbounded lists
+  (unscheduled panel, week cells and the day panel) now mount only the rows
+  around the viewport, with spacer elements preserving the exact scroll
+  height. A 2400-card board went from 4.8 s / 67.7k DOM / 1.1 GB heap / 3.9 s
+  main-thread block to ~0.7 s / 4.0k DOM / 90 MB / 176 ms; a 2400-row table
+  from 49k DOM / 513 MB to 26 mounted rows. Dragging, filtering, archive and
+  the keyboard cursor (which now scrolls its column to the target row) are
+  unchanged, and `SortableContext` still receives every card id.
 - **Retention, admin, realtime and upload hardening (TASK-148…156).**
   Retention sweeps and the board purge are paged; a soft-deleted board is
   restored as a whole subtree (children, labels, links, members and live

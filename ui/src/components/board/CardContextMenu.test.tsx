@@ -248,10 +248,16 @@ describe("card context menu (right-click)", () => {
     // The scheduled chip on its date cell.
     rightClick(screen.getAllByTestId("calendar-chip")[0]!);
     expect(await screen.findByTestId("card-context-menu")).toBeInTheDocument();
+    // Close the first menu before opening the second — independent triggers
+    // can both be open, and the assertion below finds one menu.
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByTestId("card-context-menu")).toBeNull(),
+    );
     // The unscheduled row in the side list.
-    const unscheduledRow = screen
-      .getByTestId("unscheduled-list")
-      .querySelector("button") as Element;
+    const unscheduledRow = within(screen.getByTestId("unscheduled-list"))
+      .getByText("Beta card")
+      .closest("button") as Element;
     rightClick(unscheduledRow);
     expect(await screen.findByTestId("card-context-menu")).toBeInTheDocument();
   });
