@@ -14,6 +14,14 @@ import {
  */
 export const CARD_ROW_HEIGHT = 100;
 
+/**
+ * The compact face (TASK-142) is a 48px single-line tile, so its row is
+ * 48 + 8 = 56px. The spacer geometry and the j/k scroll target must use the
+ * same height as the mounted card — otherwise the window drifts from the
+ * real scroll position.
+ */
+export const COMPACT_CARD_ROW_HEIGHT = 56;
+
 /** Rows kept mounted above and below the viewport to absorb fast scrolling. */
 const OVERSCAN = 4;
 
@@ -48,8 +56,9 @@ function computeRange(
   count: number,
   scrollTop: number,
   viewportHeight: number,
+  rowHeight: number,
 ): CardWindowRange {
-  const totalHeight = count * CARD_ROW_HEIGHT;
+  const totalHeight = count * rowHeight;
   // A shrinking column can leave a stale scrollTop above the new maximum
   // until the browser settles it; clamp here so the window never goes blank.
   const top = Math.min(
@@ -57,10 +66,10 @@ function computeRange(
     Math.max(0, totalHeight - viewportHeight),
   );
   return {
-    start: Math.max(0, Math.floor(top / CARD_ROW_HEIGHT) - OVERSCAN),
+    start: Math.max(0, Math.floor(top / rowHeight) - OVERSCAN),
     end: Math.min(
       count,
-      Math.ceil((top + viewportHeight) / CARD_ROW_HEIGHT) + OVERSCAN,
+      Math.ceil((top + viewportHeight) / rowHeight) + OVERSCAN,
     ),
   };
 }
@@ -81,7 +90,10 @@ function computeRange(
  * Kept dependency-free deliberately: the whole logic is a scroll offset and
  * a fixed row height, and the critical-path bundle budget is tight.
  */
-export function useCardWindow(count: number): CardWindow {
+export function useCardWindow(
+  count: number,
+  rowHeight: number = CARD_ROW_HEIGHT,
+): CardWindow {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({
     scrollTop: 0,
@@ -111,23 +123,26 @@ export function useCardWindow(count: number): CardWindow {
     return () => observer.disconnect();
   }, [readViewport]);
 
-  const scrollToIndex = useCallback((index: number) => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const height = el.clientHeight || INITIAL_VIEWPORT_HEIGHT;
-    const top = LIST_PADDING_TOP + index * CARD_ROW_HEIGHT;
-    const bottom = top + CARD_ROW_HEIGHT;
-    if (top >= el.scrollTop && bottom <= el.scrollTop + height) return;
+  const scrollToIndex = useCallback(
+    (index: number) => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const height = el.clientHeight || INITIAL_VIEWPORT_HEIGHT;
+      const top = LIST_PADDING_TOP + index * rowHeight;
+      const bottom = top + rowHeight;
+      if (top >= el.scrollTop && bottom <= el.scrollTop + height) return;
 
-    const nextTop = top < el.scrollTop ? top : bottom - height;
-    el.scrollTop = nextTop;
-    setViewport({ scrollTop: nextTop, height });
-  }, []);
+      const nextTop = top < el.scrollTop ? top : bottom - height;
+      el.scrollTop = nextTop;
+      setViewport({ scrollTop: nextTop, height });
+    },
+    [rowHeight],
+  );
 
   return {
     scrollRef,
     onScroll: readViewport,
-    range: computeRange(count, viewport.scrollTop, viewport.height),
+    range: computeRange(count, viewport.scrollTop, viewport.height, rowHeight),
     scrollToIndex,
   };
 }

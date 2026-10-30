@@ -95,6 +95,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   lifecycle recipes; installs into Claude Code, opencode and any
   agent-compatible harness.
 
+- **"Simplify design" card density (TASK-142).** A persisted board-view
+  checkbox swaps the full card face for a compact one-line card: title, labels
+  as colour dots, a blocked marker, checklist progress, priority and the
+  assignee — everything else (description, due date, the hover quick actions)
+  stays one click away in the card dialog. On a synthetic 2400-card board the
+  compact face mounts **46% fewer DOM nodes** (4 482 → 2 414), renders the
+  first card **~30% sooner** (1 060 → 740 ms) and fits ~45% more cards on
+  screen. A live stream of 240 swarm updates (≈9/s) was applied with **no long
+  tasks** on the main thread in either density. The choice is stored next to
+  the board/calendar/table view (`janosik-board-density`), and the compact row
+  height is wired through the same virtualization maths as the full face.
+
 ### Fixed
 
 - **Large-board rendering (TASK-139).** A full board no longer mounts every

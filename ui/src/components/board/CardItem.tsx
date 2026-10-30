@@ -28,6 +28,7 @@ import { userAvatarVar, userLabel } from "@/utils/avatar";
 import type { CardLinkFacts } from "@/utils/links";
 import {
   LABEL_COLOR_CHIP,
+  LABEL_COLOR_DOT,
   coverBackground,
   type Card,
   type Label,
@@ -76,6 +77,14 @@ interface CardItemProps {
   /** Tooltip text shown while `duplicateDisabled`. */
   duplicateDisabledReason?: string;
   /**
+   * Compact face (TASK-142): one line — title, label dots, blocked marker,
+   * checklist progress, priority and the assignee. Hover quick actions and
+   * the description/due/label chips move behind the click when the board is
+   * being watched instead of edited. Also skips the per-card ResizeObserver
+   * the truncated full-face title needs.
+   */
+  compact?: boolean;
+  /**
    * VIEWER mode (TASK-35): the right-click context menu keeps only the
    * read-only actions (open, copy link, new tab).
    */
@@ -88,10 +97,13 @@ interface CardItemProps {
  * `title` tooltip appears only when something is actually hidden — no
  * tooltip noise on short titles.
  */
-function useClamped(): [React.RefCallback<HTMLParagraphElement>, boolean] {
+function useClamped(
+  enabled = true,
+): [React.RefCallback<HTMLParagraphElement>, boolean] {
   const elRef = useRef<HTMLParagraphElement | null>(null);
   const [clamped, setClamped] = useState(false);
   useEffect(() => {
+    if (!enabled) return;
     const el = elRef.current;
     if (!el) return;
     const check = () =>
@@ -104,7 +116,7 @@ function useClamped(): [React.RefCallback<HTMLParagraphElement>, boolean] {
     const observer = new ResizeObserver(check);
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [enabled]);
   const ref: React.RefCallback<HTMLParagraphElement> = (node) => {
     elRef.current = node;
   };
@@ -144,9 +156,10 @@ function CardItemView({
   onArchive,
   duplicateDisabled = false,
   duplicateDisabledReason,
+  compact = false,
   readOnly = false,
 }: CardItemProps) {
-  const [titleRef, titleClamped] = useClamped();
+  const [titleRef, titleClamped] = useClamped(!compact);
   // Entry animation only for a card that appears in this tab now (created,
   // moved in, restored). A board load or switch re-mounts everything; running
   // the animation on all 2400 cards is pure render cost (TASK-150, C20).
@@ -263,243 +276,337 @@ function CardItemView({
         data-card-cursor={isCursor || undefined}
         data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
         className={cn(
-          "group relative flex h-[92px] cursor-pointer flex-col gap-1 overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2 shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
+          "group relative cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-card shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
+          compact
+            ? "flex h-12 items-center gap-2 px-3"
+            : "flex h-[92px] flex-col gap-1 px-3 py-2",
           entering && "animate-card-in",
           isDragging && "opacity-40",
           isCursor && "border-primary ring-2 ring-primary/60",
         )}
       >
-        {/* Hover duplicate (Trello quick-edit style): a compact icon in the
+        {/* Full-face-only chrome: the hover quick actions. The compact face
+            keeps them behind the click/dialog. */}
+        {!compact ? (
+          <>
+            {/* Hover duplicate (Trello quick-edit style): a compact icon in the
           top-right corner, visible only while hovered. Hidden while dragging
           and when there is nowhere to put the copy handler. Disabled when
           the card's column is full — the reducer would refuse the copy.
           Touch devices have no hover: there the button would stay invisible
           yet tappable, so it is removed entirely (`no-hover`) — the card
           dialog owns duplicate/archive on touch. */}
-        {onDuplicate && !isDragging && !confirmArchive ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {/* Positioning and hover-visibility live on the wrapper: a
+            {onDuplicate && !isDragging && !confirmArchive ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  {/* Positioning and hover-visibility live on the wrapper: a
                 disabled button drops pointer events, and the tooltip needs
                 an element that still receives them. */}
-              <span className="no-hover:hidden absolute right-1.5 top-1.5 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                <button
-                  type="button"
-                  aria-label={t("card.duplicate")}
-                  disabled={duplicateDisabled}
-                  className="flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-                  onClick={(e) => {
-                    // Don't let the click open the card dialog.
-                    e.stopPropagation();
-                    onDuplicate(card.id);
-                  }}
-                >
-                  <CopyPlus className="h-3.5 w-3.5" />
-                </button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>
-              {duplicateDisabled
-                ? (duplicateDisabledReason ?? t("card.duplicate"))
-                : t("card.duplicate")}
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
-        {onArchive && !isDragging ? (
-          confirmArchive ? (
-            <span
-              data-testid="card-archive-confirm"
-              className="absolute right-1.5 top-1.5 z-10 flex h-6 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                type="button"
-                aria-label={t("card.archiveConfirmYes")}
-                className="flex h-5 w-5 items-center justify-center rounded-md text-danger hover:bg-danger/10"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setConfirmArchive(false);
-                  onArchive(card.id);
-                }}
-              >
-                <Check className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                aria-label={t("card.archiveConfirmCancel")}
-                className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setConfirmArchive(false);
-                }}
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </span>
-          ) : (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  aria-label={t("card.archive")}
-                  data-testid="card-archive"
-                  className="no-hover:hidden absolute right-8 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 hover:bg-warning/10 hover:text-warning group-hover:opacity-100"
-                  onClick={(e) => {
-                    // Don't let the click open the card dialog.
-                    e.stopPropagation();
-                    setConfirmArchive(true);
-                  }}
-                >
-                  <Archive className="h-3.5 w-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{t("card.archive")}</TooltipContent>
-            </Tooltip>
-          )
-        ) : null}
-        {/* Cover: a slim top strip — same height for colors and gradients
-          (matches the label chip row scale). Absolutely positioned so the
-          fixed-height tile never reflows: it just paints the padding band. */}
-        {card.cover ? (
-          <div
-            aria-hidden
-            data-testid="card-cover"
-            data-cover-type={card.cover.type}
-            className="absolute inset-x-0 top-0 h-1.5"
-            style={{ background: coverBackground(card.cover) }}
-          />
-        ) : null}
-        {/* First line: the title owns ~75% of the tile, the labels clip
-          inside the remaining quarter (single line, fade at the cut). */}
-        <div className="flex h-5 shrink-0 items-center gap-2">
-          {/* `overflow-wrap:anywhere` (not just break-words) so a pasted URL
-            can't blow out the tile's intrinsic width. The full text stays in
-            the accessibility tree and a native `title` tooltip surfaces it,
-            only when truncated. */}
-          <p
-            ref={titleRef}
-            title={titleClamped ? card.title : undefined}
-            className="w-3/4 shrink-0 truncate break-words text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]"
-            data-testid="card-title"
-          >
-            <HighlightedText text={card.title} query={highlight ?? ""} />
-          </p>
-          <div
-            data-testid="card-labels"
-            className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,black_80%,transparent)]"
-          >
-            {labels.map((label) => (
-              <span
-                key={label.id}
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                  LABEL_COLOR_CHIP[label.color],
-                )}
-              >
-                <span
-                  className="h-1.5 w-1.5 rounded-full bg-current"
-                  aria-hidden
-                />
-                {label.name}
-              </span>
-            ))}
-          </div>
-        </div>
-        {/* Due row: only the date badge. */}
-        <div className="flex h-5 shrink-0 items-center overflow-hidden">
-          {hasDueDate ? <DueBadge dueDate={card.dueDate as number} /> : null}
-        </div>
-        {/* Last line: meta badges (description presence, linked cards,
-          checklist progress) on the left, the priority beside the assignee's
-          avatar on the right. No overflow clipping here — the 24px avatar
-          was getting shaved by sub-pixel rounding; the card's own clip plus
-          the padding absorb any stray pixel. */}
-        <div className="mt-auto flex h-7 shrink-0 items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-1.5">
-            {hasDescription ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className={cn(
-                      "inline-flex h-5 items-center rounded-md border px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary",
-                      descriptionOnly &&
-                        "border-primary/40 bg-primary/10 text-primary",
-                    )}
-                    data-testid="card-description-badge"
-                    {...(descriptionOnly
-                      ? { "data-highlight": "description" }
-                      : {})}
-                  >
-                    <AlignLeft className="h-3.5 w-3.5" aria-hidden />
+                  <span className="no-hover:hidden absolute right-1.5 top-1.5 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                    <button
+                      type="button"
+                      aria-label={t("card.duplicate")}
+                      disabled={duplicateDisabled}
+                      className="flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                      onClick={(e) => {
+                        // Don't let the click open the card dialog.
+                        e.stopPropagation();
+                        onDuplicate(card.id);
+                      }}
+                    >
+                      <CopyPlus className="h-3.5 w-3.5" />
+                    </button>
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {descriptionOnly && snippetText
-                    ? snippetText
-                    : t("card.hasDescription")}
+                  {duplicateDisabled
+                    ? (duplicateDisabledReason ?? t("card.duplicate"))
+                    : t("card.duplicate")}
                 </TooltipContent>
               </Tooltip>
             ) : null}
-            {/* Linked-cards badges (TASK-46): both the red "Blocked" marker
-              and the link count open the linked-cards popover instead of
-              bubbling into the card dialog. */}
-            {linkFacts ? (
-              <LinkedCardsPopover boardId={boardId} facts={linkFacts} />
+            {onArchive && !isDragging ? (
+              confirmArchive ? (
+                <span
+                  data-testid="card-archive-confirm"
+                  className="absolute right-1.5 top-1.5 z-10 flex h-6 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    aria-label={t("card.archiveConfirmYes")}
+                    className="flex h-5 w-5 items-center justify-center rounded-md text-danger hover:bg-danger/10"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmArchive(false);
+                      onArchive(card.id);
+                    }}
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={t("card.archiveConfirmCancel")}
+                    className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmArchive(false);
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={t("card.archive")}
+                      data-testid="card-archive"
+                      className="no-hover:hidden absolute right-8 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 hover:bg-warning/10 hover:text-warning group-hover:opacity-100"
+                      onClick={(e) => {
+                        // Don't let the click open the card dialog.
+                        e.stopPropagation();
+                        setConfirmArchive(true);
+                      }}
+                    >
+                      <Archive className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("card.archive")}</TooltipContent>
+                </Tooltip>
+              )
+            ) : null}
+          </>
+        ) : null}
+        {compact ? (
+          <>
+            {/* Compact face (TASK-142): one line, no hover chrome, no
+                ResizeObserver. Everything else lives in the dialog, one
+                click away — the wall stays readable while a swarm writes. */}
+            {card.cover ? (
+              <div
+                aria-hidden
+                data-testid="card-cover"
+                data-cover-type={card.cover.type}
+                className="absolute inset-y-0 left-0 w-1"
+                style={{ background: coverBackground(card.cover) }}
+              />
+            ) : null}
+            <p
+              title={card.title}
+              data-testid="card-title"
+              className="min-w-0 flex-1 truncate text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]"
+            >
+              <HighlightedText text={card.title} query={highlight ?? ""} />
+            </p>
+            {labels.length > 0 ? (
+              <span
+                data-testid="card-labels"
+                role="img"
+                aria-label={labels.map((label) => label.name).join(", ")}
+                className="flex shrink-0 items-center gap-1"
+              >
+                {labels.slice(0, 3).map((label) => (
+                  <span
+                    key={label.id}
+                    aria-hidden
+                    title={label.name}
+                    className={cn(
+                      "h-2 w-2 rounded-full",
+                      LABEL_COLOR_DOT[label.color],
+                    )}
+                  />
+                ))}
+              </span>
+            ) : null}
+            {linkFacts?.blocked ? (
+              <span
+                data-testid="card-blocked"
+                role="img"
+                aria-label={t("card.links.blockedBadge")}
+                title={t("card.links.blockedTooltip")}
+                className="h-2 w-2 shrink-0 rounded-full bg-danger"
+              />
             ) : null}
             {total > 0 ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className={cn(
-                      "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
-                      done === total
-                        ? "border-success/40 bg-success/10 text-success"
-                        : "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-primary",
-                    )}
-                    data-testid="card-checklist-badge"
-                  >
-                    <ListTodo className="h-3.5 w-3.5" aria-hidden />
-                    {done}/{total}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t("checklist.badgeTooltip", { done, total })}
-                </TooltipContent>
-              </Tooltip>
+              <span
+                data-testid="card-checklist-badge"
+                title={t("checklist.badgeTooltip", { done, total })}
+                className={cn(
+                  "shrink-0 text-[11px] font-medium tabular-nums",
+                  done === total ? "text-success" : "text-muted-foreground",
+                )}
+              >
+                {done}/{total}
+              </span>
             ) : null}
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
             <PriorityBadge priority={priority} />
             {card.assigneeId ? (
               <AssigneeBadge assigneeId={card.assigneeId} boardId={boardId} />
             ) : null}
-          </div>
-        </div>
-        {/* Foreign-change highlight (TASK-36): a soft ring in the author's own
+            {/* Foreign-change dot only — the animated ring is full-face. */}
+            {foreignAuthor ? (
+              <span
+                aria-hidden="true"
+                data-foreign={foreignAuthor.userId}
+                className="janosik-foreign-dot pointer-events-none h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ backgroundColor: foreignColor }}
+              />
+            ) : null}
+          </>
+        ) : (
+          <>
+            {/* Cover: a slim top strip — same height for colors and gradients
+          (matches the label chip row scale). Absolutely positioned so the
+          fixed-height tile never reflows: it just paints the padding band. */}
+            {card.cover ? (
+              <div
+                aria-hidden
+                data-testid="card-cover"
+                data-cover-type={card.cover.type}
+                className="absolute inset-x-0 top-0 h-1.5"
+                style={{ background: coverBackground(card.cover) }}
+              />
+            ) : null}
+            {/* First line: the title owns ~75% of the tile, the labels clip
+          inside the remaining quarter (single line, fade at the cut). */}
+            <div className="flex h-5 shrink-0 items-center gap-2">
+              {/* `overflow-wrap:anywhere` (not just break-words) so a pasted URL
+            can't blow out the tile's intrinsic width. The full text stays in
+            the accessibility tree and a native `title` tooltip surfaces it,
+            only when truncated. */}
+              <p
+                ref={titleRef}
+                title={titleClamped ? card.title : undefined}
+                className="w-3/4 shrink-0 truncate break-words text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]"
+                data-testid="card-title"
+              >
+                <HighlightedText text={card.title} query={highlight ?? ""} />
+              </p>
+              <div
+                data-testid="card-labels"
+                className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,black_80%,transparent)]"
+              >
+                {labels.map((label) => (
+                  <span
+                    key={label.id}
+                    className={cn(
+                      "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                      LABEL_COLOR_CHIP[label.color],
+                    )}
+                  >
+                    <span
+                      className="h-1.5 w-1.5 rounded-full bg-current"
+                      aria-hidden
+                    />
+                    {label.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+            {/* Due row: only the date badge. */}
+            <div className="flex h-5 shrink-0 items-center overflow-hidden">
+              {hasDueDate ? (
+                <DueBadge dueDate={card.dueDate as number} />
+              ) : null}
+            </div>
+            {/* Last line: meta badges (description presence, linked cards,
+          checklist progress) on the left, the priority beside the assignee's
+          avatar on the right. No overflow clipping here — the 24px avatar
+          was getting shaved by sub-pixel rounding; the card's own clip plus
+          the padding absorb any stray pixel. */}
+            <div className="mt-auto flex h-7 shrink-0 items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-1.5">
+                {hasDescription ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className={cn(
+                          "inline-flex h-5 items-center rounded-md border px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary",
+                          descriptionOnly &&
+                            "border-primary/40 bg-primary/10 text-primary",
+                        )}
+                        data-testid="card-description-badge"
+                        {...(descriptionOnly
+                          ? { "data-highlight": "description" }
+                          : {})}
+                      >
+                        <AlignLeft className="h-3.5 w-3.5" aria-hidden />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {descriptionOnly && snippetText
+                        ? snippetText
+                        : t("card.hasDescription")}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : null}
+                {/* Linked-cards badges (TASK-46): both the red "Blocked" marker
+              and the link count open the linked-cards popover instead of
+              bubbling into the card dialog. */}
+                {linkFacts ? (
+                  <LinkedCardsPopover boardId={boardId} facts={linkFacts} />
+                ) : null}
+                {total > 0 ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className={cn(
+                          "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
+                          done === total
+                            ? "border-success/40 bg-success/10 text-success"
+                            : "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-primary",
+                        )}
+                        data-testid="card-checklist-badge"
+                      >
+                        <ListTodo className="h-3.5 w-3.5" aria-hidden />
+                        {done}/{total}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {t("checklist.badgeTooltip", { done, total })}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : null}
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <PriorityBadge priority={priority} />
+                {card.assigneeId ? (
+                  <AssigneeBadge
+                    assigneeId={card.assigneeId}
+                    boardId={boardId}
+                  />
+                ) : null}
+              </div>
+            </div>
+            {/* Foreign-change highlight (TASK-36): a soft ring in the author's own
           color for two seconds, or — under reduced motion — a static dot
           badge instead of the animated ring. */}
-        {foreignAuthor?.highlight ? (
-          <span
-            aria-hidden="true"
-            data-foreign={foreignAuthor.userId}
-            style={
-              {
-                "--janosik-foreign-color": foreignColor,
-              } as React.CSSProperties
-            }
-          >
-            <span
-              className="janosik-foreign-ring pointer-events-none absolute inset-0 rounded-lg"
-              style={{
-                boxShadow: `inset 0 0 0 2px color-mix(in srgb, ${foreignColor} 65%, transparent)`,
-              }}
-            />
-            <span
-              className="janosik-foreign-dot pointer-events-none absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full"
-              style={{ backgroundColor: foreignColor }}
-            />
-          </span>
-        ) : null}
+            {foreignAuthor?.highlight ? (
+              <span
+                aria-hidden="true"
+                data-foreign={foreignAuthor.userId}
+                style={
+                  {
+                    "--janosik-foreign-color": foreignColor,
+                  } as React.CSSProperties
+                }
+              >
+                <span
+                  className="janosik-foreign-ring pointer-events-none absolute inset-0 rounded-lg"
+                  style={{
+                    boxShadow: `inset 0 0 0 2px color-mix(in srgb, ${foreignColor} 65%, transparent)`,
+                  }}
+                />
+                <span
+                  className="janosik-foreign-dot pointer-events-none absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full"
+                  style={{ backgroundColor: foreignColor }}
+                />
+              </span>
+            ) : null}
+          </>
+        )}
       </article>
     </CardContextMenu>
   );

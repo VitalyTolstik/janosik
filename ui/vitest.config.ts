@@ -15,8 +15,11 @@ export default defineConfig({
     },
   },
   test: {
-    // vmThreads boots jsdom once for the whole run instead of per file.
-    pool: "vmThreads",
+    // Locally the vm pool boots jsdom once and is fastest. On CI the
+    // 2 vCPU / 7 GB runner killed a vm worker mid-start on the larger suite
+    // ("Worker exited unexpectedly with exit code 1", reproducible only
+    // there); a process per file reaps reliably, so CI uses forks.
+    pool: process.env.CI ? "forks" : "vmThreads",
     environment: "jsdom",
     globals: true,
     // Lazy chunks (calendar, editor) plus userEvent can exceed the 5s
