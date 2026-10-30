@@ -775,6 +775,59 @@ describe("Activity & comments API (e2e)", () => {
     });
   });
 
+  describe("watch feed (TASK-157)", () => {
+    it("omits a command that changed nothing from the board feed", async () => {
+      const { boardId, cardId } = await boardWithCard("No-op board", "no");
+      // Renaming the card to its own title changes nothing: the reducer is a
+      // no-op, so the command writes no `touches` and must not appear.
+      await apply(
+        boardId,
+        scoped(boardId, { type: "UPDATE_CARD", cardId, title: "Card" }),
+      );
+      const quiet = await boardFeed(boardId);
+      expect(
+        quiet.items.some(
+          (entry) => entry.type === "UPDATE_CARD" && entry.source === "command",
+        ),
+      ).toBe(false);
+
+      // A real change still lands.
+      await apply(
+        boardId,
+        scoped(boardId, { type: "UPDATE_CARD", cardId, title: "Renamed" }),
+      );
+      const loud = await boardFeed(boardId);
+      expect(loud.items.some((entry) => entry.type === "UPDATE_CARD")).toBe(
+        true,
+      );
+    });
+
+    it("gives a membership change a diff, not a bare line", async () => {
+      const boardId = await createBoard("Membership feed board");
+      await invite(boardId, MEMBER_EMAIL, "MEMBER", memberToken);
+      const invited = await boardFeed(boardId);
+      const inviteEntry = invited.items.find(
+        (entry) => entry.type === "member_invited",
+      );
+      expect(inviteEntry?.detail).toBe(MEMBER_EMAIL);
+
+      await server()
+        .patch(`/api/v1/boards/${boardId}/members/${memberId}`)
+        .set(auth(adminToken))
+        .send({ role: "ADMIN" })
+        .expect(200);
+      const after = await boardFeed(boardId);
+      const roleChange = after.items.find(
+        (entry) => entry.type === "member_role_changed",
+      );
+      expect(roleChange?.changes?.[0]).toMatchObject({
+        field: "role",
+        from: "MEMBER",
+        to: "ADMIN",
+      });
+    });
+  });
+
   describe("delta catch-up", () => {
     it("returns only commands newer than since — no aggregate refetch needed", async () => {
       const { boardId } = await boardWithCard("Delta board", "dl");

@@ -98,6 +98,14 @@ const COMMAND_KEYS: Record<string, MessageKey> = {
   RESTORE_BOARD: "activity.board-restored",
 };
 
+/** Membership activity types (invite / role / expiry / removal) → keys. */
+const MEMBERSHIP_KEYS: Record<string, MessageKey> = {
+  member_invited: "activity.member-invited",
+  member_role_changed: "activity.member-role-changed",
+  member_expiry_changed: "activity.member-expiry-changed",
+  member_removed: "activity.member-removed",
+};
+
 /** Field label keys for the "from → to" lines. */
 export const FIELD_KEYS: Record<string, MessageKey> = {
   title: "history.field.title",
@@ -116,6 +124,8 @@ export const FIELD_KEYS: Record<string, MessageKey> = {
   checklistItem: "history.field.checklistItem",
   comment: "history.field.comment",
   cover: "history.field.cover",
+  role: "history.field.role",
+  expiresAt: "history.field.expiresAt",
 };
 
 /**
@@ -132,7 +142,7 @@ export function formatChangeValue(
   memberName?: (userId: string) => string,
 ): string {
   if (value === null) return "—";
-  if (field === "dueDate") {
+  if (field === "dueDate" || field === "expiresAt") {
     const at = Date.parse(value);
     if (Number.isFinite(at)) return formatDate(at, lang, hour12);
   }
@@ -251,6 +261,11 @@ export function sentenceFor(
   }
   if (entry.type === "comment_deleted") {
     return { key: "activity.comment-deleted" };
+  }
+
+  const membership = MEMBERSHIP_KEYS[entry.type];
+  if (membership !== undefined) {
+    return { key: membership, params: { detail: entry.detail ?? "" } };
   }
 
   return {
