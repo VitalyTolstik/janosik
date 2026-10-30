@@ -53,8 +53,8 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   never uses. The `janosik` skill also defines a canonical card shape a swarm
   can pick up cold: description sections (`Why` / `Scope` / `Acceptance
   criteria` / `Out of scope` / `Verify`), a `Definition of Done` checklist,
-  typed comments (`[status]` / `[question]` / `[blocker]` / `[evidence]` /
-  `[handoff]`) and reserved `agent:*` state labels.
+  typed comments (a structured `kind`: `status` / `question` / `blocker` /
+  `evidence` / `handoff`) and reserved `agent:*` state labels.
 - **Card claims with a lease (TASK-157).** A `CLAIM_CARD` command takes a
   temporary work lease on a card (`claimedBy` + `leaseUntil`), so a swarm of
   agents can coordinate without two of them grabbing the same card: the server
@@ -80,6 +80,32 @@ specific release, set `JANOSIK_TAG` in `.env` (see
 - **Longer checklist items (TASK-157).** A checklist item's text limit rose
   from 200 to 500 characters, so an agent can park a sub-prompt or an exact
   command in an item.
+- **Compare-and-set writes and idempotent creates (TASK-157).** Every
+  command-log write tool takes an optional `expectedVersion` (the board `seq`
+  from `janosik_get_board`): pass it and the write is refused with a version
+  conflict if the board changed since, instead of silently overwriting another
+  agent's edit. Create tools take a client id (`cardId`, `checklistId`, …) that
+  doubles as the idempotency key, so a retried call returns the first entity
+  rather than a duplicate.
+- **Comment kinds (TASK-157).** A comment carries a structured `kind` (`note`
+  by default, or `status` / `question` / `blocker` / `evidence` / `handoff`), so
+  a thread is filterable by type instead of by a text prefix:
+  `POST /cards/:id/comments` accepts `kind`, `GET /cards/:id/comments?kind=`
+  filters, the MCP tools pass and filter it, and the card shows a kind badge
+  with a picker in the composer.
+- **Search across the whole card (TASK-157).** `GET /boards/:id/search?q=`
+  matches a card's title, description, a checklist item or a comment; the MCP
+  `janosik_search_cards` and the UI search also match checklist items. Comments
+  (which are not in the board aggregate) are reached through the endpoint.
+- **Read projection (TASK-157).** `janosik_get_board` and
+  `janosik_search_cards` take `detail: "summary"` / `"full"`, so scanning a
+  board whose cards carry 64k documents stays small.
+- **Ready-to-work and a Definition-of-Done gate (TASK-157).**
+  `janosik_list_ready_cards` returns the cards an agent can pick up (Backlog,
+  unassigned, unclaimed, unblocked, by priority); `janosik_wait_for_work` blocks
+  until one appears so idle agents need not poll. `janosik_move_card` refuses to
+  move a card into the board's last (Done) column while its `Definition of Done`
+  checklist has unticked items or it has no `evidence` comment.
 
 ### Security
 

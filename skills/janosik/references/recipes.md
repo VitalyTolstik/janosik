@@ -12,11 +12,12 @@ Claiming is the first write of any work, so it gets its own recipe.
    `leaseUntil`. A live claim (lease still in the future) means someone else is on
    it.
 2. **Claim.** `janosik_claim_card` (default 15 min; `leaseMs` for a longer task,
-   clamped to 1 min–24 h). On success, comment `[status] Claimed until <time>`.
+   clamped to 1 min–24 h). On success, comment `Claimed until <time>` with
+   `kind="status"`.
 3. **Refused?** Another member holds it. Do not work the card: either
-   `janosik_add_comment` a `[question]` naming the holder and pick a different
-   card, or wait for the lease to lapse — it self-expires, so a dead agent never
-   blocks the board.
+   `janosik_add_comment` a `kind="question"` comment naming the holder and pick a
+   different card, or wait for the lease to lapse — it self-expires, so a dead
+   agent never blocks the board.
 4. **Renew a long task.** Re-run `janosik_claim_card` before the lease runs out,
    and comment that you renewed.
 5. **Release when done.** `janosik_release_card` when you finish or hand the card
@@ -25,8 +26,11 @@ Claiming is the first write of any work, so it gets its own recipe.
 ## Recipe: complete a feature card
 
 1. **Orient.** `janosik_list_boards` → `janosik_get_board` (note the column
-   names and your role) → `janosik_get_card` for the target card →
-   `janosik_list_comments` and `janosik_card_activity` for its story so far.
+   names and your role, and the board `seq`) → `janosik_get_card` for the target
+   card → `janosik_list_comments` and `janosik_card_activity` for its story so
+   far. If you have no target card, `janosik_list_ready_cards` lists what is
+   unassigned, unclaimed and unblocked; `janosik_wait_for_work` blocks until one
+   appears.
 2. **Claim it.** `janosik_claim_card` (default 15 min; pass `leaseMs` for longer)
    — refused if another member holds a live lease, in which case follow the claim
    recipe. Then `janosik_whoami` for your id → `janosik_set_card_assignee` →
@@ -42,9 +46,10 @@ Claiming is the first write of any work, so it gets its own recipe.
    is next. New subtasks you discover: `janosik_add_checklist_item`.
 5. **Dependencies.** If this card blocks or is blocked by another:
    `janosik_add_card_link`.
-6. **Finish.** When every item is ticked or explained:
-   `janosik_add_comment` with the `[evidence]` result and its proof →
-   `janosik_move_card` to **Review**.
+6. **Finish.** When every item is ticked or explained: `janosik_add_comment`
+   with the result and its proof (`kind="evidence"`) → `janosik_move_card` to
+   **Review**. Moving into the board's last (Done) column is refused while the
+   `Definition of Done` has unticked items or there is no `evidence` comment.
 7. **Close.** Only after verification (your test, or a human's approval):
    `janosik_move_card` to **Done** → `janosik_release_card` so the next agent can
    take it. If it turns out to be wrong here, jump to the bug recipe.

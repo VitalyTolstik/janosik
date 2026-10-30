@@ -26,6 +26,7 @@ design (they are not reducer actions). Content lives in the command log.
 | `PATCH`  | `/boards/:id/members/:userId` | `ADMIN`     | `UpdateMemberDto` | `BoardMemberDto`   |
 | `DELETE` | `/boards/:id/members/:userId` | `ADMIN`     | none              | `{ status: "ok" }` |
 | `GET`    | `/boards/:id/export`          | member      | none              | `BoardEnvelope`    |
+| `GET`    | `/boards/:id/search`          | member      | query `q`         | `{ cardIds: string[] }` |
 
 `GET /boards` lists the boards where the caller is an accepted member, newest
 first, each with a card and column counter and the caller's role. A pending
@@ -47,6 +48,11 @@ envelope answers `400`. The envelope is:
 response header carrying the command `seq` the aggregate reflects. A client
 resumes the SSE stream from that value. An unknown or soft-deleted board
 answers `404`.
+
+`GET /boards/:id/search?q=` returns `{ cardIds }` — the cards whose title,
+description, a checklist item or a comment contains `q` (case-insensitive
+substring). It reaches comment text, which is not part of the board aggregate.
+A query longer than 200 characters answers `400`.
 
 `DELETE /boards/:id` soft-deletes the board and cascades the flag to its
 children. Memberships are hard-deleted; live shares are revoked; snapshot
@@ -90,17 +96,18 @@ owning board from the card or comment and enforces membership.
 | Method   | Path                      | Auth / role        | Request            | Response           |
 | -------- | ------------------------- | ------------------ | ------------------ | ------------------ |
 | `POST`   | `/cards/:cardId/comments` | `ADMIN` / `MEMBER` | `CreateCommentDto` | `CommentDto`       |
-| `GET`    | `/cards/:cardId/comments` | member             | none               | `CommentPage`      |
+| `GET`    | `/cards/:cardId/comments` | member             | query `cursor`, `limit`, `kind` | `CommentPage`      |
 | `DELETE` | `/comments/:commentId`    | `ADMIN` / `MEMBER` | none               | `{ status: "ok" }` |
 
 `POST` takes no query parameters; the body is `CreateCommentDto`. A blank
-text answers `400`. When `commandId` is supplied, a retry that reuses it returns
-the first comment instead of appending a duplicate. A `commandId` already
-used on another card answers `409`.
+text answers `400`, and an unknown `kind` answers `400`. When `commandId` is
+supplied, a retry that reuses it returns the first comment instead of appending
+a duplicate. A `commandId` already used on another card answers `409`.
 
-`GET` accepts `?cursor=` (opaque) and `?limit=`. The default limit is 50, the
-maximum is 100; a limit outside `1` to `100` answers `400`. Pages are
-newest-first and `nextCursor` is `null` at the end.
+`GET` accepts `?cursor=` (opaque), `?limit=` and `?kind=` (one comment kind).
+The default limit is 50, the maximum is 100; a limit outside `1` to `100`
+answers `400`, and an unknown `kind` answers `400`. Pages are newest-first and
+`nextCursor` is `null` at the end.
 
 `DELETE` removes a comment. Only the author may delete their own comment;
 another author answers `403`.
@@ -330,10 +337,11 @@ Required tri-state used below:
 | Field       | Type   | Required | Constraints                                                |
 | ----------- | ------ | -------- | ---------------------------------------------------------- |
 | `text`      | string | required | non-empty, at most 10000 characters                        |
+| `kind`      | string | optional | one of `note`, `status`, `question`, `blocker`, `evidence`, `handoff` (default `note`) |
 | `commandId` | string | optional | at most 64 characters, `^[A-Za-z0-9_-]+$`; idempotency key |
 
 ```json
-{ "text": "Looks good", "commandId": "c-1" }
+{ "text": "Looks good", "kind": "evidence", "commandId": "c-1" }
 ```
 
 ### CreateShareDto

@@ -97,63 +97,74 @@ The command that proves it: `npm test`, a build, a smoke check.
 Set the **task contract** with `janosik_set_card_task_spec` (`acceptanceCriteria`:
 "change applied", "nothing regressed").
 
+Each comment carries a `kind` — pass it to `janosik_add_comment` (`status`,
+`question`, `blocker`, `evidence`, `handoff`); omit it for a plain note. The
+text is written plainly; the kind is the field, not a prefix.
+
 ## Comment: status
 
 ```
-[status] Plan — <the approach in one or two lines>. Steps: <a, b, c>.
-[status] <what is done>, <what is in flight>. Next: <what comes next>.
+Plan — <the approach in one or two lines>. Steps: <a, b, c>.
+<what is done>, <what is in flight>. Next: <what comes next>.
 ```
 
 ## Comment: claim
 
 ```
-[status] Claimed until <lease expiry> — <how I read the task>.
+Claimed until <lease expiry> — <how I read the task>.
 ```
+(kind `status`)
 
 ## Comment: claim refused
 
 ```
-[question] @<holder> holds a live claim on this card (lease to <time>). Leaving it
-to them; picking up <another card> instead.
+@<holder> holds a live claim on this card (lease to <time>). Leaving it to them;
+picking up <another card> instead.
 ```
+(kind `question`)
 
 ## Comment: evidence
 
 ```
-[evidence] <what shipped>, verified by <test/commit/link>. <Any number that
-proves it>. Definition of done met.
+<what shipped>, verified by <test/commit/link>. <Any number that proves it>.
+Definition of done met.
 ```
+(kind `evidence`)
 
 ## Comment: bug found (the "return it" note)
 
 ```
-[blocker] <what is wrong>.
+<what is wrong>.
 - Reproduce: <steps or command>
 - Expected: <x>. Actual: <y>.
 - Tried: <what you attempted>.
 Returning the card to <column>; remaining work is in the task contract.
 ```
+(kind `blocker`)
 
 ## Comment: blocked
 
 ```
-[blocker] <the blocker>. Needs <a decision / an access / another card>.
-Not moving this forward until that lands; see <link>.
+<the blocker>. Needs <a decision / an access / another card>. Not moving this
+forward until that lands; see <link>.
 ```
+(kind `blocker`)
 
 ## Comment: question
 
 ```
-[question] <the decision you need>, from <a human / another agent>. Blocking
-until answered; card left in <column>.
+<the decision you need>, from <a human / another agent>. Blocking until answered;
+card left in <column>.
 ```
+(kind `question`)
 
 ## Comment: handoff to review
 
 ```
-[handoff] Ready for review — <what to check>, on <board/column>. Evidence:
-<link or number>. Please look at <the risky part>.
+Ready for review — <what to check>, on <board/column>. Evidence: <link or number>.
+Please look at <the risky part>.
 ```
+(kind `handoff`)
 
 ## Label conventions
 

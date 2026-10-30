@@ -3,10 +3,12 @@
 An [MCP](https://modelcontextprotocol.io) server for [Janosik](https://github.com/VitalyTolstik/janosik),
 the self-hosted Kanban board. It lets an AI agent — Claude, Cursor, VS Code,
 opencode, Codex or any other MCP client — read and drive a board with a
-personal API key: create and move cards, claim one with a self-expiring lease
-so two agents never fight over it, set its machine-readable task contract,
-comment, tick checklists, assign people and link cards. Member, share-link and
-account tools are available too, but opt-in.
+personal API key: find the work that is ready to pick up, create and move cards,
+claim one with a self-expiring lease so two agents never fight over it, set its
+machine-readable task contract, comment with a typed kind, tick checklists,
+assign people and link cards. Writes can be pinned to the board version they
+read (compare-and-set), so a concurrent edit is refused, not clobbered. Member,
+share-link and account tools are available too, but opt-in.
 
 Writes go through the same command log the UI uses, so changes are undoable
 and stream live to anyone watching the board. Every command and activity entry
@@ -87,7 +89,8 @@ truncated into JSON that does not parse.
 `janosik_set_card_cover`, `janosik_claim_card`, `janosik_release_card`,
 `janosik_set_card_task_spec`,
 `janosik_archive_card`, `janosik_unarchive_card`,
-`janosik_delete_card`, `janosik_search_cards`
+`janosik_delete_card`, `janosik_search_cards`, `janosik_list_ready_cards`,
+`janosik_wait_for_work`
 
 **Labels** — `janosik_list_labels`, `janosik_create_label`,
 `janosik_rename_label`, `janosik_set_label_color`, `janosik_delete_label`,
@@ -125,14 +128,29 @@ an API key, so an agent can never mint itself a new one.
 - **No silent no-ops.** A write that changed nothing — an id that is not on
   the board, or a value that was already set — comes back as an error, so an
   agent never reads "done" for a write that did nothing.
-- **Concurrency.** Tools that compute a command from a read (`move_card`,
-  `move_column`, `duplicate_column`, `remove_card_link`) send it with
-  `ifMatch` on the board version they read; if another writer got there
-  first, they re-read and retry. `janosik_update_card` takes an optional
+- **Compare-and-set.** Tools that compute a command from a read (`move_card`,
+  `move_column`, `duplicate_column`, `remove_card_link`) send it with `ifMatch`
+  on the board version they read; if another writer got there first, they
+  re-read and retry. Every mutating tool also takes an optional
+  `expectedVersion` (the board `seq` from `janosik_get_board`): pass it and the
+  write is refused with a version conflict if the board changed since, instead
+  of overwriting another agent's edit. `janosik_update_card` keeps
   `expectedDescription` for compare-and-set edits of shared text.
 - **Retries are safe.** A command that fails on the network is retried with
   the same idempotency key, so a write that did commit is never applied twice.
-  Every request has a timeout.
+  Create tools take a client id (`cardId`, `checklistId`, …) that doubles as
+  the key, so a retried create returns the first entity, not a duplicate. Every
+  request has a timeout.
+- **Work discovery.** `janosik_list_ready_cards` lists the cards an agent can
+  pick up (Backlog column, unassigned, unclaimed, unblocked, by priority);
+  `janosik_wait_for_work` blocks until one appears, so an idle agent does not
+  poll.
+- **A Definition-of-Done gate.** `janosik_move_card` refuses to move a card
+  into the board's last (Done) column while its `Definition of Done` checklist
+  has unticked items or it has no `evidence` comment.
+- **Typed comments.** `janosik_add_comment` takes a `kind` (`status`,
+  `question`, `blocker`, `evidence`, `handoff`; omit for a plain note) and
+  `janosik_list_comments` filters by it.
 - **`create_card` validates first.** The due date and assignee are checked
   before the card exists; if a later field still fails, the error names the
   card that was created so the agent fixes it instead of creating a duplicate.

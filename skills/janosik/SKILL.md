@@ -42,8 +42,14 @@ Never guess an id. Start every session the same way:
 
 1. `janosik_list_boards` — find the board (and confirm your role).
 2. `janosik_get_board` — read its columns, cards and labels. On a large board,
-   pass `columnId` to read one column at a time.
-3. For the card you are about to touch: `janosik_get_card` for its fields,
+   pass `columnId` to read one column at a time, or `detail: "summary"` to skip
+   each card's description and checklists. The reply carries the board version
+   (`seq`) you pin writes with.
+3. To find work rather than a specific card: `janosik_list_ready_cards` returns
+   the cards that are unassigned, unclaimed and unblocked, most urgent first;
+   `janosik_wait_for_work` blocks until one appears, so an idle agent makes one
+   call instead of polling.
+4. For the card you are about to touch: `janosik_get_card` for its fields,
    checklists and links, `janosik_list_comments` for the conversation so far,
    and `janosik_card_activity` for what already happened to it.
 
@@ -91,8 +97,9 @@ Two agents editing one card produce a mess. So the first write is always a
   (your own user id, from `janosik_whoami` or `janosik_list_members`), move it to
   **In Progress** with `janosik_move_card`, and drop a one-line comment:
   `Picking this up.` — a heartbeat the other agents and the humans can see.
-- **Refused?** Do not silently take it. Leave a `[question]` or `[blocker]`
-  comment naming the holder, then pick a different card — or wait out the lease.
+- **Refused?** Do not silently take it. Leave a `kind=question` or
+  `kind=blocker` comment naming the holder, then pick a different card — or wait
+  out the lease.
 - **When you are done** (or handing the card off), `janosik_release_card` so the
   next agent can start. Forget, and the lease simply lapses.
 
@@ -154,16 +161,20 @@ description; omit a field to leave it unchanged, pass an empty list to clear it.
 bar, but the field is the contract: a card is Done only when every item holds — an
 unmet one is explained in a comment, never silently dropped.
 
-**Typed comments.** Start every comment with a bracketed kind, so the thread is
-machine-readable and filterable:
+**Typed comments.** Every comment carries a structured `kind`, so the thread is
+machine-readable and filterable — pass `kind` to `janosik_add_comment`, and
+filter with `kind` on `janosik_list_comments`:
 
-| Kind | For |
+| `kind` | For |
 | --- | --- |
-| `[status]` | picking up, a step done, a plan change |
-| `[question]` | a decision you need from a human or another agent |
-| `[blocker]` | something stopped you; the card should move back |
-| `[evidence]` | the proof — a commit, a test, a number, a screenshot |
-| `[handoff]` | a short summary when you pass the card on: the next agent reads this plus the description, not the whole thread |
+| `status` | picking up, a step done, a plan change |
+| `question` | a decision you need from a human or another agent |
+| `blocker` | something stopped you; the card should move back |
+| `evidence` | the proof — a commit, a test, a number, a screenshot |
+| `handoff` | a short summary when you pass the card on: the next agent reads this plus the description, not the whole thread |
+
+Omit `kind` for an ordinary note. The kind is a field, not a text prefix — write
+the text plainly and let the field carry the type.
 
 **Reserved state labels.** Beyond the board's own labels, three reserved ones let
 anyone filter the swarm at a glance — `agent:blocked` (stuck, needs help),
@@ -178,9 +189,9 @@ meaningful step gets a comment.** Not a log of every keystroke — a short,
 structured note at each turn:
 
 ```
-[status] Plan — split the export into a query and a formatter; add a CSV test.
-[status] Query done, formatter in progress; blocked on the date format.
-[evidence] Shipped in `#482`; export matches the fixture. Definition of done met.
+kind=status:  Plan — split the export into a query and a formatter; add a CSV test.
+kind=status:  Query done, formatter in progress; blocked on the date format.
+kind=evidence: Shipped in `#482`; export matches the fixture. Definition of done met.
 ```
 
 Use `janosik_add_comment`. Why it matters: the comment thread *is* the card's
@@ -239,7 +250,11 @@ Before you move a card to **Review** or **Done**:
 
 Then move it to **Review** (`janosik_move_card`) and comment that it is ready,
 naming what a reviewer should check. Only move to **Done** when the work is
-verified — by you with a test, or by the human who approved it.
+verified — by you with a test, or by the human who approved it. `janosik_move_card`
+**enforces** this on the way into the board's last (Done) column: a card whose
+`Definition of Done` checklist still has unticked items, or which has no
+`evidence` comment, is refused — tick the items and post the evidence instead of
+forcing the move.
 
 ## House rules
 
@@ -253,6 +268,13 @@ verified — by you with a test, or by the human who approved it.
   error — that means your id was wrong or the value was already set. Re-read the
   board rather than assuming it worked; never report success the board did not
   confirm.
+- **Pin your writes when it matters.** `janosik_get_board` returns the board
+  version (`seq`); pass it as `expectedVersion` on a write to refuse the write if
+  another agent changed the board since, instead of silently clobbering their
+  edit. On a version conflict, re-read and retry.
+- **Retries are safe.** Create tools take a client id (`cardId`, `checklistId`,
+  `itemId`, `columnId`, `labelId`); pass one and a retried call returns the first
+  entity instead of a duplicate.
 - **Stay in your lane.** Create and manage boards, members, invitations and
   share links only if the operator enabled those tools and the user asked. The
   default tool set is for working cards.
