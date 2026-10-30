@@ -50,6 +50,14 @@ description: История релизов и схема версиониров�
   BullMQ (mail, transcode, maintenance, media, exports, comms, demo), вход
   через OAuth (Google и Yandex), почтовые сценарии (подтверждение, смена,
   шаблоны) и fan-out через Redis для многоузлового реального времени.
+- **Agent-ready карточки (TASK-157).** Описание карточки теперь её документ:
+  лимит поднят с 10к до 64к символов — 10к было наследием бюджета localStorage
+  в 5 МБ офлайн-режима, который серверный режим не использует. Скилл `janosik`
+  также задаёт каноническую форму карточки, которую рой подхватывает без
+  человека: секции описания (`Why` / `Scope` / `Acceptance criteria` /
+  `Out of scope` / `Verify`), чек-лист `Definition of Done`, типизированные
+  комментарии (`[status]` / `[question]` / `[blocker]` / `[evidence]` /
+  `[handoff]`) и зарезервированные метки `agent:*`.
 
 ### Security
 

@@ -1033,8 +1033,8 @@ model Comment {
   cardId    String
   author    User     @relation(fields: [authorId], references: [id])
   authorId  String
-  text      String   @db.VarChar(2000)   // LIMITS.comment — plain text,
-                                         // не markdown (TASK-37, §7.6.1)
+  text      String   @db.Text            // LIMITS.comment (10000) — plain
+                                         // text, не markdown (TASK-37, §7.6.1)
   deletedAt DateTime?                    // soft-delete (§7.0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3688,6 +3688,117 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   улучшения (если подтвердятся) без функциональных регрессий; MCP
   `test`/`typecheck`/`lint` зелёные; результат записан в `docs/PERF-BASELINE.md`.
 - **Зависимости:** нет; логично делать после §7.14 (144/145), но не блокирует.
+
+---
+
+### 7.17. Агент-реди борда (A2A): контракт задачи и координация роя (TASK-157)
+
+> **Зачем.** Janosik — рабочая среда для роя ИИ-агентов (MCP + скилл `janosik`),
+> но модель карточки до сих пор спроектирована под человека. Описание урезано до
+> 10к — это наследие localStorage-бюджета 5 МБ офлайн-режима (`persistence.ts`),
+> который в серверном режиме уже неактуален (`BoardContext.tsx:708` пишет в
+> localStorage только вне server mode). Задача — это проза, которую каждый агент
+> перепарсивает заново. Координации нет вовсе: `assignee` совещательный, два агента
+> берут одну карточку и пишут поверх друг друга. Чтобы рой работал параллельно и
+> без гонок, нужны три вещи: **вместительное описание**, **машинно-читаемый
+> контракт задачи** и **атомарный захват карточки**. Стейл-ссылки на «2000» в
+> `ROADMAP.md:1036` и `AGENT.md:465` (по факту `LIMITS.comment` = 10к) — побочный
+> симптом того же разъезда.
+>
+> **Замечание.** Это не про «+символы». 64к описания × 2 байта (кириллица) ≈ 128 КБ
+> — в 15× меньше лимита одной команды (`MAX_COMMAND_BYTES` = 2 МБ). Узкое место
+> роя — координация и объём чтения, а не запись.
+
+#### TASK-157 — `agent-ready-board` · Описание 64к + конвенции + контракт + координация
+
+- **Зачем:** снять лимит описания, дать агентам машинно-читаемый контракт задачи и
+  убрать гонки за карточку — чтобы рой агентов работал на борде параллельно и
+  оставлял проверяемый след.
+
+- **Что:**
+  **A. Описание 64к (одна константа).** `LIMITS.description` 10к → 64к. Все слои
+  читают константу: UI-`maxLength` + клэмп + тост, редьюсер (`board-reducer.ts`),
+  `validate` (action + restore), `migrate`, MCP-zod, бэкенд через валидацию команд.
+  Обновить тесты (`board-reducer.test`, `migrate.test`, `validate.test`,
+  `DataSafetyBanner.test`) и `SNAPSHOT_MAX` (= `LIMITS.description`); обоснование —
+  в комментарии константы.
+  **B. Слой 0 — конвенции (без схемы, работает уже сегодня).**
+  1. Фикс стейл-доков: `ROADMAP.md:1036`, `AGENT.md:465` — «2000» → актуальный
+     `LIMITS.comment`.
+  2. «Agent-ready карточка» — зарезервированный формат описания: `## Why`,
+     `## Scope`, `## Acceptance criteria` (чек-боксы), `## Out of scope`,
+     `## Verify` (точная команда).
+  3. Чек-лист с фиксированным заголовком `Definition of Done` — «прошло» = все
+     пункты отмечены.
+  4. Типизированные комментарии префиксом: `[status] [question] [blocker]
+     [evidence] [handoff]`; `[handoff]` — обязательный короткий summary при
+     передаче (следующий агент читает его + description, а не весь тред).
+  5. Зарезервированные метки состояния: `agent:blocked`, `agent:needs-human`,
+     `agent:verified` — статус роя видно одним фильтром.
+  **C. Слой 1 — схема + команды (главный выигрыш).**
+  6. Атомарный захват с лизингом: `CLAIM_CARD {cardId, leaseMs}` → поля `claimedBy`/
+     `leaseUntil`, авто-истечение, отказ если держит живая лизия — убирает гонки роя.
+  7. Контракт как данные: `acceptanceCriteria: string[]` + `definitionOfDone: string[]`
+     (или единый `taskSpec`) — агент читает машинно, без парсинга markdown.
+  8. `actorType: "human" | "agent"` + отдельный API-токен на каждого агента (токены
+     уже есть) — реальная атрибуция в ленте; скоупы токена (доска, read/write) и
+     rate-limit на токен.
+  **D. Слой 2 — надёжность.**
+  9. CAS на все мутации (`expectedVersion`/ETag): сейчас только `expectedDescription`
+     у `update_card` — идемпотентные ретраи без затирания чужой правки.
+  10. `kind` комментария в схеме (`note|status|question|blocker|evidence|handoff`)
+      вместо префикса — фильтр «только блокеры/вопросы».
+  11. Поиск по комментариям и пунктам чек-листов (сейчас только title/description).
+  12. DoD-гейт на Done: сервер/MCP отказывает `move → Done`, пока в `Definition of
+      Done` есть непунктирнутые пункты или нет `[evidence]`-коммента (анти-«зелёный
+      забор из вранья»).
+  **E. Слой 3 — гигиена.**
+  13. `checklistItem` 200 → 500 (агенты кладут туда под-промпты); soft-кап/архивация
+      тредов; WIP- и rate-limit учитывают агентов.
+  14. Idempotent-создание: клиентские id для карточек/пунктов/комментариев, чтобы
+      ретрай не плодил дубликаты (команды уже идемпотентны по `commandId`).
+  15. «Ready to work» — запрос: unblocked + unassigned + Backlog, по приоритету —
+      откуда агенты берут работу.
+  16. Read-projection / summary для чтения доски: `fields=`/краткий режим в
+      `get_board`/`search_cards`, чтобы 64к-описания не раздували ответ. **Следствие
+      A — делать вместе с ним**, иначе рост лимита ломает bulk-чтение.
+  17. Сигнал «есть работа»: SSE/вебхук при входе карточки в Backlog — чтобы
+      простаивающие агенты не поллили.
+  **F. Документация и сайт (после реализации).**
+  18. Доки en+ru: `docs/mcp.md` — agent-ready формат, `Definition of Done`,
+      типизированные комменты, `CLAIM_CARD`, `taskSpec`/`acceptanceCriteria`,
+      per-agent токены и скоупы, «Ready to work»; `docs/user-guide/cards.md` —
+      новый лимит описания 64к и разделы контракта; `docs/api/commands.md` —
+      `CLAIM_CARD` и новые поля; `docs/api/rest.md`/`index.md` — лимиты и поиск
+      по комментам; `docs/changelog.md` — запись. Плюс `AGENT.md` и скилл
+      `janosik/SKILL.md` + `references/`.
+  19. Сайт: фича-строка «для ИИ-агентов / MCP» на лендинге (`HomePage.astro` +
+      `ui.ts` en/ru) и, если меняется вид карточки, — переснять затронутые
+      скрины/клипы (§7.12 пайплайн).
+
+- **Трогаем:** `shared/src/types/kanban.ts` (`LIMITS`, `Card`), `shared/src/store/
+  {validate,board-reducer,migrate}.ts`, `backend/prisma/schema.prisma` (+миграция),
+  `backend/src/commands/{command-writers,command-details}.ts`,
+  `backend/src/activity/*`, `mcp/src/tools/{cards,comments}.ts`, `mcp/src/render.ts`,
+  `mcp/src/client.ts`, `ui/src/components/editor/DescriptionEditor.tsx`,
+  `ui/src/components/board/CardDialog.tsx`, `ui/src/utils/persistence.ts`,
+  `site/src/content/docs/{docs,ru/docs}/{mcp,user-guide/cards,api/commands,api/rest,api/index,changelog}.md`,
+  `site/src/components/pages/HomePage.astro`, `site/src/i18n/ui.ts`, скилл
+  `janosik/SKILL.md` + `references/`, `AGENT.md`, `ROADMAP.md`.
+
+- **DoD:** `LIMITS.description = 64000`, все шесть слоёв обновлены; конвенции
+  зафиксированы в `AGENT.md` и скилле; `CLAIM_CARD` с лизингом (тесты на гонку и
+  истечение); `acceptanceCriteria`/`definitionOfDone` (или `taskSpec`); `actorType`
+  + скоупы токенов; CAS на всех мутирующих тулзах; поиск по комментам/чек-листам;
+  DoD-гейт на Done; read-projection; гейты `ui`/`backend`/`shared`/`mcp`
+  (test/typecheck/lint/build) зелёные; `prisma migrate dev` применяется чисто;
+  строки UI — en+ru; доки en+ru (`mcp`, `cards`, `commands`, `rest`, `changelog`)
+  и сайт обновлены (лендинг + доки), затронутые скрины/клипы пересняты; §1.1 и
+  §1.2 обновлены.
+
+- **Зависимости:** TASK-154 (`mcp-perf-bench` — батч-тул роя, §7.16); логично после
+  §7.14. **Порядок:** A+B → C → D → E (каждый слой — отдельный PR; A+B можно
+  отдельным PR сразу).
 
 ---
 

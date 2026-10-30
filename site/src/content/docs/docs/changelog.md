@@ -47,6 +47,14 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   (mail, transcode, maintenance, media, exports, comms, demo), OAuth login
   (Google and Yandex), email flows (verification, change, templates), and Redis
   fan-out for multi-node realtime.
+- **Agent-ready cards (TASK-157).** The card description is now the card's
+  document: the limit is raised from 10k to 64k characters — 10k was a leftover
+  of the 5 MB localStorage budget of local/offline mode, which server mode
+  never uses. The `janosik` skill also defines a canonical card shape a swarm
+  can pick up cold: description sections (`Why` / `Scope` / `Acceptance
+  criteria` / `Out of scope` / `Verify`), a `Definition of Done` checklist,
+  typed comments (`[status]` / `[question]` / `[blocker]` / `[evidence]` /
+  `[handoff]`) and reserved `agent:*` state labels.
 
 ### Security
 

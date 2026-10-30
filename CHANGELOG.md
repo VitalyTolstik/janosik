@@ -124,6 +124,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   copy now list watch as a fourth view. The recorder can grab a poster from
   later in a scene (`posterMs`), so a clip whose opening frame is not the
   payoff still gets a useful still.
+- **Agent-ready cards (TASK-157).** The card description is raised from 10k to
+  64k characters — 10k was a leftover of the 5 MB localStorage budget of
+  local/offline mode, which server mode never uses — and the `janosik` skill
+  gains a canonical card shape a swarm can pick up cold: description sections
+  (`Why` / `Scope` / `Acceptance criteria` / `Out of scope` / `Verify`), a
+  `Definition of Done` checklist, typed comments (`[status]` / `[question]` /
+  `[blocker]` / `[evidence]` / `[handoff]`) and reserved `agent:*` state labels.
 
 ### Fixed
 

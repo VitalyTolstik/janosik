@@ -22,7 +22,7 @@ order and the intent.
 5. **Dependencies.** If this card blocks or is blocked by another:
    `janosik_add_card_link`.
 6. **Finish.** When every item is ticked or explained:
-   `janosik_add_comment` with the **Result** and its evidence →
+   `janosik_add_comment` with the `[evidence]` result and its proof →
    `janosik_move_card` to **Review**.
 7. **Close.** Only after verification (your test, or a human's approval):
    `janosik_move_card` to **Done**. If it turns out to be wrong here, jump to
