@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import en from "@/locales/en/translation.json";
-import { sentenceFor } from "@/utils/activity";
+import { FIELD_KEYS, formatChangeValue, sentenceFor } from "@/utils/activity";
 import type { ActivityFeedEntry } from "@janosik/shared";
 
 /**
@@ -103,5 +103,33 @@ describe("sentenceFor", () => {
     expect(sentenceFor(released, "en", false).key).toBe(
       "activity.claim-released",
     );
+  });
+
+  it.each([
+    "member_invited",
+    "member_role_changed",
+    "member_expiry_changed",
+    "member_removed",
+  ] as const)("maps the membership event %s to a real sentence", (type) => {
+    const { key } = sentenceFor(entry(type), "en", false);
+    expect(key).not.toBe("activity.changed");
+    expect(en).toHaveProperty(key);
+  });
+
+  it("has a translated label for every diff field", () => {
+    for (const key of Object.values(FIELD_KEYS)) {
+      expect(en).toHaveProperty(key);
+    }
+  });
+
+  it("formats a membership expiry change as a date, not a raw ISO string", () => {
+    const value = formatChangeValue(
+      "expiresAt",
+      "2026-11-01T09:00:00.000Z",
+      "en",
+      false,
+    );
+    expect(value).not.toBe("2026-11-01T09:00:00.000Z");
+    expect(value).not.toContain("T");
   });
 });

@@ -74,7 +74,13 @@ export class ActivityService {
 
     const commandWhere: Prisma.CommandWhereInput = {
       boardId,
-      ...(cardTouch ? { touches: { has: cardTouch } } : {}),
+      // A no-op command changed nothing (it wrote no `touches`), so it is not
+      // something that "happened" and never enters a feed. The card feed
+      // already excludes it through the `has` filter; the board feed filters
+      // it here, so the Watch view never shows a diff-less line.
+      ...(cardTouch
+        ? { touches: { has: cardTouch } }
+        : { touches: { isEmpty: false } }),
       ...commandOlderThan(cursor),
     };
     const activityWhere: Prisma.ActivityWhereInput = {
@@ -205,7 +211,7 @@ function toActivityEntry(row: {
   details: Prisma.JsonValue | null;
   createdAt: Date;
 }): RankedEntry {
-  const snapshot = readCommentSnapshot(row.type, row.details);
+  const snapshot = readActivitySnapshot(row.type, row.details);
   const entry: ActivityFeedEntry = {
     source: "activity",
     id: row.id,
@@ -253,6 +259,59 @@ function readCommentSnapshot(
     ...(commentId !== undefined ? { detail: commentId } : {}),
     ...(changes !== undefined ? { changes } : {}),
   };
+}
+
+/** Comment or membership: whichever the row's type matches. */
+function readActivitySnapshot(
+  type: string,
+  value: Prisma.JsonValue | null,
+): { detail?: string; changes?: ActivityChange[] } {
+  return {
+    ...readCommentSnapshot(type, value),
+    ...readMembershipSnapshot(type, value),
+  };
+}
+
+/**
+ * Membership rows (invite / role / expiry / removal) carry a `details`
+ * snapshot (email + role + from/to). Turn it into the same `detail`/`changes`
+ * shape the comment rows use, so a membership change renders as a real diff in
+ * the Watch feed instead of a bare, diff-less "Changed" line (TASK-157 watch
+ * check). A malformed row degrades to a sentence-only entry, never a 500.
+ */
+function readMembershipSnapshot(
+  type: string,
+  value: Prisma.JsonValue | null,
+): { detail?: string; changes?: ActivityChange[] } {
+  if (
+    type !== "member_invited" &&
+    type !== "member_role_changed" &&
+    type !== "member_expiry_changed" &&
+    type !== "member_removed"
+  ) {
+    return {};
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const record = value as Record<string, unknown>;
+  const email = typeof record.email === "string" ? record.email : undefined;
+  const detail = email !== undefined ? { detail: email } : {};
+  if (type === "member_role_changed" || type === "member_expiry_changed") {
+    const from = typeof record.from === "string" ? record.from : null;
+    const to = typeof record.to === "string" ? record.to : null;
+    return {
+      ...detail,
+      changes: [
+        {
+          field: type === "member_role_changed" ? "role" : "expiresAt",
+          from,
+          to,
+        },
+      ],
+    };
+  }
+  return detail;
 }
 
 /** Newest first: time desc, then commands before activities, then key desc. */
