@@ -24,6 +24,7 @@ const server = JSON.parse(
 ) as {
   name: string;
   version: string;
+  description: string;
   packages: Array<{
     registryType: string;
     identifier: string;
@@ -45,6 +46,13 @@ describe("MCP registry metadata", () => {
     expect(server.version).toBe(pkg.version);
     expect(server.packages).toHaveLength(1);
     expect(server.packages[0]!.version).toBe(pkg.version);
+  });
+
+  it("keeps the registry description within its length limit", () => {
+    // The registry answers 422 for a description over 100 characters — a
+    // failure that lands *after* the npm upload, so guard it here.
+    expect(server.description.length).toBeGreaterThan(0);
+    expect(server.description.length).toBeLessThanOrEqual(100);
   });
 
   it("points the registry at this npm package over stdio", () => {
