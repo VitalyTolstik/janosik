@@ -63,6 +63,7 @@ type CardAction = Extract<
       | "SET_CARD_DUE_DATE"
       | "SET_CARD_PRIORITY"
       | "SET_CARD_ASSIGN"
+      | "CLAIM_CARD"
       | "SET_CARD_COVER"
       | "ARCHIVE_CARD"
       | "UNARCHIVE_CARD"
@@ -183,6 +184,9 @@ function cardCreateData(
     dueDate: card.dueDate !== undefined ? new Date(card.dueDate) : null,
     priority: card.priority ?? null,
     assigneeId: card.assigneeId ?? null,
+    claimedBy: card.claimedBy ?? null,
+    leaseUntil:
+      card.leaseUntil !== undefined ? new Date(card.leaseUntil) : null,
     archivedAt:
       card.archivedAt !== undefined ? new Date(card.archivedAt) : null,
     createdAt: new Date(card.createdAt),
@@ -203,6 +207,9 @@ function cardUpdateData(
     dueDate: card.dueDate !== undefined ? new Date(card.dueDate) : null,
     priority: card.priority ?? null,
     assigneeId: card.assigneeId ?? null,
+    claimedBy: card.claimedBy ?? null,
+    leaseUntil:
+      card.leaseUntil !== undefined ? new Date(card.leaseUntil) : null,
     archivedAt:
       card.archivedAt !== undefined ? new Date(card.archivedAt) : null,
     updatedAt: new Date(card.updatedAt),
@@ -643,6 +650,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
     case "SET_CARD_DUE_DATE":
     case "SET_CARD_PRIORITY":
     case "SET_CARD_ASSIGN":
+    case "CLAIM_CARD":
     case "SET_CARD_COVER":
     case "ARCHIVE_CARD":
     case "UNARCHIVE_CARD":
@@ -1187,6 +1195,7 @@ async function writeCardAction(
     case "SET_CARD_DUE_DATE":
     case "SET_CARD_PRIORITY":
     case "SET_CARD_ASSIGN":
+    case "CLAIM_CARD":
     case "SET_CARD_COVER": {
       await tx.card.update({
         where: { id: card.id },
@@ -1199,6 +1208,9 @@ async function writeCardAction(
           dueDate: card.dueDate !== undefined ? new Date(card.dueDate) : null,
           priority: card.priority ?? null,
           assigneeId: card.assigneeId ?? null,
+          claimedBy: card.claimedBy ?? null,
+          leaseUntil:
+            card.leaseUntil !== undefined ? new Date(card.leaseUntil) : null,
           updatedAt: new Date(card.updatedAt),
           version: { increment: 1 },
         },

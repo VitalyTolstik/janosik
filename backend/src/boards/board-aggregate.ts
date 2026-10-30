@@ -186,6 +186,10 @@ function toCard(
     // Assignee (TASK-49): raw user id; display data resolves client-side
     // from the member directory.
     ...(card.assigneeId ? { assigneeId: card.assigneeId } : {}),
+    // Claim (TASK-157): raw claimant id + lease expiry, both omitted when
+    // unclaimed. Display data resolves client-side like the assignee.
+    ...(card.claimedBy ? { claimedBy: card.claimedBy } : {}),
+    ...(card.leaseUntil ? { leaseUntil: card.leaseUntil.getTime() } : {}),
     ...(links && links.length > 0 ? { links } : {}),
     ...(card.coverType && card.coverValue
       ? {

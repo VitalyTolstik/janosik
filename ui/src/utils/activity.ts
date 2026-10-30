@@ -46,6 +46,7 @@ const COMMAND_KEYS: Record<string, MessageKey> = {
   SET_CARD_DUE_DATE: "activity.due-date-set",
   SET_CARD_PRIORITY: "activity.priority-set",
   SET_CARD_ASSIGN: "activity.assignee-set",
+  CLAIM_CARD: "activity.claimed",
   ADD_CARD_LINK: "activity.link-added",
   REMOVE_CARD_LINK: "activity.link-removed",
   SET_CARD_COVER: "activity.cover-set",
@@ -103,6 +104,8 @@ export const FIELD_KEYS: Record<string, MessageKey> = {
   dueDate: "history.field.dueDate",
   priority: "history.field.priority",
   assignee: "history.field.assignee",
+  claimedBy: "history.field.claimedBy",
+  leaseUntil: "history.field.leaseUntil",
   link: "history.field.link",
   column: "history.field.column",
   label: "history.field.label",
@@ -133,7 +136,7 @@ export function formatChangeValue(
   if (field === "priority" && CARD_PRIORITIES.includes(value as CardPriority)) {
     return priorityLabel(value as CardPriority, lang);
   }
-  if (field === "assignee") {
+  if (field === "assignee" || field === "claimedBy") {
     return memberName ? memberName(value) : value;
   }
   return value;
@@ -207,6 +210,16 @@ export function sentenceFor(
       return { key: "activity.assignee-unassigned" };
     }
     return { key: "activity.assignee-set", params: { detail: assigneeName } };
+  }
+
+  if (entry.type === "CLAIM_CARD") {
+    // The claimant is shown in the from → to diff (resolved to a member
+    // name there); the sentence stays name-free.
+    const to =
+      entry.changes?.find((change) => change.field === "claimedBy")?.to ?? null;
+    return to === null
+      ? { key: "activity.claim-released" }
+      : { key: "activity.claimed" };
   }
 
   if (entry.type === "SET_CARD_COVER") {

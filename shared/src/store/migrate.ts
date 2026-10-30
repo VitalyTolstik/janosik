@@ -125,6 +125,18 @@ function toAssigneeId(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
+/** Claim sanitizer (TASK-157): a non-blank user id, or nothing. */
+function toClaimedBy(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+/** A lease expiry is either absent or a finite number (TASK-157). */
+function toLeaseUntil(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
 /**
  * Card links (TASK-46): only well-formed rows survive — string id, known
  * type, non-blank target — capped to `linksPerCard`. A target that does
@@ -259,6 +271,8 @@ function normalizeCard(card: LegacyCard): Card {
     dueDate,
     priority,
     assigneeId,
+    claimedBy,
+    leaseUntil,
     links,
     cover,
     activity,
@@ -269,6 +283,12 @@ function normalizeCard(card: LegacyCard): Card {
     typeof rest.description === "string"
       ? clampText(rest.description, LIMITS.description)
       : rest.description;
+  // A claim is only meaningful as a (claimant, expiry) pair; a half-written
+  // one from a hand-edited import is dropped entirely (TASK-157).
+  const cleanClaimedBy = toClaimedBy(claimedBy);
+  const cleanLeaseUntil = toLeaseUntil(leaseUntil);
+  const hasClaim =
+    cleanClaimedBy !== undefined && cleanLeaseUntil !== undefined;
   return {
     ...rest,
     title,
@@ -289,6 +309,8 @@ function normalizeCard(card: LegacyCard): Card {
     dueDate: toDueDate(dueDate),
     priority: toPriority(priority),
     assigneeId: toAssigneeId(assigneeId),
+    claimedBy: hasClaim ? cleanClaimedBy : undefined,
+    leaseUntil: hasClaim ? cleanLeaseUntil : undefined,
     links: toLinks(links),
     cover: toCover(cover),
     activity: toActivity(activity),

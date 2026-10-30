@@ -97,6 +97,7 @@ const SUPPORTED_ACTION_REGISTRY: Record<CommandActionType, true> = {
   SET_CARD_DUE_DATE: true,
   SET_CARD_PRIORITY: true,
   SET_CARD_ASSIGN: true,
+  CLAIM_CARD: true,
   ADD_CARD_LINK: true,
   REMOVE_CARD_LINK: true,
   SET_CARD_COVER: true,
@@ -298,6 +299,7 @@ export class CommandsService {
           referencedEntityIds(action),
         );
         await this.assertAssigneeIsBoardMember(tx, boardId, action);
+        await this.assertClaimIsFree(tx, boardId, action);
 
         const before = await loadBoardAggregate(tx, boardId);
         if (!before) {
@@ -636,6 +638,38 @@ export class CommandsService {
       throw new BadRequestException({
         message: "Assignee must be an active board member",
         field: "action.assigneeId",
+      });
+    }
+  }
+
+  /**
+   * Atomic claim guard (TASK-157): a `CLAIM_CARD` may not take a lease that
+   * another member still holds. A lapsed lease (`leaseUntil` in the past) is
+   * free — that self-healing is the point of a lease. The read and the reject
+   * run inside the same board-write transaction, so two agents racing for one
+   * card cannot both win; the loser gets a `400` naming the current holder.
+   */
+  private async assertClaimIsFree(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    action: BoardAction,
+  ): Promise<void> {
+    if (action.type !== "CLAIM_CARD") return;
+    if (action.claimedBy === null || action.leaseUntil === null) return;
+    const card = await tx.card.findFirst({
+      where: { id: action.cardId, column: { boardId } },
+      select: { claimedBy: true, leaseUntil: true },
+    });
+    if (
+      card &&
+      card.claimedBy !== null &&
+      card.claimedBy !== action.claimedBy &&
+      card.leaseUntil !== null &&
+      card.leaseUntil.getTime() > Date.now()
+    ) {
+      throw new BadRequestException({
+        message: `Card is claimed by another member until ${card.leaseUntil.toISOString()}`,
+        field: "action.claimedBy",
       });
     }
   }

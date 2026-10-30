@@ -289,6 +289,28 @@ export function commandDetails(
       };
     }
 
+    case "CLAIM_CARD": {
+      const from = cardOf(before, action.cardId);
+      const to = cardOf(after, action.cardId);
+      if (!from || !to) return null;
+      const changes: ActivityChange[] = [];
+      if ((from.claimedBy ?? null) !== (to.claimedBy ?? null)) {
+        changes.push({
+          field: "claimedBy",
+          from: from.claimedBy ?? null,
+          to: to.claimedBy ?? null,
+        });
+      }
+      if ((from.leaseUntil ?? null) !== (to.leaseUntil ?? null)) {
+        changes.push({
+          field: "leaseUntil",
+          from: isoOrNull(from.leaseUntil),
+          to: isoOrNull(to.leaseUntil),
+        });
+      }
+      return changes.length > 0 ? { changes } : null;
+    }
+
     case "ADD_CARD_LINK":
     case "REMOVE_CARD_LINK": {
       // The readable half is the target card's title, frozen while the

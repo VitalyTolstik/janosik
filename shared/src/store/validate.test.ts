@@ -883,6 +883,13 @@ describe("validateBoardAction — rebuilds the action (S-4)", () => {
       { type: "SET_CARD_PRIORITY", cardId: "card-1", priority: "high", at },
       { type: "SET_CARD_ASSIGN", cardId: "card-1", assigneeId: "u-1", at },
       {
+        type: "CLAIM_CARD",
+        cardId: "card-1",
+        claimedBy: "u-1",
+        leaseUntil: at + 900_000,
+        at,
+      },
+      {
         type: "SET_CARD_COVER",
         cardId: "card-1",
         cover: { type: "color", value: "red" },

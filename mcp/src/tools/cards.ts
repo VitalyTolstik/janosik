@@ -7,7 +7,14 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { LIMITS, type Board, type Card } from "@janosik/shared";
+import {
+  CLAIM_LEASE_DEFAULT_MS,
+  CLAIM_LEASE_MAX_MS,
+  CLAIM_LEASE_MIN_MS,
+  LIMITS,
+  type Board,
+  type Card,
+} from "@janosik/shared";
 import type { JanosikClient } from "../client.js";
 import { describeError } from "../errors.js";
 import { errorResult, respond, textOnly } from "../format.js";
@@ -453,6 +460,71 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           ? `Assigned card ${cardId} to ${assigneeId}.`
           : `Unassigned card ${cardId}.`,
       );
+    },
+  );
+
+  defineTool(
+    server,
+    "janosik_claim_card",
+    {
+      title: "Claim a card",
+      description:
+        "Take a temporary work lease on a card (TASK-157) — how a swarm " +
+        "avoids two agents working the same card. The lease expires on its " +
+        "own, so a dead agent never leaves the card stuck. Refused if another " +
+        "member still holds a live lease: read the card, or pick another.",
+      inputSchema: {
+        boardId: boardIdSchema,
+        cardId: cardIdSchema,
+        leaseMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            "Lease length in ms (default 15 min, clamped to [1 min, 24 h]).",
+          ),
+      },
+      annotations: WRITE,
+    },
+    async ({ boardId, cardId, leaseMs }) => {
+      const user = await client.whoami();
+      const duration = Math.min(
+        Math.max(leaseMs ?? CLAIM_LEASE_DEFAULT_MS, CLAIM_LEASE_MIN_MS),
+        CLAIM_LEASE_MAX_MS,
+      );
+      const leaseUntil = Date.now() + duration;
+      await client.command(boardId, {
+        type: "CLAIM_CARD",
+        cardId,
+        claimedBy: user.id,
+        leaseUntil,
+      });
+      return textOnly(
+        `Claimed card ${cardId} until ${new Date(leaseUntil).toISOString()}.`,
+      );
+    },
+  );
+
+  defineTool(
+    server,
+    "janosik_release_card",
+    {
+      title: "Release a card",
+      description:
+        "Release your work lease on a card, or clear a lapsed one, so " +
+        "another agent can pick it up.",
+      inputSchema: { boardId: boardIdSchema, cardId: cardIdSchema },
+      annotations: WRITE,
+    },
+    async ({ boardId, cardId }) => {
+      await client.command(boardId, {
+        type: "CLAIM_CARD",
+        cardId,
+        claimedBy: null,
+        leaseUntil: null,
+      });
+      return textOnly(`Released card ${cardId}.`);
     },
   );
 

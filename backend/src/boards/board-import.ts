@@ -131,6 +131,14 @@ export async function persistBoard(
     // instead of failing the whole board.
     const assigneeId = card.assigneeId ?? null;
     const keptAssigneeId = assigneeId === userId ? assigneeId : null;
+    // Claim guard (TASK-157): same rule as the assignee — the only member of
+    // a fresh board is the importer, so a claim by anyone else is dropped.
+    const claimedBy = card.claimedBy ?? null;
+    const keptClaimedBy = claimedBy === userId ? claimedBy : null;
+    const leaseUntil =
+      keptClaimedBy !== null && card.leaseUntil
+        ? new Date(card.leaseUntil)
+        : null;
     cardRows.push({
       id,
       columnId,
@@ -141,6 +149,8 @@ export async function persistBoard(
       dueDate: card.dueDate ? new Date(card.dueDate) : null,
       priority: card.priority ?? null,
       assigneeId: keptAssigneeId,
+      claimedBy: keptClaimedBy,
+      leaseUntil,
       archivedAt: card.archivedAt ? new Date(card.archivedAt) : null,
       position: positionForCard.get(oldId) ?? 0,
       createdAt,

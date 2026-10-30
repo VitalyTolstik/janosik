@@ -341,6 +341,20 @@ function build(before: Board, action: BoardAction): BoardAction | null {
       };
     }
 
+    case "CLAIM_CARD": {
+      const card = cardOf(before, action.cardId);
+      if (!card) return null;
+      return {
+        ...head,
+        type: "CLAIM_CARD",
+        cardId: card.id,
+        claimedBy: card.claimedBy ?? null,
+        leaseUntil: card.leaseUntil ?? null,
+        cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
+      };
+    }
+
     case "ADD_CARD_LINK": {
       const card = cardOf(before, action.cardId);
       if (!card) return null;
