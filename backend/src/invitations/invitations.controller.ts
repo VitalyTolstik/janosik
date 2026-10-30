@@ -8,6 +8,8 @@ import {
 } from "@nestjs/common";
 import type { BoardInvitationDto } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
+import type { AuthPrincipal } from "@/auth/auth-principal";
+import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
 import { InvitationsService } from "./invitations.service";
@@ -31,17 +33,19 @@ export class InvitationsController {
   @HttpCode(200)
   accept(
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Param("id") id: string,
   ): Promise<void> {
-    return this.invitations.accept(user.id, id);
+    return this.invitations.accept(user.id, id, actorTypeOf(principal));
   }
 
   @Post(":id/decline")
   @HttpCode(200)
   decline(
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Param("id") id: string,
   ): Promise<void> {
-    return this.invitations.decline(user.id, id);
+    return this.invitations.decline(user.id, id, actorTypeOf(principal));
   }
 }

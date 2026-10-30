@@ -9,6 +9,7 @@ import {
 import { Role } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import type {
+  ActorType,
   Board,
   BoardAction,
   BoardScopedAction,
@@ -199,8 +200,12 @@ export class CommandsService {
     boardId: string,
     actorId: string,
     dto: CreateCommandDto,
-    options: { allowOversize?: boolean } = {},
+    options: { allowOversize?: boolean; actorType?: ActorType } = {},
   ): Promise<CommandResponse> {
+    // TASK-157: who issued the command — a person or an agent (a PAT). The
+    // transport resolves it from the request principal; internal callers
+    // (admin restores, the demo seeder) default to "human".
+    const actorType: ActorType = options.actorType ?? "human";
     // An oversized action is refused before anything else runs (TASK-30.2):
     // the writers would happily persist megabytes of snapshot/activity ids.
     // Internal admin restores may exceed the client cap (RESTORE_COLUMN
@@ -341,6 +346,7 @@ export class CommandsService {
             id: dto.commandId,
             boardId,
             actorId,
+            actorType,
             type: action.type,
             payload: jsonSafe(action),
             result: {},
@@ -399,6 +405,7 @@ export class CommandsService {
         seq: applied.response.seq,
         action,
         actorId,
+        actorType,
         commandId: dto.commandId,
         touches: applied.touches,
         prevSeq: applied.prevSeq,
@@ -461,6 +468,7 @@ export class CommandsService {
         id: true,
         seq: true,
         actorId: true,
+        actorType: true,
         payload: true,
         touches: true,
       },
@@ -471,6 +479,7 @@ export class CommandsService {
         seq: Number(row.seq),
         action: row.payload as unknown as BoardAction,
         actorId: row.actorId,
+        actorType: row.actorType as ActorType,
         commandId: row.id,
         touches: row.touches,
       })),

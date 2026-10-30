@@ -7,7 +7,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import type { AttachmentDto } from "@janosik/shared";
+import type { ActorType, AttachmentDto } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 
 import type { AuthUser } from "@/auth/auth.types";
@@ -74,6 +74,7 @@ export class AttachmentsService {
     user: AuthUser,
     file: UploadedBlob,
     isInline = false,
+    actorType: ActorType = "human",
   ): Promise<AttachmentDto> {
     // multer streamed the body to a `.tmp-*` file (TASK-155). Every exit path
     // removes it; a successful upload renamed it into the blob tree already.
@@ -84,7 +85,7 @@ export class AttachmentsService {
       });
     }
     try {
-      return await this.persist(cardId, user, file, isInline);
+      return await this.persist(cardId, user, file, isInline, actorType);
     } finally {
       await rm(file.path, { force: true }).catch(() => undefined);
     }
@@ -95,6 +96,7 @@ export class AttachmentsService {
     user: AuthUser,
     file: UploadedBlob,
     isInline = false,
+    actorType: ActorType = "human",
   ): Promise<AttachmentDto> {
     if (file.size <= 0) {
       throw new BadRequestException({
@@ -228,6 +230,7 @@ export class AttachmentsService {
                 cardId,
                 type: "attachment_added",
                 actorId: user.id,
+                actorType,
                 details: { attachmentId: row.id, fileName },
               },
             });
@@ -295,7 +298,11 @@ export class AttachmentsService {
     return { meta: toAttachmentDto(row), storedName: row.storedName };
   }
 
-  async remove(attachmentId: string, user: AuthUser): Promise<void> {
+  async remove(
+    attachmentId: string,
+    user: AuthUser,
+    actorType: ActorType = "human",
+  ): Promise<void> {
     const row = await this.prisma.attachment.findFirst({
       where: { id: attachmentId, deletedAt: null },
       select: {
@@ -343,6 +350,7 @@ export class AttachmentsService {
           cardId: row.cardId,
           type: "attachment_deleted",
           actorId: user.id,
+          actorType,
           details: { attachmentId },
         },
       });

@@ -69,6 +69,10 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   items are trimmed, de-blanked, clamped and capped. The MCP tool
   `janosik_set_card_task_spec` writes it, `janosik_get_card` renders it, and
   the card dialog shows it read-only.
+- **Actor attribution (TASK-157).** Every command and activity row records
+  whether a person (`"human"`, a browser session) or an agent (`"agent"`, a
+  personal API token) caused it. The activity feed carries the type and the
+  card history marks agent entries with an "Agent" badge.
 
 ### Security
 

@@ -4,8 +4,14 @@ import type {
   ActivityChange,
   ActivityFeedEntry,
   ActivityFeedPage,
+  ActorType,
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+
+/** A stored actor type, defaulting to "human" for legacy/garbage rows. */
+function toActorType(value: string): ActorType {
+  return value === "agent" ? "agent" : "human";
+}
 
 /** Default page size of an activity feed (`?limit=`). */
 const DEFAULT_LIMIT = 50;
@@ -89,6 +95,7 @@ export class ActivityService {
           touches: true,
           createdAt: true,
           actorId: true,
+          actorType: true,
           details: true,
         },
       }),
@@ -129,6 +136,7 @@ function toCommandEntry(row: {
   touches: string[];
   createdAt: Date;
   actorId: string;
+  actorType: string;
   details: Prisma.JsonValue | null;
 }): RankedEntry {
   const cardTouches = row.touches.filter((label) => label.startsWith("card:"));
@@ -140,6 +148,7 @@ function toCommandEntry(row: {
     at: row.createdAt.getTime(),
     type: row.type,
     actorId: row.actorId,
+    actorType: toActorType(row.actorType),
     // Only a command that touched a single card is card-attributed: a
     // DELETE_COLUMN touches many cards and belongs to the board.
     ...(cardTouches.length === 1 ? { cardId: cardTouches[0].slice(5) } : {}),
@@ -192,6 +201,7 @@ function toActivityEntry(row: {
   type: string;
   cardId: string | null;
   actorId: string;
+  actorType: string;
   details: Prisma.JsonValue | null;
   createdAt: Date;
 }): RankedEntry {
@@ -202,6 +212,7 @@ function toActivityEntry(row: {
     at: row.createdAt.getTime(),
     type: row.type,
     actorId: row.actorId,
+    actorType: toActorType(row.actorType),
     ...(row.cardId ? { cardId: row.cardId } : {}),
     details: (row.details as Record<string, unknown> | null) ?? null,
     ...(snapshot.detail !== undefined ? { detail: snapshot.detail } : {}),

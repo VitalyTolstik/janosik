@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { Role, Prisma } from "@prisma/client";
 import type {
+  ActorType,
   BoardAggregate,
   BoardEnvelope,
   BoardMemberDto,
@@ -306,6 +307,7 @@ export class BoardsService {
     boardId: string,
     actorId: string,
     dto: InviteMemberDto,
+    actorType: ActorType = "human",
   ): Promise<BoardMemberDto> {
     const email = dto.email.trim().toLowerCase();
     const expiresAt = this.resolveExpiresAt(dto.role, dto.expiresAt, null);
@@ -377,6 +379,7 @@ export class BoardsService {
             boardId,
             type: "member_invited",
             actorId,
+            actorType,
             details: {
               userId: user.id,
               email: user.email,
@@ -412,6 +415,7 @@ export class BoardsService {
     actorId: string,
     targetUserId: string,
     dto: UpdateMemberDto,
+    actorType: ActorType = "human",
   ): Promise<BoardMemberDto> {
     const member = await this.prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId, userId: targetUserId } },
@@ -454,6 +458,7 @@ export class BoardsService {
             boardId,
             type: roleChanged ? "member_role_changed" : "member_expiry_changed",
             actorId,
+            actorType,
             details: {
               userId: member.userId,
               email: member.user.email,
@@ -488,6 +493,7 @@ export class BoardsService {
     boardId: string,
     actorId: string,
     targetUserId: string,
+    actorType: ActorType = "human",
   ): Promise<void> {
     const member = await this.prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId, userId: targetUserId } },
@@ -512,6 +518,7 @@ export class BoardsService {
           boardId,
           type: "member_removed",
           actorId,
+          actorType,
           details: {
             userId: member.userId,
             email: member.user.email,

@@ -117,6 +117,7 @@
   "account.tokens.revokedToast": "API key revoked",
   "account.tokens.title": "API keys",
   "account.tooltip": "Account and settings",
+  "activity.agent": "Agent",
   "activity.archived": "Archived",
   "activity.assignee-set": "Assignee changed to {{detail}}",
   "activity.assignee-unassigned": "Removed the assignee",

@@ -35,6 +35,17 @@ export function principalOf(request: unknown): AuthPrincipal | undefined {
   return (request as PrincipalRequest | undefined)?.auth;
 }
 
+/**
+ * Attribution for a request (TASK-157): a personal API token (`jnk_…`) means
+ * an agent/integration, anything else a person at a browser session. Defaults
+ * to `"human"` when no principal was recorded (public/legacy paths).
+ */
+export function actorTypeOf(
+  principal: AuthPrincipal | undefined,
+): "human" | "agent" {
+  return principal?.via === "pat" ? "agent" : "human";
+}
+
 /** Injects the `AuthPrincipal` `JwtAuthGuard` recorded (may be undefined). */
 export const CurrentPrincipal = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): AuthPrincipal | undefined =>

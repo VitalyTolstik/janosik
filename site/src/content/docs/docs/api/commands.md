@@ -9,6 +9,11 @@ board's command endpoint, and the server replays the very same `BoardAction`
 through the shared `boardReducer`. Membership, board create/import/delete and
 files are the exceptions, and they live in [REST endpoints](/docs/api/rest/).
 
+Every command is attributed (TASK-157): a browser session records
+`actorType: "human"`, a personal API token (`jnk_…`) records `"agent"`. The
+type rides on the activity feed (`GET /boards/:id/activity`) so the history
+can tell an agent's edits from a teammate's.
+
 ## Apply a command
 
 ```
