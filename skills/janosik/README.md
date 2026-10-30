@@ -2,9 +2,10 @@
 
 A behaviour playbook for AI agents working a [Janosik](../../README.md) board
 through the [`@janosik/mcp`](../../mcp) MCP server. The MCP tools are the agent's
-*hands* on the board; this skill is its *manners* — when to comment, how to fill
-a card so it stands on its own, how the columns flow, and what to do when a bug
-turns up (return the card with the evidence, keep the history).
+*hands* on the board; this skill is its *manners* — how to claim a card before
+working it, when to comment, how to fill a card so it stands on its own, how the
+columns flow, and what to do when a bug turns up (return the card with the
+evidence, keep the history).
 
 It is plain markdown with a `SKILL.md` frontmatter, so any harness that speaks
 Agent Skills can load it. It **references the MCP tools by name** and never
@@ -56,8 +57,13 @@ Configure `@janosik/mcp` in the same harness (see [the MCP README](../../mcp/REA
 }
 ```
 
-Give each agent **its own user account and API key**, so the board's activity
-feed shows who did what and revoking one key stops one agent.
+Give each agent **its own user account and API key**. Commands from an agent
+account are tagged `actorType: "agent"` and carry an **Agent** badge on the board,
+so a human can tell a swarm's edits from their own, and revoking one key stops one
+agent. A key may also be **scoped**: board-bound (it reaches only its board)
+and/or **read-only** (it cannot write). A read-only agent can still orient itself
+and report, but every write tool will refuse — that refusal is the truth, not a
+bug to route around.
 
 ## Files
 

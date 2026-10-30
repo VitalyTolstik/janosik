@@ -70,12 +70,15 @@ API keys are personal tokens for scripts and integrations. A token acts as
 you, so keep it secret.
 
 Use `Create key`, give it a `Name`, and choose when it expires: `Never`,
-`In 30 days`, `In 90 days` or `In a year`. The key itself is shown once, with
-a `jnk_` prefix; copy it then and store it in a password manager. The list
-shows each key's name, status (`Active`, `Expired` or `Revoked`), when it was
-created, when it was last used and when it expires. `Revoke` stops a key
-immediately and cannot be undone; a live connection opened with the key
-closes within about 25 seconds.
+`In 30 days`, `In 90 days` or `In a year`. You can also scope the key: pin it
+to one board, make it read-only (every write is refused), and give it its own
+requests-per-minute budget. A scoped, read-only key is the least-privilege
+option for an agent. The key itself is shown once, with a `jnk_` prefix; copy
+it then and store it in a password manager. The list shows each key's name,
+status (`Active`, `Expired` or `Revoked`), its scope, when it was created, when
+it was last used and when it expires. `Revoke` stops a key immediately and
+cannot be undone; a live connection opened with the key closes within about 25
+seconds.
 
 Keys are managed only here, in a signed-in browser. A key cannot list, create
 or revoke keys, or change your password or email, so a leaked key can never

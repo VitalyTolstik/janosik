@@ -84,6 +84,19 @@ The `Assignee` row searches the board's members. Pick a person to assign the
 card, or `Unassigned` to clear it. The assignee's avatar shows on the card
 face and in the table.
 
+A card can also be *claimed*: a temporary work lease an agent takes before it
+starts, so two agents never grab the same card. A claim is not an assignment —
+it expires on its own — and the `History` tab shows who claimed or released the
+card.
+
+### Task spec
+
+When an agent sets a machine-readable task contract over the API or MCP, the
+dialog shows a read-only `Task spec` section with the card's `Acceptance
+criteria` and `Definition of done` as short lists. It is there for a human to
+review what the agent was told to do; the section is hidden while the card has
+no contract.
+
 ### Linked cards
 
 The `Linked cards` section connects cards with a relation. Pick a relation
@@ -155,8 +168,9 @@ comments, behind a confirmation. Comments need server mode.
 
 History lists everything that happened to the card, newest first, with the
 author and a from-to diff for each change — title, description, column,
-labels, priority, due date, assignee, links, cover, checklists, comments,
-archive and restore. Use `Show older` to page back.
+labels, priority, due date, assignee, claim and release, task spec, links,
+cover, checklists, comments, archive and restore. Entries an agent made carry
+an `Agent` badge. Use `Show older` to page back.
 
 ## Next
 

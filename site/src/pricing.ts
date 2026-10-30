@@ -110,6 +110,7 @@ export const comparison: Category[] = [
     titleKey: "pricing.cat.collab",
     rows: [
       { labelKey: "pricing.row.realtime", cells: [true, true] },
+      { labelKey: "pricing.row.agents", cells: [true, true] },
       { labelKey: "pricing.row.members", cells: limitCells("members") },
       { labelKey: "pricing.row.boards", cells: limitCells("boards") },
       { labelKey: "pricing.row.storage", cells: limitCells("storage") },

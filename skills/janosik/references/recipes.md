@@ -4,18 +4,39 @@ The lifecycle, tool by tool. The tool names are the real `janosik_*` MCP tools;
 nothing here duplicates the API — the tools own the transport, this owns the
 order and the intent.
 
+## Recipe: claim a card (and what to do when it is refused)
+
+Claiming is the first write of any work, so it gets its own recipe.
+
+1. **Look before you lock.** `janosik_get_card` — read `claimedBy` and
+   `leaseUntil`. A live claim (lease still in the future) means someone else is on
+   it.
+2. **Claim.** `janosik_claim_card` (default 15 min; `leaseMs` for a longer task,
+   clamped to 1 min–24 h). On success, comment `[status] Claimed until <time>`.
+3. **Refused?** Another member holds it. Do not work the card: either
+   `janosik_add_comment` a `[question]` naming the holder and pick a different
+   card, or wait for the lease to lapse — it self-expires, so a dead agent never
+   blocks the board.
+4. **Renew a long task.** Re-run `janosik_claim_card` before the lease runs out,
+   and comment that you renewed.
+5. **Release when done.** `janosik_release_card` when you finish or hand the card
+   off. If you forget, the lease lapses on its own.
+
 ## Recipe: complete a feature card
 
 1. **Orient.** `janosik_list_boards` → `janosik_get_board` (note the column
    names and your role) → `janosik_get_card` for the target card →
    `janosik_list_comments` and `janosik_card_activity` for its story so far.
-2. **Claim it.** `janosik_whoami` for your id → `janosik_set_card_assignee` →
+2. **Claim it.** `janosik_claim_card` (default 15 min; pass `leaseMs` for longer)
+   — refused if another member holds a live lease, in which case follow the claim
+   recipe. Then `janosik_whoami` for your id → `janosik_set_card_assignee` →
    `janosik_move_card` to **In Progress** → `janosik_add_comment` "Picking this
    up."
-3. **Flesh it out.** `janosik_update_card` (description with the why and
-   acceptance criteria) → `janosik_add_checklist` →
-   `janosik_add_checklist_item` per step → `janosik_set_card_priority` /
-   `janosik_set_card_label` / `janosik_set_card_due_date` as the board uses them.
+3. **Flesh it out.** `janosik_update_card` (description with the why) →
+   `janosik_set_card_task_spec` (`acceptanceCriteria` and `definitionOfDone`) →
+   `janosik_add_checklist` → `janosik_add_checklist_item` per step →
+   `janosik_set_card_priority` / `janosik_set_card_label` /
+   `janosik_set_card_due_date` as the board uses them.
 4. **Do the work, out loud.** After each step: `janosik_set_checklist_item_done`
    for the step you finished and `janosik_add_comment` for what changed and what
    is next. New subtasks you discover: `janosik_add_checklist_item`.
@@ -25,8 +46,8 @@ order and the intent.
    `janosik_add_comment` with the `[evidence]` result and its proof →
    `janosik_move_card` to **Review**.
 7. **Close.** Only after verification (your test, or a human's approval):
-   `janosik_move_card` to **Done**. If it turns out to be wrong here, jump to
-   the bug recipe.
+   `janosik_move_card` to **Done** → `janosik_release_card` so the next agent can
+   take it. If it turns out to be wrong here, jump to the bug recipe.
 
 ## Recipe: a bug turned up on a card
 
@@ -54,10 +75,11 @@ again**, with a comment explaining each turn. That is a history you can trust.
 
 ## Recipe: run a review
 
-1. `janosik_get_card` and `janosik_card_activity` — understand what was claimed
-   and by whom.
-2. Check the claim against the evidence in the comments. "Done" with no
-   test/link/number is not done.
+1. `janosik_get_card` and `janosik_card_activity` — understand what the card
+   claims and who did it; a `claimedBy` whose lease has lapsed is stale, not a
+   lock.
+2. Check what the card asserts against the evidence in the comments. "Done" with
+   no test/link/number is not done.
 3. Verify independently where you can — run the test, hit the endpoint, read the
    diff.
 4. **Passed?** `janosik_add_comment` approving, naming what you checked →

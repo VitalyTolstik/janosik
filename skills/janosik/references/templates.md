@@ -17,10 +17,6 @@ The problem this solves, and for whom. Link the request if there is one.
 ## Scope
 What changes and where — files, areas, endpoints.
 
-## Acceptance criteria
-- [ ] acceptance criterion 1
-- [ ] acceptance criterion 2
-
 ## Out of scope
 What this card deliberately does not do.
 
@@ -28,9 +24,11 @@ What this card deliberately does not do.
 The exact check that proves it: `npm test -w ui`, a curl, a link.
 ```
 
-Then add a **`Definition of Done` checklist** — the acceptance criteria as
-tickable items (a card is Done only when every one is ticked) — plus a second
-checklist for the steps (discovery, build, test, docs), ticked as you go.
+Then set the **task contract** with `janosik_set_card_task_spec`:
+`acceptanceCriteria` and `definitionOfDone`, each a list of short strings (the
+machine-readable "done when"). A `Definition of Done` checklist may mirror
+`definitionOfDone` for a visible progress bar, plus a second checklist for the
+steps (discovery, build, test, docs), ticked as you go.
 
 ## Card: bug
 
@@ -56,7 +54,9 @@ Board, card, version/commit, browser or agent, anything that narrows it.
 Your best guess, or "unknown".
 ```
 
-Link the bug to whatever it blocks with `janosik_add_card_link` (`blocks`).
+Link the bug to whatever it blocks with `janosik_add_card_link` (`blocks`), and
+set a **task contract** with `janosik_set_card_task_spec` (`definitionOfDone`:
+"repro no longer fails", "regression test added") so the fix has a finish line.
 
 ## Card: spike / research
 
@@ -90,13 +90,12 @@ Security, cost, or hygiene — one line.
 ## Scope
 The mechanical change, and where.
 
-## Acceptance criteria
-- [ ] change applied
-- [ ] nothing regressed (test, build, smoke)
-
 ## Verify
 The command that proves it: `npm test`, a build, a smoke check.
 ```
+
+Set the **task contract** with `janosik_set_card_task_spec` (`acceptanceCriteria`:
+"change applied", "nothing regressed").
 
 ## Comment: status
 
@@ -105,11 +104,24 @@ The command that proves it: `npm test`, a build, a smoke check.
 [status] <what is done>, <what is in flight>. Next: <what comes next>.
 ```
 
+## Comment: claim
+
+```
+[status] Claimed until <lease expiry> — <how I read the task>.
+```
+
+## Comment: claim refused
+
+```
+[question] @<holder> holds a live claim on this card (lease to <time>). Leaving it
+to them; picking up <another card> instead.
+```
+
 ## Comment: evidence
 
 ```
 [evidence] <what shipped>, verified by <test/commit/link>. <Any number that
-proves it>. DoD complete.
+proves it>. Definition of done met.
 ```
 
 ## Comment: bug found (the "return it" note)
@@ -119,7 +131,7 @@ proves it>. DoD complete.
 - Reproduce: <steps or command>
 - Expected: <x>. Actual: <y>.
 - Tried: <what you attempted>.
-Returning the card to <column>; remaining work is on the Definition of Done.
+Returning the card to <column>; remaining work is in the task contract.
 ```
 
 ## Comment: blocked
@@ -155,7 +167,7 @@ new ones. A small, consistent set beats a big, improvised one:
 | `chore` | upkeep, no behaviour change |
 | `docs` | documentation only |
 | `blocked` | cannot proceed (pair with the Blocked column) |
-| `agent` | a card worked by an agent, so humans can filter |
+| `agent` | a card worked by an agent (the **Agent** badge already marks this from `actorType`; the label is optional) |
 | `agent:blocked` | an agent is stuck and needs help |
 | `agent:needs-human` | waiting on a human decision |
 | `agent:verified` | an agent checked it and trusts the result |

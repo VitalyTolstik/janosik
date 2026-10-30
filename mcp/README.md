@@ -3,12 +3,15 @@
 An [MCP](https://modelcontextprotocol.io) server for [Janosik](https://github.com/VitalyTolstik/janosik),
 the self-hosted Kanban board. It lets an AI agent — Claude, Cursor, VS Code,
 opencode, Codex or any other MCP client — read and drive a board with a
-personal API key: create and move cards, comment, tick checklists, assign
-people and link cards. Member, share-link and account tools are available too,
-but opt-in.
+personal API key: create and move cards, claim one with a self-expiring lease
+so two agents never fight over it, set its machine-readable task contract,
+comment, tick checklists, assign people and link cards. Member, share-link and
+account tools are available too, but opt-in.
 
 Writes go through the same command log the UI uses, so changes are undoable
-and stream live to anyone watching the board.
+and stream live to anyone watching the board. Every command and activity entry
+is attributed to a human or an agent, and a token can be scoped to one board or
+made read-only, with its own per-minute rate limit.
 
 > **Companion skill.** The tools are the "hands"; the
 > [`janosik` skill](../skills/janosik/SKILL.md) is the "behaviour" — when to
@@ -19,7 +22,7 @@ and stream live to anyone watching the board.
 
 1. In Janosik, open **Account → API keys** and create a key (it starts with
    `jnk_`). Copy it now — it is shown once.
-2. Point your MCP client at the server with two variables:
+2. Point your MCP client at the server with these variables:
 
    | Variable | Example | Meaning |
    | --- | --- | --- |
@@ -162,7 +165,9 @@ Card text and comments are written by other people and agents, so treat
 everything an agent reads from a board as untrusted input. Keep the opt-in
 groups off unless an agent needs them, and give each agent **its own user
 account and key**: the activity feed then shows which agent did what, and
-revoking one key stops one agent.
+revoking one key stops one agent. A key can also be scoped to a single board
+or made read-only, with its own per-minute rate limit; choose these when you
+create it in the account panel.
 
 ## Development
 

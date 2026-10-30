@@ -2,13 +2,13 @@
 name: janosik
 description: >-
   How an AI agent works a Janosik Kanban board through the janosik_* MCP tools:
-  pick up a card, fill it in, move it across the columns, leave a comment at
-  every step, run its checklist, and — when a bug turns up — return the card
-  with the evidence instead of quietly burying it. Use this whenever the user
-  mentions Janosik, their board, kanban, cards, tickets or a task queue, or asks
-  you to pick up, work on, move, review, comment on or report on a card — even
-  when they do not name a tool. It is the "behaviour" half of the Janosik MCP
-  server: the tools are your hands, this is your manners.
+  claim a card before touching it, fill it in, move it across the columns, leave
+  a comment at every step, run its checklist, and — when a bug turns up — return
+  the card with the evidence instead of quietly burying it. Use this whenever
+  the user mentions Janosik, their board, kanban, cards, tickets or a task
+  queue, or asks you to pick up, work on, move, review, comment on or report on
+  a card — even when they do not name a tool. It is the "behaviour" half of the
+  Janosik MCP server: the tools are your hands, this is your manners.
 ---
 
 # Working a Janosik board
@@ -47,9 +47,14 @@ Never guess an id. Start every session the same way:
    checklists and links, `janosik_list_comments` for the conversation so far,
    and `janosik_card_activity` for what already happened to it.
 
-You act as the account the API key belongs to. Editing needs `MEMBER`, moving
-cards and managing members needs the role the board grants — if a tool returns a
-permission error, that is the truth, not a bug to work around.
+You act as the account the API key belongs to. A **per-agent account** is what
+makes your edits attributable: the board marks commands from an agent account
+with an **Agent** badge (`actorType`), so a human can tell a swarm's writes from
+their own, and revoking one key stops one agent. A key may also be **scoped** — a
+board-bound key reaches only its board, and a **read-only** key cannot write at
+all. Editing needs `MEMBER`, moving cards and managing members needs the role the
+board grants — if a tool returns a permission error, that is the truth, not a bug
+to work around.
 
 ## The columns are a pipeline, not a parking lot
 
@@ -73,17 +78,26 @@ and ask before closing — a human deciding is cheaper than a human undoing.
 
 ## Claim the card before you work it
 
-Two agents editing one card produce a mess. So the first write is always
-ownership:
+Two agents editing one card produce a mess. So the first write is always a
+**claim**:
 
-- Assign the card to yourself with `janosik_set_card_assignee` (your own user
-  id, from `janosik_whoami` or `janosik_list_members`).
-- Move it to **In Progress** with `janosik_move_card`.
-- Drop a one-line comment: `Picking this up.` — a heartbeat the other agents and
-  the humans can see.
+- Read the card first (`janosik_get_card`) and check `claimedBy` / `leaseUntil` —
+  it tells you if another agent already holds it.
+- **Claim a work lease** with `janosik_claim_card`. It defaults to 15 minutes;
+  pass `leaseMs` for a different span (clamped to 1 min–24 h). The server
+  **refuses** the claim while another member holds a live lease, and the lease
+  **self-expires**, so a dead agent never leaves a card stuck.
+- Assign it to yourself for durable ownership with `janosik_set_card_assignee`
+  (your own user id, from `janosik_whoami` or `janosik_list_members`), move it to
+  **In Progress** with `janosik_move_card`, and drop a one-line comment:
+  `Picking this up.` — a heartbeat the other agents and the humans can see.
+- **Refused?** Do not silently take it. Leave a `[question]` or `[blocker]`
+  comment naming the holder, then pick a different card — or wait out the lease.
+- **When you are done** (or handing the card off), `janosik_release_card` so the
+  next agent can start. Forget, and the lease simply lapses.
 
-If the card is already assigned to someone else, do not silently take it: leave
-a comment asking, or pick a different card.
+A long task may outlive its lease: re-claim (`janosik_claim_card` again) before it
+expires, and comment when you do, so the renewal is visible.
 
 ## Fill the card so it can be worked without you
 
@@ -91,8 +105,11 @@ A thin card is a trap for whoever gets it next. Before you call it "In
 Progress", make the card self-contained:
 
 - **Title** — an action, not a topic: "Export board to CSV", not "CSV".
-- **Description** — the *why*, the context, and what "done" looks like
-  (acceptance criteria, links, constraints). Use `janosik_update_card`.
+- **Description** — the *why*, the context, links and constraints. Use
+  `janosik_update_card`.
+- **Task contract** — the acceptance criteria and the definition of done, as
+  machine-readable lists with `janosik_set_card_task_spec` (see below). This is
+  what a later agent reads directly.
 - **Checklist** — break the work into steps with `janosik_add_checklist` and
   `janosik_add_checklist_item`, and tick them with
   `janosik_set_checklist_item_done` as you go. The checklist is the progress bar
@@ -121,10 +138,6 @@ The problem, and for whom. The paragraph that survives a re-read.
 ## Scope
 What changes and where — files, areas, endpoints. Enough to start.
 
-## Acceptance criteria
-- [ ] the observable outcome
-- [ ] the second one
-
 ## Out of scope
 What this card deliberately does not do, so nobody gold-plates it.
 
@@ -132,10 +145,14 @@ What this card deliberately does not do, so nobody gold-plates it.
 The exact check that proves it: `npm test -w ui`, a curl, a link, a number.
 ```
 
-**A `Definition of Done` checklist.** Put the "done when" list in a checklist
-whose title is exactly `Definition of Done`. Its progress bar is the card's
-truth: a card is Done only when every item is ticked — an unticked one is
-explained in a comment, never silently dropped.
+**The task contract (`janosik_set_card_task_spec`).** The acceptance criteria and
+the definition of done are not prose — they are machine-readable lists of short
+strings on the card, set with `janosik_set_card_task_spec` (`acceptanceCriteria`,
+`definitionOfDone`). An agent reads those fields directly instead of parsing the
+description; omit a field to leave it unchanged, pass an empty list to clear it. A
+`Definition of Done` checklist may mirror `definitionOfDone` as a visible progress
+bar, but the field is the contract: a card is Done only when every item holds — an
+unmet one is explained in a comment, never silently dropped.
 
 **Typed comments.** Start every comment with a bracketed kind, so the thread is
 machine-readable and filterable:
@@ -163,7 +180,7 @@ structured note at each turn:
 ```
 [status] Plan — split the export into a query and a formatter; add a CSV test.
 [status] Query done, formatter in progress; blocked on the date format.
-[evidence] Shipped in `#482`; export matches the fixture. DoD complete.
+[evidence] Shipped in `#482`; export matches the fixture. Definition of done met.
 ```
 
 Use `janosik_add_comment`. Why it matters: the comment thread *is* the card's
@@ -213,9 +230,10 @@ that one spawned the other.
 
 Before you move a card to **Review** or **Done**:
 
-- every checklist item is ticked, or the unticked ones are explained in a
-  comment;
-- the description reflects what was actually built, not what was planned;
+- every `definitionOfDone` item holds and every checklist item is ticked, or the
+  unmet ones are explained in a comment;
+- the description reflects what was actually built, not what was planned, and the
+  task contract still matches it;
 - there is an `[evidence]` comment — a commit, a passing test, a
   screenshot, a measurement. "Done" without evidence is a claim, not a fact.
 
@@ -227,8 +245,8 @@ verified — by you with a test, or by the human who approved it.
 
 - **Archive, don't delete.** `janosik_archive_card` keeps the card and its
   history; `janosik_delete_card` is forever. Prefer archiving.
-- **One card, one owner.** Do not edit a card another agent is actively working
-  without a comment explaining why.
+- **One card, one owner.** The live claim says who is working it. Do not edit a
+  card another agent holds without a comment explaining why.
 - **Don't spam.** Batch trivial changes; one comment per turn of the work, not
   per tool call.
 - **Read the tool's answer.** A write that changed nothing comes back as an
@@ -244,8 +262,9 @@ verified — by you with a test, or by the human who approved it.
 - [references/templates.md](references/templates.md) — copy-paste card,
   comment and label templates for features, bugs, spikes and chores.
 - [references/recipes.md](references/recipes.md) — step-by-step, tool-by-tool
-  recipes: complete a feature, fix a bug, run a review, report a blocker.
+  recipes: claim a card, complete a feature, fix a bug, run a review, report a
+  blocker.
 
-When in doubt, the shortest version of this skill is: **read first, comment as
-you go, fill the card so it stands alone, move it forward, and when it breaks —
-move it back and say why.**
+When in doubt, the shortest version of this skill is: **read first, claim before
+you touch it, comment as you go, fill the card so it stands alone, move it
+forward, and when it breaks — move it back and say why.**

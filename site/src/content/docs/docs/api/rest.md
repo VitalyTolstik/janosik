@@ -257,14 +257,19 @@ The stream carries five event types:
 
 | `type`       | Payload                                                        | Notes                                          |
 | ------------ | -------------------------------------------------------------- | ---------------------------------------------- |
-| `command`    | `seq`, `action`, `actorId`, `commandId`, `touches`             | a committed command                            |
+| `command`    | `seq`, `action`, `actorId`, `actorType?`, `commandId`, `touches` | a committed command                            |
 | `presence`   | `users[]`                                                      | who is connected; no `seq`                     |
 | `membership` | `boardId`, `userId`, `change`                                  | `change` is `accepted`, `updated` or `removed` |
-| `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `at`, `kind`, `detail?` | non-reducer activity, e.g. a new comment       |
+| `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `actorType?`, `at`, `kind`, `detail?` | non-reducer activity, e.g. a new comment |
 | `resync`     | none                                                           | the gap cannot be replayed; refetch the board  |
 
 `commandId` is the idempotency key the command was sent with, so a client
 recognises its own echo by key even when one account runs several writers.
+
+`actorType` is `"human"` for a browser session and `"agent"` for a personal API
+token; it is omitted on frames written before the field existed, so treat a
+missing value as `"human"`. The card history marks agent entries with an
+"Agent" badge.
 
 When the removed user is the caller, the server sends the `membership` frame
 as the last one and closes the stream.
