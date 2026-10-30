@@ -4,7 +4,11 @@ import { useSearchParams } from "react-router-dom";
 import { FilterBar } from "@/components/board/FilterBar";
 import { DndBoard } from "@/components/board/DndBoard";
 // Calendar/table render only after a view switch — lazy chunks (TASK-34).
-import { CalendarView, TableView } from "@/components/board/views-lazy";
+import {
+  CalendarView,
+  TableView,
+  WatchView,
+} from "@/components/board/views-lazy";
 import { CardDialog } from "@/components/board/CardDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ViewSwitcher, type BoardView } from "@/components/board/ViewSwitcher";
@@ -29,7 +33,12 @@ const VIEW_STORAGE_KEY = "janosik-board-view";
 function readStoredView(): BoardView {
   try {
     const stored = localStorage.getItem(VIEW_STORAGE_KEY);
-    if (stored === "calendar" || stored === "table" || stored === "board") {
+    if (
+      stored === "calendar" ||
+      stored === "table" ||
+      stored === "board" ||
+      stored === "watch"
+    ) {
       return stored;
     }
   } catch {
@@ -166,15 +175,19 @@ export function BoardSection() {
         boardBackgroundById(background).className,
       )}
     >
-      <div className="mb-3">
-        <FilterBar
-          filter={filter}
-          labels={board.labels}
-          boardId={board.id}
-          matchCount={matchCount}
-          onChange={setFilter}
-        />
-      </div>
+      {/* The watch view reads the whole board feed; a card filter would only
+          contradict it, so the toolbar is hidden there. */}
+      {view !== "watch" ? (
+        <div className="mb-3">
+          <FilterBar
+            filter={filter}
+            labels={board.labels}
+            boardId={board.id}
+            matchCount={matchCount}
+            onChange={setFilter}
+          />
+        </div>
+      ) : null}
       <div className="mb-3 flex items-center justify-between gap-3">
         <ViewSwitcher value={view} onChange={setView} />
         {/* Board-view display controls: column glass + card density. */}
@@ -194,6 +207,8 @@ export function BoardSection() {
           density={density}
           readOnly={readOnly}
         />
+      ) : view === "watch" ? (
+        <WatchView boardId={board.id} />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {view === "calendar" ? (

@@ -759,6 +759,17 @@ export class ApiClient {
     );
   }
 
+  /** Newest-first board-wide feed for the Watch view (commands + activity). */
+  boardActivity(
+    boardId: string,
+    cursor?: string,
+    limit?: number,
+  ): Promise<ActivityFeedPage> {
+    return this.request<ActivityFeedPage>(
+      `/boards/${encodeURIComponent(boardId)}/activity${pageQuery(cursor, limit)}`,
+    );
+  }
+
   /** One HTTP round-trip with token, 401-refresh-retry and JSON handling. */
   private async request<T>(
     path: string,

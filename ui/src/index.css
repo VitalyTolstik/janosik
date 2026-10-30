@@ -1084,3 +1084,13 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
 .mdxeditor.janosik-mdx .janosik-md-content input[type="checkbox"] {
   accent-color: var(--primary);
 }
+
+/* Watch view (TASK-142): deliberately bare — no animations or transitions,
+   whatever a descendant component brings by default. */
+[data-watch],
+[data-watch] *,
+[data-watch] *::before,
+[data-watch] *::after {
+  animation: none !important;
+  transition: none !important;
+}
