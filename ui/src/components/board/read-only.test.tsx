@@ -137,9 +137,11 @@ describe("VIEWER read-only UI (TASK-35)", () => {
     expect(within(dialog).getByDisplayValue("Careful card")).toHaveAttribute(
       "readonly",
     );
-    expect(within(dialog).getByTestId("description-editor")).toHaveAttribute(
-      "readonly",
-    );
+    // The description editor is a lazy chunk: wait for it instead of racing
+    // the Suspense boundary (a plain getByTestId flakes under load).
+    expect(
+      await within(dialog).findByTestId("description-editor"),
+    ).toHaveAttribute("readonly");
     expect(
       within(dialog).queryByRole("button", { name: /duplicate/i }),
     ).toBeNull();
