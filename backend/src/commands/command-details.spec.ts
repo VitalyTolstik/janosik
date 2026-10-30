@@ -372,6 +372,37 @@ describe("commandDetails", () => {
     ]);
   });
 
+  it("captures the task-spec change per field", () => {
+    const before = makeBoard();
+    const withSpec = makeBoard(
+      makeCard({
+        acceptanceCriteria: ["runs", "passes"],
+        definitionOfDone: ["green"],
+      }),
+    );
+    const set = {
+      ...base,
+      type: "SET_CARD_TASK_SPEC",
+      cardId: "card-1",
+      acceptanceCriteria: ["runs", "passes"],
+      definitionOfDone: ["green"],
+    } as BoardAction;
+    const clearCriteria = {
+      ...base,
+      type: "SET_CARD_TASK_SPEC",
+      cardId: "card-1",
+      acceptanceCriteria: [],
+    } as BoardAction;
+
+    expect(commandDetails(set, before, withSpec)?.changes).toEqual([
+      { field: "acceptanceCriteria", from: null, to: "runs; passes" },
+      { field: "definitionOfDone", from: null, to: "green" },
+    ]);
+    expect(commandDetails(clearCriteria, withSpec, before)?.changes).toEqual([
+      { field: "acceptanceCriteria", from: "runs; passes", to: null },
+    ]);
+  });
+
   it("freezes the linked card's title on add and remove", () => {
     const target = makeCard({ id: "card-2", title: "Target card" });
     const source = makeCard({

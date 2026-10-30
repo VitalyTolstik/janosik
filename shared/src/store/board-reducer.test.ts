@@ -3093,3 +3093,83 @@ describe("boardReducer — card claim (TASK-157)", () => {
     expect(same).toBe(board);
   });
 });
+
+describe("boardReducer — card task spec (TASK-157)", () => {
+  const AT = CLOCK + 10_000;
+
+  it("sets both fields and records the activity", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "SET_CARD_TASK_SPEC",
+      cardId: "card-1",
+      acceptanceCriteria: ["Runs", "Passes CI"],
+      definitionOfDone: ["Tests green"],
+      at: AT,
+    });
+    const card = board.cards["card-1"];
+    expect(card.acceptanceCriteria).toEqual(["Runs", "Passes CI"]);
+    expect(card.definitionOfDone).toEqual(["Tests green"]);
+    expect(card.activity?.at(-1)?.type).toBe("task-spec-changed");
+  });
+
+  it("trims, de-blanks, clamps and caps the items", () => {
+    const long = "x".repeat(LIMITS.taskSpecItem + 50);
+    const board = reduceBoard(freshBoard(), {
+      type: "SET_CARD_TASK_SPEC",
+      cardId: "card-1",
+      acceptanceCriteria: [
+        "  padded  ",
+        "   ",
+        long,
+        ...Array.from({ length: LIMITS.taskSpecItems + 5 }, (_, i) => `i${i}`),
+      ],
+      at: AT,
+    });
+    const list = board.cards["card-1"].acceptanceCriteria ?? [];
+    expect(list[0]).toBe("padded");
+    expect(list).not.toContain("");
+    expect(list[1]).toHaveLength(LIMITS.taskSpecItem);
+    expect(list).toHaveLength(LIMITS.taskSpecItems);
+  });
+
+  it("clears a field with an empty list and leaves the other untouched", () => {
+    const set = reduceBoard(freshBoard(), {
+      type: "SET_CARD_TASK_SPEC",
+      cardId: "card-1",
+      acceptanceCriteria: ["a"],
+      definitionOfDone: ["b"],
+      at: AT,
+    });
+    const cleared = reduceBoard(set, {
+      type: "SET_CARD_TASK_SPEC",
+      cardId: "card-1",
+      acceptanceCriteria: [],
+      at: AT + 1000,
+    });
+    const card = cleared.cards["card-1"];
+    expect(card.acceptanceCriteria).toBeUndefined();
+    expect(card.definitionOfDone).toEqual(["b"]);
+  });
+
+  it("omits an absent field: only the passed one is written", () => {
+    const board = reduceBoard(freshBoard(), {
+      type: "SET_CARD_TASK_SPEC",
+      cardId: "card-1",
+      definitionOfDone: ["done"],
+      at: AT,
+    });
+    expect(board.cards["card-1"].acceptanceCriteria).toBeUndefined();
+    expect(board.cards["card-1"].definitionOfDone).toEqual(["done"]);
+  });
+
+  it("is a no-op when nothing changes", () => {
+    const board = freshBoard();
+    const same = reduceState([board], {
+      type: "SET_CARD_TASK_SPEC",
+      cardId: "card-1",
+      acceptanceCriteria: [],
+      definitionOfDone: [],
+      at: AT,
+    })[0];
+    expect(same).toBe(board);
+  });
+});

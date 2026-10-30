@@ -62,6 +62,13 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   expires on its own, so a dead agent never leaves a card stuck. Two new MCP
   tools (`janosik_claim_card`, `janosik_release_card`) and a history entry for
   claims and releases.
+- **Machine-readable task contract (TASK-157).** A `SET_CARD_TASK_SPEC`
+  command sets a card's `acceptanceCriteria` and `definitionOfDone` as lists of
+  short strings an agent reads directly instead of parsing prose. Each field is
+  independent (omit to leave it unchanged, pass an empty list to clear it) and
+  items are trimmed, de-blanked, clamped and capped. The MCP tool
+  `janosik_set_card_task_spec` writes it, `janosik_get_card` renders it, and
+  the card dialog shows it read-only.
 
 ### Security
 

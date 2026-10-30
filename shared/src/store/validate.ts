@@ -68,6 +68,7 @@ const CARD_STAMPED_TYPES: ReadonlySet<string> = new Set([
   "SET_CARD_PRIORITY",
   "SET_CARD_ASSIGN",
   "CLAIM_CARD",
+  "SET_CARD_TASK_SPEC",
   "ADD_CARD_LINK",
   "REMOVE_CARD_LINK",
   "SET_CARD_COVER",
@@ -262,6 +263,27 @@ function readIdArray(
   return value.map((entry, index) => checkId(entry, `${field}[${index}]`));
 }
 
+/**
+ * An array of free-text strings (TASK-157 task spec): the length cap is
+ * checked before any entry is read, and each entry is bounded. Blank entries
+ * are allowed through — the reducer trims and drops them — but a non-string
+ * or an oversized entry is a client bug worth a `400`.
+ */
+function readTextArray(
+  obj: Json,
+  key: string,
+  field: string,
+  max: number,
+  itemMax: number,
+): string[] {
+  const value = obj[key];
+  if (!Array.isArray(value)) fail(field, "must be an array of strings");
+  if (value.length > max) fail(field, `must hold at most ${max} entries`);
+  return value.map((entry, index) =>
+    checkString(entry, `${field}[${index}]`, { max: itemMax }),
+  );
+}
+
 function readBoolean(obj: Json, key: string, field: string): boolean {
   const value = obj[key];
   if (typeof value !== "boolean") fail(field, "must be a boolean");
@@ -438,6 +460,26 @@ function validateCard(value: unknown, field: string): Json {
     "leaseUntil",
     readOptionalTimestamp(card, "leaseUntil", `${field}.leaseUntil`),
   );
+  // The task contract (TASK-157) — the same shape the SET_CARD_TASK_SPEC
+  // command accepts, so a restore snapshot cannot smuggle oversized lists.
+  if (!absent(card.acceptanceCriteria)) {
+    out.acceptanceCriteria = readTextArray(
+      card,
+      "acceptanceCriteria",
+      `${field}.acceptanceCriteria`,
+      LIMITS.taskSpecItems,
+      LIMITS.taskSpecItem,
+    );
+  }
+  if (!absent(card.definitionOfDone)) {
+    out.definitionOfDone = readTextArray(
+      card,
+      "definitionOfDone",
+      `${field}.definitionOfDone`,
+      LIMITS.taskSpecItems,
+      LIMITS.taskSpecItem,
+    );
+  }
   // Server-side denormalized columns (TASK-36, TASK-47) ride along in the
   // snapshot so an undo does not blank the avatar or attachment badge.
   put(
@@ -826,6 +868,32 @@ function parseAction(action: Json): BoardAction {
           fail("action.leaseUntil", "lease is too long");
         }
         result.leaseUntil = lease;
+      }
+      break;
+    }
+    case "SET_CARD_TASK_SPEC": {
+      result = out();
+      result.cardId = id("cardId");
+      // Each field is independent: absent leaves it unchanged, an empty list
+      // clears it. At least one must be present for the command to do
+      // anything, but a both-absent command is a harmless no-op, not an error.
+      if (action.acceptanceCriteria !== undefined) {
+        result.acceptanceCriteria = readTextArray(
+          action,
+          "acceptanceCriteria",
+          "action.acceptanceCriteria",
+          LIMITS.taskSpecItems,
+          LIMITS.taskSpecItem,
+        );
+      }
+      if (action.definitionOfDone !== undefined) {
+        result.definitionOfDone = readTextArray(
+          action,
+          "definitionOfDone",
+          "action.definitionOfDone",
+          LIMITS.taskSpecItems,
+          LIMITS.taskSpecItem,
+        );
       }
       break;
     }

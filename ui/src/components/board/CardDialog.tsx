@@ -26,6 +26,7 @@ import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { CardDueDate } from "@/components/board/CardDueDate";
 import { CardPriority } from "@/components/board/CardPriority";
 import { CardAssignee } from "@/components/board/CardAssignee";
+import { CardTaskSpec } from "@/components/board/CardTaskSpec";
 import { CardLinks } from "@/components/board/CardLinks";
 import { CardCoverPicker } from "@/components/board/CardCoverPicker";
 import { LabelPicker } from "@/components/board/LabelPicker";
@@ -941,6 +942,11 @@ export function CardDialog({
               cardId={card.id}
               assigneeId={card.assigneeId}
               readOnly={readOnly}
+            />
+
+            <CardTaskSpec
+              acceptanceCriteria={card.acceptanceCriteria}
+              definitionOfDone={card.definitionOfDone}
             />
 
             <CardLinks cardId={card.id} board={board} readOnly={readOnly} />

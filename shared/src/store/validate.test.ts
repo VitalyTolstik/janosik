@@ -103,6 +103,17 @@ const validActions: BoardAction[] = [
     cover: { type: "gradient", value: "ocean" },
   }),
   action({
+    type: "SET_CARD_TASK_SPEC",
+    cardId: "card-1",
+    acceptanceCriteria: ["runs", "passes"],
+    definitionOfDone: ["green"],
+  }),
+  action({
+    type: "SET_CARD_TASK_SPEC",
+    cardId: "card-1",
+    acceptanceCriteria: [],
+  }),
+  action({
     type: "MOVE_CARD",
     cardId: "card-1",
     fromColumnId: "col-1",
@@ -890,6 +901,13 @@ describe("validateBoardAction — rebuilds the action (S-4)", () => {
         at,
       },
       {
+        type: "SET_CARD_TASK_SPEC",
+        cardId: "card-1",
+        acceptanceCriteria: ["a", "b"],
+        definitionOfDone: ["c"],
+        at,
+      },
+      {
         type: "SET_CARD_COVER",
         cardId: "card-1",
         cover: { type: "color", value: "red" },
@@ -1003,5 +1021,55 @@ describe("validateBoardAction — string and id bounds", () => {
     expect(
       validateBoardAction(action({ type, ...body, [key]: ids })),
     ).toMatchObject({ ok: false, field: `action.${key}` });
+  });
+});
+
+describe("validateBoardAction — task spec bounds (TASK-157)", () => {
+  it("rejects a non-array task-spec field", () => {
+    expect(
+      validateBoardAction(
+        action({
+          type: "SET_CARD_TASK_SPEC",
+          cardId: "card-1",
+          acceptanceCriteria: "not a list",
+        }),
+      ),
+    ).toMatchObject({ ok: false, field: "action.acceptanceCriteria" });
+  });
+
+  it("caps the list and each item", () => {
+    expect(
+      validateBoardAction(
+        action({
+          type: "SET_CARD_TASK_SPEC",
+          cardId: "card-1",
+          acceptanceCriteria: Array.from(
+            { length: LIMITS.taskSpecItems + 1 },
+            () => "x",
+          ),
+        }),
+      ),
+    ).toMatchObject({ ok: false, field: "action.acceptanceCriteria" });
+    expect(
+      validateBoardAction(
+        action({
+          type: "SET_CARD_TASK_SPEC",
+          cardId: "card-1",
+          definitionOfDone: ["x".repeat(LIMITS.taskSpecItem + 1)],
+        }),
+      ),
+    ).toMatchObject({ ok: false, field: "action.definitionOfDone[0]" });
+  });
+
+  it("rejects a non-string item", () => {
+    expect(
+      validateBoardAction(
+        action({
+          type: "SET_CARD_TASK_SPEC",
+          cardId: "card-1",
+          definitionOfDone: [42],
+        }),
+      ),
+    ).toMatchObject({ ok: false, field: "action.definitionOfDone[0]" });
   });
 });

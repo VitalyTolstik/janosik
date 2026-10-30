@@ -182,11 +182,12 @@ describe("janosik MCP server", () => {
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
     // Pinned exactly so a dropped or renamed tool fails loudly.
-    expect(names.length).toBe(70);
+    expect(names.length).toBe(71);
     expect(names).toContain("janosik_list_boards");
     expect(names).toContain("janosik_create_card");
     expect(names).toContain("janosik_claim_card");
     expect(names).toContain("janosik_release_card");
+    expect(names).toContain("janosik_set_card_task_spec");
     expect(names).toContain("janosik_create_share");
     expect(names).toContain("janosik_upload_attachment");
     // Every tool is prefixed for coexistence with other servers.

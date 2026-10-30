@@ -151,6 +151,8 @@ export async function persistBoard(
       assigneeId: keptAssigneeId,
       claimedBy: keptClaimedBy,
       leaseUntil,
+      acceptanceCriteria: card.acceptanceCriteria ?? [],
+      definitionOfDone: card.definitionOfDone ?? [],
       archivedAt: card.archivedAt ? new Date(card.archivedAt) : null,
       position: positionForCard.get(oldId) ?? 0,
       createdAt,

@@ -166,6 +166,13 @@ export interface Card {
   /** Unix timestamp (ms) at which the claim above expires. Omitted when unclaimed. */
   leaseUntil?: number;
   /**
+   * Machine-readable task contract (TASK-157): the acceptance criteria and the
+   * definition of done, as lists of short strings an agent reads directly
+   * instead of parsing prose. Omitted when empty (optional-field rule).
+   */
+  acceptanceCriteria?: string[];
+  definitionOfDone?: string[];
+  /**
    * Links this card holds towards other cards (TASK-46). Omitted when the
    * card has none. A link whose target no longer exists (the target was
    * deleted) is kept — undoing the deletion revives the link, and every
@@ -223,6 +230,7 @@ export const CARD_ACTIVITY_TYPES = [
   "assignee-set",
   "claimed",
   "claim-released",
+  "task-spec-changed",
   "link-added",
   "link-removed",
   "cover-set",
@@ -281,6 +289,10 @@ export const LIMITS = {
   checklistTitle: 100,
   /** Checklist item text (add + rename). */
   checklistItem: 200,
+  /** Acceptance-criteria / definition-of-done items per card (TASK-157). */
+  taskSpecItems: 50,
+  /** Characters per acceptance-criteria / definition-of-done item. */
+  taskSpecItem: 500,
   /**
    * Card comment (plain text, TASK-28 REST / TASK-37 UI). Owner call: Jira
    * keeps far more, but 10k keeps payloads and comment feeds sane — the card's

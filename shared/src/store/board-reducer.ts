@@ -499,6 +499,18 @@ export interface ClaimCardAction {
   leaseUntil: number | null;
 }
 
+/**
+ * The card's machine-readable task contract (TASK-157). Each field is
+ * independent: omit one to leave it unchanged, pass an empty list to clear it.
+ * Values are trimmed, de-blanked and clamped by the reducer.
+ */
+export interface SetCardTaskSpecAction {
+  type: "SET_CARD_TASK_SPEC";
+  cardId: string;
+  acceptanceCriteria?: string[];
+  definitionOfDone?: string[];
+}
+
 /** Jira-style card links (TASK-46) — the types live in `types/kanban.ts`. */
 export interface AddCardLinkAction {
   type: "ADD_CARD_LINK";
@@ -737,6 +749,7 @@ export type BoardAction =
   | BoardScoped<SetCardPriorityAction>
   | BoardScoped<SetCardAssignAction>
   | BoardScoped<ClaimCardAction>
+  | BoardScoped<SetCardTaskSpecAction>
   | BoardScoped<AddCardLinkAction>
   | BoardScoped<RemoveCardLinkAction>
   | BoardScoped<SetCardCoverAction>
@@ -1696,6 +1709,85 @@ function claimCard(
 }
 
 /**
+ * Sanitize one task-spec list (TASK-157): trim each item, drop the blank
+ * ones, clamp each to `LIMITS.taskSpecItem` and cap the count at
+ * `LIMITS.taskSpecItems`. The reducer is the last line of defense — the UI
+ * and the strict API validator clamp or reject first.
+ */
+function cleanTaskSpecList(items: readonly string[]): string[] {
+  return items
+    .map((item) => item.trim())
+    .filter((item) => item !== "")
+    .map((item) => clampText(item, LIMITS.taskSpecItem))
+    .slice(0, LIMITS.taskSpecItems);
+}
+
+/** Does a card already hold exactly this (cleaned) task-spec list? */
+function sameTaskSpecList(
+  current: string[] | undefined,
+  next: readonly string[],
+): boolean {
+  if (current === undefined) return next.length === 0;
+  return (
+    current.length === next.length &&
+    current.every((item, index) => item === next[index])
+  );
+}
+
+/**
+ * Set a card's machine-readable task contract (TASK-157): the acceptance
+ * criteria and/or the definition of done, each an independent optional
+ * field. Omitting a field leaves it unchanged; an empty (or all-blank) list
+ * clears it — the optional-field convention. Values are trimmed, de-blanked,
+ * clamped and capped, so a hand-dispatched command cannot smuggle oversized
+ * text past the collection limits.
+ */
+function setCardTaskSpec(
+  board: Board,
+  action: BoardScoped<SetCardTaskSpecAction>,
+  options: ReduceOptions,
+): Board {
+  const target = cardOf(board, action.cardId);
+  if (!target) return board;
+  let nextCard: Card = { ...target };
+  let changed = false;
+  if (action.acceptanceCriteria !== undefined) {
+    const list = cleanTaskSpecList(action.acceptanceCriteria);
+    if (list.length === 0) {
+      if (nextCard.acceptanceCriteria !== undefined) {
+        delete nextCard.acceptanceCriteria;
+        changed = true;
+      }
+    } else if (!sameTaskSpecList(nextCard.acceptanceCriteria, list)) {
+      nextCard.acceptanceCriteria = list;
+      changed = true;
+    }
+  }
+  if (action.definitionOfDone !== undefined) {
+    const list = cleanTaskSpecList(action.definitionOfDone);
+    if (list.length === 0) {
+      if (nextCard.definitionOfDone !== undefined) {
+        delete nextCard.definitionOfDone;
+        changed = true;
+      }
+    } else if (!sameTaskSpecList(nextCard.definitionOfDone, list)) {
+      nextCard.definitionOfDone = list;
+      changed = true;
+    }
+  }
+  if (!changed) return board;
+  nextCard = { ...nextCard, updatedAt: cardStamp(action) };
+  nextCard = appendActivity(nextCard, "task-spec-changed", action, 0, options);
+  return {
+    ...board,
+    cards: {
+      ...board.cards,
+      [action.cardId]: nextCard,
+    },
+  };
+}
+
+/**
  * Add a link row on the source card (TASK-46). Guards: known cards, no
  * self-link, one link per unordered pair, the source card's row cap, and —
  * for `blocks` — no cycle. Inverses step past the guards (they put back
@@ -2447,6 +2539,8 @@ export function boardReducer(
       return committed(setCardAssign(board, action, options));
     case "CLAIM_CARD":
       return committed(claimCard(board, action, options));
+    case "SET_CARD_TASK_SPEC":
+      return committed(setCardTaskSpec(board, action, options));
     case "ADD_CARD_LINK":
       return committed(addCardLink(board, action, options));
     case "REMOVE_CARD_LINK":

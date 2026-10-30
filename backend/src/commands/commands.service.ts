@@ -98,6 +98,7 @@ const SUPPORTED_ACTION_REGISTRY: Record<CommandActionType, true> = {
   SET_CARD_PRIORITY: true,
   SET_CARD_ASSIGN: true,
   CLAIM_CARD: true,
+  SET_CARD_TASK_SPEC: true,
   ADD_CARD_LINK: true,
   REMOVE_CARD_LINK: true,
   SET_CARD_COVER: true,

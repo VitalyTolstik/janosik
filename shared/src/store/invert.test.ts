@@ -314,6 +314,22 @@ const PLANS: Record<BoardAction["type"], Plan> = {
       at: AT,
     },
   ],
+  SET_CARD_TASK_SPEC: [
+    // Both cards start with no task spec; the inverses clear them again.
+    {
+      type: "SET_CARD_TASK_SPEC",
+      cardId: "c-1",
+      acceptanceCriteria: ["one", "two"],
+      definitionOfDone: ["three"],
+      at: AT,
+    },
+    {
+      type: "SET_CARD_TASK_SPEC",
+      cardId: "c-2",
+      acceptanceCriteria: ["four"],
+      at: AT,
+    },
+  ],
   ADD_CARD_LINK: [
     // A fresh pair (c-2 ⇄ c-3 is unlinked in the fixture).
     {
