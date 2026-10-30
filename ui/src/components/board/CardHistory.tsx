@@ -292,6 +292,15 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
                 <span className="text-muted-foreground/60"> · </span>
               </>
             ) : null}
+            {entry.actorType === "agent" ? (
+              <span
+                className="mr-1 rounded bg-muted px-1 py-0.5 align-middle text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                data-testid="actor-agent-badge"
+                title={t("activity.agent")}
+              >
+                {t("activity.agent")}
+              </span>
+            ) : null}
             {t(sentence.key, sentence.params)}
           </p>
           <time

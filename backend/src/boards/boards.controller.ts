@@ -20,6 +20,8 @@ import type {
   BoardSummary,
 } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
+import type { AuthPrincipal } from "@/auth/auth-principal";
+import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
 import { BoardRoles } from "@/common/board-roles.decorator";
@@ -98,9 +100,10 @@ export class BoardsController {
   invite(
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Body() dto: InviteMemberDto,
   ): Promise<BoardMemberDto> {
-    return this.boards.inviteMember(id, user.id, dto);
+    return this.boards.inviteMember(id, user.id, dto, actorTypeOf(principal));
   }
 
   @UseGuards(MembershipGuard)
@@ -110,9 +113,16 @@ export class BoardsController {
     @Param("id") id: string,
     @Param("userId") userId: string,
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Body() dto: UpdateMemberDto,
   ): Promise<BoardMemberDto> {
-    return this.boards.updateMember(id, user.id, userId, dto);
+    return this.boards.updateMember(
+      id,
+      user.id,
+      userId,
+      dto,
+      actorTypeOf(principal),
+    );
   }
 
   @UseGuards(MembershipGuard)
@@ -123,8 +133,9 @@ export class BoardsController {
     @Param("id") id: string,
     @Param("userId") userId: string,
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
   ): Promise<{ status: "ok" }> {
-    await this.boards.removeMember(id, user.id, userId);
+    await this.boards.removeMember(id, user.id, userId, actorTypeOf(principal));
     return { status: "ok" };
   }
 

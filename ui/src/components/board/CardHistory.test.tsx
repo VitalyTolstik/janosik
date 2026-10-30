@@ -135,6 +135,19 @@ describe("CardHistory", () => {
     expect(diffs[1]).toHaveTextContent("Done");
   });
 
+  it("marks an agent-issued command with a badge (TASK-157)", async () => {
+    const server = new FakeServer();
+    server.seedActivity("card-1", [
+      commandEntry({ id: "agent", actorType: "agent" }),
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+    renderHistory();
+
+    expect(await screen.findByTestId("actor-agent-badge")).toHaveTextContent(
+      "Agent",
+    );
+  });
+
   it("renders the priority sentence with the localized level name", async () => {
     const server = new FakeServer();
     server.seedActivity("card-1", [

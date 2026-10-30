@@ -13,6 +13,8 @@ import {
 import { Role } from "@prisma/client";
 import type { CommentDto, CommentPage } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
+import type { AuthPrincipal } from "@/auth/auth-principal";
+import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { BoardRoles } from "@/common/board-roles.decorator";
 import { CardAccessGuard } from "@/common/card-access.guard";
@@ -34,9 +36,10 @@ export class CommentsController {
   create(
     @Param("cardId") cardId: string,
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Body() dto: CreateCommentDto,
   ): Promise<CommentDto> {
-    return this.comments.create(cardId, user.id, dto);
+    return this.comments.create(cardId, user.id, dto, actorTypeOf(principal));
   }
 
   @UseGuards(CardAccessGuard)
@@ -56,8 +59,9 @@ export class CommentsController {
   async remove(
     @Param("commentId") commentId: string,
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
   ): Promise<{ status: "ok" }> {
-    await this.comments.remove(commentId, user.id);
+    await this.comments.remove(commentId, user.id, actorTypeOf(principal));
     return { status: "ok" };
   }
 }

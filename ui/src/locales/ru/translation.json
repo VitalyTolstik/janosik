@@ -117,6 +117,7 @@
   "account.tokens.revokedToast": "API-ключ отозван",
   "account.tokens.title": "API-ключи",
   "account.tooltip": "Аккаунт и настройки",
+  "activity.agent": "Агент",
   "activity.archived": "Отправлена в архив",
   "activity.assignee-set": "Исполнитель изменён на {{detail}}",
   "activity.assignee-unassigned": "Убрал исполнителя",

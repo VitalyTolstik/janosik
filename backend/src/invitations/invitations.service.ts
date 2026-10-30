@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import type { BoardInvitationDto } from "@janosik/shared";
+import type { ActorType, BoardInvitationDto } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
@@ -63,7 +63,11 @@ export class InvitationsService {
   }
 
   /** Accept a pending invitation — the board appears in `GET /boards`. */
-  async accept(userId: string, invitationId: string): Promise<void> {
+  async accept(
+    userId: string,
+    invitationId: string,
+    actorType: ActorType = "human",
+  ): Promise<void> {
     if (!(await this.isVerified(userId))) {
       throw new ForbiddenException(
         "Confirm your email address before accepting invitations",
@@ -89,6 +93,7 @@ export class InvitationsService {
           boardId: invitation.boardId,
           type: "member_invite_accepted",
           actorId: userId,
+          actorType,
           details: { userId, role: invitation.role },
         },
       });
@@ -104,7 +109,11 @@ export class InvitationsService {
   }
 
   /** Decline a pending invitation — the row is dropped, access never granted. */
-  async decline(userId: string, invitationId: string): Promise<void> {
+  async decline(
+    userId: string,
+    invitationId: string,
+    actorType: ActorType = "human",
+  ): Promise<void> {
     const invitation = await this.findPending(userId, invitationId);
     await this.boardWrite.run(invitation.boardId, async (tx) => {
       await tx.boardMember.delete({ where: { id: invitation.id } });
@@ -113,6 +122,7 @@ export class InvitationsService {
           boardId: invitation.boardId,
           type: "member_invite_declined",
           actorId: userId,
+          actorType,
           details: { userId, role: invitation.role },
         },
       });

@@ -60,6 +60,14 @@ export interface ConflictError {
 }
 
 /**
+ * Who performed a command (TASK-157): a person at a browser session
+ * (`"human"`) or an agent/integration authenticating with a personal API
+ * token (`"agent"`). Recorded on the command and activity rows so the feed
+ * can tell a swarm's edits from a teammate's.
+ */
+export type ActorType = "human" | "agent";
+
+/**
  * One entry of `GET /boards/:id/commands?since=<seq>` — the delta catch-up
  * after an SSE gap. Carries the committed action so a client replays it
  * through `boardReducer`.
@@ -71,6 +79,11 @@ export interface CommandDeltaEntry {
   action: BoardAction;
   /** Who issued the command. */
   actorId: string;
+  /**
+   * Whether a person or an agent issued the command (TASK-157). Omitted on
+   * frames written before the field existed — treat as `"human"`.
+   */
+  actorType?: ActorType;
   /**
    * The issuing client's idempotency key. Lets a client recognise its own
    * echo by key rather than by `actorId` — one account may run several
@@ -93,6 +106,8 @@ export interface CommandSseEvent {
   seq: number;
   action: BoardAction;
   actorId: string;
+  /** Whether a person or an agent issued the command (TASK-157). */
+  actorType?: ActorType;
   /** The issuing client's idempotency key (see `CommandDeltaEntry.commandId`). */
   commandId?: string;
   /** Touched entity labels — same contract as `CommandDeltaEntry.touches`. */
@@ -306,6 +321,11 @@ export interface ActivityFeedEntry {
   type: string;
   /** Who caused the entry (real user id). */
   actorId: string;
+  /**
+   * Whether a person or an agent caused the entry (TASK-157). Omitted on
+   * legacy rows — treat as `"human"`.
+   */
+  actorType?: ActorType;
   /** Command entries: the single card the command touched, when unambiguous. */
   cardId?: string;
   /** `Activity.details` snapshot (member email/role, comment text, …). */

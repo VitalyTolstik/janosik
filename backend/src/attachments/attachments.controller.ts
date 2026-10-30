@@ -23,6 +23,8 @@ import { BoardRoles } from "@/common/board-roles.decorator";
 import { CardAccessGuard } from "@/common/card-access.guard";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import type { AuthUser } from "@/auth/auth.types";
+import type { AuthPrincipal } from "@/auth/auth-principal";
+import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
 import { AttachmentsService } from "./attachments.service";
 import type { UploadedBlob } from "./attachments.service";
 import { MediaService } from "./media.service";
@@ -61,6 +63,7 @@ export class AttachmentsController {
   create(
     @Param("cardId") cardId: string,
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @UploadedFile() file: UploadedBlob,
     @Query("inline") inline?: string,
   ): Promise<AttachmentDto> {
@@ -69,6 +72,7 @@ export class AttachmentsController {
       user,
       file,
       inline === "1" || inline === "true",
+      actorTypeOf(principal),
     );
   }
 
@@ -152,8 +156,9 @@ export class AttachmentsController {
   async remove(
     @Param("attachmentId") attachmentId: string,
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
   ): Promise<{ status: "ok" }> {
-    await this.attachments.remove(attachmentId, user);
+    await this.attachments.remove(attachmentId, user, actorTypeOf(principal));
     return { status: "ok" };
   }
 }

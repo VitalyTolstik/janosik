@@ -635,6 +635,15 @@ function WatchRow({
       <span className="truncate text-foreground/80" title={actorName}>
         {actorName}
       </span>
+      {entry.actorType === "agent" ? (
+        <span
+          className="shrink-0 rounded bg-muted px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+          data-testid="actor-agent-badge"
+          title={t("activity.agent")}
+        >
+          {t("activity.agent")}
+        </span>
+      ) : null}
       <span className="min-w-0 break-words text-foreground/90 [overflow-wrap:anywhere]">
         {card ? (
           <span

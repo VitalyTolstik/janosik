@@ -144,6 +144,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the items are trimmed, de-blanked, clamped and capped. The MCP tool
   `janosik_set_card_task_spec` writes it, `janosik_get_card` renders it, and
   the card dialog shows it read-only.
+- **Actor attribution (TASK-157).** Every command and activity row now records
+  whether a person (`"human"`, a browser session) or an agent (`"agent"`, a
+  personal API token) caused it; the activity feed carries the type and the
+  card history marks agent entries with an "Agent" badge.
 
 ### Fixed
 

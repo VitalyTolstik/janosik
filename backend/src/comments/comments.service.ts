@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { Comment } from "@prisma/client";
-import type { CommentDto, CommentPage } from "@janosik/shared";
+import type { ActorType, CommentDto, CommentPage } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
@@ -47,6 +47,7 @@ export class CommentsService {
     cardId: string,
     authorId: string,
     dto: CreateCommentDto,
+    actorType: ActorType = "human",
   ): Promise<CommentDto> {
     const text = dto.text.trim();
     if (text.length === 0) {
@@ -100,6 +101,7 @@ export class CommentsService {
             cardId,
             type: "comment_added",
             actorId: authorId,
+            actorType,
             details: { commentId: comment.id, text },
           },
         });
@@ -185,7 +187,11 @@ export class CommentsService {
   }
 
   /** Soft-delete the caller's own comment (ADMIN/MEMBER enforced by guard). */
-  async remove(commentId: string, userId: string): Promise<void> {
+  async remove(
+    commentId: string,
+    userId: string,
+    actorType: ActorType = "human",
+  ): Promise<void> {
     const comment = await this.prisma.comment.findFirst({
       where: { id: commentId, deletedAt: null },
       select: {
@@ -217,6 +223,7 @@ export class CommentsService {
             cardId: comment.cardId,
             type: "comment_deleted",
             actorId: userId,
+            actorType,
             details: { commentId: comment.id, text: comment.text },
           },
         });

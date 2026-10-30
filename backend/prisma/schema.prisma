@@ -273,6 +273,7 @@ model Command {
   boardId   String
   actor     User     @relation(fields: [actorId], references: [id])
   actorId   String
+  actorType String   @default("human") // TASK-157: human | agent
   seq       BigInt   @default(autoincrement()) // monotonic board version; ?since=
   type      String // BoardAction type
   payload   Json // whole action (deterministic — TASK-21.7a)
@@ -455,6 +456,7 @@ model Activity {
   type      String // member_invited | member_role_changed | member_removed | comment_added
   actor     User     @relation(fields: [actorId], references: [id])
   actorId   String // now a real user
+  actorType String   @default("human") // TASK-157: human | agent
   details   Json? // snapshot details (email, role, …)
   createdAt DateTime @default(now())
 

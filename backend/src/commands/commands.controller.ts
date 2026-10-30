@@ -14,6 +14,8 @@ import type { Response } from "express";
 import { Role } from "@prisma/client";
 import type { CommandDeltaEntry, CommandResponse } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
+import type { AuthPrincipal } from "@/auth/auth-principal";
+import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { BoardRoles } from "@/common/board-roles.decorator";
 import { MembershipGuard } from "@/common/membership.guard";
@@ -43,9 +45,12 @@ export class CommandsController {
   create(
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Body() dto: CreateCommandDto,
   ): Promise<CommandResponse> {
-    return this.commands.apply(id, user.id, dto);
+    return this.commands.apply(id, user.id, dto, {
+      actorType: actorTypeOf(principal),
+    });
   }
 
   /**
