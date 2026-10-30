@@ -516,7 +516,12 @@ describe("BoardProvider in server mode", () => {
     );
     expect(imports).toHaveLength(1);
     expect(server.boards.size).toBe(1);
-    expect(screen.getByTestId("title").textContent).toBe("Board");
+    // The home route redirects to the imported board in a follow-up effect,
+    // so the active board lands a tick after hydration reports "ready" — wait
+    // for it rather than racing the redirect (the click below needs it).
+    await waitFor(() =>
+      expect(screen.getByTestId("title").textContent).toBe("Board"),
+    );
 
     // The queue was revived after the cleanup half of the cycle.
     fireEvent.click(screen.getByTestId("add-column"));
