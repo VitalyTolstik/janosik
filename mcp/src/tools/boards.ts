@@ -12,10 +12,12 @@ import type { JanosikClient } from "../client.js";
 import { CHARACTER_LIMIT } from "../constants.js";
 import { errorResult, respond, textOnly } from "../format.js";
 import { writeSandboxedFile, type FsOptions } from "../fs-policy.js";
+import { summarizeBoard } from "../project.js";
 import { renderBoard, renderBoardSummaries } from "../render.js";
 import {
   boardIdSchema,
   columnIdSchema,
+  detailSchema,
   responseFormatSchema,
 } from "../schemas.js";
 import { DESTRUCTIVE, READ, WRITE, defineTool } from "./helpers.js";
@@ -76,7 +78,8 @@ export function registerBoardTools(
         "Read a board: columns with their cards, every card's badges and the " +
         "label set. Card and column ids returned here are what the other " +
         "tools expect. On a large board pass columnId to read one column; " +
-        "archived cards are listed only with include_archived.",
+        "archived cards are listed only with include_archived. Pass " +
+        "detail='summary' to skip each card's description and checklists.",
       inputSchema: {
         boardId: boardIdSchema,
         columnId: columnIdSchema
@@ -86,11 +89,26 @@ export function registerBoardTools(
           .boolean()
           .default(false)
           .describe("Also list the board's archived cards."),
+        detail: detailSchema
+          .default("full")
+          .describe(
+            "Read projection: 'full' (default) includes each card's " +
+              "description and checklists; 'summary' omits them (a size hint " +
+              "is kept) — use it to scan a board whose cards carry long " +
+              "documents. Read a single card with janosik_get_card for the " +
+              "full text.",
+          ),
         response_format: responseFormatSchema,
       },
       annotations: READ,
     },
-    async ({ boardId, columnId, include_archived, response_format }) => {
+    async ({
+      boardId,
+      columnId,
+      include_archived,
+      detail,
+      response_format,
+    }) => {
       const board = sliceBoard(
         await client.getBoard(boardId),
         columnId,
@@ -102,12 +120,17 @@ export function registerBoardTools(
             "janosik_get_board without columnId for current ids.",
         );
       }
-      return respond(
-        response_format,
-        { board },
-        renderBoard(board),
-        "Pass columnId to read one column at a time.",
-      );
+      const hint = "Pass columnId to read one column at a time.";
+      if (detail === "summary") {
+        return respond(
+          response_format,
+          { board: summarizeBoard(board) },
+          `${renderBoard(board)}\n\n_(summary: descriptions and checklists ` +
+            "omitted — read a card with janosik_get_card for the full text.)_",
+          hint,
+        );
+      }
+      return respond(response_format, { board }, renderBoard(board), hint);
     },
   );
 

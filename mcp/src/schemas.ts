@@ -89,6 +89,19 @@ export const coverSchema = z
   ])
   .describe("Card cover stripe.");
 
+/**
+ * Read projection (TASK-157, E16). 'full' returns every card as stored;
+ * 'summary' drops each card's description and checklists (keeping a size
+ * hint), so scanning a board whose cards carry 64k documents stays small.
+ * Each tool picks its own default.
+ */
+export const detailSchema = z
+  .enum(["summary", "full"])
+  .describe(
+    "Read projection: 'full' includes each card's description and " +
+      "checklists; 'summary' omits them (a size hint is kept).",
+  );
+
 /** A cursor-paginated page request (comments, activity). */
 export const pageSchema = z.object({
   cursor: z

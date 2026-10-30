@@ -429,4 +429,54 @@ describe("janosik MCP server", () => {
     expect(board.columns).toHaveLength(1);
     await client.close();
   });
+
+  it("projects a board in summary mode without the descriptions", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_get_board",
+      arguments: { boardId: "b1", detail: "summary", response_format: "json" },
+    });
+    expect(result.isError).toBeFalsy();
+    const summary = (
+      result.structuredContent as {
+        board: { cards: Record<string, Record<string, unknown>> };
+      }
+    ).board;
+    const k1 = summary.cards.k1!;
+    expect(k1).not.toHaveProperty("description");
+    expect(k1.descriptionChars).toBe("original".length);
+    expect(k1.columnId).toBe("col1");
+    // The markdown form flags that it is a summary (the JSON is the payload).
+    const markdown = await client.callTool({
+      name: "janosik_get_board",
+      arguments: { boardId: "b1", detail: "summary" },
+    });
+    expect(firstText(markdown)).toMatch(/summary/i);
+    await client.close();
+  });
+
+  it("adds a description snippet in full search mode", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_search_cards",
+      arguments: { boardId: "b1", query: "first", detail: "full" },
+    });
+    expect(result.structuredContent).toMatchObject({
+      results: [{ id: "k1", description: "original" }],
+    });
+    await client.close();
+  });
+
+  it("omits the description in the default search mode", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_search_cards",
+      arguments: { boardId: "b1", query: "first" },
+    });
+    const results = (result.structuredContent as { results: unknown[] })
+      .results;
+    expect(results).toHaveLength(1);
+    expect(results[0]).not.toHaveProperty("description");
+    await client.close();
+  });
 });
