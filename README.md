@@ -432,8 +432,8 @@ Workspace-specific extras worth knowing:
 
 | Command | What it does |
 | --- | --- |
-| `npm run start -w backend` | Run the built API (`node backend/dist/main.js`) |
-| `npm run prisma:deploy -w backend` | Apply Prisma migrations to `DATABASE_URL` |
+| `npm run start -w backend` | Run the built API (`node backend/dist/main.js`); applies pending migrations first |
+| `npm run prisma:deploy -w backend` | Apply Prisma migrations to `DATABASE_URL` (without starting) |
 | `npm run admin:create/passwd/list -w backend` | Master-account CLI (see above) |
 | `npm run test:watch -w ui` | Vitest in watch mode |
 
