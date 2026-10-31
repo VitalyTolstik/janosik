@@ -242,8 +242,9 @@ jobs:
       - name: Build (MCP server)
         run: npm run build -w mcp
 
-      # No `--provenance`: it needs a *public* source repository (the repo is
-      # private for now). Add it back when the repo goes public.
+      # The repository is public, so `--provenance` works: npm signs a build
+      # attestation (SLSA) tying the tarball to this workflow run — Trusted
+      # Publishing plus the `id-token: write` permission above.
       #
       # Idempotent: re-running the tag (for example to retry the registry step
       # below) must not fail on an already-published version.
@@ -253,7 +254,7 @@ jobs:
           if npm view "@janosik/mcp@${version}" version >/dev/null 2>&1; then
             echo "@janosik/mcp@${version} is already on npm — skipping publish."
           else
-            npm publish -w mcp --access public
+            npm publish -w mcp --access public --provenance
           fi
 
       - name: Install mcp-publisher

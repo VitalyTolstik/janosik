@@ -85,6 +85,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     (`JANOSIK_MCP_ALLOW_FS=1`) and can be confined with
     `JANOSIK_MCP_FS_ROOT`; symlinks out of the root are refused and existing
     files are never overwritten.
+  - A card is created in one round-trip: `janosik_create_card` sends the card
+    and its fields as a single batch to `POST /boards/:id/commands/batch`,
+    which the server applies in one transaction under the board's write lock.
+    On a 200-card board this roughly doubles write throughput (≈43 → ≈102
+    commands/s) and more than halves per-command latency (TASK-160;
+    `docs/PERF-ONE-BOARD.md`).
 
 - **Agent skill (`skills/janosik`).** A behaviour playbook for agents working a
   board through the MCP tools: read before writing, claim and fill a card so it
