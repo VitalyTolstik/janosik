@@ -152,6 +152,57 @@ the same `commandId`: the idempotency key makes the retry safe.
 Commands that reference unknown entities no-op exactly like the reducer and
 are still recorded. A replay returns the stored no-op result.
 
+## Apply a batch of commands
+
+```
+POST /api/v1/boards/:id/commands/batch
+```
+
+Auth and role are the same as the single endpoint. The body is
+`CommandBatchRequest`:
+
+```json
+{
+  "commands": [
+    { "commandId": "…", "action": { "…": "…" } },
+    { "commandId": "…", "action": { "…": "…" } }
+  ]
+}
+```
+
+The server applies every command in order, in **one** transaction under the
+board's single write lock — one lock, one aggregate load and one cross-board id
+check for the whole batch. Each command still writes its own `Command` row, so
+`seq`, `commandId` idempotency, attribution, undo and the SSE feed are exactly
+as for the single endpoint. The response is `CommandBatchResponse`:
+
+```json
+{
+  "results": [
+    { "seq": 42, "versions": { "card:abc": 7 } },
+    { "seq": 43, "versions": { "card:abc": 8 } }
+  ]
+}
+```
+
+One `CommandResponse` per request command, in order; a retried `commandId`
+returns its stored result.
+
+The batch is **all-or-nothing**: any command's failure rolls the whole batch
+back, so a create and its follow-up field commands either all land or none do.
+The array holds at most `COMMAND_BATCH_MAX` (100) commands — a longer array
+answers `400`. Each command is validated and size-capped exactly like a single
+one, so one oversized member is a `413` before the board lock.
+
+`ifMatch`/`ifMatchVersions` are checked at each command's own point in the
+batch. Because the earlier commands advance the board `seq`, pin the board
+version on the **first** command only — the later ones see the earlier
+command's `seq`.
+
+The batch is what makes an agent's multi-step edit one round-trip:
+`create_card` with a description, priority, assignee and due date is a single
+`ADD_CARD` + field-commands batch, not five requests.
+
 ## Read the command log
 
 ```

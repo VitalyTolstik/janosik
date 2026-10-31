@@ -28,6 +28,8 @@ import type {
   CommentDto,
   CommentKind,
   CommentPage,
+  CommandBatchRequest,
+  CommandBatchResponse,
   CommandRequest,
   CommandResponse,
   CreateShareRequest,
@@ -80,6 +82,25 @@ export interface CommandOptions {
    * "done" for a write that did nothing.
    */
   allowNoChange?: boolean;
+}
+
+/**
+ * One command of a batch (TASK-160): the action plus its own preconditions.
+ * A batch shares one board lock and one aggregate load, so a create and its
+ * follow-up field commands travel together in one round-trip. Preconditions
+ * are checked at each command's own point in the batch — pin the board
+ * version on the *first* command only.
+ */
+export interface BatchCommandItem {
+  action: CommandAction;
+  ifMatch?: number;
+  ifMatchVersions?: Record<string, number>;
+  /**
+   * Pin this command's idempotency key. A create tool passes the
+   * client-supplied entity id here, so a retried batch reuses the key and the
+   * server returns the first result instead of minting a duplicate.
+   */
+  commandId?: string;
 }
 
 /**
@@ -213,14 +234,62 @@ export class JanosikClient {
         ? { ifMatchVersions: opts.ifMatchVersions }
         : {}),
     };
-    let response: CommandResponse;
+    const response = await this.sendCommand<CommandResponse>(
+      apiPath`/boards/${boardId}/commands`,
+      request,
+    );
+    // A committed change always bumps the board version, so an empty map
+    // means the reducer found nothing to do.
+    if (!opts.allowNoChange && Object.keys(response.versions).length === 0) {
+      throw new NoChangeError(action.type);
+    }
+    return response;
+  }
+
+  /**
+   * Apply several commands to one board in a single request (TASK-160). The
+   * server runs them in one transaction under the board's write lock, so a
+   * create plus its field commands cost one round-trip and one lock instead
+   * of one per command. All-or-nothing: a failure on any command rolls the
+   * whole batch back, so a retry after a failure cannot leave a half-made
+   * entity behind.
+   *
+   * Returns one {@link CommandResponse} per command, in order. A command
+   * whose `commandId` was already applied returns its stored result. No
+   * {@link NoChangeError} is raised: a batched field that is already set is
+   * not a failure.
+   */
+  async commandBatch(
+    boardId: string,
+    items: BatchCommandItem[],
+  ): Promise<CommandResponse[]> {
+    const request: CommandBatchRequest = {
+      commands: items.map((item) => ({
+        commandId: item.commandId ?? newCommandId(),
+        action: { ...item.action, boardId, at: Date.now() } as BoardAction,
+        ...(item.ifMatch !== undefined ? { ifMatch: item.ifMatch } : {}),
+        ...(item.ifMatchVersions
+          ? { ifMatchVersions: item.ifMatchVersions }
+          : {}),
+      })),
+    };
+    const response = await this.sendCommand<CommandBatchResponse>(
+      apiPath`/boards/${boardId}/commands/batch`,
+      request,
+    );
+    return response.results;
+  }
+
+  /**
+   * POST a command body with the shared retry policy. The body is built once
+   * by the caller, so a network failure or timeout is retried with the *same*
+   * `commandId`s — if the first attempt did commit, the server answers the
+   * retry with the stored results instead of applying it twice.
+   */
+  private async sendCommand<T>(path: string, body: unknown): Promise<T> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        response = await this.send<CommandResponse>(
-          apiPath`/boards/${boardId}/commands`,
-          { method: "POST", body: request },
-        );
-        break;
+        return await this.send<T>(path, { method: "POST", body });
       } catch (error) {
         if (attempt >= COMMAND_RETRIES || !isTransientNetworkError(error)) {
           throw error;
@@ -231,12 +300,6 @@ export class JanosikClient {
         );
       }
     }
-    // A committed change always bumps the board version, so an empty map
-    // means the reducer found nothing to do.
-    if (!opts.allowNoChange && Object.keys(response.versions).length === 0) {
-      throw new NoChangeError(action.type);
-    }
-    return response;
   }
 
   /**

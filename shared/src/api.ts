@@ -44,6 +44,33 @@ export interface CommandResponse {
 }
 
 /**
+ * Upper bound on the commands in one batch (TASK-160). A batch shares one
+ * board lock, one aggregate load and one transaction, so the ceiling keeps a
+ * single write bounded; a caller that needs more sends several batches.
+ */
+export const COMMAND_BATCH_MAX = 100;
+
+/**
+ * Body of `POST /boards/:id/commands/batch` (TASK-160). The server applies
+ * every command in order, in one transaction under the board's single write
+ * lock, so an agent's "create a card and set its fields" step costs one
+ * round-trip and one lock instead of one per command. All-or-nothing: a
+ * failure on any command rolls the whole batch back.
+ */
+export interface CommandBatchRequest {
+  commands: CommandRequest[];
+}
+
+/**
+ * `200` body of `POST /boards/:id/commands/batch` — one `CommandResponse`
+ * per request command, in the same order. A command that was already applied
+ * (a retried `commandId`) returns its stored result.
+ */
+export interface CommandBatchResponse {
+  results: CommandResponse[];
+}
+
+/**
  * Conflict categories a command can be refused with (§7.4):
  * - `version` — a precondition (`ifMatch`/`ifMatchVersions`) is stale;
  * - `wip` — the command would break a collection/WIP limit;

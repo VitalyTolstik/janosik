@@ -1632,7 +1632,7 @@ TASK-36 и TASK-37.)*
 | 88 | TASK-157 `agent-ready-board` ✅ | `main` | §7.17: описание 64к + конвенции слоя 0, атомарный захват с лизингом, контракт задачи, `actorType` + скоупы токенов, CAS на всех мутациях, виды комментариев, поиск по комментам/чек-листам, DoD-гейт, ready-to-work, проекция чтения, доки/сайт/скилл | **Выполнено:** A+B описание 64к + конвенции (`#120`), C1 claim+lease (`#121`), C2 taskSpec (`#123`), C3a `actorType` (`#124`), C3b скоупы+rate-limit (`#125`), E13 лимит пункта 500 (`#126`), E16 проекция чтения (`#131`), D10+D11 виды комментариев + поиск по комментам/чек-листам (`#132`), D9+E14 CAS `expectedVersion` + идемпотентные id (`#133`), D12 DoD-гейт на Done (`#134`), E15+E17 ready-to-work + wait-for-work (`#135`); F (доки en+ru, сайт, скилл, README, AGENT.md) и бамп `@janosik/mcp` 0.4.0 — в этом же этапе. Гейты: shared 448, ui 1004, backend 314 e2e, mcp 90. См. §7.17 |
 | 89 | TASK-158 `admin-master-allowlist` | `feature/TASK-158-admin-master-allowlist` | §7.18: IP-allowlist **для других мастеров** из панели (сейчас только self-service, OWNER правит лишь свою строку) | OWNER задаёт allowlist оператору; адрес вне списка → отказ; аудит; en+ru; тесты. См. §7.18 |
 | 90 | TASK-159 `admin-ui-tests` | `feature/TASK-159-admin-ui-tests` | §7.18: тесты админ-страниц Ops/Comms/Observability/Security (добавлены без ui-набора) | страницы покрыты тестами на fake-admin-server; гейты `ui` зелёные. См. §7.18 |
-| 91 | TASK-160 `board-command-batching` | `feature/TASK-160-board-command-batching` | §7.19: батч команд одной доски — одна транзакция на N команд (амортизация `loadBoardAggregate`/проверок/лока), чтобы держать рой агентов на одной доске | `POST /boards/:id/commands` принимает массив; N `Command`-строк в одной транзакции; throughput одной доски ×N; MCP склеивает поля карточки. Замер — `docs/PERF-ONE-BOARD.md`. См. §7.19 |
+| 91 | TASK-160 `board-command-batching` ✅ | `feature/TASK-160-board-command-batching` | §7.19: батч команд одной доски — одна транзакция на N команд (амортизация `loadBoardAggregate`/проверок/лока), чтобы держать рой агентов на одной доске | `POST /boards/:id/commands/batch` принимает массив; N `Command`-строк в одной транзакции; throughput одной доски выше; MCP склеивает поля карточки. Замер — `docs/PERF-ONE-BOARD.md`. **Выполнено:** батч-эндпоинт (≤`COMMAND_BATCH_MAX`=100) — один lock/`loadBoardAggregate`/id-чек на пачку против бегущего агрегата, атомарно, с сохранением `seq`/идемпотентности/undo/SSE; `apply` = обёртка над `applyBatch` из одной команды; MCP `commandBatch` + `create_card` одним батчем. Замер: **43 → 102 команд/с** (×2.3–2.5), латентность/команда ×2.3 ниже. Гейты: backend unit 333, e2e (новый `commands-batch` 5 + старые 49), mcp 95, lint/format ✓. См. §7.19 |
 
 > **TASK-38a/38b выполнены (2026-10-26).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -3007,7 +3007,9 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   (`docs/PERF-ONE-BOARD.md`) — «рой агентов» наступил: запись одной доски держит
   ~42 команд/с, а из 24 ms на команду лок всего 0.7 ms (3 %), тогда как загрузка
   всей доски — 8 ms (33 %) и pre-checks — 7 ms (29 %). Рычаг — батч команд, а не
-  снятие лока → заведено как TASK-160 (§7.19).**
+  снятие лока. → TASK-160 (§7.19) сделан: батч-транспорт поднял запись одной
+  доски до ~102 команд/с (×2.3–2.5). Глобальный потолок (~290/s, CPU) и шардинг
+  по-прежнему отложены.**
 - Многонодность, Redis pub/sub fan-out, лимит `/auth/login` 5/мин — **не трогаем**
   (первое уже есть, второе — защита by design). **Исключение:** presence при
   нескольких нодах ломается (см. TASK-145) — включать >1 ноды можно только после неё.
@@ -3874,25 +3876,28 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 > board-wide лок, а работа внутри сериализованной транзакции; рычаг — **батч
 > команд**. См. §7.13 «Отложено».
 
-#### TASK-160 — `board-command-batching` · Батч команд одной доски
+#### TASK-160 — `board-command-batching` · Батч команд одной доски ✅
 
 - **Зачем:** §7.13 (отложенный «батчинг команд одной доски»), замер
   `docs/PERF-ONE-BOARD.md`. Агентский шаг (create + description + priority +
   assignee + due) — это **5 отдельных транзакций**, каждая грузит всю доску; при
   100 агентах это 5× цена за одну логическую операцию.
-- **Что:** `POST /boards/:id/commands` принимает **массив** команд; сервер
-  применяет их в **одной** транзакции — один захват advisory-lock, один
-  `loadBoardAggregate`, один набор board-scoped проверок, по одной `Command`-строке
-  на команду (сохранение `seq`, `commandId`-идемпотентности, атрибуции, undo,
-  SSE). Ответ — массив результатов `{seq, versions}`. Одиночный вызов остаётся
-  валидным (массив из 1). MCP: склеивать поля карточки в один запрос
-  (`create_card` + поля, `update_card`), `move_card` — read + один батч.
-- **Трогаем:** `backend/src/commands/*` (dto, controller, service, writers),
-  `shared/src/api.ts` (контракт батча), `mcp/src/client.ts` + `tools/cards.ts`,
-  опционально `ui/src/store/server-sync.ts`, доки.
-- **DoD:** N команд одной доски применяются за одну транзакцию (проверяемо
-  логом/метрикой); `docs/PERF-ONE-BOARD.md` перепроверен — throughput одной доски
-  кратно выше, латентность ниже; инварианты (WIP, claim, id, board-management)
+- **Что (как сделано):** новый эндпоинт `POST /boards/:id/commands/batch`
+  принимает `{ commands: [...] }` (≤ `COMMAND_BATCH_MAX = 100`); сервер применяет
+  их в **одной** транзакции — один захват advisory-lock, один `loadBoardAggregate`,
+  одна проверка чужих id на всю пачку — против «бегущего» агрегата в памяти.
+  Каждая команда по-прежнему пишет свою `Command`-строку (`seq`,
+  `commandId`-идемпотентность, атрибуция, undo, SSE), пачка атомарна. Одиночный
+  `POST /boards/:id/commands` **не менялся** — `apply` стал тонкой обёрткой над
+  `applyBatch` из одной команды (один путь → нет дрейфа). MCP: `commandBatch` +
+  `create_card` шлёт `ADD_CARD` и поля одним батчем.
+- **Трогаем:** `shared/src/api.ts` (контракт батча + `COMMAND_BATCH_MAX`),
+  `backend/src/commands/*` (dto/controller/service), `backend/src/common/app-setup.ts`
+  (лимит тела для `/commands/batch`), `mcp/src/client.ts` + `tools/cards.ts`, тесты,
+  доки.
+- **DoD:** ✅ N команд одной доски применяются за одну транзакцию; замер
+  (`docs/PERF-ONE-BOARD.md`, «Результат 3») — **43 → 102 команд/с (×2.3–2.5)**,
+  латентность на команду ×2.3 ниже; инварианты (WIP, claim, id, board-management)
   сохранены; идемпотентность/undo/SSE без регрессий; unit + e2e + MCP-тесты
   зелёные.
 - **Зависимости:** замер `docs/PERF-ONE-BOARD.md` (сделано); TASK-56, TASK-157

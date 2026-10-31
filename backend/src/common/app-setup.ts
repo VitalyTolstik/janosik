@@ -15,11 +15,12 @@ export const DEFAULT_JSON_LIMIT = "256kb";
 
 /**
  * Routes allowed the large body: `POST /boards/import` and
- * `POST /boards/:id/commands` (plus the admin board-content editor, which
- * submits the same commands on the owner's behalf).
+ * `POST /boards/:id/commands` (plus its `batch` sibling, TASK-160, and the
+ * admin board-content editor, which submits the same commands on the owner's
+ * behalf).
  */
 const LARGE_BODY_ROUTE =
-  /^\/api\/v1\/(boards\/import|boards\/[^/]+\/commands|admin\/boards\/[^/]+\/commands)\/?$/;
+  /^\/api\/v1\/(boards\/import|boards\/[^/]+\/commands(?:\/batch)?|admin\/boards\/[^/]+\/commands(?:\/batch)?)\/?$/;
 
 /**
  * The HTTP pipeline shared by main.ts and the e2e specs, so tests always run
