@@ -422,7 +422,11 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       // Done` checklist is fully ticked and it has an evidence comment. This
       // is the anti-"green fence built from lies" rule — a swarm cannot mark
       // work done on its own say-so.
-      const before = await client.getBoard(boardId);
+      //
+      // The read below serves both the gate and the move: the snapshot is
+      // handed to `commandOnFreshBoard`, so a move costs one `GET` (not two,
+      // TASK-154) and only re-reads on a version conflict.
+      const { board: before, seq } = await client.getBoardWithSeq(boardId);
       const origin = findCardLocation(before, cardId);
       if (origin === null) return cardNotFound(cardId, boardId);
       const destinationId = toColumnId ?? origin.column.id;
@@ -474,6 +478,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         },
         3,
         expectedVersion,
+        { board: before, seq },
       );
       if (missingColumn !== null) {
         return errorResult(
