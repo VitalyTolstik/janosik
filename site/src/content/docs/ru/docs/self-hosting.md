@@ -251,6 +251,7 @@ Yandex и Mail.ru нужен пароль приложения при включ
 | `AUDIT_RETENTION_DAYS` | `365` | Удаляет строки журнала аудита мастер-панели старше стольких дней (для подотчётности окно длиннее). |
 | `DB_CONNECTION_LIMIT` | `10` | Размер пула Prisma на процесс API. Держите `реплики × это` ниже `POSTGRES_MAX_CONNECTIONS`. |
 | `SLOW_QUERY_MS` | `200` | Запросы Prisma не короче этого порога логируются вместе с id запроса. `0` — выключено. |
+| `NODE_OPTIONS` | `--max-old-space-size=1024` | Потолок кучи Node для процесса API. Ограничивает память, чтобы всплеск живых потоков вызывал GC, а не OOM-киллер контейнера. Поднимите на большем хосте. |
 | `POSTGRES_SHARED_BUFFERS` | `256MB` | `shared_buffers` встроенного контейнера Postgres. |
 | `POSTGRES_WORK_MEM` | `8MB` | `work_mem` встроенного контейнера Postgres. |
 | `POSTGRES_MAX_CONNECTIONS` | `100` | `max_connections` встроенного контейнера Postgres. |

@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { RealtimeService } from "./realtime.service";
 
 /** TASK-102: a board's channel must not outlive its last subscriber. */
@@ -66,5 +67,58 @@ describe("RealtimeService.reserveSubscriber", () => {
     expect(realtime.subscriberCount).toBe(40);
     for (const release of releases) release();
     expect(realtime.subscriberCount).toBe(0);
+  });
+});
+
+/** TASK-140: the live-stream count and refusals are visible in the logs. */
+describe("RealtimeService connection logging", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+    jest.useRealTimers();
+  });
+
+  it("logs the live count once a minute while streams are open", () => {
+    jest.useFakeTimers();
+    const log = jest
+      .spyOn(Logger.prototype, "log")
+      .mockImplementation(() => undefined);
+    const realtime = new RealtimeService();
+    realtime.onModuleInit();
+    const admission = realtime.reserveSubscriber("b1", "u1");
+    expect(admission.ok).toBe(true);
+
+    jest.advanceTimersByTime(60_000);
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining("Live SSE connections: 1"),
+    );
+
+    if (admission.ok) admission.release();
+    void realtime.onModuleDestroy();
+  });
+
+  it("stays quiet while no stream is (or was) open", () => {
+    jest.useFakeTimers();
+    const log = jest
+      .spyOn(Logger.prototype, "log")
+      .mockImplementation(() => undefined);
+    const realtime = new RealtimeService();
+    realtime.onModuleInit();
+    jest.advanceTimersByTime(180_000);
+    expect(log).not.toHaveBeenCalled();
+    void realtime.onModuleDestroy();
+  });
+
+  it("warns when a stream is refused past a cap", () => {
+    const warn = jest
+      .spyOn(Logger.prototype, "warn")
+      .mockImplementation(() => undefined);
+    const realtime = new RealtimeService();
+    // Exhaust the per-user cap; the refusal must be logged with its reason.
+    for (let index = 0; index < 100; index += 1) {
+      if (!realtime.reserveSubscriber("b1", "u1").ok) break;
+    }
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("SSE stream refused (user limit"),
+    );
   });
 });

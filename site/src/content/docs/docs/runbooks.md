@@ -187,6 +187,28 @@ docker compose logs -f app        # follow
 docker compose logs --tail=200 app
 ```
 
+## Scaling
+
+One small host serves a normal team. Two knobs matter as you grow, both with
+safe defaults:
+
+- **Live streams.** Each open board (and public share) holds one SSE connection
+  (~0.1–0.17 MB). Past a cap the instance refuses new streams with `503` +
+  `Retry-After` instead of exhausting memory, and logs the live count once a
+  minute while streams are open. Tune with `SSE_MAX_CONNECTIONS` (per instance,
+  default `5000`), `SSE_MAX_PER_USER` (default `32`) and `SSE_MAX_PER_BOARD`
+  (default `0` = unlimited). `0` means unlimited for each.
+- **Heap.** `NODE_OPTIONS=--max-old-space-size=…` (default `1024`) caps V8's old
+  space so a surge triggers GC instead of the container OOM-killer.
+
+**Multiple nodes.** With Redis configured the board fan-out is already
+cross-node and queue workers spread across replicas, so you can run several API
+replicas behind a load balancer: drop the host `ports:` mapping and let the
+balancer reach the replicas on the container network, and set `TRUST_PROXY=1`.
+Keep `DB_CONNECTION_LIMIT` × replicas under `POSTGRES_MAX_CONNECTIONS`. Presence
+(the "who is on this board" roster) is per-node for now, so it can differ
+between nodes. For a single team, one node is the right answer.
+
 ## Troubleshooting
 
 **The app container restarts in a loop, and the logs mention `Refusing to

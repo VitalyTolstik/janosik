@@ -53,6 +53,10 @@ RUN npm run build -w backend \
 # -------------------------------------------------------------- runtime ----
 FROM node:25-bookworm-slim AS runtime
 ENV NODE_ENV=production
+# Bound the V8 old-space heap (TASK-140): a live-stream surge then triggers GC
+# instead of the container being OOM-killed (which drops *every* connection at
+# once). Overridable at run time with `NODE_OPTIONS` in `.env`.
+ENV NODE_OPTIONS=--max-old-space-size=1024
 # Prisma needs openssl at runtime; ca-certificates for outbound TLS (SMTP,
 # OAuth). ffmpeg-static ships its own binary, so no system ffmpeg is needed.
 RUN apt-get update \

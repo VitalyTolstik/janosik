@@ -34,6 +34,10 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
       DB_CONNECTION_LIMIT: ${DB_CONNECTION_LIMIT:-10}
       SLOW_QUERY_MS: ${SLOW_QUERY_MS:-200}
+      # V8 heap ceiling for the API process (TASK-140): bounds memory so a
+      # live-stream surge triggers GC rather than the container OOM-killer,
+      # which would drop every open SSE connection at once.
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=1024}
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (openssl rand -hex 32)}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
