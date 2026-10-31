@@ -39,7 +39,7 @@
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.1.6",
     "@nestjs/throttler": "^6.4.0",
-    "@prisma/client": "^6.16.2",
+    "@prisma/client": "^7.10.1",
     "prisma": "^6.16.2",
     "@types/multer": "^2.2.0",
     "argon2": "^0.45.1",
