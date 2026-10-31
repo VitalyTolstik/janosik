@@ -30,6 +30,13 @@ const PUBLISH_ATTEMPTS = 3;
 const PUBLISH_RETRY_MS = 250;
 
 /**
+ * How often the live-connection count is logged (TASK-140). A periodic line is
+ * enough to see a stream surge in the logs; it only prints while there is
+ * something to report (at least one stream now or on the previous tick).
+ */
+const CONNECTION_LOG_MS = 60_000;
+
+/**
  * Board event fan-out (§7.0, TASK-30).
  *
  * The MVP ran a single node, so a lazily-created rxjs `Subject` per board was
@@ -53,10 +60,16 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   private subscribers = 0;
   private publisher: Redis | null = null;
   private subscriber: Redis | null = null;
+  /** Periodic connection-count log (TASK-140). */
+  private monitor: NodeJS.Timeout | null = null;
+  private lastLoggedSubscribers = 0;
   /** This node's id — so it ignores the echo of its own published frames. */
   private readonly nodeId = randomUUID();
 
   onModuleInit(): void {
+    // Log the live-stream count on a timer regardless of Redis (TASK-140):
+    // the metric (`subscriberCount`) feeds observability, this feeds the logs.
+    this.startMonitor();
     if (env.REDIS_URL.trim().length === 0) return;
     try {
       this.publisher = new Redis(env.REDIS_URL, {
@@ -92,8 +105,29 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
+    if (this.monitor !== null) {
+      clearInterval(this.monitor);
+      this.monitor = null;
+    }
     await this.publisher?.quit().catch(() => undefined);
     await this.subscriber?.quit().catch(() => undefined);
+  }
+
+  /**
+   * Emit one log line per interval with the live-stream count, but only while
+   * streams exist (or existed on the previous tick), so an idle instance stays
+   * quiet (TASK-140). `unref` keeps the timer from holding the process open.
+   */
+  private startMonitor(): void {
+    this.monitor = setInterval(() => {
+      if (this.subscribers === 0 && this.lastLoggedSubscribers === 0) return;
+      this.logger.log(
+        `Live SSE connections: ${this.subscribers} ` +
+          `(boards: ${this.channels.size}, redis fan-out: ${this.publisher !== null})`,
+      );
+      this.lastLoggedSubscribers = this.subscribers;
+    }, CONNECTION_LOG_MS);
+    this.monitor.unref?.();
   }
 
   /** Push one committed event to every subscriber of the board (all nodes). */
@@ -230,18 +264,18 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
       env.SSE_MAX_CONNECTIONS > 0 &&
       this.subscribers >= env.SSE_MAX_CONNECTIONS
     ) {
-      return { ok: false, reason: "instance", limit: env.SSE_MAX_CONNECTIONS };
+      return this.refuse("instance", env.SSE_MAX_CONNECTIONS);
     }
     if (
       userId !== null &&
       env.SSE_MAX_PER_USER > 0 &&
       userCount >= env.SSE_MAX_PER_USER
     ) {
-      return { ok: false, reason: "user", limit: env.SSE_MAX_PER_USER };
+      return this.refuse("user", env.SSE_MAX_PER_USER);
     }
     const boardCount = this.limitByBoard.get(boardId) ?? 0;
     if (env.SSE_MAX_PER_BOARD > 0 && boardCount >= env.SSE_MAX_PER_BOARD) {
-      return { ok: false, reason: "board", limit: env.SSE_MAX_PER_BOARD };
+      return this.refuse("board", env.SSE_MAX_PER_BOARD);
     }
     this.subscribers += 1;
     if (userId !== null) this.limitByUser.set(userId, userCount + 1);
@@ -257,6 +291,22 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
         this.decrement(this.limitByBoard, boardId);
       },
     };
+  }
+
+  /**
+   * Refuse a stream past a cap (TASK-140): the caller answers `503` + the
+   * `Retry-After` header, and the refusal is logged so a surge is visible in
+   * the logs, not only in the panel's metric.
+   */
+  private refuse(
+    reason: "instance" | "user" | "board",
+    limit: number,
+  ): SubscriberAdmission {
+    this.logger.warn(
+      `SSE stream refused (${reason} limit ${limit}); ` +
+        `live connections: ${this.subscribers}, boards: ${this.channels.size}`,
+    );
+    return { ok: false, reason, limit };
   }
 
   private decrement(map: Map<string, number>, key: string): void {
