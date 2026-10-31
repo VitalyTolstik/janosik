@@ -199,6 +199,8 @@ that matter most:
 | `DB_CONNECTION_LIMIT` | `10` | Prisma pool size per API process. Keep `replicas × this` well under `POSTGRES_MAX_CONNECTIONS`. |
 | `SLOW_QUERY_MS` | `200` | Prisma queries at or above this duration are logged with the request id (`X-Request-Id`). `0` disables it. |
 | `NODE_OPTIONS` | `--max-old-space-size=1024` | Node heap ceiling for the API process. Bounds memory so a live-stream surge triggers GC instead of the container OOM-killer. Raise it on a bigger host. |
+| `SHARE_AGGREGATE_CACHE_MS` | `2000` | Live-share aggregate cache window. A hot link rebuilds its board at most once per window; a committed command invalidates it via the board `seq`. `0` disables. |
+| `ADMIN_METRICS_CACHE_MS` | `5000` | Master `/admin/metrics` cache window (dropped on any moderation action). `0` disables. |
 | `POSTGRES_SHARED_BUFFERS` | `256MB` | `shared_buffers` of the bundled Postgres container; raise on a larger host. |
 | `POSTGRES_WORK_MEM` | `8MB` | `work_mem` of the bundled Postgres container. |
 | `POSTGRES_MAX_CONNECTIONS` | `100` | `max_connections` of the bundled Postgres container. |

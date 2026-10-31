@@ -20,12 +20,15 @@ import type {
 } from "@janosik/shared";
 import { SHARE_LIMITS, serializeExport } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { env } from "@/config/env";
 import { BoardsService } from "@/boards/boards.service";
 import { CommentsService } from "@/comments/comments.service";
 import { AttachmentsService } from "@/attachments/attachments.service";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import type { CreateShareDto, UpdateShareDto } from "./dto/share.dto";
 import { renderBoardPng } from "./og-image";
+import { ShareAggregateCache } from "./share-aggregate-cache";
+import type { CachedBoardAggregate } from "./share-aggregate-cache";
 
 /** What a snapshot share freezes: the envelope plus its (sanitized) roster. */
 interface SnapshotPayload {
@@ -58,6 +61,15 @@ export class ShareService {
     private readonly attachments: AttachmentsService,
     private readonly flags: FeatureFlagsService,
   ) {}
+
+  /**
+   * Live-aggregate cache (TASK-141): a hot share link stops rebuilding the
+   * whole board on every request. Invalidated the moment the board's command
+   * `seq` moves; the window bounds how stale the roster may be.
+   */
+  private readonly aggregateCache = new ShareAggregateCache(
+    env.SHARE_AGGREGATE_CACHE_MS,
+  );
 
   // ------------------------------------------------------------ owner side
 
@@ -244,14 +256,14 @@ export class ShareService {
 
     const boardId = this.boardIdOf(share);
     await this.assertBoardAlive(boardId);
-    const { board, seq } = await this.boards.getAggregateWithSeq(boardId);
+    const { board, members, seq } = await this.liveAggregate(boardId);
     return {
       mode: "live",
       title: share.title,
       takenAt: null,
       board,
       seq,
-      members: await this.publicMembers(boardId),
+      members,
       includeComments: share.includeComments,
       includeAttachments: share.includeAttachments,
     };
@@ -345,7 +357,40 @@ export class ShareService {
    */
   private async loadLiveBoard(boardId: string): Promise<BoardAggregate> {
     await this.assertBoardAlive(boardId);
-    return this.boards.getAggregate(boardId);
+    return (await this.liveAggregate(boardId)).board;
+  }
+
+  /**
+   * The live board aggregate + roster, served from the short-TTL cache
+   * (TASK-141) when the board's command `seq` is unchanged. A committed
+   * command bumps the `seq` and forces a rebuild, so the served board is never
+   * stale relative to the log; only the roster may lag, and only up to the
+   * cache window. Concurrent misses share one rebuild.
+   */
+  private async liveAggregate(boardId: string): Promise<CachedBoardAggregate> {
+    if (this.aggregateCache.enabled) {
+      const cached = this.aggregateCache.get(
+        boardId,
+        await this.currentSeq(boardId),
+      );
+      if (cached !== undefined) return cached;
+    }
+    return this.aggregateCache.load(boardId, async () => {
+      const { board, seq } = await this.boards.getAggregateWithSeq(boardId);
+      return { board, seq, members: await this.publicMembers(boardId) };
+    });
+  }
+
+  /**
+   * The board's current command `seq` — one cheap indexed read on
+   * `Command(boardId, seq)`, far lighter than rebuilding the aggregate.
+   */
+  private async currentSeq(boardId: string): Promise<number> {
+    const max = await this.prisma.command.aggregate({
+      where: { boardId },
+      _max: { seq: true },
+    });
+    return max._max.seq === null ? 0 : Number(max._max.seq);
   }
 
   /** Throws `410 Gone` when the board is missing, deleted or archived. */
