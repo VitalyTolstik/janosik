@@ -413,7 +413,7 @@
 | 34 | TASK-43 `master-admin-panel` | ✅ реализовано вне очереди по запросу — мастер-контур (§7.0/§7.4): `AdminUser` (OWNER/OPERATOR, отдельные cookie/JWT-аудиенция/refresh-таблица), `/admin/auth/*` + `/admin/*` (метрики с runtime, юзеры, доски, **карточки, комментарии, сессии, API-токены**, журнал команд, аудит), **редактор контента доски через командный лог от имени владельца**, модерация (блок юзера + ревок сессий/токенов по одной, архив/soft-delete доски и карточки, удаление комментария), управление мастерами только у OWNER, CLI `admin:create/passwd/list`, аудит каждого действия, lockout и anti-timing логина, ID всех сущностей с копированием, поиск по ID, удаление `User.isSuperAdmin`; **таблицы schema-first** (`Board.id`/`BoardMember.userId`/`Card.columnId`/`Comment.authorId`/…, FK-айди как значения, поиск по айди, без счётчиков, скролл-вьюпорт со sticky-шапкой) | гейты: ui 483, shared 325, backend 22 unit + 100 e2e, build/lint/format, size 204.66/210 KB + ленивый admin-чанк 20.7/30 KB; live-смоук: CLI → браузер (вход мастера, создание мастера из панели, блок юзера, Playwright-смоук) |
 | 35 | TASK-35 `board-members-ui` | ✅ реализовано, PR #74 — участники доски из UI (§7.6.1): модалка «Участники (N)» из шапки (`BoardMembersDialog` + `UserAvatar`), инвайт по email, смена роли, `expiresAt` для VIEWER с бейджем «доступ истёк», исключение с инлайн-подтверждением, последний ADMIN защищён (disabled + тултип-причина), ошибки API → тосты; **VIEWER получает read-only UI** (нет drag/композеров/меню/инлайн-редакторов, диалог карточки только для чтения, `roleOf` → `readOnly` через BoardSection); `GET /boards/:id/members` уже отдавал `userId`/`displayName`/`email` — бэкенд не менялся | гейты: ui 512 (485+27, покрытие выше порогов), shared 325, backend 22 unit + 100 e2e не тронуты, build/lint/format; live-смоук |
 | 30 | TASK-30 `realtime-sse` | ✅ реализовано, ветка `feature/TASK-30-realtime-sse`; доборы — TASK-30.1 ✅ (`touches` в событии + бюджет ленивого чанка) и TASK-30.2 ✅ (audit hardening) — §7.5 — SSE `GET /boards/:id/events` (`{type:"command", seq, action, actorId}`) + догон `?since=`; `X-Board-Seq` на агрегате; UI-мост в ленивом чанке (`fetch`-ридер с Authorization вместо EventSource+ticket), чужие экшены через тот же `boardReducer`, дедуп по seq, defer при in-flight командах, focus refetch остался fallback | два браузера видят правки без перезагрузки; обрыв догоняется дельтой (live-смоук 8/8, включая `setOffline`) |
-| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. Следующий — TASK-36 `presence-attribution` |
+| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-39/40/41 (§7.8), TASK-31/32, TASK-140/141 (§7.13, частично), TASK-131 (отложено). Следующий — TASK-39 `public-demo` (после TASK-40) |
 
 ### 6.0.1. Укрепление фундамента перед бэкендом (TASK-21.1…21.11)
 
@@ -1555,7 +1555,7 @@ TASK-36 и TASK-37.)*
 | 13 | TASK-38a `self-host-hardening` ✅ | `feature/TASK-38a-self-host-hardening` | §7.8: шесть грабель самохостинга, каждая ломается **молча** (Secure-кука по HTTP, буферизация SSE за nginx, миграции в entrypoint, JWT без дефолтов, `ALLOW_REGISTRATION`, healthcheck БД) + джоб чистки soft-delete на `@nestjs/schedule` | HTTP-инсталляция ругается, а не разлогинивает молча; SSE работает за дефолтным nginx; пустой `JWT_SECRET` не даёт стартовать; чистка идёт по расписанию |
 | 14 | TASK-38b `self-host-release` ✅ | `feature/TASK-38b-self-host-release` | §7.8: `LICENSE` (AGPL-3.0) + поля в `package.json`, multi-stage `Dockerfile`, прод-`docker-compose.yml`, `.env.example`, публикация образов в `ghcr.io` из CI по тегу, README под самохостера, `SECURITY.md`, `CHANGELOG.md` | `curl -O docker-compose.yml && cp .env.example .env && docker compose up -d` поднимает инстанс на чистой машине; `pull && up -d` обновляет без ручных шагов |
 | 15 | TASK-39 `public-demo` | `feature/TASK-39-public-demo` | §7.8: демо-инстанс на своём домене, сид-доска en/ru, ночной сброс, два предсозданных аккаунта (совместный режим щупается в двух окнах), регистрация закрыта, ссылка первым экраном README | демо по HTTPS; два аккаунта показывают realtime вдвоём; ночной сброс отрабатывает |
-| 16 | TASK-40 `observability` | `feature/TASK-40-observability` | §7.8: Sentry на фронт и бэк (**DSN — переменная, пустая по умолчанию**: свой DSN в опенсорс-образ зашивать нельзя), `pino` со структурными логами и `requestId`→`commandId`, `/health` со статусом БД и версией образа | ошибка долетает до Sentry с версией сборки; пустой `SENTRY_DSN` полностью выключает отправку; по `commandId` трассируется путь команды |
+| 16 | TASK-40 `observability` | `feature/TASK-40-observability` | §7.8: Sentry на фронт и бэк (**DSN — переменная, пустая по умолчанию**: свой DSN в опенсорс-образ зашивать нельзя), `pino` со структурными логами и `requestId`→`commandId`, `/health` со статусом БД и версией образа | ошибка долетает до Sentry с версией сборки; пустой `SENTRY_DSN` полностью выключает отправку; по `commandId` трассируется путь команды. **Частично (2026-10-31):** `/health` со статусом БД и версией (TASK-147 `health/ready` + TASK-64 observability) и `requestId`→`commandId` (TASK-153) — уже сделано; осталось **Sentry + `pino`** |
 | 17 | TASK-41 `e2e-multiuser` | `feature/TASK-41-e2e-multiuser` | §7.8: Playwright, **ровно шесть** сценариев на два браузера (undo не затирает чужое, конфликт текста, живое прилетание, догон `?since=`, идемпотентность, presence). Правка §0 п.4 — запрет сужается, а не снимается. Гоняется в CI против `docker compose` из TASK-38b | все шесть зелёные в CI; прогон ≤5 мин; §0 и README обновлены |
 | 18 | TASK-31 `mobile-ux` | `feature/TASK-31-mobile-ux` | Тач-слой для календаря/таблицы (HTML5 DnD на тачах не работает; доска уже покрыта TASK-21.10), адаптив шапки/фильтров/диалогов | drag-сроки и перенос строк работают на тач-эмуляторе; вёрстка не ломается на 390px |
 | 19 | TASK-32 `landing-intro` | `feature/TASK-32-landing-intro` | Презентационная страница для неавторизованных + маршруты «войти / создать аккаунт» (auth готов с TASK-24; роутер уже BrowserRouter — TASK-21.8) | неавторизованный видит лендинг, после логина попадает на доску; deep-links не сломаны |
@@ -1614,8 +1614,8 @@ TASK-36 и TASK-37.)*
 | 72 | TASK-139 `board-virtualization` ✅ | `feature/TASK-139-board-virtualization` | §7.13: виртуализация больших досок — рендер только видимых карточек/колонок, без фризов на 1000+ карточек | **Выполнено:** окно карточек в колонке (`use-card-window.ts`) и строк таблицы (`@tanstack/react-virtual`) с точной высотой скролла; несмонтированные карточки остаются в `SortableContext`, j/k скроллит колонку к курсору; календарь: bounded-месяц не тронут, но unscheduled-панель, недельные ячейки и day-panel получают окно. Замер: board 2400 → 108 карточек в DOM, ~4.0k узлов, 90 MB heap, первый рендер ~0.7 с, max long task 176 мс (было 4.81 с / 67.7k / 1.1 GB / 3.90 с); table 2400 → 26 строк вместо 49k DOM; unscheduled 1200 → 27 кнопок. См. §7.13, `docs/PERF-BASELINE.md` |
 | 72.1 | TASK-142 `simplify-design` ✅ | `main` | §7.13: чекбокс «Упростить дизайн» — плотная лицевая часть карточки и лёгкий «watch»-вид для наблюдения за роем (снижает DOM и перерисовки), **после виртуализации** | тумблер переключает плотный/полный вид и сохраняется; DOM/время рендера заметно ниже (замер); функции по клику; en+ru. **Выполнено:** чекбокс в меню плотности на панели вида (рядом с настройками колонок), выбор в `localStorage` (`janosik-board-density`); компактная однострочная карточка (48px) — заголовок, метки точками, blocked-маркер, прогресс чек-листа, приоритет, исполнитель; hover-кнопки, описание, срок и подписи меток ушли в диалог по клику; компактная высота строки (56px) прокинута в виртуализацию; ResizeObserver на каждую карточку в компактном режиме не создаётся. Замер на 2400 карточек: DOM 4 482 → 2 414 (−46%), первый рендер 1 060 → 740 мс (−30%), карточек в окне 108 → 156; 240 live-обновлений роя (≈9/с) — 0 long task в обоих режимах. Плюс четвёртый **watch-вид «без косметики»** (крупный статус + онлайн + живая лента активности, без карточек/DnD/анимаций: 0 карточек, ~405 DOM-узлов на 2400-доске). См. §7.13, `docs/PERF-BASELINE.md` |
 | 72.2 | TASK-143 `presence-deltas` ✅ | `main` | §7.13: presence дельтами — `sync` на connect, `join`/`leave`/`update` дальше, без 30-секундного broadcast ростера; `?presence=0` для агентских потоков | **Выполнено:** 3000 SSE без OOM (703 MB, было падение); 1600 коннектов 1464→463 MB; backend 280 / ui 866 / shared 431 тестов зелёные. См. §7.13 |
-| 73 | TASK-140 `realtime-resilience` | `feature/TASK-140-realtime-resilience` | §7.13: устойчивость SSE — heap-лимит, лимит соединений на инстанс с вежливым отказом вместо OOM, масштабирование нод | перегруз не роняет процесс; лимит и heap настраиваются env; доки self-hosting описывают масштаб. См. §7.13 |
-| 74 | TASK-141 `scale-caches-config` | `feature/TASK-141-scale-caches-config` | §7.13: TTL-кэш live-share и admin-метрик, `shared_buffers` в self-host compose | live-share и метрики читаются из кэша (RPS ×N), конфиг БД задокументирован. См. §7.13 |
+| 73 | TASK-140 `realtime-resilience` | `feature/TASK-140-realtime-resilience` | §7.13: устойчивость SSE — heap-лимит, лимит соединений на инстанс с вежливым отказом вместо OOM, масштабирование нод | перегруз не роняет процесс; лимит и heap настраиваются env; доки self-hosting описывают масштаб. **Частично:** лимит соединений с `503`+`Retry-After` уже в TASK-146; осталось heap-лимит (`--max-old-space-size`), лог числа соединений, доки по нодам. См. §7.13 |
+| 74 | TASK-141 `scale-caches-config` | `feature/TASK-141-scale-caches-config` | §7.13: TTL-кэш live-share и admin-метрик, `shared_buffers` в self-host compose | live-share и метрики читаются из кэша (RPS ×N), конфиг БД задокументирован. **Частично:** `shared_buffers`/`work_mem`/`max_connections` и `DB_CONNECTION_LIMIT` уже в TASK-153; осталось кэш live-share и `/admin/metrics`. См. §7.13 |
 | 75 | TASK-144 `ui-edit-coalescing` ✅ | `main` | §7.14: слияние quiet-патчей по полям; не коммитить описание при неразрешённом конфликте | **Выполнено:** quiet-патчи сливаются по полям (title+description в одном окне не теряются); конфликтное описание не коммитится на blur/close/switch/pagehide, черновик держится за карточкой и переопрашивается при открытии; тесты server-sync и CardDialog. См. §7.14 |
 | 76 | TASK-145 `presence-consistency` ✅ | `main` | §7.14: топология presence (1/несколько нод), presence-epoch + resync, rejoin по TTL, `avatarPath`, `clientId` до Observable | **Выполнено:** presence — только локально (без Redis-фан-аута → нет ложных `leave` на 2 нодах); `epoch` в кадрах + keepalive + reconnect при расхождении; ping `410` → rejoin; `avatarPath` в сравнении; `clientId` проверяется до Observable; CRLF-парсер; ростер чистится на смене доски; тесты. **Остаётся:** общий presence-store в Redis для сходимости ростера на нескольких нодах (отдельная задача). См. §7.14 |
 | 77 | TASK-146 `resource-limits` ✅ | `main` | §7.14: кэпы SSE/сессий, `ifMatchVersions`, upload-квоты, bounded share-throttle | **Выполнено:** SSE-кэпы instance/user/board (`503` + `Retry-After`); `ifMatchVersions` ≤100 и батч-чтение версий (≤1 запрос на тип); upload-rate 60/мин на юзера (`429`); share-throttle ограничен по размеру + валидация формы токена; тесты. **Остаётся:** temp-file uploads → **TASK-155**; Redis-лимитер шары на несколько нод. См. §7.14 |
@@ -1630,6 +1630,8 @@ TASK-36 и TASK-37.)*
 | 86 | TASK-155 `upload-hardening` ✅ | `main` | §7.14: multer `diskStorage` → temp-файл → sniff первых байт → `rename` в место; `rm` в `finally`; sweep `.tmp-*` | **Выполнено:** `tempUploadStorage` (multer disk → `.tmp-<uuid><ext>` в blob-root); `UploadedBlob.path`; MIME по префиксу 4 КБ; `rename` после проверок; `rm` в `finally` на всех путях (вложения и аватар); транскод/деривативы по id; `.tmp` sweep из TASK-148. e2e загрузок/транскода/шары зелёные. См. §7.14 |
 | 87 | TASK-156 `review-fixes` ✅ | `main` | §7.15: правки по итогам семи независимых ревью TASK-148/149/150/151/152/153/155 (блокеры, средние, low, тесты) | **Выполнено:** subtree-restore доски с memberships и без воскрешения ранее удалённых чек-листов; snapshot несёт links/lastActorId/attachmentCount; единый `APP_BASE`; `controllerchange` во всех вкладках + отказ кэшировать HTML как JS; сборка финального блоба при ошибке после `rename`; ресинк/конфликт draft заголовка; page-purge доски; минуты не закрывают пикер; чанкированные sweeps и индексы кодов; сортировка bulk restore и audit по элементам; oversight-limit для внутренних restore; чанки импорта; P2028→503; a11y/dnd/lightbox/DueBadge; detached snapshot-шары; кэш ops-settings и границы курсоров. Гейты: unit 306, e2e 301, ui 908, shared 431; lint 0 errors, format/build/size/site зелёные. См. §7.15 |
 | 88 | TASK-157 `agent-ready-board` ✅ | `main` | §7.17: описание 64к + конвенции слоя 0, атомарный захват с лизингом, контракт задачи, `actorType` + скоупы токенов, CAS на всех мутациях, виды комментариев, поиск по комментам/чек-листам, DoD-гейт, ready-to-work, проекция чтения, доки/сайт/скилл | **Выполнено:** A+B описание 64к + конвенции (`#120`), C1 claim+lease (`#121`), C2 taskSpec (`#123`), C3a `actorType` (`#124`), C3b скоупы+rate-limit (`#125`), E13 лимит пункта 500 (`#126`), E16 проекция чтения (`#131`), D10+D11 виды комментариев + поиск по комментам/чек-листам (`#132`), D9+E14 CAS `expectedVersion` + идемпотентные id (`#133`), D12 DoD-гейт на Done (`#134`), E15+E17 ready-to-work + wait-for-work (`#135`); F (доки en+ru, сайт, скилл, README, AGENT.md) и бамп `@janosik/mcp` 0.4.0 — в этом же этапе. Гейты: shared 448, ui 1004, backend 314 e2e, mcp 90. См. §7.17 |
+| 89 | TASK-158 `admin-master-allowlist` | `feature/TASK-158-admin-master-allowlist` | §7.18: IP-allowlist **для других мастеров** из панели (сейчас только self-service, OWNER правит лишь свою строку) | OWNER задаёт allowlist оператору; адрес вне списка → отказ; аудит; en+ru; тесты. См. §7.18 |
+| 90 | TASK-159 `admin-ui-tests` | `feature/TASK-159-admin-ui-tests` | §7.18: тесты админ-страниц Ops/Comms/Observability/Security (добавлены без ui-набора) | страницы покрыты тестами на fake-admin-server; гейты `ui` зелёные. См. §7.18 |
 
 > **TASK-38a/38b выполнены (2026-10-26).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -2966,9 +2968,12 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   соединениям и остаётся жив; лимит и heap — через env; доки self-hosting описывают
   масштаб и путь «несколько нод»; смоук `sse-agents`: N соединений без OOM.
 - **Зависимости:** TASK-74 (уже реализовано).
-- **Статус:** причина OOM (присутствие) уже устранена в TASK-143 (3000 коннектов
-  держатся без падения). Здесь остаются heap-лимит, лимит соединений с вежливым
-  отказом, метрики и доки по нодам.
+- **Статус:** причина OOM (присутствие) устранена в TASK-143 (3000 коннектов
+  держатся без падения); **лимит одновременных SSE с вежливым `503`+`Retry-After`
+  уже сделан в TASK-146** (`SSE_MAX_CONNECTIONS`/`SSE_MAX_PER_USER`/`SSE_MAX_PER_BOARD`,
+  счётчик `RealtimeService.subscriberCount` виден в observability TASK-64).
+  **Осталось:** heap-лимит (`--max-old-space-size` в `Dockerfile`/compose/.env),
+  лог числа активных соединений и раздел про несколько нод в `docs/SELF-HOSTING.md`.
 
 #### TASK-141 — `scale-caches-config` · Кэши и конфиг БД
 
@@ -2985,6 +2990,10 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   до/после в PR), консистентность сохраняется (инвалидация по `seq`); self-host compose
   и доки описывают `shared_buffers`.
 - **Зависимости:** нет.
+- **Статус:** пункты (3) `shared_buffers`/`work_mem`/`max_connections` и (4)
+  `DB_CONNECTION_LIMIT` **уже сделаны в TASK-153** (compose + `.env.example` +
+  `docs/SELF-HOSTING.md`). **Осталось:** (1) TTL-кэш live-share с инвалидацией по
+  `seq` и (2) инвалидируемый кэш `/admin/metrics`.
 
 #### Отложено (не сейчас)
 
@@ -3801,6 +3810,49 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 - **Зависимости:** TASK-154 (`mcp-perf-bench` — батч-тул роя, §7.16); логично после
   §7.14. **Порядок:** A+B → C → D → E (каждый слой — отдельный PR; A+B можно
   отдельным PR сразу).
+
+---
+
+### 7.18. Хвосты из ревизии статуса (TASK-158…159)
+
+> **Откуда.** Ревизия статусов 2026-10-31 (проверка таблицы §7.7 против кода)
+> нашла два пункта, которые были помечены словами «НЕ ЗАБЫТЬ»/«не покрыто», но
+> **не заведены задачей** — значит не попадут ни в одну итерацию. Заводим явно.
+
+#### TASK-158 — `admin-master-allowlist` · IP-allowlist для других мастеров
+
+- **Зачем:** §7.10 (addendum к TASK-65). Сейчас `AdminUser.ipAllowlist`
+  (CSV IP/CIDR, `null` = без ограничений) — **self-service**: `PUT /admin/security`
+  действует на `@CurrentAdmin()` (`admin.controller.ts`), правит только свою
+  строку, и только OWNER (`security.service.ts`). Нет способа из панели **Masters**
+  задать/посмотреть allowlist **другому мастеру** — а именно это нужно, чтобы
+  «пускать оператора только с этих адресов».
+- **Что:** эндпоинт OWNER-only для чтения/записи allowlist конкретного мастера
+  (`GET`/`PUT /admin/masters/:id/allowlist`), та же валидация `invalidAllowlistEntries`
+  и нормализация, аудит `security.ip_allowlist_changed` с `target=admin:<id>`;
+  поле в UI на странице Masters (редактор у оператора, read-only для OPERATOR).
+  Гвард: нельзя сузить allowlist **собственного** входа мимо проверки caller-IP
+  (уже есть в `SecurityService.update`).
+- **Трогаем:** `backend/src/admin/admin.controller.ts`, `security.service.ts`,
+  `dto/admin-v3.dto.ts`, `ui/src/components/admin/*` (страница Masters), `locales/*`.
+- **DoD:** OWNER задаёт allowlist оператору из панели; адрес вне списка получает
+  отказ на входе и на каждом запросе; всё в аудите; en+ru; тесты.
+- **Зависимости:** TASK-65 (сделано).
+
+#### TASK-159 — `admin-ui-tests` · Тесты админ-страниц Ops/Comms/Observability/Security
+
+- **Зачем:** §7.7 (примечание к TASK-59…65). Страницы Ops/Comms/Observability/
+  Security добавлены **без отдельного ui-набора** — логика покрыта backend
+  e2e/unit, но регресс в самих страницах (fake-admin-server, формы, i18n) не
+  ловится.
+- **Что:** тесты на страницы Ops (флаги/maintenance/retention/purge), Comms
+  (рассылка/объявления/шаблоны), Observability (version/deploy, размер БД, джобы,
+  health), Security (2FA/IP-allowlist/алерты) — на fake-admin-server, как у
+  `TrafficSettingsPage`/`DemoPage`/`SharesPage`.
+- **Трогаем:** `ui/src/components/admin/*.test.tsx` (новые), fake-admin-server.
+- **DoD:** страницы покрыты тестами (рендер, ключевые действия, ошибки API, en/ru);
+  гейты `ui` зелёные.
+- **Зависимости:** TASK-59…65 (сделано).
 
 ---
 
