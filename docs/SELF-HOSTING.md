@@ -198,6 +198,7 @@ that matter most:
 | `AUDIT_RETENTION_DAYS` | `365` | Retention for the master audit trail (separate, longer window). |
 | `DB_CONNECTION_LIMIT` | `10` | Prisma pool size per API process. Keep `replicas × this` well under `POSTGRES_MAX_CONNECTIONS`. |
 | `SLOW_QUERY_MS` | `200` | Prisma queries at or above this duration are logged with the request id (`X-Request-Id`). `0` disables it. |
+| `NODE_OPTIONS` | `--max-old-space-size=1024` | Node heap ceiling for the API process. Bounds memory so a live-stream surge triggers GC instead of the container OOM-killer. Raise it on a bigger host. |
 | `SHARE_AGGREGATE_CACHE_MS` | `2000` | Live-share aggregate cache window. A hot link rebuilds its board at most once per window; a committed command invalidates it via the board `seq`. `0` disables. |
 | `ADMIN_METRICS_CACHE_MS` | `5000` | Master `/admin/metrics` cache window (dropped on any moderation action). `0` disables. |
 | `POSTGRES_SHARED_BUFFERS` | `256MB` | `shared_buffers` of the bundled Postgres container; raise on a larger host. |
@@ -270,6 +271,33 @@ npm run db:indexes --workspace backend
 
 Compose users get the same statements inline on first start; plan that
 upgrade for a quiet window on a big instance.
+
+### Scaling (streams and multiple nodes)
+
+The API is a single Node process; one small host serves a normal team
+comfortably. Two knobs matter when you grow, and both have safe defaults:
+
+- **Live streams.** Every open board (and public share) holds one SSE
+  connection (~0.1–0.17 MB each). Past a cap the instance refuses new streams
+  with `503` + `Retry-After` instead of exhausting memory, and it logs the live
+  count once a minute while streams are open. Tune with `SSE_MAX_CONNECTIONS`
+  (per instance, default `5000`), `SSE_MAX_PER_USER` (default `32`) and
+  `SSE_MAX_PER_BOARD` (default `0` = unlimited — a swarm legitimately holds
+  many). `0` means unlimited for each.
+- **Heap.** `NODE_OPTIONS=--max-old-space-size=…` (default `1024`) caps V8's old
+  space so a surge triggers GC rather than the container OOM-killer, which would
+  drop every open connection at once.
+
+**Multiple nodes.** With Redis set (`REDIS_URL`, on in the compose stack) the
+board event fan-out is already cross-node (TASK-74) and BullMQ workers spread
+across replicas, so you can run several API replicas behind a load balancer:
+drop the host `ports:` mapping from the `app` service and let the balancer reach
+the replicas on the container network (or run them under an orchestrator), and
+set `TRUST_PROXY=1`. Keep the Postgres budget in mind — `DB_CONNECTION_LIMIT`
+(per process) × replicas must stay under `POSTGRES_MAX_CONNECTIONS`. One caveat
+today: **presence** (the "who is on this board" roster) is per-node until the
+shared Redis presence store lands, so the roster can differ between nodes. For a
+single team, one node is the right answer.
 
 ### Backup
 
