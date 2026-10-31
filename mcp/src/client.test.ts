@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { Board } from "@janosik/shared";
+
 import { JanosikClient, apiPath } from "./client.js";
 import { ApiError, NoChangeError, describeError } from "./errors.js";
 
@@ -129,6 +131,71 @@ describe("JanosikClient.command outcomes", () => {
       boardId: "other",
     } as never);
     expect(JSON.parse(String(calls[0]!.init.body)).action.boardId).toBe("b1");
+  });
+});
+
+describe("JanosikClient.commandOnFreshBoard", () => {
+  const board = {
+    id: "b1",
+    columns: [],
+    cards: {},
+    labels: [],
+  } as unknown as Board;
+  const boardResponse = (seq: number): Response =>
+    new Response(JSON.stringify(board), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Board-Seq": String(seq),
+      },
+    });
+
+  it("reuses a prefetched snapshot instead of re-reading the board", async () => {
+    const { calls } = stubFetch((call) =>
+      call.init.method === "POST"
+        ? json({ seq: 9, versions: { "board:b1": 1 } })
+        : boardResponse(8),
+    );
+    const client = new JanosikClient("http://api.test", "t");
+    const result = await client.commandOnFreshBoard(
+      "b1",
+      () => ({ action: { type: "DELETE_CARD", cardId: "c1" }, result: "ok" }),
+      3,
+      undefined,
+      { board, seq: 8 },
+    );
+    expect(result).toBe("ok");
+    // Exactly one request — the write. The prefetched snapshot is reused, so
+    // a move that already read the board costs one GET fewer (TASK-154).
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]!.init.body)).ifMatch).toBe(8);
+  });
+
+  it("re-reads once and retries on a version conflict", async () => {
+    let gets = 0;
+    let posts = 0;
+    stubFetch((call) => {
+      if (call.init.method === "POST") {
+        posts += 1;
+        return posts === 1
+          ? json({ conflict: "version" }, 409)
+          : json({ seq: 11, versions: { "board:b1": 1 } });
+      }
+      gets += 1;
+      return boardResponse(10 + gets);
+    });
+    const client = new JanosikClient("http://api.test", "t");
+    const result = await client.commandOnFreshBoard(
+      "b1",
+      () => ({ action: { type: "DELETE_CARD", cardId: "c1" }, result: "ok" }),
+      3,
+      undefined,
+      { board, seq: 10 },
+    );
+    expect(result).toBe("ok");
+    expect(posts).toBe(2);
+    expect(gets).toBe(1); // the conflict forced one fresh read
   });
 });
 

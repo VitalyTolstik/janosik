@@ -253,16 +253,25 @@ export class JanosikClient {
    * caller saw: when set, the command carries it as `ifMatch` and is sent
    * exactly once — a mismatch is a version conflict the caller must resolve
    * by re-reading, not a retry.
+   *
+   * `prefetched` (TASK-154) lets a caller that already read the board hand
+   * that snapshot in: the first attempt then reuses it instead of issuing
+   * another `GET`. A version conflict still re-reads, so correctness is
+   * unchanged — only the common (no-conflict) path loses one round-trip.
    */
   async commandOnFreshBoard<R>(
     boardId: string,
     build: (board: Board) => { action?: CommandAction; result: R } | null,
     attempts = 3,
     expectedVersion?: number,
+    prefetched?: { board: Board; seq: number },
   ): Promise<R | null> {
     const maxAttempts = expectedVersion !== undefined ? 1 : attempts;
     for (let attempt = 1; ; attempt += 1) {
-      const { board, seq } = await this.getBoardWithSeq(boardId);
+      const { board, seq } =
+        attempt === 1 && prefetched
+          ? prefetched
+          : await this.getBoardWithSeq(boardId);
       const plan = build(board);
       if (plan === null) return null;
       if (plan.action === undefined) return plan.result;
