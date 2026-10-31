@@ -1614,8 +1614,8 @@ TASK-36 и TASK-37.)*
 | 72 | TASK-139 `board-virtualization` ✅ | `feature/TASK-139-board-virtualization` | §7.13: виртуализация больших досок — рендер только видимых карточек/колонок, без фризов на 1000+ карточек | **Выполнено:** окно карточек в колонке (`use-card-window.ts`) и строк таблицы (`@tanstack/react-virtual`) с точной высотой скролла; несмонтированные карточки остаются в `SortableContext`, j/k скроллит колонку к курсору; календарь: bounded-месяц не тронут, но unscheduled-панель, недельные ячейки и day-panel получают окно. Замер: board 2400 → 108 карточек в DOM, ~4.0k узлов, 90 MB heap, первый рендер ~0.7 с, max long task 176 мс (было 4.81 с / 67.7k / 1.1 GB / 3.90 с); table 2400 → 26 строк вместо 49k DOM; unscheduled 1200 → 27 кнопок. См. §7.13, `docs/PERF-BASELINE.md` |
 | 72.1 | TASK-142 `simplify-design` ✅ | `main` | §7.13: чекбокс «Упростить дизайн» — плотная лицевая часть карточки и лёгкий «watch»-вид для наблюдения за роем (снижает DOM и перерисовки), **после виртуализации** | тумблер переключает плотный/полный вид и сохраняется; DOM/время рендера заметно ниже (замер); функции по клику; en+ru. **Выполнено:** чекбокс в меню плотности на панели вида (рядом с настройками колонок), выбор в `localStorage` (`janosik-board-density`); компактная однострочная карточка (48px) — заголовок, метки точками, blocked-маркер, прогресс чек-листа, приоритет, исполнитель; hover-кнопки, описание, срок и подписи меток ушли в диалог по клику; компактная высота строки (56px) прокинута в виртуализацию; ResizeObserver на каждую карточку в компактном режиме не создаётся. Замер на 2400 карточек: DOM 4 482 → 2 414 (−46%), первый рендер 1 060 → 740 мс (−30%), карточек в окне 108 → 156; 240 live-обновлений роя (≈9/с) — 0 long task в обоих режимах. Плюс четвёртый **watch-вид «без косметики»** (крупный статус + онлайн + живая лента активности, без карточек/DnD/анимаций: 0 карточек, ~405 DOM-узлов на 2400-доске). См. §7.13, `docs/PERF-BASELINE.md` |
 | 72.2 | TASK-143 `presence-deltas` ✅ | `main` | §7.13: presence дельтами — `sync` на connect, `join`/`leave`/`update` дальше, без 30-секундного broadcast ростера; `?presence=0` для агентских потоков | **Выполнено:** 3000 SSE без OOM (703 MB, было падение); 1600 коннектов 1464→463 MB; backend 280 / ui 866 / shared 431 тестов зелёные. См. §7.13 |
-| 73 | TASK-140 `realtime-resilience` | `feature/TASK-140-realtime-resilience` | §7.13: устойчивость SSE — heap-лимит, лимит соединений на инстанс с вежливым отказом вместо OOM, масштабирование нод | перегруз не роняет процесс; лимит и heap настраиваются env; доки self-hosting описывают масштаб. **Частично:** лимит соединений с `503`+`Retry-After` уже в TASK-146; осталось heap-лимит (`--max-old-space-size`), лог числа соединений, доки по нодам. См. §7.13 |
-| 74 | TASK-141 `scale-caches-config` | `feature/TASK-141-scale-caches-config` | §7.13: TTL-кэш live-share и admin-метрик, `shared_buffers` в self-host compose | live-share и метрики читаются из кэша (RPS ×N), конфиг БД задокументирован. **Частично:** `shared_buffers`/`work_mem`/`max_connections` и `DB_CONNECTION_LIMIT` уже в TASK-153; осталось кэш live-share и `/admin/metrics`. См. §7.13 |
+| 73 | TASK-140 `realtime-resilience` ✅ | `feature/TASK-140-realtime-resilience` | §7.13: устойчивость SSE — heap-лимит, лимит соединений на инстанс с вежливым отказом вместо OOM, масштабирование нод | перегруз не роняет процесс; лимит и heap настраиваются env; доки self-hosting описывают масштаб. **Выполнено: PR #144** — `NODE_OPTIONS=--max-old-space-size=1024` (Dockerfile/compose/.env), лог числа живых соединений раз в минуту + warn при отказе (`RealtimeService`), раздел «Scaling» в self-hosting-доках (en/ru); лимит соединений с `503`+`Retry-After` — TASK-146. См. §7.13 |
+| 74 | TASK-141 `scale-caches-config` ✅ | `feature/TASK-141-scale-caches-config` | §7.13: TTL-кэш live-share и admin-метрик, `shared_buffers` в self-host compose | live-share и метрики читаются из кэша (RPS ×N), конфиг БД задокументирован. **Выполнено: PR #145** — `ShareAggregateCache` (кэш агрегата live-шары по `seq` + TTL для ростера + single-flight), `TtlCache` для `/admin/metrics` (сброс на любой модерации через `audit()`), env `SHARE_AGGREGATE_CACHE_MS`/`ADMIN_METRICS_CACHE_MS`; `shared_buffers`/`DB_CONNECTION_LIMIT` — TASK-153. См. §7.13 |
 | 75 | TASK-144 `ui-edit-coalescing` ✅ | `main` | §7.14: слияние quiet-патчей по полям; не коммитить описание при неразрешённом конфликте | **Выполнено:** quiet-патчи сливаются по полям (title+description в одном окне не теряются); конфликтное описание не коммитится на blur/close/switch/pagehide, черновик держится за карточкой и переопрашивается при открытии; тесты server-sync и CardDialog. См. §7.14 |
 | 76 | TASK-145 `presence-consistency` ✅ | `main` | §7.14: топология presence (1/несколько нод), presence-epoch + resync, rejoin по TTL, `avatarPath`, `clientId` до Observable | **Выполнено:** presence — только локально (без Redis-фан-аута → нет ложных `leave` на 2 нодах); `epoch` в кадрах + keepalive + reconnect при расхождении; ping `410` → rejoin; `avatarPath` в сравнении; `clientId` проверяется до Observable; CRLF-парсер; ростер чистится на смене доски; тесты. **Остаётся:** общий presence-store в Redis для сходимости ростера на нескольких нодах (отдельная задача). См. §7.14 |
 | 77 | TASK-146 `resource-limits` ✅ | `main` | §7.14: кэпы SSE/сессий, `ifMatchVersions`, upload-квоты, bounded share-throttle | **Выполнено:** SSE-кэпы instance/user/board (`503` + `Retry-After`); `ifMatchVersions` ≤100 и батч-чтение версий (≤1 запрос на тип); upload-rate 60/мин на юзера (`429`); share-throttle ограничен по размеру + валидация формы токена; тесты. **Остаётся:** temp-file uploads → **TASK-155**; Redis-лимитер шары на несколько нод. См. §7.14 |
@@ -2972,8 +2972,10 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   держатся без падения); **лимит одновременных SSE с вежливым `503`+`Retry-After`
   уже сделан в TASK-146** (`SSE_MAX_CONNECTIONS`/`SSE_MAX_PER_USER`/`SSE_MAX_PER_BOARD`,
   счётчик `RealtimeService.subscriberCount` виден в observability TASK-64).
-  **Осталось:** heap-лимит (`--max-old-space-size` в `Dockerfile`/compose/.env),
-  лог числа активных соединений и раздел про несколько нод в `docs/SELF-HOSTING.md`.
+  **Сделано (PR #144):** heap-лимит (`--max-old-space-size=1024` в
+  `Dockerfile`/compose/.env), лог числа активных соединений раз в минуту +
+  warn при отказе, раздел «Scaling (streams and multiple nodes)» в
+  `docs/SELF-HOSTING.md` и в сайтовых runbooks (en/ru).
 
 #### TASK-141 — `scale-caches-config` · Кэши и конфиг БД
 
@@ -2992,8 +2994,10 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 - **Зависимости:** нет.
 - **Статус:** пункты (3) `shared_buffers`/`work_mem`/`max_connections` и (4)
   `DB_CONNECTION_LIMIT` **уже сделаны в TASK-153** (compose + `.env.example` +
-  `docs/SELF-HOSTING.md`). **Осталось:** (1) TTL-кэш live-share с инвалидацией по
-  `seq` и (2) инвалидируемый кэш `/admin/metrics`.
+  `docs/SELF-HOSTING.md`). **Сделано (PR #145):** (1) `ShareAggregateCache` —
+  TTL-кэш live-share с инвалидацией по `seq` (+ single-flight, TTL для ростера)
+  и (2) `TtlCache` для `/admin/metrics` со сбросом на любой модерации через
+  `audit()`; env `SHARE_AGGREGATE_CACHE_MS`/`ADMIN_METRICS_CACHE_MS`.
 
 #### Отложено (не сейчас)
 
