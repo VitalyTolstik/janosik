@@ -221,9 +221,8 @@ nvm install && nvm use                  # репо пинит версию в .n
 
 cp backend/.env.example backend/.env    # задать JWT_SECRET (openssl rand -hex 32)
 docker compose -f backend/docker-compose.yml up -d   # postgres :5433 (+redis :6379)
-npm run prisma:deploy -w backend        # миграции
-npm run build:backend
-npm run start -w backend                # API :3000
+npm run build:backend                   # prisma generate + tsc
+npm run start -w backend                # API :3000 (миграции — сами, через prestart)
 npm run dev                             # UI :5173 (/api проксируется на :3000)
 ```
 
