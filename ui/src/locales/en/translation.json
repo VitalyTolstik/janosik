@@ -126,7 +126,7 @@
   "account.tokens.scopeReadOnly": "Read-only",
   "account.tokens.title": "API keys",
   "account.tooltip": "Account and settings",
-  "activity.agent": "Agent",
+  "activity.agent": "AI",
   "activity.archived": "Archived",
   "activity.assignee-set": "Assignee changed to {{detail}}",
   "activity.assignee-unassigned": "Removed the assignee",
