@@ -60,6 +60,7 @@ import {
   type OAuthProviderId,
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { TtlCache } from "@/common/ttl-cache";
 import { BoardWriteService } from "@/common/board-write.service";
 import { activeMembershipWhere } from "@/common/membership";
 import { TrafficService } from "@/common/traffic.service";
@@ -142,9 +143,31 @@ export class AdminService {
     private readonly maintenance: MaintenanceService,
   ) {}
 
+  /**
+   * Short-TTL cache for the metrics snapshot (TASK-141): the panel polls it
+   * and each build runs ~17 counts. It is dropped on any moderation action
+   * (see `audit`), so the panel never serves a snapshot it just changed.
+   */
+  private readonly metricsCache = new TtlCache<string, AdminMetricsDto>(
+    env.ADMIN_METRICS_CACHE_MS,
+  );
+
   // ---------------------------------------------------------------- metrics
 
   async metrics(): Promise<AdminMetricsDto> {
+    const cached = this.metricsCache.get("snapshot");
+    if (cached !== undefined) return cached;
+    const value = await this.computeMetrics();
+    this.metricsCache.set("snapshot", value);
+    return value;
+  }
+
+  /** Drop the cached metrics snapshot (a moderation action changed counts). */
+  invalidateMetrics(): void {
+    this.metricsCache.delete("snapshot");
+  }
+
+  private async computeMetrics(): Promise<AdminMetricsDto> {
     const now = Date.now();
     const since7d = new Date(now - 7 * DAY_MS);
     const since24h = new Date(now - DAY_MS);
@@ -1758,6 +1781,9 @@ export class AdminService {
     targetId: string | null,
     details: Record<string, unknown> = {},
   ): Promise<void> {
+    // Every moderation action is audited here, so this is the one choke point
+    // that reliably drops the metrics snapshot (TASK-141).
+    this.invalidateMetrics();
     await this.prisma.adminAuditLog.create({
       data: {
         adminId: admin.id,

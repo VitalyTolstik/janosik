@@ -50,6 +50,13 @@ if (process.env.NODE_ENV === "test") {
   process.env.SHARE_OG_RATE_LIMIT = "50";
 }
 
+// Read caches (TASK-141) are off in tests, so a second read inside one spec
+// always sees the freshly written database state.
+if (process.env.NODE_ENV === "test") {
+  process.env.SHARE_AGGREGATE_CACHE_MS = "0";
+  process.env.ADMIN_METRICS_CACHE_MS = "0";
+}
+
 // Tests are hermetic: a developer machine's SMTP_* (backend/.env) must not
 // turn e2e runs into live senders. Specs that exercise a transport start
 // one explicitly via MailerService.reconfigure.
@@ -244,6 +251,20 @@ export const env = cleanEnv(process.env, {
     desc: "Public share OG preview requests per minute, per token",
     default: SHARE_LIMITS.ogRateLimitPerMinute,
     example: "60",
+  }),
+  // Short-TTL read caches (TASK-141). A hot live-share link rebuilds its
+  // aggregate at most once per window, and the board `seq` invalidates it the
+  // moment a command commits; the master metrics snapshot is served from a
+  // short cache too. 0 disables each cache.
+  SHARE_AGGREGATE_CACHE_MS: num({
+    desc: "Live-share aggregate cache window in ms (0 = disabled)",
+    default: 2000,
+    example: "2000",
+  }),
+  ADMIN_METRICS_CACHE_MS: num({
+    desc: "Master /admin/metrics cache window in ms (0 = disabled)",
+    default: 5000,
+    example: "5000",
   }),
   // Live-stream admission caps (TASK-146): a ceiling on concurrent SSE
   // connections per instance, per user and per board. One VIEWER opening
