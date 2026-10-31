@@ -12,7 +12,11 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { Role } from "@prisma/client";
-import type { CommandDeltaEntry, CommandResponse } from "@janosik/shared";
+import type {
+  CommandBatchResponse,
+  CommandDeltaEntry,
+  CommandResponse,
+} from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
@@ -20,6 +24,7 @@ import { CurrentUser } from "@/auth/current-user.decorator";
 import { BoardRoles } from "@/common/board-roles.decorator";
 import { MembershipGuard } from "@/common/membership.guard";
 import { CommandsService } from "./commands.service";
+import { CreateCommandBatchDto } from "./dto/create-command-batch.dto";
 import { CreateCommandDto } from "./dto/create-command.dto";
 import { parseSince } from "./parse-since";
 
@@ -51,6 +56,28 @@ export class CommandsController {
     return this.commands.apply(id, user.id, dto, {
       actorType: actorTypeOf(principal),
     });
+  }
+
+  /**
+   * Apply several commands in one transaction (TASK-160): one board lock and
+   * one aggregate load for the whole batch, so an agent's multi-step edit
+   * (create a card, then set its fields) is one round-trip instead of one per
+   * command. All-or-nothing — any command's failure rolls the batch back.
+   */
+  @UseGuards(MembershipGuard)
+  @BoardRoles(Role.ADMIN, Role.MEMBER)
+  @Post("batch")
+  @HttpCode(HttpStatus.OK)
+  async batch(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @Body() dto: CreateCommandBatchDto,
+  ): Promise<CommandBatchResponse> {
+    const results = await this.commands.applyBatch(id, user.id, dto.commands, {
+      actorType: actorTypeOf(principal),
+    });
+    return { results };
   }
 
   /**

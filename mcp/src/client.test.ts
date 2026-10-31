@@ -73,6 +73,71 @@ describe("JanosikClient.command", () => {
   });
 });
 
+describe("JanosikClient.commandBatch", () => {
+  it("posts every command in one request and returns the results in order", async () => {
+    const { calls } = stubFetch(() =>
+      json({
+        results: [
+          { seq: 1, versions: { "board:b1": 1 } },
+          { seq: 2, versions: { "card:c1": 1 } },
+        ],
+      }),
+    );
+    const client = new JanosikClient("http://api.test", "jnk_token");
+
+    const results = await client.commandBatch("b1", [
+      {
+        action: {
+          type: "ADD_CARD",
+          newCardId: "c1",
+          columnId: "col",
+          title: "T",
+        },
+        commandId: "c1",
+        ifMatch: 5,
+      },
+      { action: { type: "SET_CARD_PRIORITY", cardId: "c1", priority: "high" } },
+    ]);
+
+    expect(results.map((r) => r.seq)).toEqual([1, 2]);
+    expect(calls).toHaveLength(1);
+    const call = calls[0]!;
+    expect(call.url).toBe("http://api.test/api/v1/boards/b1/commands/batch");
+    const body = JSON.parse(String(call.init.body));
+    expect(body.commands).toHaveLength(2);
+    expect(body.commands[0]).toMatchObject({ commandId: "c1", ifMatch: 5 });
+    expect(body.commands[0].action).toMatchObject({
+      boardId: "b1",
+      type: "ADD_CARD",
+      newCardId: "c1",
+    });
+    expect(typeof body.commands[0].action.at).toBe("number");
+    // A command without a pinned key still gets a fresh idempotency key.
+    expect(body.commands[1].commandId).toMatch(/^mcp-/);
+  });
+
+  it("retries a network failure with the same commandIds", async () => {
+    let attempt = 0;
+    const bodies: string[] = [];
+    vi.stubGlobal("fetch", (_input: string, init?: RequestInit) => {
+      bodies.push(String(init?.body));
+      attempt += 1;
+      if (attempt === 1) return Promise.reject(new TypeError("fetch failed"));
+      return Promise.resolve(
+        json({ results: [{ seq: 1, versions: { "board:b1": 1 } }] }),
+      );
+    });
+    const client = new JanosikClient("http://api.test", "t");
+    await client.commandBatch("b1", [
+      { action: { type: "RENAME_BOARD", title: "X" } },
+    ]);
+    expect(bodies).toHaveLength(2);
+    expect(JSON.parse(bodies[0]!).commands[0].commandId).toBe(
+      JSON.parse(bodies[1]!).commands[0].commandId,
+    );
+  });
+});
+
 describe("JanosikClient.command outcomes", () => {
   it("treats an empty versions map as a no-op error", async () => {
     stubFetch(() => json({ seq: 2, versions: {} }));

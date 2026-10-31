@@ -162,3 +162,49 @@ describe("CommandsService.apply size caps", () => {
     ).rejects.toThrow(PayloadTooLargeException);
   });
 });
+
+/**
+ * TASK-160: a batch validates every command before it takes the board lock,
+ * so an oversized member is a cheap 413 — never megabytes serialized through
+ * the board writer, and never a partial apply.
+ */
+describe("CommandsService.applyBatch size caps", () => {
+  const actorId = "user-1";
+  const boardId = "board-1";
+
+  /** An `UPDATE_CARD` whose JSON encoding is exactly `bytes` bytes long. */
+  const actionOfBytes = (bytes: number) => {
+    const skeleton = {
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      at: 1,
+      description: "",
+    };
+    const overhead = Buffer.byteLength(JSON.stringify(skeleton), "utf8");
+    return { ...skeleton, description: "a".repeat(bytes - overhead) };
+  };
+
+  it("413s the batch before the board lock when any member is oversized", async () => {
+    const boardWrite = { run: jest.fn() };
+    const prisma = {
+      command: { findMany: jest.fn(), findFirst: jest.fn() },
+    } as unknown as PrismaService;
+    const svc = new CommandsService(prisma, boardWrite as never, {} as never);
+
+    await expect(
+      svc.applyBatch(boardId, actorId, [
+        {
+          commandId: "cmd-ok",
+          action: { type: "RENAME_BOARD", title: "x", at: 1 },
+        },
+        {
+          commandId: "cmd-big",
+          action: actionOfBytes(MAX_COMMAND_BYTES + 1),
+        },
+      ]),
+    ).rejects.toThrow(PayloadTooLargeException);
+    // The board writer — the per-board queue and the advisory lock — was
+    // never entered: the whole batch failed its cheap validation first.
+    expect(boardWrite.run).not.toHaveBeenCalled();
+  });
+});

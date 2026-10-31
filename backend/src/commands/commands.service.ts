@@ -187,6 +187,17 @@ export interface CommandDelta {
   resync: boolean;
 }
 
+/**
+ * A command validated and normalized outside the board lock (TASK-160): the
+ * wire DTO, the action the reducer and the writers receive (with a clamped
+ * `at`), and the canonical identity for the idempotency check (no `at`).
+ */
+interface PreparedCommand {
+  dto: CreateCommandDto;
+  action: BoardAction;
+  fingerprint: string;
+}
+
 @Injectable()
 export class CommandsService {
   constructor(
@@ -195,17 +206,175 @@ export class CommandsService {
     private readonly realtime: RealtimeService,
   ) {}
 
-  /** Apply one command idempotently, or return its stored result on replay. */
+  /**
+   * Apply one command idempotently, or return its stored result on replay.
+   * A thin wrapper over {@link applyBatch} of one, so the single and the
+   * batched transports share one code path (TASK-160).
+   */
   async apply(
     boardId: string,
     actorId: string,
     dto: CreateCommandDto,
     options: { allowOversize?: boolean; actorType?: ActorType } = {},
   ): Promise<CommandResponse> {
-    // TASK-157: who issued the command — a person or an agent (a PAT). The
+    const [response] = await this.applyBatch(boardId, actorId, [dto], options);
+    return response;
+  }
+
+  /**
+   * Apply several commands to one board in a single transaction (TASK-160):
+   * one board lock, one aggregate load, one set of pre-checks for the whole
+   * batch. Commands are applied in order against a running in-memory
+   * aggregate, each still writing its own `Command` row — so `seq`,
+   * `commandId` idempotency, attribution, undo and the SSE feed are
+   * unchanged. All-or-nothing: any command's failure rolls the batch back.
+   *
+   * `ifMatch`/`ifMatchVersions` are checked at each command's own point in
+   * the batch — a client that batches a create with its fields pins the board
+   * version on the *first* command only (the later ones see the earlier
+   * command's `seq`).
+   */
+  async applyBatch(
+    boardId: string,
+    actorId: string,
+    dtos: CreateCommandDto[],
+    options: { allowOversize?: boolean; actorType?: ActorType } = {},
+  ): Promise<CommandResponse[]> {
+    // TASK-157: who issued the commands — a person or an agent (a PAT). The
     // transport resolves it from the request principal; internal callers
     // (admin restores, the demo seeder) default to "human".
     const actorType: ActorType = options.actorType ?? "human";
+    // Validate every command *before* the board lock (TASK-147 follow-up): an
+    // oversized or malformed command is a cheap 400/413, not megabytes
+    // serialized through the board writer.
+    const prepared = dtos.map((dto) => this.prepareCommand(dto, options));
+
+    const applied = await this.boardWrite.run(
+      boardId,
+      async (
+        tx,
+      ): Promise<{
+        responses: CommandResponse[];
+        events: InternalCommandEvent[];
+      }> => {
+        // The board write lock (BoardWriteService) already serializes every
+        // command on this board — the `ifMatch` checks below see each
+        // committed predecessor. We only need the board to exist.
+        const board = await tx.board.findFirst({
+          where: { id: boardId, deletedAt: null },
+          select: { id: true },
+        });
+        if (!board) {
+          throw new NotFoundException("Board not found");
+        }
+
+        // Resolve every `commandId` up front: a retried batch returns the
+        // stored results without re-applying (idempotency), and only the
+        // *fresh* commands need their ids checked against the entity tables.
+        const existingRows = await tx.command.findMany({
+          where: { id: { in: prepared.map((entry) => entry.dto.commandId) } },
+          select: { id: true, boardId: true, payload: true, result: true },
+        });
+        const existingById = new Map(existingRows.map((row) => [row.id, row]));
+        for (const entry of prepared) {
+          const existing = existingById.get(entry.dto.commandId);
+          if (!existing) continue;
+          if (existing.boardId !== boardId) {
+            throw new ConflictException({
+              message: "commandId already used on another board",
+              field: "commandId",
+            });
+          }
+          // A reused key with a different body is a client bug (or a key
+          // collision), not a retry: answering with the first command's
+          // result would tell the caller its *new* action was applied.
+          if (actionFingerprint(existing.payload) !== entry.fingerprint) {
+            throw new ConflictException({
+              message: "commandId already used with a different payload",
+              field: "commandId",
+            });
+          }
+        }
+
+        // Entity ids are global primary keys while commands are board-scoped:
+        // an id that already lives on another board would be silently
+        // rewritten by the upserts below (TASK-30.2). One check covers the
+        // whole batch — an id created by an earlier command is still free
+        // here and passes; replays are skipped (their stored result must stay
+        // reproducible).
+        const referenced = new Set<string>();
+        for (const entry of prepared) {
+          if (existingById.has(entry.dto.commandId)) continue;
+          for (const id of referencedEntityIds(entry.action)) {
+            referenced.add(id);
+          }
+        }
+        await this.assertIdsBelongToBoard(tx, boardId, [...referenced]);
+
+        let running = await loadBoardAggregate(tx, boardId);
+        if (!running) {
+          throw new NotFoundException("Board not found");
+        }
+
+        const responses: CommandResponse[] = [];
+        const events: InternalCommandEvent[] = [];
+        for (const entry of prepared) {
+          const existing = existingById.get(entry.dto.commandId);
+          if (existing) {
+            // A replay of an existing `commandId` publishes nothing — that
+            // `seq` already went out on the stream.
+            responses.push(existing.result as unknown as CommandResponse);
+            continue;
+          }
+          const outcome = await this.applyPrepared(tx, {
+            boardId,
+            actorId,
+            actorType,
+            entry,
+            board: running,
+          });
+          responses.push(outcome.response);
+          running = outcome.board;
+          // Collected here, published by the caller only after the commit: a
+          // subscriber must never replay a command the database could still
+          // roll back. `touches` rides along (TASK-30.1) — it is what the
+          // command actually wrote, so subscribers mark their undo history
+          // foreign without diffing the whole board. `prevSeq` is the board's
+          // seq right before this command (B-4), an internal stream hint.
+          events.push({
+            type: "command",
+            seq: outcome.response.seq,
+            action: entry.action,
+            actorId,
+            actorType,
+            commandId: entry.dto.commandId,
+            touches: outcome.touches,
+            prevSeq: outcome.prevSeq,
+          });
+        }
+        return { responses, events };
+      },
+    );
+
+    // Publish after the batch committed, in order. A failed batch throws
+    // before this, so nothing half-applied is ever announced.
+    for (const event of applied.events) {
+      this.realtime.publish(boardId, event);
+    }
+    return applied.responses;
+  }
+
+  /**
+   * Validate and normalize one command outside the board lock (TASK-160): the
+   * size cap, the reducer-shape check, the supported-action check, the date
+   * range and the `ifMatchVersions` cap all throw a cheap `4xx` here. The
+   * idempotency fingerprint is taken *before* the `at` clamp, so an honest
+   * retry (same body, later wall clock) still matches the stored command.
+   */
+  private prepareCommand(
+    dto: CreateCommandDto,
+    options: { allowOversize?: boolean },
+  ): PreparedCommand {
     // An oversized action is refused before anything else runs (TASK-30.2):
     // the writers would happily persist megabytes of snapshot/activity ids.
     // Internal admin restores may exceed the client cap (RESTORE_COLUMN
@@ -241,178 +410,109 @@ export class CommandsService {
     // oversized map must be a cheap 400, not 5 MB serialized through the
     // board writer (the in-transaction check stays as defence in depth).
     this.assertIfMatchVersionsSize(dto.ifMatchVersions);
-    // Identity of the request for the idempotency check below — taken before
-    // the clamp, so an honest retry (same body, later wall clock) still
-    // matches the stored command.
-    const requestFingerprint = actionFingerprint(validation.action);
-    const action = clampActionAt(validation.action, Date.now());
+    return {
+      dto,
+      action: clampActionAt(validation.action, Date.now()),
+      fingerprint: actionFingerprint(validation.action),
+    };
+  }
 
-    const applied = await this.boardWrite.run(
+  /**
+   * Apply one already-prepared command inside the board-write transaction
+   * (TASK-160). `board` is the running aggregate — the loaded board plus the
+   * effect of every earlier command in the batch; the returned `board` is the
+   * state the next command in the batch sees.
+   */
+  private async applyPrepared(
+    tx: Prisma.TransactionClient,
+    params: {
+      boardId: string;
+      actorId: string;
+      actorType: ActorType;
+      entry: PreparedCommand;
+      board: Board;
+    },
+  ): Promise<{
+    response: CommandResponse;
+    touches: string[];
+    prevSeq: number;
+    board: Board;
+  }> {
+    const { boardId, actorId, actorType, entry, board } = params;
+    const { dto, action } = entry;
+
+    await this.assertAssigneeIsBoardMember(tx, boardId, action);
+    await this.assertClaimIsFree(tx, boardId, action);
+
+    await this.assertBoardManagement(tx, boardId, actorId, action.type);
+
+    const currentVersion = await this.currentSeq(tx, boardId);
+    await this.assertVersionPreconditions(
+      tx,
       boardId,
-      async (
-        tx,
-      ): Promise<{
-        response: CommandResponse;
-        fresh: boolean;
-        touches: string[];
-        prevSeq: number;
-      }> => {
-        // The board write lock (BoardWriteService) already serializes every
-        // command on this board — the `ifMatch` check below sees each
-        // committed predecessor. We only need the board to exist.
-        const board = await tx.board.findFirst({
-          where: { id: boardId, deletedAt: null },
-          select: { id: true },
-        });
-        if (!board) {
-          throw new NotFoundException("Board not found");
-        }
-
-        const existing = await tx.command.findUnique({
-          where: { id: dto.commandId },
-        });
-        if (existing) {
-          if (existing.boardId !== boardId) {
-            throw new ConflictException({
-              message: "commandId already used on another board",
-              field: "commandId",
-            });
-          }
-          // A reused key with a different body is a client bug (or a key
-          // collision), not a retry: answering with the first command's
-          // result would tell the caller its *new* action was applied.
-          if (actionFingerprint(existing.payload) !== requestFingerprint) {
-            throw new ConflictException({
-              message: "commandId already used with a different payload",
-              field: "commandId",
-            });
-          }
-          return {
-            response: existing.result as unknown as CommandResponse,
-            fresh: false,
-            touches: [],
-            prevSeq: 0,
-          };
-        }
-
-        // Entity ids are global primary keys while commands are board-scoped:
-        // an id that already lives on another board would be silently
-        // rewritten by the upserts below (TASK-30.2). Replays skip this
-        // check — their stored result must stay reproducible.
-        await this.assertIdsBelongToBoard(
-          tx,
-          boardId,
-          referencedEntityIds(action),
-        );
-        await this.assertAssigneeIsBoardMember(tx, boardId, action);
-        await this.assertClaimIsFree(tx, boardId, action);
-
-        const before = await loadBoardAggregate(tx, boardId);
-        if (!before) {
-          throw new NotFoundException("Board not found");
-        }
-
-        await this.assertBoardManagement(tx, boardId, actorId, action.type);
-
-        const currentVersion = await this.currentSeq(tx, boardId);
-        await this.assertVersionPreconditions(
-          tx,
-          boardId,
-          dto.ifMatchVersions,
-          currentVersion,
-        );
-        if (dto.ifMatch !== undefined && dto.ifMatch !== currentVersion) {
-          throw new ConflictException({
-            conflict: "version",
-            currentVersion,
-          } satisfies ConflictError);
-        }
-        this.assertNoWipConflict(before, action, currentVersion);
-
-        const at = (action as BoardScopedAction).at;
-        const state = boardReducer(
-          [before],
-          Object.assign({}, action, { boardId }) as BoardAction,
-          { withActivity: false },
-        );
-        const after = state[0] ?? before;
-        const changed = stableStringify(before) !== stableStringify(after);
-        // Freeze the display diff while both aggregates are in hand (TASK-37)
-        // — the history feed reads it back; the payload stays a pure action.
-        const details = changed ? commandDetails(action, before, after) : null;
-
-        const created = await tx.command.create({
-          data: {
-            id: dto.commandId,
-            boardId,
-            actorId,
-            actorType,
-            type: action.type,
-            payload: jsonSafe(action),
-            result: {},
-            ...(details !== null
-              ? { details: jsonSafe(details) as Prisma.InputJsonValue }
-              : {}),
-            touches: [],
-          },
-        });
-        const seq = Number(created.seq);
-
-        let touches: string[] = [];
-        if (changed) {
-          touches = await applyCommandWrites(tx, {
-            boardId,
-            action,
-            before,
-            after,
-            at,
-            actorId,
-          });
-        }
-        const versions = changed
-          ? await collectVersions(tx, boardId, touches)
-          : {};
-        const response: CommandResponse = { seq, versions };
-
-        await tx.command.update({
-          where: { id: created.id },
-          data: {
-            payload: jsonSafe(action),
-            result: jsonSafe(response),
-            touches,
-          },
-        });
-        return { response, fresh: true, touches, prevSeq: currentVersion };
-      },
+      dto.ifMatchVersions,
+      currentVersion,
     );
+    if (dto.ifMatch !== undefined && dto.ifMatch !== currentVersion) {
+      throw new ConflictException({
+        conflict: "version",
+        currentVersion,
+      } satisfies ConflictError);
+    }
+    this.assertNoWipConflict(board, action, currentVersion);
 
-    // Publish only after the transaction committed: a subscriber must never
-    // replay a command the database could still roll back. A replay of an
-    // existing `commandId` publishes nothing — that `seq` already went out.
-    // `touches` rides along (TASK-30.1): it is what the command actually
-    // wrote, so subscribers mark their undo history foreign without diffing
-    // the whole board.
-    //
-    // `commandId` lets a client recognise its own echo by key (one account
-    // may run several writers). `prevSeq` — the board's seq right before
-    // this command, known because the board lock serialized it — is an
-    // internal hint for the stream (B-4): a subscriber whose last delivered
-    // seq differs knows it missed something and re-reads the log. It is
-    // stripped before the frame goes out on the wire.
-    if (applied.fresh) {
-      const event: InternalCommandEvent = {
-        type: "command",
-        seq: applied.response.seq,
-        action,
+    const at = (action as BoardScopedAction).at;
+    const state = boardReducer(
+      [board],
+      Object.assign({}, action, { boardId }) as BoardAction,
+      { withActivity: false },
+    );
+    const after = state[0] ?? board;
+    const changed = stableStringify(board) !== stableStringify(after);
+    // Freeze the display diff while both aggregates are in hand (TASK-37)
+    // — the history feed reads it back; the payload stays a pure action.
+    const details = changed ? commandDetails(action, board, after) : null;
+
+    const created = await tx.command.create({
+      data: {
+        id: dto.commandId,
+        boardId,
         actorId,
         actorType,
-        commandId: dto.commandId,
-        touches: applied.touches,
-        prevSeq: applied.prevSeq,
-      };
-      this.realtime.publish(boardId, event);
+        type: action.type,
+        payload: jsonSafe(action),
+        result: {},
+        ...(details !== null
+          ? { details: jsonSafe(details) as Prisma.InputJsonValue }
+          : {}),
+        touches: [],
+      },
+    });
+    const seq = Number(created.seq);
+
+    let touches: string[] = [];
+    if (changed) {
+      touches = await applyCommandWrites(tx, {
+        boardId,
+        action,
+        before: board,
+        after,
+        at,
+        actorId,
+      });
     }
-    return applied.response;
+    const versions = changed ? await collectVersions(tx, boardId, touches) : {};
+    const response: CommandResponse = { seq, versions };
+
+    await tx.command.update({
+      where: { id: created.id },
+      data: {
+        payload: jsonSafe(action),
+        result: jsonSafe(response),
+        touches,
+      },
+    });
+    return { response, touches, prevSeq: currentVersion, board: after };
   }
 
   /**

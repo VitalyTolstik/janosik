@@ -199,6 +199,49 @@ function fakeApi(
         return respond({ seq: ++boardSeq, versions: { "board:b1": 2 } });
     }
   }
+  if (path === "/boards/b1/commands/batch" && method === "POST") {
+    // TASK-160: apply every command in order, one result each. A failing
+    // member fails the whole batch (the real server rolls it back).
+    const request = body as {
+      commands: Array<{
+        ifMatch?: number;
+        action: { type: string; dueDate?: number };
+      }>;
+    };
+    commandPayload = commandPayload || JSON.stringify(request);
+    const results: Array<{ seq: number; versions: Record<string, number> }> =
+      [];
+    for (const command of request.commands) {
+      if (command.ifMatch !== undefined) {
+        if (staleWrites > 0) {
+          staleWrites -= 1;
+          boardSeq += 1;
+          return respond(
+            { conflict: "version", currentVersion: boardSeq },
+            409,
+          );
+        }
+        if (command.ifMatch !== boardSeq) {
+          return respond(
+            { conflict: "version", currentVersion: boardSeq },
+            409,
+          );
+        }
+      }
+      switch (command.action.type) {
+        case "RENAME_BOARD":
+          return respond({ conflict: "wip" }, 409);
+        case "SET_CHECKLIST_ITEM_DONE":
+          results.push({ seq: ++boardSeq, versions: {} });
+          break;
+        case "SET_CARD_DUE_DATE":
+          return respond({ message: "boom" }, 500);
+        default:
+          results.push({ seq: ++boardSeq, versions: { "board:b1": 2 } });
+      }
+    }
+    return respond({ results });
+  }
   const commentMatch = /^\/cards\/([^/]+)\/comments$/.exec(path);
   if (commentMatch && method === "GET") {
     // No seeded comments: the DoD gate finds no evidence.
@@ -315,9 +358,10 @@ describe("janosik MCP server", () => {
       name: "janosik_create_card",
       arguments: { boardId: "b1", columnId: "col1", title: "New task" },
     });
-    const command = calls.find((call) => call.path === "/boards/b1/commands");
-    const action = (command?.body as { action: Record<string, unknown> })
-      .action;
+    const call = calls.find((c) => c.path === "/boards/b1/commands/batch");
+    const action = (
+      call?.body as { commands: Array<{ action: Record<string, unknown> }> }
+    ).commands[0]!.action;
     expect(action).toMatchObject({
       type: "ADD_CARD",
       boardId: "b1",
@@ -436,13 +480,13 @@ describe("janosik MCP server", () => {
       },
     });
     expect(result.isError).toBe(true);
-    expect(calls.some((call) => call.path === "/boards/b1/commands")).toBe(
-      false,
-    );
+    expect(
+      calls.some((call) => call.path.startsWith("/boards/b1/commands")),
+    ).toBe(false);
     await client.close();
   });
 
-  it("names the created card when a follow-up field fails", async () => {
+  it("reports a failed batch without claiming the card exists", async () => {
     const client = await connect();
     const result = await client.callTool({
       name: "janosik_create_card",
@@ -454,8 +498,10 @@ describe("janosik MCP server", () => {
       },
     });
     expect(result.isError).toBe(true);
-    expect(firstText(result)).toMatch(/was created — `[0-9a-f-]{36}`/);
-    expect(firstText(result)).toMatch(/do not create the card again/);
+    // The batch is atomic: the card was not created, so a plain retry is
+    // safe — the error must not tell the agent a card now exists.
+    expect(firstText(result)).toMatch(/500|boom/i);
+    expect(firstText(result)).not.toMatch(/was created/);
     await client.close();
   });
 
@@ -669,15 +715,25 @@ describe("janosik MCP server", () => {
     };
     await client.callTool({ name: "janosik_create_card", arguments: args });
     await client.callTool({ name: "janosik_create_card", arguments: args });
-    const writes = calls.filter((call) => call.path === "/boards/b1/commands");
+    const writes = calls.filter(
+      (call) => call.path === "/boards/b1/commands/batch",
+    );
     expect(writes).toHaveLength(2);
     expect(
-      writes.map((call) => (call.body as { commandId: string }).commandId),
+      writes.map(
+        (call) =>
+          (call.body as { commands: Array<{ commandId: string }> }).commands[0]!
+            .commandId,
+      ),
     ).toEqual(["my-card", "my-card"]);
     expect(
       writes.map(
         (call) =>
-          (call.body as { action: { newCardId: string } }).action.newCardId,
+          (
+            call.body as {
+              commands: Array<{ action: { newCardId: string } }>;
+            }
+          ).commands[0]!.action.newCardId,
       ),
     ).toEqual(["my-card", "my-card"]);
     await client.close();

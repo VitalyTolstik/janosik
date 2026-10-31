@@ -17,7 +17,7 @@ import {
   type Board,
   type Card,
 } from "@janosik/shared";
-import type { JanosikClient } from "../client.js";
+import type { BatchCommandItem, JanosikClient } from "../client.js";
 import { describeError } from "../errors.js";
 import { errorResult, respond, textOnly } from "../format.js";
 import { newId } from "../ids.js";
@@ -50,56 +50,6 @@ function parseDueDate(
     );
   }
   return ms;
-}
-
-/**
- * Apply the optional card fields that ADD_CARD cannot carry, one command
- * each. Keeps `janosik_create_card` a single convenient call for agents while
- * every write still travels as a normal command. Inputs are validated by the
- * caller *before* the card exists, so a bad field cannot strand a half-made
- * card; a value that is already set (e.g. the default priority) is not an
- * error here.
- */
-async function applyCardFields(
-  client: JanosikClient,
-  boardId: string,
-  cardId: string,
-  fields: {
-    description?: string;
-    priority?: z.infer<typeof prioritySchema>;
-    assigneeId?: string;
-    dueDate?: number;
-  },
-): Promise<void> {
-  const quiet = { allowNoChange: true };
-  if (fields.description !== undefined) {
-    await client.command(
-      boardId,
-      { type: "UPDATE_CARD", cardId, description: fields.description },
-      quiet,
-    );
-  }
-  if (fields.priority !== undefined) {
-    await client.command(
-      boardId,
-      { type: "SET_CARD_PRIORITY", cardId, priority: fields.priority },
-      quiet,
-    );
-  }
-  if (fields.assigneeId !== undefined) {
-    await client.command(
-      boardId,
-      { type: "SET_CARD_ASSIGN", cardId, assigneeId: fields.assigneeId },
-      quiet,
-    );
-  }
-  if (fields.dueDate !== undefined) {
-    await client.command(
-      boardId,
-      { type: "SET_CARD_DUE_DATE", cardId, dueDate: fields.dueDate },
-      quiet,
-    );
-  }
 }
 
 /** Characters of a card description shown by `search_cards` in full mode. */
@@ -238,36 +188,57 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       }
 
       const newCardId = cardId ?? newId();
-      await client.command(
-        boardId,
+      // Create the card and set its fields in one batch (TASK-160): one
+      // round-trip and one board lock instead of one per command, and
+      // all-or-nothing — a bad field rolls the whole batch back, so a failure
+      // never strands a half-made card and a retry is always safe.
+      const items: BatchCommandItem[] = [
         {
-          type: "ADD_CARD",
-          newCardId,
-          columnId,
-          title,
-          ...(labelIds ? { labelIds } : {}),
-          ...(position !== undefined ? { atIndex: position } : {}),
-        },
-        // A client id doubles as the idempotency key, so a retry is a no-op.
-        {
-          ifMatch: expectedVersion,
+          action: {
+            type: "ADD_CARD",
+            newCardId,
+            columnId,
+            title,
+            ...(labelIds ? { labelIds } : {}),
+            ...(position !== undefined ? { atIndex: position } : {}),
+          },
+          ...(expectedVersion !== undefined
+            ? { ifMatch: expectedVersion }
+            : {}),
+          // A client id doubles as the idempotency key, so a retry is a no-op.
           ...(cardId ? { commandId: cardId } : {}),
         },
-      );
-      try {
-        await applyCardFields(client, boardId, newCardId, {
-          ...(description !== undefined ? { description } : {}),
-          ...(priority !== undefined ? { priority } : {}),
-          ...(assigneeId !== undefined ? { assigneeId } : {}),
-          ...(due !== undefined ? { dueDate: due } : {}),
+      ];
+      if (description !== undefined) {
+        items.push({
+          action: { type: "UPDATE_CARD", cardId: newCardId, description },
         });
+      }
+      if (priority !== undefined) {
+        items.push({
+          action: { type: "SET_CARD_PRIORITY", cardId: newCardId, priority },
+        });
+      }
+      if (assigneeId !== undefined) {
+        items.push({
+          action: { type: "SET_CARD_ASSIGN", cardId: newCardId, assigneeId },
+        });
+      }
+      if (due !== undefined) {
+        items.push({
+          action: {
+            type: "SET_CARD_DUE_DATE",
+            cardId: newCardId,
+            dueDate: due,
+          },
+        });
+      }
+      try {
+        await client.commandBatch(boardId, items);
       } catch (error) {
-        // The card exists: say so, so the agent fixes it instead of retrying.
-        return errorResult(
-          `Card "${title}" was created — \`${newCardId}\` — but setting its ` +
-            `other fields failed: ${describeError(error)} Fix them with the ` +
-            "card tools; do not create the card again.",
-        );
+        // The batch is atomic: the card was not created, so a plain retry is
+        // safe (the same ids would otherwise leave a duplicate behind).
+        return errorResult(describeError(error));
       }
       return textOnly(`Created card "${title}" — \`${newCardId}\`.`);
     },
