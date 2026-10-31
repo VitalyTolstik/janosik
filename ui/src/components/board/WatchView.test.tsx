@@ -327,4 +327,57 @@ describe("WatchView (TASK-142)", () => {
       "Added a column",
     );
   });
+
+  it("lists recently-active agents apart from the humans online", async () => {
+    hoisted.enabled.value = true;
+    const now = Date.now();
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "command",
+          id: "a-1",
+          seq: 12,
+          at: now,
+          type: "MOVE_CARD",
+          actorId: "u-2",
+          actorType: "agent",
+          cardId: "card-1",
+        },
+        {
+          source: "command",
+          id: "a-2",
+          seq: 11,
+          at: now - 1000,
+          type: "CREATE_CARD",
+          actorId: "u-2",
+          actorType: "agent",
+          cardId: "card-2",
+        },
+        {
+          source: "command",
+          id: "h-1",
+          seq: 10,
+          at: now - 500,
+          type: "CREATE_CARD",
+          actorId: "u-1",
+          actorType: "human",
+          cardId: "card-1",
+        },
+      ],
+      nextCursor: null,
+    });
+
+    renderWatch();
+
+    const agents = await screen.findByTestId("watch-agents-list");
+    // u-2 (Grace) is an agent; u-1 (Ada) is a person and stays out.
+    expect(agents).toHaveTextContent("Grace");
+    expect(agents).not.toHaveTextContent("Ada");
+    expect(screen.getByTestId("watch-agents")).toHaveTextContent("1");
+    // The human is in the presence roster; the agent never opens a stream.
+    expect(screen.getByTestId("watch-presence-list")).toHaveTextContent("Ada");
+    expect(screen.getByTestId("watch-presence-list")).not.toHaveTextContent(
+      "Grace",
+    );
+  });
 });

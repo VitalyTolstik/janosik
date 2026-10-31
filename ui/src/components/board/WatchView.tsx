@@ -21,12 +21,28 @@ import { userLabel } from "@/utils/avatar";
 const PAGE_SIZE = 50;
 /** How often the newest page is re-read; commands have no SSE frame. */
 const POLL_MS = 3000;
+/** Coalesce SSE-triggered refreshes so a busy board cannot storm the API. */
+const REFRESH_COALESCE_MS = 1000;
 /** The most changed fields rendered inline (the rest stay off the line). */
 const MAX_CHANGE_LINES = 3;
 /** A feed value is a display snippet, not the whole field: cap its width. */
 const MAX_VALUE_CHARS = 120;
 /** Page buttons kept around the current one before an ellipsis. */
 const PAGE_WINDOW = 2;
+/** How far back an agent's action still counts as "working now" (TASK-157). */
+const AGENT_WINDOW_MS = 180_000;
+
+/** One recently-active agent and how long ago it last acted. */
+interface AgentActivity {
+  actorId: string;
+  ageMs: number;
+}
+
+/** A compact "12s" / "3m" age label. */
+function ageLabel(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  return seconds < 60 ? `${seconds}s` : `${Math.round(seconds / 60)}m`;
+}
 
 function shorten(value: string): string {
   return value.length > MAX_VALUE_CHARS
@@ -67,6 +83,11 @@ export function WatchView({ boardId }: WatchViewProps) {
   const [atEnd, setAtEnd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [activeAgents, setActiveAgents] = useState<AgentActivity[]>([]);
+  // Last action time per agent, kept across page loads so membership is a
+  // real sliding window (AGENT_WINDOW_MS), not "whoever is on the newest page"
+  // — under a swarm 50 rows can span a few seconds.
+  const agentSeen = useRef(new Map<string, number>());
 
   // Cursor that fetches a given page (page 0 has none). A missing entry means
   // the page is not reachable yet — the chain is discovered by walking.
@@ -80,6 +101,31 @@ export function WatchView({ boardId }: WatchViewProps) {
   useEffect(() => {
     pageRef.current = page;
   }, [page]);
+
+  /**
+   * Fold the newest page into the rolling agent map and publish the agents
+   * seen within {@link AGENT_WINDOW_MS}, most recent first. An agent keeps its
+   * slot for the whole window even after its rows scroll off the page, and
+   * drops out only once it has been idle that long.
+   */
+  const rememberAgents = useCallback((items: ActivityFeedEntry[]) => {
+    const seen = agentSeen.current;
+    for (const entry of items) {
+      if (entry.actorType !== "agent" || !entry.actorId) continue;
+      seen.set(entry.actorId, Math.max(seen.get(entry.actorId) ?? 0, entry.at));
+    }
+    const now = Date.now();
+    const active: AgentActivity[] = [];
+    for (const [actorId, lastAt] of seen) {
+      if (now - lastAt > AGENT_WINDOW_MS) {
+        seen.delete(actorId);
+        continue;
+      }
+      active.push({ actorId, ageMs: now - lastAt });
+    }
+    active.sort((a, b) => a.ageMs - b.ageMs);
+    setActiveAgents(active);
+  }, []);
 
   /** Fetch (and cache) one page, discovering the next page's cursor. */
   const fetchPage = useCallback(
@@ -145,10 +191,11 @@ export function WatchView({ boardId }: WatchViewProps) {
       }
       setMaxPage(Math.max(...cursorByPage.current.keys()));
       setItems(result.items);
+      rememberAgents(result.items);
       setPage(0);
       pageRef.current = 0;
     },
-    [boardId],
+    [boardId, rememberAgents],
   );
 
   // The newest page stays live; when the user pages into history, polling
@@ -164,6 +211,18 @@ export function WatchView({ boardId }: WatchViewProps) {
       inFlight.current = false;
     }
   }, [loadFirst, pageSize, serverMode]);
+
+  // SSE frames arrive per command; on a busy board a refetch per frame would
+  // hammer the feed endpoint (and the rate limit), so bursts are coalesced
+  // into at most one refresh per REFRESH_COALESCE_MS.
+  const refreshTimer = useRef<number | null>(null);
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimer.current !== null) return;
+    refreshTimer.current = window.setTimeout(() => {
+      refreshTimer.current = null;
+      void refreshNewest();
+    }, REFRESH_COALESCE_MS);
+  }, [refreshNewest]);
 
   /** Change the page size and jump back to the live first page. */
   const selectPageSize = useCallback(
@@ -199,20 +258,25 @@ export function WatchView({ boardId }: WatchViewProps) {
   }, [refreshNewest, serverMode]);
 
   // A comment frame and our own settled commands are the moments the feed can
-  // change sooner than the poll.
+  // change sooner than the poll. Coalesced: a swarm can emit frames far faster
+  // than a refetch is worth.
   useEffect(() => {
     if (!serverMode) return;
     const offActivity = activity.subscribe((event) => {
-      if (event.boardId === boardId) void refreshNewest();
+      if (event.boardId === boardId) scheduleRefresh();
     });
     const offCommits = commits.subscribe((id) => {
-      if (id === boardId) void refreshNewest();
+      if (id === boardId) scheduleRefresh();
     });
     return () => {
       offActivity();
       offCommits();
+      if (refreshTimer.current !== null) {
+        window.clearTimeout(refreshTimer.current);
+        refreshTimer.current = null;
+      }
     };
-  }, [activity, commits, boardId, refreshNewest, serverMode]);
+  }, [activity, commits, boardId, scheduleRefresh, serverMode]);
 
   const membersById = useMemo(() => {
     const map = new Map<string, BoardMemberDto>();
@@ -256,6 +320,11 @@ export function WatchView({ boardId }: WatchViewProps) {
             label={t("watch.online")}
             value={String(presence.length)}
             testId="watch-online"
+          />
+          <Stat
+            label={t("watch.agents")}
+            value={String(activeAgents.length)}
+            testId="watch-agents"
           />
         </div>
         <span
@@ -310,6 +379,45 @@ export function WatchView({ boardId }: WatchViewProps) {
                     {user.displayName || user.id}
                   </li>
                 ))}
+              </ul>
+            )}
+          </Section>
+
+          {/* Agents never open an SSE stream, so they are not in "Online";
+              their recent activity is shown here instead (TASK-157). */}
+          <Section title={t("watch.agentsList")}>
+            {activeAgents.length === 0 ? (
+              <p className="py-1 text-sm text-muted-foreground/70">
+                {t("watch.noAgents")}
+              </p>
+            ) : (
+              <ul data-testid="watch-agents-list">
+                {activeAgents.map((agent) => {
+                  const member = membersById.get(agent.actorId);
+                  const name = userLabel(
+                    member?.displayName ?? null,
+                    member?.email ?? agent.actorId,
+                  );
+                  return (
+                    <li
+                      key={agent.actorId}
+                      className="flex items-baseline justify-between gap-3 border-b border-muted-foreground/30 py-1.5 text-sm last:border-b-0"
+                    >
+                      <span
+                        className="min-w-0 truncate text-foreground/90"
+                        title={name}
+                      >
+                        {name}
+                      </span>
+                      <span
+                        className="shrink-0 tabular-nums text-muted-foreground"
+                        title={t("watch.agentAge")}
+                      >
+                        {ageLabel(agent.ageMs)}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Section>
@@ -632,18 +740,21 @@ function WatchRow({
       >
         {clock}
       </time>
-      <span className="truncate text-foreground/80" title={actorName}>
-        {actorName}
+      <span
+        className="flex min-w-0 items-center gap-1.5 text-foreground/80"
+        title={actorName}
+      >
+        <span className="truncate">{actorName}</span>
+        {entry.actorType === "agent" ? (
+          <span
+            className="shrink-0 rounded bg-muted px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+            data-testid="actor-agent-badge"
+            title={t("activity.agent")}
+          >
+            {t("activity.agent")}
+          </span>
+        ) : null}
       </span>
-      {entry.actorType === "agent" ? (
-        <span
-          className="shrink-0 rounded bg-muted px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-          data-testid="actor-agent-badge"
-          title={t("activity.agent")}
-        >
-          {t("activity.agent")}
-        </span>
-      ) : null}
       <span className="min-w-0 break-words text-foreground/90 [overflow-wrap:anywhere]">
         {card ? (
           <span

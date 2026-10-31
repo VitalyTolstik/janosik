@@ -144,7 +144,7 @@ describe("CardHistory", () => {
     renderHistory();
 
     expect(await screen.findByTestId("actor-agent-badge")).toHaveTextContent(
-      "Agent",
+      "AI",
     );
   });
 
