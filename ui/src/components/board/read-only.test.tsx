@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { addDays } from "date-fns";
 import type { ComponentProps } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Board } from "@janosik/shared";
 import { CardDialog } from "@/components/board/CardDialog";
@@ -60,9 +61,10 @@ vi.mock("@dnd-kit/core", async (importOriginal) => {
   };
 });
 
-// Oct 2026, local noon — the clock is frozen to that month in beforeEach, so
-// the chip always lands inside the calendar's visible grid.
-const DUE = new Date(2026, 9, 1, 12, 0).getTime();
+// Tomorrow — always inside the calendar's visible month grid (the whole
+// current month plus the adjacent days it pads with), so the chips are there
+// whatever the wall-clock date.
+const DUE = addDays(new Date(), 1).getTime();
 
 const SAMPLE_BOARD: Board = {
   id: "b-1",
@@ -105,17 +107,9 @@ function tree(children: React.ReactNode) {
 
 describe("VIEWER read-only UI (TASK-35)", () => {
   beforeEach(() => {
-    // Freeze the clock: the calendar anchors on the current month, so a real
-    // date makes the chips fall out of the grid at a month boundary.
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date(2026, 9, 15, 12, 0));
     localStorage.clear();
     localStorage.setItem("janosik-boards", JSON.stringify([SAMPLE_BOARD]));
     dnd.sensors = [];
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it("DndBoard: mounts no sensors and hides composers/column controls", () => {

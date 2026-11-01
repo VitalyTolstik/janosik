@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { addDays } from "date-fns";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CalendarView } from "@/components/board/CalendarView";
 import { TableView } from "@/components/board/TableView";
@@ -41,9 +42,10 @@ const BOARD: Board = {
       labelIds: [],
       createdAt: 1,
       updatedAt: 1,
-      // Oct 2026, local noon — the clock is frozen to that month in
-      // beforeEach, so the chip always lands inside the visible grid.
-      dueDate: new Date(2026, 9, 1, 12, 0).getTime(),
+      // Tomorrow — always inside the calendar's visible month grid (the whole
+      // current month plus the adjacent days it pads with), so the chip is
+      // there whatever the wall-clock date.
+      dueDate: addDays(new Date(), 1).getTime(),
     },
     "c-plain": {
       id: "c-plain",
@@ -89,18 +91,9 @@ function middleClick(el: Element) {
 
 describe("middle-click opens a card in a new tab", () => {
   beforeEach(() => {
-    // Freeze the clock: the calendar anchors on the current month, so a real
-    // date makes the scheduled chip fall out of the grid at a month boundary
-    // (it did — the suite rotted the day the month rolled over).
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date(2026, 9, 15, 12, 0));
     localStorage.clear();
     localStorage.setItem("janosik-boards", JSON.stringify([BOARD]));
     vi.spyOn(window, "open").mockImplementation(() => null);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it("TableView: wheel-clicking a row opens the card", () => {
