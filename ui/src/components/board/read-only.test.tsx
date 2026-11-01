@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { addDays } from "date-fns";
 import type { ComponentProps } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -60,7 +61,10 @@ vi.mock("@dnd-kit/core", async (importOriginal) => {
   };
 });
 
-const DUE = Date.UTC(2026, 9, 1, 12, 0);
+// Tomorrow — always inside the calendar's visible month grid (the whole
+// current month plus the adjacent days it pads with), so the chips are there
+// whatever the wall-clock date.
+const DUE = addDays(new Date(), 1).getTime();
 
 const SAMPLE_BOARD: Board = {
   id: "b-1",
@@ -180,7 +184,9 @@ describe("VIEWER read-only UI (TASK-35)", () => {
       within(screen.getByTestId("unscheduled-list")).queryByRole("textbox"),
     ).toBeNull();
 
-    for (const chip of screen.getAllByTestId("calendar-chip")) {
+    const chips = screen.getAllByTestId("calendar-chip");
+    expect(chips.length).toBeGreaterThan(0);
+    for (const chip of chips) {
       expect(chip.getAttribute("draggable")).not.toBe("true");
     }
   });
@@ -188,7 +194,9 @@ describe("VIEWER read-only UI (TASK-35)", () => {
   it("CalendarView: own sensors/drag stay on by default (control)", () => {
     render(tree(<CalendarView onCardClick={() => {}} />));
 
-    for (const chip of screen.getAllByTestId("calendar-chip")) {
+    const chips = screen.getAllByTestId("calendar-chip");
+    expect(chips.length).toBeGreaterThan(0);
+    for (const chip of chips) {
       expect(chip.getAttribute("draggable")).toBe("true");
     }
     expect(screen.getAllByTestId("day-add").length).toBeGreaterThan(0);

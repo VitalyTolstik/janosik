@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { addDays } from "date-fns";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -41,7 +42,10 @@ const BOARD: Board = {
       labelIds: [],
       createdAt: 1,
       updatedAt: 1,
-      dueDate: Date.UTC(2026, 9, 1, 12, 0),
+      // Tomorrow — always inside the calendar's visible month grid (the whole
+      // current month plus the adjacent days it pads with), so the chip is
+      // there whatever the wall-clock date.
+      dueDate: addDays(new Date(), 1).getTime(),
     },
     "c-plain": {
       id: "c-plain",
