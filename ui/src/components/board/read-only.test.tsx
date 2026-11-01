@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Board } from "@janosik/shared";
 import { CardDialog } from "@/components/board/CardDialog";
@@ -60,7 +60,9 @@ vi.mock("@dnd-kit/core", async (importOriginal) => {
   };
 });
 
-const DUE = Date.UTC(2026, 9, 1, 12, 0);
+// Oct 2026, local noon — the clock is frozen to that month in beforeEach, so
+// the chip always lands inside the calendar's visible grid.
+const DUE = new Date(2026, 9, 1, 12, 0).getTime();
 
 const SAMPLE_BOARD: Board = {
   id: "b-1",
@@ -103,9 +105,17 @@ function tree(children: React.ReactNode) {
 
 describe("VIEWER read-only UI (TASK-35)", () => {
   beforeEach(() => {
+    // Freeze the clock: the calendar anchors on the current month, so a real
+    // date makes the chips fall out of the grid at a month boundary.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 15, 12, 0));
     localStorage.clear();
     localStorage.setItem("janosik-boards", JSON.stringify([SAMPLE_BOARD]));
     dnd.sensors = [];
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("DndBoard: mounts no sensors and hides composers/column controls", () => {
@@ -180,7 +190,9 @@ describe("VIEWER read-only UI (TASK-35)", () => {
       within(screen.getByTestId("unscheduled-list")).queryByRole("textbox"),
     ).toBeNull();
 
-    for (const chip of screen.getAllByTestId("calendar-chip")) {
+    const chips = screen.getAllByTestId("calendar-chip");
+    expect(chips.length).toBeGreaterThan(0);
+    for (const chip of chips) {
       expect(chip.getAttribute("draggable")).not.toBe("true");
     }
   });
@@ -188,7 +200,9 @@ describe("VIEWER read-only UI (TASK-35)", () => {
   it("CalendarView: own sensors/drag stay on by default (control)", () => {
     render(tree(<CalendarView onCardClick={() => {}} />));
 
-    for (const chip of screen.getAllByTestId("calendar-chip")) {
+    const chips = screen.getAllByTestId("calendar-chip");
+    expect(chips.length).toBeGreaterThan(0);
+    for (const chip of chips) {
       expect(chip.getAttribute("draggable")).toBe("true");
     }
     expect(screen.getAllByTestId("day-add").length).toBeGreaterThan(0);
