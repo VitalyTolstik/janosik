@@ -1,28 +1,32 @@
 # Janosik
 
-A premium **Kanban board** — Trello-class drag & drop with a Space Grotesk wordmark and obsessive attention to micro-detail. **Server mode** (accounts, shared boards, realtime sync) on an offline-first foundation: the whole board lives in one pure reducer, every edit runs through a shared command log, and the app is an installable PWA.
+A self-hosted **Kanban board for teams and AI agents**. Server mode provides accounts, shared boards and realtime sync. The UI and API share one pure reducer and a command log; the installable PWA can reopen cached pages offline.
 
 [![React](https://img.shields.io/badge/React-18-61dafb?logo=react&logoColor=white)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)](https://vite.dev)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38bdf8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![NestJS](https://img.shields.io/badge/NestJS-11-e0234e?logo=nestjs&logoColor=white)](https://nestjs.com)
-[![Tests](https://img.shields.io/badge/tests-2078%20passing-brightgreen)](#)
+[![CI](https://github.com/VitalyTolstik/janosik/actions/workflows/ci.yml/badge.svg)](https://github.com/VitalyTolstik/janosik/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 
-> **Janosik** installs as a **PWA** and runs in **server mode**: accounts, shared boards and a command-log sync (`POST /boards/:id/commands`) sit on top of one pure reducer (`boardReducer`) shared by the UI and the API, with optimistic updates and undo. The reducer is offline-first by design and the **unit tests** run it with no API (data in `localStorage`); the dev and production builds always talk to the API (`VITE_API_URL`, `/api/v1` by default) and show a sign-in screen. Members UI, **realtime SSE** (everyone sees each other's edits without a reload, dropped streams catch up from `?since=`), presence and the comments UI have all landed — see [ROADMAP.md §7](./ROADMAP.md).
+> Janosik runs in **server mode** in development and production. The UI applies edits optimistically, then sends them to the API as commands (`POST /boards/:id/commands`); the UI and API use the same `boardReducer`. Unit tests can exercise the reducer without an API. The PWA caches its app shell and assets, so previously loaded pages can reopen offline, but saving changes requires a server connection. Realtime updates use SSE and resume from `?since=` after a dropped connection. See [ROADMAP.md §7](./ROADMAP.md) for the architecture history.
 
 ---
 
-## Repository layout — what `ui`, `shared` and `backend` are
+## Repository layout — the workspaces
 
-This is an **npm-workspaces monorepo**. Three packages, one `npm install` at the root. The rule of thumb: **`shared` is a library, `ui` and `backend` are programs that use it.**
+This is an **npm workspaces monorepo** with seven workspaces and one root lockfile. `ui`, `shared` and `backend` make up the application; `brand`, `site`, `video` and `mcp` support its design system, website, media and agent integrations. Install dependencies once with `npm install` from the repository root.
 
 | Workspace | npm name | What it is | How it runs |
 | --- | --- | --- | --- |
 | **`ui/`** | `@janosik/ui` | The **frontend**: the whole single-page app — board/calendar/table/watch views, drag & drop, card dialog, search, settings, i18n, PWA service worker, the login screen and the `/admin` master panel. It talks to the backend over `fetch`. | Vite dev server (`npm run dev`) or is served as static files from `ui/dist` |
 | **`shared/`** | `@janosik/shared` | A **TypeScript library with no build step and no runtime of its own**: the domain model (`Board`/`Column`/`Card`/`Label`), the pure `boardReducer` (the single implementation of every board operation), its inverse for undo, command validation, export/import serialization, storage keys — plus the **typed API contracts** (user and admin DTOs). | Nothing to run. `ui` and `backend` import its `.ts` sources directly through aliases, so client and server literally share the same types and the same reducer logic |
 | **`backend/`** | `@janosik/backend` | The **server**: a NestJS API on PostgreSQL — auth (JWT + refresh rotation + argon2id), boards/members, the command log that persists UI actions, comments/activity, and the isolated master-admin contour (`/api/v1/admin/*`). | Node process (`npm run build:backend` + `npm run start -w backend`); dev DB via Docker Compose |
+| **`brand/`** | `@janosik/brand` | Shared brand assets and design tokens. | Imported by the UI and site; has its own tests and lint script. |
+| **`site/`** | `@janosik/site` | Astro marketing site and Starlight documentation, with English and Russian content. | `npm run dev:site` or `npm run build:site`. |
+| **`video/`** | `@janosik/video` | Remotion scenes and scripts for recording and rendering product clips. | `npm run studio -w video` or `npm run render -w video`. |
+| **`mcp/`** | `@janosik/mcp` | MCP server that lets compatible AI clients work with Janosik through scoped API keys. | `npm run dev -w mcp`, or use the published `@janosik/mcp` package. |
 
 Why `shared` matters: a board mutation is written **once** (in the reducer), executed in the browser for instant feedback and on the server when the command arrives — so a card can never move differently in the UI and in the database. The same applies to validation and to DTO types: change a field in `shared/src/admin.ts` and both sides fail to compile until they agree.
 
@@ -49,12 +53,15 @@ janosik/                        # npm workspaces root (one package-lock.json)
 │  ├─ scripts/                  # admin-cli.cjs, migrate-test-db.cjs
 │  ├─ docker-compose.yml        # dev PostgreSQL 16 (janosik + janosik_test)
 │  └─ .env.example
+├─ brand/                       # @janosik/brand — shared brand assets and tokens
+├─ site/                        # @janosik/site — marketing site and documentation
+├─ video/                       # @janosik/video — product demo clips
 ├─ mcp/                         # @janosik/mcp — the MCP server: the board as agent tools
 │  ├─ src/                      # client + 13 tool groups (71 tools), toolset gating
 │  ├─ server.json               # MCP Registry metadata (published as io.github.vitalytolstik/janosik)
 │  └─ scripts/smoke.mjs         # live smoke test against a running instance
-├─ skills/janosik/              # the agent skill (behaviour playbook for the MCP tools)
-│  ├─ SKILL.md                  #   the behaviour a harness loads
+├─ skills/janosik/              # workflow guidance for AI agents using the MCP tools
+│  ├─ SKILL.md                  #   the instructions a harness loads
 │  └─ references/               #   card/comment templates + lifecycle recipes
 ├─ deploy/nginx.conf            # optional SPA fallback + /api proxy (single-image serving is built in)
 ├─ Dockerfile                   # multi-stage: builds UI + API into one self-host image
@@ -65,7 +72,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 ├─ LICENSE / TRADEMARK.md       # AGPL-3.0 terms + brand/trademark policy
 ├─ docs/SELF-HOSTING.md         # full self-hosting guide (TLS, backups, ops)
 ├─ docs/INSTALL-BY-OS.md        # running it on macOS / Windows 11 / Linux
-├─ ROADMAP.md                   # plan, architecture assessment, §7 backend spec
+├─ ROADMAP.md                   # project priorities, architecture decisions and task status
 ├─ ROADMAP-DONE.md              # archive of closed tasks
 └─ AGENT.md                     # working agreement for AI agents/contributors
 ```
@@ -74,7 +81,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 
 ## Highlights
 
-- **Four board views** — Kanban, **Calendar** (drag deadlines, "unscheduled" panel, week/month, day panel), **Table** (sorting, inline editing, configurable columns) and **Watch** (a bare status plus a live activity feed for observing a swarm, with paging and a 20/50/100 page size).
+- **Four board views** — Kanban, **Calendar** (drag deadlines, "unscheduled" panel, week/month, day panel), **Table** (sorting, inline editing, configurable columns) and **Watch** (a read-only status view with a live activity feed and 20/50/100-item pages).
 - **Card density** — a `Simplify design` toggle switches every card to a compact one-line tile (title, label dots, blocked marker, checklist progress, priority and assignee) with far fewer elements; the full face stays one click away in the card dialog.
 - **Drag & drop** — move cards within/between columns and reorder columns (`@dnd-kit`), inline Trello-style "+" zones, keyboard sensor and drag overlay.
 - **Rich card content** — WYSIWYG description (MDXEditor) that is the card's document (up to 64k characters), checklists with progress badges (items up to 500 characters), due dates with overdue/soon badges, color/gradient covers, 14-color labels, and a read-only machine-readable acceptance-criteria / definition-of-done contract.
@@ -85,13 +92,13 @@ janosik/                        # npm workspaces root (one package-lock.json)
 - **Activity feed** — per-card event history covering every board action, with relative timestamps and an "Agent" badge on entries an agent's API token caused.
 - **Keyboard-first** — shortcut palette (`?`), `j/k` cursor navigation, `n`/`c` composers, `e`/`Enter` edit.
 - **Undo / redo** — 50-step history with coalescing, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`, `Ctrl+Y`, header buttons.
-- **PWA** — installable (manifest + icons), service worker caches the app shell and all hashed chunks, so it opens with the network cut. Writes need the network (optimistic edits roll back with a toast if the API is unreachable — there is no persistent outbox yet, so a reload drops unsynced changes); reads keep working offline from the last fetch.
-- **Server mode** — sign in, and boards live in PostgreSQL: every edit travels the command log (`POST /boards/:id/commands`) through the same `boardReducer`, optimistic first, with rollback + toast on refusal; typed text is protected by per-entity version preconditions so undo never clobbers another member's edit. Sign-out is always visible in the board header, and HTTP keepalive delivers a command that was already in flight if the tab reloads. The reducer stays offline-first; the no-API (local-only) mode ships in the unit tests, not in the dev/prod build.
+- **PWA** — installable (manifest + icons). The service worker caches the app shell and hashed assets, so previously loaded pages can reopen offline. Writes still need the API: if it is unreachable, an optimistic edit rolls back with a message. There is no persistent outbox yet, so reloading discards unsynced changes; previously loaded data remains available offline.
+- **Server mode** — sign in to work with boards stored in PostgreSQL. The UI applies edits optimistically and sends each one through the command log (`POST /boards/:id/commands`); rejected edits roll back with a message. Per-entity version checks protect typed text from a stale undo. A request already in flight can finish during a reload. The no-API local-only mode is used by unit tests; development and production builds require the API.
 - **Realtime** — a `GET /boards/:id/events` SSE stream carries every committed command (`{type, seq, action, actorId}`) and the client replays foreign actions through the very same reducer. Edits appear in other browsers with no reload; a dropped stream resumes exactly where it stopped (`?since=`) and window focus remains the fallback. Your own commands are never applied twice, and a stale undo still refuses to clobber someone else's text.
 - **Shared boards** — a **Members (N)** dialog in the header: admins invite by email, switch roles (`ADMIN`/`MEMBER`/`VIEWER`), bound a viewer's access with an expiry date ("access expired" badge) and remove members — the last admin can never be demoted or removed. Invitations are **opt-in**: the invitee gets a badge on the header bell and accepts or declines there; nothing is shared until they accept. Everyone else sees the same member list read-only, and a `VIEWER` gets a genuinely read-only board: no drag, no composers, no menus, no inline editors, a read-only card dialog — while the server independently answers 403 to every mutation.
 - **Master panel** — a separate `/admin` area for the platform operator: metrics, all users and boards, command log, audit trail and moderation (block a user and their sessions die instantly, revoke API tokens, archive/soft-delete a board, create accounts with a one-time password). Master accounts live outside the user table, have their own login, cookie and JWT audience, and are created only by the server CLI (`npm run admin:create -w backend`); `OWNER` can add more masters, `OPERATOR` cannot. Panel tables are **schema-first**: columns are named after Prisma fields (`Board.id`, `BoardMember.userId`, `Card.columnId`, `Comment.authorId`, …), foreign keys are shown as copyable IDs (title/email only as a caption) and search matches those IDs — a row can be traced to its parents even when names are not unique.
-- **AI agents (MCP + skill)** — `@janosik/mcp` exposes the whole board to any MCP client (Claude, Cursor, VS Code, opencode, Codex) over a personal API key, and the `janosik` skill teaches the agent *how* to behave: pick a card up under an atomic lease, fill it to the canonical agent-ready shape (description sections `Why` / `Scope` / `Acceptance criteria` / `Out of scope` / `Verify`, a `Definition of Done` checklist and typed comments (a structured `kind`: `status` / `question` / `blocker` / `evidence` / `handoff`)), move it through the columns, and — when a bug turns up — return the card with the evidence instead of burying it. An agent can write the card's machine-readable task contract (`acceptanceCriteria` + `definitionOfDone`), every command records whether a person or an agent caused it (agent entries carry an "Agent" badge), and a key can be scoped to one board, made read-only and given its own rate limit. Writes go through the same command log, so an agent's work is undoable, streamed live, and keeps the full history. See [Drive it from an AI agent](#drive-it-from-an-ai-agent-mcp--skill).
-- **Fast by construction** — code-split bundle (editor & calendar load on demand), vendor chunks with stable cache keys; first paint ~212 ms on throttled CPU.
+- **AI agents (MCP + skill)** — `@janosik/mcp` gives compatible clients (Claude, Cursor, VS Code, opencode and Codex) access to board tools through a personal API key. The `janosik` skill provides workflow guidance: claim a card under a temporary lease, keep its description, checklist and comments structured, and return blocked work with evidence. Keys can be scoped to one board, made read-only and rate-limited. Commands retain actor attribution, history and undo. See [Drive it from an AI agent](#drive-it-from-an-ai-agent-mcp--skill).
+- **Performance** — the editor and calendar load on demand; vendor libraries use separate cacheable chunks, and board rows and cards are memoized. Performance measurements and their test conditions are recorded in [docs/PERF-BASELINE.md](./docs/PERF-BASELINE.md).
 - **Data safety** — debounced saves, JSON export/import, automatic backups (20 snapshots, rotated), error boundary + toasts, input/collection limits everywhere.
 - **Themes & polish** — dark/light with no-flash preflight, four board backgrounds, adjustable column glass, `prefers-reduced-motion`, custom scrollbars.
 - **i18n** — English & Russian with type-safe keys and pluralization; 12h/24h time format toggle.
@@ -116,7 +123,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 | Fonts | `@fontsource/space-grotesk` (self-hosted, no CDN) |
 | Shared | `@janosik/shared` — domain model, reducer + inverse, validation, DTO contracts (imported as TS source, no build step) |
 | Backend | NestJS 11, Prisma 6, PostgreSQL 16, JWT (`@nestjs/jwt`) + refresh rotation, argon2id, helmet, rate limiting |
-| Tests | Vitest + React Testing Library (ui 1000, shared 448) + Jest + Supertest (backend 318 unit, 312 e2e against a real test DB) — 2078 total |
+| Tests | Vitest + React Testing Library (UI, shared, brand, site and MCP); Jest + Supertest (backend unit and API end-to-end tests against PostgreSQL) |
 
 ---
 
@@ -185,11 +192,11 @@ are never actually delivered until you configure a transport in the master panel
 
 To actually send mail, open **`/admin` → Email service** (owner only), pick a preset and paste the credentials, then flip **Enable delivery** and hit **Send test email**:
 
-- **Gmail / Yandex / Mail.ru** — free for a personal account, but you need an **app password** (2-step verification enabled), not your login password.
-- **Brevo / SendGrid** — transactional relays with solid free tiers (username `apikey` + API key for SendGrid).
+- **Gmail / Yandex / Mail.ru** — configure the provider's SMTP settings and use an app password where the provider requires one.
+- **Brevo / SendGrid** — transactional email services. SendGrid uses `apikey` as the username and your API key as the password.
 - **Custom SMTP** — any host / port / TLS.
 
-**Trying it out locally (Mailpit).** The **Mailpit (sandbox)** preset sends to a local catcher and needs no credentials — letters land in a web inbox instead of a real address. Start it, then open the inbox:
+**Trying it out locally (Mailpit).** The **Mailpit (sandbox)** preset sends email to a local catcher and needs no credentials. Messages appear in its web inbox instead of being sent to a real address. Start it, then open the inbox:
 
 ```bash
 docker run -d --name janosik-mailpit --restart unless-stopped -p 1025:1025 -p 8025:8025 axllent/mailpit
@@ -321,23 +328,19 @@ Rules worth knowing:
 
 ## Drive it from an AI agent (MCP + skill)
 
-Janosik is built so a swarm of AI agents can work a board alongside people. Two
-pieces make that real, and they are deliberately separate:
+Janosik lets AI agents and people work on shared boards. The MCP server provides
+the tools; the skill describes a consistent workflow for using them:
 
-- **`@janosik/mcp` — the tools (the "hands").** An MCP server (71 tools across
-  13 groups) that exposes the whole board — boards, columns, cards, labels,
-  checklists, links, comments, activity and attachments (plus, opt-in, members,
-  invitations, share links and the account) — to any MCP client. It talks to
-  your instance with a personal API key (`jnk_…`) and routes every write
-  through the same command log the UI uses, so an agent's changes are undoable
-  and stream live to everyone watching.
-- **`skills/janosik` — the behaviour (the "manners").** A playbook that tells
-  the agent *how* to work: read before writing, claim a card under an atomic
-  lease, fill it to the canonical agent-ready shape (description sections, a
-  `Definition of Done` checklist, typed comments (a structured `kind`), reserved
-  `agent:*` labels), move it
-  through the columns, and — when a bug turns up — move the card back with the
-  evidence instead of marking it Done.
+- **`@janosik/mcp` — the tools.** An MCP server (71 tools across 13 groups)
+  for boards, columns, cards, labels, checklists, links, comments, activity and
+  attachments. Optional toolsets add members, invitations, share links and
+  account actions. Any compatible MCP client can connect with a personal API
+  key (`jnk_…`). Writes use the same command log as the UI, so they can be
+  undone and stream live to other board members.
+- **`skills/janosik` — workflow guidance.** It tells the agent to read before
+  writing, claim a card under a time-limited lease, keep its description,
+  checklist and comments structured, use reserved `agent:*` labels, and return
+  blocked work with evidence instead of marking it Done.
 
 ### 1. Get an API key
 
@@ -347,7 +350,7 @@ and revoking one key stops one agent. A key can be scoped when you create it:
 restrict it to a single board, make it **read-only** (writes answer `403
 pat_read_only`) and give it its own requests-per-minute budget (over budget
 answers `429`) — a board-scoped, read-only key is the least-privilege choice for
-a swarm.
+an agent.
 
 ### 2. Add the MCP server
 
@@ -378,25 +381,25 @@ Drop `skills/janosik/` into your harness's skills directory — Claude Code:
 `~/.claude/skills/`, opencode: `~/.config/opencode/skills/`, agent-compatible
 harnesses: `~/.agents/skills/`. Details in
 [skills/janosik/README.md](./skills/janosik/README.md). The skill needs no
-configuration; it just makes the agent follow the board's conventions.
+configuration; it provides Janosik-specific guidance for working with cards.
 
 ### What the agent does with it
 
-Picks up a card under an **atomic lease** (`janosik_claim_card`, released with
+The agent claims a card under an **atomic lease** (`janosik_claim_card`, released with
 `janosik_release_card`): the server refuses a claim while another member still
-holds a live lease, and the lease self-expires so a dead agent never leaves a
-card stuck. It comments as it goes, fills the description and checklist, moves
+holds a live lease, and the lease expires automatically if an agent stops
+responding. It comments as it goes, fills the description and checklist, moves
 it **In Progress → Review → Done**, and on a bug moves it **back** (to Bugs /
 In Progress) with a comment describing the defect — so a reviewer sees the card
 travel forward, back and forward again, with a reason at every turn. That
 backward move plus the comment is the audit trail.
 
-The skill asks the agent to leave a card a swarm can pick up cold: description
+The skill asks the agent to leave a card another agent can continue without
+prior context: description
 sections (`Why` / `Scope` / `Acceptance criteria` / `Out of scope` / `Verify`),
 a `Definition of Done` checklist, and typed comments (a structured `kind`:
 `status` / `question` / `blocker` / `evidence` / `handoff`) so the thread is
-machine-readable
-and filterable. It can also write the card's machine-readable task contract
+machine-readable and filterable. It can also write the card's task contract
 (`janosik_set_card_task_spec` sets `acceptanceCriteria` + `definitionOfDone`,
 each rendered read-only in the card dialog) and tag cards with the reserved
 `agent:blocked` / `agent:needs-human` / `agent:verified` labels. Every command
@@ -410,7 +413,7 @@ Full guide in-repo: [mcp/README.md](./mcp/README.md) and
 
 ## Scripts
 
-Root scripts fan out to the workspaces (`-w ui`, `-w shared`, `-w backend`, `-w site`, `-w mcp`, …):
+Root scripts cover the seven npm workspaces:
 
 | Command | What it does |
 | --- | --- |
@@ -421,10 +424,10 @@ Root scripts fan out to the workspaces (`-w ui`, `-w shared`, `-w backend`, `-w 
 | `npm run build` | Type-check + build the UI (`ui/dist`) |
 | `npm run build:backend` | Prisma generate + compile the API (`backend/dist`) |
 | `npm run preview` | Serve the built UI locally |
-| `npm test` | UI + shared test suites (Vitest) |
+| `npm test` | Vitest suites for UI, shared, brand, site and MCP (not backend) |
 | `npm run test:backend` | Backend Jest unit + e2e (e2e creates/migrates `janosik_test` first) |
-| `npm run test:coverage` | Vitest coverage for ui + shared |
-| `npm run lint` | ESLint in all three workspaces |
+| `npm run test:coverage` | Vitest coverage for UI, shared and brand |
+| `npm run lint` | ESLint in all seven workspaces |
 | `npm run format` / `format:check` | Prettier write / verify (repo-wide) |
 | `npm run size` | size-limit budgets for the UI bundle (entry, lazy chunks, admin chunk) |
 
@@ -434,7 +437,7 @@ Workspace-specific extras worth knowing:
 | --- | --- |
 | `npm run start -w backend` | Run the built API (`node backend/dist/main.js`); applies pending migrations first |
 | `npm run prisma:deploy -w backend` | Apply Prisma migrations to `DATABASE_URL` (without starting) |
-| `npm run admin:create/passwd/list -w backend` | Master-account CLI (see above) |
+| `npm run admin:create -w backend` / `npm run admin:passwd -w backend` / `npm run admin:list -w backend` | Master-account CLI (see above) |
 | `npm run test:watch -w ui` | Vitest in watch mode |
 
 ---
@@ -481,7 +484,7 @@ ui/
 - **Persistence is swappable — and was swapped** — the `DebouncedPersistence` interface wraps `localStorage` for the local mode; server mode adds a fetch adapter (`ui/src/api/client.ts` + `ui/src/store/server-sync.ts`) that ships the same actions to the command log **without touching the reducer or the UI** (optimistic updates on top of the same actions). In server mode board data is deliberately not mirrored into `localStorage` (accounts on a shared browser must not see each other's boards).
 - **Performance** — the MDXEditor description editor and the calendar are lazy-loaded on first use; vendor libraries are split into stable chunks that the service worker caches; columns, cards, insert zones and table rows are memoized, so typing in one card re-renders only its own column (or table row) — the cost per keystroke no longer grows with the board.
 
-See [ROADMAP.md](./ROADMAP.md) for the full architecture assessment, competitor comparison, the iteration log and the backend plan (accounts, shared boards with ADMIN/MEMBER/VIEWER roles, realtime).
+See [ROADMAP.md](./ROADMAP.md) for project priorities, architecture decisions and task status.
 
 ---
 
@@ -494,12 +497,12 @@ See [ROADMAP.md](./ROADMAP.md) for the full architecture assessment, competitor 
    npm run lint
    npm run format:check
    npm test
-   npm run test:backend   # needs the dev database running
+   npm run test:backend   # needs the PostgreSQL test database running
    npm run build
    npm run size
    ```
 
-3. Browser end-to-end tests (Playwright/Cypress) are intentionally **out of scope** — UI testing is Vitest + React Testing Library, the backend e2e suite is Jest + Supertest against a real PostgreSQL test database.
+3. UI unit and component tests use Vitest + React Testing Library. Backend end-to-end tests use Jest + Supertest against PostgreSQL. Browser-level Playwright coverage is tracked in [ROADMAP.md](./ROADMAP.md) under TASK-41; it is not part of the current CI workflow yet.
 4. New UI strings land in both `src/locales/en` and `src/locales/ru` synchronously; colors come only from the design tokens in `src/index.css`.
 5. Change the data model, a board operation, validation or an API contract in `@janosik/shared` first — both `ui` and `backend` compile against it.
 6. The backend follows the fixed stack in `ROADMAP.md` §7 (NestJS/Prisma/PostgreSQL/JWT) and its iteration order.
@@ -513,12 +516,12 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide — dev setup, the g
 
 [AGPL-3.0](./LICENSE) © 2026 Vitali Toustsik
 
-Use it, self-host it, fork it, modify it — commercially too. The one condition
-AGPL-3.0 adds over a permissive licence: if you run a modified version as a
-network service, you must offer its source to the people who use it. That keeps
-the hosted edition honest — nobody can quietly run a closed fork as a SaaS.
+You may use, self-host, fork and modify the code, including commercially. See
+[LICENSE](./LICENSE) for the full AGPL-3.0 terms. In particular, if you run a
+modified version as a network service, the license requires you to offer its
+source code to the people using that service.
 
-**Trademarks.** The licence covers the code, not the name. "Janosik" and the
+**Trademarks.** The license covers the code, not the name. "Janosik" and the
 feather mark identify this project; forks are welcome but must not present
 themselves as the official Janosik or its hosted service — see
 [TRADEMARK.md](./TRADEMARK.md).

@@ -1,7 +1,7 @@
 # Trademark policy
 
 The **code** in this repository is licensed under the
-[GNU AGPL-3.0](./LICENSE). That licence covers the source — it does **not**
+[GNU AGPL-3.0](./LICENSE). That license covers the source — it does **not**
 grant any right to the project's **name** or **logo**. This policy explains what
 you may and may not do with the Janosik marks. It is a short, plain-language
 summary, not legal advice.
@@ -35,13 +35,13 @@ maintainer's hosted offering may be presented as the official Janosik service.
 
 ## Third-party assets
 
-Some bundled assets (fonts, libraries) carry their own licences — see the
+Some bundled assets (fonts, libraries) carry their own licenses — see the
 respective `package.json` files and upstream projects.
 
 ## Questions
 
 If you are unsure whether a use is allowed, or you would like permission for
-something this policy does not cover (including a commercial licence for the
+something this policy does not cover (including a commercial license for the
 code), open an issue or contact the maintainer:
 
 - Repository: <https://github.com/VitalyTolstik/janosik>
