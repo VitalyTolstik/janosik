@@ -286,7 +286,7 @@ Two ways to run Janosik on your own machine:
 | --- | --- | --- |
 | What it is | Prebuilt container: whole app plus PostgreSQL and Redis | Node dev server, optionally with a local API |
 | You need | Docker Desktop or Docker Engine | Node.js 22.17 or newer, npm |
-| Best for | Actually using it, self-hosting | Changing the code |
+| Best for | Running Janosik, including self-hosting | Developing Janosik |
 
 ### macOS
 
@@ -473,7 +473,7 @@ site/docs** from *different* hosts, wire the two links that cross between them:
 | Site → App ("Sign in" / "Create account" CTAs) | `PUBLIC_APP_URL` | the **site** build | the app origin, e.g. `https://app.example.com/` |
 | App → Site ("Help → Documentation") | `VITE_SITE_URL` | the **UI** build | the site origin, with a trailing slash, e.g. `https://example.com/` |
 
-Getting either wrong lands the user on a **404**: a CTA that opens the site's
+If either value is wrong, the link opens a **404**: a CTA opens the site's
 not-found page, or Help → Documentation that opens the app's not-found page. This
 is the same pair you set in dev, where the app and the site are always two
 servers (app `:5173`, site `:4321`):

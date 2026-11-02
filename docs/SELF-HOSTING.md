@@ -47,7 +47,7 @@ docker compose version
 
 ## 1. Trial on a LAN / localhost (plain HTTP)
 
-Good for kicking the tyres. Not for exposing to the internet.
+Use this for a local trial. Do not expose this HTTP setup to the internet.
 
 ```bash
 mkdir janosik && cd janosik
@@ -103,8 +103,7 @@ The app is now on `localhost:3000`, reachable only from the host.
 
 ### 2.3 Put TLS in front
 
-**Caddy** — the simplest option; it provisions a Let's Encrypt certificate
-automatically:
+**Caddy** — provisions a Let's Encrypt certificate automatically:
 
 ```caddyfile
 # /etc/caddy/Caddyfile
@@ -164,13 +163,14 @@ database/Redis ports stay internal.
 
    ```bash
    docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
-   # hidden password prompt (typed twice); the first master becomes OWNER
+   # Enter the password twice when prompted; the first master becomes OWNER
    docker compose exec app node backend/scripts/admin-cli.cjs list
    ```
 
    Sign in at `PUBLIC_ORIGIN/admin`.
 
-   Re-key an existing master (also revokes its sessions and clears lockouts):
+   Reset an existing master's password (this also revokes its sessions and
+   clears login lockouts):
 
    ```bash
    docker compose exec app node backend/scripts/admin-cli.cjs passwd --email me@example.com
@@ -185,7 +185,7 @@ that matter most:
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `JWT_SECRET` | — (**required**) | Access-token signing key. `openssl rand -hex 32`. Never change it casually — everyone is logged out. |
+| `JWT_SECRET` | — (**required**) | Access-token signing key. Generate it with `openssl rand -hex 32`. Changing it invalidates all current sessions. |
 | `PUBLIC_ORIGIN` | `http://localhost:3000` | Public URL. Builds OAuth callbacks; must be `https://…` for `COOKIE_SECURE=true`. |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `janosik` / — / `janosik` | Database credentials (created on first `up`). |
 | `COOKIE_SECURE` | `true` (compose default) | `Secure` flag on the refresh cookie. Keep `true` behind HTTPS; set `false` only for a plain-HTTP trial. A production install served over HTTP with it unset/`true` **refuses to boot**. |
@@ -220,7 +220,7 @@ site/docs** from *different* hosts, point the two cross-links by hand:
 | Site → App ("Sign in" / "Create account" CTAs) | `PUBLIC_APP_URL` | **site** build | the app origin, e.g. `https://app.example.com/` |
 | App → Site ("Help → Documentation") | `VITE_SITE_URL` | **UI** build | the site origin, with a trailing slash, e.g. `https://example.com/` |
 
-Get either wrong and a link lands on a **404** — the site's not-found page for
+If either value is wrong, the link opens a **404** — the site's not-found page for
 the CTAs, or the app's not-found page for Help. This is the same pair the dev
 setup needs, where the app (`:5173`) and the site (`:4321`) are always two
 servers: `VITE_SITE_URL=http://localhost:4321/ npm run dev` and
@@ -261,16 +261,16 @@ Migrations run automatically on container start, so no manual step is needed.
 To pin a version, set `JANOSIK_TAG=v0.1.0` in `.env`.
 
 The retention upgrade (TASK-148) adds indexes to large tables, so the first
-start after it builds them before the API is up. On an existing instance with
-a lot of data and a bare-metal (`npm`) deployment, build them without a write
-lock first and the migration then becomes a no-op:
+start after it builds them before the API is up. On an existing installation
+with a lot of data and a direct Node.js (`npm`) deployment, build them without
+a write lock first; the migration will then have no work to do:
 
 ```bash
 npm run db:indexes --workspace backend
 ```
 
-Compose users get the same statements inline on first start; plan that
-upgrade for a quiet window on a big instance.
+Compose users get the same statements inline on first start; schedule that
+upgrade during a quiet period on a large installation.
 
 ### Scaling (streams and multiple nodes)
 
@@ -279,8 +279,8 @@ comfortably. Two knobs matter when you grow, and both have safe defaults:
 
 - **Live streams.** Every open board (and public share) holds one SSE
   connection (~0.1–0.17 MB each). Past a cap the instance refuses new streams
-  with `503` + `Retry-After` instead of exhausting memory, and it logs the live
-  count once a minute while streams are open. Tune with `SSE_MAX_CONNECTIONS`
+  with `503` + `Retry-After` instead of exhausting memory. While streams are
+  open, it logs the active connection count once a minute. Tune with `SSE_MAX_CONNECTIONS`
   (per instance, default `5000`), `SSE_MAX_PER_USER` (default `32`) and
   `SSE_MAX_PER_BOARD` (default `0` = unlimited — a swarm legitimately holds
   many). `0` means unlimited for each.
@@ -294,10 +294,10 @@ across replicas, so you can run several API replicas behind a load balancer:
 drop the host `ports:` mapping from the `app` service and let the balancer reach
 the replicas on the container network (or run them under an orchestrator), and
 set `TRUST_PROXY=1`. Keep the Postgres budget in mind — `DB_CONNECTION_LIMIT`
-(per process) × replicas must stay under `POSTGRES_MAX_CONNECTIONS`. One caveat
-today: **presence** (the "who is on this board" roster) is per-node until the
-shared Redis presence store lands, so the roster can differ between nodes. For a
-single team, one node is the right answer.
+(per process) × replicas must stay under `POSTGRES_MAX_CONNECTIONS`. One
+limitation remains: **presence** (the list of people on a board) is stored per
+node until shared Redis storage is implemented, so the roster can differ
+between nodes. For a single team, one node is usually sufficient.
 
 ### Backup
 

@@ -43,11 +43,11 @@ confirmation.
 
 ### Profile
 
-![The Profile section: photo, avatar colour, display name and email.](/screens/account-profile.png)
+![The Profile section: photo, avatar color, display name and email.](/screens/account-profile.png)
 
 - `Profile photo` — upload a PNG, JPEG, GIF or WebP image. The uploaded photo
   replaces the initials.
-- `Avatar color` — pick a colour for your initials, or leave it on automatic.
+- `Avatar color` — pick a color for your initials, or leave it on automatic.
 - `Display name` — shows on cards, in the feed and in the presence stack.
 - `Email` — your sign-in address, shown read-only. Use `Change` to start the
   change flow.
@@ -103,7 +103,7 @@ appearance menu in the board view.
 
 Janosik is installable as a web app. It ships a manifest that requests a
 standalone window and a service worker that caches the app shell and its
-hashed files, so the app opens with the network cut. Use your browser's own
+hashed files, so the app opens while you are offline. Use your browser's own
 install option to add it; the app has no separate install button.
 
 The app opens offline from its cached shell, but saving changes needs the

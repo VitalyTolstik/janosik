@@ -6,23 +6,23 @@ description: Common questions about licensing, hosting, data, offline use, backu
 Short answers to common questions. Each one links to the page that owns the
 detail.
 
-## What licence is Janosik under?
+## What license is Janosik under?
 
 AGPL-3.0, copyright 2026 Vitali Toustsik. You may use, self-host, fork and
 modify it, including commercially. The one condition AGPL-3.0 adds is that if
 you run a modified version as a network service, you must offer its source to
 the people who use it.
 
-The licence covers the code, not the name. "Janosik" and the feather logo
+The license covers the code, not the name. "Janosik" and the feather logo
 identify this project. Forks are welcome under a different name and logo, and
 must not present themselves as the official Janosik. See the
 [Trademark policy](https://github.com/VitalyTolstik/janosik/blob/main/TRADEMARK.md).
 
-## Should I self-host or use a hosted edition?
+## Should I self-host Janosik?
 
-Both exist. The maintainer runs a hosted edition, and Janosik is built to be
-self-hosted as a single container image. Self-hosting keeps all data on your
-own host and is the documented path in [Self-hosting](/docs/self-hosting/).
+The managed cloud is not available yet. You can run Janosik on your own server
+as a single container image. Self-hosting keeps your data on your own server;
+see the [Self-hosting guide](/docs/self-hosting/) to get started.
 
 ## Where is my data stored?
 
@@ -34,10 +34,11 @@ Janosik runs in server mode: boards live in PostgreSQL, on the Docker volume
 
 ## Does it work offline?
 
-The PWA caches its app shell, so it opens with the network cut. Server mode needs
-the network for writes: an optimistic edit rolls back with a toast if the API is
-unreachable, and a reload drops unsynced changes because there is no persistent
-outbox yet. Reads keep working offline from the last fetch.
+The PWA caches the app shell, so it can open while you are offline. Server mode
+needs a network connection to save changes. If the API is unreachable, an
+optimistic edit is rolled back and a message appears. Unsynced changes are lost
+if you reload because there is no persistent outbox. Previously loaded data
+remains available offline.
 
 ## How do I back up my data?
 
@@ -70,8 +71,8 @@ API runs in **log mode**: verification codes and notices are written to the
 server log instead of being sent, and registration auto-verifies. Nothing is
 emailed until you configure a transport in
 [Email service](/docs/admin/settings/) (or the `SMTP_*` environment variables).
-For local testing, Mailpit catches the letters on `localhost:1025` with a web
-inbox on `http://localhost:8025`:
+For local testing, Mailpit captures outgoing email on `localhost:1025` and shows
+it in a web inbox at `http://localhost:8025`:
 
 ```bash
 docker run -d --name janosik-mailpit --restart unless-stopped -p 1025:1025 -p 8025:8025 axllent/mailpit

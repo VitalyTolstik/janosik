@@ -58,7 +58,7 @@ and the presence stack in the header shows who is on the board now.
 </video>
 
 When someone else changes a card, that card briefly wears a ring in the
-author's colour, so you can see what moved. Your own changes stay quiet. If
+author's color, so you can see what moved. Your own changes stay quiet. If
 the connection drops, the app reconnects and catches up from the last event it
 saw. If it missed too much to catch up event by event, it reloads the board
 instead. When your access to the board ends (you are removed, a viewer's

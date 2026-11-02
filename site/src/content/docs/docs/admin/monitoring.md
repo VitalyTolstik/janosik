@@ -113,9 +113,9 @@ Every action the audit log can carry:
 | Demo and shares | `demo.started`, `demo.stopped`, `share.created`, `share.refreshed`, `share.revoked` |
 | Operations | `maintenance.run`, `queue.ticket_issued` |
 
-## Shared list behaviour
+## Shared list behavior
 
-Every listing in the panel uses one table implementation, so behaviour is
+Every listing in the panel uses one table implementation, so behavior is
 identical everywhere. Each page has a search box, pagination and the filters
 its entity supports.
 

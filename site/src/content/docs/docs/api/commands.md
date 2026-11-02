@@ -188,8 +188,9 @@ as for the single endpoint. The response is `CommandBatchResponse`:
 One `CommandResponse` per request command, in order; a retried `commandId`
 returns its stored result.
 
-The batch is **all-or-nothing**: any command's failure rolls the whole batch
-back, so a create and its follow-up field commands either all land or none do.
+The batch is **all-or-nothing**: if any command fails, the whole batch rolls
+back. A create command and its follow-up field updates are either all applied
+or none are.
 The array holds at most `COMMAND_BATCH_MAX` (100) commands — a longer array
 answers `400`. Each command is validated and size-capped exactly like a single
 one, so one oversized member is a `413` before the board lock.
@@ -263,8 +264,8 @@ One entry of the delta feed:
 | `touches`   | string[]      | the entities the command wrote, as touch labels; empty when nothing changed |
 
 `commandId` lets a client recognise its own echo by key rather than by
-`actorId`: one account may run several writers at once (tabs, agents on the
-same API key).
+`actorId`: one account may send commands from several tabs or from multiple
+agents using the same API key.
 
 ### ConflictError
 

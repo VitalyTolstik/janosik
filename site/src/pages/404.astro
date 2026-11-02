@@ -10,8 +10,8 @@ import { withBase } from "../utils/url";
 const COPY = {
   en: {
     title: "Page not found",
-    headline: "This card left the board.",
-    lead: "The page you're looking for was moved, archived, or never created. An agent from the swarm may have dragged it somewhere else.",
+    headline: "This page seems to be missing.",
+    lead: "The page may have moved, been archived, or never existed. Try the home page or browse the documentation.",
     home: "Back to home",
     docs: "Read the docs",
     backlog: "Backlog",
@@ -19,12 +19,12 @@ const COPY = {
     cardTitle: "This page",
     overdue: "overdue",
     blocker: "Blocker",
-    bubble: "couldn't find it",
+    bubble: "couldn't find this page",
   },
   ru: {
     title: "Страница не найдена",
-    headline: "Эта карточка ушла с доски.",
-    lead: "Страница, которую вы ищете, переехала, ушла в архив или никогда не существовала. Возможно, её перетащил кто-то из роя агентов.",
+    headline: "Не удалось найти эту страницу.",
+    lead: "Возможно, страница была перемещена или удалена. Перейдите на главную или откройте документацию.",
     home: "На главную",
     docs: "Документация",
     backlog: "Бэклог",
@@ -32,7 +32,7 @@ const COPY = {
     cardTitle: "Эта страница",
     overdue: "просрочено",
     blocker: "Блокер",
-    bubble: "не нашёл её",
+    bubble: "не нашёл страницу",
   },
 } as const;
 

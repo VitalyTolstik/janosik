@@ -49,7 +49,7 @@ Every row has an actions menu with the following entries.
 | Unverify email | withdraws the confirmation | destructive, shown when verified; confirmed |
 | Resend verification | sends a fresh confirmation code | shown always |
 | Reset password | issues a temporary password | owner-only server-side; opens a dialog |
-| Promote to master | creates an `OPERATOR` master | warning colour; opens a dialog |
+| Promote to master | creates an `OPERATOR` master | warning color; opens a dialog |
 | Impersonate | opens a short support session | owner-only; opens the app in a new tab |
 | Export data | downloads a GDPR bundle | owner-only server-side |
 | Delete user | erases the account | owner-only server-side; opens a dialog that requires typing the email |
@@ -81,10 +81,10 @@ answers `409`.
 
 ### Impersonate
 
-`Impersonate` mints a short-lived user token (15 minutes) scoped to one
+`Impersonate` creates a short-lived user token (15 minutes) scoped to one
 account and opens the app with it in a new tab. The app shows an irremovable
 banner naming the master. It is owner-only and refuses a disabled account. The
-mint is audited as `user.impersonated`.
+token creation is recorded as `user.impersonated` in the audit log.
 
 ### Export data
 
@@ -173,7 +173,7 @@ and shows it once with a copy button. An existing master answers `409`.
 | --- | --- | --- |
 | Block | sets `disabledAt` and revokes every session | destructive; disabled for your own account |
 | Unblock | clears `disabledAt`, the counter and the lockout | |
-| Unlock | clears the lockout and the failed-login counter | shown only when locked |
+| Unlock | clears the account lockout and failed-login counter | shown only when locked |
 | Reset password | issues a one-time password and revokes every session | shows the password once |
 | Revoke sessions | revokes every session of that master | |
 | Remove from masters | deletes the master account | destructive; disabled for your own account |

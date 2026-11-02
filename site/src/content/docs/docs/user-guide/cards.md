@@ -21,7 +21,7 @@ full dialog.
 - **Priority** — pick one of six levels.
 - **Assignee** — search the board's members.
 - **Link card** — pick a relation and a target card.
-- **Cover** — a colour or gradient strip.
+- **Cover** — a color or gradient strip.
 - **Checklists** — tick items and add new ones.
 - **Add comment** — write a comment and send it.
 - **Copy card link** and **Open in new tab**.
@@ -62,8 +62,8 @@ the server.
 ### Labels
 
 The `Label` row is a multi-select picker. Click a chip to toggle it, or use
-`New label` to create one with a name and a colour. Each chip has a menu to
-rename, recolour or delete it (deleting removes the label from every card).
+`New label` to create one with a name and a color. Each chip has a menu to
+rename, change its color or delete it (deleting removes the label from every card).
 
 ### Priority
 
@@ -75,7 +75,7 @@ face.
 
 The `Due date` row opens a calendar and a time field. Picking a day or
 changing the time applies at once, and `Remove due date` clears it. The card
-face shows the deadline, coloured red when it is overdue and yellow when it is
+face shows the deadline, colored red when it is overdue and yellow when it is
 due within a day.
 
 ### Assignee
@@ -84,10 +84,10 @@ The `Assignee` row searches the board's members. Pick a person to assign the
 card, or `Unassigned` to clear it. The assignee's avatar shows on the card
 face and in the table.
 
-A card can also be *claimed*: a temporary work lease an agent takes before it
-starts, so two agents never grab the same card. A claim is not an assignment —
-it expires on its own — and the `History` tab shows who claimed or released the
-card.
+A card can also be *claimed*: it is reserved for one agent while that agent
+works on it, so another agent cannot claim it at the same time. A claim is not
+an assignment and expires automatically. The `History` tab shows who claimed
+or released the card.
 
 ### Task spec
 
@@ -107,7 +107,7 @@ dependency is refused.
 
 ### Cover
 
-The `Cover` row sets a decorative strip on the card face. Choose a colour
+The `Cover` row sets a decorative strip on the card face. Choose a color
 (`Red`, `Orange`, `Yellow`, `Green`, `Teal`, `Cyan`, `Blue`, `Indigo`,
 `Brand`, `Fuchsia`, `Pink`, `Slate`) or a gradient (`Sunset`, `Ocean`,
 `Forest`, `Candy`, `Grape`, `Steel`). `Remove cover` clears it.
@@ -139,8 +139,8 @@ is disabled in the list.
 At the foot of the dialog you can `Duplicate card`, `Archive` the card, or
 delete it.
 
-- **Duplicate** copies the card's content and lands in the same column, right
-  below the original. It is disabled when the column cannot take another card.
+- **Duplicate** copies the card's content into the same column, immediately
+  below the original. It is disabled when the column has reached its card limit.
 - **Archive** takes a card off the board but keeps it: archived cards stay in
   search and in the card archive, and the dialog footer flips to `Send back to
   board`, which restores the card to a column you pick.

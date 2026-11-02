@@ -1,6 +1,6 @@
 ---
 title: MCP server
-description: Let AI agents read and drive a board with the Janosik MCP server and its behaviour skill, using a personal API key.
+description: Let AI agents read and manage a board with the Janosik MCP server and its behavior skill, using a personal API key.
 ---
 
 The `@janosik/mcp` server exposes a board to any MCP client (Claude, Cursor,
@@ -83,7 +83,7 @@ retried call returns the first entity rather than a duplicate.
 ## The skill: teach the agent how to work
 
 The server gives an agent the tools; it does not tell it *how* to use them well.
-The **`janosik` skill** is the behaviour half — a playbook that makes the agent
+The **`janosik` skill** is the behavior half — a playbook that guides the agent
 work a card the way a good teammate would:
 
 - **Read before writing** — list the boards, read the board, read the card's
@@ -110,7 +110,7 @@ Install it by dropping `skills/janosik/` into your harness's skills directory:
 | Codex / no skills support | Paste `SKILL.md` into your `AGENTS.md` |
 
 The skill references the tools by name and needs no configuration. It ships in
-the repository under `skills/janosik/` (behaviour in `SKILL.md`, plus
+the repository under `skills/janosik/` (behavior in `SKILL.md`, plus
 `references/templates.md` and `references/recipes.md`).
 
 ### The agent-ready card

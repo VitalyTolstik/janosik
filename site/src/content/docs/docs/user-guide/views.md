@@ -1,6 +1,6 @@
 ---
 title: Calendar, table and watch views
-description: Four ways to work the same cards — a calendar by due date, a sortable table, and a bare watch view for observing a swarm.
+description: Four ways to work with the same cards — a calendar by due date, a sortable table, and a simplified watch view for monitoring a board.
 ---
 
 The view switcher above the board offers four projections of the same cards.
@@ -64,7 +64,7 @@ just a large status and a live feed of what is happening.
   100 rows. The first page stays live; browsing older pages pauses the stream.
 
 The watch view is deliberately plain — no animations, no hover effects, no
-colour beyond the diff markers — so it can stay open on a screen as a status
+color beyond the diff markers — so it can stay open on a screen as a status
 board.
 
 ## Card density

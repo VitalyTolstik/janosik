@@ -6,11 +6,11 @@ Two ways to run Janosik:
 | --- | --- | --- |
 | What it is | Prebuilt container: whole app (API + UI) + PostgreSQL + Redis | Node dev server, optionally with a local API |
 | You need | Docker Desktop / Docker Engine | Node.js 22.17+, npm |
-| Best for | Actually using it, self-hosting | Changing the code |
+| Best for | Running Janosik, including self-hosting | Developing Janosik |
 
-Pick one below. For a **server** (VPS) rather than a laptop, the
-[self-hosting guide](./SELF-HOSTING.md) is the deeper read — this page is about
-getting it running on your own machine.
+Choose the option that fits your setup. For a **server** (VPS), see the
+[self-hosting guide](./SELF-HOSTING.md). This page covers running Janosik on
+your own computer.
 
 ---
 
@@ -71,8 +71,8 @@ site is a separate dev server (`npm run dev:site`, port 4321).
 
 ## Windows 11
 
-Docker on Windows runs through **WSL2**, so the smoothest experience is to do
-everything inside a WSL2 Linux shell. Native PowerShell works too.
+Docker Desktop for Windows uses **WSL2**. We recommend running the commands
+from an Ubuntu WSL2 shell; native PowerShell also works.
 
 ### Step 0 — one-time setup
 
@@ -131,7 +131,8 @@ docker compose exec app node backend/scripts/admin-cli.cjs create --email me@exa
 
 ### From source
 
-Prefer WSL2 Ubuntu for the dev flow (native tooling, fast file watching):
+For development, we recommend WSL2 Ubuntu for native Linux tooling and fast
+file watching:
 
 ```bash
 # Node via nvm (the distro `nodejs` is often too old for the backend engines):

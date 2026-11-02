@@ -324,7 +324,7 @@ Both redirect endpoints are full page navigations, not XHR. `providers` lists
 only enabled providers; each entry is `{ id, label }` with `id` one of
 `google` or `yandex`.
 
-`start` mints state, sets an httpOnly `SameSite=Lax` state cookie scoped to
+`start` generates a state value and sets an httpOnly `SameSite=Lax` state cookie scoped to
 `/api/v1/auth/oauth`, and redirects to the provider. `callback` validates the
 state, sets the refresh cookie, and redirects to the UI root. Any failure
 redirects to `?authError=oauth_failed` on the UI root.

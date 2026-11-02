@@ -113,7 +113,7 @@ no manual migration step.
    which takes a while on a large volume.
 
    The retention indexes (soft-delete, token, share, invitation, reminder)
-   are built the same way. On a bare-metal (`npm`) deployment with a large
+   are built the same way. On a direct Node.js (`npm`) deployment with a large
    database, build them without a write lock before upgrading; the migration
    then finds them and is instant:
 
@@ -194,8 +194,8 @@ safe defaults:
 
 - **Live streams.** Each open board (and public share) holds one SSE connection
   (~0.1–0.17 MB). Past a cap the instance refuses new streams with `503` +
-  `Retry-After` instead of exhausting memory, and logs the live count once a
-  minute while streams are open. Tune with `SSE_MAX_CONNECTIONS` (per instance,
+  `Retry-After` instead of exhausting memory. While streams are open, the API
+  logs the active connection count once a minute. Tune with `SSE_MAX_CONNECTIONS` (per instance,
   default `5000`), `SSE_MAX_PER_USER` (default `32`) and `SSE_MAX_PER_BOARD`
   (default `0` = unlimited). `0` means unlimited for each.
 - **Heap.** `NODE_OPTIONS=--max-old-space-size=…` (default `1024`) caps V8's old
@@ -206,8 +206,8 @@ cross-node and queue workers spread across replicas, so you can run several API
 replicas behind a load balancer: drop the host `ports:` mapping and let the
 balancer reach the replicas on the container network, and set `TRUST_PROXY=1`.
 Keep `DB_CONNECTION_LIMIT` × replicas under `POSTGRES_MAX_CONNECTIONS`. Presence
-(the "who is on this board" roster) is per-node for now, so it can differ
-between nodes. For a single team, one node is the right answer.
+(the list of people on a board) is stored per node for now, so it can differ
+between nodes. A single node is usually sufficient for a small team.
 
 ## Troubleshooting
 

@@ -59,8 +59,8 @@ The right side holds the tools:
 
 - [Boards, columns and cards](boards/) — the board surface: creating and
   managing boards and columns, adding and moving cards.
-- [Calendar, table and watch views](views/) — the alternative projections of
-  the same cards, including the bare watch view and the compact card size.
+- [Calendar, table and watch views](views/) — other ways to view the same cards,
+  including the simplified watch view and compact card layout.
 - [Card details and the quick menu](cards/) — everything inside a card and
   the right-click quick menu.
 - [Collaboration, sharing and search](collaboration/) — members, realtime

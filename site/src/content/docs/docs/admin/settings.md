@@ -68,8 +68,8 @@ and the panel says so. A failed probe shows the error text.
 The `Mailpit (sandbox)` test provider is a local mail catcher that never
 reaches real inboxes. It points at a Mailpit sidecar on the host: SMTP
 `localhost:1025`, web inbox `http://localhost:8025`. No credentials are needed.
-A sandbox panel then offers `Open the inbox`. Letters land in the local web
-inbox, which runs on the same machine only.
+A sandbox panel then offers `Open the inbox`. Test emails appear in the local
+web inbox, which is available only on the same machine.
 
 ## OAuth login
 

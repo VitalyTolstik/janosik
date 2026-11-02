@@ -165,7 +165,7 @@ A share's `mode` is `snapshot` or `live`. A snapshot freezes the board at
 creation and survives the board being deleted; only the owner can refresh it.
 A live share reads the board as it is now and follows it over SSE.
 
-`POST` mints a random token (16 bytes, base64url). `includeComments` defaults
+`POST` generates a random token (16 bytes, base64url). `includeComments` defaults
 to `true` for a live share and `false` for a snapshot; `includeAttachments`
 defaults to `false`. An `expiresAt` in the past answers `400`.
 
@@ -258,7 +258,7 @@ the account was disabled, the board was deleted, or the stream was opened
 with a personal API token that has since been revoked or has expired.
 
 `?client=` is an optional tab-scoped id matching `^[A-Za-z0-9_-]{8,64}$`.
-When omitted or malformed, the server mints one.
+When omitted or malformed, the server generates one.
 
 The stream carries five event types:
 
@@ -270,8 +270,9 @@ The stream carries five event types:
 | `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `actorType?`, `at`, `kind`, `detail?` | non-reducer activity, e.g. a new comment |
 | `resync`     | none                                                           | the gap cannot be replayed; refetch the board  |
 
-`commandId` is the idempotency key the command was sent with, so a client
-recognises its own echo by key even when one account runs several writers.
+`commandId` is the idempotency key sent with the command. A client uses it to
+recognise its own echo even when commands come from multiple tabs or agents
+using the same account.
 
 `actorType` is `"human"` for a browser session and `"agent"` for a personal API
 token; it is omitted on frames written before the field existed, so treat a

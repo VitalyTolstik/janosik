@@ -84,7 +84,7 @@ other `ADMIN` is demoted to `MEMBER` and the target becomes `ADMIN`.
 ### Columns and labels
 
 The columns table shows Column, Position, WIP limit, Cards and Status. The
-labels panel shows each label as a colour chip.
+labels panel shows each label as a color chip.
 
 ## Board content editor
 
@@ -157,7 +157,7 @@ dash for cards imported before the command log.
 ### Sections
 
 - Description, when present, shown as preformatted text.
-- Labels, as colour chips.
+- Labels, as color chips.
 - Checklists, each with a title, a `done/total` count and its live items.
 - Links, both directions: outgoing links with an up-right arrow and incoming
   links with a down-left arrow, each with a type badge and a `Deleted` badge
@@ -192,7 +192,7 @@ palette`.
 
 | Column | Value |
 | --- | --- |
-| Label | the label as a colour chip |
+| Label | the label as a color chip |
 | Board | board title, linked |
 | Position | sort position |
 | Cards | cards carrying the label |
@@ -312,8 +312,7 @@ token immediately.
 
 ## Public shares
 
-`/admin/shares` is the browser for read-only board links minted against any
-board. The subtitle is `Read-only board links minted against any board,
+`/admin/shares` lists read-only board links created for any board. The subtitle is `Read-only board links created for any board,
 inspect and revoke.`
 
 | Column | Value |

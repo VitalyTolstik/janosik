@@ -22,7 +22,7 @@ empty and you are taken straight to it.
 ### Switch between boards
 
 The switcher groups boards into `My boards` and `Shared with me` when both
-exist. Each row shows a coloured avatar, the board name and its card count.
+exist. Each row shows a colored avatar, the board name and its card count.
 Use the arrow keys and Enter, or just click a row. A board shared with you
 carries a role icon: member (can edit) or viewer (view only).
 

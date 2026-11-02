@@ -106,7 +106,7 @@ password recovery, no social entry.
 - Refresh tokens rotate on every use. Reusing a revoked token revokes every
   session of that master.
 
-A successful sign-in lands on the dashboard. The login screen also carries the
+A successful sign-in takes you to the dashboard. The login screen also shows the
 hint `Master accounts are created on the server via the admin CLI.`
 
 ## The shell
