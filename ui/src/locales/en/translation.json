@@ -205,6 +205,7 @@
   "archive.searchPlaceholder": "Search the archive…",
   "archive.subtitle": "{{board}} · {{count}} cards",
   "archive.title": "Card archive",
+  "auth.backToSite": "Back to site",
   "auth.displayName": "Name (optional)",
   "auth.email": "Email",
   "auth.emailTaken": "An account with this email already exists",

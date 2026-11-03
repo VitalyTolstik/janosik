@@ -22,3 +22,11 @@ function siteBase(): string {
 export function docsUrl(lang: string): string {
   return `${siteBase()}${lang === "ru" ? "ru/docs/" : "docs/"}`;
 }
+
+/** Marketing home, preserving the app's current language when a site exists. */
+export function siteHomeUrl(lang: string): string | null {
+  if (!import.meta.env.VITE_SITE_URL && !APP_BASE.endsWith("app/")) {
+    return null;
+  }
+  return `${siteBase()}${lang === "ru" ? "ru/" : ""}`;
+}

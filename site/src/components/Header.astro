@@ -2,7 +2,7 @@
 import { appLink, nav, site } from "../config";
 import type { Lang } from "../i18n/ui";
 import { localizedUrl, useTranslations } from "../i18n/utils";
-import { withBase } from "../utils/url";
+import BrandMark from "./BrandMark.astro";
 import LangSwitcher from "./LangSwitcher.astro";
 import ThemeToggle from "./ThemeToggle.astro";
 
@@ -12,13 +12,12 @@ interface Props {
 
 const { lang } = Astro.props;
 const t = useTranslations(lang);
-const favicon = withBase("/favicon.svg");
 ---
 
 <header class="site-header">
   <div class="container header-inner">
     <a class="brand" href={localizedUrl("/", lang)}>
-      <img src={favicon} alt="" width="32" height="32" />
+      <BrandMark {lang} placement="header" />
       <span>{site.name}</span>
     </a>
 

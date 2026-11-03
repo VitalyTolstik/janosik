@@ -66,6 +66,28 @@ afterEach(() => {
 });
 
 describe("LoginPage", () => {
+  it("links both sign-in and registration back to the marketing site", () => {
+    vi.stubEnv("VITE_SITE_URL", "https://site.example/");
+    renderPage();
+    expect(screen.getByTestId("auth-back-to-site")).toHaveAttribute(
+      "href",
+      "https://site.example/",
+    );
+
+    fireEvent.click(screen.getByTestId("login-toggle"));
+    expect(screen.getByTestId("login-display-name")).toBeInTheDocument();
+    expect(screen.getByTestId("auth-back-to-site")).toHaveAttribute(
+      "href",
+      "https://site.example/",
+    );
+  });
+
+  it("omits the site link in a standalone app without a site URL", () => {
+    vi.stubEnv("VITE_SITE_URL", "");
+    renderPage();
+    expect(screen.queryByTestId("auth-back-to-site")).toBeNull();
+  });
+
   it("shows a localized error for wrong credentials", async () => {
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
       if (pathOf(input).endsWith("/auth/refresh")) {

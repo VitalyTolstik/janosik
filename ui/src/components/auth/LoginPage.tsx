@@ -1,11 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 
 import { api, ApiError } from "@/api/client";
+import { BrandMark } from "@/components/BrandMark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/auth/AuthContext";
 import { useI18n } from "@/i18n";
+import { siteHomeUrl } from "@/utils/docs-url";
 import type { OAuthProviderDto } from "@janosik/shared";
 
 /**
@@ -58,7 +61,7 @@ function loginBackoffMessage(
 }
 
 export function LoginPage() {
-  const { t } = useI18n();
+  const { lang, t } = useI18n();
   const { login, register } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   // `?mode=register` opens the screen on the register form — the marketing
@@ -75,6 +78,7 @@ export function LoginPage() {
   const [allowRegistration, setAllowRegistration] = useState(true);
 
   const isRegister = mode === "register";
+  const siteUrl = siteHomeUrl(lang);
 
   // An OAuth round trip that failed server-side lands back here with
   // ?authError=oauth_failed — surface it and clean the URL.
@@ -149,25 +153,21 @@ export function LoginPage() {
   };
 
   return (
-    <main className="flex flex-1 items-center justify-center p-6">
+    <main className="relative flex flex-1 items-center justify-center p-6">
+      {siteUrl && (
+        <a
+          href={siteUrl}
+          data-testid="auth-back-to-site"
+          className="absolute top-6 left-6 inline-flex items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          {t("auth.backToSite")}
+        </a>
+      )}
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <span
-            aria-hidden
-            className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-secondary text-primary-foreground shadow-sm"
-          >
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M14.086 18.412A2 2 0 0112.67 19H5v-7.672a2 2 0 01.586-1.414L11.75 3.75a6 6 0 118.49 8.49z"
-                fill="currentColor"
-              />
-              <path
-                d="M16 8 2 22"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-              />
-            </svg>
+          <span aria-hidden className="group">
+            <BrandMark size="large" />
           </span>
           <h1 className="text-lg font-semibold text-foreground">
             {isRegister ? t("auth.registerTitle") : t("auth.title")}
