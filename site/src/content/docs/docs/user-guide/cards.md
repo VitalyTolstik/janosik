@@ -48,8 +48,8 @@ after a few lines.
 `Description` is a rich-text editor for Markdown. The toolbar offers undo and
 redo, a block-type menu (paragraph, headings, quote), bold and italic,
 strikethrough, inline code, bulleted, numbered and check lists, and links.
-Tables and images have no toolbar buttons, but Markdown that contains them
-still round-trips.
+Tables and images have no toolbar buttons, but tables and images in Markdown are
+preserved when you edit and save the description.
 
 Edits are committed when you leave the editor, so the history shows one change
 per editing session.
@@ -160,9 +160,10 @@ The `Activity` section is the last part of the dialog. It has two tabs,
 ### Comments
 
 Comments are written in the same Markdown editor as the description, with
-`Save` and `Cancel`. Press Ctrl+Enter (or Cmd+Enter) to save. Comments list
-newest first, with `Show older comments` to page back. You can delete your own
-comments, behind a confirmation. Comments need server mode.
+`Save` and `Cancel`. Press Ctrl+Enter (or Cmd+Enter) to save. Comments are
+listed newest first, with `Show older comments` to page back. You can delete
+your own
+comments after confirmation. Comments need server mode.
 
 ### History
 

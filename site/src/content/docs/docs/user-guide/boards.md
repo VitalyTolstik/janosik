@@ -1,6 +1,6 @@
 ---
 title: Boards, columns and cards
-description: Create and manage boards and columns, add and move cards, and work the board view.
+description: Create and manage boards and columns, add and move cards, and use the board view.
 ---
 
 A board is an ordered strip of columns, and each column holds an ordered list
@@ -73,7 +73,7 @@ Open the menu with the `⋮` button in the column header. It holds `Rename`,
 
 A WIP limit caps how many cards a column accepts. Open `WIP limit` in the
 column menu and enter a number. Leave it empty, or use `Remove limit`, to
-clear it. The column header then shows `count/limit`, and the counter turns
+clear it. When a limit is set, the column header shows `count/limit`, and the counter turns
 yellow at the limit and red past it. Adds and moves into a full column are
 blocked with a short message.
 
@@ -104,8 +104,9 @@ open its details — or right-click it for the quick menu (see
 
 ### Drag and drop
 
-Drag a card by holding it: the mouse starts a drag after a short move, a touch
-screen after a short press, and the keyboard can move a card too. Drop a card
+To drag a card with a mouse, hold it and move the pointer. On a touch screen,
+press and hold the card first. You can also move cards with the keyboard. Drop a
+card
 between two cards in the same column to reorder, or into another column to
 move it. A drop into a full column is refused and the card returns to its
 place. While a filter is active, dragging is disabled and the board says so.

@@ -4,7 +4,7 @@ description: Boards, members, comments, attachments, sharing and realtime for th
 ---
 
 Content mutations travel through the [Command API](/docs/api/commands/). This page
-documents everything else on the user-facing surface: boards and membership,
+documents the other user-facing operations: boards and membership,
 comments, attachments, public sharing and the realtime stream. See
 [API reference](./) for the shared conventions (base path, auth, errors,
 rate limits).
@@ -90,7 +90,7 @@ token. Only the account-credential routes are session-only (see
 
 ## Comments
 
-Comments are plain text and ordinary REST. `CardAccessGuard` resolves the
+Comments are stored as Markdown strings and managed through REST. `CardAccessGuard` resolves the
 owning board from the card or comment and enforces membership.
 
 | Method   | Path                      | Auth / role        | Request            | Response           |
@@ -148,7 +148,7 @@ non-image without a generated thumbnail answers `404`.
 `GET .../poster` serves the first meaningful frame of a video (`image/jpeg`).
 When none was generated it answers `404`.
 
-## Sharing (owner endpoints)
+## Managing public share links
 
 A share is its own entity (token, mode, privacy flags, TTL, revoke). Owner
 management is nested under the board and gated to `ADMIN`.
@@ -162,7 +162,7 @@ management is nested under the board and gated to `ADMIN`.
 | `DELETE` | `/boards/:id/shares/:shareId`         | `ADMIN`     | none             | `BoardShareDto`   |
 
 A share's `mode` is `snapshot` or `live`. A snapshot freezes the board at
-creation and survives the board being deleted; only the owner can refresh it.
+creation and survives the board being deleted; a board admin can refresh it.
 A live share reads the board as it is now and follows it over SSE.
 
 `POST` generates a random token (16 bytes, base64url). `includeComments` defaults
@@ -179,13 +179,13 @@ answers `404`.
 
 ## Public share endpoints
 
-The public contour is read-only and outside the user JWT. Every route is
-behind `ShareAccessGuard`, which resolves `:token` to a live, non-revoked,
-non-expired share, and the `ALLOW_PUBLIC_SHARES` master switch. A missing,
-revoked, expired or disabled share all answer the same `404`. The read
+The public API is read-only and does not require a user JWT. `ShareAccessGuard`
+checks the link token, expiry, revocation and the `ALLOW_PUBLIC_SHARES` setting.
+The server returns the same `404` response for an unknown, revoked, expired or
+disabled link. The read
 responses carry `X-Robots-Tag: noindex, nofollow`.
 
-The contour has a per-token rate limit: 240 requests per minute per token
+The public API has a per-token rate limit: 240 requests per minute per token
 (`SHARE_RATE_LIMIT`), and 60 per minute for the OG preview
 (`SHARE_OG_RATE_LIMIT`). Exceeding it answers `429`.
 
@@ -207,8 +207,9 @@ is gone answers `410`; a snapshot never depends on the board.
 
 `GET /share/:token/events` is live mode only; a snapshot answers `404`. It
 streams `command` frames and, when `includeComments` is set, `activity`
-frames. Presence and membership frames are dropped, so a public viewer sees
-no identities. The `?since=` delta catch-up mirrors the member stream,
+frames. Presence and membership frames are dropped, so a public viewer does not
+receive member-presence events. The `?since=` delta catch-up mirrors the member
+stream,
 including the `resync` frame. A live board that is gone answers `410`. An open
 stream re-checks the share on every keep-alive tick and closes once the share
 is revoked or expired, public sharing is switched off, or the board is gone.
@@ -224,7 +225,7 @@ and attachment content include only what was created up to the moment the
 snapshot was captured (or last refreshed). A later attachment answers `404`.
 
 `POST /share/:token` and any nested `POST` answer `405` with
-`"Shared boards are read-only"`. The public contour states its read-only rule
+`"Shared boards are read-only"`. The public API states its read-only rule
 rather than relying on the absence of a route.
 
 ## Realtime
@@ -290,7 +291,7 @@ The response is `204` with an empty body.
 
 ## DTO catalog
 
-Required tri-state used below:
+Field presence and nullability are specified separately:
 
 - `required`: the key must be present.
 - `optional`: the key may be omitted.
@@ -387,12 +388,20 @@ Required tri-state used below:
 The response bodies are the shared wire types. Key fields:
 
 - `BoardSummary`: `id`, `title`, `archivedAt?`, `counters` (`{ cards, columns }`), `role`.
-- `BoardAggregate`: the frontend `Board` (`id`, `title`, `columns[]`, `cards` map, `labels[]`, `createdAt`, `updatedAt`, `archivedAt?`).
-- `BoardMemberDto`: `userId`, `displayName`, `email`, `role`, `expiresAt`, `avatarColor`, `avatarPath`. The invite response is masked (`userId: ""`, profile fields `null`).
+- `BoardAggregate`: the frontend `Board` (`id`, `title`, `columns[]`, `cards`
+  map, `labels[]`, `createdAt`, `updatedAt`, `archivedAt?`).
+- `BoardMemberDto`: `userId`, `displayName`, `email`, `role`, `expiresAt`,
+  `avatarColor`, `avatarPath`. The invite response is masked (`userId: ""`,
+  profile fields `null`).
 - `CommentDto`: `id`, `cardId`, `authorId`, `text`, `createdAt`. `CommentPage`: `{ items, nextCursor }`.
-- `AttachmentDto`: `id`, `cardId`, `fileName`, `mimeType`, `sizeBytes`, `uploadedById`, `createdAt`, `transcodeStatus`, `hasThumbnail`, `hasPoster`.
-- `BoardShareDto`: `id`, `token`, `boardId`, `boardTitle`, `mode`, `title`, `includeComments`, `includeAttachments`, `expiresAt`, `revokedAt`, `views`, `lastViewedAt`, `createdAt`, `createdBy`.
-- `PublicBoardDto`: `mode`, `title`, `takenAt`, `board`, `seq`, `members[]`, `includeComments`, `includeAttachments`. Members are `{ id, displayName, avatarColor, avatarPath }` with no emails.
+- `AttachmentDto`: `id`, `cardId`, `fileName`, `mimeType`, `sizeBytes`,
+  `uploadedById`, `createdAt`, `transcodeStatus`, `hasThumbnail`, `hasPoster`.
+- `BoardShareDto`: `id`, `token`, `boardId`, `boardTitle`, `mode`, `title`,
+  `includeComments`, `includeAttachments`, `expiresAt`, `revokedAt`, `views`,
+  `lastViewedAt`, `createdAt`, `createdBy`.
+- `PublicBoardDto`: `mode`, `title`, `takenAt`, `board`, `seq`, `members[]`,
+  `includeComments`, `includeAttachments`. Members are `{ id, displayName,
+  avatarColor, avatarPath }` with no emails.
 - `BoardEnvelope`: `{ app, schemaVersion, exportedAt, boards[] }`.
 
 ## Errors
@@ -404,7 +413,7 @@ The response bodies are the shared wire types. Key fields:
 | `403`  | not a member; a role the route does not allow; an expired `VIEWER`; a share that does not belong to the board; a non-author deleting a comment            |
 | `403`  | `code: "pat_forbidden"`: a personal API token on a session-only route                                                                                     |
 | `404`  | unknown or soft-deleted board, card, comment, attachment or share; a disabled, revoked or expired public share; a thumbnail or poster that does not exist |
-| `405`  | a write against the public share contour                                                                                                                  |
+| `405`  | a write against the public share API                                                                                                                  |
 | `409`  | inviting an accepted member; demoting or removing the last `ADMIN`; an expired invitation; a `commandId` reused on another card                           |
 | `410`  | a live share whose board no longer exists                                                                                                                 |
 | `413`  | a command payload over `MAX_COMMAND_BYTES`; a JSON body over 256 KB (5 MB on import and commands)                                                         |

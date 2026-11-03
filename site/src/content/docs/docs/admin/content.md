@@ -3,7 +3,7 @@ title: Boards, cards and content
 description: Boards and the board content editor, cards and card detail, and the columns, labels, checklists, links, comments, attachments, sessions, tokens and shares browsers.
 ---
 
-The content section is the day-to-day moderation surface. It exposes boards,
+The content section provides tools for daily moderation. It exposes boards,
 cards and every board-scoped model the panel can list, plus the session, token
 and public share browsers that sit under security.
 
@@ -25,13 +25,13 @@ pagination, a `Create board` button and bulk selection.
 ### Create a board
 
 The `Create board` dialog takes a title and an owner email. The owner becomes
-the board `ADMIN`. An owner email with no matching user answers `404`.
+the board `ADMIN`. If no user matches the owner email, the server returns `404`.
 
 ### Row actions
 
 | Action | Effect | Notes |
 | --- | --- | --- |
-| Edit content | opens the board content editor | no toast, pure navigation |
+| Edit content | opens the board content editor | opens the editor page |
 | Archive | sets `archivedAt` | confirmed; the board becomes read-only for members |
 | Restore | clears `archivedAt` | shown when archived |
 | Delete | soft-deletes the board | destructive, confirmed; purged after the retention window |
@@ -39,8 +39,9 @@ the board `ADMIN`. An owner email with no matching user answers `404`.
 ### Bulk actions
 
 With rows selected, a bar appears with `Delete selected`, `Restore selected`
-and `Clear`. A bulk delete is confirmed and cannot be undone for the selected
-rows. Deleting a column takes its cards down with it (they are soft-deleted,
+and `Clear`. Bulk deletion requires confirmation and does not support ordinary
+undo. Soft-deleted records can be restored until they are permanently purged.
+Deleting a column takes its cards down with it (they are soft-deleted,
 never left pointing at a deleted column), and restoring the column brings them
 back.
 
@@ -96,13 +97,14 @@ labels panel shows each label as a color chip.
   and archive controls; a composer at the bottom adds a card.
 - A manual refresh button is in the header.
 - The page polls the board aggregate every 2 seconds while it is visible and
-  focused, so a running demo is watched in place.
+  focused, so you can monitor a running demo on this page.
 
-Every mutation is a real board action sent through
+Each edit is submitted as a board command through
 `POST /admin/boards/:id/commands` on behalf of the board owner, the board's
 first accepted `ADMIN`. The server re-validates each action with the shared
-strict validator, so a refusal (a WIP limit, a size limit) surfaces as a toast
-and changes nothing. The editor sends `ADD_COLUMN`, `ADD_CARD`, `RENAME_COLUMN`,
+strict validator, so a rejected action (for example, due to a WIP or size limit)
+shows a notification and leaves the board unchanged. The editor sends
+`ADD_COLUMN`, `ADD_CARD`, `RENAME_COLUMN`,
 `UPDATE_CARD`, `ARCHIVE_CARD` and `DELETE_COLUMN`, each stamped with the
 command clock. The command log, versions and the board UI stay consistent.
 
@@ -133,7 +135,7 @@ Row actions: `Archive` (confirmed), `Restore` (when archived) and `Delete`
 
 ## Card detail
 
-`/admin/cards/:id` shows the full card graph. The header carries the title, the
+`/admin/cards/:id` shows the card and its related records. The header carries the title, the
 subtitle `board · column`, and an actions menu with archive, restore and
 delete. A status badge, a priority badge and a due-date chip are shown.
 
@@ -150,7 +152,7 @@ delete. A status badge, a priority badge and a due-date chip are shown.
 | Assignee | assignee, linked, or a dash |
 | Last changed by | the label of the last actor, or a dash |
 
-A card has no creator column, so `Created by` is derived from the first
+A card has no separate creator field, so `Created by` is derived from the first
 `ADD_CARD` or `DUPLICATE_CARD` command whose payload names the card. It is a
 dash for cards imported before the command log.
 
@@ -312,7 +314,8 @@ token immediately.
 
 ## Public shares
 
-`/admin/shares` lists read-only board links created for any board. The subtitle is `Read-only board links created for any board,
+`/admin/shares` lists read-only board links created for any board. The subtitle
+is `Read-only board links created for any board,
 inspect and revoke.`
 
 | Column | Value |

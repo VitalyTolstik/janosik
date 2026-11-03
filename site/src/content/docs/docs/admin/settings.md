@@ -20,9 +20,9 @@ A status banner reports where the active transport comes from:
 
 | State | Meaning |
 | --- | --- |
-| `Delivery is active via {provider} ({host}:{port}).` | a saved, enabled row |
-| `Delivery is active via the server's SMTP_* env bootstrap` | the environment bootstrap is in use |
-| `Delivery is off` | a saved row is kept but unused |
+| `Delivery is active via {provider} ({host}:{port}).` | saved email delivery settings are active |
+| `Delivery is active via the server's SMTP_* env bootstrap` | SMTP settings from environment variables are in use |
+| `Delivery is off` | settings are saved, but delivery is disabled |
 | `Delivery is not configured` | emails are written to the server log |
 
 When a probe has run, the last test result and its time are shown.
@@ -59,9 +59,9 @@ password, and a help link points at the provider's instructions.
 
 ### Test delivery
 
-The test panel sends a probe to an address. The outcome is returned and
-recorded. When delivery is off, the probe is written to the server log instead
-and the panel says so. A failed probe shows the error text.
+The test panel sends a test email to the specified address. The outcome is returned and
+recorded. When delivery is off, the test email is written to the server log instead
+and the panel says so. If sending fails, the error message is shown.
 
 ### Sandbox
 
@@ -98,7 +98,7 @@ screen the moment it succeeds: the button appears when the provider is enabled.
 
 ## Security
 
-`/admin/security` manages the signed-in master's own posture. The scope note
+`/admin/security` manages the signed-in master’s security settings. The scope note
 reads: these settings apply only to your own master account, and regular users
 are not affected.
 
@@ -171,16 +171,15 @@ Owner-only inputs:
 | Agents | 1 to 100 | |
 | Tasks | 1 to 1000 | cards to seed |
 
-`Start demo` provisions the population and starts the swarm. `Stop & clean up`
-is enabled while a run's footprint still exists; it is confirmed and deletes
+`Start demo` creates the demo users and cards, then starts the scenario. `Stop & clean up`
+is enabled while data created by the demo still exists; it is confirmed and deletes
 exactly the recorded rows: the board when the run created it, its cards, its
 demo users and its share.
 
 Behind the scenes the runner creates a dispatcher and the requested agents on
 the reserved `@janosik.demo` domain, the five flow columns (Новые, В работе,
 На ревью, Тестирование, Готово), a label set and one card per agent, then
-drives the cards across the flow. Every id it creates is recorded, so cleanup
-never guesses by name.
+drives the cards across the flow. Every id it creates is recorded, so cleanup uses the recorded IDs.
 
 ## Operations
 
@@ -206,7 +205,7 @@ request time.
 
 The maintenance toggle takes an optional message (at most 500 characters).
 When on, every user request is answered `503` with the message; the panel and
-the sign-in stay open, so an operator can switch it off.
+the sign-in stay open, so an owner can switch it off.
 
 ### Rate limit
 
@@ -304,9 +303,9 @@ Five templates are editable:
 | `due_reminder` | Due-date reminder |
 
 Each template has a subject and an HTML body. Placeholders are shown as
-`{{name}}`. `Preview` renders the letter with sample values in an iframe.
+`{{name}}`. `Preview` renders the email with sample values in an iframe.
 `Save` stores an override and marks the template `custom`; `Reset to default`
-drops the override so the built-in letter takes over. With no override the
+drops the override so the default template is used again. With no override the
 built-in letter is shown, so the editor is never empty.
 
 ### Announcement history
@@ -347,15 +346,15 @@ The page has a search box and status tabs (active, inactive). Row actions:
   (boards/clients) and the Demo runner (on or off).
 - A queues grid shows each queue's name, pending, done and failed counts and
   its backend (`redis` or `memory`).
-- The `Biggest tables` table lists up to 12 tables with rows and size.
+- The `Biggest tables` table lists up to 12 tables with row counts and sizes.
 - The health panel lists `database` (`SELECT 1` and its latency), `realtime`
   (board channels) and `maintenance` (on or off).
 
 ## The user-facing announcements banner
 
 Active announcements reach signed-in users as a banner under the app header.
-The endpoint is `GET /announcements/active`, reached through the ordinary user
-auth contour, so a signed-out visitor gets nothing and a user sees only
+The endpoint is `GET /announcements/active`, protected by standard user
+authentication, so a signed-out visitor gets nothing and a user sees only
 announcements addressed to them.
 
 Each banner is styled by level (info, warning, danger) and can be dismissed.

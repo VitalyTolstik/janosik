@@ -3,7 +3,7 @@ title: Calendar, table and watch views
 description: Four ways to work with the same cards — a calendar by due date, a sortable table, and a simplified watch view for monitoring a board.
 ---
 
-The view switcher above the board offers four projections of the same cards.
+The view switcher above the board offers four ways to view the same cards.
 Your last choice is remembered across sessions. The board view is covered in
 [Boards, columns and cards](/docs/user-guide/boards/); this page covers the
 other three.
@@ -43,8 +43,8 @@ Inside the table you can:
 ## Watch
 
 The watch view is for **observing** a board — a swarm of agents at work, or a
-busy team — without the wall of cards. It mounts no cards and no drag & drop:
-just a large status and a live feed of what is happening.
+busy team — without the wall of cards. It hides cards and editing controls,
+showing a summary and a live activity feed.
 
 <video controls muted loop playsinline poster="/media/feature-watch.jpg">
   <source src="/media/feature-watch.mp4" type="video/mp4" />

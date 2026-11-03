@@ -187,12 +187,16 @@ const codeSample = `POST /api/v1/boards/:id/commands
   "action": {
     "type": "MOVE_CARD",
     "cardId": "card_demo07",
-    "toColumnId": "col_review"
+    "fromColumnId": "col_progress",
+    "fromIndex": 0,
+    "toColumnId": "col_review",
+    "toIndex": 0,
+    "at": 1793793600000
   }
 }
 
 200 OK
-{ "seq": 412, "versions": { "card_demo07": 8 } }`;
+{ "seq": 412, "versions": { "card:card_demo07": 8 } }`;
 
 const ossPoints: UIKey[] = [
   "home.oss.point1",

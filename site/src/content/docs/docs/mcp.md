@@ -4,15 +4,18 @@ description: Let AI agents read and manage a board with the Janosik MCP server a
 ---
 
 The `@janosik/mcp` server exposes a board to any MCP client (Claude, Cursor,
-VS Code, opencode, Codex). An agent can list boards, read a board, and create,
-move, comment, tick, assign, claim, link and share, using a personal API key.
-Writes go through the same command log the app uses, so they are undoable and
-stream live to anyone watching the board.
+VS Code, opencode, Codex). An agent uses a personal API key to read boards,
+create and move cards, update checklists, assign work and reserve tasks. It can
+also add comments, link cards and manage public share links. Changes made
+through the command API support undo. Comments, attachments, membership and
+share links use REST and do not support ordinary undo. New events appear live on
+the open board.
 
 ## Setup
 
 Create a key in **Account → API keys** (it starts with `jnk_`), then add the
-server to your MCP client:
+server to your MCP client. This example uses the `mcpServers` configuration
+format; adapt it to your client’s MCP settings if needed:
 
 ```json
 {
@@ -37,8 +40,9 @@ from source. Add `JANOSIK_APP_BASE` (e.g. `/app`) when the app is not served at
 the site root; it is used to build board links. The self-host image serves the
 app under `/app/`, so set `JANOSIK_APP_BASE=/app` there.
 
-Upload and download of attachments, and exporting a board to a file, touch
-the machine running the server, so they stay off until you set
+Uploading and downloading attachments and exporting a board to a file access the
+filesystem of the computer running the MCP server. These operations are disabled
+until you set
 `JANOSIK_MCP_ALLOW_FS=1`. Add `JANOSIK_MCP_FS_ROOT=/path` to confine them to
 one directory: symlinks out of it are refused and existing files are never
 overwritten.
@@ -55,7 +59,7 @@ on your account (`members`, `invitations`, `shares`, `account`) are opt-in:
 | `JANOSIK_MCP_TOOLSETS` | Comma-separated groups, e.g. `default,members`, or `all`. |
 | `JANOSIK_MCP_READONLY=1` | Only tools that never change anything. |
 
-Every data tool takes `response_format: "markdown"` (default) or `"json"`. The
+Data-reading tools accept `response_format: "markdown"` (default) or `"json"`. The
 tool names all start with `janosik_` so they sit alongside other servers
 without clashing.
 
@@ -74,7 +78,7 @@ A typical run:
 A write that changes nothing (for example an id that is not on the board)
 comes back as an error, so an agent never mistakes it for success. Tools that
 compute a write from a read retry when another agent changed the board in
-between. Any write accepts `expectedVersion` (the board `seq` from
+between. Command-log write tools accept `expectedVersion` (the board `seq` from
 `janosik_get_board`): pass it and the write is refused if the board changed
 since, instead of silently overwriting another agent's edit. Create tools take a
 client id (`cardId`, `checklistId`, …) reused as the idempotency key, so a
@@ -82,9 +86,8 @@ retried call returns the first entity rather than a duplicate.
 
 ## The skill: teach the agent how to work
 
-The server gives an agent the tools; it does not tell it *how* to use them well.
-The **`janosik` skill** is the behavior half — a playbook that guides the agent
-work a card the way a good teammate would:
+The **`janosik` skill** provides a workflow for using the tools and keeping a
+card’s progress clear to other team members:
 
 - **Read before writing** — list the boards, read the board, read the card's
   comments and activity before touching anything.
@@ -100,23 +103,26 @@ work a card the way a good teammate would:
   defect and a checklist item for the fix, instead of marking it Done. That
   backward move plus the comment is the audit trail.
 
-Install it by dropping `skills/janosik/` into your harness's skills directory:
+Copy `skills/janosik/` into your client’s skills directory:
 
-| Harness | Where |
+| Client | Directory |
 | --- | --- |
 | Claude Code | `~/.claude/skills/janosik/` (or `.claude/skills/` in a project) |
 | opencode | `~/.config/opencode/skills/janosik/` (or `.opencode/skills/`) |
-| Agent-compatible harnesses | `~/.agents/skills/janosik/` (or `.agents/skills/`) |
-| Codex / no skills support | Paste `SKILL.md` into your `AGENTS.md` |
+| Codex and other clients that support `.agents/skills` | `~/.agents/skills/janosik/` or `.agents/skills/janosik/` in a project |
+| Clients without skills support | Add the instructions from `SKILL.md` and the relevant reference files to the client’s supported instruction file |
 
-The skill references the tools by name and needs no configuration. It ships in
+See the [official Codex skill
+documentation](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)
+for installation details. The Janosik skill references tools by name and needs
+no separate configuration. It ships in
 the repository under `skills/janosik/` (behavior in `SKILL.md`, plus
 `references/templates.md` and `references/recipes.md`).
 
 ### The agent-ready card
 
-The skill asks an agent to leave a card a swarm can pick up cold — one shape,
-the same on every card:
+The skill uses a consistent card structure so another agent can continue the
+work without additional explanation:
 
 - **Description sections** — `## Why`, `## Scope`, `## Acceptance criteria`
   (checkboxes), `## Out of scope`, `## Verify` (the exact check that proves it).
@@ -125,7 +131,7 @@ the same on every card:
 - **Typed comments** — each carries a structured `kind` (`status`, `question`,
   `blocker`, `evidence`, `handoff`; omit it for a plain note), so the thread is
   machine-readable and filterable — `janosik_list_comments` filters by `kind`.
-- **Reserved labels** — `agent:blocked`, `agent:needs-human`, `agent:verified`,
+- **Labels used by the skill** — `agent:blocked`, `agent:needs-human`, `agent:verified`,
   so a human can filter the swarm's state at a glance.
 
 ### Claiming a card and the task contract
@@ -135,16 +141,16 @@ Three tools let a swarm share one board without stepping on itself:
 - `janosik_claim_card` takes a temporary work lease on a card (the `CLAIM_CARD`
   command, `claimedBy` + `leaseUntil`). The lease defaults to 15 minutes and is
   clamped to between 1 minute and 24 hours. The server refuses the claim while
-  another member still holds a live lease, and a lapsed lease is free again — so
-  a dead agent never leaves a card stuck.
-- `janosik_release_card` releases the caller's lease early, so another agent can
+  another member still holds a live lease, and the card becomes available again
+  when the lease expires, even if the agent has stopped responding.
+- `janosik_release_card` releases the card reservation before it expires, so another agent can
   pick the card up.
 - `janosik_set_card_task_spec` writes the card's machine-readable task contract:
   `acceptanceCriteria` and `definitionOfDone`, as lists of short strings an
   agent reads directly instead of parsing prose. Each field is independent (omit
-  it to leave it unchanged, pass an empty list to clear it), and items are
-  capped at 500 characters and 50 items. `janosik_get_card` renders the contract
-  back, and the card dialog shows it read-only.
+  it to leave it unchanged, pass an empty list to clear it), and each list holds
+  up to 50 items of at most 500 characters each. `janosik_get_card` returns the
+  contract, and the card dialog shows it read-only.
 
 ### Ready to work, and the Definition-of-Done gate
 
@@ -153,10 +159,13 @@ Three tools let a swarm share one board without stepping on itself:
   blocked by another card, most urgent first. `janosik_wait_for_work` blocks
   until one appears (or a timeout passes), so idle agents make one call instead
   of polling.
-- `janosik_move_card` refuses to move a card into the board's last (Done) column
-  while its `Definition of Done` checklist has unticked items or it has no
-  `evidence` comment — the anti-"green fence" rule. Tick the items and post the
-  evidence; do not force the move.
+- `janosik_move_card` checks completion requirements when moving a card into the
+  board’s last column, which the tool treats as Done. The check applies if the
+  card has a non-empty `definitionOfDone` field or a checklist named `Definition
+  of Done`. Every item in that checklist must be checked, and the card must have
+  at least one `evidence` comment. Cards without such a contract are not subject
+  to this check. The agent must separately verify the criteria and the content
+  of the evidence.
 
 ## Permissions
 
@@ -168,8 +177,7 @@ an agent off.
 A key can be scoped when you create it in **Account → API keys**: `boardId`
 restricts it to one board, `readOnly` refuses every write (`403
 pat_read_only`), and `rateLimitPerMinute` gives it its own request budget (over
-the budget answers `429`). A board-scoped, read-only key is the least-privilege
-option for a swarm.
+the budget answers `429`). If an agent only needs to read data, use a read-only key restricted to one board.
 
 Card text and comments are written by other people and agents, so treat what
 an agent reads from a board as untrusted. Give each agent its own user account

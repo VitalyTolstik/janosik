@@ -51,14 +51,14 @@ Invitations appear only once you have confirmed your email address.
 ## Realtime updates and presence
 
 While a board is open, changes made by other members appear without a reload,
-and the presence stack in the header shows who is on the board now.
+and the list of online members in the header shows who is on the board now.
 
 <video controls muted loop playsinline poster="/media/feature-realtime.jpg">
   <source src="/media/feature-realtime.mp4" type="video/mp4" />
 </video>
 
-When someone else changes a card, that card briefly wears a ring in the
-author's color, so you can see what moved. Your own changes stay quiet. If
+When someone else changes a card, it is briefly outlined in the author’s color.
+Your own changes are not highlighted. If
 the connection drops, the app reconnects and catches up from the last event it
 saw. If it missed too much to catch up event by event, it reloads the board
 instead. When your access to the board ends (you are removed, a viewer's
@@ -78,7 +78,7 @@ without an account.
 Choose a mode:
 
 - `Live` follows the board as it changes.
-- `Snapshot` is a frozen copy captured now, which only you can refresh. A
+- `Snapshot` saves the board as it is when the link is created. A board admin can refresh the snapshot. A
   snapshot's board content and member list survive the board's deletion. Its
   comments and attachments are frozen too: comments and files added after the
   capture do not appear until you refresh it. They are stored with the source
@@ -127,7 +127,7 @@ The `Filters` button opens the faceted filters:
   and include cards with `No label`.
 - `Priority`: pick one or more levels.
 - `Assignee`: pick members, or `Unassigned`.
-- `Links`: `Blocked` cards, or cards that `Has links`.
+- `Links`: `Blocked` cards, or cards with links (`Has links`).
 - `Created`: `Any time`, `Today`, `Last 7 days`, `Last 30 days` or a specific
   `On date…`.
 

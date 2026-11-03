@@ -25,7 +25,7 @@ export default defineConfig({
     starlight({
       title: "Janosik",
       description:
-        "Documentation for Janosik — a self-hosted, offline-first Kanban board.",
+        "Documentation for Janosik — a self-hosted Kanban board for teams and AI agents.",
       locales: {
         root: { label: "English", lang: "en" },
         ru: { label: "Русский", lang: "ru" },

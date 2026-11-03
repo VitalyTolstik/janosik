@@ -13,7 +13,7 @@ export const GET: APIRoute = ({ site }) => {
 
 > ${siteConfig.description}
 
-Janosik is a Kanban board for teams working with AI agents. Give each agent a scoped API token with a request limit. Agents can claim cards temporarily, move them, comment and update checklists through the command API while people follow changes live. Cards support structured task details, acceptance criteria and a Definition of Done checklist. Each action is attributed to a person or an agent. Janosik is free to self-host under the AGPL-3.0 license. The managed cloud is not available yet.
+Janosik is a Kanban board for teams working with AI agents. Give each agent a scoped API token with a request limit. Agents can reserve cards temporarily, move them and update checklists through the command API, and add comments through the REST API. People can follow changes live. Cards support structured task details, acceptance criteria and a Definition of Done checklist. Each action is attributed to a person or an agent. Janosik is free to self-host under the AGPL-3.0 license. The managed cloud is not available yet.
 
 ## Pages
 

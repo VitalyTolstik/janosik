@@ -4,7 +4,7 @@ Two ways to run Janosik:
 
 | | **Docker (recommended)** | **From source (for development)** |
 | --- | --- | --- |
-| What it is | Prebuilt container: whole app (API + UI) + PostgreSQL + Redis | Node dev server, optionally with a local API |
+| What it is | Prebuilt container: whole app (API + UI) + PostgreSQL + Redis | UI and API development servers with PostgreSQL |
 | You need | Docker Desktop / Docker Engine | Node.js 22.17+, npm |
 | Best for | Running Janosik, including self-hosting | Developing Janosik |
 
@@ -41,8 +41,7 @@ your own computer.
    docker compose up -d
    ```
 
-3. Open <http://localhost:3000>. Create your account, then create a master for
-   `/admin`:
+3. Open <http://localhost:3000/app/>. Create your account, then create a master for `/app/admin`:
 
    ```bash
    docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
@@ -114,7 +113,7 @@ notepad .env                    # paste it into JWT_SECRET, set POSTGRES_PASSWOR
 docker compose up -d
 ```
 
-Open <http://localhost:3000> in your browser. Create the master account the
+Open <http://localhost:3000/app/> in your browser. Create the master account the
 same way (works from either shell):
 
 ```powershell
@@ -152,7 +151,11 @@ marketing site is a separate dev server:
 PUBLIC_APP_URL=http://localhost:5173 npm run dev:site   # → http://localhost:4321
 ```
 
-In dev both cross-links need pointing: `PUBLIC_APP_URL` for the site's "Sign in" / "Create account" CTAs (they default to `/app/`, which only exists in the self-host image) and `VITE_SITE_URL` for the app's **Help → Documentation** link. Without them the site CTAs 404 on `:4321/app/` and Help 404s on `:5173/docs/`:
+In dev both cross-links need pointing: `PUBLIC_APP_URL` for the site's "Sign in"
+/ "Create account" CTAs (they default to `/app/`, which only exists in the
+self-host image) and `VITE_SITE_URL` for the app's **Help → Documentation**
+link. Without them the site CTAs 404 on `:4321/app/` and Help 404s on
+`:5173/docs/`:
 
 ```bash
 VITE_SITE_URL=http://localhost:4321/ npm run dev        # UI   (:5173)
@@ -207,7 +210,7 @@ then the same `npm install` / `npm run dev`. Use PowerShell or Git Bash.
    docker compose up -d
    ```
 
-3. Open <http://localhost:3000>, create your account and a master:
+3. Open <http://localhost:3000/app/>, create your account and a master:
 
    ```bash
    docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
@@ -298,6 +301,6 @@ list.
 | Windows 11 | WSL: `nvm install` (`.nvmrc`) · native: `winget install OpenJS.NodeJS.LTS` or `fnm` |
 | Linux | `nvm install` (`.nvmrc`) or distro packages |
 
-The repo pins the exact version in **`.nvmrc`** (currently **24**): run `nvm use`
+The repo selects the Node.js major version in **`.nvmrc`** (currently **24**): run `nvm use`
 in the repo root, or `nvm install` once. If the backend complains about the Node
 version, check with `node -v` — it must be **22.17 or newer**.

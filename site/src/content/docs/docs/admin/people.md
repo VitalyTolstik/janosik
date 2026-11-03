@@ -76,8 +76,8 @@ request as soon as it opens.
 
 `Promote to master` creates an `OPERATOR` master with the same email and a new
 temporary password. The dialog requires typing the account's email to confirm,
-then shows the one-time password. A master with that email already existing
-answers `409`.
+then shows the one-time password. If a master account with that email already
+exists, the server returns `409`.
 
 ### Impersonate
 
@@ -90,21 +90,22 @@ token creation is recorded as `user.impersonated` in the audit log.
 
 `Export data` requests a JSON bundle of everything tied to the user (profile,
 memberships, comments, attachments, sessions, tokens, commands, activity). A
-small account is built inline and downloaded at once; a large one is queued and
+small data export is generated and downloaded immediately; a large export is
+queued and
 the panel polls until the artifact is ready. The artifact has a seven-day
 lifetime. It is owner-only server-side.
 
 ### Delete user
 
 `Delete user` erases the account and the rows it authored in one transaction,
-then removes its blobs. It is the destructive twin of `Block`. The dialog
+then removes its blobs. Unlike `Block`, this permanently removes the account’s data. The dialog
 requires typing the account's exact email to confirm. It cannot be undone. It
 is owner-only server-side: an operator gets `403` with `Owner rights are
 required`.
 
 ## User detail
 
-`/admin/users/:id` shows the whole user graph a support agent needs. The header
+`/admin/users/:id` shows the user’s details and related records needed by support staff. The header
 carries the display name (or email), the email, the id, a status badge, the
 registration time, the disabled time when blocked, and a verified or unverified
 badge. The actions menu repeats the full action set.
@@ -165,7 +166,8 @@ the active, archived or deleted status. Empty tabs show a short empty state.
 `Add master` opens a dialog with an email, an optional display name (at most 50
 characters) and a `Grant owner rights` checkbox. The checkbox selects `OWNER`
 when checked and `OPERATOR` when not. The server generates a one-time password
-and shows it once with a copy button. An existing master answers `409`.
+and shows it once with a copy button. If a master account with that email
+already exists, the server returns `409`.
 
 ### Row actions
 

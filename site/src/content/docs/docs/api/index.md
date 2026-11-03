@@ -3,10 +3,10 @@ title: API reference
 description: Conventions, authentication and endpoint groups for the Janosik HTTP API.
 ---
 
-The Janosik backend is a NestJS service. This page fixes the conventions every
-route shares, then lists the top-level endpoint groups. Content mutations
-travel through the [Command API](./commands/); the rest of the surface is
-plain REST, documented in [REST endpoints](./rest/).
+The Janosik backend is a NestJS service. This page describes the conventions
+shared by all routes, then lists the top-level endpoint groups. Changes to board
+content use the [Command API](./commands/); other operations, including comments
+and attachments, use REST, documented in [REST endpoints](./rest/).
 
 ## Base path and transport
 
@@ -14,14 +14,13 @@ Every route is served under the global prefix `/api/v1`. A route named
 `POST /auth/login` in this reference is reached at
 `POST /api/v1/auth/login`.
 
-Requests and responses are JSON. A JSON body is capped at 256 KB on every
-route except the two that legitimately carry large bodies: `POST /boards/import`
-and `POST /boards/:id/commands` (plus the master-contour
-`POST /admin/boards/:id/commands`) accept up to `MAX_IMPORT_BYTES` (5 MB,
-`shared/src/types/kanban.ts`), so a large import envelope or a `RESTORE_*`
-command reaches validation instead of dying in the parser. One command payload
-is additionally capped at `MAX_COMMAND_BYTES` (2 MB) inside the command
-service. A body over its limit answers `413`.
+Requests and responses use JSON. Request bodies are limited to 256 KB by
+default. Board import (`POST /boards/import`), board commands
+(`POST /boards/:id/commands`), command batches (`POST /boards/:id/commands/batch`)
+and administrative command routes accept up to `MAX_IMPORT_BYTES` (5 MB).
+This allows large import envelopes and `RESTORE_*` snapshots to reach
+validation. Individual actions are also limited to `MAX_COMMAND_BYTES` (2 MB)
+by the command service. If a body exceeds its limit, the server returns `413`.
 
 File uploads use `multipart/form-data` with a single `file` part.
 
@@ -65,7 +64,7 @@ cookie named `refresh_token`, scoped to path `/api/v1/auth` with
 `SameSite=Strict`. Only `POST /auth/refresh` and the other `/auth` routes that
 need the caller's session read it.
 
-The master-account contour uses a separate cookie (`admin_refresh_token`,
+The administrative authentication system uses a separate cookie (`admin_refresh_token`,
 path `/api/v1/admin/auth`), a separate JWT audience (`janosik-admin`) and a
 separate `typ` claim. A user token never authenticates an admin route, and an
 admin token never authenticates a user route.
@@ -105,10 +104,10 @@ Some shapes deviate from the default and are documented where they occur:
 Two limiters run globally:
 
 - A fixed window of `THROTTLE_LIMIT` requests per minute (default 300) per
-  principal. An operator can change it at runtime from the master panel.
+  principal. An owner can change it at runtime from the master panel.
   `/health` is exempt.
 - An optional per-authenticated-user budget, set from the master panel. The
-  `/admin`, `/auth` and `/health` contours are exempt from it.
+  `/admin`, `/auth` and `/health` route groups are exempt from it.
 
 The principal a request counts against is the user for a valid access token
 (every tab and device of one account share a budget), the key for a personal
@@ -132,7 +131,7 @@ same way: per IP on the anonymous routes, per user on the signed-in ones.
 | `GET /auth/oauth/:provider/start`    | 20 per minute per IP   |
 | `GET /auth/oauth/:provider/callback` | 20 per minute per IP   |
 
-The public share contour has its own per-token budget (see
+The public share API has its own per-token budget (see
 [REST endpoints](./rest/)). A rejection answers `429`.
 
 ### Login backoff
@@ -157,9 +156,9 @@ last failure. With `REDIS_URL` set the counter is shared across nodes.
 
 ## Maintenance mode
 
-When an operator enables maintenance, the `MaintenanceGuard` answers every
-public and user request with `503` and the operator's message. The `/admin`,
-`/auth` and `/health` paths stay reachable, so an operator can still log in
+When an owner enables maintenance, the `MaintenanceGuard` answers every
+public and user request with `503` and the configured message. The `/admin`,
+`/auth` and `/health` paths stay reachable, so an owner can still log in
 and switch maintenance off.
 
 ## Endpoint groups
@@ -181,11 +180,12 @@ and switch maintenance off.
 | Activity feeds        | `/boards/:id/activity`, `/cards/:cardId/activity`          | this page                                |
 | Health                | `/health`                                                  | this page                                |
 | Announcements         | `/announcements`                                           | this page                                |
-| Master auth           | `/admin/auth`                                              | master-account contour, not covered here |
-| Master API            | `/admin`                                                   | master-account contour, not covered here |
+| Master auth           | `/admin/auth`                                              | administrative authentication system, not covered here |
+| Master API            | `/admin`                                                   | administrative authentication system, not covered here |
 
-The master-account contour (`/admin`, `/admin/auth`) is a separate surface
-behind its own audience and cookie. It is listed here for completeness but is
+The administrative authentication system (`/admin`, `/admin/auth`) is a separate
+API with its own JWT audience and cookie. It is listed here for completeness but
+is
 out of scope for this reference.
 
 ## Auth endpoints
@@ -276,7 +276,7 @@ personal API token of the account.
 ### Email change
 
 Both email-change routes are session-only. `POST /auth/email/change/request`
-starts a double opt-in. Body:
+requires the current password and confirmation of the new address. Body:
 
 | Field             | Type   | Required | Constraints                         |
 | ----------------- | ------ | -------- | ----------------------------------- |
@@ -310,7 +310,7 @@ sends a fresh code and returns `{ expiresAt, queued }`.
 User accounts have no second factor. A 6-digit code (email confirmation, email
 change) is an out-of-band confirmation, not a login factor. Two-factor
 authentication exists only on the master-account login: the admin login body
-accepts an optional `totpCode`. See the master-account contour.
+accepts an optional `totpCode`. See the administrative authentication system.
 
 ## OAuth login
 
@@ -332,8 +332,9 @@ redirects to `?authError=oauth_failed` on the UI root.
 The provider's email is trimmed, lowercased and matched case-insensitively
 against existing accounts. A new address creates an OAuth-only account with no
 password. An existing account is linked, and its address becomes verified. If
-that account had never confirmed its email, the link first hands it over
-clean: its password is removed, every refresh session and personal API token
+that account had never confirmed its email, the server removes its existing
+credentials before linking the provider: its password is removed, every refresh
+session and personal API token
 is revoked, and pending verification and email-change codes are deleted. This
 closes the pre-account-takeover path where someone registers a victim's address
 with a password before the victim ever signs in. The account is then
@@ -346,7 +347,7 @@ Every route is behind user auth (JWT or PAT), except the three token routes,
 which are [session-only](#session-only-routes): an API key can neither list
 nor create nor revoke keys.
 
-A personal API token (TASK-157) can be scoped when created: `boardId` limits
+A personal API token can be scoped when created: `boardId` limits
 it to one board, `readOnly: true` refuses every write (`403 pat_read_only`),
 and `rateLimitPerMinute` gives it its own request budget (over the budget
 answers `429`).
@@ -374,7 +375,7 @@ The image is at most 2 MB (`LIMITS.avatarSize`). Returns the updated user.
 
 `GET /users/:userId/avatar` streams the avatar image to any authenticated
 user. Blob names are unique per upload, so the response is cacheable
-aggressively. A user without an avatar answers `404`.
+aggressively. If the user has no avatar, the server returns `404`.
 
 `POST /users/me/tokens` body:
 
@@ -430,17 +431,20 @@ command log with `Activity` rows; the card feed is scoped to one card.
 
 ## Health
 
-`GET /health` is the liveness and readiness probe. It is exempt from the
-global rate limit. It returns `200` with a `HealthReport`:
+`GET /health` is the liveness probe. It performs no database or Redis I/O
+and returns `200` with `{ "status": "ok" }` when the process responds.
+
+`GET /health/ready` is the readiness probe. It checks the database and, when
+configured, Redis. The result is cached for a few seconds. Both probes are
+exempt from the global rate limit.
 
 ```json
 { "status": "ok", "db": "up", "redis": "up" }
 ```
 
-`redis` is `disabled` when no Redis URL is configured. The DB is mandatory: a
-failed DB ping answers `503` with `{ "status": "error", "db": "down", "redis": ... }`.
-A configured but unreachable Redis also answers `503` with
-`{ "status": "error", "db": "up", "redis": "down" }`.
+When `REDIS_URL` is unset, `redis` is `disabled`. If the database or a configured
+Redis is unavailable, readiness returns `503` with `status: "error"` and the
+dependency states (`up` or `down`).
 
 ## Announcements
 

@@ -36,7 +36,7 @@ const planSection = plans
       .join("\n");
     return [
       `### ${name}`,
-      `- Price: ${price} (${ui.en[plan.period]})`,
+      `- Price: ${price}${typeof plan.price === "number" ? ` (${ui.en[plan.period]})` : ""}`,
       ...limits.map((line) => `- ${line}`),
       highlights ? `- Includes:\n${highlights}` : "",
     ]

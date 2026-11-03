@@ -6,10 +6,11 @@ description: The command-log transport that carries every board content mutation
 Board content (columns, cards, labels, checklists, links, covers, moves)
 does not travel as ordinary REST. The client posts a `CommandRequest` to the
 board's command endpoint, and the server replays the very same `BoardAction`
-through the shared `boardReducer`. Membership, board create/import/delete and
-files are the exceptions, and they live in [REST endpoints](/docs/api/rest/).
+through the shared `boardReducer`. Membership, comments, board
+creation/import/deletion and files are exceptions, and they live in [REST
+endpoints](/docs/api/rest/).
 
-Every command is attributed (TASK-157): a browser session records
+Every command is attributed: a browser session records
 `actorType: "human"`, a personal API token (`jnk_…`) records `"agent"`. The
 type rides on the command delta, the SSE frames and the activity feed
 (`GET /boards/:id/activity`) so the history can tell an agent's edits from a
@@ -61,8 +62,7 @@ of a `RESTORE_*` snapshot) must lie within the JavaScript Date range
 `at` is the command clock: the reducer stamps it into `createdAt`,
 `updatedAt`, `archivedAt` and the rest. The server trusts it within five
 minutes of its own clock. An `at` further off is replaced with the server time
-before the command is applied, so a client cannot backdate or postdate what it
-writes.
+before the command is applied, so timestamps more than five minutes away from server time are not retained.
 
 ### Idempotency
 
@@ -106,8 +106,8 @@ precondition cannot be used to probe the versions of boards the caller is not
 a member of.
 
 `ifMatchVersions` is what makes undo of a text edit safe: if another writer
-changed the entity since, the server refuses and the client refuses the undo
-instead of overwriting the foreign text.
+changed the entity since, the server rejects the undo request, preventing the
+client from overwriting another user’s changes.
 
 ### Conflicts
 
@@ -193,7 +193,7 @@ back. A create command and its follow-up field updates are either all applied
 or none are.
 The array holds at most `COMMAND_BATCH_MAX` (100) commands — a longer array
 answers `400`. Each command is validated and size-capped exactly like a single
-one, so one oversized member is a `413` before the board lock.
+one, so if any command exceeds the size limit, the server returns `413` before acquiring the board lock.
 
 `ifMatch`/`ifMatchVersions` are checked at each command's own point in the
 batch. Because the earlier commands advance the board `seq`, pin the board
@@ -314,7 +314,7 @@ aggregate-level actions are listed at the end and are rejected.
 | Action              | Fields                                                                                    | Meaning                                                                                                                                    |
 | ------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `ADD_CARD`          | `newCardId`, `columnId`, `title`, `labelIds` string[] optional, `atIndex` number optional | Creates a card. `atIndex` is clamped to `[0, count]`; omitted appends. Only labels that exist on the board attach.                         |
-| `UPDATE_CARD`       | `cardId`, `title` optional, `description` optional, `quiet` boolean optional              | Partial patch; set only changed fields. `quiet` keeps `updatedAt` quiet for per-keystroke live edits. Empty description removes the field. The description is capped at `LIMITS.description` (64000). |
+| `UPDATE_CARD`       | `cardId`, `title` optional, `description` optional, `quiet` boolean optional              | Partial patch; set only changed fields. With `quiet: true`, `updatedAt` is not changed during per-keystroke edits. Empty description removes the field. The description is capped at `LIMITS.description` (64000). |
 | `TOUCH_CARD`        | `cardId`                                                                                  | Commits the `updatedAt` timestamp after a burst of quiet edits.                                                                            |
 | `DELETE_CARD`       | `cardId`                                                                                  | Removes the card.                                                                                                                          |
 | `ARCHIVE_CARD`      | `cardId`, `archivedAt` number optional                                                    | Archives the card; `archivedAt` defaults to `at`.                                                                                          |
@@ -398,12 +398,12 @@ rejected by the command endpoint with `400`:
 `touches` and the SSE frame use these labels to name the entities a command
 wrote: `card:<id>`, `column:<id>`, `label:<id>`, `checklist:<id>`,
 `checklistItem:<id>`, `board:<id>`. An empty array means the command changed
-nothing. A client uses `touches` to mark its undo history foreign without
-diffing the whole board.
+nothing. A client uses `touches` to mark undo entries affected by another user’s
+changes without comparing the entire board.
 
-## Master-contour variant
+## Administrative variant
 
 The master-account API exposes `POST /admin/boards/:id/commands` with the same
 action shape. Its body is `AdminBoardCommandRequest`: `{ commandId? string,
-action BoardAction }`. It is part of the separate master-account contour and
+action BoardAction }`. It is part of the separate administrative authentication system and
 is out of scope for this page.

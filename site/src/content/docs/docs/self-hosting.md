@@ -186,8 +186,9 @@ database and Redis ports stay internal.
    registration** in the master panel later. The sign-in screen then hides the
    register form.
 3. **Create a master (platform admin).** The panel at `/admin` belongs to a
-   master account, which lives outside the user table and can only be created
-   by the CLI. There is deliberately no HTTP endpoint for it:
+   master account, which lives outside the user table and must be created
+   through the CLI for the first administrator. Owners can create additional
+   master accounts from the panel:
 
    ```bash
    docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
@@ -197,7 +198,7 @@ database and Redis ports stay internal.
 
    Sign in to the master panel at `PUBLIC_ORIGIN/app/admin`.
 
-   Re-key an existing master (this also revokes its sessions and clears any
+   Reset an existing master’s password (this also revokes its sessions and clears any
    lockout):
 
    ```bash
@@ -240,7 +241,7 @@ compose stack fills the ones it needs from `.env`.
 | `STATIC_DIR` | empty | Built UI directory. Empty means API only. The image sets `/app/public`. Inline scripts here are allowed by CSP hashes computed at startup, so restart the API after rebuilding the UI. |
 | `SITE_DIR` | empty | Built marketing site directory served at `/`. Empty means not served. The image sets `/app/site`. |
 | `UI_BASE` | `/` | Sub-path the app is served from, used for OAuth redirects. The image sets `/app/`. |
-| `ALLOW_PUBLIC_SHARES` | `true` | Master switch for public read-only share links. `false` makes the whole share contour answer `404`. |
+| `ALLOW_PUBLIC_SHARES` | `true` | Master switch for public read-only share links. `false` makes the whole share API answer `404`. |
 | `ALLOW_REGISTRATION` | `true` | Open sign-up. Set `false` after your account exists. The container logs a warning at start while it is `true`. |
 | `COOKIE_SECURE` | `true` (compose default) | Force the `Secure` cookie attribute. Keep `true` behind HTTPS; set `false` only for a plain-HTTP trial (the app then refuses to boot with it on). Choices are empty (auto: on in production), `true`, `false`. |
 | `PURGE_AFTER_DAYS` | `30` | Delete soft-deleted rows older than this many days. Used when the panel has no retention setting. |
@@ -284,7 +285,7 @@ Two ways to run Janosik on your own machine:
 
 | | Docker (recommended) | From source (development) |
 | --- | --- | --- |
-| What it is | Prebuilt container: whole app plus PostgreSQL and Redis | Node dev server, optionally with a local API |
+| What it is | Prebuilt container: whole app plus PostgreSQL and Redis | UI and API development servers with PostgreSQL |
 | You need | Docker Desktop or Docker Engine | Node.js 22.17 or newer, npm |
 | Best for | Running Janosik, including self-hosting | Developing Janosik |
 
@@ -417,8 +418,9 @@ Open the firewall only for `80` and `443` (`sudo ufw allow 80,443/tcp`).
 
 ### From source, all platforms
 
-Once Node 22.17 or newer (the repo pins **24** in `.nvmrc`) is installed and
-`npm install` has run at the repo root. Configure the API **first** — the dev
+Install Node.js 22.17 or newer (the repository selects major version **24** in
+`.nvmrc`) and run `npm install` at the repository root. Configure the API
+**first** — the dev
 compose file reads `POSTGRES_*` from `backend/.env`, so that file must exist
 before `docker compose up`:
 
@@ -474,7 +476,7 @@ site/docs** from *different* hosts, wire the two links that cross between them:
 | App → Site ("Help → Documentation") | `VITE_SITE_URL` | the **UI** build | the site origin, with a trailing slash, e.g. `https://example.com/` |
 
 If either value is wrong, the link opens a **404**: a CTA opens the site's
-not-found page, or Help → Documentation that opens the app's not-found page. This
+not-found page, or Help → Documentation opens the app's not-found page. This
 is the same pair you set in dev, where the app and the site are always two
 servers (app `:5173`, site `:4321`):
 
