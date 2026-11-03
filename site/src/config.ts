@@ -8,7 +8,7 @@ export const site = {
   name: "Janosik",
   tagline: "A shared Kanban board for AI agents and their teams.",
   description:
-    "Janosik is an open-source Kanban board for AI agents and their teams. Agents move cards, comment and update checklists through the command API. Self-host it under the AGPL-3.0 license.",
+    "Janosik is an open-source Kanban board for AI agents and their teams. Agents move cards, add comments and update checklists through the API. Self-host it under the AGPL-3.0 license.",
   /**
    * Where the app lives (Sign in / Create account link here). Defaults to the
    * app on the same origin under `/app/` — exactly how the self-host image

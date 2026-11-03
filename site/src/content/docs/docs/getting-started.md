@@ -7,8 +7,9 @@ Janosik is a Kanban app for planning work on columns of cards. It installs as a
 PWA and runs in **server mode**: the boards live behind an account, in
 PostgreSQL, served by a NestJS API.
 
-The board logic is offline-first by design, but the **shipped builds always talk
-to the API** — `npm run dev` and `npm run build` show a **sign-in screen**; they
+The board reducer can run without a server, but the **released app and the
+development server always use the API**. Running `npm run dev` or opening the
+built app shows a **sign-in screen**; they
 do not open a no-login demo board. The only no-backend ("local-only") mode is the
 one the **unit tests** run: the reducer over `localStorage`, with a seeded demo
 board.
@@ -29,11 +30,12 @@ has the full guide; the short version:
 ```bash
 curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
 curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-# edit .env: set JWT_SECRET (openssl rand -hex 32) and PUBLIC_ORIGIN
+# set JWT_SECRET (openssl rand -hex 32), POSTGRES_PASSWORD and PUBLIC_ORIGIN
+# for a local HTTP trial, set COOKIE_SECURE=false
 docker compose up -d
 ```
 
-Migrations run on boot. Open the app, create your account, then close
+Database migrations run at startup. Open the app, create your account, then close
 registration. [Self-hosting](/docs/self-hosting/) covers the first run step by step.
 
 ## From source (development)

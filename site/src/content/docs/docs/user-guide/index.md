@@ -57,8 +57,7 @@ The right side holds the tools:
 
 ## Where to go next
 
-- [Boards, columns and cards](boards/) — the board surface: creating and
-  managing boards and columns, adding and moving cards.
+- [Boards, columns and cards](boards/) — creating and managing boards and columns, adding and moving cards.
 - [Calendar, table and watch views](views/) — other ways to view the same cards,
   including the simplified watch view and compact card layout.
 - [Card details and the quick menu](cards/) — everything inside a card and

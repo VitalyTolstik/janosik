@@ -9,7 +9,7 @@ the dashboard, the activity feed, the command log and the audit trail.
 
 ## Dashboard
 
-The dashboard is the panel home at `/admin`. It loads two requests:
+The dashboard is the panel home at `/admin`. It sends two requests:
 `GET /admin/metrics` and a small `GET /admin/audit?limit=8`. The page has three
 parts.
 
@@ -127,7 +127,7 @@ its entity supports.
   size default is 50, the minimum is 1 and the maximum is 100.
 - A loading spinner, an error state with retry, and an empty state are shown
   per page.
-- A failed action toasts `Access denied` on `403`, `No connection to the
+- If an action fails, a notification shows `Access denied` on `403`, `No connection to the
   server` when the request never left, and `The action failed` otherwise.
 
 The dashboard is described here; the user, board and content listings are on

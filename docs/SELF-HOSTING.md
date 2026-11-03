@@ -16,7 +16,7 @@ HTTPS, day-2 operations (upgrades, backups) and troubleshooting.
 
 | Service | Image | Role |
 | --- | --- | --- |
-| `app` | `ghcr.io/vitalytolstik/janosik` | The whole application: NestJS API under `/api/v1`, the built SPA, the master panel at `/admin`, background jobs. Serves on port `3000`. |
+| `app` | `ghcr.io/vitalytolstik/janosik` | The whole application: NestJS API under `/api/v1`, the built SPA, the master panel at `/app/admin`, background jobs. Serves on port `3000`. |
 | `postgres` | `postgres:16-alpine` | The database (boards, users, command log, audit). |
 | `redis` | `redis:7-alpine` | Job queues (mail, video transcoding, maintenance, exports). |
 
@@ -67,7 +67,7 @@ Edit `.env`:
 docker compose up -d
 ```
 
-Open `http://<host-ip>:3000`. Because this is plain HTTP, the app logs a loud
+Open `http://<host-ip>:3000/app/`. Because this is plain HTTP, the app logs a loud
 warning about `COOKIE_SECURE=false` — that is expected here.
 
 ---
@@ -152,14 +152,15 @@ database/Redis ports stay internal.
 
 ## 3. First run: account, registration, master panel
 
-1. **Create your account.** Open `PUBLIC_ORIGIN`, click **Create account**.
+1. **Create your account.** Open `PUBLIC_ORIGIN/app/`, click **Create account**.
    The first account is a normal user — there is no auto-admin.
 2. **Close registration.** Set `ALLOW_REGISTRATION=false` in `.env` and
    `docker compose up -d`. (Or toggle **Feature flags → Open registration** in
    the panel later.) The sign-in screen then hides the register form.
 3. **Create a master (platform admin).** The panel at `/admin` belongs to a
-   *master* account, which lives outside the user table and can only be created
-   by the CLI — there is deliberately no HTTP endpoint for it:
+   *master* account, which is stored separately from regular users. Create the
+   first master through the CLI; owners can create additional accounts from the
+   panel:
 
    ```bash
    docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
@@ -167,7 +168,7 @@ database/Redis ports stay internal.
    docker compose exec app node backend/scripts/admin-cli.cjs list
    ```
 
-   Sign in at `PUBLIC_ORIGIN/admin`.
+   Sign in at `PUBLIC_ORIGIN/app/admin`.
 
    Reset an existing master's password (this also revokes its sessions and
    clears login lockouts):
@@ -235,7 +236,7 @@ Out of the box the app runs in **log mode** — no mail is sent, and verificatio
 codes are printed to `docker compose logs app`. That is fine for a single-user
 install.
 
-To send real mail, open `PUBLIC_ORIGIN/admin` → **Email service**, pick a
+To send real mail, open `PUBLIC_ORIGIN/app/admin` → **Email service**, pick a
 preset (Gmail / Yandex / Mail.ru / Brevo / SendGrid / custom SMTP), paste the
 credentials and enable delivery. Gmail/Yandex/Mail.ru need an **app password**
 (2-step verification on), not your login password.
@@ -379,6 +380,6 @@ Without `SMTP_*` the app is in log mode by design — check
 - [ ] Reverse proxy in front, `TRUST_PROXY=1`.
 - [ ] Only 80/443 exposed; the database and Redis stay internal.
 - [ ] Regular `pg_dump` + uploads backups (and an occasional restore test).
-- [ ] `docker compose pull && up -d` applied for security fixes.
+- [ ] `docker compose pull && docker compose up -d` applied for security fixes.
 
 Report vulnerabilities privately — see [SECURITY.md](../SECURITY.md).

@@ -40,7 +40,7 @@ specific release, set `JANOSIK_TAG` in `.env` (see
 - Collaboration: realtime SSE, presence and attribution, comments with history
   diffs, and board members with roles and expiring access.
 - Four board views — kanban, calendar, table and a read-only **watch** view for
-  observing a swarm: a large status, a column and online rail, and a live
+  observing a swarm: a large status, a panel showing columns and online members, and a live
   activity feed with from → to diffs and paging. A persisted "Simplify design"
   toggle swaps the full card for a compact one-line face.
 - Backend: command log with idempotency and conflict handling, BullMQ queues
@@ -54,7 +54,7 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   can pick up cold: description sections (`Why` / `Scope` / `Acceptance
   criteria` / `Out of scope` / `Verify`), a `Definition of Done` checklist,
   typed comments (a structured `kind`: `status` / `question` / `blocker` /
-  `evidence` / `handoff`) and reserved `agent:*` state labels.
+  `evidence` / `handoff`) and `agent:*` state labels used by the skill.
 - **Card claims with a lease (TASK-157).** A `CLAIM_CARD` command takes a
   temporary work lease on a card (`claimedBy` + `leaseUntil`), so a swarm of
   agents can coordinate without two of them grabbing the same card: the server
@@ -103,9 +103,10 @@ specific release, set `JANOSIK_TAG` in `.env` (see
 - **Ready-to-work and a Definition-of-Done gate (TASK-157).**
   `janosik_list_ready_cards` returns the cards an agent can pick up (Backlog,
   unassigned, unclaimed, unblocked, by priority); `janosik_wait_for_work` blocks
-  until one appears so idle agents need not poll. `janosik_move_card` refuses to
-  move a card into the board's last (Done) column while its `Definition of Done`
-  checklist has unticked items or it has no `evidence` comment.
+  until one appears so idle agents need not poll. `janosik_move_card` checks
+  moves into the last (Done) column for cards with a non-empty
+  `definitionOfDone` field or a `Definition of Done` checklist. All items in
+  that checklist must be checked, and an `evidence` comment must be present.
 
 ### Security
 
@@ -148,7 +149,7 @@ specific release, set `JANOSIK_TAG` in `.env` (see
 
 ## 0.1.0 - 2026-10-26
 
-Initial self-hosted release: an offline-first PWA Kanban board with drag and
+Initial self-hosted release: a Kanban board with an installable PWA interface with drag and
 drop, calendar and table views, undo and redo, WIP limits, labels, checklists,
 links, priorities, assignees, due dates, i18n (English and Russian), and a
 NestJS and PostgreSQL backend.

@@ -3,18 +3,19 @@ title: Admin panel
 description: The master panel at /admin, who may use it, how to create a master and sign in, and a map of its pages.
 ---
 
-The admin panel is the platform operator surface. It is served at `/admin`,
-lazy-loaded on top of the app, and talks to its own API client with its own
-token. It is structurally separate from the user app: the admin route tree
-never mounts the user `AuthProvider` or `BoardProvider`, and the two sessions
-cannot leak into each other.
+The admin panel is the interface for managing the platform. It is served at
+`/admin` (`/app/admin` in the Docker installation) and loads separately from the
+board interface. It uses a separate API client and authentication token. It is
+structurally separate from the user app: the admin route tree
+never mounts the user `AuthProvider` or `BoardProvider`, keeping the
+administrative and user sessions isolated.
 
 ## Who can use the panel
 
-The panel is for master accounts, not for regular users. A master is an
-`AdminUser`, a different table from `User`, and it signs in through
-`/api/v1/admin/auth/*` with its own JWT audience (`janosik-admin`) and its own
-refresh cookie.
+The panel is for master accounts, not for regular users. Master accounts are
+stored in the `AdminUser` table, separately from regular users in `User`. They
+sign in through
+`/api/v1/admin/auth/*`, which uses a separate JWT audience (`janosik-admin`) and refresh cookie.
 
 Masters come in two tiers:
 
@@ -28,7 +29,7 @@ operator who calls one of them receives `403` with `Owner rights are
 required`. In the sidebar, the `Masters`, `Email service` and `OAuth login`
 entries are hidden from operators. On the settings pages an operator sees the
 state read-only: the traffic limit, the demo runner, the operations controls,
-the communications writes, the security IP allowlist and the retention purge
+changes to communication settings, the security IP allowlist and the retention purge
 are all owner-only.
 
 ## Three ways to create a master
@@ -56,11 +57,11 @@ npm run admin:list   -w backend
 - The password is never taken from the command line. It is prompted with a
   hidden input and confirmed, or read from the `ADMIN_PASSWORD` environment
   variable for automation. It must be 8 to 100 characters.
-- `passwd` re-keys an existing master, revokes all of its refresh sessions and
+- `passwd` resets an existing master’s password, revokes all of its refresh sessions and
   clears any lockout.
 - `list` prints every master (email, role, display name, last login, disabled
   or locked flags). No secrets are shown.
-- The CLI writes an audit row, so a creation or re-key appears in the panel's
+- The CLI writes an audit row, so account creation or a password reset appears in the panel's
   audit trail.
 
 ### 2. The panel (owner only)
@@ -81,7 +82,7 @@ exists with that email, the request answers `409`.
 
 Open `/admin`. An unauthenticated visit shows the master sign-in screen, which
 is deliberately different from the user login: no registration link, no
-password recovery, no social entry.
+password recovery, no external sign-in buttons.
 
 - The form posts to `POST /admin/auth/login` with email and password, plus an
   optional six-digit two-factor code.
@@ -94,7 +95,7 @@ password recovery, no social entry.
   answers `429` and the form shows `Account is temporarily locked`. A
   successful login clears the counter and the lockout.
 - An unknown email costs the same password-hash work as a wrong password, so
-  response time never reveals whether a master exists.
+  this reduces the risk of identifying an existing account from response time.
 - A disabled account is refused after the password check with `403`.
 - When two-factor is enabled, the password alone is not enough. The server
   answers `401` with `code: "totp_required"` and the form reveals a two-factor
@@ -160,5 +161,5 @@ the related detail page. The search is debounced and runs against
   observability, and the user-facing announcements banner.
 
 For the user-facing side of the product, see the
-[user guide](../user-guide/). The master API surface is described in the
-[API reference](../api/).
+[user guide](../user-guide/). The [API reference](../api/) describes user-facing
+endpoints. The administrative API uses separate authentication.

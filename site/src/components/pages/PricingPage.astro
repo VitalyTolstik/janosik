@@ -128,7 +128,9 @@ const breadcrumbs = [
 
               <p class="plan-price">
                 <span class="price-num">{renderPrice(plan.price)}</span>
-                <span class="price-period">{t(plan.period)}</span>
+                {typeof plan.price === "number" && (
+                  <span class="price-period">{t(plan.period)}</span>
+                )}
               </p>
 
               <p class="plan-limits">{limitLine(plan)}</p>

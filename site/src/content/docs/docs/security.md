@@ -48,7 +48,7 @@ The `Secure` attribute follows `COOKIE_SECURE` (auto: on in production, off
 elsewhere). Over plain HTTP a browser silently drops a `Secure` cookie, which
 is why the boot guard below exists.
 
-The master-account contour uses its own cookie, `admin_refresh_token`, scoped
+The master-account authentication system uses its own cookie, `admin_refresh_token`, scoped
 to `/api/v1/admin/auth`, with a separate JWT audience (`janosik-admin`) and a
 separate `typ` claim. A user token never authenticates an admin route, and an
 admin token never authenticates a user route.
@@ -68,8 +68,8 @@ key on those routes gets `403` with `code: "pat_forbidden"`. A key leaked
 through a log line or a prompt-injected agent therefore cannot mint a
 longer-lived key, lock the owner out or move the account to another mailbox.
 
-Changing the password revokes every API key of the account, so the "I think
-something leaked" button covers keys as well as sessions. A key created
+Changing the password revokes every API key as well as other sessions, which is
+useful if you suspect a credential leak. A key created
 through the API without an expiry gets 90 days; only an explicit `null` (the
 app's `Never` choice) makes it permanent. Only the key's sha256 hash is
 stored.
@@ -112,7 +112,7 @@ A global limit runs at `THROTTLE_LIMIT` requests per minute (default 300) per
 principal: the user for a signed-in session, the key for a personal API key,
 and the client IP for anonymous traffic. The `/health` probe is exempt. With
 `REDIS_URL` set the counters are shared by every node. Individual auth routes
-add tighter windows on top, and the public share contour has its own
+add tighter windows on top, and the public share API has its own
 per-token budget. The exact windows are in the
 [API reference](/docs/api/#rate-limits). A rejection answers `429`.
 
@@ -150,8 +150,9 @@ container image does this on every deploy anyway.
 
 ### Master account lockout
 
-The master login locks an account after five wrong passwords for 15 minutes. A
-leaked password cannot be brute-forced. Every login attempt and mutation writes
+The master login locks an account after five wrong passwords for 15 minutes. The
+lockout limits repeated password guesses. Every login attempt and mutation
+writes
 an audit row, visible on the panel's audit page.
 
 ### Two-factor authentication and IP allowlist
@@ -194,8 +195,8 @@ it logs a warning at start while `ALLOW_REGISTRATION` is `true` (the default).
   than five minutes off its own.
 - Snapshot share links serve only the comments and attachments that existed
   when the snapshot was captured.
-- Markdown surfaces (card descriptions and comments) run through a hardened
-  renderer. Keep dependencies up to date.
+- Card descriptions and comments use a Markdown renderer with protections
+  against unsafe content. Keep dependencies up to date.
 - Access is role-based per board (ADMIN, MEMBER, VIEWER), plus a separate
-  master-account contour for the platform admin panel with its own audience,
+  master-account authentication system for the platform admin panel with its own audience,
   cookies and refresh table.

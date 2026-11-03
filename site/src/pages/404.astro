@@ -80,10 +80,16 @@ const title = `${COPY.en.title} — ${site.name}`;
                 <h1 class="nf-title">{c.headline}</h1>
                 <p class="lead nf-lead">{c.lead}</p>
                 <div class="nf-actions">
-                  <a class="btn btn-primary btn-lg" href={withBase("/")}>
+                  <a
+                    class="btn btn-primary btn-lg"
+                    href={withBase(lang === "ru" ? "/ru/" : "/")}
+                  >
                     {c.home}
                   </a>
-                  <a class="btn btn-ghost btn-lg" href={withBase("/docs/")}>
+                  <a
+                    class="btn btn-ghost btn-lg"
+                    href={withBase(lang === "ru" ? "/ru/docs/" : "/docs/")}
+                  >
                     {c.docs}
                   </a>
                 </div>

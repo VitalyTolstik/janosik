@@ -45,7 +45,9 @@ const year = new Date().getFullYear();
           <a href={site.githubUrl}>{t("nav.github")}</a>
         </li>
         <li>
-          <a href={localizedUrl("/docs", lang)}>{t("footer.selfhost")}</a>
+          <a href={localizedUrl("/docs/self-hosting/", lang)}>
+            {t("footer.selfhost")}
+          </a>
         </li>
         <li>
           <a href={`${site.githubUrl}/blob/main/CHANGELOG.md`}>

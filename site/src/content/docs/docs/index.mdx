@@ -3,9 +3,10 @@ title: Documentation
 description: Guides for self-hosting, using and administering Janosik.
 ---
 
-Janosik is a self-hosted Kanban app. A board consists of columns of cards, and
-each change is recorded as a command so it can be replayed or undone. Boards
-can also be shared. In **server mode**, the NestJS API uses PostgreSQL and
+Janosik is a self-hosted Kanban app. A board consists of columns of cards.
+Changes to board content use a command log and support undo. Comments,
+attachments and access management use separate REST operations. Boards can also
+be shared. In **server mode**, the NestJS API uses PostgreSQL and
 provides accounts, realtime updates and public share links. A no-backend
 "local-only" mode is used only in unit tests.
 
@@ -13,8 +14,8 @@ This documentation has four parts.
 
 ## Start here
 
-- [Getting started](/docs/getting-started/) runs Janosik for the first time,
-  either with Docker or from source.
+- [Getting started](/docs/getting-started/) helps you run Janosik for the first
+  time, either with Docker or from source.
 - [Self-hosting](/docs/self-hosting/) covers the compose stack, HTTPS and the
   full environment reference.
 - [Operations runbooks](/docs/runbooks/) covers backup, restore, upgrade,
@@ -37,8 +38,7 @@ This documentation has four parts.
 - [MCP server](/docs/mcp/) wires the board into an AI agent (Claude, Cursor,
   VS Code, opencode) with a personal API key.
 
-Looking for a quick answer? The [FAQ](/docs/faq/) and the
-[security policy](/docs/security/) sit at the end.
+Looking for a quick answer? See the [FAQ](/docs/faq/) or the [security policy](/docs/security/).
 
 These docs describe the latest release. When a second major version appears,
 each version gets its own docs and a switcher in the header.
