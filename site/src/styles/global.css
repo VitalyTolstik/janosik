@@ -316,10 +316,101 @@ p {
   font-size: 1.2rem;
 }
 
-.brand img {
+.janosik-brand-tile {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
   width: 2rem;
   height: 2rem;
   border-radius: 0.5rem;
+  color: #fff;
+  background-image: linear-gradient(
+    to bottom right,
+    var(--janosik-logo-from),
+    var(--janosik-logo-to)
+  );
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.1);
+}
+
+.janosik-feather {
+  transform-origin: 5px 18px;
+  animation: janosik-feather-idle 7s ease-in-out infinite;
+}
+
+.janosik-sparkle {
+  position: absolute;
+  top: -0.125rem;
+  right: -0.125rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.3) rotate(0deg);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .brand:hover .janosik-feather {
+    animation: janosik-feather-sway 2.2s ease-in-out infinite;
+  }
+
+  .brand:hover .janosik-sparkle {
+    animation: janosik-sparkle-twinkle 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes janosik-feather-idle {
+  0%,
+  100% {
+    transform: rotate(-2deg);
+  }
+  50% {
+    transform: rotate(2.5deg);
+  }
+}
+
+@keyframes janosik-feather-sway {
+  0%,
+  100% {
+    transform: rotate(-7deg) scale(1.02);
+  }
+  50% {
+    transform: rotate(7deg) scale(1.06);
+  }
+}
+
+@keyframes janosik-sparkle-twinkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.3) rotate(0deg);
+  }
+  12% {
+    opacity: 1;
+    transform: scale(1) rotate(24deg);
+  }
+  28% {
+    opacity: 0.65;
+    transform: scale(0.75) rotate(8deg);
+  }
+  44% {
+    opacity: 1;
+    transform: scale(1.12) rotate(32deg);
+  }
+  62% {
+    opacity: 0;
+    transform: scale(0.45) rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .janosik-feather {
+    animation: none;
+  }
+  .janosik-sparkle {
+    display: none;
+  }
 }
 
 .site-nav {

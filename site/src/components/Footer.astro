@@ -2,7 +2,7 @@
 import { site } from "../config";
 import type { Lang } from "../i18n/ui";
 import { localizedUrl, useTranslations } from "../i18n/utils";
-import { withBase } from "../utils/url";
+import BrandMark from "./BrandMark.astro";
 
 interface Props {
   lang: Lang;
@@ -17,7 +17,7 @@ const year = new Date().getFullYear();
   <div class="container footer-grid">
     <div class="footer-brand">
       <a class="brand" href={localizedUrl("/", lang)}>
-        <img src={withBase("/favicon.svg")} alt="" width="32" height="32" />
+        <BrandMark {lang} placement="footer" />
         <span>{site.name}</span>
       </a>
       <p>{t("footer.tagline")}</p>

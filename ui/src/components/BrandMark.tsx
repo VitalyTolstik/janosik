@@ -5,13 +5,20 @@
  * of an approximation; the hover animations key off a `.group` ancestor and
  * the `janosik-feather` / `janosik-sparkle` classes in index.css.
  */
-export function BrandMark() {
+export function BrandMark({
+  size = "default",
+}: {
+  size?: "default" | "large";
+}) {
+  const large = size === "large";
   return (
-    <div className="janosik-brand-tile relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-primary-foreground shadow-sm">
+    <div
+      className={`janosik-brand-tile relative flex shrink-0 items-center justify-center text-primary-foreground shadow-sm ${large ? "h-12 w-12 rounded-2xl" : "h-8 w-8 rounded-lg"}`}
+    >
       <svg
-        className="janosik-feather"
-        width="20"
-        height="20"
+        className={`janosik-feather${large ? " janosik-feather-large" : ""}`}
+        width={large ? 26 : 20}
+        height={large ? 26 : 20}
         viewBox="0 0 24 24"
         fill="none"
         aria-hidden

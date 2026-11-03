@@ -231,6 +231,9 @@
   transform-origin: 5px 18px;
   animation: janosik-feather-idle 7s ease-in-out infinite;
 }
+.janosik-feather-large {
+  transform-origin: 6.5px 23.4px;
+}
 .janosik-sparkle {
   opacity: 0;
   transform: scale(0.3) rotate(0deg);
