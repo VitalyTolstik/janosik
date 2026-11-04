@@ -5,11 +5,12 @@
 > `CURRENT_WORK_ITERATIONS.md` (они удалены). Любой ИИ-агент начинает работу
 > с чтения этого файла и `AGENT.md`.
 >
-> **Текущий фокус:** фундамент перед бэкендом закрыт полностью (§6.0.1,
-> TASK-21.1…21.11 ✅); активная фаза — бэкенд, совместный UI и релиз
-> (§7, TASK-22…32 и 35…41 — порядок в §7.7). **Форма поставки —
-> самохостимый опенсорс** (AGPL-3.0, `docker compose`, публичное демо):
-> §7.8. Обновлено: 2026-09.
+> **Текущее состояние:** серверный режим, совместная работа, MCP и первый
+> self-hosted релиз реализованы. Открытые задачи и их зависимости перечислены
+> в §7.7; Sentry и полный браузерный E2E-набор остаются в TASK-40/41.
+> Отдельный публичный демо-инстанс TASK-39 отменён: демо запускается из
+> админки. **Форма поставки — самохостимый опенсорс** (AGPL-3.0,
+> Docker Compose). Аудит статусов: 2026-11-04.
 
 ---
 
@@ -225,7 +226,7 @@
 | --- | --- | --- |
 | Доска | заголовок редактируется инлайн в шапке, горизонтальная лента колонок, 4 фона, настраиваемое «стекло» колонок | 7, 8 |
 | Мультидоски | свитчер, создание/переименование/архив/восстановление/удаление, deep-links `/board/:id`, пустое состояние с CTA | 7, 8 |
-| Виды доски | канбан / **календарь** (drag сроков, панель «Без срока», неделя-месяц, панель дня) / **таблица** (сортировка, инлайн-редактирование, настройки колонок); выбор вида сохраняется между сессиями | 14, 14.1 |
+| Виды доски | канбан, **календарь**, **таблица** и **watch**; настройки вида и компактного отображения сохраняются | 14, 14.1, 142 |
 | Колонки | добавление, переименование (двойной клик), удаление с каскадом, drag-перестановка, дублирование, сортировка карточек (создание/срок/название) | 6, 9 |
 | Карточки | inline-композер (в т.ч. hover-зоны между карточками), живое редактирование заголовка, удаление с подтверждением, drag&drop внутри/между колонками и на тачах (long-press), перенос через меню, дублирование | 6, 21.10 |
 | Описание карточки | WYSIWYG MDX-редактор (MDXEditor) в диалоге, бейдж «есть описание» на карточке, санитизация сырого HTML при импорте | 2, 21 |
@@ -249,9 +250,13 @@
 | Лимиты ввода | `LIMITS` на 14 полях + коллекциях, счётчики «осталось N», тултипы/тосты гвардов. **Калибруются в TASK-21.5** | 20 |
 | ИИ-агенты | MCP-сервер (`@janosik/mcp`) + скилл `janosik`: описание 64к, захват с лизингом, контракт задачи, CAS `expectedVersion`, идемпотентные id, типизированные комментарии (`kind`), поиск по комментам/чек-листам, проекция чтения, ready-to-work + wait-for-work, DoD-гейт на Done, `actorType`, скоупы токенов | 157 |
 
-> **Чего ещё нет (упирается в бэкенд, §7):** аккаунты и шаринг, комментарии,
-> исполнители, уведомления, вложения. Из фронтового — тач-слой календаря/
-> таблицы (TASK-31) и дублирование доски.
+| Совместная работа | аккаунты, роли и приглашения, realtime/presence, комментарии, исполнители, уведомления, публичные ссылки для просмотра | 24, 35–37, 49, 58 |
+| Вложения | файлы и аватары, загрузка и скачивание, обработка видео и миниатюры | 47, 50, 66, 70 |
+| Self-hosting | Docker Compose, установщик и публичный образ GHCR `v0.1.1` для amd64/arm64; документация и MCP | 38a, 38b, 136 |
+
+> **Из открытого:** тач-слой календаря/таблицы (TASK-31), отдельная
+> in-app презентация (TASK-32), Sentry и полный E2E-набор (§7.8).
+> Полный перечень открытых задач — в §7.7.
 
 ### 1.2. Архитектура (кратко)
 
@@ -414,7 +419,7 @@
 | 34 | TASK-43 `master-admin-panel` | ✅ реализовано вне очереди по запросу — мастер-контур (§7.0/§7.4): `AdminUser` (OWNER/OPERATOR, отдельные cookie/JWT-аудиенция/refresh-таблица), `/admin/auth/*` + `/admin/*` (метрики с runtime, юзеры, доски, **карточки, комментарии, сессии, API-токены**, журнал команд, аудит), **редактор контента доски через командный лог от имени владельца**, модерация (блок юзера + ревок сессий/токенов по одной, архив/soft-delete доски и карточки, удаление комментария), управление мастерами только у OWNER, CLI `admin:create/passwd/list`, аудит каждого действия, lockout и anti-timing логина, ID всех сущностей с копированием, поиск по ID, удаление `User.isSuperAdmin`; **таблицы schema-first** (`Board.id`/`BoardMember.userId`/`Card.columnId`/`Comment.authorId`/…, FK-айди как значения, поиск по айди, без счётчиков, скролл-вьюпорт со sticky-шапкой) | гейты: ui 483, shared 325, backend 22 unit + 100 e2e, build/lint/format, size 204.66/210 KB + ленивый admin-чанк 20.7/30 KB; live-смоук: CLI → браузер (вход мастера, создание мастера из панели, блок юзера, Playwright-смоук) |
 | 35 | TASK-35 `board-members-ui` | ✅ реализовано, PR #74 — участники доски из UI (§7.6.1): модалка «Участники (N)» из шапки (`BoardMembersDialog` + `UserAvatar`), инвайт по email, смена роли, `expiresAt` для VIEWER с бейджем «доступ истёк», исключение с инлайн-подтверждением, последний ADMIN защищён (disabled + тултип-причина), ошибки API → тосты; **VIEWER получает read-only UI** (нет drag/композеров/меню/инлайн-редакторов, диалог карточки только для чтения, `roleOf` → `readOnly` через BoardSection); `GET /boards/:id/members` уже отдавал `userId`/`displayName`/`email` — бэкенд не менялся | гейты: ui 512 (485+27, покрытие выше порогов), shared 325, backend 22 unit + 100 e2e не тронуты, build/lint/format; live-смоук |
 | 30 | TASK-30 `realtime-sse` | ✅ реализовано, ветка `feature/TASK-30-realtime-sse`; доборы — TASK-30.1 ✅ (`touches` в событии + бюджет ленивого чанка) и TASK-30.2 ✅ (audit hardening) — §7.5 — SSE `GET /boards/:id/events` (`{type:"command", seq, action, actorId}`) + догон `?since=`; `X-Board-Seq` на агрегате; UI-мост в ленивом чанке (`fetch`-ридер с Authorization вместо EventSource+ticket), чужие экшены через тот же `boardReducer`, дедуп по seq, defer при in-flight командах, focus refetch остался fallback | два браузера видят правки без перезагрузки; обрыв догоняется дельтой (live-смоук 8/8, включая `setOffline`) |
-| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-39/40/41 (§7.8), TASK-31/32, TASK-140/141 (§7.13, частично), TASK-131 (отложено). Следующий — TASK-39 `public-demo` (после TASK-40) |
+| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-40/41 (§7.8), TASK-31/32, TASK-158/159 (§7.18), TASK-131 (отложено). TASK-39 отменена; TASK-140/141 завершены (§7.13) |
 
 ### 6.0.1. Укрепление фундамента перед бэкендом (TASK-21.1…21.11)
 
@@ -1272,7 +1277,7 @@ Member/comment-события и снапшот-детали (`details` — им
   доской и помечает затронутые шаги dead — undo пропускает их с тостом
   `sync.foreignEdit`; незамеченная гонка ловится `ifMatchVersions`.
 
-#### TASK-30.1 — `realtime-refinements` · Добор к SSE (TASK-30)
+#### TASK-30.1 — `realtime-refinements` · Добор к SSE (TASK-30) ✅
 
 > **Откуда взялась.** TASK-30 закрыт по DoD, но в реализации осознанно
 > остались два «хвоста», которые видны только на больших досках и в
@@ -1355,7 +1360,7 @@ Member/comment-события и снапшот-детали (`details` — им
 `changedEntityIds`, ленивый чанк получил запись в `size-limit` — 6 KB gzip при
 фактических 1.59 KB. Подробности и цифры — `ROADMAP-DONE.md` (TASK-30.1).
 
-#### TASK-30.2 — `hardening-followups` · Добор по итогам аудита покрытия
+#### TASK-30.2 — `hardening-followups` · Добор по итогам аудита покрытия ✅
 
 > **Откуда взялась.** После 30.1 прогнали аудит покрытия (команды ↔ e2e,
 > покрытие UI, известные незакрытые места). Из находок выбраны четыре,
@@ -1454,7 +1459,7 @@ TASK-36 и TASK-37.)*
 Бэкенд для всех трёх уже построен к TASK-28 — здесь только интерфейс плюс
 одно денормализованное поле и расширение SSE-контракта.
 
-#### TASK-35 — `board-members-ui` · Участники доски и приглашения
+#### TASK-35 — `board-members-ui` · Участники доски и приглашения ✅
 
 - **Зачем:** до этой задачи второго человека на доску **невозможно добавить
   из интерфейса** — только руками в БД. Это не полировка: DoD TASK-30 («два
@@ -1481,7 +1486,7 @@ TASK-36 и TASK-37.)*
   ролевые гварды.
 - **Зависимости:** TASK-29.
 
-#### TASK-36 — `presence-attribution` · Кто что делает
+#### TASK-36 — `presence-attribution` · Кто что делает ✅
 
 - **Зачем:** после TASK-30 чужие правки прилетают, но выглядят как «карточки
   двигаются сами». Самая дешёвая часть работы с самой высокой отдачей.
@@ -1510,7 +1515,7 @@ TASK-36 и TASK-37.)*
   вкладки убирает аватар за ≤60 с; `prefers-reduced-motion` учтён.
 - **Зависимости:** TASK-30, TASK-35 (`UserAvatar`).
 
-#### TASK-37 — `comments-ui` · Комментарии в карточке
+#### TASK-37 — `comments-ui` · Комментарии в карточке ✅
 
 - **Зачем:** API готов с TASK-28, интерфейса нет — самая заметная дыра
   «бэкенд есть, UI нет».
@@ -1551,11 +1556,11 @@ TASK-36 и TASK-37.)*
 | 10.2 | TASK-30.2 `hardening-followups` ✅ | `feature/TASK-30.1-30.2-realtime-hardening` | Добор по аудиту покрытия (детали — §7.5) | чужой id → 409 (`command-ids.e2e`); `MAX_COMMAND_BYTES` 2 MB + явный json-лимит 5 MB, вложенная валидация restore; own-echo не убивает undo, deferred после ack (ui 533); 17 пар undo-через-`invert` в `commands-undo.e2e`; shared 333, backend 22 + 121 e2e; live-смоуки зелёные; бюджет критического пути 300 KB по решению владельца. **Выполнено: PR #76, merge `1c33aeb`** (в ветке также 30.1, redo/refresh/tailwind-фиксы и фокус/фид-фиксы) |
 | 11 | TASK-36 `presence-attribution` ✅ | `feature/TASK-36-presence-attribution` | §7.6.1: `Card.lastActorId` + аватар на карточке, аватары в ленте активности, стопка «сейчас на доске» (SSE-событие `presence`), подсветка чужого изменения | оба браузера видят аватар друг друга; чужая правка подсвечена; лента показывает кто; вкладку закрыли — аватар ушёл за ≤60 с. **Выполнено:** `PresenceService` (сессии per вкладка с дедупом по юзеру, join/leave-бродкасты, heartbeat 30 с, sweep TTL 60 с) + событие `presence` мимо seq-дедупа + `POST /boards/:id/presence` (heartbeat из UI раз в 20 с, `?client=` — стабильный tab-id); `lastActorId` пишут все карточные writers там же, где `updatedAt` (чистые reorder'ы — нет; контрактные e2e снимают поле `stripAttribution()` и проверяют штамп отдельно); UI-сторы `board-live.tsx` с узкими подписками — стопка в шапке (≤5 + «+N» → popover с ролями, пульс-точка, solo скрыт), автор + относительное время на карточке и в таблице (только чужое), кольцо 2 с в цвете автора (`prefers-reduced-motion` → статичная точка/заливка), имя+аватар в ленте; en+ru; ui 558 (72 файла), shared 334, backend 27 unit + 124 e2e; coverage 94.78/87.25/93.33/97.16; size critical 212.21/300, realtime 2.02/6, styles 15.67/18; live-проба двумя браузерами `presence-probe.mjs` 15/15 (ростер, кольцо, лента, таблица, уход по закрытию вкладки, персист `lastActorId` после reload) — **PR #77** |
 | 11.1 | TASK-36.1 `account-panel` ✅ | `feature/TASK-36.1-account-panel` | По запросу владельца: вместо кнопки выхода — персональная панель (Linear-style: рейл разделов, на мобиле — табы). Профиль: имя, цвет аватара из палитры (серверный `User.avatarColor`, виден команде — карточки, лента, presence, кольцо атрибуции), email read-only; безопасность: смена пароля с ревоком остальных сессий (кука скоупится `/auth`, поэтому эндпоинт `POST /auth/password`, не `/users/me/password`), API-ключи не затрагиваются; **рабочие персональные API-ключи** (`jnk_…`, sha256 в БД, показ один раз, список/отзыв/`lastUsedAt`; PAT принимают `JwtAuthGuard` и `MembershipGuard`, admin-контур — нет); перенос из хедера языка/времени/фона в «Настройки» (тема живёт только там); Sign out — внизу панели с подтверждением. **Смена имени/цвета транслируется вживую всем:** `PresenceService.updateUser` перезаписывает открытые сессии без реконнекта, `membership change:"updated"` по всем бордам заставляет перечитать каталог (карточки, таблица, лента). **Профиль человека кликабелен отовсюду** (`UserProfileDialog`: presence-ростер, список участников, фейс автора на карточке/в таблице/ленте; онлайн-статус, роль, срок доступа). Осознанно не делаем (отдельные задачи): загрузка фото (нужно файловое хранилище), смена email (нужен мейлер и double opt-in), список активных сессий, 2FA | профиль/пароль/ключи работают из панели; цвет аватара видят остальные; панель не теряет борду (модалка, не роут); en+ru; тесты. **Выполнено:** миграция `20260918080434_user_avatar_color`; `UsersModule` (`PATCH /users/me`, `GET/POST/DELETE /users/me/tokens`), `AuthService.changePassword` + `ApiTokenService`; PAT-фолбэк в guard'ах; UI `components/account/*` (+4 тест-файла), i18n `account.*`; гейты: ui 593 (76 файлов), shared 336, backend 48 unit + 144 e2e, lint/tsc/prettier/build/size зелёные; живая проба `account-probe.mjs` 18/18, `rename-probe.mjs` 9/9 — **PR #78, merge `00de4d5`**; **догон:** фиксированная высота панели под вьюпорт (все вкладки одной высоты, длинный контент скроллится внутри; проба `account-height.mjs` 9/9) — **PR #80, merge `79e9d62`** |
-| 11.2 | TASK-36.2 `board-switcher-roles` ✅ | `feature/TASK-36.2-board-switcher-roles` | По запросу владельца: в свитчере видно, где я админ, а где доступ «со стороны» | секции «Мои доски» (ADMIN) и «Совместные» (MEMBER/VIEWER), заголовки — только когда есть обе группы (иначе плоский список); на общих досках в слоте действия — иконка роли с тултипом и aria-label («Участник — можно редактировать» / «Наблюдатель — только просмотр») вместо пустого места, архив по-прежнему только у ADMIN; плоский клавиатурный порядок ↑/↓ и поиск не меняются; en+ru. **Выполнено локально (не закоммичено):** `BoardSwitcher` groups + `board.switcher.section.*`/`role.*`; `FakeServer.roles` per board; ui 597 (76 файлов), lint/tsc/prettier/build/size зелёные; живая проба `switcher-roles.mjs` 7/7 (секции, иконки, порядок) — **PR #79, merge `aaa97da`** |
+| 11.2 | TASK-36.2 `board-switcher-roles` ✅ | `feature/TASK-36.2-board-switcher-roles` | По запросу владельца: в свитчере видно, где я админ, а где доступ «со стороны» | секции «Мои доски» (ADMIN) и «Совместные» (MEMBER/VIEWER), заголовки — только когда есть обе группы (иначе плоский список); на общих досках в слоте действия — иконка роли с тултипом и aria-label («Участник — можно редактировать» / «Наблюдатель — только просмотр») вместо пустого места, архив по-прежнему только у ADMIN; плоский клавиатурный порядок ↑/↓ и поиск не меняются; en+ru. **Выполнено:** `BoardSwitcher` groups + `board.switcher.section.*`/`role.*`; `FakeServer.roles` per board; ui 597 (76 файлов), lint/tsc/prettier/build/size зелёные; живая проба `switcher-roles.mjs` 7/7 (секции, иконки, порядок) — **PR #79, merge `aaa97da`** |
 | 12 | TASK-37 `comments-ui` ✅ | `feature/TASK-37-comments-ui` | §7.6.1: секция комментариев в диалоге карточки поверх API TASK-28, курсорная пагинация, живое прилетание по SSE, `LIMITS.comment`. По запросу владельца расширена до Jira-вида и дважды переоформлена после ревью: Activity — последняя секция, сегментные табы Comments/History (как переключатель видов доски), markdown-композер как у Description (Save/Cancel, Ctrl/Cmd+Enter), кнопка копирования ссылки; History — серверный фид с диффом «было → стало» половинами, старое значение зачёркнуто; комменты видны в истории диффом `Comment: — → текст`; описание коммитится одним `UPDATE_CARD` на сессию печати (blur/смена карточки/закрытие), свежесть истории — по коммит-сигналу `CommitStore` (без лага «на шаг позади» при чек-боксах); дифф подсвечивает изменённый фрагмент word-diff'ом (красное зачёркнутое / зелёное, контекст схлопывается в «…», `clip` снапшотов поднят 280 → `LIMITS.description`); чужой комментарий перевешивает «морду» карточки (SSE-фрейм ставит attribution с кольцом, сервер пишет `Card.lastActorId` — после перезагрузки то же лицо) | пишется/удаляется/пагинируется; чужой комментарий приходит живым; лимит гвардит; en+ru. **Выполнено:** UI `CardActivity`/`CardComments`/`CardHistory` + ленивый `CommentEditor` (компактный MDXEditor, тела комментариев — markdown-вьюер, голые URL линкует `autolinkMarkdown`; оптимистичная отправка, удаление своих с подтверждением, курсорный «Show older»); SSE `type:"activity"` публикуется из `CommentsService` и раздаётся через `ActivityStore`; `Command.details` (миграция `20260918174753_command_details`) хранит снапшот `{detail,changes}` команд, текст комментов — в `Activity.details` (`readCommentSnapshot` в `activity.service`) — диффы в `GET /cards/:id/activity`, посимвольные правки сворачиваются (окно 2 с); копирование `?card=`-ссылки + фикс холодной загрузки deep-link; ui 617 (80 файлов), backend 145 unit+e2e, lint/tsc/prettier/build/size; живые пробы `comments-probe.mjs` 12/12 и `activity-redesign-probe.mjs` 30/30 — **PR #82, merge `a6b8b2c`; полировка — PR #83, merge `68716dc`** |
 | 13 | TASK-38a `self-host-hardening` ✅ | `feature/TASK-38a-self-host-hardening` | §7.8: шесть грабель самохостинга, каждая ломается **молча** (Secure-кука по HTTP, буферизация SSE за nginx, миграции в entrypoint, JWT без дефолтов, `ALLOW_REGISTRATION`, healthcheck БД) + джоб чистки soft-delete на `@nestjs/schedule` | HTTP-инсталляция ругается, а не разлогинивает молча; SSE работает за дефолтным nginx; пустой `JWT_SECRET` не даёт стартовать; чистка идёт по расписанию |
-| 14 | TASK-38b `self-host-release` 🟡 | `feature/TASK-38b-self-host-release` | §7.8: `LICENSE` (AGPL-3.0) + поля в `package.json`, multi-stage `Dockerfile`, прод-`docker-compose.yml`, `.env.example`, публикация образов в `ghcr.io` из CI по тегу, README под самохостера, `SECURITY.md`, `CHANGELOG.md` | Подготовлены установщик с уникальными секретами и фиксацией версии, проверка установки и восстановления в CI, инструкции EN/RU и MCP. Локальный образ проверен на чистой БД. **Осталось:** выпустить первый стабильный GitHub Release и общедоступный GHCR-образ, затем проверить установку с чистого хоста без авторизации. |
-| 15 | TASK-39 `public-demo` | `feature/TASK-39-public-demo` | §7.8: демо-инстанс на своём домене, сид-доска en/ru, ночной сброс, два предсозданных аккаунта (совместный режим щупается в двух окнах), регистрация закрыта, ссылка первым экраном README | демо по HTTPS; два аккаунта показывают realtime вдвоём; ночной сброс отрабатывает |
+| 14 | TASK-38b `self-host-release` ✅ | `feature/TASK-38b-self-host-release` | §7.8: `LICENSE` (AGPL-3.0) + поля в `package.json`, multi-stage `Dockerfile`, прод-`docker-compose.yml`, `.env.example`, публикация образов в `ghcr.io` из CI по тегу, README под самохостера, `SECURITY.md`, `CHANGELOG.md` | **Выполнено:** PR #159 и #160; опубликован стабильный релиз `v0.1.1` и публичный GHCR-образ для amd64/arm64; установка из опубликованного образа без авторизации проверена на WSL. Установщик создаёт уникальные секреты, доступны EN/RU-инструкции и MCP. Физические macOS и Windows вне WSL не проверялись. |
+| 15 | TASK-39 `public-demo` ❌ отменено | — | Отдельный публичный инстанс больше не планируется по решению владельца. Демонстрация роя запускается из админки (TASK-57/69), наблюдать можно по публичной live-ссылке (TASK-58) | См. §7.8: постоянно доступный инстанс и остальные первоначальные требования не реализованы и не требуются |
 | 16 | TASK-40 `observability` | `feature/TASK-40-observability` | §7.8: Sentry на фронт и бэк (**DSN — переменная, пустая по умолчанию**: свой DSN в опенсорс-образ зашивать нельзя), `pino` со структурными логами и `requestId`→`commandId`, `/health` со статусом БД и версией образа | ошибка долетает до Sentry с версией сборки; пустой `SENTRY_DSN` полностью выключает отправку; по `commandId` трассируется путь команды. **Частично (2026-10-31):** `/health` со статусом БД и версией (TASK-147 `health/ready` + TASK-64 observability) и `requestId`→`commandId` (TASK-153) — уже сделано; осталось **Sentry + `pino`** |
 | 17 | TASK-41 `e2e-chrome` | `feature/TASK-41-e2e-chrome` | §7.8: Playwright-набор **на всё приложение**, браузер — **только Google Chrome** (без кросс-браузерной матрицы Firefox/WebKit). Правка §0 п.4 — запрет E2E **снимается**. Гоняется в CI против `docker compose` из TASK-38b | покрыты auth / доска / карточка / виды / realtime+presence (два контекста) / шаринг / аккаунт / админ-smoke / PWA; зелёные в CI; артефакт трейсов на падении; §0 и README обновлены |
 | 18 | TASK-31 `mobile-ux` | `feature/TASK-31-mobile-ux` | Тач-слой для календаря/таблицы (HTML5 DnD на тачах не работает; доска уже покрыта TASK-21.10), адаптив шапки/фильтров/диалогов | drag-сроки и перенос строк работают на тач-эмуляторе; вёрстка не ломается на 390px |
@@ -1563,12 +1568,12 @@ TASK-36 и TASK-37.)*
 | 20 | TASK-43 `master-admin-panel` ✅ | `main` (вне очереди, по запросу) | Мастер-контур §7.0/§7.4: `AdminUser` OWNER/OPERATOR отдельно от `User`, свой вход/аудиенция/cookie, админ-панель `/admin` (дашборд, юзеры, доски, журнал, аудит, мастера), CLI `admin:create/passwd/list`, модерация и аудит; `User.isSuperAdmin` удалён | вход мастера из браузера; из панели создаётся оператор и не может управлять мастерами; юзер-токен в `/admin` → 401 и наоборот; блок юзера убивает сессии; всё в аудите; e2e на запреты |
 | 21 | TASK-44 `card-layout` ✅ | `feature/TASK-44-card-layout` | По запросу владельца: карточка больше не «дышит» высотой — фикс под вьюпорт, секции сворачиваются в едином стиле, чеклист не растёт бесконечно | диалог карточки — `100dvh−2rem` со скроллом тела; `CollapsibleSection` (Description/Checklists открыты, Activity свёрнута) + сворачивание каждого чеклиста отдельно с видимым прогрессом; пункты чеклиста капнуты 8 строками (внутренний скролл); Title — авто-высота 1–4 строки без пустых строк. **Выполнено:** ui 602 (77 файлов), lint/tsc/prettier зелёные; живая проба `card-layout-probe.mjs` 17/17 (высота 868/608, неизменна при сворачивании, список 218>192) — **PR #81, merge `5fe2677`** |
 | 22 | TASK-44.1 `header-gradient` ✅ | `main` (вне очереди, по запросу) | По запросу владельца: шапка сайта получает фон-градиент панели аккаунта (`from-primary/15 via-secondary/10 to-transparent`) поверх `bg-background/80` с блюром | только оформление, функционал не тронут; ui 602 (77 файлов), lint/tsc/prettier зелёные; живой скрин |
-| 23 | TASK-45 `card-priority` | `feature/TASK-45-card-priority` | По запросу владельца: Jira-приоритеты на карточке. 6 уровней (`blocker/highest/high/medium/low/lowest`), дефолт Medium; серверный `Card.priority` + миграция, команда `SET_CARD_PRIORITY` (паттерн `SET_CARD_DUE_DATE`) + inverse/activity-событие, writer/aggregate/import, миграция данных v7. UI: селект с иконками и цветами Jira в карточке, бейдж на морде, опциональная колонка в TableView, сортировка колонки по приоритету, мультивыбор в фильтрах | приоритет переживает reload/export/import и undo; чужая смена видна по SSE; en+ru; тесты + живая проба. Готово: полный контур команды (shared-редьюсер/invert/validate/migrate, Prisma v7, writers в ОБОИХ свитчах, aggregate/import/export), UI (селект в диалоге, бейдж на морде для не-medium, опциональная колонка + сортировка в TableView, фасет-мультивыбор в фильтрах), история с локализованным уровнем; проба `priority-probe.mjs` 16/16 (SSE-видимость чужой смены, undo/redo, сортировка, фильтры) — **PR #84, merge `d2066e2`**. Попутно: лимит коммента 2000→10000 (Prisma v8 `Comment.text` → Text), premium-Save слева + Cancel сразу (оба дисейбл на пустом черновике), эмодзи в markdown-вьюерах (`emojify`: шорткоды+эмотиконы, код не трогаем) |
+| 23 | TASK-45 `card-priority` ✅ | `feature/TASK-45-card-priority` | По запросу владельца: Jira-приоритеты на карточке. 6 уровней (`blocker/highest/high/medium/low/lowest`), дефолт Medium; серверный `Card.priority` + миграция, команда `SET_CARD_PRIORITY` (паттерн `SET_CARD_DUE_DATE`) + inverse/activity-событие, writer/aggregate/import, миграция данных v7. UI: селект с иконками и цветами Jira в карточке, бейдж на морде, опциональная колонка в TableView, сортировка колонки по приоритету, мультивыбор в фильтрах | приоритет переживает reload/export/import и undo; чужая смена видна по SSE; en+ru; тесты + живая проба. Готово: полный контур команды (shared-редьюсер/invert/validate/migrate, Prisma v7, writers в ОБОИХ свитчах, aggregate/import/export), UI (селект в диалоге, бейдж на морде для не-medium, опциональная колонка + сортировка в TableView, фасет-мультивыбор в фильтрах), история с локализованным уровнем; проба `priority-probe.mjs` 16/16 (SSE-видимость чужой смены, undo/redo, сортировка, фильтры) — **PR #84, merge `d2066e2`**. Попутно: лимит коммента 2000→10000 (Prisma v8 `Comment.text` → Text), premium-Save слева + Cancel сразу (оба дисейбл на пустом черновике), эмодзи в markdown-вьюерах (`emojify`: шорткоды+эмотиконы, код не трогаем) |
 | 24 | TASK-46 `card-links` ✅ | `feature/TASK-46-card-links` | По запросу владельца: Jira-связи карточек. `CardLink (fromCardId, toCardId, type)` — 3 семейства: `blocks`/`blocked by`, `relates to`, `duplicates`/`duplicated by`; отображение обеих сторон, запрет self-link и дублей пары, лимит 50 связей на карточку, каскад при удалении, запрет циклов `blocks` с тостом; всё командами (undo/redo/SSE). В карточке — секция «Linked cards» в стиле общих секций: группы по типу, переход на связанную карточку, поиск при добавлении; на морде — иконка/счётчик связей и красный «Blocked» по входящему blocks от неархивной карточки; фильтры «Blocked» и «Has links» | связи переживают reload/export/import; цикл `blocks` не создаётся; undo/realtime работают; en+ru; тесты. **Выполнено:** `CardLink` хранится на источнике (directional), вторая сторона вычисляется сканом; гварды: self-link, дубль пары, `LIMITS.linksPerCard = 50`, DFS-циклы `blocks`; dangling-tolerant (удаление цели оставляет строку, undo оживляет), дубликаты без связей; Prisma `CardLink` (soft-delete, FK RESTRICT) + миграция `20260919131635_card_links`, writers upsert/soft-delete, aggregate/import, command-details со снапшотом титула цели; UI `CardLinks` (саджесты, 5 Jira-фразировок → 3 wire-типа, клавиатура, тост цикла, навигация `?card=`), бейджи на морде, фасеты фильтров, история; en+ru. Гейты: shared 349, backend 57 unit + 145 e2e, ui 658 (85 файлов), lint/tsc/prettier/build/size зелёные (живая проба отменена владельцем) — **PR #85, merge `54c9937`** |
 | 25 | TASK-47 `files` ✅ | `feature/TASK-47-files` | По запросу владельца (self-hosted, без S3): файловые вложения карточек и аватары пользователей на локальном диске. Backend: `Attachment` (id, boardId, cardId, fileName, storedName, mimeType, sizeBytes, uploadedById, deletedAt), multer-хранение в `UPLOAD_DIR` (дефолт `data/uploads`, в git-игноре), upload/stream/delete REST поверх MembershipGuard (как комменты — вне командного контура, undo не покрывает), denormalized `Card.attachmentCount` в aggregate + SSE `type:"attachment"`, лимиты `LIMITS.attachment` (25 MB, mime-allowlist); аватар: `PATCH /users/me/avatar` + `GET /users/:id/avatar`, `User.avatarPath`. UI: секция Attachments в диалоге (иконки по mime, размер, скачивание, удаление), бейдж-счётчик на морде, живое прилетание по SSE; аватар в аккаунт-панели. Docker: прод-compose монтирует `data/` как bind mount (детали упаковки остаются в TASK-38b) | файл переживает рестарт контейнера; чужой upload виден по SSE; лимит и чужой mime отсекаются; скачивание только участникам доски; en+ru; тесты. **Выполнено:** Prisma `Attachment` (soft-delete, FK RESTRICT) + миграция `20260919210000_attachments`, `User.avatarPath`/`Card.attachmentCount`; multer в `UPLOAD_DIR` (дефолт `data/uploads`, git-игнор), storedName=UUID+sanitized ext, allowlist mime (вложения 25MB×20/карточка, аватар 2MB), удаление blob-файла при soft-delete; REST вне командного контура: POST/GET `/cards/:cardId/attachments`, GET `/attachments/:id/content` (Content-Disposition UTF-8), DELETE `/attachments/:id` (uploader или ADMIN), `PATCH /users/me/avatar` + `GET /users/:id/avatar` (immutable-cache); activity `attachment_added/deleted` + SSE, avatarPath сквозь presence/roster/updateUser; UI: секция Attachments (upload/скачивание через blob-fetch, ConfirmDialog, SSE-merge, canDelete), Paperclip-бейдж на морде, аватары в presence/членах/профиле/аккаунте (module-cached object URL), en+ru; попутно правила линков вынесены в `shared/src/store/card-links`. Гейты: backend 57 unit + 152 e2e, ui 661 (86 файлов), lint/tsc/prettier/build/size зелёные — **PR #86, merge `2c2692a`** |
 | 26 | TASK-48 `admin-redesign` ✅ | `feat/TASK-48-admin-redesign` | Вне очереди, по запросу владельца: (1) редизайн админ-панели — 9 сущностей таблицами (`/admin/entities/:entity`: cards, users, boards, comments, attachments, checklists, labels, sessions, apiTokens) с cross-entity поиском, пагинацией, период-фильтрами (24h/7d/30d), детальными страницами карточки/юзера/доски с вкладками Activity/Command log/Audit/Sessions/Tokens, скачиванием вложений мастером, приоритетом/due в таблице карточек; (2) Jira-style paste-медиа — Ctrl+V картинки/файлов/видео в описание и комментарии: embed на позиции курсора с сохранением структуры «текст → медиа → текст», картинки/видео/аудио рендерятся (авторизованные blob-URL через imagePreviewHandler), видео/аудио — нативные плееры (`::video{src=…}`-директивы), файлы — ссылки с открытием; в описании — реальное вложение, в комментарии — скрытое inline-вложение (без бейджа и ленты, удаляется вместе с комментарием); fullscreen-просмотрщик картинок; фикс mojibake имён (multer latin1) | вход только по API-токену (e2e-гейт 7 кейсов); период-фильтры обрезают все 6 лент; inline скрыт из списка и счётчика; удаление комментария чистит его inline-вложения (e2e); mojibake-имя сохраняется в UTF-8 (e2e); en+ru; тесты. **Выполнено:** backend — `AdminListQueryDto` (query/from/to), `/admin/entities/:entity`, `GET /admin/attachments/:id/download`, `Attachment.isInline` (миграция `20260920120000_attachment_inline`), payload в командных строках, priority/dueDate в карточных; UI — AdminApp (таблицы, период-табы, `JsonCell` с expand без трима, `CopyButton`/`EntityLink`, `key={entity}` сброс пагинации, `{total}`-подзаголовки, RowActions без действий → null); paste-контур — `embedAttachments` (embedMarkdown/preview-cache/lightbox/click-delegation), `directivesPlugin` с video/audio-дескрипторами (micromark v3, `::video{src="…"}`), paste-хендлеры описания и композера, mojibake-фикс `sanitizeFileName`; admin-чанк бюджет 30→32 KB. Гейты: backend 57 unit + 166 e2e, ui 692 (89 файлов), lint/tsc/prettier/build/size зелёные — **PR #88, merge `681fc96`** |
 | 27 | TASK-49 `card-assignee` ✅ | `feature/TASK-49-card-assignee` | Вне очереди, по запросу владельца: Jira-исполнитель на карточке. `Card.assigneeId` (optional-field конвенция: `null` = не назначен) + команда `SET_CARD_ASSIGN` (паттерн `SET_CARD_PRIORITY`) с серверной проверкой, что исполнитель — активный участник доски (принял приглашение, не истёкший VIEWER; inverse освобождён для undo). UI: пикер исполнителя в карточке — поповер с живым поиском по ростеру доски (аватары, email, клавиатура, закреплённый «Unassigned»), мгновенное применение; аватар исполнителя в правом нижнем углу карточки на борде (как в Jira) с профилем по клику; опциональная сортируемая колонка в TableView (не назначенные всегда в хвосте); фасеты фильтров по участникам + «Unassigned». Админка: колонка Assignee в таблице карточек (EntityLink + копирование), исполнитель в мета-панели карточки, вкладка «Assigned cards» и счётчик у юзера, поиск карточек по исполнителю. Попутно убран «кто изменил» с морды карточки и ячейки таблицы (решение владельца) — живой 2-секундный foreign-хайлайт сохранён | назначить можно только активного участника (e2e: outsider/pending 400, member 200, undo); исполнители переживают reload/export/import/undo; чужая смена видна по SSE; en+ru; тесты. **Выполнено:** миграция `20260920210948_card_assignee` (FK SetNull + индекс), writers в обоих свитчах (`writeCardAction`, `cardCreateData`/`cardUpdateData` — DUPLICATE_CARD копирует исполнителя через spread), aggregate/import (FK-гвард от мусорных id), command-details `assignee` from/to; UI — `CardAssignee` (Popover + combobox, поиск по `useBoardMembersList` — новый хук/`MembersStore.list`), `AssigneeBadge` на морде (boardId-prop-drilling для memo), колонка/сортировка/фасеты, история резолвит имя через директорию (fallback на raw id); ретро-аттрибуция: убраны `card-last-actor`/`table-last-actor` + ключ `card.changedBy`. Гейты: shared 367, backend 58 unit + 170 e2e (новый `card-assignee.e2e-spec` 4 кейса), ui 700 (90 файлов), lint/tsc/prettier/build/size зелёные (admin-чанк 31.15/32 KB) |
-| 28 | TASK-50 `video-transcode` ✓ | `feature/TASK-50-video-transcode` | «Ужиматор» видео как у топ-ресурсов: каждое видео-вложение в фоне перекодируется в компактный H.264/AAC MP4 (ffmpeg, CRF 25, ≤1920 по ширине, +faststart) — минимальная потеря качества, минус 50–80% размера на записях экрана; оригинал живёт до успеха кодека и остаётся при неудаче. Статусы none/pending/done/failed в `Attachment.transcodeStatus`; очередь — in-process FIFO (один кодек за раз), потери при рестарте нет — `onModuleInit` переставляет `pending`-строки в очередь. Блоб подменяется атомарно (tmp+rename), `content`-URL не меняется — плееры и встроенные в описания `::video` продолжают работать без перезагрузки страницы; о SSE-фрейме `attachment_updated` диалог перечитывает ряд. Бинарник — `ffmpeg-static` (без системных зависимостей), оверрайд `FFMPEG_PATH`. UI: плашка «Encoding…/Сжимаем…» у ряда пока идёт кодек. Админка: колонка «Encode» со статусом в таблице вложений. Попутно в TASK-50 вошёл фикс хранилища: дефолт `UPLOAD_DIR` больше не от cwd, а якорится к папке backend (PR #92: cwd-relative путь однажды «потерял» все блобы после рестарта из другой папки); resolved-путь логируется на старте. Тесты: e2e с реальным ffmpeg и коммитнутой фикстурой `sample-video.mp4` — успешный кодек, гарбаж-файл → failed с живым оригиналом, не-видео → none; юнит на профиль аргументов ffmpeg; тест плашки Encoding. Гейты: shared 367, backend 59 unit + 173 e2e (19 сюитов), ui 701 (90 файлов), lint/tsc/build/размеры зелёные
+| 28 | TASK-50 `video-transcode` ✅ | `feature/TASK-50-video-transcode` | «Ужиматор» видео как у топ-ресурсов: каждое видео-вложение в фоне перекодируется в компактный H.264/AAC MP4 (ffmpeg, CRF 25, ≤1920 по ширине, +faststart) — минимальная потеря качества, минус 50–80% размера на записях экрана; оригинал живёт до успеха кодека и остаётся при неудаче. Статусы none/pending/done/failed в `Attachment.transcodeStatus`; очередь — in-process FIFO (один кодек за раз), потери при рестарте нет — `onModuleInit` переставляет `pending`-строки в очередь. Блоб подменяется атомарно (tmp+rename), `content`-URL не меняется — плееры и встроенные в описания `::video` продолжают работать без перезагрузки страницы; о SSE-фрейме `attachment_updated` диалог перечитывает ряд. Бинарник — `ffmpeg-static` (без системных зависимостей), оверрайд `FFMPEG_PATH`. UI: плашка «Encoding…/Сжимаем…» у ряда пока идёт кодек. Админка: колонка «Encode» со статусом в таблице вложений. Попутно в TASK-50 вошёл фикс хранилища: дефолт `UPLOAD_DIR` больше не от cwd, а якорится к папке backend (PR #92: cwd-relative путь однажды «потерял» все блобы после рестарта из другой папки); resolved-путь логируется на старте. Тесты: e2e с реальным ffmpeg и коммитнутой фикстурой `sample-video.mp4` — успешный кодек, гарбаж-файл → failed с живым оригиналом, не-видео → none; юнит на профиль аргументов ffmpeg; тест плашки Encoding. Гейты: shared 367, backend 59 unit + 173 e2e (19 сюитов), ui 701 (90 файлов), lint/tsc/build/размеры зелёные
 | 29 | TASK-51 `email-change` ✅ | `feature/TASK-51-email-change` | Вне очереди, по запросу владельца: смена email «как у топовых приложений» (double opt-in с кодом) + смена email пользователю из админки. Самостоятельный флоу (аккаунт-панель → профиль → «Изменить»): текущий пароль + новый адрес → 6-значный код уходит на НОВЫЙ адрес (nodemailer, SMTP-переменные опциональны; без `SMTP_HOST` письма пишутся в лог сервера и outbox — самохостинг заводится без почты) → ввод кода (react-otp-input, 6 боксов) → адрес меняется, остальные сессии ревокаются (кука скоупится `/auth`, как у смены пароля), свежая токен-пара возвращается в ответе, на старый адрес — уведомление (best-effort). Код: sha256 в БД (`EmailChangeCode`, миграция `20260921195304_email_change_codes`), 15 минут, одноразовый, новый запрос убивает старый, 5 неверных вводов сжигают код; троттлинг request 3/час, confirm 5/мин; 409 при занятом адресе (пре-чек + P2002 на confirm); шаблоны писем en/ru по `Accept-Language`. Админка: `PATCH /admin/users/:id` принял `email` — мгновенно, без кода, ревок всех сессий юзера, аудит `user.email_changed` (from/to), письмо на старый адрес; UI — пункт «Change email» в Actions на странице юзера. Профиль: поле email разблокировано для флоу (кнопка «Изменить», диалог двухшаговый, resend с кулдауном 60с, en+ru) | код не принимается повторно и не утекает (только хэш); чужие сессии мертвы после смены, сессия инициатора жива (ротация); старый email перестаёт работать для логина; занятый адрес → 409; юнит + e2e (`email-change.e2e-spec`, бюджет троттлинга request×3/confirm×5). Гейты: shared 367, backend 71 unit + 183 e2e, ui 726 (94 файла), lint/tsc/build/size зелёные (index 198.67/300, admin 32.24/33 KB — бюджет админ-чанка 32→33 по прецеденту TASK-48: диалог смены email + en/ru строки). **PR #96, merge `9dff411`**. Догон: тот же диалог в меню «⋯» строк таблицы Users (генерик `EntityAction.renderDialog` в EntityPage — действие, открывающий кастомный диалог вместо confirm) — **PR #97**. Урок эксплуатации: после мержа backend-фич живой процесс надо перезапускать — владелец поймал 404 на новых роутах, пока `node dist/main.js` не перезапущен |
 | 30 | TASK-52 `email-service-page` ✅ | `feature/TASK-52-email-service-page` | Вне очереди, по запросу владельца: настройка email-рассылки из админки без правок кода и env, с горячим перезапуском сендера. Вкладка «Email service» (`/admin/email`, OWNER-only, операторам — read-only): карточки-пресеты Gmail / Яндекс / Mail.ru / Brevo / SendGrid + «Свой SMTP» — хост/порт/TLS подтягиваются из пресета (backend берёт их из `EMAIL_SMTP_PRESETS` в shared и игнорирует клиентские значения; для custom — свои поля), вводятся только from/логин/пароль (пароль приложения / API-ключ, ссылка «Как получить» на инструкцию провайдера). Сохранение (PUT `/admin/email-settings`) шифрует пароль AES-256-GCM (`secret-box.ts`, ключ `SETTINGS_SECRET`, fallback — деривация из JWT_SECRET), кладёт singleton-строку в `EmailSettings` (миграция `20260921214147_email_settings`) и вызывает `MailerService.reconfigure()` — транспорт меняется на лету: nodemailer держит соединение только на время отправки, рестарт процесса не нужен, летящие письма доскажут старым транспортом. Приоритет конфигов: сохранённая включённая строка → SMTP_* env (bootstrap) → log-mode; `onModuleInit` переприменяет сохранённую строку после рестарта. Пароль никогда не покидает backend (GET возвращает `hasPassword`); отключение рассылки креды сохраняет. Кнопка «Отправить тестовое письмо» (POST `/admin/email-settings/test`, `@HttpCode(200)`) — outcome ok/error возвращается и пишется в строку (lastTestAt/Ok/Error, сбрасывается при следующем сохранении); в log-mode пробное письмо падает в outbox. Аудит: `email.settings_changed`, `email.test_sent` (в `ADMIN_AUDIT_ACTIONS`). e2e-герметичность: при `NODE_ENV=test` env.ts глушит SMTP_* — дев-`.env` с реальным SMTP не превращает прогоны в живой рассыльщик (спеки с транспортом конфигурируют его явно). UI: `EmailSettingsPage` (статус-баннер active/env/log, LastProbe, пресеты, форма, тест-секция, en+ru в admin-i18n), fake-admin-server с пресет-логикой. Гейты: backend 90 unit + 192 e2e (новые `secret-box.spec`, `email-settings.service.spec`, `admin-email-settings.e2e-spec`: маскировка, OWNER 403, валидации, encrypted-at-rest, dead-transport ECONNREFUSED, аудит), shared 367, ui 731 (95 файлов), lint/build зелёные; size-limit: админ-чанк 35.49/38 KB (бюджет 33→38, стр. ~3.2 KB gzip). **PR #98, merge `72ac404`**. Догон (по репортам владельца, **PR #99**, merge `b06ba0d`): секция «Test providers» с песочницей писем (в TASK-55 внешний сервис заменён локальным Mailpit); проба в log-режиме честно пишет «письмо в журнале сервера»; счётчики Comments/History в карточке появляются сразу (обе вьюхи смонтированы, неактивная скрыта, SSE держит свежей); битая вложенная картинка вместо красного пунктира MDXEditor — спокойный сланцевый плейсхолдер (`attachmentImagePreviewHandler`) |
 | 31 | — `card-visual-rework` ✅ | `feature/card-visual-rework` | Вне очереди, по запросу владельца: переработка визуала карточки. Доска: карточка — тайл фиксированного размера (одинаковая ширина/высота у всех, `h-[136px]`), ряды строго по одному: лейблы в одну строку (лишнее обрезается с fade-маской), тайтл в одну строку (`truncate`, нативный тултип только при обрезке), отдельный ряд только с due date, ряд мета-бейджей (иконка дескрипшена → связанные карточки → чеклисты), футер — только приоритет и аватар исполнителя; бейдж вложений с лицевой стороны убран (остался в деталях), приоритет Medium теперь рендерится на карточке (больше не прячется как дефолт). Табличный вид: колонка Assignee включена по умолчанию (сохранённые пользовательские наборы колонок приоритетнее). Card details: «Copy card link» переехала в шапку рядом с заголовком и раскрывается при ховере шапки (не прижата к правому краю), порядок тела — тайтл → строка создан/обновлён → дескрипшен → лейблы → приоритет → due date → далее как было; иконка copy-link наклонена на 45° как в Jira (контекстное меню + шапка деталей). Гейты: ui 740 (96 файлов), lint/build зелёные, size-limit админ-чанк 36.55/38 KB |
@@ -1632,10 +1637,10 @@ TASK-36 и TASK-37.)*
 | 87 | TASK-156 `review-fixes` ✅ | `main` | §7.15: правки по итогам семи независимых ревью TASK-148/149/150/151/152/153/155 (блокеры, средние, low, тесты) | **Выполнено:** subtree-restore доски с memberships и без воскрешения ранее удалённых чек-листов; snapshot несёт links/lastActorId/attachmentCount; единый `APP_BASE`; `controllerchange` во всех вкладках + отказ кэшировать HTML как JS; сборка финального блоба при ошибке после `rename`; ресинк/конфликт draft заголовка; page-purge доски; минуты не закрывают пикер; чанкированные sweeps и индексы кодов; сортировка bulk restore и audit по элементам; oversight-limit для внутренних restore; чанки импорта; P2028→503; a11y/dnd/lightbox/DueBadge; detached snapshot-шары; кэш ops-settings и границы курсоров. Гейты: unit 306, e2e 301, ui 908, shared 431; lint 0 errors, format/build/size/site зелёные. См. §7.15 |
 | 88 | TASK-157 `agent-ready-board` ✅ | `main` | §7.17: описание 64к + конвенции слоя 0, атомарный захват с лизингом, контракт задачи, `actorType` + скоупы токенов, CAS на всех мутациях, виды комментариев, поиск по комментам/чек-листам, DoD-гейт, ready-to-work, проекция чтения, доки/сайт/скилл | **Выполнено:** A+B описание 64к + конвенции (`#120`), C1 claim+lease (`#121`), C2 taskSpec (`#123`), C3a `actorType` (`#124`), C3b скоупы+rate-limit (`#125`), E13 лимит пункта 500 (`#126`), E16 проекция чтения (`#131`), D10+D11 виды комментариев + поиск по комментам/чек-листам (`#132`), D9+E14 CAS `expectedVersion` + идемпотентные id (`#133`), D12 DoD-гейт на Done (`#134`), E15+E17 ready-to-work + wait-for-work (`#135`); F (доки en+ru, сайт, скилл, README, AGENT.md) и бамп `@janosik/mcp` 0.4.0 — в этом же этапе. Гейты: shared 448, ui 1004, backend 314 e2e, mcp 90. См. §7.17 |
 | 89 | TASK-158 `admin-master-allowlist` | `feature/TASK-158-admin-master-allowlist` | §7.18: IP-allowlist **для других мастеров** из панели (сейчас только self-service, OWNER правит лишь свою строку) | OWNER задаёт allowlist оператору; адрес вне списка → отказ; аудит; en+ru; тесты. См. §7.18 |
-| 90 | TASK-159 `admin-ui-tests` | `feature/TASK-159-admin-ui-tests` | §7.18: тесты админ-страниц Ops/Comms/Observability/Security (добавлены без ui-набора) | страницы покрыты тестами на fake-admin-server; гейты `ui` зелёные. См. §7.18 |
+| 90 | TASK-159 `admin-ui-tests` | `feature/TASK-159-admin-ui-tests` | §7.18: тесты админ-страниц Ops/Comms/Observability/Security (для Observability уже есть частичные тесты) | страницы покрыты тестами на fake-admin-server; гейты `ui` зелёные. См. §7.18 |
 | 91 | TASK-160 `board-command-batching` ✅ | `feature/TASK-160-board-command-batching` | §7.19: батч команд одной доски — одна транзакция на N команд (амортизация `loadBoardAggregate`/проверок/лока), чтобы держать рой агентов на одной доске | `POST /boards/:id/commands/batch` принимает массив; N `Command`-строк в одной транзакции; throughput одной доски выше; MCP склеивает поля карточки. Замер — `docs/PERF-ONE-BOARD.md`. **Выполнено:** батч-эндпоинт (≤`COMMAND_BATCH_MAX`=100) — один lock/`loadBoardAggregate`/id-чек на пачку против бегущего агрегата, атомарно, с сохранением `seq`/идемпотентности/undo/SSE; `apply` = обёртка над `applyBatch` из одной команды; MCP `commandBatch` + `create_card` одним батчем (бамп `@janosik/mcp` 0.5.0). Замер: **43 → 102 команд/с** (×2.3–2.5), латентность/команда ×2.3 ниже. Гейты: backend unit 333, e2e (новый `commands-batch` 5 + старые 49), mcp 95, lint/format ✓. См. §7.19 |
 
-> **TASK-38a/38b выполнены (2026-10-26).** Self-host hardening + release
+> **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
 > — прод на HTTP не стартует, пока не задан `COOKIE_SECURE=false`; иначе громкий
 > warn), `ALLOW_REGISTRATION` (дефолт флага `registration_open`), публичный
@@ -1671,8 +1676,9 @@ TASK-36 и TASK-37.)*
 > backoff); `redis` добавлен в `backend/docker-compose.yml`, подключение через
 > env `REDIS_URL`; без `REDIS_URL` — фолбэк на in-process очередь. Гейты:
 > shared 367, backend 138 unit + 228 e2e, ui 769, lint/build/size зелёные.
-> **Не покрыто тестами UI:** новые страницы (Ops/Comms/Observability/Security) —
-> добавлены без отдельного ui-набора; логика покрыта backend e2e/unit.
+> **UI-тесты:** для Observability позже добавлены частичные тесты; Ops/Comms/
+> Security не имеют отдельных наборов. Полное покрытие остаётся в TASK-159;
+> серверная логика покрыта backend e2e/unit.
 >
 > **TASK-65 addendum — IP-allowlist только для OWNER.** Менять allowlist может
 > **только OWNER**; оператор — read-only (себе тоже не может — нельзя сузить
@@ -1810,7 +1816,7 @@ TASK-29 приложение живёт с сервера, после TASK-35 н
 > Outline — люди ждут именно этого, и половина уходит, если надо собирать из
 > исходников.
 
-#### TASK-38a — `self-host-hardening` · Шесть грабель самохостинга
+#### TASK-38a — `self-host-hardening` · Шесть грабель самохостинга ✅
 
 - **Зачем:** каждая из шести ломается **молча**, и документацией не лечится —
   README читает меньшинство. Это код, а не абзац.
@@ -1847,7 +1853,7 @@ TASK-29 приложение живёт с сервера, после TASK-35 н
   отрабатывает по расписанию.
 - **Зависимости:** TASK-30 (SSE), TASK-25 (миграции).
 
-#### TASK-38b — `self-host-release` · Артефакты поставки и лицензия
+#### TASK-38b — `self-host-release` · Артефакты поставки и лицензия ✅
 
 - **Зачем:** сейчас `LICENSE` в репозитории **нет**, а README прямо говорит
   «Private project — not yet released under an open-source license» — то есть
@@ -1884,7 +1890,12 @@ TASK-29 приложение живёт с сервера, после TASK-35 н
   `CHANGELOG.md`; README больше не называет проект приватным.
 - **Зависимости:** TASK-38a.
 
-#### TASK-39 — `public-demo` · Публичный демо-инстанс
+#### TASK-39 — `public-demo` · Публичный демо-инстанс ❌ отменено
+
+**Статус:** отменено по решению владельца. Для демонстрации уже есть запуск
+демо-роя из админки (TASK-57/69) и публичная read-only live-ссылка (TASK-58).
+Это закрывает текущую потребность; отдельный постоянно доступный демо-инстанс
+не планируется. Описанные ниже первоначальные требования не считаются выполненными.
 
 - **Зачем:** для опенсорса это главный канал — живой инстанс убеждает лучше,
   чем любой список фич.
@@ -2221,8 +2232,8 @@ model BoardShare {
 - **Зависит от:** TASK-30/36 (SSE/realtime-мост), TASK-25 (миграции),
   TASK-43 (админ-контур для управления шерами), TASK-57 (демо — интеграция
   `live`-шеры и снятие watcher).
-- **Пересекается:** TASK-39 `public-demo` (публичный инстанс — шара это его
-  частный случай «показать доску наружу»), TASK-38b (self-host: флаг и проверка
+- **Пересекается:** отменённая TASK-39 `public-demo` (публичный инстанс),
+  TASK-38b (self-host: флаг и проверка
   «поднимается с нуля»).
 - **Не трогает:** текущие `MembershipGuard`/`CardAccessGuard` и командный контур —
   публичная шара идёт **отдельным read-only контуром**.
@@ -2490,7 +2501,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 ---
 
-#### TASK-122 — `brand-system` · Бренд-система и токены
+#### TASK-122 — `brand-system` · Бренд-система и токены ✅
 
 - **Скилы:** `leonxlnx/taste-skill@brandkit` (опц.), `emilkowalski/skills@emil-design-eng`
 - **Зачем:** сейчас цвета/шрифты живут только в `ui/src/index.css`; сайт и видео
@@ -2508,7 +2519,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   расхождения по палитре/шрифтам; лого во всех форматах; бренд-гайд в `docs/`.
 - **Зависимости:** нет (первая задача волны).
 
-#### TASK-123 — `marketing-site-scaffold` · Каркас маркетинг-сайта
+#### TASK-123 — `marketing-site-scaffold` · Каркас маркетинг-сайта ✅
 
 - **Скилы:** `vercel-labs/agent-skills@vercel-composition-patterns`
 - **Зачем:** нужен воркспейс под лендинг и доки.
@@ -2525,7 +2536,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   TASK-32.
 - **Зависимости:** 122.
 
-#### TASK-124 — `landing-hero-features` · Лендинг: герой и фичи
+#### TASK-124 — `landing-hero-features` · Лендинг: герой и фичи ✅
 
 - **Скилы:** `anthropics/skills@frontend-design`, `vercel-labs/agent-skills@web-design-guidelines`
 - **Зачем:** витрина «как у Miro» — показать продукт.
@@ -2540,7 +2551,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   deep-links не сломаны; мобилка без горизонтального скролла; en+ru.
 - **Зависимости:** 123.
 
-#### TASK-125 — `landing-pricing` · Тарифы и подписка
+#### TASK-125 — `landing-pricing` · Тарифы и подписка ✅
 
 - **Скилы:** `coreyhaines31/marketingskills@pricing-strategy`
 - **Зачем:** монетизация hosted-варианта.
@@ -2553,7 +2564,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   лендинге; согласовано с лицензией/self-hosted (что бесплатно, что платно).
 - **Зависимости:** 123, 124; согласование с TASK-131.
 
-#### TASK-126 — `site-copy-cro-seo` · Текст, конверсия и SEO
+#### TASK-126 — `site-copy-cro-seo` · Текст, конверсия и SEO ✅
 
 - **Скилы:** `coreyhaines31/marketingskills@{copywriting,page-cro,seo-audit,ai-seo,schema-markup,analytics-tracking}`
 - **Зачем:** сайт должен находиться в поиске и конвертировать.
@@ -2567,7 +2578,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   валиден; события трекинга покрывают ключевые CTA; Lighthouse SEO ≥95.
 - **Зависимости:** 124, 125.
 
-#### TASK-127 — `site-a11y-perf-audit` · Аудит доступности и перфа
+#### TASK-127 — `site-a11y-perf-audit` · Аудит доступности и перфа ✅
 
 - **Скилы:** `vercel-labs/agent-skills@web-design-guidelines`, `pbakaus/impeccable`
 - **Зачем:** «не тупой сайт» = доступный, быстрый, без визуального мусора.
@@ -2580,7 +2591,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   ≥95 на лендинге и тарифах; мобильная версия вылизана; отчёт-чеклист в PR.
 - **Зависимости:** 124, 125.
 
-#### TASK-128 — `video-scaffold` · Каркас видео-пайплайна
+#### TASK-128 — `video-scaffold` · Каркас видео-пайплайна ✅
 
 - **Скилы:** `remotion-dev/skills@remotion-best-practices`
 - **Зачем:** клипы фич должны собираться повторяемо и лежать как ассеты.
@@ -2593,7 +2604,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   композиция-образец на бренд-токенах; сборка не тянет Remotion в бандл `site`.
 - **Зависимости:** 122.
 
-#### TASK-129 — `video-feature-clips` · Клипы ключевых фич
+#### TASK-129 — `video-feature-clips` · Клипы ключевых фич ✅
 
 - **Скилы:** `remotion-dev/skills@remotion-best-practices` (+ опц. `heygen-com/hyperframes@product-launch-video`)
 - **Зачем:** «фичи как у Miro» — показать движением.
@@ -2607,7 +2618,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   корректно смотрятся в лупе; `prefers-reduced-motion` даёт статичный постер.
 - **Зависимости:** 128; стабильный UI приложения.
 
-#### TASK-130 — `site-media-integration` · Встраивание медиа в сайт
+#### TASK-130 — `site-media-integration` · Встраивание медиа в сайт ✅
 
 - **Скилы:** `coreyhaines31/marketingskills@image` (опц.)
 - **Зачем:** соединить лендинг (слоты) и видео (ассеты).
@@ -2663,7 +2674,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   недвусмысленно; ссылка из README.
 - **Зависимости:** нет.
 
-#### TASK-132 — `docs-site` · Доковый сайт (Starlight)
+#### TASK-132 — `docs-site` · Доковый сайт (Starlight) ✅
 
 - **Скилы:** `anthropics/skills@doc-coauthoring`
 - **Зачем:** сейчас доки — разрозненные markdown-файлы.
@@ -2686,7 +2697,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   шапке (кнопка «?»): «Горячие клавиши» + «Документация» (`/docs/`, для ru
   `/ru/docs/`; в сплит-деплое — `VITE_SITE_URL`).
 
-#### TASK-133 — `docs-user-guide` · Пользовательская документация
+#### TASK-133 — `docs-user-guide` · Пользовательская документация ✅
 
 - **Скилы:** `riekelt/technical-writer@technical-writing`, `anthropics/skills@doc-coauthoring`
 - **Зачем:** help center по фичам (не только self-hosting).
@@ -2699,7 +2710,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   поиск по разделам; en+ru.
 - **Зависимости:** 132, 129 (гифки).
 
-#### TASK-134 — `docs-api-reference` · API-reference и runbooks
+#### TASK-134 — `docs-api-reference` · API-reference и runbooks ✅
 
 - **Скилы:** `addyosmani/agent-skills@documentation-and-adrs`, `riekelt/technical-writer@{writing-design-docs,writing-runbooks}`
 - **Зачем:** self-hosters/интеграторы.
@@ -2711,7 +2722,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   проверены на чистой машине; ADR-структура заведена.
 - **Зависимости:** 132.
 
-#### TASK-136 — `mcp-server` · MCP-сервер для роя агентов
+#### TASK-136 — `mcp-server` · MCP-сервер для роя агентов ✅
 
 - **Скилы:** `directory-submissions` (публикация в каталогах/registry)
 - **Зачем:** сделать «направьте агентов на доску» реальным: любой MCP-клиент
@@ -2791,7 +2802,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   каталога вместо ~13.9k). Тестов **65** (было 39). Осталось внешнее:
   `npm publish` и MCP registry.
 
-#### TASK-137 — `agent-skill` · Скилл-плейбук роя
+#### TASK-137 — `agent-skill` · Скилл-плейбук роя ✅
 
 - **Скилы:** `skill-creator`
 - **Зачем:** MCP — «руки», скилл — «поведение»: конвенции роя, а не транспорт.
@@ -2846,7 +2857,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 > закрываем то, что бьёт пользователя и режим отказа. Порядок — в таблице §7.7
 > (строки 72–74).
 
-#### TASK-139 — `board-virtualization` · Большие доски без фризов
+#### TASK-139 — `board-virtualization` · Большие доски без фризов ✅
 
 - **Зачем:** доска максимального размера (`LIMITS` 12×200 = 2400 карточек)
   достижима уже сейчас, но рендерится 4.8 с и морозит main-thread на 3.9 с
@@ -2871,7 +2882,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   unscheduled — 27 кнопок вместо 2400. См. `docs/PERF-BASELINE.md`.
 - **Зависимости:** нет.
 
-#### TASK-142 — `simplify-design` · Чекбокс «Упростить дизайн» (+ лёгкий «watch»-вид)
+#### TASK-142 — `simplify-design` · Чекбокс «Упростить дизайн» (+ лёгкий «watch»-вид) ✅
 
 - **Зачем:** рой агентов постоянно меняет карточки → частые перерисовки; полная карточка
   (~28 DOM-узлов: бейджи, контролы, обёртки) тяжела для рендера и шумна для глаза,
@@ -2959,7 +2970,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   зелёные; lint/format/build/size зелёные.
 - **Зависимости:** TASK-30 (SSE), TASK-36 (presence).
 
-#### TASK-140 — `realtime-resilience` · Перегруз не должен ронять сервер
+#### TASK-140 — `realtime-resilience` · Перегруз не должен ронять сервер ✅
 
 - **Зачем:** при ~3000 одновременных SSE процесс падает `V8 heap out of memory`,
   systemd перезапускает — и **все** соединения рвутся разом. Режим отказа должен быть
@@ -2986,7 +2997,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   warn при отказе, раздел «Scaling (streams and multiple nodes)» в
   `docs/SELF-HOSTING.md` и в сайтовых runbooks (en/ru).
 
-#### TASK-141 — `scale-caches-config` · Кэши и конфиг БД
+#### TASK-141 — `scale-caches-config` · Кэши и конфиг БД ✅
 
 - **Зачем:** live-share пересобирает агрегат на каждый просмотр (~95 rps против ~250
   у snapshot); admin-чтение дорогое (~6 ядер на 650 rps); Postgres стартует с
@@ -3032,7 +3043,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 > задачи: одна тема = одна ветка = один PR. Порядок — по цене ошибки, не по
 > объёму.
 
-#### TASK-144 — `ui-edit-coalescing` · Без молчаливых потерь правок
+#### TASK-144 — `ui-edit-coalescing` · Без молчаливых потерь правок ✅
 
 - **Зачем:** C2 — коалесинг quiet-правок ключуется `${boardId}:${cardId}` и
   **заменяет весь patch**: «описание (blur) + заголовок (по символу)» в пределах
@@ -3057,7 +3068,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   обрабатывается один раз (одно сообщение/откат) — waiter'ы резолвятся одним
   outcome, дедуп в `BoardContext`; тест на порядок резолва.
 
-#### TASK-145 — `presence-consistency` · Presence не врёт и самовосстанавливается
+#### TASK-145 — `presence-consistency` · Presence не врёт и самовосстанавливается ✅
 
 - **Зачем:** A1 — per-node presence фан-аутится через Redis глобально: на 2+ нодах
   `sync` неполный, ложные `leave`, `update` по невидимым сессиям. A2 — после
@@ -3095,7 +3106,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   реконнектит новую; `epochs` освобождается вместе с пустой доской; SSE-парсер
   ограничен по размеру буфера.
 
-#### TASK-146 — `resource-limits` · Кэпы на SSE, команды, загрузки, шары
+#### TASK-146 — `resource-limits` · Кэпы на SSE, команды, загрузки, шары ✅
 
 - **Зачем:** A4 — нет лимита SSE-соединений/сессий (один VIEWER = неограниченно
   потоков). B1 — `ifMatchVersions` без лимита: десятки тысяч ключей внутри
@@ -3125,7 +3136,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   multer; share-throttle — честный LRU. Тесты: events e2e (нет утечки слота),
   `realtime.service.spec`, `upload-limiter.spec`, `share-throttler.guard.spec`.
 
-#### TASK-147 — `security-hardening` · Auth, доступ, секреты
+#### TASK-147 — `security-hardening` · Auth, доступ, секреты ✅
 
 - **Зачем:** B2 — `/health` публичный/без троттлинга/ходит в БД+Redis (усилитель
   пула). B3 — impersonation выдаёт полноценный user-JWT (смена пароля/PAT →
@@ -3163,7 +3174,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   не логируется в production; квикстарты `README`/`INSTALL-BY-OS`/self-hosting
   (en/ru) и таблицы дефолтов приведены к `COOKIE_SECURE=true`.
 
-#### TASK-148 — `retention-and-indexes` · Очистка, индексы, очереди не копятся
+#### TASK-148 — `retention-and-indexes` · Очистка, индексы, очереди не копятся ✅
 
 - **Зачем:** B8 — нет индексов `deletedAt` (Card/Comment/Checklist/…),
   `expiresAt/revokedAt` (токены/шары/инвайты), `dueDate` (ReminderSent) → purge
@@ -3192,7 +3203,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   BullMQ не исчерпал `attempts`, и только тогда пишут `failed`.
   Тесты: unit 260, e2e 285 (в т.ч. e2e на erase экспорта).
 
-#### TASK-149 — `admin-consistency` · Админка через те же инварианты
+#### TASK-149 — `admin-consistency` · Админка через те же инварианты ✅
 
 - **Зачем:** B10 — admin archive/delete/restore мутируют строку напрямую (без
   command/version/SSE/каскада): удаление колонки оставляет карточки вне колонок.
@@ -3220,7 +3231,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   колонки и восстановление поддерева, бейдж вложений, атомный многодосочный
   импорт (unit 263, e2e 288).
 
-#### TASK-150 — `ui-render-perf` · Больше не дёргать всю доску
+#### TASK-150 — `ui-render-perf` · Больше не дёргать всю доску ✅
 
 - **Зачем:** C4 — `MembersStore` глобальный: загрузка участников/любое membership
   перерисовывает все карточки (второй полный рендер). C6 — `MeasuringStrategy.Always`
@@ -3255,7 +3266,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 - **Остаётся:** числовой Playwright-замер 2400 карточек — в объёме **TASK-139**
   (виртуализация); здесь доказательство через счётчики рендеров.
 
-#### TASK-151 — `pwa-stream-recovery` · Деплой и обрывы не ломают открытую доску
+#### TASK-151 — `pwa-stream-recovery` · Деплой и обрывы не ломают открытую доску ✅
 
 - **Зачем:** C5 — SW делает `skipWaiting`/`claim` и удаляет прошлый кэш → открытая
   вкладка ловит старый lazy-chunk, nginx отдаёт `index.html` (200) → SyntaxError,
@@ -3286,7 +3297,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   копии как новые доски). Тесты: SW (ожидание update, fallback прошлого кэша,
   аккуратный activate), watchdog, parity i18n. ui 878 зелёные.
 
-#### TASK-152 — `ui-a11y-polish` · Клавиатура, фокус, локали
+#### TASK-152 — `ui-a11y-polish` · Клавиатура, фокус, локали ✅
 
 - **Зачем:** C16 — зоны вставки невидимы, но в tab-порядке (~2400 stop). C17 —
   каждая карточка `role="button"` с вложенными кнопками, j/k-курсор недоступен AT,
@@ -3317,7 +3328,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   тик срока, focus-trap/revoke/alt. ui 882 зелёные (один известный флейк
   CardComments под нагрузкой).
 
-#### TASK-153 — `config-and-observability` · Конфиг БД, guard-кэш, логи
+#### TASK-153 — `config-and-observability` · Конфиг БД, guard-кэш, логи ✅
 
 - **Зачем:** B14 — `shared_buffers=16MB`, пул Prisma ~33/нода без `connection_limit`;
   B15 — `MaintenanceGuard` ходит в БД на каждый запрос до auth; low-находки:
@@ -3345,7 +3356,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   по умолчанию 200 мс) с id запроса. `CONCURRENTLY` для операционных индексов
   закрыт ещё в TASK-148 (`db:indexes`). Тесты: unit 271, e2e 290, ui 882.
 
-#### TASK-155 — `upload-hardening` · Загрузки через временный файл, а не RAM
+#### TASK-155 — `upload-hardening` · Загрузки через временный файл, а не RAM ✅
 
 - **Зачем:** B20 (остаток TASK-146). `multer` держит до `LIMITS.attachmentSize`
   (25 MB) **на запрос в памяти** (`memoryStorage` → `file.buffer`), затем
@@ -3395,7 +3406,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 > три волны по цене ошибки. Пункты, помеченные **[проверено]**, подтверждены
 > чтением кода или целевым прогоном.
 
-#### TASK-156 — `review-fixes` · Правки по итогам ревью
+#### TASK-156 — `review-fixes` · Правки по итогам ревью ✅
 
 - **Зачем:** ревью подтвердило, что заявленные в TASK-149/150/151/155 свойства
   местами не достигнуты (restore доски, «ввод не рендерит редактор», деплой
@@ -3691,7 +3702,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 > `POST /commands`); меняется **стоимость действия агента** (латентность и число
 > запросов к API). Поэтому мерить надо отдельно, как метрику задачи агента.
 
-#### TASK-154 — `mcp-perf-bench` · Замер и оптимизация пути через MCP
+#### TASK-154 — `mcp-perf-bench` · Замер и оптимизация пути через MCP ✅
 
 - **Зачем:** неизвестно, где узкое место у агентского пути: в MCP-процессе
   (валидация/рендер/`stdio`), в лишних round-trip'ах (`GET`+`POST` на действие),
@@ -3738,7 +3749,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 > — в 15× меньше лимита одной команды (`MAX_COMMAND_BYTES` = 2 МБ). Узкое место
 > роя — координация и объём чтения, а не запись.
 
-#### TASK-157 — `agent-ready-board` · Описание 64к + конвенции + контракт + координация
+#### TASK-157 — `agent-ready-board` · Описание 64к + конвенции + контракт + координация ✅
 
 - **Зачем:** снять лимит описания, дать агентам машинно-читаемый контракт задачи и
   убрать гонки за карточку — чтобы рой агентов работал на борде параллельно и
@@ -3859,8 +3870,9 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 #### TASK-159 — `admin-ui-tests` · Тесты админ-страниц Ops/Comms/Observability/Security
 
-- **Зачем:** §7.7 (примечание к TASK-59…65). Страницы Ops/Comms/Observability/
-  Security добавлены **без отдельного ui-набора** — логика покрыта backend
+- **Зачем:** §7.7 (примечание к TASK-59…65). Страницы Ops/Comms/Security добавлены **без отдельного ui-набора**;
+  для Observability есть частичные тесты `ObservabilityPage.test.tsx`, но полного
+  покрытия критериев задачи нет — логика покрыта backend
   e2e/unit, но регресс в самих страницах (fake-admin-server, формы, i18n) не
   ловится.
 - **Что:** тесты на страницы Ops (флаги/maintenance/retention/purge), Comms

@@ -205,6 +205,13 @@ docker run -d --name janosik-mailpit --restart unless-stopped -p 1025:1025 -p 80
 
 ### Self-hosting with Docker (production)
 
+Janosik runs in a browser and needs a running server. The Docker installation
+works on Linux, macOS (Intel and Apple Silicon), and Windows with Docker Desktop
+and WSL2. It downloads Linux `amd64` or `arm64` images; there is no standalone
+Windows `.exe` or macOS `.dmg` installer. GitHub release source archives are
+source code, not installers. Version v0.1.1 was tested on WSL and in Linux CI on
+both architectures; it has not been separately tested on a physical Mac.
+
 For a local trial on Linux, macOS or WSL with Docker, Compose, curl and OpenSSL
 installed, download and run the installer:
 

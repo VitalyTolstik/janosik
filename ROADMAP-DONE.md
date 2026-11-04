@@ -1,7 +1,7 @@
 # Janosik — архив закрытых задач (ROADMAP-DONE)
 
-> Полные описания реализованных задач TASK-1…21 (Фазы A/B/C+), аудит-фиксов
-> TASK-33/34 и бэкенд-задач TASK-22…29. Вынесены из `ROADMAP.md`, чтобы
+> Архив содержит описания и результаты закрытых задач, в том числе записи,
+> восстановленные по истории коммитов. Вынесены из `ROADMAP.md`, чтобы
 > обязательное чтение агента (§0 ROADMAP) оставалось компактным. Статус и
 > порядок — в таблице §6.0 `ROADMAP.md`; решения и «что сделано» — здесь.
 > Номера задач не переиспользуются.
@@ -1793,3 +1793,633 @@ shared 367; backend **58 unit + 170 e2e** (+4 assignee-гейт, контрак�
 ### Гейты и раскладка
 
 shared 367; backend **59 unit + 173 e2e (19 сюитов)** — новый `attachments-transcode.e2e-spec` гоняет **реальный ffmpeg** (ffmpeg-static) с коммитнутой фикстурой `sample-video.mp4` (1 сек color bars): успешный кодек → `done` + mp4 на диске, мусорный файл → `failed` с играющим оригиналом, png → `none`; юнит на профиль аргументов; ui 701 — тест плашки Encoding; lint/tsc/prettier/build зелёные.
+
+
+## Аудит завершённых задач (2026-11-04)
+
+Записи восстановлены по истории `main` и исходным строкам §7.7 `ROADMAP.md`. Хеши указывают на внедрение или слияние; подробные результаты и исторические замеры остаются в плане. Более поздние изменения могли заменить отдельные детали реализации.
+
+### TASK-21.9 `motion-lazy` ✅
+
+motion-чанк вне критического пути: иконки шапки грузятся после idle (вариант Б), критический путь ~786→~653 KB raw / 239.2→197.9 KB gzip, отдельный size-бюджет на ленивый чанк — см. §6.0.1
+
+История: `f82cd24`, `ec6ade4`.
+
+### TASK-21.8 `browser-router` ✅
+
+BrowserRouter (`/board/:id`, `?card=`), контракт SPA-fallback — `deploy/nginx.conf`; `navigator.platform` → UA-CH с фоллбаком
+
+История: `8b8729f`.
+
+### TASK-36.1 `account-panel` ✅
+
+миграция `20260918080434_user_avatar_color`; `UsersModule` (`PATCH /users/me`, `GET/POST/DELETE /users/me/tokens`), `AuthService.changePassword` + `ApiTokenService`; PAT-фолбэк в guard'ах; UI `components/account/*` (+4 тест-файла), i18n `account.*`; гейты: ui 593 (76 файлов), shared 336, backend 48 unit + 144 e2e, lint/tsc/prettier/build/size зелёные; живая проба `account-probe.mjs` 18/18, `rename-probe.mjs` 9/9 — **PR #78, merge `00de4d5`**; **догон:** фиксированная высота панели под вьюпорт (все вкладки одной высоты, длинный контент скроллится внутри; проба `account-height.mjs` 9/9) — **PR #80, merge `79e9d62`**
+
+История: `740ac68`.
+
+### TASK-36.2 `board-switcher-roles` ✅
+
+Свитчер группирует собственные и совместные доски, для общих показывает роль и сохраняет клавиатурную навигацию.
+
+История: `f553645`.
+
+### TASK-37 `comments-ui` ✅
+
+UI `CardActivity`/`CardComments`/`CardHistory` + ленивый `CommentEditor` (компактный MDXEditor, тела комментариев — markdown-вьюер, голые URL линкует `autolinkMarkdown`; оптимистичная отправка, удаление своих с подтверждением, курсорный «Show older»); SSE `type:"activity"` публикуется из `CommentsService` и раздаётся через `ActivityStore`; `Command.details` (миграция `20260918174753_command_details`) хранит снапшот `{detail,changes}` команд, текст комментов — в `Activity.details` (`readCommentSnapshot` в `activity.service`) — диффы в `GET /cards/:id/activity`, посимвольные правки сворачиваются (окно 2 с); копирование `?card=`-ссылки + фикс холодной загрузки deep-link; ui 617 (80 файлов), backend 145 unit+e2e, lint/tsc/prettier/build/size; живые пробы `comments-probe.mjs` 12/12 и `activity-redesign-probe.mjs` 30/30 — **PR #82, merge `a6b8b2c`; полировка — PR #83, merge `68716dc`**
+
+История: `8d95e32`.
+
+### TASK-38a `self-host-hardening` ✅
+
+шесть грабель самохостинга, каждая ломается **молча** (Secure-кука по HTTP, буферизация SSE за nginx, миграции в entrypoint, JWT без дефолтов, `ALLOW_REGISTRATION`, healthcheck БД) + джоб чистки soft-delete на `@nestjs/schedule`
+
+История: `8c13a68`.
+
+### TASK-38b `self-host-release` ✅
+
+Установщик с уникальными секретами, Compose и EN/RU-инструкции; релиз `v0.1.1` и публичный multi-arch GHCR-образ, проверена установка без авторизации.
+
+История: `7ab15ac`, `2032639`.
+
+### TASK-44 `card-layout` ✅
+
+Диалог карточки получил фиксированную высоту, скроллируемое тело и сворачиваемые секции. ui 602 (77 файлов), lint/tsc/prettier зелёные; живая проба `card-layout-probe.mjs` 17/17 (высота 868/608, неизменна при сворачивании, список 218>192) — **PR #81, merge `5fe2677`**
+
+История: `173d66b`.
+
+### TASK-44.1 `header-gradient` ✅
+
+По запросу владельца: шапка сайта получает фон-градиент панели аккаунта (`from-primary/15 via-secondary/10 to-transparent`) поверх `bg-background/80` с блюром
+
+История: `2ff95b0`.
+
+### TASK-45 `card-priority` ✅
+
+полный контур команды (shared-редьюсер/invert/validate/migrate, Prisma v7, writers в ОБОИХ свитчах, aggregate/import/export), UI (селект в диалоге, бейдж на морде для не-medium, опциональная колонка + сортировка в TableView, фасет-мультивыбор в фильтрах), история с локализованным уровнем; проба `priority-probe.mjs` 16/16 (SSE-видимость чужой смены, undo/redo, сортировка, фильтры) — **PR #84, merge `d2066e2`**. Попутно: лимит коммента 2000→10000 (Prisma v8 `Comment.text` → Text), premium-Save слева + Cancel сразу (оба дисейбл на пустом черновике), эмодзи в markdown-вьюерах (`emojify`: шорткоды+эмотиконы, код не трогаем)
+
+История: `fee9708`.
+
+### TASK-46 `card-links` ✅
+
+`CardLink` хранится на источнике (directional), вторая сторона вычисляется сканом; гварды: self-link, дубль пары, `LIMITS.linksPerCard = 50`, DFS-циклы `blocks`; dangling-tolerant (удаление цели оставляет строку, undo оживляет), дубликаты без связей; Prisma `CardLink` (soft-delete, FK RESTRICT) + миграция `20260919131635_card_links`, writers upsert/soft-delete, aggregate/import, command-details со снапшотом титула цели; UI `CardLinks` (саджесты, 5 Jira-фразировок → 3 wire-типа, клавиатура, тост цикла, навигация `?card=`), бейджи на морде, фасеты фильтров, история; en+ru. Гейты: shared 349, backend 57 unit + 145 e2e, ui 658 (85 файлов), lint/tsc/prettier/build/size зелёные (живая проба отменена владельцем) — **PR #85, merge `54c9937`**
+
+История: `54c9937`.
+
+### TASK-47 `files` ✅
+
+Prisma `Attachment` (soft-delete, FK RESTRICT) + миграция `20260919210000_attachments`, `User.avatarPath`/`Card.attachmentCount`; multer в `UPLOAD_DIR` (дефолт `data/uploads`, git-игнор), storedName=UUID+sanitized ext, allowlist mime (вложения 25MB×20/карточка, аватар 2MB), удаление blob-файла при soft-delete; REST вне командного контура: POST/GET `/cards/:cardId/attachments`, GET `/attachments/:id/content` (Content-Disposition UTF-8), DELETE `/attachments/:id` (uploader или ADMIN), `PATCH /users/me/avatar` + `GET /users/:id/avatar` (immutable-cache); activity `attachment_added/deleted` + SSE, avatarPath сквозь presence/roster/updateUser; UI: секция Attachments (upload/скачивание через blob-fetch, ConfirmDialog, SSE-merge, canDelete), Paperclip-бейдж на морде, аватары в presence/членах/профиле/аккаунте (module-cached object URL), en+ru; попутно правила линков вынесены в `shared/src/store/card-links`. Гейты: backend 57 unit + 152 e2e, ui 661 (86 файлов), lint/tsc/prettier/build/size зелёные — **PR #86, merge `2c2692a`**
+
+История: `9f37f1a`.
+
+### TASK-51 `email-change` ✅
+
+Вне очереди, по запросу владельца: смена email «как у топовых приложений» (double opt-in с кодом) + смена email пользователю из админки. Самостоятельный флоу (аккаунт-панель → профиль → «Изменить»): текущий пароль + новый адрес → 6-значный код уходит на НОВЫЙ адрес (nodemailer, SMTP-переменные опциональны; без `SMTP_HOST` письма пишутся в лог сервера и outbox — самохостинг заводится без почты) → ввод кода (react-otp-input, 6 боксов) → адрес меняется, остальные сессии ревокаются (кука скоупится `/auth`, как у смены пароля), свежая токен-пара возвращается в ответе, на старый адрес — уведомление (best-effort).
+
+История: `9dff411`.
+
+### TASK-52 `email-service-page` ✅
+
+Вне очереди, по запросу владельца: настройка email-рассылки из админки без правок кода и env, с горячим перезапуском сендера. Вкладка «Email service» (`/admin/email`, OWNER-only, операторам — read-only): карточки-пресеты Gmail / Яндекс / Mail.ru / Brevo / SendGrid + «Свой SMTP» — хост/порт/TLS подтягиваются из пресета (backend берёт их из `EMAIL_SMTP_PRESETS` в shared и игнорирует клиентские значения; для custom — свои поля), вводятся только from/логин/пароль (пароль приложения / API-ключ, ссылка «Как получить» на инструкцию провайдера).
+
+История: `2ceccb2`.
+
+### TASK-53 `registration-email-verification` ✅
+
+Вне очереди, по запросу владельца: подтверждение email при регистрации (как в топ-приложениях). При `POST /auth/register` (если mail-транспорт живой) аккаунт создаётся с `User.emailVerifiedAt = null` и на адрес уходит 6-значный код (`EmailVerificationCode` — та же дисциплина, что у кодов смены email: только sha256, одна живая строка на юзера, TTL 15 мин, 5 неверных вводов сжигают код; письмо `verificationCodeEmail` en/ru); отправка при регистрации best-effort (сбой SMTP не валит регистрацию — гейт предлагает resend).
+
+История: `b6c7513`.
+
+### TASK-54 `oauth-login` ✅
+
+Вне очереди, по запросу владельца: вход через Google и Яндекс (authorization-code flow, редиректы браузера, без SDK и без CORS). Админка: вкладка «OAuth login» (`/admin/oauth`, OWNER-only, операторам read-only) — на провайдера client id + client secret (AES-256-GCM `secret-box`, аналог EmailSettings: GET отдаёт `hasSecret`, PUT — семантика undefined/null/string = оставить/очистить/заменить, включение без секрета → 400), показ точного callback URL (`PUBLIC_ORIGIN/api/v1/auth/oauth/:provider/callback` — его владелец регистрирует в консоли провайдера verbatim), аудит `oauth.settings_changed` (новый action в `ADMIN_AUDIT_ACTIONS`), таблица `OAuthProviderSettings` (id = provider id, миграция `20261008212559_oauth_login`).
+
+История: `2d05235`.
+
+### TASK-55 `sandbox-mailpit` ✅
+
+Вне очереди, по запросу владельца: заменить песочницу писем — внешний Ethereal недостижим из части сетей (timeout на SMTP и API-хост Hetzner, проверено на машине владельца), поэтому пресет песочницы — **локальный Mailpit**. `EMAIL_SMTP_TEST_PRESETS` получил `mailpit` (host `localhost`, port `1025`, без auth, веб-ящик `http://localhost:8025`). Backend больше не минтит аккаунт через API nodemailer (`ensureEtherealAccount` удалён): транспорт анонимный, включение без пароля, `toConfig`/`onModuleInit`/`active` допускают null-пароль у песочницы, `webViewer` стал `{url}` и виден всем (секретов в нём нет).
+
+История: `a7c11a6`.
+
+### TASK-56 `board-write-serialization` ✅
+
+Вне очереди, по запросу владельца («рой ИИшек»): параллельные писатели одной доски дедлочились в Postgres (`40P01`) — команды брали строку доски (`SELECT … FOR UPDATE`), а комменты/вложения шли Card → Activity (FK на доску) — противоположный порядок блокировок. Введён `BoardWriteService` (§7.4): единый писатель доски — in-process очередь по `boardId` (ожидающие не держат соединение БД, важно при 100 редакторах) + транзакционный advisory-лок `pg_advisory_xact_lock(hashtextextended(boardId, 0))` (работает и между инстансами: Postgres сам, без Redis/Kafka) + ретрай транзакции на `40P01`/`40001`/`P2034` с backoff.
+
+История: `ad6b3ee`.
+
+### TASK-57 `ops-traffic-demo` ✅
+
+Вне очереди, по запросу владельца: эксплуатация из мастер-панели — лимит API (env + панель), живой счётчик запросов и запуск/очистка демо-роя. (1) **Лимит**: `THROTTLE_LIMIT` (env, дефолт 300) + singleton-таблица `ThrottleSettings`; throttler резолвит значение в каждом запросе (`limit: () => throttleLimit()`), поэтому правка из панели применяется без рестарта; OWNER-only, аудит `throttle.settings_changed`. (2) **Трафик**: `TrafficService` — два rolling-кольца по 60 c (приходы через middleware до гардов + отказы 429 через `@Catch(ThrottlerException)`-фильтр), `GET /admin/traffic` отдаёт RPM, посекундный спарклайн и `throttledLastMinute`; страница «Traffic & limits» поллит раз в секунду, операторам read-only. (3) **Демо**: серверный `DemoService` поднимает выделенную доску «Демо» (демо-юзеры `@janosik.demo`, 5 колонок, 5 меток, по карточке на агента) и гоняет их по флоу через `CommandsService`/`CommentsService`; **все созданные id пишутся в манифест** (`DemoRun.manifest`), поэтому `stop` удаляет ровно их (доска, карточки, комменты, команды, членства, демо-юзеры) — без угадывания «демо по имени»; страница «Demo runner» (OWNER) — старт/стоп с подтверждением и живой счётчик. Миграция `20261024173310_throttle_and_demo`.
+
+История: `89dda36`.
+
+### TASK-58 `board-share` ✅
+
+публичный read-only шаринг доски **двух видов** — (A) статический снапшот (замороженный агрегат для «переслать / вставить / превью») и (B) живой read-only (SSE по тому же токену — смотреть рой и правки в реальном времени). Токен-сущность `BoardShare`, публичные роуты без auth, страница `/s/:token` (борд без шелла и логина), OG-картинка, TTL/отзыв, приватность-флаги; демо переключается на `live`-шару и избавляется от «Watch as»/watcher-аккаунта
+
+История: `7d740b8`.
+
+### TASK-59 `admin-user-support` ✅
+
+Поддержка пользователей из админки: подтверждение email, повторная отправка, временный пароль, удаление данных, назначение мастером и просмотр от имени пользователя.
+
+История: `ac908af`.
+
+### TASK-60 `admin-membership-moderation` ✅
+
+Модерация участников и владельца доски, удаление вложений, восстановление удалённых сущностей и массовые операции в админке.
+
+История: `ac908af`.
+
+### TASK-61 `admin-flags-ops` ✅
+
+Глобальные и персональные feature flags, maintenance mode, персональные ограничения запросов и запуск очистки удалённых данных из панели.
+
+История: `ac908af`.
+
+### TASK-62 `admin-comms` ✅
+
+Рассылки и объявления в приложении с возможностью отправки email, таргетированием и редактированием почтовых шаблонов.
+
+История: `ac908af`.
+
+### TASK-63 `admin-data-compliance` ✅
+
+Экспорт пользовательских данных, GDPR-удаление, настройка срока хранения и сведения о резервных копиях.
+
+История: `ac908af`.
+
+### TASK-64 `admin-observability` ✅
+
+Панель состояния: версия и параметры запуска, размеры БД и таблиц, очереди и health.
+
+История: `ac908af`.
+
+### TASK-65 `admin-security` ✅
+
+2FA мастеров, IP-allowlist, IP/UA сессий и оповещения по аудиту. Редактирование allowlist других мастеров осталось отдельной задачей TASK-158; UI-тесты — TASK-159.
+
+История: `ac908af`.
+
+### TASK-66 `queue-transcode` ✅
+
+Транскодирование видео переведено на очередь BullMQ с восстановлением задач; повторные попытки исправлены в TASK-87.
+
+История: `ac423b3`.
+
+### TASK-67 `queue-mail` ✅
+
+Транзакционные письма поставлены в очередь: сбой SMTP не блокирует исходный запрос.
+
+История: `ac423b3`.
+
+### TASK-68 `queue-maintenance` ✅
+
+Очистка и обслуживание запускаются через очередь и планировщик, доступны настройки и ручной запуск из панели.
+
+История: `ac423b3`.
+
+### TASK-69 `queue-demo` ✅
+
+Демо-рой запускается задачей очереди с учётом прогресса и остановки; жизненный цикл Redis-режима дополнительно исправлен в TASK-82.
+
+История: `ac423b3`.
+
+### TASK-70 `queue-media-derivatives` ✅
+
+Фоновое создание миниатюр изображений и постеров видео, отдельные маршруты и хранение производных файлов.
+
+История: `ac423b3`.
+
+### TASK-71 `queue-exports` ✅
+
+Очередь экспорта крупных наборов данных, хранение артефакта и ссылка с ограниченным сроком; небольшой экспорт обрабатывается синхронно.
+
+История: `ac423b3`.
+
+### TASK-72 `queue-comms-scheduled` ✅
+
+Планировщик дайджестов и напоминаний о сроках, очередь рассылки, настройки периодичности и пользовательская настройка уведомлений.
+
+История: `ac423b3`.
+
+### TASK-73 `bull-board` ✅
+
+Bull Board для очередей с доступом мастера и отдельным флагом включения; безопасность тикета усилена в TASK-90.
+
+История: `ac423b3`.
+
+### TASK-74 `realtime-redis-fanout` ✅
+
+Redis pub/sub для распространения событий доски между узлами. Presence остаётся локальным для каждого узла; общий presence-store не завершён (см. TASK-145).
+
+История: `ac423b3`.
+
+### TASK-122 `brand-system` ✅
+
+воркспейс `@janosik/brand` — `src/tokens.ts` + `src/tokens.css` (одна правда, парити-тест `tokens.test.ts`), motion-токены (кастомные кривые + длительности), ассеты `assets/logo/` (mark, feather/lockup/wordmark в dark+light) и `assets/og/` (1200×630); `ui` импортирует токены в `index.css` (значения не менялись — визуально идентично), алиасы/tsconfig/Dockerfile обновлены; `docs/BRAND.md`. Гейты: brand 28, ui 791, lint 0 errors, build/size без изменений (201.57/300 KB)
+
+История: `21c0a85`.
+
+### TASK-124 `landing-hero-features` ✅
+
+лендинг переписан «как у Miro» — герой в две колонки (оффер+CTA+мокап доски), 4 чередующихся фича-ряда (доска/виды, realtime, карточки, шаринг) с медиа-слотами, список «И детали» (8 пунктов), OSS-полоса с self-host терминалом, 4 шага, 4 FAQ, финальный CTA; новый `site/src/components/MediaSlot.astro` (варианты board/realtime/cards/sharing/selfhost, готов принять `src`/video без CLS); i18n en/ru; убраны «шаблонные» приёмы (ALL-CAPS-«eyebrow», радиальный градиент героя, сетка одинаковых карточек); мобилка без гор. скролла + вход в шапке. Гейты: site 13, `astro check` 0 ошибок, сборка 7 страниц, lint/format ✓
+
+История: `19bf47c`.
+
+### TASK-126 `site-copy-cro-seo` ✅
+
+копирайт-проход по скилу `copywriting` (убраны AI-tells: em dash в коротких строках, negation-списки, trailing pile-ons; CTA `Get started` → `Start your first board`); уникальные SEO title/description по страницам (`seo.*`, keyword-first: 34/39 симв., desc 140–144); структурированные данные единым JSON-LD-массивом: Organization + WebSite + SoftwareApplication (offers из `pricing.ts`) + FAQPage (home/pricing) + Product (AggregateOffer) + BreadcrumbList — валидный JSON-LD на всех страницах; AI-SEO: `/llms.txt` и `/pricing.md` (генерируются из `pricing.ts`), semantic HTML; privacy-friendly аналитика — `src/lib/analytics.ts` + `Analytics.astro`, по умолчанию **не грузится ни одного стороннего скрипта** (opt-in `PUBLIC_ANALYTICS_DOMAIN`/`PUBLIC_ANALYTICS_SRC`), события `cta_clicked` на всех ключевых CTA через `data-cta` (delegated, honour Do Not Track); OG-картинки страниц (`og-pricing.png`, `og-docs.png`) генерируются из бренд-шаблона интеграцией `og-images`. Lighthouse: SEO **100**, perf 100/99, best-practices 100 (home/pricing).
+
+История: `301c47c`.
+
+### TASK-127 `site-a11y-perf-audit` ✅
+
+аудит скилами `web-design-guidelines` + `impeccable` (`context`/`audit`/`craft-floor`) и Lighthouse desktop+mobile на `/` и `/pricing`. a11y **94/95 → 100** во всех 4 прогонах (perf 100, моб. pricing 99; LCP 0.4s desktop / 1.6s mobile, CLS ≈0). Фиксы: (1) `LangSwitcher` — `aria-label` теперь включает видимый код (`RU — Русский`), убран `label-content-name-mismatch`; (2) футер — заголовки колонок `h4`→`h2` (был пропуск уровня заголовков); (3) контраст — зелёные `✓` в макете терминала (`--success` → `color-mix(success 75%, foreground)`), бейдж «Most popular» и метка «2 months free» (`--primary` → `color-mix(primary 80%, foreground)`), текст CTA-полосы на градиенте (`--muted-foreground` → `color-mix(muted 78%, foreground)`) — всё ≥4.5:1, тема-адаптивно (light+dark, без новых токенов).
+
+История: `9039b46`.
+
+### TASK-128 `video-scaffold` ✅
+
+воркспейс `@janosik/video` (Remotion 4.0.539, React 18) — `src/Root.tsx` (по одному авторскому `<Composition>` на клип, `theme`-проп light/dark), `src/lib/{layout,motion,fonts,types}.ts`, бренд-CSS из `@janosik/brand` (`tokens.css` + `site-tokens.css` — без хардкода цветов), Space Grotesk через `@remotion/fonts` (`loadFont`, без FOUT); `scripts/render.mjs` — один бандл на все клипы, `renderMedia` mp4 (H.264) + webm (VP8) и `renderStill` постер для каждой темы (light/dark) в `site/public/media`; `scripts/copy-assets.mjs` (шрифты+лого из `brand/`, git-ignore); CI-джоб `video` (workflow_dispatch/тег → рендер + artifact); `video/README.md`; отдельный воркспейс — Remotion не попадает в бандл `site`. Гейты: video typecheck 0, lint 0; рендер 6 клипов ✓
+
+История: `d60dfc9`.
+
+### TASK-129 `video-feature-clips` ✅
+
+6 клипов 1280×800 (16:10 = аспект слота), 30 fps, 7–10 c, бесшовный луп — `Hero` (рой из ~10 агентов: 5 колонок, 10 агент-цветов, ростер из 10 аватаров, 4 пульсирующие карточки, 3 карточки в полёте между колонками, 2 коммент-бабла, «10 agents · live» в шапке), `Board` (один клип = **три вида**: канбан с drag&drop → календарь-месяц с перетаскиванием карточки на дату → таблица с сортировкой и инлайн-правкой; переключатель Kanban/Calendar/Table в шапке), `Realtime` (4 курсора разных цветов — Mira/Alex/Sam/Noor, presence-ростер, 2 карточки прилетают), `Cards` (диалог: чек-лист тикает, метки, вложение), `Sharing` (read-only ссылка + copy), `Selfhost` (терминал `docker compose up -d` → `✓ postgres ready`/`✓ janosik ready on :3000`); общий визуальный язык с `MediaSlot` (chrome/колонки/карточки/агент-доты), бренд-токены и motion-кривые. Полный список §7.12 (оффлайн/PWA, админка, paste-медиа) свёрнут до 6 клипов под реальные слоты лендинга (остальные — в бэклоге, если появятся слоты).
+
+История: `d60dfc9`, `61578cf`.
+
+### TASK-130 `site-media-integration` ✅
+
+`MediaSlot` принимает `mp4`/`webm`/`poster` + `*Dark` и рендерит два `<video muted loop playsinline preload="none" poster aria-hidden data-lazy-video>` (light/dark; CSS показывает нужный по `data-theme`); клипы рендерятся в двух темах (`render` → `<slug>.*` и `<slug>-dark.*`); ленивая загрузка — `IntersectionObserver` в `BaseLayout` (`rootMargin: 200px`; играет только видимый вариант, `MutationObserver` на `data-theme` пересинхронизирует при переключении темы; `prefers-reduced-motion` → постер; no-JS → постер); no-CLS — кадр 16:10 совпадает с видео; `HomePage` мапит вариант слота → клип через `withBase` (учёт деплой-базы); `.slot-media` фон `--surface`; 6 клипов закоммичены в `site/public/media` (~5.8 MB mp4+webm+jpg, теперь реальные записи). OG/превью — постеры как `poster`; бренд-OG-карточки страниц не тронуты.
+
+История: `d60dfc9`, `61578cf`.
+
+### TASK-132 `docs-site` ✅
+
+Starlight на `/docs` в `site/` — структура (Начало/Self-hosting/User guide/API/FAQ/Changelog), поиск, версии, i18n en/ru, тема; миграция `README`, `docs/*`, `SECURITY.md`, `CHANGELOG.md`
+
+История: `c464493`, `0d808dc`, `de205b9`.
+
+### TASK-135 `landing-agent-swarm` ✅
+
+герой переписан («Kanban for your agent swarm.») + новый вариант мокапа `swarm` в `MediaSlot` (4 колонки, агенты на карточках, presence-ростер, активная карточка с пульсом, комментарий-бабл; `prefers-reduced-motion` → статика); новая секция `#swarm` «How a swarm works the board» — 3 шага (ключ → агент ведёт доску → вы наблюдаете) + реальный запрос/ответ командного API (`POST /boards/:id/commands` → `{seq, versions}`) + 3 чек-буллета; в «И детали» добавлены «Personal API keys for agents» и «Live read-only share links»; +2 FAQ («Can AI agents use Janosik?», «How do I watch the swarm?»); SEO home title/description под агентов; `llms.txt` и `site.description` обновлены; i18n en+ru. Гейты: site 17, `astro check` 0, сборка 7 страниц, lint 0 (51 пре-существующих warning), format ✓; Lighthouse a11y/perf/SEO/best-practices **100** на `/` и `/pricing`; детектор `impeccable` — только намеренные `overused-font` (Space Grotesk) и `nested-cards` (макет доски); визуально EN+RU light/dark, 1280/390 (починен гор. скролл от `<pre>` — `minmax(0,1fr)` в гриде)
+
+История: `4706a88`.
+
+### TASK-136 `mcp-server` ✅
+
+**MCP-сервер для роя агентов** — тонкая TS-обёртка над командным API (`POST /boards/:id/commands`) и комментами; auth персональным ключом `jnk_…` (env `JANOSIK_URL`/`JANOSIK_TOKEN`); тулзы `list_boards`/`get_board`/`create_card`/`update_card`/`move_card`/`comment`/`checklist_*`/`set_label`/`assign`; read-only тулзы отдельно от write; переиспользует DTO из `shared/src/api.ts`; `npx @janosik/mcp` + регистрация в MCP registry
+
+История: `162ef30`.
+
+### TASK-137 `agent-skill` ✅
+
+**скилл-плейбук роя** поверх MCP-тулзов — конвенции (колонки, когда комментировать и тащить в Review, как называть карточки), шаблоны карточек/меток, рецепт жизненного цикла; не дублирует I/O, ссылается на тулзы
+
+История: `c9bd06c`.
+
+### TASK-138 `contributing-cla` ✅
+
+`CONTRIBUTING.md` (dev-setup, гейты, стиль коммитов, PR-процесс, DCO + `Signed-off-by`, inbound=outbound); ссылка из README
+
+История: `b36c89c`.
+
+### TASK-139 `board-virtualization` ✅
+
+окно карточек в колонке (`use-card-window.ts`) и строк таблицы (`@tanstack/react-virtual`) с точной высотой скролла; несмонтированные карточки остаются в `SortableContext`, j/k скроллит колонку к курсору; календарь: bounded-месяц не тронут, но unscheduled-панель, недельные ячейки и day-panel получают окно. Замер: board 2400 → 108 карточек в DOM, ~4.0k узлов, 90 MB heap, первый рендер ~0.7 с, max long task 176 мс (было 4.81 с / 67.7k / 1.1 GB / 3.90 с); table 2400 → 26 строк вместо 49k DOM; unscheduled 1200 → 27 кнопок. См. §7.13, `docs/PERF-BASELINE.md`
+
+История: `f8afc8c`.
+
+### TASK-142 `simplify-design` ✅
+
+чекбокс в меню плотности на панели вида (рядом с настройками колонок), выбор в `localStorage` (`janosik-board-density`); компактная однострочная карточка (48px) — заголовок, метки точками, blocked-маркер, прогресс чек-листа, приоритет, исполнитель; hover-кнопки, описание, срок и подписи меток ушли в диалог по клику; компактная высота строки (56px) прокинута в виртуализацию; ResizeObserver на каждую карточку в компактном режиме не создаётся. Замер на 2400 карточек: DOM 4 482 → 2 414 (−46%), первый рендер 1 060 → 740 мс (−30%), карточек в окне 108 → 156; 240 live-обновлений роя (≈9/с) — 0 long task в обоих режимах. Плюс четвёртый **watch-вид «без косметики»** (крупный статус + онлайн + живая лента активности, без карточек/DnD/анимаций: 0 карточек, ~405 DOM-узлов на 2400-доске). См. §7.13, `docs/PERF-BASELINE.md`
+
+История: `4103b46`.
+
+### TASK-143 `presence-deltas` ✅
+
+3000 SSE без OOM (703 MB, было падение); 1600 коннектов 1464→463 MB; backend 280 / ui 866 / shared 431 тестов зелёные. См. §7.13
+
+История: `5a5606d`.
+
+### TASK-140 `realtime-resilience` ✅
+
+устойчивость SSE — heap-лимит, лимит соединений на инстанс с вежливым отказом вместо OOM, масштабирование нод
+
+История: `b33482a`.
+
+### TASK-141 `scale-caches-config` ✅
+
+TTL-кэш live-share и admin-метрик, `shared_buffers` в self-host compose
+
+История: `6dea6d8`.
+
+### TASK-144 `ui-edit-coalescing` ✅
+
+quiet-патчи сливаются по полям (title+description в одном окне не теряются); конфликтное описание не коммитится на blur/close/switch/pagehide, черновик держится за карточкой и переопрашивается при открытии; тесты server-sync и CardDialog. См. §7.14
+
+История: `49022b8`.
+
+### TASK-145 `presence-consistency` ✅
+
+presence — только локально (без Redis-фан-аута → нет ложных `leave` на 2 нодах); `epoch` в кадрах + keepalive + reconnect при расхождении; ping `410` → rejoin; `avatarPath` в сравнении; `clientId` проверяется до Observable; CRLF-парсер; ростер чистится на смене доски; тесты. **Остаётся:** общий presence-store в Redis для сходимости ростера на нескольких нодах (отдельная задача). См. §7.14
+
+История: `c2a8663`.
+
+### TASK-146 `resource-limits` ✅
+
+SSE-кэпы instance/user/board (`503` + `Retry-After`); `ifMatchVersions` ≤100 и батч-чтение версий (≤1 запрос на тип); upload-rate 60/мин на юзера (`429`); share-throttle ограничен по размеру + валидация формы токена; тесты. **Остаётся:** temp-file uploads → **TASK-155**; Redis-лимитер шары на несколько нод. См. §7.14
+
+История: `fdf661c`.
+
+### TASK-147 `security-hardening` ✅
+
+`/health` — liveness без I/O, `/health/ready` — readiness с кэшем ~2 с и single-flight; impersonation-токен read-only (safe-методы + presence-ping, прочие записи и `/users/me/tokens` → `403`); единый предикат активного членства в `listBoards`/`listMembers`/дайджестах/напоминаниях + drop assignee на restore/import; bull-board за тем же IP-allowlist; `COOKIE_SECURE=true` по умолчанию (compose/.env/docs); CIDR с валидацией префикса и IPv6 (+ отказ при сохранении); TOTP в lockout + защита от replay; тела писем не логируются в production. e2e на каждую дыру; тесты. См. §7.14
+
+История: `500b424`.
+
+### TASK-148 `retention-and-indexes` ✅
+
+индексы purge/TTL/due (`CONCURRENTLY`-скрипт `db:indexes` + миграция `IF NOT EXISTS`); sweep целых `Board` (доска+фид+лог+шары+блобы), `Activity`, `AdminAuditLog` (`AUDIT_RETENTION_DAYS=365`), отозванных шар (24 ч), `.tmp-*` по grace; `exports`/`media` бросают ошибку пока есть попытки (BullMQ retry); retention-opts у Job Scheduler; GDPR-erase удаляет `DataExport`/бандлы; тесты на каждый sweep. См. §7.14
+
+История: `452922b`.
+
+### TASK-149 `admin-consistency` ✅
+
+archive/delete/restore карточек и колонок (включая bulk) идут через `CommandsService.apply` от owner — версия, SSE и каскад; `DELETE_CARD`/`DELETE_COLUMN` больше не рвут `CardLabel` (restore пересобирает `labelIds`/чек-листы); бейдж вложений пересчитывается на delete/restore/erase и на revive карточки; импорт — одна транзакция с явным `timeout`, `createMany`-батчи; тесты. См. §7.14
+
+История: `0e573cb`.
+
+### TASK-150 `ui-render-perf` ✅
+
+`MembersStore` — per-user/per-board подписки (directory reload не ререндерит карточки); dnd `MeasuringStrategy.WhileDragging`/`BeforeDragging`; `linkSignature` кэшируется по снапшоту (WeakMap); заголовок карточки — локальный черновик с тихим коммитом по blur/close (ввод не ререндерит MDXEditor); focus-diff по `updatedAt`/`archivedAt` вместо JSON всей доски; входная анимация только у новых карточек + `prefers-reduced-motion`; тесты изоляции рендера. См. §7.14
+
+История: `dbad808`.
+
+### TASK-151 `pwa-stream-recovery` ✅
+
+SW ждёт `SKIP_WAITING` (баннер «новая версия» + reload) и хранит прошлый кэш как fallback для старых lazy-chunk; watchdog 90 с без кадров → abort+reconnect; 404 стрима → доска убирается; `cardHref` через `APP_BASE` (`/app/…`); restore бэкапа в server-режиме отключён; compact error boundary на `CardDialog`; тесты. См. §7.14
+
+История: `da6b7a9`.
+
+### TASK-152 `ui-a11y-polish` ✅
+
+зоны вставки `tabIndex=-1` (из tab-порядка ушли ~2400 стопов); карточка — `role="group"` вместо вложенной `button`, локализованные dnd-анонсы и инструкция; listbox времени и radiogroup фильтров ходят стрелками (roving tabindex); lightbox — focus-trap, `alt`, revoke blob, возврат фокуса; бейдж срока пересчитывается по таймеру/фокусу; `common.close` в диалогах; закрытие карточки удаляет только `card` из URL; тесты. См. §7.14
+
+История: `200ac50`.
+
+### TASK-153 `config-and-observability` ✅
+
+`DB_CONNECTION_LIMIT` (в DSN, если не задан) + `shared_buffers`/`work_mem`/`max_connections` в compose; кэш `OpsSettings` 15 с с инвалидацией (guard больше не ходит в БД на каждый запрос); счётчик карточек без архива/удалённых колонок, фид приглашений без истёкших, битые seq-курсоры → 400, idempotency коммента проверяет автора, admin refresh с grace 60 с, `notifyDigest` в API/UI; slow-query лог с `X-Request-Id` (AsyncLocalStorage); `CONCURRENTLY` уже закрыт в 148. Тесты. См. §7.14
+
+История: `99e116b`.
+
+### TASK-154 `mcp-perf-bench` ✅
+
+бенч `~/.janosik-dev/load/mcp-vs-api.mjs` (считающий прокси `:3100`, прямой HTTP vs MCP stdio, R=20) — подтверждённая точка: `move_card` читал доску **дважды** (DoD-гейт + `commandOnFreshBoard`); фикс — `commandOnFreshBoard(prefetched)`, снимок первого чтения переиспользуется, повтор только на 409. Итог: MCP на паритете с прямым клиентом — 6.00→**5.00** запросов/итерацию, move 65.4→**45.2 ms**, CPU 12.5→11.0 ms/вызов. Рендер markdown на `json`, keep-alive, JSON/Zod и батч-тул замерены как **не**-горячие (нет серверного батч-эндпоинта). Раздел «Путь агента через MCP» в `docs/PERF-BASELINE.md` + строка матрицы. Гейты: mcp typecheck/lint/build + 93 теста (2 новых). **PR #141**
+
+История: `0ec89c6`.
+
+### TASK-155 `upload-hardening` ✅
+
+`tempUploadStorage` (multer disk → `.tmp-<uuid><ext>` в blob-root); `UploadedBlob.path`; MIME по префиксу 4 КБ; `rename` после проверок; `rm` в `finally` на всех путях (вложения и аватар); транскод/деривативы по id; `.tmp` sweep из TASK-148. e2e загрузок/транскода/шары зелёные. См. §7.14
+
+История: `8aaf9c9`.
+
+### TASK-156 `review-fixes` ✅
+
+subtree-restore доски с memberships и без воскрешения ранее удалённых чек-листов; snapshot несёт links/lastActorId/attachmentCount; единый `APP_BASE`; `controllerchange` во всех вкладках + отказ кэшировать HTML как JS; сборка финального блоба при ошибке после `rename`; ресинк/конфликт draft заголовка; page-purge доски; минуты не закрывают пикер; чанкированные sweeps и индексы кодов; сортировка bulk restore и audit по элементам; oversight-limit для внутренних restore; чанки импорта; P2028→503; a11y/dnd/lightbox/DueBadge; detached snapshot-шары; кэш ops-settings и границы курсоров. Гейты: unit 306, e2e 301, ui 908, shared 431; lint 0 errors, format/build/size/site зелёные. См. §7.15
+
+История: `c495578`.
+
+### TASK-157 `agent-ready-board` ✅
+
+A+B описание 64к + конвенции (`#120`), C1 claim+lease (`#121`), C2 taskSpec (`#123`), C3a `actorType` (`#124`), C3b скоупы+rate-limit (`#125`), E13 лимит пункта 500 (`#126`), E16 проекция чтения (`#131`), D10+D11 виды комментариев + поиск по комментам/чек-листам (`#132`), D9+E14 CAS `expectedVersion` + идемпотентные id (`#133`), D12 DoD-гейт на Done (`#134`), E15+E17 ready-to-work + wait-for-work (`#135`); F (доки en+ru, сайт, скилл, README, AGENT.md) и бамп `@janosik/mcp` 0.4.0 — в этом же этапе. Гейты: shared 448, ui 1004, backend 314 e2e, mcp 90. См. §7.17
+
+История: `cd112e2`.
+
+### TASK-160 `board-command-batching` ✅
+
+батч-эндпоинт (≤`COMMAND_BATCH_MAX`=100) — один lock/`loadBoardAggregate`/id-чек на пачку против бегущего агрегата, атомарно, с сохранением `seq`/идемпотентности/undo/SSE; `apply` = обёртка над `applyBatch` из одной команды; MCP `commandBatch` + `create_card` одним батчем (бамп `@janosik/mcp` 0.5.0). Замер: **43 → 102 команд/с** (×2.3–2.5), латентность/команда ×2.3 ниже. Гейты: backend unit 333, e2e (новый `commands-batch` 5 + старые 49), mcp 95, lint/format ✓. См. §7.19
+
+История: `872cfe8`.
+
+
+### TASK-123 `marketing-site-scaffold` ✅
+
+Создан Astro/Starlight-воркспейс сайта: маршруты, локализация en/ru, темы и SEO; сайт и приложение доставляются в одном образе.
+
+История: `c464493`.
+
+### TASK-125 `landing-pricing` ✅
+
+Добавлена страница тарифов; позже продуктовая модель изменена на бесплатный self-hosted и облако в будущем (TASK-131 отложена).
+
+История: `5f2294a`, `18d1de4`.
+
+### TASK-133 `docs-user-guide` ✅
+
+Подготовлены англо- и русскоязычные пользовательские руководства по возможностям приложения, затем обновлены снимки и структура.
+
+История: `0d808dc`, `0783245`.
+
+### TASK-134 `docs-api-reference` ✅
+
+Добавлены API-справочник, примеры и self-hosting runbooks на английском и русском.
+
+История: `0d808dc`.
+
+## Аудит 2026-10: TASK-75…121 ✅
+
+Задачи восстановлены из `REVIEW-TASKS.md` в коммите `0d26b79` (файл позже удалён из корня). Ниже — предмет и коммиты реализации; исходная постановка и критерии доступны через `git show 0d26b79:REVIEW-TASKS.md`. Закрытие исторического ревью не отменяет последующих находок и ограничений, отдельно записанных в TASK-140…159. Для TASK-105 принято документирование ограничений офлайна, а не реализация offline-outbox.
+
+### TASK-75 `sw-api-cache` ✅
+
+service worker не кэширует API и SSE. История: `b28a7a4`.
+
+### TASK-76 `attachment-mime` ✅
+
+sniff MIME + `attachment` на публичной шаре. История: `b28a7a4`.
+
+### TASK-77 `orphan-blob-grace` ✅
+
+grace-окно в orphan-sweep. История: `b28a7a4`.
+
+### TASK-78 `stream-pipeline` ✅
+
+`pipeline` вместо `pipe` во всех стрим-роутах. История: `b28a7a4`.
+
+### TASK-79 `admin-owner-guards` ✅
+
+OWNER на глобальные ops + `assertOwner` на user-actions. История: `b28a7a4`.
+
+### TASK-80 `inverse-server-side` ✅
+
+не доверять клиентскому `inverse`. История: `b28a7a4`.
+
+### TASK-81 `inline-attachment-scope` ✅
+
+скоуп по доске при удалении inline-вложений. История: `b28a7a4`.
+
+### TASK-82 `demo-queue-lifecycle` ✅
+
+демо-раннер в Redis-режиме не освобождается. История: `39b5b28`.
+
+### TASK-83 `comms-schedule` ✅
+
+таймер, дедуп напоминаний, cadence parity. История: `39b5b28`.
+
+### TASK-84 `command-retention` ✅
+
+`take` в `listSince` + retention `Command`. История: `39b5b28`.
+
+### TASK-85 `impersonation-refresh` ✅
+
+имперсонация не апгрейдится до мастера. История: `c6261ff`.
+
+### TASK-86 `command-keepalive` ✅
+
+`keepalive` только ниже порога. История: `c6261ff`.
+
+### TASK-87 `transcode-retry` ✅
+
+живые ретраи транскода. История: `b28a7a4`.
+
+### TASK-88 `attachment-softdelete-restore` ✅
+
+не удалять блоб при soft-delete. История: `b28a7a4`.
+
+### TASK-89 `admin-master-role` ✅
+
+панель не создаёт OWNER-мастера. История: `b28a7a4`.
+
+### TASK-90 `queue-ticket-audience` ✅
+
+отдельная audience для queue-тикета. История: `b28a7a4`.
+
+### TASK-91 `trust-proxy` ✅
+
+`app.set("trust proxy")`. История: `39b5b28`.
+
+### TASK-92 `db-indexes` ✅
+
+недостающие индексы. История: `39b5b28`.
+
+### TASK-93 `admin-destructive-confirm` ✅
+
+подтверждения в панели. История: `1b4918c`.
+
+### TASK-94 `admin-ui-fixes` ✅
+
+мелкие дефекты панели. История: `1b4918c`.
+
+### TASK-95 `backend-ci-typecheck` ✅
+
+typecheck спека в CI. История: `02bfcac`.
+
+### TASK-96 `command-registry` ✅
+
+реестр команд и `never`-эксхоустивность. История: `02bfcac`, `0d26b79`.
+
+### TASK-97 `shared-reducer-hardening` ✅
+
+дефекты редьюсера. История: `02bfcac`, `0d26b79`.
+
+### TASK-98 `createid-crypto` ✅
+
+`createId` → `crypto.randomUUID()`. История: `819243f`.
+
+### TASK-99 `comment-idempotency` ✅
+
+идемпотентность комментариев. История: `819243f`.
+
+### TASK-100 `board-write-toctou` ✅
+
+TOCTOU-гонки. История: `819243f`.
+
+### TASK-101 `list-boards-counts` ✅
+
+N+1 в `listBoards`. История: `819243f`.
+
+### TASK-102 `realtime-presence-hardening` ✅
+
+утечки и ownership. История: `819243f`.
+
+### TASK-103 `sse-auth-lost` ✅
+
+фатальный SSE 401 → auth-lost. История: `c6261ff`.
+
+### TASK-104 `share-live-frozen` ✅
+
+шара: 404/410, VIEWER, snapshot. История: `819243f`.
+
+### TASK-105 `offline-outbox` ✅
+
+offline-outbox или честный README. История: `c6261ff`.
+
+### TASK-106 `object-url-leaks` ✅
+
+утечки object-URL. История: `c6261ff`, `0d26b79`.
+
+### TASK-107 `media-files-hardening` ✅
+
+`.tmp`, производные, range. История: `819243f`.
+
+### TASK-108 `inline-attachment-cap` ✅
+
+cap и `attachmentCount`. История: `819243f`.
+
+### TASK-109 `export-ttl-audit` ✅
+
+TTL при скачивании + аудит. История: `819243f`.
+
+### TASK-110 `broadcast-fanout-retry` ✅
+
+фан-аут и реальные ретраи. История: `819243f`.
+
+### TASK-111 `exports-queue-threshold` ✅
+
+порог синхронного экспорта. История: `819243f`.
+
+### TASK-112 `contract-drift` ✅
+
+drift контрактов. История: `50d5217`, `0d26b79`.
+
+### TASK-113 `admin-announcement-edit` ✅
+
+редактирование объявлений. История: `0dc7e1c`.
+
+### TASK-114 `dead-code-i18n-cleanup` ✅
+
+мёртвый код и i18n. История: `0dc7e1c`.
+
+### TASK-115 `design-tokens` ✅
+
+токены: приоритеты и lightbox. История: `c6261ff`, `0d26b79`.
+
+### TASK-116 `a11y-board` ✅
+
+a11y карточек и заголовка колонки. История: `c6261ff`.
+
+### TASK-117 `tableview-memo` ✅
+
+мемоизация `TableView`. История: `c6261ff`.
+
+### TASK-118 `god-module-split` ✅
+
+расслоение god-модулей. История: `ce123ba`, `0d26b79`.
+
+### TASK-119 `health-readiness` ✅
+
+`/health` с зависимостями. История: `39b5b28`.
+
+### TASK-120 `env-hardening` ✅
+
+env и avatar MIME. История: `39b5b28`.
+
+### TASK-121 `i18n-parity` ✅
+
+паритет en/ru. История: `c6261ff`.
