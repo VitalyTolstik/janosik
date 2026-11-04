@@ -44,7 +44,7 @@ your own computer.
 3. Open <http://localhost:3000/app/>. Create your account, then create a master for `/app/admin`:
 
    ```bash
-   docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
+   docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
    ```
 
 > **Apple Silicon:** the published image is built for both `arm64` and `amd64`,
@@ -117,7 +117,7 @@ Open <http://localhost:3000/app/> in your browser. Create the master account the
 same way (works from either shell):
 
 ```powershell
-docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
+docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
 ```
 
 > **Tips**
@@ -213,7 +213,7 @@ then the same `npm install` / `npm run dev`. Use PowerShell or Git Bash.
 3. Open <http://localhost:3000/app/>, create your account and a master:
 
    ```bash
-   docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
+   docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
    ```
 
 > For a public server, add TLS (Caddy/nginx) and set `COOKIE_SECURE=true` +

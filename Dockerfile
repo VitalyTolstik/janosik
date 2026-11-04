@@ -79,7 +79,7 @@ RUN npm prune --omit=dev
 COPY --from=build /app/backend/dist ./backend/dist
 COPY --from=build /app/backend/prisma ./backend/prisma
 # The master-account CLI (create/list/re-key an admin) — the only way to make
-# a master, run in the container: `docker compose exec app node backend/scripts/admin-cli.cjs …`.
+# a master, run in the container: `docker compose exec app node /app/backend/scripts/admin-cli.cjs …`.
 COPY --from=build /app/backend/scripts ./backend/scripts
 # The app (SPA) is served under `/app/`; the marketing site + docs at `/`.
 COPY --from=build /app/ui/dist ./public
