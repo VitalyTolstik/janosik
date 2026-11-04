@@ -1428,6 +1428,21 @@ export interface AdminSecurityAlertDto {
   ip: string | null;
   createdAt: number;
   detail: string;
+  reason:
+    | "unknown_email"
+    | "wrong_password"
+    | "disabled"
+    | "ip_not_allowed"
+    | "invalid_2fa"
+    | "locked"
+    | "refresh_invalid"
+    | "refresh_expired"
+    | "refresh_race"
+    | "refresh_reuse"
+    | "unknown";
+  stage: "login" | "refresh" | "request";
+  count: number;
+  lastOccurredAt: number;
 }
 
 /** `POST /admin/security/totp` — begin enrollment (returns the secret). */

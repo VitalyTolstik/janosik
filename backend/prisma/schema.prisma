@@ -611,6 +611,9 @@ model AdminAuditLog {
   targetId   String?
   details    Json?
   createdAt  DateTime   @default(now())
+  aggregateKey String?  @unique
+  eventCount Int        @default(1)
+  lastOccurredAt DateTime @default(now())
 
   @@index([createdAt])
   @@index([adminId, createdAt])

@@ -262,6 +262,9 @@ export function SecurityPage() {
         <h2 className="mb-3 text-sm font-medium">
           {t("admin.security.alerts")}
         </h2>
+        <p className="mb-3 text-xs text-muted-foreground">
+          {t("admin.security.alert.window")}
+        </p>
         {security.alerts.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             {t("admin.security.alerts.empty")}
@@ -275,16 +278,25 @@ export function SecurityPage() {
                     alert.action === "admin.login_locked" ? "danger" : "warning"
                   }
                 >
-                  {alert.action === "admin.login_locked"
-                    ? t("admin.security.alert.locked")
-                    : t("admin.security.alert.failed")}
+                  {t(`admin.security.alert.${alert.reason}`)}
                 </Badge>
-                <span className="text-xs">{alert.adminEmail}</span>
-                <span className="text-xs text-muted-foreground">
-                  {alert.ip ?? "—"}
+                <span className="text-xs">
+                  {t(`admin.security.stage.${alert.stage}`)}
                 </span>
+                <span className="text-xs">
+                  {alert.adminEmail || t("admin.security.alert.noAccount")}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {alert.ip ?? t("admin.security.alert.noIp")}
+                </span>
+                {alert.count > 1 && (
+                  <span className="text-xs">
+                    {t("admin.security.alert.count")}: {alert.count} (
+                    {formatDate(alert.createdAt, lang, hour12)})
+                  </span>
+                )}
                 <span className="ml-auto text-xs text-muted-foreground">
-                  {formatDate(alert.createdAt, lang, hour12)}
+                  {formatDate(alert.lastOccurredAt, lang, hour12)}
                 </span>
               </div>
             ))}
