@@ -117,14 +117,18 @@ requires the code after the password.
 ### IP allowlist
 
 The allowlist is a comma- or space-separated list of IPs and CIDR ranges. An
-empty list allows any address. An exact string match or an IPv4 CIDR match
-passes. The list is trimmed and de-duplicated on save. It is owner-only: an
-operator cannot restrict their own sign-in origin.
+empty list allows any address. Exact IPv4/IPv6 addresses and IPv4/IPv6 CIDR
+ranges are supported. The list is trimmed and de-duplicated on save. An
+operator can view their own list here but only an owner can change it.
+
+To manage another master's list, open **Masters**, choose **IP access** in that
+master's action menu, and save the addresses or ranges. Changes take effect on
+their existing sessions immediately and are recorded in the audit log.
 
 The list is enforced on every request of the master's session and on every
-refresh, not only at sign-in. Saving a list that does not include your current
-address is therefore refused with `400` (`The allowlist must include your
-current address (…)`), so you cannot lock yourself out mid-session. Behind a
+refresh, not only at sign-in. When editing your own list, saving a list that
+does not include your current address is refused, so you cannot lock yourself
+out mid-session. Another master's list does not need to include your address. Behind a
 reverse proxy, set `TRUST_PROXY` so the server sees the real client address.
 
 ### Suspicious activity

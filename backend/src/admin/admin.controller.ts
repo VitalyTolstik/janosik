@@ -115,6 +115,7 @@ import {
   AdminUpdateAnnouncementDto,
   AdminUpdateBoardMemberDto,
   AdminMaintenanceRunDto,
+  AdminMasterAllowlistDto,
   AdminUpdateEmailTemplateDto,
   AdminUpdateFeatureFlagDto,
   AdminUpdateOpsDto,
@@ -282,6 +283,39 @@ export class AdminController {
   }
 
   // --------------------------------------------------------------- masters
+
+  @Get("masters/:id/allowlist")
+  getMasterAllowlist(
+    @Param("id") id: string,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<{ ipAllowlist: string | null }> {
+    this.admin.assertOwner(admin);
+    return this.security.getMasterAllowlist(id);
+  }
+
+  @Put("masters/:id/allowlist")
+  async updateMasterAllowlist(
+    @Param("id") id: string,
+    @Body() dto: AdminMasterAllowlistDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+    @Req() req: Request,
+  ): Promise<{ ipAllowlist: string | null }> {
+    this.admin.assertOwner(admin);
+    const result = await this.security.updateMasterAllowlist(
+      admin,
+      id,
+      dto.ipAllowlist,
+      req.ip ?? null,
+    );
+    await this.admin.audit(
+      admin,
+      "security.ip_allowlist_changed",
+      "admin",
+      id,
+      result,
+    );
+    return result;
+  }
 
   @Get("admins")
   listMasters(

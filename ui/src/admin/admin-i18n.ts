@@ -384,6 +384,9 @@ const en = {
   "admin.login.submit": "Sign in",
   "admin.login.submitting": "Signing in…",
   "admin.login.error": "Invalid credentials",
+  "admin.login.ipDenied": "Sign-in from this IP address is not allowed",
+  "admin.login.ipDeniedHint":
+    "Contact the application owner to add your address to the allowed list.",
   "admin.login.locked": "Account is temporarily locked",
   "admin.login.hint":
     "Master accounts are created on the server via the admin CLI.",
@@ -692,6 +695,16 @@ const en = {
   "admin.masters.action.unlock": "Unlock",
   "admin.masters.action.revokeSessions": "Revoke sessions",
   "admin.masters.action.remove": "Remove from masters",
+  "admin.masters.action.allowlist": "IP access",
+  "admin.masters.allowlist.title": "IP access for {email}",
+  "admin.masters.allowlist.hint":
+    "Enter IP addresses or CIDR ranges separated by commas. Leave empty to allow all addresses.",
+  "admin.masters.allowlist.loadError": "Could not load IP access settings.",
+  "admin.masters.allowlist.saved": "IP access settings saved",
+  "admin.masters.allowlist.invalid":
+    "Invalid IP address or CIDR range. Check the list and try again.",
+  "admin.masters.allowlist.selfLock":
+    "Include your current IP address to keep access to your account.",
   "admin.masters.confirm.remove.title": "Remove {email} from masters?",
   "admin.masters.confirm.remove.body":
     "The master account is deleted. If this email also has a user account, the user is untouched.",
@@ -1320,6 +1333,9 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.login.submit": "Войти",
   "admin.login.submitting": "Входим…",
   "admin.login.error": "Неверные данные",
+  "admin.login.ipDenied": "Вход с этого IP-адреса запрещён",
+  "admin.login.ipDeniedHint":
+    "Обратитесь к владельцу приложения, чтобы он добавил ваш адрес в список разрешённых.",
   "admin.login.locked": "Аккаунт временно заблокирован",
   "admin.login.hint": "Мастер-аккаунт создаётся на сервере через admin CLI.",
   "admin.login.back": "Вернуться в приложение",
@@ -1628,6 +1644,17 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.masters.action.unlock": "Разблокировать",
   "admin.masters.action.revokeSessions": "Ревокнуть сессии",
   "admin.masters.action.remove": "Убрать из мастеров",
+  "admin.masters.action.allowlist": "Доступ по IP",
+  "admin.masters.allowlist.title": "Доступ по IP: {email}",
+  "admin.masters.allowlist.hint":
+    "Укажите IP-адреса или диапазоны CIDR через запятую. Пустое поле разрешает доступ с любых адресов.",
+  "admin.masters.allowlist.loadError":
+    "Не удалось загрузить настройки доступа по IP.",
+  "admin.masters.allowlist.saved": "Настройки доступа по IP сохранены",
+  "admin.masters.allowlist.invalid":
+    "Неверный IP-адрес или диапазон CIDR. Проверьте список и попробуйте снова.",
+  "admin.masters.allowlist.selfLock":
+    "Добавьте свой текущий IP-адрес, чтобы сохранить доступ к аккаунту.",
   "admin.masters.confirm.remove.title": "Убрать {email} из мастеров?",
   "admin.masters.confirm.remove.body":
     "Мастер-аккаунт удаляется. Если у этого email есть ещё и пользовательский аккаунт, он не затрагивается.",

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Loader2, Lock } from "lucide-react";
+import { ArrowLeft, CircleAlert, Loader2, Lock } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/api/client";
@@ -22,6 +22,7 @@ export function AdminLoginPage() {
   const [code, setCode] = useState("");
   const [totpRequired, setTotpRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ipDenied, setIpDenied] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const emailError = fieldError(t, email, { required: true, email: true });
@@ -34,6 +35,7 @@ export function AdminLoginPage() {
     event.preventDefault();
     setBusy(true);
     setError(null);
+    setIpDenied(false);
     try {
       await login(
         email.trim(),
@@ -46,6 +48,11 @@ export function AdminLoginPage() {
         if (body?.code === "totp_required") {
           setTotpRequired(true);
           setError(code.trim() === "" ? null : t("admin.login.totpInvalid"));
+          return;
+        }
+        if (cause.status === 403 && body?.code === "ip_not_allowed") {
+          setIpDenied(true);
+          setError(t("admin.login.ipDenied"));
           return;
         }
         if (cause.status === 429) {
@@ -151,13 +158,25 @@ export function AdminLoginPage() {
               {emailError}
             </p>
           ) : error ? (
-            <p
+            <div
               role="alert"
               data-testid="admin-login-error"
-              className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
+              className="flex gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 text-xs text-danger"
             >
-              {error}
-            </p>
+              {ipDenied ? (
+                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              ) : null}
+              <div>
+                <span className={ipDenied ? "font-semibold" : undefined}>
+                  {error}
+                </span>
+                {ipDenied ? (
+                  <p className="mt-1 leading-relaxed">
+                    {t("admin.login.ipDeniedHint")}
+                  </p>
+                ) : null}
+              </div>
+            </div>
           ) : null}
 
           <Button

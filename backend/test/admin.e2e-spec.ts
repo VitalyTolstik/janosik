@@ -1682,6 +1682,7 @@ describe("Admin API (e2e)", () => {
   describe("master management (owners only)", () => {
     let operatorToken: string;
     let operatorId: string;
+    let operatorPassword: string;
 
     it("lets an owner mint another master and shows the password once", async () => {
       const res = await server()
@@ -1698,6 +1699,7 @@ describe("Admin API (e2e)", () => {
       expect(typeof res.body.temporaryPassword).toBe("string");
       expect(res.body.admin.passwordHash).toBeUndefined();
       operatorId = res.body.admin.id;
+      operatorPassword = res.body.temporaryPassword;
 
       const audit = await prisma.adminAuditLog.findFirst({
         where: { action: "admin.create", targetId: operatorId },
@@ -1864,6 +1866,69 @@ describe("Admin API (e2e)", () => {
         .send({ ipAllowlist: null })
         .expect(200);
       expect(cleared.body.ipAllowlist).toBeNull();
+    });
+
+    it("manages another master's allowlist and enforces it immediately (TASK-158)", async () => {
+      const endpoint = `/api/v1/admin/masters/${operatorId}/allowlist`;
+      const owner = { Authorization: `Bearer ${adminToken}` };
+      const operator = { Authorization: `Bearer ${operatorToken}` };
+      await server().get(endpoint).set(operator).expect(403);
+      await server()
+        .put(endpoint)
+        .set(operator)
+        .send({ ipAllowlist: null })
+        .expect(403);
+      await server()
+        .get(`/api/v1/admin/masters/missing/allowlist`)
+        .set(owner)
+        .expect(404);
+      await server().put(endpoint).set(owner).send({}).expect(400);
+      await server()
+        .put(endpoint)
+        .set(owner)
+        .send({ ipAllowlist: "10.0.0.0/33" })
+        .expect(400);
+      await server()
+        .put(`/api/v1/admin/masters/${adminId}/allowlist`)
+        .set(owner)
+        .send({ ipAllowlist: "10.0.0.0/8" })
+        .expect(400);
+
+      try {
+        const saved = await server()
+          .put(endpoint)
+          .set(owner)
+          .send({ ipAllowlist: " 10.0.0.0/8 , 192.0.2.1 " })
+          .expect(200);
+        expect(saved.body.ipAllowlist).toBe("10.0.0.0/8,192.0.2.1");
+        const fetched = await server().get(endpoint).set(owner).expect(200);
+        expect(fetched.body).toEqual(saved.body);
+        await server().get("/api/v1/admin/security").set(operator).expect(403);
+        const deniedLogin = await server()
+          .post("/api/v1/admin/auth/login")
+          .send({ email: "operator@example.com", password: operatorPassword })
+          .expect(403);
+        expect(deniedLogin.body.code).toBe("ip_not_allowed");
+        const audit = await prisma.adminAuditLog.findFirst({
+          where: {
+            action: "security.ip_allowlist_changed",
+            adminId,
+            targetType: "admin",
+            targetId: operatorId,
+          },
+          orderBy: { createdAt: "desc" },
+        });
+        expect(audit?.details).toMatchObject({
+          ipAllowlist: "10.0.0.0/8,192.0.2.1",
+        });
+      } finally {
+        await server()
+          .put(endpoint)
+          .set(owner)
+          .send({ ipAllowlist: null })
+          .expect(200);
+      }
+      await server().get("/api/v1/admin/security").set(operator).expect(200);
     });
 
     it("lists masters for an owner", async () => {

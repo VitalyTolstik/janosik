@@ -13,6 +13,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   registerDecorator,
   type ValidationOptions,
 } from "class-validator";
@@ -295,4 +296,11 @@ export class AdminUpdateSecurityDto {
   @MinLength(6)
   @MaxLength(6)
   totpCode?: string;
+}
+
+export class AdminMasterAllowlistDto {
+  @ValidateIf((_object, value: unknown) => value !== null)
+  @IsString()
+  @MaxLength(500)
+  ipAllowlist!: string | null;
 }

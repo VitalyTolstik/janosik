@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import type {
@@ -299,6 +300,46 @@ export class SecurityService {
     return isIpAllowed(row?.ipAllowlist ?? null, ip);
   }
 
+  async getMasterAllowlist(
+    adminId: string,
+  ): Promise<{ ipAllowlist: string | null }> {
+    const master = await this.prisma.adminUser.findUnique({
+      where: { id: adminId },
+      select: { ipAllowlist: true },
+    });
+    if (!master) throw new NotFoundException("Master not found");
+    return master;
+  }
+
+  async updateMasterAllowlist(
+    admin: AdminPrincipal,
+    adminId: string,
+    value: string | null,
+    callerIp: string | null,
+  ): Promise<{ ipAllowlist: string | null }> {
+    if (admin.role !== "OWNER") {
+      throw new ForbiddenException("Owner rights are required");
+    }
+    await this.getMasterAllowlist(adminId);
+    const invalid = invalidAllowlistEntries(value);
+    if (invalid.length > 0) {
+      throw new BadRequestException(
+        `Invalid allowlist entries: ${invalid.join(", ")}`,
+      );
+    }
+    const allowlist = normalizeAllowlist(value);
+    if (adminId === admin.id && !isIpAllowed(allowlist, callerIp)) {
+      throw new BadRequestException(
+        `The allowlist must include your current address (${callerIp ?? "unknown"})`,
+      );
+    }
+    return this.prisma.adminUser.update({
+      where: { id: adminId },
+      data: { ipAllowlist: allowlist },
+      select: { ipAllowlist: true },
+    });
+  }
+
   // ------------------------------------------------------------------- dto
 
   async get(admin: AdminPrincipal): Promise<AdminSecurityDto> {
@@ -324,27 +365,12 @@ export class SecurityService {
       if (admin.role !== "OWNER") {
         throw new ForbiddenException("Owner rights are required");
       }
-      // A malformed entry (bad prefix, unknown shorthand) silently matched
-      // nothing and could lock the owner out believing the list was saved
-      // (TASK-147, B17). Refuse it instead.
-      const invalid = invalidAllowlistEntries(dto.ipAllowlist);
-      if (invalid.length > 0) {
-        throw new BadRequestException(
-          `Invalid allowlist entries: ${invalid.join(", ")}`,
-        );
-      }
-      const allowlist = normalizeAllowlist(dto.ipAllowlist);
-      // The list is enforced on every admin request now, so saving one that
-      // excludes the caller's own address would lock them out mid-session.
-      if (!isIpAllowed(allowlist, callerIp)) {
-        throw new BadRequestException(
-          `The allowlist must include your current address (${callerIp ?? "unknown"})`,
-        );
-      }
-      await this.prisma.adminUser.update({
-        where: { id: admin.id },
-        data: { ipAllowlist: allowlist },
-      });
+      await this.updateMasterAllowlist(
+        admin,
+        admin.id,
+        dto.ipAllowlist,
+        callerIp,
+      );
     }
     if (dto.totpEnabled === false) {
       const secret = await this.secretFor(admin.id);

@@ -92,6 +92,33 @@ afterEach(() => {
 });
 
 describe("AdminApp", () => {
+  it("lets the owner edit another master's IP access", async () => {
+    const server = serverWith();
+    server.masters = [adminMaster()];
+    server.masterAllowlists["master-2"] = "192.0.2.10";
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/masters");
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-master-menu-operator@example.com"),
+      { button: 0 },
+    );
+    fireEvent.click(
+      await screen.findByText(t("admin.masters.action.allowlist")),
+    );
+    const input = await screen.findByRole("textbox", {
+      name: t("admin.masters.action.allowlist"),
+    });
+    await waitFor(() => expect(input).toHaveValue("192.0.2.10"));
+    fireEvent.change(input, { target: { value: "10.0.0.0/8" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: t("admin.common.save") }),
+    );
+    await waitFor(() =>
+      expect(server.masterAllowlists["master-2"]).toBe("10.0.0.0/8"),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
   it("shows the master login when no session exists", async () => {
     const server = serverWith();
     server.sessionAlive = false;
@@ -118,6 +145,18 @@ describe("AdminApp", () => {
     fireEvent.click(screen.getByTestId("admin-login-submit"));
 
     expect(await screen.findByText(t("admin.login.error"))).toBeTruthy();
+  });
+
+  it("explains when a valid master login is denied by IP restriction", async () => {
+    const server = serverWith();
+    server.sessionAlive = false;
+    server.loginIpDenied = true;
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin();
+    await screen.findByTestId("admin-login-form");
+    await login();
+    expect(await screen.findByText(t("admin.login.ipDenied"))).toBeTruthy();
+    expect(screen.getByText(t("admin.login.ipDeniedHint"))).toBeTruthy();
   });
 
   it("restores a cookie session and renders the dashboard", async () => {
