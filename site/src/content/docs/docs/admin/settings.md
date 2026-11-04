@@ -133,9 +133,14 @@ reverse proxy, set `TRUST_PROXY` so the server sees the real client address.
 
 ### Suspicious activity
 
-The alerts feed lists failed and locked sign-ins from the last 24 hours, up to
-50 rows. Each line shows a `locked` or `failed sign-in` badge, the master
-email, the IP and the time.
+The alerts feed shows up to 50 groups from the last 24 hours, including failed
+sign-ins, lockouts and IP restrictions on sign-in, session renewal and requests.
+Each line shows the reason, stage, account, IP address and most recent time;
+unavailable account or IP information is marked as unknown. Repeated events
+with the same account, IP, reason and stage are grouped per minute, with a count
+and the first occurrence time. Older events are available in the audit log,
+subject to audit retention. Changes to an IP allowlist are recorded separately
+in the audit log with the author and target master.
 
 ## Traffic and rate limit
 

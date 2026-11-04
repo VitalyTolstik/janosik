@@ -1764,7 +1764,13 @@ export class AdminService {
         action: entry.action,
         targetType: entry.targetType,
         targetId: entry.targetId,
-        details: (entry.details as Record<string, unknown> | null) ?? null,
+        details: entry.aggregateKey
+          ? {
+              ...((entry.details as Record<string, unknown> | null) ?? {}),
+              count: entry.eventCount,
+              lastOccurredAt: entry.lastOccurredAt.toISOString(),
+            }
+          : ((entry.details as Record<string, unknown> | null) ?? null),
         createdAt: entry.createdAt.getTime(),
       })),
       total,

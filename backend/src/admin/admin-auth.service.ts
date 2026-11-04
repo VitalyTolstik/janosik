@@ -14,6 +14,8 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
 import { AdminLoginDto } from "@/auth/dto/login.dto";
 import { isIpAllowed, SecurityService } from "./security.service";
+import { SecurityEventsService } from "./security-events.service";
+import type { SecurityEventReason } from "./security-events.service";
 import {
   ADMIN_JWT_AUDIENCE,
   ADMIN_LOCKOUT_MS,
@@ -50,6 +52,7 @@ export class AdminAuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly security: SecurityService,
+    private readonly securityEvents: SecurityEventsService,
   ) {}
 
   async login(
@@ -61,7 +64,7 @@ export class AdminAuthService {
     });
     if (!admin) {
       await this.burnPasswordTime(dto.password);
-      await this.auditLoginFailed(dto.email, null, "unknown email");
+      await this.auditLoginFailed(dto.email, null, "unknown_email", context.ip);
       throw new UnauthorizedException("Invalid credentials");
     }
 
@@ -69,14 +72,7 @@ export class AdminAuthService {
       admin.lockedUntil !== null &&
       admin.lockedUntil.getTime() > Date.now()
     ) {
-      await this.prisma.adminAuditLog.create({
-        data: {
-          adminId: admin.id,
-          adminEmail: admin.email,
-          action: "admin.login_locked",
-          details: { until: admin.lockedUntil.toISOString() },
-        },
-      });
+      await this.auditLoginFailed(admin.email, admin.id, "locked", context.ip);
       throw new HttpException(
         "Account is temporarily locked",
         HttpStatus.TOO_MANY_REQUESTS,
@@ -85,12 +81,12 @@ export class AdminAuthService {
 
     const valid = await argonVerify(admin.passwordHash, dto.password);
     if (!valid) {
-      await this.registerFailedLogin(admin, "wrong password");
+      await this.registerFailedLogin(admin, "wrong_password", context.ip);
       throw new UnauthorizedException("Invalid credentials");
     }
 
     if (admin.disabledAt !== null) {
-      await this.auditLoginFailed(dto.email, admin.id, "disabled");
+      await this.auditLoginFailed(dto.email, admin.id, "disabled", context.ip);
       throw new ForbiddenException("Account is disabled");
     }
 
@@ -98,9 +94,12 @@ export class AdminAuthService {
     // after the password check, so an attacker never learns the list without
     // a valid password.
     if (!(await this.security.isIpAllowed(admin.id, context.ip ?? null))) {
-      await this.auditLoginFailed(dto.email, admin.id, "ip not allowed", {
-        ip: context.ip ?? null,
-      });
+      await this.auditLoginFailed(
+        dto.email,
+        admin.id,
+        "ip_not_allowed",
+        context.ip,
+      );
       throw new ForbiddenException({
         message: "Sign-in from this IP is not allowed",
         code: "ip_not_allowed",
@@ -119,7 +118,7 @@ export class AdminAuthService {
         ? this.security.verifyCode(totpSecret, dto.totpCode, admin.id)
         : false;
       if (!codeValid) {
-        await this.registerFailedLogin(admin, "2fa required");
+        await this.registerFailedLogin(admin, "invalid_2fa", context.ip);
         throw new UnauthorizedException({
           message: "A valid two-factor code is required",
           code: "totp_required",
@@ -158,6 +157,13 @@ export class AdminAuthService {
       include: { admin: true },
     });
     if (!stored) {
+      await this.auditLoginFailed(
+        "",
+        null,
+        "refresh_invalid",
+        context.ip,
+        "refresh",
+      );
       throw new UnauthorizedException("Invalid refresh token");
     }
     if (stored.revokedAt) {
@@ -167,6 +173,13 @@ export class AdminAuthService {
           `Admin refresh race for ${stored.adminId} (revoked ${Math.round(
             revokedAgo / 1000,
           )}s ago) — rejecting without revoking all sessions`,
+        );
+        await this.auditLoginFailed(
+          stored.admin.email,
+          stored.adminId,
+          "refresh_race",
+          context.ip,
+          "refresh",
         );
         throw new UnauthorizedException("Refresh token race detected");
       }
@@ -182,13 +195,34 @@ export class AdminAuthService {
       this.logger.warn(
         `Admin refresh token reuse detected for ${stored.adminId}: all sessions revoked`,
       );
+      await this.auditLoginFailed(
+        stored.admin.email,
+        stored.adminId,
+        "refresh_reuse",
+        context.ip,
+        "refresh",
+      );
       throw new UnauthorizedException("Refresh token reuse detected");
     }
     if (stored.expiresAt.getTime() <= Date.now()) {
+      await this.auditLoginFailed(
+        stored.admin.email,
+        stored.adminId,
+        "refresh_expired",
+        context.ip,
+        "refresh",
+      );
       throw new UnauthorizedException("Refresh token expired");
     }
     if (stored.admin.disabledAt !== null) {
       await this.revokeAllSessions(stored.adminId);
+      await this.auditLoginFailed(
+        stored.admin.email,
+        stored.adminId,
+        "disabled",
+        context.ip,
+        "refresh",
+      );
       throw new ForbiddenException("Account is disabled");
     }
     // The allowlist gates session renewal too (not only the password login):
@@ -197,11 +231,9 @@ export class AdminAuthService {
       await this.auditLoginFailed(
         stored.admin.email,
         stored.adminId,
-        "ip not allowed",
-        {
-          ip: context.ip ?? null,
-          stage: "refresh",
-        },
+        "ip_not_allowed",
+        context.ip,
+        "refresh",
       );
       throw new ForbiddenException("Sign-in from this IP is not allowed");
     }
@@ -214,6 +246,13 @@ export class AdminAuthService {
       // (TASK-156): reject this loser without nuking every session.
       this.logger.log(
         `Concurrent admin refresh race for ${stored.adminId} — rejecting without session revocation`,
+      );
+      await this.auditLoginFailed(
+        stored.admin.email,
+        stored.adminId,
+        "refresh_race",
+        context.ip,
+        "refresh",
       );
       throw new UnauthorizedException("Refresh token race detected");
     }
@@ -299,16 +338,16 @@ export class AdminAuthService {
   private async auditLoginFailed(
     email: string,
     adminId: string | null,
-    reason: string,
-    details: Record<string, unknown> = {},
+    reason: SecurityEventReason,
+    ip?: string | null,
+    stage: "login" | "refresh" = "login",
   ): Promise<void> {
-    await this.prisma.adminAuditLog.create({
-      data: {
-        adminId,
-        adminEmail: email,
-        action: "admin.login_failed",
-        details: { reason, ...details },
-      },
+    await this.securityEvents.record({
+      email,
+      adminId,
+      reason,
+      ip: ip ?? null,
+      stage,
     });
   }
 
@@ -319,7 +358,8 @@ export class AdminAuthService {
    */
   private async registerFailedLogin(
     admin: AdminUser,
-    reason: string,
+    reason: SecurityEventReason,
+    ip?: string | null,
   ): Promise<void> {
     const failedLogins = admin.failedLogins + 1;
     const lockedUntil =
@@ -330,9 +370,7 @@ export class AdminAuthService {
       where: { id: admin.id },
       data: { failedLogins, lockedUntil },
     });
-    await this.auditLoginFailed(admin.email, admin.id, reason, {
-      failedLogins,
-    });
+    await this.auditLoginFailed(admin.email, admin.id, reason, ip);
   }
 
   /** Equal-cost path for unknown emails (see class docs). */

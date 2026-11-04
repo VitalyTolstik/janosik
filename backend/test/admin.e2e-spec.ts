@@ -176,6 +176,11 @@ describe("Admin API (e2e)", () => {
     });
     expect(audit).not.toBeNull();
     expect(audit?.adminId).toBeNull();
+    expect(audit?.details).toMatchObject({
+      reason: "unknown_email",
+      stage: "login",
+      ip: expect.any(String),
+    });
   });
 
   it("locks the account after too many failed logins", async () => {
@@ -194,6 +199,15 @@ describe("Admin API (e2e)", () => {
     });
     expect(locked?.failedLogins).toBe(5);
     expect(locked?.lockedUntil?.getTime()).toBeGreaterThan(Date.now());
+    const failed = await prisma.adminAuditLog.findFirst({
+      where: { adminId, action: "admin.login_failed" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(failed?.details).toMatchObject({
+      reason: "wrong_password",
+      stage: "login",
+      ip: expect.any(String),
+    });
 
     const res = await server()
       .post("/api/v1/admin/auth/login")
@@ -205,6 +219,11 @@ describe("Admin API (e2e)", () => {
       where: { action: "admin.login_locked", adminId },
     });
     expect(audit).not.toBeNull();
+    expect(audit?.details).toMatchObject({
+      reason: "locked",
+      stage: "login",
+      ip: expect.any(String),
+    });
 
     await prisma.adminUser.update({
       where: { id: adminId },
@@ -1872,6 +1891,11 @@ describe("Admin API (e2e)", () => {
       const endpoint = `/api/v1/admin/masters/${operatorId}/allowlist`;
       const owner = { Authorization: `Bearer ${adminToken}` };
       const operator = { Authorization: `Bearer ${operatorToken}` };
+      const login = await server()
+        .post("/api/v1/admin/auth/login")
+        .send({ email: "operator@example.com", password: operatorPassword })
+        .expect(200);
+      const refreshCookie = findCookie(login, ADMIN_REFRESH_COOKIE)!;
       await server().get(endpoint).set(operator).expect(403);
       await server()
         .put(endpoint)
@@ -1904,11 +1928,68 @@ describe("Admin API (e2e)", () => {
         const fetched = await server().get(endpoint).set(owner).expect(200);
         expect(fetched.body).toEqual(saved.body);
         await server().get("/api/v1/admin/security").set(operator).expect(403);
+        await server().get("/api/v1/admin/security").set(operator).expect(403);
+        const auditFailure = jest
+          .spyOn(prisma.adminAuditLog, "upsert")
+          .mockRejectedValueOnce(new Error("audit unavailable"));
+        try {
+          await server()
+            .get("/api/v1/admin/security")
+            .set(operator)
+            .expect(403);
+        } finally {
+          auditFailure.mockRestore();
+        }
+        await server()
+          .post("/api/v1/admin/auth/refresh")
+          .set("Cookie", refreshCookie)
+          .expect(403);
         const deniedLogin = await server()
           .post("/api/v1/admin/auth/login")
           .send({ email: "operator@example.com", password: operatorPassword })
           .expect(403);
         expect(deniedLogin.body.code).toBe("ip_not_allowed");
+        const events = await prisma.adminAuditLog.findMany({
+          where: { adminId: operatorId, action: "admin.login_failed" },
+        });
+        for (const stage of ["login", "refresh", "request"]) {
+          expect(
+            events.some((event) => {
+              const details = event.details as Record<string, unknown>;
+              return (
+                details.reason === "ip_not_allowed" &&
+                details.stage === stage &&
+                typeof details.ip === "string" &&
+                (stage !== "request" || event.eventCount >= 2)
+              );
+            }),
+          ).toBe(true);
+        }
+        const security = await server()
+          .get("/api/v1/admin/security")
+          .set(owner)
+          .expect(200);
+        expect(security.body.alerts).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              adminEmail: "operator@example.com",
+              reason: "ip_not_allowed",
+              stage: "request",
+              count: expect.any(Number),
+              ip: expect.any(String),
+            }),
+            expect.objectContaining({
+              adminEmail: "operator@example.com",
+              reason: "ip_not_allowed",
+              stage: "refresh",
+            }),
+            expect.objectContaining({
+              adminEmail: "operator@example.com",
+              reason: "ip_not_allowed",
+              stage: "login",
+            }),
+          ]),
+        );
         const audit = await prisma.adminAuditLog.findFirst({
           where: {
             action: "security.ip_allowlist_changed",

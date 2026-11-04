@@ -28,6 +28,7 @@ import { ExportsService, EXPORTS_QUEUE } from "./exports.service";
 import { ExportsProcessor } from "./exports.processor";
 import { ObservabilityService } from "./observability.service";
 import { SecurityService } from "./security.service";
+import { SecurityEventsService } from "./security-events.service";
 import { ThrottleSettingsService } from "./throttle-settings.service";
 
 /**
@@ -73,6 +74,7 @@ import { ThrottleSettingsService } from "./throttle-settings.service";
     ...(queuesEnabled ? [DemoProcessor, ExportsProcessor] : []),
     CommsService,
     SecurityService,
+    SecurityEventsService,
     ObservabilityService,
   ],
 })

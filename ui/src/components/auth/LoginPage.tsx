@@ -16,7 +16,7 @@ import type { OAuthProviderDto } from "@janosik/shared";
  *
  * One form, two modes: the server needs at least one account before anything
  * can be stored, and self-hosters start from zero, so registration lives on
- * the same screen instead of waiting for the landing page (TASK-32). Errors
+ * the same screen. Errors
  * map to localized messages; the raw NestJS text stays on the English
  * validation path only as a last resort.
  */

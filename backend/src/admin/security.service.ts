@@ -394,19 +394,47 @@ export class SecurityService {
     const rows = await this.prisma.adminAuditLog.findMany({
       where: {
         action: { in: ["admin.login_failed", "admin.login_locked"] },
-        createdAt: { gte: since },
+        lastOccurredAt: { gte: since },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: { lastOccurredAt: "desc" },
       take: 50,
     });
     return rows.map((row) => {
       const details = (row.details as Record<string, unknown> | null) ?? {};
+      const reasons: Record<string, AdminSecurityAlertDto["reason"]> = {
+        unknown_email: "unknown_email",
+        "unknown email": "unknown_email",
+        wrong_password: "wrong_password",
+        "wrong password": "wrong_password",
+        disabled: "disabled",
+        ip_not_allowed: "ip_not_allowed",
+        "ip not allowed": "ip_not_allowed",
+        invalid_2fa: "invalid_2fa",
+        "2fa required": "invalid_2fa",
+        locked: "locked",
+        refresh_invalid: "refresh_invalid",
+        refresh_expired: "refresh_expired",
+        refresh_race: "refresh_race",
+        refresh_reuse: "refresh_reuse",
+      };
+      const reason =
+        row.action === "admin.login_locked"
+          ? "locked"
+          : (reasons[String(details.reason)] ?? "unknown");
+      const stage =
+        details.stage === "refresh" || details.stage === "request"
+          ? details.stage
+          : "login";
       return {
         id: row.id,
         action: row.action,
         adminEmail: row.adminEmail,
         ip: typeof details.ip === "string" ? details.ip : null,
         createdAt: row.createdAt.getTime(),
+        lastOccurredAt: row.lastOccurredAt.getTime(),
+        count: row.eventCount,
+        reason,
+        stage,
         detail:
           row.action === "admin.login_locked"
             ? "Account temporarily locked after repeated failures"

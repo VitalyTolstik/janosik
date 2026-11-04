@@ -1,6 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { argon2id, hash as argonHash } from "argon2";
+import { createServer } from "node:net";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import "@/config/env";
@@ -19,7 +20,7 @@ const USER_PASSWORD = "user correct horse battery";
  * Master-panel email settings (TASK-52): presets, credential masking, the
  * owner-only edit guard, the probe endpoint and the audit trail. Delivery
  * itself is unit-covered; here the flow goes over real HTTP with a real
- * app (the dead `127.0.0.1:1` transport fails fast with ECONNREFUSED).
+ * app and a local SMTP server that deterministically rejects the connection.
  */
 describe("Admin email settings (e2e)", () => {
   let app: INestApplication;
@@ -225,35 +226,50 @@ describe("Admin email settings (e2e)", () => {
   });
 
   it("probing a dead transport reports the failure and records it", async () => {
-    // Reconfigure onto a port that refuses instantly, then probe.
-    await server()
-      .put("/api/v1/admin/email-settings")
-      .set("Authorization", `Bearer ${ownerToken}`)
-      .send({
-        provider: "custom",
-        host: "127.0.0.1",
-        port: 1,
-        secure: false,
-        from: "Janosik <no-reply@example.com>",
-        username: "user",
-        enabled: true,
-      })
-      .expect(200);
-
-    const res = await server()
-      .post("/api/v1/admin/email-settings/test")
-      .set("Authorization", `Bearer ${ownerToken}`)
-      .send({ to: "probe@example.com" })
-      .expect(200);
-
-    expect(res.body.ok).toBe(false);
-    expect(res.body.error).toContain("ECONNREFUSED");
-
-    const row = await prisma.emailSettings.findUnique({
-      where: { id: "singleton" },
+    const smtp = createServer((socket) =>
+      socket.end("421 Test SMTP unavailable\r\n"),
+    );
+    await new Promise<void>((resolve, reject) => {
+      smtp.once("error", reject);
+      smtp.listen(0, "127.0.0.1", resolve);
     });
-    expect(row?.lastTestOk).toBe(false);
-    expect(row?.lastError).toContain("ECONNREFUSED");
+    const address = smtp.address();
+    if (!address || typeof address === "string")
+      throw new Error("No SMTP test address");
+    try {
+      await server()
+        .put("/api/v1/admin/email-settings")
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .send({
+          provider: "custom",
+          host: "127.0.0.1",
+          port: address.port,
+          secure: false,
+          from: "Janosik <no-reply@example.com>",
+          username: "user",
+          enabled: true,
+        })
+        .expect(200);
+
+      const res = await server()
+        .post("/api/v1/admin/email-settings/test")
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .send({ to: "probe@example.com" })
+        .expect(200);
+
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error).toContain("Test SMTP unavailable");
+
+      const row = await prisma.emailSettings.findUnique({
+        where: { id: "singleton" },
+      });
+      expect(row?.lastTestOk).toBe(false);
+      expect(row?.lastError).toContain("Test SMTP unavailable");
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        smtp.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
   });
 
   it("probing in log mode reports ok and the email lands in the outbox", async () => {

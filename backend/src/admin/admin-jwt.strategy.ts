@@ -10,6 +10,7 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
 import { ADMIN_JWT_AUDIENCE, ADMIN_TOKEN_TYPE } from "./admin.types";
 import { isIpAllowed } from "./security.service";
+import { SecurityEventsService } from "./security-events.service";
 import type { AdminPrincipal } from "./admin.types";
 
 interface AdminTokenPayload {
@@ -29,7 +30,10 @@ interface AdminTokenPayload {
  */
 @Injectable()
 export class AdminJwtStrategy extends PassportStrategy(Strategy, "admin-jwt") {
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly securityEvents: SecurityEventsService,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -53,6 +57,13 @@ export class AdminJwtStrategy extends PassportStrategy(Strategy, "admin-jwt") {
       throw new UnauthorizedException();
     }
     if (!isIpAllowed(admin.ipAllowlist, req.ip ?? null)) {
+      await this.securityEvents.record({
+        adminId: admin.id,
+        email: admin.email,
+        ip: req.ip ?? null,
+        reason: "ip_not_allowed",
+        stage: "request",
+      });
       throw new ForbiddenException("Access from this IP is not allowed");
     }
     return {
