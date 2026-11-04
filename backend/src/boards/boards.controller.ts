@@ -75,8 +75,12 @@ export class BoardsController {
   @Post("import")
   import(
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Body() body: unknown,
   ): Promise<BoardAggregate[]> {
+    if (principal?.tokenScope?.boardId) {
+      throw new ForbiddenException("Token is scoped to one board");
+    }
     return this.boards.importBoards(user.id, body);
   }
 

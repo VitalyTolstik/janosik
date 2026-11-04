@@ -40,12 +40,10 @@ describe("loadConfig", () => {
     expect(config).toMatchObject({ url: "http://a", token: "jnk_x" });
   });
 
-  it("keeps an `=` inside a flag value", () => {
-    const config = loadConfig(
-      ["--url=http://a.test/path?x=1", "--token=jnk_x"],
-      {},
-    );
-    expect(config.url).toBe("http://a.test/path?x=1");
+  it("rejects a URL with a path or query instead of building broken API paths", () => {
+    expect(() =>
+      loadConfig(["--url=http://a.test/path?x=1", "--token=jnk_x"], {}),
+    ).toThrow(/origin without a path/);
   });
 
   it("normalises the app base and reads the fs options", () => {
@@ -56,8 +54,8 @@ describe("loadConfig", () => {
       JANOSIK_MCP_FS_ROOT: "/tmp/sandbox",
     });
     expect(config.appBase).toBe("/app");
-    // A sandbox root implies filesystem access is on.
-    expect(config.allowFs).toBe(true);
+    // A root only constrains access; it does not opt in to filesystem tools.
+    expect(config.allowFs).toBe(false);
     expect(config.fsRoot).toBe("/tmp/sandbox");
   });
 

@@ -15,9 +15,9 @@ import path from "node:path";
 /**
  * Tool groups. The default set covers working the board; the groups that act
  * on the *account* or on who can see a board (members, invitations, share
- * links, API keys) are opt-in. Board content is untrusted input to the model,
- * and a prompt-injected agent holding those tools could invite an outsider,
- * publish the board or mint itself a fresh API key.
+ * links, profile) are opt-in. Board content is untrusted input to the model,
+ * and a prompt-injected agent holding those tools could invite an outsider
+ * or publish the board. API-key management is not exposed to API keys.
  */
 export const TOOLSETS = [
   "boards",
@@ -136,9 +136,28 @@ function parseArgs(argv: string[]): ParsedArgs {
   return out;
 }
 
-/** Strip a trailing slash so `${url}/api/v1` never doubles up. */
+/** Accept an HTTP(S) origin, so API paths and share links use one base. */
 function normalizeUrl(url: string): string {
-  return url.replace(/\/+$/, "");
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new ConfigError("JANOSIK_URL must be an HTTP(S) instance origin.");
+  }
+  if (
+    !["http:", "https:"].includes(parsed.protocol) ||
+    parsed.username ||
+    parsed.password ||
+    parsed.pathname !== "/" ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw new ConfigError(
+      "JANOSIK_URL must be an HTTP(S) instance origin without a path, " +
+        "credentials, query or fragment (for example https://boards.example.com).",
+    );
+  }
+  return parsed.origin;
 }
 
 /** Normalise a sub-path: `""` at the root, otherwise `"/app"` (no slashes). */
@@ -208,8 +227,7 @@ export function loadConfig(
 
   const appBase = normalizeAppBase(args.appBase ?? env.JANOSIK_APP_BASE ?? "");
   const fsRootRaw = args.fsRoot ?? env.JANOSIK_MCP_FS_ROOT;
-  const allowFs =
-    args.allowFs ?? parseBool(env.JANOSIK_MCP_ALLOW_FS) ?? Boolean(fsRootRaw);
+  const allowFs = args.allowFs ?? parseBool(env.JANOSIK_MCP_ALLOW_FS) ?? false;
 
   return {
     url: normalizeUrl(url),
@@ -236,7 +254,8 @@ Environment:
   JANOSIK_MCP_READONLY Register read-only tools only
 
   Prefer the environment for JANOSIK_TOKEN: a --token flag is visible to
-  other local users in the process list.
+  other local users in the process list. Create the key in Account → API keys
+  with a browser session; this server only consumes it.
 
 Flags:
   --url <url>          Override JANOSIK_URL

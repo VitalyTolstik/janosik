@@ -233,12 +233,15 @@ export function renderActivity(
   return `# Activity (${entries.length})\n\n${bullets(lines)}${more}`;
 }
 
-export function renderShares(shares: BoardShareDto[]): string {
+export function renderShares(
+  shares: BoardShareDto[],
+  urlFor: (token: string) => string,
+): string {
   if (shares.length === 0) return "No share links.";
   return `# Share links (${shares.length})\n\n${bullets(
     shares.map((share) => {
       const state = share.revokedAt ? "revoked" : "active";
-      return `${share.mode} · ${state} · ${share.views} views · ${code(share.token)} — ${code(share.id)}`;
+      return `${share.mode} · ${state} · ${share.views} views · ${urlFor(share.token)} — ${code(share.id)}`;
     }),
   )}`;
 }

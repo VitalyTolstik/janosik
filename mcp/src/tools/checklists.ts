@@ -9,7 +9,7 @@ import { z } from "zod";
 
 import type { JanosikClient } from "../client.js";
 import { textOnly } from "../format.js";
-import { newId } from "../ids.js";
+import { newId, stableCommandId } from "../ids.js";
 import {
   boardIdSchema,
   cardIdSchema,
@@ -38,7 +38,7 @@ export function registerChecklistTools(
         checklistId: idSchema
           .optional()
           .describe(
-            "Client id for the new checklist (TASK-157, E14) — a retry then " +
+            "Client id for the new checklist — a retry then " +
               "returns the first checklist instead of a duplicate.",
           ),
         title: z
@@ -62,7 +62,9 @@ export function registerChecklistTools(
         },
         {
           ifMatch: expectedVersion,
-          ...(checklistId ? { commandId: checklistId } : {}),
+          ...(checklistId
+            ? { commandId: stableCommandId(checklistId, "create") }
+            : {}),
         },
       );
       return textOnly(`Added checklist "${title}" — \`${newChecklistId}\`.`);
@@ -116,7 +118,7 @@ export function registerChecklistTools(
         itemId: idSchema
           .optional()
           .describe(
-            "Client id for the new item (TASK-157, E14) — a retry then " +
+            "Client id for the new item — a retry then " +
               "returns the first item instead of a duplicate.",
           ),
         text: z
@@ -139,7 +141,10 @@ export function registerChecklistTools(
           newItemId,
           text,
         },
-        { ifMatch: expectedVersion, ...(itemId ? { commandId: itemId } : {}) },
+        {
+          ifMatch: expectedVersion,
+          ...(itemId ? { commandId: stableCommandId(itemId, "create") } : {}),
+        },
       );
       return textOnly(`Added item "${text}" — \`${newItemId}\`.`);
     },

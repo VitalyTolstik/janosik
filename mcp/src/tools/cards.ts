@@ -18,9 +18,9 @@ import {
   type Card,
 } from "@janosik/shared";
 import type { BatchCommandItem, JanosikClient } from "../client.js";
-import { describeError } from "../errors.js";
+import { ApiError, describeError } from "../errors.js";
 import { errorResult, respond, textOnly } from "../format.js";
-import { newId } from "../ids.js";
+import { newId, stableCommandId } from "../ids.js";
 import { findCardLocation } from "../locate.js";
 import { blockedIds } from "../project.js";
 import { renderCard } from "../render.js";
@@ -126,7 +126,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         cardId: idSchema
           .optional()
           .describe(
-            "Client id for the new card (TASK-157, E14). Pass a stable id so " +
+            "Client id for the new card. Pass a stable id so " +
               "a retried call returns the first card instead of a duplicate.",
           ),
         title: z.string().min(1).max(LIMITS.cardTitle).describe("Card title."),
@@ -205,23 +205,28 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           ...(expectedVersion !== undefined
             ? { ifMatch: expectedVersion }
             : {}),
-          // A client id doubles as the idempotency key, so a retry is a no-op.
-          ...(cardId ? { commandId: cardId } : {}),
+          // A client id determines the idempotency key, so a retry replays.
+          ...(cardId ? { commandId: stableCommandId(cardId, "create") } : {}),
         },
       ];
       if (description !== undefined) {
         items.push({
           action: { type: "UPDATE_CARD", cardId: newCardId, description },
+          ...(cardId
+            ? { commandId: stableCommandId(cardId, "description") }
+            : {}),
         });
       }
       if (priority !== undefined) {
         items.push({
           action: { type: "SET_CARD_PRIORITY", cardId: newCardId, priority },
+          ...(cardId ? { commandId: stableCommandId(cardId, "priority") } : {}),
         });
       }
       if (assigneeId !== undefined) {
         items.push({
           action: { type: "SET_CARD_ASSIGN", cardId: newCardId, assigneeId },
+          ...(cardId ? { commandId: stableCommandId(cardId, "assignee") } : {}),
         });
       }
       if (due !== undefined) {
@@ -231,6 +236,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
             cardId: newCardId,
             dueDate: due,
           },
+          ...(cardId ? { commandId: stableCommandId(cardId, "dueDate") } : {}),
         });
       }
       try {
@@ -387,29 +393,17 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, cardId, toColumnId, position, expectedVersion }) => {
-      // Definition-of-Done gate (TASK-157, D12). The board's *last* column is
-      // its "Done" column (the same heuristic the OG image uses); a card that
+      // Definition-of-Done gate (TASK-157, D12). This MCP tool treats the
+      // board's last column as Done; a card that
       // carries a task contract may only enter it once its `Definition of
       // Done` checklist is fully ticked and it has an evidence comment. This
-      // is the anti-"green fence built from lies" rule — a swarm cannot mark
-      // work done on its own say-so.
+      // is checked here before this tool moves it. Other clients can still
+      // move it because the command API does not enforce this convention.
       //
       // The read below serves both the gate and the move: the snapshot is
       // handed to `commandOnFreshBoard`, so a move costs one `GET` (not two,
       // TASK-154) and only re-reads on a version conflict.
       const { board: before, seq } = await client.getBoardWithSeq(boardId);
-      const origin = findCardLocation(before, cardId);
-      if (origin === null) return cardNotFound(cardId, boardId);
-      const destinationId = toColumnId ?? origin.column.id;
-      const doneColumnId = before.columns.at(-1)?.id;
-      if (
-        destinationId === doneColumnId &&
-        destinationId !== origin.column.id
-      ) {
-        const block = await dodBlock(client, before.cards[cardId]!);
-        if (block !== null) return errorResult(block);
-      }
-
       // The source column/index come from the read, and `ifMatch` refuses
       // the move if another writer changed the board in between (the read
       // is then retried), so a concurrent move can never act on stale
@@ -417,7 +411,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       let missingColumn: string | null = null;
       const moved = await client.commandOnFreshBoard(
         boardId,
-        (board) => {
+        async (board) => {
           const location = findCardLocation(board, cardId);
           if (!location) return null;
           const destinationId = toColumnId ?? location.column.id;
@@ -427,6 +421,13 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           if (!destination) {
             missingColumn = destinationId;
             return null;
+          }
+          if (
+            destination.id === board.columns.at(-1)?.id &&
+            destination.id !== location.column.id
+          ) {
+            const block = await dodBlock(client, board.cards[cardId]!);
+            if (block !== null) throw new Error(block);
           }
           // Within one column the card's own slot does not count.
           const slots =
@@ -570,7 +571,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
     {
       title: "Claim a card",
       description:
-        "Take a temporary work lease on a card (TASK-157) — how a swarm " +
+        "Take a temporary work lease on a card — how a swarm " +
         "avoids two agents working the same card. The lease expires on its " +
         "own, so a dead agent never leaves the card stuck. Refused if another " +
         "member still holds a live lease: read the card, or pick another.",
@@ -619,7 +620,8 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       title: "Release a card",
       description:
         "Release your work lease on a card, or clear a lapsed one, so " +
-        "another agent can pick it up.",
+        "another agent can pick it up. A live claim held by another user " +
+        "cannot be released with this tool.",
       inputSchema: {
         boardId: boardIdSchema,
         cardId: cardIdSchema,
@@ -628,16 +630,41 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, cardId, expectedVersion }) => {
-      await client.command(
+      const user = await client.whoami();
+      const outcome = await client.commandOnFreshBoard(
         boardId,
-        {
-          type: "CLAIM_CARD",
-          cardId,
-          claimedBy: null,
-          leaseUntil: null,
+        (board) => {
+          const card = Object.hasOwn(board.cards, cardId)
+            ? board.cards[cardId]
+            : undefined;
+          if (!card) return null;
+          if (
+            card.claimedBy &&
+            card.claimedBy !== user.id &&
+            (card.leaseUntil ?? 0) > Date.now()
+          ) {
+            return { result: "held" as const };
+          }
+          return {
+            action: {
+              type: "CLAIM_CARD",
+              cardId,
+              claimedBy: null,
+              leaseUntil: null,
+            },
+            result: "released" as const,
+          };
         },
-        { ifMatch: expectedVersion },
+        3,
+        expectedVersion,
       );
+      if (outcome === null) return cardNotFound(cardId, boardId);
+      if (outcome === "held") {
+        return errorResult(
+          `Error: card ${cardId} has a live claim held by another user. ` +
+            "Read the card and wait for its lease to expire.",
+        );
+      }
       return textOnly(`Released card ${cardId}.`);
     },
   );
@@ -648,7 +675,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
     {
       title: "Set a card's task spec",
       description:
-        "Set the card's machine-readable task contract (TASK-157): the " +
+        "Set the card's machine-readable task contract: the " +
         "acceptance criteria and/or the definition of done, as lists of " +
         "short strings an agent reads directly instead of parsing prose. " +
         "Omit a field to leave it unchanged; pass an empty list to clear it.",
@@ -744,8 +771,8 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
     {
       title: "Set a card cover",
       description:
-        "Set or clear a card's colour/gradient cover stripe. Use " +
-        "janosik_get_board to see available colours, or pass null to remove it.",
+        "Set or clear a card's colour/gradient cover stripe. Use the cover " +
+        "input's colour and gradient choices, or pass null to remove it.",
       inputSchema: {
         boardId: boardIdSchema,
         cardId: cardIdSchema,
@@ -839,8 +866,9 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
     {
       title: "Delete a card",
       description:
-        "Delete a card permanently. Destructive — prefer janosik_archive_card " +
-        "when the card might be needed again.",
+        "Remove a card and its content from the board. For routine cleanup, " +
+        "use janosik_archive_card so the card and its history remain easy " +
+        "to restore. Use this tool when removal is specifically intended.",
       inputSchema: {
         boardId: boardIdSchema,
         cardId: cardIdSchema,
@@ -985,8 +1013,8 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
     {
       title: "List cards ready to work",
       description:
-        "Cards an agent can pick up right now: in the board's first " +
-        "(Backlog) column, unassigned, not under a live claim and not " +
+        "Candidate cards in each active board's first column: unassigned, not " +
+        "under a live claim and not " +
         "blocked by another card. Sorted by priority (most urgent first). " +
         "Reads one board, or every board the user can access when boardId is " +
         "omitted.",
@@ -1036,9 +1064,9 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
     {
       title: "Wait for a ready card",
       description:
-        "Block until a card is ready to work (see janosik_list_ready_cards) " +
-        "or the timeout passes, so an idle agent makes one call instead of " +
-        "polling. Returns the ready card, or null on timeout.",
+        "Check periodically until a candidate card appears (see " +
+        "janosik_list_ready_cards) or the timeout passes. Returns the card " +
+        "or null on timeout. The server polls the board during this call.",
       inputSchema: {
         boardId: boardIdSchema.optional().describe("Limit to one board."),
         timeoutMs: z
@@ -1102,6 +1130,7 @@ function readyCards(
 ): Array<{ board: Board; card: Card; column: string }> {
   const out: Array<{ board: Board; card: Card; column: string }> = [];
   for (const board of boards) {
+    if (board.archivedAt !== undefined) continue;
     const backlog = board.columns[0];
     if (!backlog) continue;
     const blocked = blockedIds(board);
@@ -1191,8 +1220,10 @@ async function loadTextMatches(
         try {
           const result = await client.searchBoardCards(board.id, query);
           out.set(board.id, new Set(result.cardIds));
-        } catch {
-          /* older instance: no server search, the client-side match stands in */
+        } catch (error) {
+          // Only a missing route means this is an older instance. Auth,
+          // permission and rate-limit failures must not hide matching cards.
+          if (!(error instanceof ApiError && error.status === 404)) throw error;
         }
       }),
     );

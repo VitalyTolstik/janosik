@@ -240,6 +240,49 @@ describe("Commands batch API (e2e)", () => {
     );
   });
 
+  it("rejects a no-op create before follow-up edits can touch an existing card", async () => {
+    const boardId = await createBoard("Duplicate create guard");
+    const columnId = randomUUID();
+    await addColumn(boardId, columnId, "Todo");
+    const cardId = randomUUID();
+    await postBatch(boardId, [
+      item(
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: cardId,
+          columnId,
+          title: "Original",
+        }),
+      ),
+    ]).expect(200);
+    const commandsBefore = await prisma.command.count({ where: { boardId } });
+
+    await postBatch(boardId, [
+      item(
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: cardId,
+          columnId,
+          title: "Duplicate",
+        }),
+      ),
+      item(
+        scoped(boardId, {
+          type: "UPDATE_CARD",
+          cardId,
+          description: "Must not be applied",
+        }),
+      ),
+    ]).expect(400);
+
+    const after = await getAggregate(boardId);
+    expect(after.cards[cardId]).toMatchObject({ title: "Original" });
+    expect(after.cards[cardId]?.description).toBeUndefined();
+    expect(await prisma.command.count({ where: { boardId } })).toBe(
+      commandsBefore,
+    );
+  });
+
   it("replays a batch idempotently: same seqs, no new commands", async () => {
     const boardId = await createBoard("Idempotent board");
     const columnId = randomUUID();

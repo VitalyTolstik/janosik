@@ -469,6 +469,16 @@ export class CommandsService {
     );
     const after = state[0] ?? board;
     const changed = stableStringify(board) !== stableStringify(after);
+    // A create followed by field edits must not turn a duplicate or invalid
+    // ADD_CARD into edits of an existing card. Reject before writing any
+    // command row so the whole batch rolls back. A genuine commandId replay
+    // is handled above and never reaches this branch.
+    if (!changed && action.type === "ADD_CARD") {
+      throw new BadRequestException({
+        message: "Card was not created; check the column and card ids",
+        field: "action.newCardId",
+      });
+    }
     // Freeze the display diff while both aggregates are in hand (TASK-37)
     // — the history feed reads it back; the payload stays a pure action.
     const details = changed ? commandDetails(action, board, after) : null;

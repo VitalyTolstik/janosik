@@ -56,7 +56,7 @@ export function registerShareTools(
             url: shareUrl(baseUrl, appBase, share.token),
           })),
         },
-        renderShares(shares),
+        renderShares(shares, (token) => shareUrl(baseUrl, appBase, token)),
       );
     },
   );
@@ -176,7 +176,7 @@ export function registerShareTools(
       title: "Refresh a snapshot share",
       description:
         "Re-capture a snapshot share from the board's current content " +
-        "(ADMIN only). No effect on a live link.",
+        "(ADMIN only). The API rejects this for a live link.",
       inputSchema: {
         boardId: boardIdSchema,
         shareId: idSchema.describe("Share id."),

@@ -11,7 +11,7 @@ import { z } from "zod";
 
 import type { JanosikClient } from "../client.js";
 import { respond, textOnly } from "../format.js";
-import { newId } from "../ids.js";
+import { newId, stableCommandId } from "../ids.js";
 import {
   boardIdSchema,
   cardIdSchema,
@@ -61,7 +61,7 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
         labelId: idSchema
           .optional()
           .describe(
-            "Client id for the new label (TASK-157, E14) — a retry then " +
+            "Client id for the new label — a retry then " +
               "returns the first label instead of a duplicate.",
           ),
         name: z.string().min(1).max(LIMITS.labelName).describe("Label name."),
@@ -80,7 +80,7 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
         },
         {
           ifMatch: expectedVersion,
-          ...(labelId ? { commandId: labelId } : {}),
+          ...(labelId ? { commandId: stableCommandId(labelId, "create") } : {}),
         },
       );
       return textOnly(`Created label "${name}" (${color}) — \`${id}\`.`);

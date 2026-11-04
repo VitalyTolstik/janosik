@@ -101,6 +101,17 @@ describe("API token scopes (e2e)", () => {
     expect((list.body as Array<{ id: string }>).map((b) => b.id)).toEqual([
       boardA,
     ]);
+
+    await server()
+      .post("/api/v1/boards")
+      .set(auth(pat))
+      .send({ title: "Outside scope" })
+      .expect(403);
+    await server()
+      .post("/api/v1/boards/import")
+      .set(auth(pat))
+      .send({})
+      .expect(403);
   });
 
   it("enforces the per-token rate limit", async () => {
