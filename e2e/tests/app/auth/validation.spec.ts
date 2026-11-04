@@ -10,11 +10,13 @@ test.beforeEach(async ({ page }) => {
 
 test("require an email address", async ({ page }) => {
   await page.getByTestId("login-submit").click();
-  expect(
-    await page
-      .getByTestId("login-email")
-      .evaluate((el: HTMLInputElement) => el.validity.valueMissing),
-  ).toBe(true);
+  await expect(page.getByTestId("login-error")).toHaveText(
+    "Enter your email address.",
+  );
+  await expect(page.getByTestId("login-email")).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
 });
 
 test("reject a malformed email address", async ({ page }) => {
@@ -22,9 +24,10 @@ test("reject a malformed email address", async ({ page }) => {
   await email.fill("not-an-email");
   await page.getByTestId("login-password").fill("valid-password");
   await page.getByTestId("login-submit").click();
-  expect(
-    await email.evaluate((el: HTMLInputElement) => el.validity.typeMismatch),
-  ).toBe(true);
+  await expect(page.getByTestId("login-error")).toHaveText(
+    "Enter a valid email address.",
+  );
+  await expect(email).toHaveAttribute("aria-invalid", "true");
 });
 
 test("require a password", async ({ page }) => {
@@ -32,11 +35,13 @@ test("require a password", async ({ page }) => {
     .getByTestId("login-email")
     .fill(`validation-${randomUUID()}@e2e.example`);
   await page.getByTestId("login-submit").click();
-  expect(
-    await page
-      .getByTestId("login-password")
-      .evaluate((el: HTMLInputElement) => el.validity.valueMissing),
-  ).toBe(true);
+  await expect(page.getByTestId("login-error")).toHaveText(
+    "Enter your password.",
+  );
+  await expect(page.getByTestId("login-password")).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
 });
 
 test("reject a password shorter than eight characters", async ({ page }) => {

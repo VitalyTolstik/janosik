@@ -262,6 +262,26 @@ export class ApiClient {
     return response;
   }
 
+  async requestPasswordReset(email: string): Promise<void> {
+    await this.request("/auth/password/reset/request", {
+      method: "POST",
+      body: { email },
+      auth: false,
+    });
+  }
+
+  async confirmPasswordReset(
+    email: string,
+    code: string,
+    newPassword: string,
+  ): Promise<void> {
+    await this.request("/auth/password/reset/confirm", {
+      method: "POST",
+      body: { email, code, newPassword },
+      auth: false,
+    });
+  }
+
   /** `POST /auth/logout` — revokes the refresh session server-side. */
   async logout(): Promise<void> {
     try {

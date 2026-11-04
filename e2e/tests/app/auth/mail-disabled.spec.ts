@@ -45,3 +45,13 @@ test("hide registration while existing users can sign in", async ({
   await login(page, user);
   await expect(page.getByTestId("account-trigger")).toBeVisible();
 });
+
+test("explain when password recovery is unavailable", async ({ page }) => {
+  await page.goto(appUrl);
+  await page.getByTestId("forgot-password").click();
+  await page.getByTestId("recovery-email").fill("user@example.com");
+  await page.getByTestId("recovery-submit").click();
+  await expect(page.getByTestId("recovery-error")).toContainText(
+    "Contact your administrator",
+  );
+});

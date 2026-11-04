@@ -35,6 +35,7 @@ const prismaMock = {
   apiToken: {
     updateMany: jest.fn(),
   },
+  passwordResetToken: { deleteMany: jest.fn() },
   emailChangeCode: {
     findFirst: jest.fn(),
     create: jest.fn(),
@@ -46,6 +47,7 @@ const prismaMock = {
   user: Record<"create" | "findUnique" | "update", jest.Mock>;
   refreshToken: Record<"create" | "findUnique" | "updateMany", jest.Mock>;
   apiToken: Record<"updateMany", jest.Mock>;
+  passwordResetToken: Record<"deleteMany", jest.Mock>;
   emailChangeCode: Record<
     "findFirst" | "create" | "update" | "deleteMany",
     jest.Mock
@@ -663,6 +665,7 @@ describe("AuthService", () => {
             fn({
               user: { update: txUserUpdate },
               emailChangeCode: { update: txCodeUpdate },
+              passwordResetToken: { deleteMany: jest.fn() },
             }),
         );
         prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 2 });

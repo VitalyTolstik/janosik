@@ -364,6 +364,7 @@ function ChecklistCard({
 
       {expanded && !readOnly ? (
         <form
+          noValidate
           className="mt-2 flex items-center gap-2"
           onSubmit={(e) => {
             e.preventDefault();

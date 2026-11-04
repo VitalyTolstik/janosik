@@ -34,6 +34,7 @@ function makePrisma(): PrismaService {
     ),
     emailVerificationCode: sweepable(2),
     emailChangeCode: sweepable(1),
+    passwordResetToken: sweepable(0),
     refreshToken: { deleteMany: jest.fn().mockResolvedValue({ count: 4 }) },
     adminRefreshToken: {
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),

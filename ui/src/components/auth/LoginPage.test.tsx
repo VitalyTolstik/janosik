@@ -66,6 +66,44 @@ afterEach(() => {
 });
 
 describe("LoginPage", () => {
+  it("opens password recovery with the email entered on sign-in", () => {
+    renderPage();
+    fireEvent.change(screen.getByTestId("login-email"), {
+      target: { value: "person@example.com" },
+    });
+    fireEvent.click(screen.getByTestId("forgot-password"));
+    expect(screen.getByTestId("recovery-email")).toHaveValue(
+      "person@example.com",
+    );
+    expect(screen.queryByTestId("login-password")).toBeNull();
+  });
+
+  it("shows a recovery-specific error when the request fails", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (pathOf(input).endsWith("/auth/password/reset/request")) {
+        return json({ message: "Not Found" }, 404);
+      }
+      return json({ providers: [] });
+    });
+    renderPage();
+    fireEvent.click(screen.getByTestId("forgot-password"));
+    fireEvent.change(screen.getByTestId("recovery-email"), {
+      target: { value: "person@example.com" },
+    });
+    fireEvent.click(screen.getByTestId("recovery-submit"));
+    expect(await screen.findByTestId("recovery-error")).toHaveTextContent(
+      "Could not recover your password — please try again.",
+    );
+  });
+
+  it("returns from password recovery to the sign-in form", () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId("forgot-password"));
+    fireEvent.click(screen.getByTestId("recovery-back"));
+    expect(screen.getByTestId("login-password")).toBeInTheDocument();
+    expect(screen.queryByTestId("recovery-email")).toBeNull();
+  });
+
   it("links both sign-in and registration back to the marketing site", () => {
     vi.stubEnv("VITE_SITE_URL", "https://site.example/");
     renderPage();

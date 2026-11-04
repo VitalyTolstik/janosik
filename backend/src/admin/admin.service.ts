@@ -414,6 +414,13 @@ export class AdminService {
       }
       data.email = emailChanged;
     }
+    if (
+      emailChanged !== null ||
+      dto.disabled === true ||
+      dto.emailVerified === false
+    ) {
+      await this.prisma.passwordResetToken.deleteMany({ where: { userId } });
+    }
     const updated =
       Object.keys(data).length > 0
         ? await this.prisma.user.update({ where: { id: userId }, data })
@@ -1891,6 +1898,7 @@ export class AdminService {
         where: { id: userId },
         data: { passwordHash },
       }),
+      this.prisma.passwordResetToken.deleteMany({ where: { userId } }),
       this.prisma.refreshToken.updateMany({
         where: { userId, revokedAt: null },
         data: { revokedAt: new Date() },

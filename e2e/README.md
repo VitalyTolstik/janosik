@@ -20,7 +20,8 @@ E2E_MAIL_DISABLED_TEST=1 npm run test:docker -w e2e
 
 The last command runs the admin-settings scenario separately: it changes
 global settings and must only target a disposable isolated stack. The
-normal suite excludes it. CI runs both commands. To run more than one stack at
+normal suite excludes it. CI runs both commands even if the first test suite fails,
+and saves separate failure reports. To run more than one stack at
 once, set distinct `E2E_PORT` and `E2E_MAIL_PORT` values.
 Concurrent Playwright runs also need separate output directories: set
 `PLAYWRIGHT_HTML_OUTPUT_DIR` and pass `--output` to the test command.
@@ -42,4 +43,5 @@ appropriate production build and origin configuration. Tests can use
 `helpers/urls.ts` for these addresses. To target a folder, append it after `--`.
 
 The HTML report is written to `e2e/playwright-report/`; failed tests retain a
-trace and screenshot under `e2e/test-results/`. CI uploads both on failure.
+trace and screenshot under `e2e/test-results/`. CI uploads both on failure, with
+separate artifacts for the normal and email-disabled suites.

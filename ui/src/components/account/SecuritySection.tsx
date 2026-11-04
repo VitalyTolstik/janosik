@@ -114,6 +114,7 @@ export function SecuritySection() {
       </header>
 
       <form
+        noValidate
         onSubmit={handleSubmit}
         className="space-y-4 rounded-lg border bg-muted/30 p-4"
       >

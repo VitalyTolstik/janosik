@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
@@ -20,6 +21,8 @@ import { env } from "@/config/env";
 import { EmailTemplateService } from "@/ops/email-template.service";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import type { MailLocale } from "@/mailer/mail.types";
+import { passwordResetEmail } from "@/mailer/templates";
+import type { ConfirmPasswordResetDto } from "./dto/password-reset.dto";
 import { MailerService } from "@/mailer/mailer.service";
 import { MailQueueService } from "@/mailer/mail-queue.service";
 import { toAuthUser } from "./auth-user.mapper";
@@ -164,6 +167,101 @@ export class AuthService {
     return this.startSession(user);
   }
 
+  async requestPasswordReset(
+    email: string,
+    locale: MailLocale,
+  ): Promise<boolean> {
+    if (!this.mailer.enabled) {
+      throw new ServiceUnavailableException("Password recovery is unavailable");
+    }
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (
+      !user ||
+      user.disabledAt !== null ||
+      user.emailVerifiedAt === null ||
+      user.passwordHash === null
+    )
+      return false;
+    const code = randomBytes(16).toString("hex");
+    const tokenHash = this.hashToken(code);
+    const expiresAt = new Date(Date.now() + 15 * 60_000);
+    // Keep one live code and cap mail per account across all application nodes.
+    const created = await this.prisma.passwordResetToken.createMany({
+      data: [{ userId: user.id, tokenHash, expiresAt }],
+      skipDuplicates: true,
+    });
+    if (created.count === 0) {
+      const replaced = await this.prisma.passwordResetToken.updateMany({
+        where: {
+          userId: user.id,
+          expiresAt: { lte: new Date(Date.now() + 14 * 60_000) },
+        },
+        data: { tokenHash, expiresAt },
+      });
+      if (replaced.count === 0) return true;
+    }
+    await this.mailQueue.enqueue({
+      to: user.email,
+      ...passwordResetEmail(code, locale),
+    });
+    return false;
+  }
+
+  async confirmPasswordReset(dto: ConfirmPasswordResetDto): Promise<void> {
+    const tokenHash = this.hashToken(dto.code);
+    const candidate = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+    if (
+      !candidate ||
+      candidate.expiresAt <= new Date() ||
+      candidate.user.email !== dto.email ||
+      candidate.user.disabledAt !== null ||
+      candidate.user.emailVerifiedAt === null
+    ) {
+      throw new BadRequestException("Invalid or expired recovery code");
+    }
+    const passwordHash = await argonHash(dto.newPassword, { type: argon2id });
+    await this.prisma.$transaction(async (tx) => {
+      const token = await tx.passwordResetToken.findUnique({
+        where: { tokenHash },
+        include: { user: true },
+      });
+      if (
+        !token ||
+        token.expiresAt <= new Date() ||
+        token.user.email !== dto.email ||
+        token.user.disabledAt !== null ||
+        token.user.emailVerifiedAt === null
+      ) {
+        throw new BadRequestException("Invalid or expired recovery code");
+      }
+      const consumed = await tx.passwordResetToken.deleteMany({
+        where: {
+          userId: token.userId,
+          tokenHash,
+          expiresAt: { gt: new Date() },
+        },
+      });
+      if (consumed.count !== 1)
+        throw new BadRequestException("Invalid or expired recovery code");
+      await tx.user.update({
+        where: { id: token.userId },
+        data: { passwordHash },
+      });
+      await tx.refreshToken.updateMany({
+        where: { userId: token.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      await tx.apiToken.updateMany({
+        where: { userId: token.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    });
+    await this.loginBackoff.reset(dto.email);
+  }
+
   async refresh(rawToken: string | undefined): Promise<AuthResult> {
     if (!rawToken) {
       throw new UnauthorizedException("Missing refresh token");
@@ -267,6 +365,7 @@ export class AuthService {
         where: { id: userId },
         data: { passwordHash },
       }),
+      this.prisma.passwordResetToken.deleteMany({ where: { userId } }),
       this.prisma.apiToken.updateMany({
         where: { userId, revokedAt: null },
         data: { revokedAt: new Date() },
@@ -394,6 +493,7 @@ export class AuthService {
           where: { id: userId },
           data: { email: stored.newEmail },
         });
+        await tx.passwordResetToken.deleteMany({ where: { userId } });
         await tx.emailChangeCode.update({
           where: { id: stored.id },
           data: { consumedAt: new Date() },

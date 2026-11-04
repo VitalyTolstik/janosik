@@ -473,6 +473,23 @@ export class MaintenanceService {
           })
         ).count,
     );
+    removed += await this.purgeChunks(
+      (take) =>
+        this.prisma.passwordResetToken.findMany({
+          where: { expiresAt: { lt: now } },
+          select: { userId: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.passwordResetToken.deleteMany({
+            where: {
+              userId: { in: rows.map((row) => row.userId) },
+              expiresAt: { lt: now },
+            },
+          })
+        ).count,
+    );
     return removed;
   }
 

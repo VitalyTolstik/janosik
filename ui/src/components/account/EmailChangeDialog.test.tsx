@@ -74,6 +74,26 @@ describe("EmailChangeDialog (TASK-51)", () => {
     });
   });
 
+  it("shows an inline error for an invalid new email", async () => {
+    const server = new FakeServer();
+    renderDialog(server);
+    await userEvent.type(
+      screen.getByTestId("email-change-new"),
+      "invalid-email",
+    );
+    await userEvent.type(
+      screen.getByTestId("email-change-password"),
+      server.account.password,
+    );
+    await userEvent.click(screen.getByTestId("email-change-send"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("valid email");
+    expect(
+      server.requests.some(
+        (request) => request.path === "/api/v1/auth/email/change/request",
+      ),
+    ).toBe(false);
+  });
+
   it("confirms the change with the code and closes the dialog", async () => {
     const server = new FakeServer();
     const onOpenChange = await requestCode(server);

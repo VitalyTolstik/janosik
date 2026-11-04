@@ -177,7 +177,7 @@ export function EmailChangeDialog({
         </DialogHeader>
 
         {step === "form" ? (
-          <form onSubmit={handleRequest} className="space-y-4">
+          <form noValidate onSubmit={handleRequest} className="space-y-4">
             <div className="space-y-1.5">
               <label
                 htmlFor="email-change-new"
@@ -236,7 +236,7 @@ export function EmailChangeDialog({
             </DialogFooter>
           </form>
         ) : (
-          <form onSubmit={handleConfirm} className="space-y-4">
+          <form noValidate onSubmit={handleConfirm} className="space-y-4">
             <div className="flex flex-col items-center gap-3">
               <div className="flex gap-2" data-testid="email-change-code">
                 <OTPInput

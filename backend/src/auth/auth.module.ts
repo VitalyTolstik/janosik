@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import type { StringValue } from "ms";
 import { env } from "@/config/env";
+import { PasswordResetAuditService } from "./password-reset-audit.service";
 import { ApiTokenService } from "./api-token.service";
 import { SessionOnlyGuard } from "./auth-principal";
 import { AuthController } from "./auth.controller";
@@ -20,6 +21,7 @@ import { LoginBackoffService } from "./login-backoff.service";
   controllers: [AuthController],
   providers: [
     AuthService,
+    PasswordResetAuditService,
     JwtStrategy,
     JwtAuthGuard,
     SessionOnlyGuard,

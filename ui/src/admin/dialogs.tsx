@@ -172,6 +172,7 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
             </>
           ) : (
             <form
+              noValidate
               onSubmit={(event) => void submit(event)}
               className="space-y-3"
             >
@@ -319,7 +320,11 @@ export function CreateBoardButton({ reload }: { reload: () => void }) {
         onOpenChange={(next) => (next ? undefined : setOpen(false))}
       >
         <DialogContent className="max-w-sm">
-          <form onSubmit={(event) => void submit(event)} className="space-y-3">
+          <form
+            noValidate
+            onSubmit={(event) => void submit(event)}
+            className="space-y-3"
+          >
             <DialogHeader>
               <DialogTitle className="text-sm">
                 {t("admin.boards.create.title")}
@@ -415,7 +420,7 @@ export function ChangeUserEmailDialog({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (user === null || busy) return;
+    if (user === null || busy || emailError !== null) return;
     setBusy(true);
     setError(null);
     try {
@@ -459,7 +464,7 @@ export function ChangeUserEmailDialog({
             </DialogDescription>
           ) : null}
         </DialogHeader>
-        <form onSubmit={submit} className="space-y-3">
+        <form noValidate onSubmit={submit} className="space-y-3">
           <Field
             htmlFor="admin-change-email"
             label={t("admin.users.changeEmail.newLabel")}
@@ -682,7 +687,7 @@ export function DeleteUserDialog({
             {t("admin.userDetail.confirm.delete.body")}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit} className="space-y-3">
+        <form noValidate onSubmit={submit} className="space-y-3">
           <Field
             label={t("admin.userDetail.delete.prompt", {
               email: user?.email ?? "",
@@ -798,7 +803,7 @@ export function PromoteUserDialog({
           </DialogDescription>
         </DialogHeader>
         {password === null ? (
-          <form onSubmit={submit} className="space-y-3">
+          <form noValidate onSubmit={submit} className="space-y-3">
             <Field
               label={t("admin.userDetail.promote.prompt", {
                 email: user?.email ?? "",
