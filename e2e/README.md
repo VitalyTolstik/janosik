@@ -13,12 +13,17 @@ Redis and Mailpit). The script builds the image from this checkout and removes
 its containers and volumes on exit. Ports 4300 and 4802 must be free.
 
 ```bash
-npm run test:docker -w e2e -- --pass-with-no-tests
+npm run test:docker -w e2e
 npm run test:docker -w e2e -- tests/app/auth
+E2E_MAIL_DISABLED_TEST=1 npm run test:docker -w e2e
 ```
 
-The first command also works before the first scenario is added. To run more
-than one stack at once, set distinct `E2E_PORT` and `E2E_MAIL_PORT` values.
+The last command runs the admin-settings scenario separately: it changes
+global settings and must only target a disposable isolated stack. The
+normal suite excludes it. CI runs both commands. To run more than one stack at
+once, set distinct `E2E_PORT` and `E2E_MAIL_PORT` values.
+Concurrent Playwright runs also need separate output directories: set
+`PLAYWRIGHT_HTML_OUTPUT_DIR` and pass `--output` to the test command.
 Each run creates an isolated master account (`master@e2e.example`, password
 `e2e-master-password`), intended solely for the disposable test stack.
 
