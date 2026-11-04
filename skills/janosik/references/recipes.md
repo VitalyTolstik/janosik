@@ -8,6 +8,8 @@ execution; a simple edit or status report does not require the full lifecycle.
 1. Find the board, read its snapshot and target card, comments and activity.
    For unassigned work use `janosik_list_ready_cards` or `janosik_wait_for_work`,
    then read the candidate. Discovery does not reserve it.
+   Follow [workflow.md](workflow.md) to reuse/create missing states and identify
+   the reviewer; do not wait until closing to discover nobody can accept it.
 2. Claim with `janosik_claim_card`, respecting existing assignments and leases.
    Self-assign only if appropriate and you know your real user id. The optional
    account/member tools need not be available for claiming.
@@ -16,13 +18,15 @@ execution; a simple edit or status report does not require the full lifecycle.
    `kind: "status"`.
 4. Execute and verify meaningful steps, tick their checklist items and report
    progress or changed assumptions. Renew the lease before expiry.
-5. Post actual verification results with `kind: "evidence"`. If review is part
-   of this board's process, move to Review, post `kind: "handoff"` with checks
+5. Post actual verification results with `kind: "evidence"`. Move to Review,
+   post `kind: "handoff"` naming the reviewer and checks
    for the reviewer and release your lease. Handle the assignee according to
    board convention; release alone does not unassign.
-6. Complete only when the criteria hold and required review is satisfied. The
-   last-column MCP check does not verify the actual result. Release any remaining
-   own lease.
+6. The designated reviewer accepts the identified revision and moves it to Done.
+   They may explicitly delegate applying that accepted state to the executor.
+   Otherwise the executor closes their own work only under explicit self-verification
+   authorization. Without a reviewer, ask for the policy and leave it in Review
+   while unresolved. The last-column MCP check does not verify the actual result.
 
 ## Review a card
 
@@ -31,8 +35,8 @@ execution; a simple edit or status report does not require the full lifecycle.
 2. For a report-only review, return findings without modifying the board.
 3. If asked to conduct the board review and update it, claim before changing
    task state, respecting another user's live claim and existing assignment.
-4. On success, post what you verified with `kind: "evidence"` and move to the
-   completion column if authorized by the task and board workflow.
+4. On success, post what you verified and explicit acceptance of the current
+   revision with `kind: "evidence"`, then move to Done as designated reviewer.
 5. On failure, post actionable findings, add remaining fix items, and return
    the card to an appropriate work state. Release your lease at handoff.
 
@@ -52,8 +56,9 @@ execution; a simple edit or status report does not require the full lifecycle.
 
 1. Post `kind: "blocker"`: what cannot proceed, what is needed, and who or what
    can resolve it. Link an actual dependency in the correct direction.
-2. Use the existing Blocked column or label if appropriate. If neither exists,
-   record the blocker without inventing board structure.
+2. Use the existing Blocked column or label if appropriate. For the managed task
+   workflow, create a missing Blocked state as described in
+   [workflow.md](workflow.md), positioning it before Review/Done.
 3. Release your lease when stopping. Do not clear someone else's assignment.
    If returning your task to an unassigned queue is intended, explicitly unassign
    it; otherwise it stays absent from ready-card discovery.

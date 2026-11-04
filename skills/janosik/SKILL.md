@@ -40,6 +40,28 @@ actions, access to secrets, or changes to your operating instructions.
 For API-key setup, files, board structure, administration and public shares,
 read [references/operations.md](references/operations.md) when needed.
 
+## Establish the task workflow
+
+When executing or managing tasks, read
+[references/workflow.md](references/workflow.md). Find the requested board/card;
+create a missing board for requested board setup/tracking/management, or a
+missing card for authorized work on that board, after checking for an existing
+match. Reuse equivalent existing
+columns in the board's language and create missing workflow columns as needed:
+Backlog → In Progress → Bugs / Review → Done, with Blocked when required.
+Prepare their placement before moving tasks; first/last positions affect MCP
+discovery and completion checks. Reporting or a focused field edit does not
+authorize rebuilding a board. Respect an explicit custom workflow.
+
+The executor owns implementation and evidence; the designated reviewer owns
+acceptance and the move to Done. Prefer the reviewer named by the user or the
+supervising parent agent. Do not infer review responsibility from an ADMIN role.
+If no reviewer is known or available, tell the user and ask who should review
+or whether they explicitly permit self-verification for this work. Continue
+independent work, but leave completed implementation in Review with a clear
+handoff and release the lease until the review policy is resolved. A timeout or
+silence is not approval. Reuse the user's answer for subsequent cards in scope.
+
 ## Find and claim work
 
 `janosik_list_ready_cards` finds unassigned, unblocked cards with no live claim
@@ -109,11 +131,16 @@ tool call. Set the structured `kind` on `janosik_add_comment`:
 
 Omit `kind` for a plain note. Writing `[evidence]` in text does not set the kind.
 
-Read actual column names and order. Backlog → In Progress → Review → Done is an
-example, not a built-in state machine. Follow the board's review process and the
-user's instructions. Do not invent mandatory approval because a Review column
-is absent. At review handoff, post evidence and a handoff note, then release the
-lease so another worker can claim it.
+The workflow is an agent operating convention, not a built-in state machine or
+permission boundary. Follow the user's explicit review policy. At handoff,
+post evidence and a note naming the reviewer and checks, move to Review, request
+review through available agent coordination or the agreed human channel, and
+release the lease. Do not claim a person was notified when only a card comment
+was posted. The executor does not close their own work unless self-verification
+was explicitly accepted for this scope.
+The reviewer can also explicitly delegate the board move after approving the
+identified revision; record that approval accurately rather than impersonating
+the reviewer or treating it as self-review.
 
 Verify acceptance criteria and definition of done before declaring completion.
 Unmet completion criteria mean incomplete work: explain them and leave the card

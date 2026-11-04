@@ -169,10 +169,36 @@ card left in <column>.
 
 ```
 Ready for review — <what to check>, on <board/column>. Evidence: <link or number>.
-Please look at <the risky part>.
+Revision: <commit/artifact/version>. Reviewer: <designated person or parent agent>.
+Please look at <the risky part>. Remaining reviewer checks: <checks or none>.
+Work lease released. Review request: <sent through channel / needs routing>.
 ```
 
 (kind `handoff`)
+
+## Comment: reviewer unavailable
+
+```
+Implementation is ready for review; acceptance is pending.
+<No reviewer is assigned / the designated reviewer is unavailable>.
+Please choose the responsible reviewer, or explicitly allow self-verification
+for <scope>. Card stays in Review; evidence: <reference>. Work lease released.
+```
+
+(kind `question`; also raise the decision to the user instead of relying on a
+comment being noticed. Reuse an existing answer rather than posting repeatedly.)
+
+## Comment: review accepted
+
+```
+Accepted revision <commit/artifact/version>.
+Checked: <criteria, independent checks and actual results>.
+Limitations: <material checks not performed, or none>.
+Completion criteria satisfied; moving to Done.
+```
+
+(kind `evidence`; only the designated reviewer, or an explicitly authorized
+self-verifier who identifies that policy, should record acceptance.)
 
 ## Label conventions
 

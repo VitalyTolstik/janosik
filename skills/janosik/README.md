@@ -79,3 +79,5 @@ entirely. Separate keys on one account still share a claim identity.
   lifecycles (complete a feature, fix a bug, run a review, report a blocker).
 - `references/operations.md` — token setup, capabilities, board operations,
   files, access and public sharing.
+- `references/workflow.md` — missing columns, executor/reviewer responsibilities,
+  review requests, unavailable reviewers, acceptance and reopening.
