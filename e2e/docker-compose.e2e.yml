@@ -10,6 +10,8 @@ services:
       SMTP_SECURE: "false"
       SMTP_USER: ""
       SMTP_PASS: ""
+      # Each browser test supplies its own forwarded IP for rate-limit isolation.
+      TRUST_PROXY: "1"
     depends_on:
       mailpit:
         condition: service_started

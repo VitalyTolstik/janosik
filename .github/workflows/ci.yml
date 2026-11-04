@@ -125,8 +125,10 @@ jobs:
       - run: npm ci
       - run: npm run typecheck -w e2e
       - run: npx playwright install --with-deps chrome
-      # Remove --pass-with-no-tests when TASK-162.1 adds the first scenarios.
-      - run: npm run test:docker -w e2e -- --pass-with-no-tests
+      - run: npm run test:docker -w e2e
+      - run: npm run test:docker -w e2e
+        env:
+          E2E_MAIL_DISABLED_TEST: "1"
       - name: Upload browser report and traces
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
