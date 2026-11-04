@@ -8,6 +8,8 @@ Two ways to run Janosik:
 | You need | Docker Desktop / Docker Engine | Node.js 22.17+, npm |
 | Best for | Running Janosik, including self-hosting | Developing Janosik |
 
+The released Docker images target Linux `amd64` and `arm64`; Docker Desktop runs them on macOS and Windows. There are no standalone `.exe` or `.dmg` installers. Version v0.1.1 was tested on WSL and in Linux CI on both architectures.
+
 Choose the option that fits your setup. For a **server** (VPS), see the
 [self-hosting guide](./SELF-HOSTING.md). This page covers running Janosik on
 your own computer.
@@ -30,26 +32,9 @@ your own computer.
    Launch Docker Desktop once (whale icon in the menu bar) and wait until it
    says "Docker Desktop is running".
 
-2. Run the stack:
+2. With `curl` and OpenSSL installed, run the [local installer](./SELF-HOSTING.md) in Terminal. It opens `http://localhost:3210/app/` and generates the configuration.
 
-   ```bash
-   mkdir janosik && cd janosik
-   curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
-   curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-   openssl rand -hex 32            # copy into JWT_SECRET in .env
-   # edit .env: JWT_SECRET, POSTGRES_PASSWORD, PUBLIC_ORIGIN=http://localhost:3000
-   docker compose up -d
-   ```
-
-3. Open <http://localhost:3000/app/>. Create your account, then create a master for `/app/admin`:
-
-   ```bash
-   docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
-   ```
-
-> **Apple Silicon:** the published image is built for both `arm64` and `amd64`,
-> so it runs natively. If you build locally (`docker build`), it also works —
-> `ffmpeg-static` and Prisma both ship arm64 binaries.
+The published image supports `arm64` and `amd64`. Version v0.1.1 has not been separately tested on a physical Mac.
 
 ### From source
 
@@ -71,7 +56,7 @@ site is a separate dev server (`npm run dev:site`, port 4321).
 ## Windows 11
 
 Docker Desktop for Windows uses **WSL2**. We recommend running the commands
-from an Ubuntu WSL2 shell; native PowerShell also works.
+from an Ubuntu WSL2 shell for the installer.
 
 ### Step 0 — one-time setup
 
@@ -89,44 +74,7 @@ from an Ubuntu WSL2 shell; native PowerShell also works.
 
 ### Docker (recommended)
 
-**Option A — in WSL2 (recommended).** Open Ubuntu and follow the Linux
-commands. `curl` and `openssl` are present:
-
-```bash
-mkdir janosik && cd janosik
-curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-openssl rand -hex 32            # → JWT_SECRET
-docker compose up -d
-```
-
-**Option B — in PowerShell.** `curl` ships with Windows 11 as `curl.exe`, but
-`openssl` does **not** — generate the secret like this instead:
-
-```powershell
-mkdir janosik; cd janosik
-curl.exe -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
-curl.exe -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-# JWT_SECRET value (64 hex chars):
--join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
-notepad .env                    # paste it into JWT_SECRET, set POSTGRES_PASSWORD
-docker compose up -d
-```
-
-Open <http://localhost:3000/app/> in your browser. Create the master account the
-same way (works from either shell):
-
-```powershell
-docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
-```
-
-> **Tips**
-> - Keep the project inside the WSL filesystem (e.g. `~/janosik`), not under
->   `/mnt/c/…` — file I/O across the Windows/Linux boundary is slow.
-> - If `docker` isn't found in WSL, make sure WSL integration is enabled for
->   your distro in Docker Desktop → Settings → Resources → WSL Integration.
-> - `.env` should be saved as **UTF-8 without BOM** and use plain LF line
->   endings; the template already does.
+Open your WSL2 Ubuntu terminal, ensure `curl` and `openssl` are installed, and run the [local installer](./SELF-HOSTING.md). Open <http://localhost:3210/app/> in your browser. The installer is a Bash script; do not run it directly in PowerShell. Keep the installation inside the WSL filesystem, such as `~/janosik`.
 
 ### From source
 
@@ -198,27 +146,9 @@ then the same `npm install` / `npm run dev`. Use PowerShell or Git Bash.
    sudo usermod -aG docker "$USER"
    ```
 
-2. Run the stack (no `sudo` needed after re-login):
+2. Ensure `curl` and OpenSSL are installed, then run the [local installer](./SELF-HOSTING.md). Open <http://localhost:3210/app/> in your browser.
 
-   ```bash
-   mkdir janosik && cd janosik
-   curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
-   curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-   openssl rand -hex 32            # → JWT_SECRET
-   nano .env                       # JWT_SECRET, POSTGRES_PASSWORD, PUBLIC_ORIGIN,
-                                   # and COOKIE_SECURE=false for this plain-HTTP trial
-   docker compose up -d
-   ```
-
-3. Open <http://localhost:3000/app/>, create your account and a master:
-
-   ```bash
-   docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
-   ```
-
-> For a public server, add TLS (Caddy/nginx) and set `COOKIE_SECURE=true` +
-> `TRUST_PROXY=1` — see [SELF-HOSTING.md](./SELF-HOSTING.md). Open the firewall
-> only for 80/443 (`sudo ufw allow 80,443/tcp`).
+For access from other devices or a public server, see the LAN and HTTPS instructions in [SELF-HOSTING.md](./SELF-HOSTING.md).
 
 ### From source
 

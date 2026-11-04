@@ -35,11 +35,25 @@ description: Запуск Janosik одним контейнером вместе
 по `/`, а приложение по `/app/`, поэтому интерфейс доски доступен по
 `PUBLIC_ORIGIN/app/`, а панель мастера по `PUBLIC_ORIGIN/app/admin`.
 
+## Платформы и установка
+
+Janosik открывается в браузере и требует работающего сервера. Используйте Docker
+на Linux, macOS (Intel или Apple Silicon) либо Windows с Docker Desktop и WSL2.
+Docker автоматически скачает подходящий Linux-образ `amd64` или `arm64`.
+Архивы в GitHub Releases содержат исходный код; отдельных установщиков `.exe`
+для Windows и `.dmg` для macOS пока нет.
+
+Версия v0.1.1 проверена в WSL и в Linux CI на обеих архитектурах. Отдельной
+проверки на физическом Mac пока не было. Установщик запускает приложение только
+на этом компьютере; для доступа с других устройств см. инструкции для локальной
+сети и HTTPS ниже.
+
 ## Требования
 
 - Хост с Docker Engine 24 или новее и плагином Docker Compose v2.
-- Порт `3000` доступен для пробного запуска в локальной сети, либо `80` и
-  `443`, если впереди стоит обратный прокси (рекомендуется для production).
+- Свободный порт `3210` для установщика по умолчанию; примеры ручной настройки
+  локальной сети используют порт `3000`. Для публичного сервера нужны порты
+  `80` и `443` и обратный прокси.
 - Доменное имя для HTTPS (необязательно для пробного запуска, требуется для
   реального использования).
 
@@ -312,7 +326,7 @@ Compose также читает переменные, которые API не п
 | `POSTGRES_USER` | `janosik` в `.env.example` | Пользователь базы данных, создаётся при первом `up`. |
 | `POSTGRES_PASSWORD` | `change-me` в `.env.example` (обязательна) | Пароль базы данных. Задайте надёжный: пока он равен `change-me`, контейнер не запускается. |
 | `POSTGRES_DB` | `janosik` в `.env.example` | Имя базы данных. |
-| `JANOSIK_TAG` | `latest` | Тег образа для запуска, например `v0.1.0`. |
+| `JANOSIK_TAG` | `latest` | Тег образа для запуска, например `v0.1.1`. |
 
 OAuth-вход (Google и Yandex) настраивается в панели мастера, а не в `.env`.
 
@@ -328,133 +342,33 @@ OAuth-вход (Google и Yandex) настраивается в панели м�
 
 ### macOS
 
-Установите Docker Desktop (Apple Silicon или Intel) или Colima для более
-лёгкой установки только через CLI:
-
-```bash
-brew install --cask docker          # Docker Desktop
-# or, no GUI:
-brew install colima docker docker-compose && colima start
-```
-
-Запустите Docker Desktop один раз и дождитесь сообщения о работе. Затем:
-
-```bash
-mkdir janosik && cd janosik
-curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-openssl rand -hex 32            # copy into JWT_SECRET in .env
-# edit .env: JWT_SECRET, POSTGRES_PASSWORD, PUBLIC_ORIGIN=http://localhost:3000
-docker compose up -d
-```
-
-Откройте `http://localhost:3000/app/`, создайте учётную запись, затем создайте
-мастера:
-
-```bash
-docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
-```
-
-Публикуемый образ собран и для `arm64`, и для `amd64`, поэтому на Apple
-Silicon он работает нативно. Локальная сборка `docker build` тоже работает:
-`ffmpeg-static` и Prisma поставляют бинарники arm64.
+Установите и запустите Docker Desktop (Intel или Apple Silicon) либо Colima
+с Docker и Compose. В терминале выполните команду из раздела
+[пробной установки](#пробный-запуск-в-локальной-сети-или-на-localhost).
+Опубликованный образ поддерживает `amd64` и `arm64`.
 
 ### Windows 11
 
-Docker в Windows работает через WSL2, поэтому удобнее всего делать всё в
-оболочке Linux внутри WSL2. Нативный PowerShell тоже подходит.
+1. Установите WSL2 и дистрибутив Linux (например, Ubuntu): выполните
+   `wsl --install` в PowerShell от администратора. При необходимости
+   перезагрузите компьютер.
+2. Установите и запустите Docker Desktop. Включите WSL2 engine и интеграцию
+   с WSL для выбранного дистрибутива.
+3. Откройте терминал Ubuntu, убедитесь, что установлены `curl` и `openssl`,
+   и выполните команду из раздела
+   [пробной установки](#пробный-запуск-в-локальной-сети-или-на-localhost).
+   Держите папку установки внутри файловой системы WSL (например, `~/janosik`).
 
-Разовая настройка:
-
-1. Установите WSL2 и дистрибутив (Ubuntu) из PowerShell с правами
-   администратора:
-
-   ```powershell
-   wsl --install
-   ```
-
-   Перезагрузитесь, если будет предложено, затем задайте имя пользователя и
-   пароль Linux.
-
-2. Установите Docker Desktop для Windows и включите **Use the WSL 2 based
-   engine**, а также **WSL integration** для вашего дистрибутива Ubuntu.
-   Держите Docker Desktop запущенным.
-
-Вариант A, в WSL2 (рекомендуется). Откройте Ubuntu и следуйте командам для
-Linux. `curl` и `openssl` доступны:
-
-```bash
-mkdir janosik && cd janosik
-curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-openssl rand -hex 32            # JWT_SECRET
-docker compose up -d
-```
-
-Вариант B, в PowerShell. `curl` поставляется с Windows 11 как `curl.exe`, но
-`openssl` отсутствует, поэтому сгенерируйте секрет так:
-
-```powershell
-mkdir janosik; cd janosik
-curl.exe -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
-curl.exe -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-# JWT_SECRET value (64 hex chars):
--join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
-notepad .env                    # paste it into JWT_SECRET, set POSTGRES_PASSWORD
-docker compose up -d
-```
-
-Откройте `http://localhost:3000/app/` в браузере и создайте мастера тем же
-способом из любой оболочки:
-
-```powershell
-docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
-```
-
-Советы: держите проект внутри файловой системы WSL (например, `~/janosik`), а
-не в `/mnt/c/…`, потому что файловый ввод-вывод через границу Windows и Linux
-медленный. Если `docker` не найден в WSL, включите интеграцию WSL для вашего
-дистрибутива в Docker Desktop. Сохраняйте `.env` в кодировке UTF-8 без BOM и
-с переводами строк LF; шаблон уже такой.
+Установщик — Bash-скрипт; не запускайте его напрямую в PowerShell.
 
 ### Linux
 
-Установите Docker Engine и плагин Compose. Быстрый вариант — официальный установочный скрипт:
-
-```bash
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker "$USER"   # then log out and back in
-```
-
-Или используйте пакеты вашего дистрибутива (Debian и Ubuntu):
-
-```bash
-sudo apt update
-sudo apt install -y docker.io docker-compose-v2
-sudo systemctl enable --now docker
-sudo usermod -aG docker "$USER"
-```
-
-Запустите стек (после повторного входа `sudo` не нужен):
-
-```bash
-mkdir janosik && cd janosik
-curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-openssl rand -hex 32            # JWT_SECRET
-nano .env                       # JWT_SECRET, POSTGRES_PASSWORD, PUBLIC_ORIGIN
-docker compose up -d
-```
-
-Откройте `http://localhost:3000/app/`, создайте учётную запись и мастера:
-
-```bash
-docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
-```
-
-Для публичного сервера добавьте TLS и задайте `COOKIE_SECURE=true` и
-`TRUST_PROXY=1`. Откройте брандмауэр только для `80` и `443`
-(`sudo ufw allow 80,443/tcp`).
+Установите и запустите Docker Engine с плагином Compose v2. Убедитесь, что ваш
+пользователь может запускать Docker, и установите `curl` и OpenSSL. Затем
+выполните команду из раздела
+[пробной установки](#пробный-запуск-в-локальной-сети-или-на-localhost).
+Официальные инструкции для дистрибутивов — на
+[docs.docker.com/engine/install](https://docs.docker.com/engine/install/).
 
 ### Из исходников, все платформы
 

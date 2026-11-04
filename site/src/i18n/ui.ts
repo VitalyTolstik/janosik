@@ -112,7 +112,7 @@ const en = {
   "home.oss.body":
     "Run Janosik in a single container with your own database. AGPL-3.0 lets you run, modify and audit the source code.",
   "home.oss.point1": "AGPL-3.0 — no lock-in",
-  "home.oss.point2": "One Docker image, your database",
+  "home.oss.point2": "Docker on Linux, macOS and Windows (WSL2)",
   "home.oss.point3": "No telemetry, ever",
 
   "home.how.title": "Running in minutes",
@@ -375,7 +375,7 @@ const ru: Record<keyof typeof en, string> = {
   "home.oss.body":
     "Запустите контейнер Janosik и подключите свою базу данных. Лицензия AGPL-3.0 позволяет использовать, изменять и проверять исходный код.",
   "home.oss.point1": "Лицензия AGPL-3.0 — без привязки к вендору",
-  "home.oss.point2": "Один Docker-образ, ваша база",
+  "home.oss.point2": "Docker на Linux, macOS и Windows (WSL2)",
   "home.oss.point3": "Никакой телеметрии",
 
   "home.how.title": "Запуск за минуты",

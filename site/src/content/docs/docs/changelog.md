@@ -8,12 +8,12 @@ description: The release history and the versioning scheme.
 Notable changes are documented here in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Releases are tagged
-in git as `v<version>` (for example `v0.1.0`), and the container image is
+in git as `v<version>` (for example `v0.1.1`), and the container image is
 published to `ghcr.io/vitalytolstik/janosik` from CI on a version tag. To run a
 specific release, set `JANOSIK_TAG` in `.env` (see
 [Self-hosting](/docs/self-hosting/)).
 
-## Unreleased
+## 0.1.1 - 2026-11-04
 
 ### Added
 
@@ -149,7 +149,7 @@ specific release, set `JANOSIK_TAG` in `.env` (see
 
 ## 0.1.0 - 2026-10-26
 
-Initial self-hosted release: a Kanban board with an installable PWA interface with drag and
+Initial project version: a Kanban board with an installable PWA interface with drag and
 drop, calendar and table views, undo and redo, WIP limits, labels, checklists,
 links, priorities, assignees, due dates, i18n (English and Russian), and a
 NestJS and PostgreSQL backend.
