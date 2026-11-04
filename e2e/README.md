@@ -35,7 +35,9 @@ E2E_SITE_URL=http://localhost:4321/ E2E_APP_URL=http://localhost:5173/ npm run t
 ```
 
 The dev servers need an API and suitable isolated data. Set `E2E_MAIL_URL` for
-tests that read messages from Mailpit. PWA and cross-site flows require the
+tests that read messages from Mailpit, and configure `TRUST_PROXY=1` on the
+isolated API so each browser test has an independent rate-limit bucket. The
+test-only Compose setup already does this. PWA and cross-site flows require the
 appropriate production build and origin configuration. Tests can use
 `helpers/urls.ts` for these addresses. To target a folder, append it after `--`.
 

@@ -8,6 +8,7 @@ export default defineConfig({
     ? { testMatch: "**/mail-disabled.spec.ts" }
     : { testIgnore: "**/mail-disabled.spec.ts" }),
   fullyParallel: true,
+  workers: process.env.CI ? 4 : undefined,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"], ["html", { open: "never" }]],
