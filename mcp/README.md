@@ -244,7 +244,8 @@ The package is published to npm and listed in the
 `io.github.VitalyTolstik/janosik`. A release is one tag; CI does the rest.
 
 1. Bump the version in **both** `package.json` and `server.json` (a test
-   keeps them in lockstep) and merge to `main`.
+   keeps them in lockstep), update the workspace entry in the root
+   `package-lock.json`, and merge to `main`.
 2. Tag and push: `git tag mcp-v<version> && git push origin mcp-v<version>` (the
    tag must equal the version you just bumped).
 
@@ -252,8 +253,9 @@ The `mcp-publish` job in `.github/workflows/ci.yml` runs only on an `mcp-v*` tag
 waits for the test suite, then publishes to npm and pushes the metadata to the
 registry. It refuses to publish when the tag does not match the `package.json`
 version. Auth is OIDC (npm Trusted Publishing + the registry's GitHub OIDC), so
-there is no token to rotate; `--provenance` is omitted because it needs a public
-source repository. `mcpName` in `package.json` must equal the registry name in
+there is no long-lived publishing token to rotate. The public repository lets
+npm publish with `--provenance`, tying the package to its workflow build.
+`mcpName` in `package.json` must equal the registry name in
 `server.json`.
 
 One-time bootstrap (before the first automated release): create the npm
