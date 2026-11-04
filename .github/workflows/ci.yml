@@ -42,6 +42,13 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Check release version
+        env:
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+        run: |
+          node --test scripts/check-release-version.test.mjs
+          node scripts/check-release-version.mjs
+
       - name: Install dependencies
         run: npm ci
 
@@ -65,7 +72,9 @@ jobs:
         run: npm run check -w site
 
       - name: Build (site)
-        run: npm run build -w site
+        run: |
+          npm run build -w site
+          node scripts/check-built-docs-version.mjs
 
       # The MCP server: type-check, unit tests and a bundle, so a broken
       # tool schema fails the build before it reaches `npx @janosik/mcp`.

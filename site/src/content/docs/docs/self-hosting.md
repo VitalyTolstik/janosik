@@ -35,11 +35,24 @@ The image sets `STATIC_DIR=/app/public`, `SITE_DIR=/app/site` and
 is under `/app/`, so the board UI is at `PUBLIC_ORIGIN/app/` and the master
 panel is at `PUBLIC_ORIGIN/app/admin`.
 
+## Platforms and installation
+
+Janosik runs in a browser and requires a running server. Use Docker on Linux,
+macOS (Intel or Apple Silicon), or Windows with Docker Desktop and WSL2. Docker
+downloads the appropriate Linux `amd64` or `arm64` image automatically.
+GitHub release archives contain source code; there is no standalone Windows
+`.exe` or macOS `.dmg` installer.
+
+Version v0.1.1 was tested on WSL and in Linux CI on both architectures. It has
+not been separately tested on a physical Mac. The installer starts a local-only
+trial; see the LAN and HTTPS instructions below to reach it from other devices.
+
 ## Prerequisites
 
 - A host with Docker Engine 24 or newer and the Docker Compose v2 plugin.
-- Port `3000` reachable for the LAN trial, or `80` and `443` if you put a
-  reverse proxy in front (recommended for production).
+- Port `3210` free for the default local installer; manual LAN examples use
+  port `3000`. For a public deployment, use ports `80` and `443` with a
+  reverse proxy.
 - A domain name for HTTPS (optional for a trial, required for real use).
 
 Check your host:
@@ -306,7 +319,7 @@ The compose file also reads variables that the API does not validate:
 | `POSTGRES_USER` | `janosik` in `.env.example` | Database user, created on first `up`. |
 | `POSTGRES_PASSWORD` | `change-me` in `.env.example` (required) | Database password. Pick a strong one: the container refuses to start while it is `change-me`. |
 | `POSTGRES_DB` | `janosik` in `.env.example` | Database name. |
-| `JANOSIK_TAG` | `latest` | Image tag to run, for example `v0.1.0`. |
+| `JANOSIK_TAG` | `latest` | Image tag to run, for example `v0.1.1`. |
 
 OAuth login (Google and Yandex) is configured in the master panel, not in
 `.env`.
@@ -323,130 +336,28 @@ Two ways to run Janosik on your own machine:
 
 ### macOS
 
-Install Docker Desktop (Apple Silicon or Intel), or Colima for a lighter
-CLI-only setup:
-
-```bash
-brew install --cask docker          # Docker Desktop
-# or, no GUI:
-brew install colima docker docker-compose && colima start
-```
-
-Launch Docker Desktop once and wait until it says it is running. Then:
-
-```bash
-mkdir janosik && cd janosik
-curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-openssl rand -hex 32            # copy into JWT_SECRET in .env
-# edit .env: JWT_SECRET, POSTGRES_PASSWORD, PUBLIC_ORIGIN=http://localhost:3000
-docker compose up -d
-```
-
-Open `http://localhost:3000/app/`, create your account, then create a master:
-
-```bash
-docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
-```
-
-The published image is built for both `arm64` and `amd64`, so Apple Silicon
-runs it natively. A local `docker build` also works: `ffmpeg-static` and Prisma
-both ship arm64 binaries.
+Install and start Docker Desktop (Intel or Apple Silicon), or use Colima with
+Docker and Compose. In Terminal, follow the [local installer](#trial-on-a-lan-or-localhost).
+The published image supports both `amd64` and `arm64`.
 
 ### Windows 11
 
-Docker on Windows runs through WSL2, so the smoothest experience is to work
-inside a WSL2 Linux shell. Native PowerShell works too.
+1. Install WSL2 and a Linux distribution (for example Ubuntu) from an
+   administrator PowerShell using `wsl --install`. Restart if prompted.
+2. Install and start Docker Desktop. Enable its WSL2 engine and WSL integration
+   for your distribution.
+3. Open the Ubuntu terminal, ensure `curl` and `openssl` are installed, and run
+   the [local installer](#trial-on-a-lan-or-localhost) there. Keep the install
+   directory inside the WSL filesystem (for example `~/janosik`).
 
-One-time setup:
-
-1. Install WSL2 and a distro (Ubuntu) from an admin PowerShell:
-
-   ```powershell
-   wsl --install
-   ```
-
-   Reboot if asked, then set a Linux username and password.
-
-2. Install Docker Desktop for Windows and enable **Use the WSL 2 based
-   engine** plus **WSL integration** for your Ubuntu distro. Keep Docker
-   Desktop running.
-
-Option A, in WSL2 (recommended). Open Ubuntu and follow the Linux commands.
-`curl` and `openssl` are present:
-
-```bash
-mkdir janosik && cd janosik
-curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-openssl rand -hex 32            # JWT_SECRET
-docker compose up -d
-```
-
-Option B, in PowerShell. `curl` ships with Windows 11 as `curl.exe`, but
-`openssl` does not, so generate the secret like this instead:
-
-```powershell
-mkdir janosik; cd janosik
-curl.exe -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
-curl.exe -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-# JWT_SECRET value (64 hex chars):
--join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
-notepad .env                    # paste it into JWT_SECRET, set POSTGRES_PASSWORD
-docker compose up -d
-```
-
-Open `http://localhost:3000/app/` in your browser and create the master the
-same way from either shell:
-
-```powershell
-docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
-```
-
-Tips: keep the project inside the WSL filesystem (for example `~/janosik`),
-not under `/mnt/c/…`, because file I/O across the Windows and Linux boundary is
-slow. If `docker` is not found in WSL, enable WSL integration for your distro
-in Docker Desktop. Save `.env` as UTF-8 without BOM and with LF line endings;
-the template already does.
+The installer is a Bash script; do not run it directly in PowerShell.
 
 ### Linux
 
-Install Docker Engine and the Compose plugin. The official convenience script
-is the quickest:
-
-```bash
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker "$USER"   # then log out and back in
-```
-
-Or use your distro's packages (Debian and Ubuntu):
-
-```bash
-sudo apt update
-sudo apt install -y docker.io docker-compose-v2
-sudo systemctl enable --now docker
-sudo usermod -aG docker "$USER"
-```
-
-Run the stack (no `sudo` needed after re-login):
-
-```bash
-mkdir janosik && cd janosik
-curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-openssl rand -hex 32            # JWT_SECRET
-nano .env                       # JWT_SECRET, POSTGRES_PASSWORD, PUBLIC_ORIGIN
-docker compose up -d
-```
-
-Open `http://localhost:3000/app/`, create your account and a master:
-
-```bash
-docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
-```
-
-For a public server, add TLS and set `COOKIE_SECURE=true` plus `TRUST_PROXY=1`.
-Open the firewall only for `80` and `443` (`sudo ufw allow 80,443/tcp`).
+Install and start Docker Engine and the Compose v2 plugin. Make sure your user
+can run Docker, and install `curl` and OpenSSL. Then run the
+[local installer](#trial-on-a-lan-or-localhost). Docker's official installation
+instructions for your distribution are at [docs.docker.com/engine/install](https://docs.docker.com/engine/install/).
 
 ### From source, all platforms
 

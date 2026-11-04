@@ -26,6 +26,14 @@ starts the API.
 
 ---
 
+The application runs in a browser and requires a running server. Docker is
+available on Linux, macOS (Intel and Apple Silicon), and Windows with Docker
+Desktop and WSL2. The registry provides Linux `amd64` and `arm64` images;
+GitHub release archives contain source code, not installers. There are no
+standalone `.exe` or `.dmg` installers. Version v0.1.1 was tested on WSL and
+in Linux CI on both architectures; it has not been separately tested on a
+physical Mac.
+
 ## Prerequisites
 
 - A host with **Docker Engine 24+** and the **Docker Compose v2** plugin.
@@ -245,7 +253,7 @@ that matter most:
 | `ALLOW_REGISTRATION` | `true` | Open sign-up. Turn off after creating your account. |
 | `TRUST_PROXY` | `0` | Number of trusted proxy hops. Set `1` behind one reverse proxy. |
 | `PORT` | `3000` | Host port to publish (container always listens on 3000). |
-| `JANOSIK_TAG` | `latest` | Image tag to run (e.g. `v0.1.0`). |
+| `JANOSIK_TAG` | `latest` | Image tag to run (e.g. `v0.1.1`). |
 | `SMTP_HOST` … `SMTP_PASS` | unset | Outgoing email. Unset = no delivery; registration auto-verifies and production logs omit message contents. |
 | `PURGE_AFTER_DAYS` | `30` | Retention for the hourly soft-delete sweep (fallback when the panel has no setting). |
 | `AUDIT_RETENTION_DAYS` | `365` | Retention for the master audit trail (separate, longer window). |
@@ -315,7 +323,7 @@ docker compose pull && docker compose up -d
 ```
 
 Migrations run automatically on container start, so no manual step is needed.
-To pin a version, set `JANOSIK_TAG=v0.1.0` in `.env`.
+To pin a version, set `JANOSIK_TAG=v0.1.1` in `.env`.
 
 The retention upgrade (TASK-148) adds indexes to large tables, so the first
 start after it builds them before the API is up. On an existing installation
@@ -452,14 +460,19 @@ Compose file from its tag. CI publishes `ghcr.io/vitalytolstik/janosik:<tag>`
 and `:latest` for a stable `vX.Y.Z` tag, after the verification and Docker
 smoke jobs pass. A tag alone does not create a GitHub Release.
 
-1. Merge and verify the changes, choose a new stable `vX.Y.Z` version and push
-   its tag from the intended commit. Wait for CI to publish both architectures.
-2. Ensure the GHCR package is public and test an anonymous pull of the tagged
+1. Choose the release version and update the root `package.json` and root
+   entries in `package-lock.json` together (for example, `npm version 0.1.2
+   --no-git-tag-version --workspaces=false`). The documentation header reads
+   this version. Update release notes and examples as appropriate.
+2. Merge and verify the changes, then push the matching `vX.Y.Z` tag from that
+   commit. CI checks the tag against the root version and lockfile before it
+   publishes images. Wait for both architectures.
+3. Ensure the GHCR package is public and test an anonymous pull of the tagged
    image. Package visibility can require a one-time change in GitHub settings.
-3. Publish the GitHub Release for that same tag with release and upgrade notes.
+4. Publish the GitHub Release for that same tag with release and upgrade notes.
    Only publish it after the image is available: the installer treats the latest
    stable release as ready to install.
-4. From a clean host with Docker, Compose, curl and OpenSSL, run the documented
+5. From a clean host with Docker, Compose, curl and OpenSSL, run the documented
    installer without registry credentials, create an account and check MCP.
 
 For pre-release tags, CI publishes a tag-specific image but does not move

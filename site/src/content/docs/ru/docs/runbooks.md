@@ -89,13 +89,13 @@ description: Нумерованные процедуры для резервно
 у обновления нет ручного шага миграции.
 
 1. Прочитайте заметки к релизу и создайте резервные копии базы, загрузок и
-   `.env`. Задайте нужную версию в `JANOSIK_TAG` в `.env`, например `v0.1.0`.
+   `.env`. Задайте нужную версию в `JANOSIK_TAG` в `.env`, например `v0.1.1`.
    Установщик фиксирует начальную версию, поэтому одной загрузки образа для
    обновления недостаточно. Скачайте и проверьте Compose из того же релиза,
-   заменив `v0.1.0` в адресе на выбранную версию:
+   заменив `v0.1.1` в адресе на выбранную версию:
 
    ```bash
-   curl -fsSL -o docker-compose.yml.new https://raw.githubusercontent.com/VitalyTolstik/janosik/v0.1.0/docker-compose.yml
+   curl -fsSL -o docker-compose.yml.new https://raw.githubusercontent.com/VitalyTolstik/janosik/v0.1.1/docker-compose.yml
    # Проверьте docker-compose.yml.new и замените им docker-compose.yml.
    ```
 
