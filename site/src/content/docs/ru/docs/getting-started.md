@@ -29,16 +29,14 @@ in** / **Create account** на приложение — см.
 [Установка на своём сервере](/ru/docs/self-hosting/) содержит полное руководство; короткая версия:
 
 ```bash
-curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-# задайте JWT_SECRET (openssl rand -hex 32), POSTGRES_PASSWORD и PUBLIC_ORIGIN
-# для пробного запуска по HTTP задайте COOKIE_SECURE=false
-docker compose up -d
+curl -fsSLO https://raw.githubusercontent.com/VitalyTolstik/janosik/main/install.sh && bash install.sh
 ```
 
-Миграции выполняются при запуске. Откройте приложение, создайте учётную
-запись, затем закройте регистрацию. [Установка на своём сервере](/ru/docs/self-hosting/) описывает
-первый запуск по шагам.
+При установленных Docker, Compose, curl и OpenSSL команда запустит пробную
+версию на `http://localhost:3210/app/`. Для этого нужны опубликованные
+стабильный релиз и образ. Создайте учётную запись и закройте регистрацию.
+Раздел [Установка на своём сервере](/ru/docs/self-hosting/) описывает установку,
+обновление, MCP и HTTPS.
 
 ## Из исходников (разработка)
 

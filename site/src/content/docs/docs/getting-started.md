@@ -28,15 +28,13 @@ the marketing site) next to PostgreSQL and Redis. [Self-hosting](/docs/self-host
 has the full guide; the short version:
 
 ```bash
-curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-# set JWT_SECRET (openssl rand -hex 32), POSTGRES_PASSWORD and PUBLIC_ORIGIN
-# for a local HTTP trial, set COOKIE_SECURE=false
-docker compose up -d
+curl -fsSLO https://raw.githubusercontent.com/VitalyTolstik/janosik/main/install.sh && bash install.sh
 ```
 
-Database migrations run at startup. Open the app, create your account, then close
-registration. [Self-hosting](/docs/self-hosting/) covers the first run step by step.
+With Docker, Compose, curl and OpenSSL installed, this starts a local trial at
+`http://localhost:3210/app/`. It requires a published stable release and image.
+Create your account, then close registration. [Self-hosting](/docs/self-hosting/)
+covers installation, updates, MCP and HTTPS.
 
 ## From source (development)
 

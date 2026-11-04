@@ -49,6 +49,23 @@ docker compose version
 
 Use this for a local trial. Do not expose this HTTP setup to the internet.
 
+For a localhost-only trial on Linux, macOS, or WSL with Docker, Compose, curl
+and OpenSSL installed, the installer generates the secrets and starts the stack:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/VitalyTolstik/janosik/main/install.sh && bash install.sh
+```
+
+Open `http://localhost:3210/app/`. The installer creates `janosik/.env` and
+`janosik/docker-compose.yml` and refuses to overwrite either file. Set
+`JANOSIK_INSTALL_DIR` or `JANOSIK_INSTALL_PORT` before invoking it to choose
+another directory or port. If startup fails, fix the reported error and run
+`docker compose up -d` from that directory. The installer pins the image and
+Compose file to the latest stable GitHub release. A published release and its
+public image are required.
+
+For a LAN trial, or to configure the stack manually:
+
 ```bash
 mkdir janosik && cd janosik
 curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
@@ -87,11 +104,15 @@ POSTGRES_DB=janosik
 PUBLIC_ORIGIN=https://kanban.example.com
 COOKIE_SECURE=true
 TRUST_PROXY=1
+APP_BIND_ADDRESS=127.0.0.1
 ALLOW_REGISTRATION=true
 ```
 
 `PUBLIC_ORIGIN` must match the URL users actually open — it builds OAuth
 callback URLs and drives the Secure-cookie check.
+If converting an installer-created trial, retain its existing secrets and
+`COMPOSE_PROJECT_NAME`. It uses `PORT=3210`; either change `PORT` to `3000`
+for the proxy examples below or point the proxy to `127.0.0.1:3210`.
 
 ### 2.2 Start the stack
 
@@ -99,7 +120,8 @@ callback URLs and drives the Secure-cookie check.
 docker compose up -d
 ```
 
-The app is now on `localhost:3000`, reachable only from the host.
+With `APP_BIND_ADDRESS=127.0.0.1`, the app is reachable only from the host.
+Without it, Compose publishes the port on all host interfaces.
 
 ### 2.3 Put TLS in front
 
@@ -156,16 +178,18 @@ database/Redis ports stay internal.
    The first account is a normal user — there is no auto-admin.
 2. **Close registration.** Set `ALLOW_REGISTRATION=false` in `.env` and
    `docker compose up -d`. (Or toggle **Feature flags → Open registration** in
-   the panel later.) The sign-in screen then hides the register form.
+   the panel later.) The sign-in screen then hides the register form. A flag
+   explicitly saved in the panel takes precedence over the `.env` default;
+   check `/api/v1/auth/config` to confirm `allowRegistration` is false.
 3. **Create a master (platform admin).** The panel at `/admin` belongs to a
    *master* account, which is stored separately from regular users. Create the
    first master through the CLI; owners can create additional accounts from the
    panel:
 
    ```bash
-   docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
+   docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
    # Enter the password twice when prompted; the first master becomes OWNER
-   docker compose exec app node backend/scripts/admin-cli.cjs list
+   docker compose exec app node /app/backend/scripts/admin-cli.cjs list
    ```
 
    Sign in at `PUBLIC_ORIGIN/app/admin`.
@@ -174,8 +198,36 @@ database/Redis ports stay internal.
    clears login lockouts):
 
    ```bash
-   docker compose exec app node backend/scripts/admin-cli.cjs passwd --email me@example.com
+   docker compose exec app node /app/backend/scripts/admin-cli.cjs passwd --email me@example.com
    ```
+
+### Connect an MCP client
+
+MCP runs as a separate local process inside your AI client's environment; the
+Compose stack already exposes the API it needs. In Janosik, create a personal
+key under **Account → API keys**, then configure your MCP client, for example:
+
+```json
+{
+  "mcpServers": {
+    "janosik": {
+      "command": "npx",
+      "args": ["-y", "@janosik/mcp"],
+      "env": {
+        "JANOSIK_URL": "http://localhost:3210",
+        "JANOSIK_APP_BASE": "/app",
+        "JANOSIK_TOKEN": "jnk_your_personal_key"
+      }
+    }
+  }
+}
+```
+
+The MCP host needs Node.js and network access to the Janosik URL. If it runs
+on another machine or in a container, its `localhost` refers to that machine
+or container; use a reachable HTTPS origin instead. Use a separate scoped key
+per agent. See [the MCP guide](../mcp/README.md) for client configuration and
+optional toolsets.
 
 ---
 
@@ -194,7 +246,7 @@ that matter most:
 | `TRUST_PROXY` | `0` | Number of trusted proxy hops. Set `1` behind one reverse proxy. |
 | `PORT` | `3000` | Host port to publish (container always listens on 3000). |
 | `JANOSIK_TAG` | `latest` | Image tag to run (e.g. `v0.1.0`). |
-| `SMTP_HOST` … `SMTP_PASS` | unset | Outgoing email. Unset = **log mode**: codes are written to the server log and registration auto-verifies. |
+| `SMTP_HOST` … `SMTP_PASS` | unset | Outgoing email. Unset = no delivery; registration auto-verifies and production logs omit message contents. |
 | `PURGE_AFTER_DAYS` | `30` | Retention for the hourly soft-delete sweep (fallback when the panel has no setting). |
 | `AUDIT_RETENTION_DAYS` | `365` | Retention for the master audit trail (separate, longer window). |
 | `DB_CONNECTION_LIMIT` | `10` | Prisma pool size per API process. Keep `replicas × this` well under `POSTGRES_MAX_CONNECTIONS`. |
@@ -232,9 +284,8 @@ both for the single-origin layout (`UI_BASE=/app/`, `PUBLIC_APP_URL=/app/`).
 
 ## 5. Email (optional)
 
-Out of the box the app runs in **log mode** — no mail is sent, and verification
-codes are printed to `docker compose logs app`. That is fine for a single-user
-install.
+Without SMTP no mail is sent, and new accounts are automatically verified.
+Production logs omit message contents, including codes.
 
 To send real mail, open `PUBLIC_ORIGIN/app/admin` → **Email service**, pick a
 preset (Gmail / Yandex / Mail.ru / Brevo / SendGrid / custom SMTP), paste the
@@ -244,6 +295,11 @@ credentials and enable delivery. Gmail/Yandex/Mail.ru need an **app password**
 ---
 
 ## 6. Operations
+
+For an installer-created instance, read the release notes before upgrading.
+Back up the database, uploads and `.env`, then set `JANOSIK_TAG` in `.env` to
+the desired release. If the release changes Compose, also download its matching
+`docker-compose.yml` before pulling and restarting.
 
 ### Logs
 
@@ -304,24 +360,29 @@ between nodes. For a single team, one node is usually sufficient.
 
 ```bash
 # database
-docker compose exec postgres pg_dump -U janosik janosik > backup-$(date +%F).sql
+docker compose exec -T postgres pg_dump --clean --if-exists -U janosik janosik > backup-$(date +%F).sql
 
 # uploaded files (attachments, avatars) from the volume
 docker run --rm \
-  -v janosik_janosik-uploads:/data \
+  --volumes-from "$(docker compose ps -aq app):ro" \
   -v "$PWD:/out" \
-  alpine tar czf /out/uploads-$(date +%F).tar.gz -C /data .
+  alpine tar czf /out/uploads-$(date +%F).tar.gz -C /data/uploads .
 ```
 
-(The volume name is prefixed with the Compose project — usually the folder
-name. Check with `docker volume ls`.)
+This uses the app container's uploads volume even when the installer chose a
+unique project name. Store a secure copy of `.env` with the backups.
 
 ### Restore
 
+Take a fresh backup first. Stop the app while restoring and choose the files
+to restore. The uploads command deletes the current contents.
+
 ```bash
-docker compose exec -T postgres psql -U janosik janosik < backup-2026-10-26.sql
-docker run --rm -v janosik_janosik-uploads:/data -v "$PWD:/out" alpine \
-  sh -c "rm -rf /data/* && tar xzf /out/uploads-2026-10-26.tar.gz -C /data"
+docker compose stop app
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U janosik janosik < backup-2026-10-26.sql
+docker run --rm --volumes-from "$(docker compose ps -aq app)" -v "$PWD:/out" alpine \
+  sh -c "find /data/uploads -mindepth 1 -delete && tar xzf /out/uploads-2026-10-26.tar.gz -C /data/uploads"
+docker compose start app
 ```
 
 ### Stop / uninstall
@@ -364,8 +425,8 @@ A proxy is buffering the SSE stream. Ensure it forwards to `127.0.0.1:3000`
 Set `TRUST_PROXY=1` (and make sure the proxy sends `X-Forwarded-For`).
 
 **Emails never arrive.**
-Without `SMTP_*` the app is in log mode by design — check
-`docker compose logs app`, or configure **Email service** in the panel.
+Without `SMTP_*` the app cannot deliver email. Configure SMTP in `.env` or
+configure **Email service** in the panel; production logs do not contain codes.
 
 **`docker compose up` fails with "set JWT_SECRET".**
 `.env` is missing or empty. Copy `.env.example` to `.env` and fill it in.
@@ -383,3 +444,24 @@ Without `SMTP_*` the app is in log mode by design — check
 - [ ] `docker compose pull && docker compose up -d` applied for security fixes.
 
 Report vulnerabilities privately — see [SECURITY.md](../SECURITY.md).
+
+## Publishing a self-host release (maintainers)
+
+The installer selects the latest stable GitHub Release and downloads the
+Compose file from its tag. CI publishes `ghcr.io/vitalytolstik/janosik:<tag>`
+and `:latest` for a stable `vX.Y.Z` tag, after the verification and Docker
+smoke jobs pass. A tag alone does not create a GitHub Release.
+
+1. Merge and verify the changes, choose a new stable `vX.Y.Z` version and push
+   its tag from the intended commit. Wait for CI to publish both architectures.
+2. Ensure the GHCR package is public and test an anonymous pull of the tagged
+   image. Package visibility can require a one-time change in GitHub settings.
+3. Publish the GitHub Release for that same tag with release and upgrade notes.
+   Only publish it after the image is available: the installer treats the latest
+   stable release as ready to install.
+4. From a clean host with Docker, Compose, curl and OpenSSL, run the documented
+   installer without registry credentials, create an account and check MCP.
+
+For pre-release tags, CI publishes a tag-specific image but does not move
+`:latest`. GitHub's latest release endpoint excludes pre-releases; the installer
+uses stable releases only.

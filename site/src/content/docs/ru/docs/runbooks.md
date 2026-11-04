@@ -15,7 +15,7 @@ description: Нумерованные процедуры для резервно
 1. Сохраните дамп базы данных в файл с датой в текущем каталоге.
 
    ```bash
-   docker compose exec postgres pg_dump -U janosik janosik > backup-$(date +%F).sql
+   docker compose exec -T postgres pg_dump --clean --if-exists -U janosik janosik > backup-$(date +%F).sql
    ```
 
    Откат: нет. Этот шаг только читает.
@@ -24,16 +24,16 @@ description: Нумерованные процедуры для резервно
 
    ```bash
    docker run --rm \
-     -v janosik_janosik-uploads:/data \
+     --volumes-from "$(docker compose ps -aq app):ro" \
      -v "$PWD:/out" \
-     alpine tar czf /out/uploads-$(date +%F).tar.gz -C /data .
+     alpine tar czf /out/uploads-$(date +%F).tar.gz -C /data/uploads .
    ```
 
-   Имя тома имеет префикс проекта Compose, обычно это имя каталога. Проверьте
-   реальное имя командой `docker volume ls`. Откат: нет. Этот шаг только
-   читает.
+   Команда использует том загрузок контейнера приложения, в том числе при
+   уникальном имени проекта от установщика. Откат: нет, шаг только читает.
 
-3. Скопируйте оба файла с хоста.
+3. Скопируйте оба файла и `.env` с хоста в защищённое место. В `.env`
+   хранятся секреты установки.
 
 ## Восстановление
 
@@ -44,7 +44,7 @@ description: Нумерованные процедуры для резервно
    менять.
 
    ```bash
-   docker compose exec postgres pg_dump -U janosik janosik > pre-restore-$(date +%F).sql
+   docker compose exec -T postgres pg_dump --clean --if-exists -U janosik janosik > pre-restore-$(date +%F).sql
    ```
 
    Откат: нет. Этот шаг только читает.
@@ -60,7 +60,7 @@ description: Нумерованные процедуры для резервно
 3. **Risky.** Восстановите базу данных. Это перезаписывает текущие данные.
 
    ```bash
-   docker compose exec -T postgres psql -U janosik janosik < backup-2026-10-26.sql
+   docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U janosik janosik < backup-2026-10-26.sql
    ```
 
    Откат: загрузите дамп из шага 1.
@@ -69,8 +69,8 @@ description: Нумерованные процедуры для резервно
    содержимое.
 
    ```bash
-   docker run --rm -v janosik_janosik-uploads:/data -v "$PWD:/out" alpine \
-     sh -c "rm -rf /data/* && tar xzf /out/uploads-2026-10-26.tar.gz -C /data"
+   docker run --rm --volumes-from "$(docker compose ps -aq app)" -v "$PWD:/out" alpine \
+     sh -c "find /data/uploads -mindepth 1 -delete && tar xzf /out/uploads-2026-10-26.tar.gz -C /data/uploads"
    ```
 
    Откат: восстановите архив загрузок, снятый до этого сценария.
@@ -88,8 +88,16 @@ description: Нумерованные процедуры для резервно
 Миграции выполняются автоматически при запуске контейнера приложения, поэтому
 у обновления нет ручного шага миграции.
 
-1. Зафиксируйте целевую версию (необязательно). Задайте `JANOSIK_TAG=v0.1.0` в
-   `.env`.
+1. Прочитайте заметки к релизу и создайте резервные копии базы, загрузок и
+   `.env`. Задайте нужную версию в `JANOSIK_TAG` в `.env`, например `v0.1.0`.
+   Установщик фиксирует начальную версию, поэтому одной загрузки образа для
+   обновления недостаточно. Скачайте и проверьте Compose из того же релиза,
+   заменив `v0.1.0` в адресе на выбранную версию:
+
+   ```bash
+   curl -fsSL -o docker-compose.yml.new https://raw.githubusercontent.com/VitalyTolstik/janosik/v0.1.0/docker-compose.yml
+   # Проверьте docker-compose.yml.new и замените им docker-compose.yml.
+   ```
 
    Откат: измените значение или удалите строку.
 

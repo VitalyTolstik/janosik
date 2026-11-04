@@ -55,6 +55,23 @@ below.
 
 Good for kicking the tyres. Not for exposing to the internet.
 
+For a trial on Linux, macOS or Windows with WSL2, install Docker, Compose,
+curl and OpenSSL, then run:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/VitalyTolstik/janosik/main/install.sh && bash install.sh
+```
+
+Open `http://localhost:3210/app/`. The installer creates `janosik/.env` and
+`janosik/docker-compose.yml`, generates unique secrets, and listens only on
+localhost. It uses the latest stable GitHub release and its matching image;
+both must be published first. To change the directory or port, set
+`JANOSIK_INSTALL_DIR` or `JANOSIK_INSTALL_PORT` when running `bash install.sh`.
+It refuses to overwrite existing files. After a startup error, correct it and
+run `docker compose up -d` in the installation directory.
+
+For a LAN trial or manual configuration:
+
 ```bash
 mkdir janosik && cd janosik
 curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
@@ -92,11 +109,15 @@ POSTGRES_DB=janosik
 PUBLIC_ORIGIN=https://kanban.example.com
 COOKIE_SECURE=true
 TRUST_PROXY=1
+APP_BIND_ADDRESS=127.0.0.1
 ALLOW_REGISTRATION=true
 ```
 
 `PUBLIC_ORIGIN` must match the URL users actually open. It builds OAuth
 callback URLs and drives the Secure-cookie check.
+If converting an installer-created trial, keep its secrets and
+`COMPOSE_PROJECT_NAME`. The installer sets `PORT=3210`; either change it to
+`3000` for the examples below or configure the proxy for `127.0.0.1:3210`.
 
 ### Start the stack
 
@@ -184,16 +205,17 @@ database and Redis ports stay internal.
 2. **Close registration.** Set `ALLOW_REGISTRATION=false` in `.env` and run
    `docker compose up -d`. You can also toggle **Feature flags → Open
    registration** in the master panel later. The sign-in screen then hides the
-   register form.
+   register form. A flag saved in the panel takes precedence over `.env`;
+   check `/api/v1/auth/config` for `allowRegistration: false`.
 3. **Create a master (platform admin).** The panel at `/admin` belongs to a
    master account, which lives outside the user table and must be created
    through the CLI for the first administrator. Owners can create additional
    master accounts from the panel:
 
    ```bash
-   docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
+   docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
    # hidden password prompt (typed twice); the first master becomes OWNER
-   docker compose exec app node backend/scripts/admin-cli.cjs list
+   docker compose exec app node /app/backend/scripts/admin-cli.cjs list
    ```
 
    Sign in to the master panel at `PUBLIC_ORIGIN/app/admin`.
@@ -202,7 +224,7 @@ database and Redis ports stay internal.
    lockout):
 
    ```bash
-   docker compose exec app node backend/scripts/admin-cli.cjs passwd --email me@example.com
+   docker compose exec app node /app/backend/scripts/admin-cli.cjs passwd --email me@example.com
    ```
 
 The CLI accepts three commands: `create`, `passwd` and `list`. Passwords are 8
@@ -210,11 +232,19 @@ to 100 characters and are never passed on the command line. Interactive runs
 prompt twice with hidden input; non-interactive runs read the `ADMIN_PASSWORD`
 environment variable instead.
 
+### Connect MCP
+
+The Compose stack already provides the API used by MCP. Create a personal key
+under **Account → API keys**, then configure the MCP client on the agent's
+machine as described in [MCP and agents](/docs/mcp/). For this local trial use
+`JANOSIK_URL=http://localhost:3210` and `JANOSIK_APP_BASE=/app`. The MCP
+process needs Node.js and network access to that URL; on another machine or in
+a container, use a reachable HTTPS origin instead of `localhost`.
+
 ## Email (optional)
 
-Out of the box the app runs in log mode. No mail is sent, and verification
-codes are printed to `docker compose logs app`. That is fine for a
-single-user install.
+Without SMTP no mail is sent, and new accounts are automatically verified.
+Production logs omit message contents, including codes.
 
 To send real mail, open the master panel, go to **Email service**, pick a
 preset (Gmail, Yandex, Mail.ru, Brevo, SendGrid or custom SMTP), paste the
@@ -256,7 +286,7 @@ compose stack fills the ones it needs from `.env`.
 | `POSTGRES_MAX_CONNECTIONS` | `100` | `max_connections` of the bundled Postgres container. |
 | `SHARE_RATE_LIMIT` | `240` | Public share requests per minute, per token. |
 | `SHARE_OG_RATE_LIMIT` | `60` | Public share OG preview requests per minute, per token. |
-| `SMTP_HOST` | empty | SMTP host. Unset means emails are written to the log, never sent. |
+| `SMTP_HOST` | empty | SMTP host. Unset means emails are not sent; production logs omit their contents. |
 | `SMTP_PORT` | `587` | SMTP port. |
 | `SMTP_SECURE` | `false` | Implicit TLS. Use `true` for port 465. |
 | `SMTP_USER` | empty | SMTP user. |
@@ -314,7 +344,7 @@ docker compose up -d
 Open `http://localhost:3000/app/`, create your account, then create a master:
 
 ```bash
-docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
+docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
 ```
 
 The published image is built for both `arm64` and `amd64`, so Apple Silicon
@@ -368,7 +398,7 @@ Open `http://localhost:3000/app/` in your browser and create the master the
 same way from either shell:
 
 ```powershell
-docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
+docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
 ```
 
 Tips: keep the project inside the WSL filesystem (for example `~/janosik`),
@@ -410,7 +440,7 @@ docker compose up -d
 Open `http://localhost:3000/app/`, create your account and a master:
 
 ```bash
-docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
+docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
 ```
 
 For a public server, add TLS and set `COOKIE_SECURE=true` plus `TRUST_PROXY=1`.

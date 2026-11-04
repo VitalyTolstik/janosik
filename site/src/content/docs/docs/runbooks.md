@@ -14,7 +14,7 @@ Back up both the database and the uploads volume. Neither step changes state.
 1. Dump the database to a dated file in the current directory.
 
    ```bash
-   docker compose exec postgres pg_dump -U janosik janosik > backup-$(date +%F).sql
+   docker compose exec -T postgres pg_dump --clean --if-exists -U janosik janosik > backup-$(date +%F).sql
    ```
 
    Rollback: none. This step only reads.
@@ -23,16 +23,16 @@ Back up both the database and the uploads volume. Neither step changes state.
 
    ```bash
    docker run --rm \
-     -v janosik_janosik-uploads:/data \
+     --volumes-from "$(docker compose ps -aq app):ro" \
      -v "$PWD:/out" \
-     alpine tar czf /out/uploads-$(date +%F).tar.gz -C /data .
+     alpine tar czf /out/uploads-$(date +%F).tar.gz -C /data/uploads .
    ```
 
-   The volume name is prefixed with the Compose project, usually the folder
-   name. Check the real name with `docker volume ls`. Rollback: none. This
-   step only reads.
+   This uses the app container's uploads volume even when the installer chose
+   a unique project name. Rollback: none. This step only reads.
 
-3. Copy both files off the host.
+3. Copy both files and `.env` off the host to a secure location. The `.env`
+   file contains the installation's secrets.
 
 ## Restore
 
@@ -42,7 +42,7 @@ can undo the whole runbook.
 1. Take a fresh backup of the current database before touching anything.
 
    ```bash
-   docker compose exec postgres pg_dump -U janosik janosik > pre-restore-$(date +%F).sql
+   docker compose exec -T postgres pg_dump --clean --if-exists -U janosik janosik > pre-restore-$(date +%F).sql
    ```
 
    Rollback: none. This step only reads.
@@ -58,7 +58,7 @@ can undo the whole runbook.
 3. **Risky.** Restore the database. This overwrites the current data.
 
    ```bash
-   docker compose exec -T postgres psql -U janosik janosik < backup-2026-10-26.sql
+   docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U janosik janosik < backup-2026-10-26.sql
    ```
 
    Rollback: load the dump from step 1.
@@ -67,8 +67,8 @@ can undo the whole runbook.
    contents first.
 
    ```bash
-   docker run --rm -v janosik_janosik-uploads:/data -v "$PWD:/out" alpine \
-     sh -c "rm -rf /data/* && tar xzf /out/uploads-2026-10-26.tar.gz -C /data"
+   docker run --rm --volumes-from "$(docker compose ps -aq app)" -v "$PWD:/out" alpine \
+     sh -c "find /data/uploads -mindepth 1 -delete && tar xzf /out/uploads-2026-10-26.tar.gz -C /data/uploads"
    ```
 
    Rollback: restore the uploads archive you took before this runbook.
@@ -86,7 +86,16 @@ can undo the whole runbook.
 Migrations run automatically when the app container starts, so an upgrade has
 no manual migration step.
 
-1. Pin the target version (optional). Set `JANOSIK_TAG=v0.1.0` in `.env`.
+1. Read the release notes and back up the database, uploads and `.env`. Set
+   `JANOSIK_TAG` in `.env` to the desired release (for example `v0.1.0`).
+   The installer pins the initial version, so pulling alone will not upgrade
+   it. Review and download the matching Compose file from that release; replace
+   `v0.1.0` in the URL with your chosen tag:
+
+   ```bash
+   curl -fsSL -o docker-compose.yml.new https://raw.githubusercontent.com/VitalyTolstik/janosik/v0.1.0/docker-compose.yml
+   # Review docker-compose.yml.new, then replace docker-compose.yml with it.
+   ```
 
    Rollback: change the value or remove the line.
 

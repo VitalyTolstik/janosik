@@ -13,7 +13,7 @@
 
 services:
   app:
-    image: ghcr.io/vitalytolstik/janosik:${JANOSIK_TAG:-latest}
+    image: ${JANOSIK_IMAGE:-ghcr.io/vitalytolstik/janosik}:${JANOSIK_TAG:-latest}
     # Uncomment to build the image from this checkout instead of pulling:
     # build: .
     restart: unless-stopped
@@ -48,6 +48,25 @@ services:
       # silent default.
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+      ALLOW_PUBLIC_SHARES: ${ALLOW_PUBLIC_SHARES:-true}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-300}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Janosik <no-reply@janosik.local>}
+      SETTINGS_SECRET: ${SETTINGS_SECRET:-}
+      SHARE_RATE_LIMIT: ${SHARE_RATE_LIMIT:-240}
+      SHARE_OG_RATE_LIMIT: ${SHARE_OG_RATE_LIMIT:-60}
+      SHARE_AGGREGATE_CACHE_MS: ${SHARE_AGGREGATE_CACHE_MS:-2000}
+      ADMIN_METRICS_CACHE_MS: ${ADMIN_METRICS_CACHE_MS:-5000}
+      SSE_MAX_CONNECTIONS: ${SSE_MAX_CONNECTIONS:-5000}
+      SSE_MAX_PER_USER: ${SSE_MAX_PER_USER:-32}
+      SSE_MAX_PER_BOARD: ${SSE_MAX_PER_BOARD:-0}
+      UPLOAD_RATE_LIMIT: ${UPLOAD_RATE_LIMIT:-60}
       # 0 = no proxy in front (the port is published directly). Set to 1 when
       # you put nginx/Caddy/Traefik in front, so rate limits and the audit log
       # see the real client IP.
@@ -60,7 +79,7 @@ services:
       # is OWNER-only and off unless enabled.
       QUEUES_DASHBOARD: ${QUEUES_DASHBOARD:-false}
     ports:
-      - "${PORT:-3000}:3000"
+      - "${APP_BIND_ADDRESS:-0.0.0.0}:${PORT:-3000}:3000"
     volumes:
       - janosik-uploads:/data/uploads
     # The image ships the same probe; declared here too so `docker compose ps`

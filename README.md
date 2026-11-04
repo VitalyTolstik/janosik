@@ -205,6 +205,21 @@ docker run -d --name janosik-mailpit --restart unless-stopped -p 1025:1025 -p 80
 
 ### Self-hosting with Docker (production)
 
+For a local trial on Linux, macOS or WSL with Docker, Compose, curl and OpenSSL
+installed, download and run the installer:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/VitalyTolstik/janosik/main/install.sh && bash install.sh
+```
+
+It creates `janosik/.env` with unique secrets, starts the stack bound to
+`127.0.0.1:3210`, and prints the app URL. Set `JANOSIK_INSTALL_PORT` or
+`JANOSIK_INSTALL_DIR` before running the script to change the local port or
+directory. It pins the Compose file and image to the latest stable GitHub
+release and refuses to overwrite an existing configuration.
+The public image must have been released before this installation can work.
+For a public deployment use HTTPS and the production instructions below.
+
 The fastest way to run Janosik is the prebuilt image: one container serves the
 **whole app** (API under `/api/v1` + the built SPA), next to PostgreSQL and
 Redis. No separate web server or proxy config — SSE and cookies work on a
@@ -216,7 +231,7 @@ curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-comp
 curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
 
 # 2. Edit .env — at minimum JWT_SECRET and PUBLIC_ORIGIN:
-#    JWT_SECRET=$(openssl rand -hex 32)
+#    JWT_SECRET=$(openssl rand -hex 32), POSTGRES_PASSWORD=<strong password>
 #    For this plain-HTTP quickstart also set COOKIE_SECURE=false (the safe
 #    default is true; over HTTP the API refuses to boot rather than drop the
 #    refresh cookie). Behind HTTPS keep it true.
@@ -232,10 +247,10 @@ Create a **master (platform admin)** account for the `/admin` panel — the CLI
 is the only door, there is deliberately no HTTP endpoint for it:
 
 ```bash
-docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
+docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
 # (hidden password prompt; the first master becomes OWNER)
-docker compose exec app node backend/scripts/admin-cli.cjs list
-# then sign in at PUBLIC_ORIGIN/admin
+docker compose exec app node /app/backend/scripts/admin-cli.cjs list
+# then sign in at PUBLIC_ORIGIN/app/admin
 ```
 
 Upgrade and back up:
@@ -245,6 +260,11 @@ docker compose pull && docker compose up -d          # new image, schema migrate
 docker compose exec postgres pg_dump -U janosik janosik > backup.sql
 # restore: docker compose exec -T postgres psql -U janosik janosik < backup.sql
 ```
+
+For an installer-created instance, check the release notes and change
+`JANOSIK_TAG` in `janosik/.env` to the desired release before pulling. When a
+release changes the Compose file, update it from that same release as well.
+Back up the database, uploads, and `.env` before upgrading.
 
 Environment variables (see `.env.example` for the full annotated list):
 

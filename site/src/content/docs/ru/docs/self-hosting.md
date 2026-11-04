@@ -55,6 +55,24 @@ docker compose version
 
 Подходит, чтобы попробовать. Не для публикации в интернете.
 
+Для пробного запуска на Linux, macOS или Windows с WSL2 установите Docker,
+Compose, curl и OpenSSL, затем выполните:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/VitalyTolstik/janosik/main/install.sh && bash install.sh
+```
+
+Откройте `http://localhost:3210/app/`. Установщик создаст `janosik/.env` и
+`janosik/docker-compose.yml`, сгенерирует уникальные секреты и откроет
+приложение только на localhost. Он использует последний стабильный релиз GitHub
+и соответствующий образ; оба должны быть опубликованы. Чтобы изменить папку или
+порт, задайте `JANOSIK_INSTALL_DIR` или `JANOSIK_INSTALL_PORT` при запуске
+`bash install.sh`. Существующие файлы установщик не перезаписывает. Если запуск
+завершился с ошибкой, устраните её и выполните `docker compose up -d` в папке
+установки.
+
+Для локальной сети или ручной настройки:
+
 ```bash
 mkdir janosik && cd janosik
 curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
@@ -94,11 +112,15 @@ POSTGRES_DB=janosik
 PUBLIC_ORIGIN=https://kanban.example.com
 COOKIE_SECURE=true
 TRUST_PROXY=1
+APP_BIND_ADDRESS=127.0.0.1
 ALLOW_REGISTRATION=true
 ```
 
 `PUBLIC_ORIGIN` должен совпадать с URL, который реально открывают пользователи.
 Значение используется для формирования URL обратного вызова OAuth и проверки Secure-cookie.
+При переходе с пробной установки сохраните её секреты и `COMPOSE_PROJECT_NAME`.
+Установщик задаёт `PORT=3210`: измените порт на `3000` для примеров ниже или
+направьте прокси на `127.0.0.1:3210`.
 
 ### Запустите стек
 
@@ -186,16 +208,18 @@ http:
 2. **Закройте регистрацию.** Задайте `ALLOW_REGISTRATION=false` в `.env` и
    выполните `docker compose up -d`. Позже это можно переключить в панели
    мастера через **Feature flags → Open registration**. Экран входа после
-   этого скрывает форму регистрации.
+   этого скрывает форму регистрации. Настройка, сохранённая в панели, важнее
+   значения `.env`; проверьте `allowRegistration: false` по адресу
+   `/api/v1/auth/config`.
 3. **Создайте мастера (администратора платформы).** Панель по `/admin`
    принадлежит учётной записи мастера, которая хранится отдельно от обычных
    пользователей. Первого администратора создают через CLI; следующих владелец
    может создавать из панели:
 
    ```bash
-   docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
+   docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
    # hidden password prompt (typed twice); the first master becomes OWNER
-   docker compose exec app node backend/scripts/admin-cli.cjs list
+   docker compose exec app node /app/backend/scripts/admin-cli.cjs list
    ```
 
    Войдите в панель мастера по `PUBLIC_ORIGIN/app/admin`.
@@ -204,7 +228,7 @@ http:
    блокировку):
 
    ```bash
-   docker compose exec app node backend/scripts/admin-cli.cjs passwd --email me@example.com
+   docker compose exec app node /app/backend/scripts/admin-cli.cjs passwd --email me@example.com
    ```
 
 CLI принимает три команды: `create`, `passwd` и `list`. Длина пароля — от 8 до
@@ -213,11 +237,19 @@ CLI принимает три команды: `create`, `passwd` и `list`. Дл
 запрашивает пароль дважды скрытым вводом; неинтерактивный читает переменную
 окружения `ADMIN_PASSWORD`.
 
+### Подключение MCP
+
+Стек Compose уже предоставляет API для MCP. Создайте персональный ключ в
+**Account → API keys**, затем настройте MCP-клиент на машине агента по
+[инструкции MCP](/ru/docs/mcp/). Для локального запуска укажите
+`JANOSIK_URL=http://localhost:3210` и `JANOSIK_APP_BASE=/app`. Для процесса MCP
+нужны Node.js и доступ к этому адресу; на другой машине или в контейнере вместо
+`localhost` используйте доступный HTTPS-адрес.
+
 ## Почта (необязательно)
 
-Из коробки приложение работает в режиме логирования. Почта не отправляется, а
-коды подтверждения печатаются в `docker compose logs app`. Для установки на
-одного пользователя этого достаточно.
+Без SMTP почта не отправляется, а новые аккаунты подтверждаются автоматически.
+В production-логе содержание сообщений и коды не записываются.
 
 Чтобы отправлять реальную почту, откройте панель мастера, перейдите в
 **Email service**, выберите шаблон (Gmail, Yandex, Mail.ru, Brevo, SendGrid
@@ -318,7 +350,7 @@ docker compose up -d
 мастера:
 
 ```bash
-docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
+docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
 ```
 
 Публикуемый образ собран и для `arm64`, и для `amd64`, поэтому на Apple
@@ -374,7 +406,7 @@ docker compose up -d
 способом из любой оболочки:
 
 ```powershell
-docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
+docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
 ```
 
 Советы: держите проект внутри файловой системы WSL (например, `~/janosik`), а
@@ -415,7 +447,7 @@ docker compose up -d
 Откройте `http://localhost:3000/app/`, создайте учётную запись и мастера:
 
 ```bash
-docker compose exec app node backend/scripts/admin-cli.cjs create --email me@example.com
+docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
 ```
 
 Для публичного сервера добавьте TLS и задайте `COOKIE_SECURE=true` и
@@ -459,7 +491,7 @@ Dev-UI **всегда в серверном режиме**: `npm run dev` пок
 `PUBLIC_APP_URL=http://localhost:5173 npm run dev:site`.
 
 **Исходящая почта по умолчанию выключена** (режим записи в журнал, если не заданы `SMTP_*`):
-коды идут в лог сервера, письма не отправляются. См.
+письма не отправляются, а коды в production-лог не записываются. См.
 [Почтовая служба](/ru/docs/admin/settings/) и [Инструкции по эксплуатации](/ru/docs/runbooks/).
 Локальная песочница — Mailpit:
 
