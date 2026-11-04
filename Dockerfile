@@ -27,6 +27,7 @@ COPY brand/package.json brand/package.json
 COPY ui/package.json ui/package.json
 COPY site/package.json site/package.json
 COPY backend/package.json backend/package.json
+COPY e2e/package.json e2e/package.json
 RUN npm ci
 
 # Sources. Symlinks (backend/src/shared → ../../shared/src) are preserved by
@@ -71,6 +72,7 @@ COPY brand/package.json brand/package.json
 COPY ui/package.json ui/package.json
 COPY site/package.json site/package.json
 COPY backend/package.json backend/package.json
+COPY e2e/package.json e2e/package.json
 COPY --from=build /app/node_modules ./node_modules
 # Now that everything is built, drop dev-only dependencies (typescript, jest,
 # the whole UI toolchain) to slim the image.

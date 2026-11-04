@@ -16,7 +16,7 @@ A self-hosted **Kanban board for teams and AI agents**. Server mode provides acc
 
 ## Repository layout — the workspaces
 
-This is an **npm workspaces monorepo** with seven workspaces and one root lockfile. `ui`, `shared` and `backend` make up the application; `brand`, `site`, `video` and `mcp` support its design system, website, media and agent integrations. Install dependencies once with `npm install` from the repository root.
+This is an **npm workspaces monorepo** with one root lockfile. `ui`, `shared` and `backend` make up the application; `brand`, `site`, `video` and `mcp` support its design system, website, media and agent integrations; `e2e` holds browser-test infrastructure. Install dependencies once with `npm install` from the repository root.
 
 | Workspace | npm name | What it is | How it runs |
 | --- | --- | --- | --- |
@@ -124,6 +124,10 @@ janosik/                        # npm workspaces root (one package-lock.json)
 | Shared | `@janosik/shared` — domain model, reducer + inverse, validation, DTO contracts (imported as TS source, no build step) |
 | Backend | NestJS 11, Prisma 6, PostgreSQL 16, JWT (`@nestjs/jwt`) + refresh rotation, argon2id, helmet, rate limiting |
 | Tests | Vitest + React Testing Library (UI, shared, brand, site and MCP); Jest + Supertest (backend unit and API end-to-end tests against PostgreSQL) |
+
+Browser E2E infrastructure uses Playwright with Google Chrome and an isolated
+self-host stack. See [e2e/README.md](./e2e/README.md) for setup and commands;
+the browser scenarios are being added under TASK-162.
 
 ---
 
@@ -440,7 +444,7 @@ Full guide in-repo: [mcp/README.md](./mcp/README.md) and
 
 ## Scripts
 
-Root scripts cover the seven npm workspaces:
+Root scripts cover the npm workspaces:
 
 | Command | What it does |
 | --- | --- |
@@ -453,8 +457,9 @@ Root scripts cover the seven npm workspaces:
 | `npm run preview` | Serve the built UI locally |
 | `npm test` | Vitest suites for UI, shared, brand, site and MCP (not backend) |
 | `npm run test:backend` | Backend Jest unit + e2e (e2e creates/migrates `janosik_test` first) |
+| `npm run test:e2e` | Playwright against configured running servers; see [e2e/README.md](./e2e/README.md) for the isolated Docker runner |
 | `npm run test:coverage` | Vitest coverage for UI, shared and brand |
-| `npm run lint` | ESLint in all seven workspaces |
+| `npm run lint` | ESLint in the seven application and tooling workspaces |
 | `npm run format` / `format:check` | Prettier write / verify (repo-wide) |
 | `npm run size` | size-limit budgets for the UI bundle (entry, lazy chunks, admin chunk) |
 
@@ -525,11 +530,12 @@ See [ROADMAP.md](./ROADMAP.md) for project priorities, architecture decisions an
    npm run format:check
    npm test
    npm run test:backend   # needs the PostgreSQL test database running
+   npm run test:docker -w e2e -- --pass-with-no-tests # Docker + Google Chrome
    npm run build
    npm run size
    ```
 
-3. UI unit and component tests use Vitest + React Testing Library. Backend end-to-end tests use Jest + Supertest against PostgreSQL. Browser-level Playwright coverage is tracked in [ROADMAP.md](./ROADMAP.md) under TASK-41; it is not part of the current CI workflow yet.
+3. UI unit and component tests use Vitest + React Testing Library. Backend end-to-end tests use Jest + Supertest against PostgreSQL. CI also runs the Google Chrome Playwright job against the Docker stack; browser scenarios are tracked in [ROADMAP.md](./ROADMAP.md) under TASK-162. Until the first scenario lands, an empty browser suite is allowed.
 4. New UI strings land in both `src/locales/en` and `src/locales/ru` synchronously; colors come only from the design tokens in `src/index.css`.
 5. Change the data model, a board operation, validation or an API contract in `@janosik/shared` first — both `ui` and `backend` compile against it.
 6. The backend follows the fixed stack in `ROADMAP.md` §7 (NestJS/Prisma/PostgreSQL/JWT) and its iteration order.

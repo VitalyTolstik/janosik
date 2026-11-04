@@ -21,6 +21,8 @@ backend/data
 **/.DS_Store
 **/*.log
 **/.playwright-mcp
+e2e/*
+!e2e/package.json
 
 # Docs and audits are not needed to build the image.
 *.md

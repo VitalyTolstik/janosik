@@ -74,6 +74,7 @@ npm run lint
 npm run format:check      # `npm run format` to fix
 npm test                  # ui + shared (Vitest)
 npm run test:backend      # Jest + Supertest, needs the dev database
+npm run test:docker -w e2e -- --pass-with-no-tests # Docker + Google Chrome
 npm run build
 npm run size -w ui
 ```
