@@ -33,23 +33,45 @@ const MIME_BY_EXT: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
   ".webp": "image/webp",
-  ".svg": "image/svg+xml",
+  ".bmp": "image/bmp",
+  ".avif": "image/avif",
+  ".heic": "image/heic",
   ".pdf": "application/pdf",
   ".txt": "text/plain",
-  ".md": "text/markdown",
-  ".csv": "text/csv",
+  ".md": "text/plain",
+  ".csv": "text/plain",
   ".json": "application/json",
+  ".doc": "application/msword",
+  ".xls": "application/vnd.ms-excel",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".docx":
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".pptx":
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".zip": "application/zip",
+  ".rtf": "application/rtf",
+  ".gz": "application/gzip",
+  ".7z": "application/x-7z-compressed",
+  ".tar": "application/x-tar",
   ".mp4": "video/mp4",
   ".webm": "video/webm",
   ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".mov": "video/quicktime",
+  ".m4a": "audio/mp4",
 };
 
 function mimeFor(fileName: string): string {
-  return (
-    MIME_BY_EXT[path.extname(fileName).toLowerCase()] ??
-    "application/octet-stream"
-  );
+  const mime = MIME_BY_EXT[path.extname(fileName).toLowerCase()];
+  if (!mime) {
+    throw new Error(
+      `Unsupported attachment extension for "${fileName}". Use a file ` +
+        "type accepted by the Janosik attachment API.",
+    );
+  }
+  return mime;
 }
 
 export function registerAttachmentTools(

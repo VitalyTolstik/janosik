@@ -33,13 +33,10 @@ import type {
   CommandRequest,
   CommandResponse,
   CreateShareRequest,
-  CreateUserTokenRequest,
-  CreateUserTokenResponse,
   InviteMemberRequest,
   UpdateMemberRequest,
   UpdateProfileRequest,
   UpdateShareRequest,
-  UserTokenDto,
 } from "@janosik/shared";
 import type { Board } from "@janosik/shared";
 import {
@@ -324,7 +321,12 @@ export class JanosikClient {
    */
   async commandOnFreshBoard<R>(
     boardId: string,
-    build: (board: Board) => { action?: CommandAction; result: R } | null,
+    build: (
+      board: Board,
+    ) =>
+      | { action?: CommandAction; result: R }
+      | null
+      | Promise<{ action?: CommandAction; result: R } | null>,
     attempts = 3,
     expectedVersion?: number,
     prefetched?: { board: Board; seq: number },
@@ -335,7 +337,7 @@ export class JanosikClient {
         attempt === 1 && prefetched
           ? prefetched
           : await this.getBoardWithSeq(boardId);
-      const plan = build(board);
+      const plan = await build(board);
       if (plan === null) return null;
       if (plan.action === undefined) return plan.result;
       try {
@@ -600,18 +602,6 @@ export class JanosikClient {
 
   updateProfile(dto: UpdateProfileRequest): Promise<AuthUserDto> {
     return this.request("/users/me", { method: "PATCH", body: dto });
-  }
-
-  listTokens(): Promise<UserTokenDto[]> {
-    return this.request("/users/me/tokens");
-  }
-
-  createToken(dto: CreateUserTokenRequest): Promise<CreateUserTokenResponse> {
-    return this.request("/users/me/tokens", { method: "POST", body: dto });
-  }
-
-  revokeToken(id: string): Promise<{ status: "ok" }> {
-    return this.request(apiPath`/users/me/tokens/${id}`, { method: "DELETE" });
   }
 }
 

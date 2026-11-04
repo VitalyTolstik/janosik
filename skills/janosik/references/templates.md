@@ -21,7 +21,7 @@ What changes and where — files, areas, endpoints.
 What this card deliberately does not do.
 
 ## Verify
-The exact check that proves it: `npm test -w ui`, a curl, a link.
+The exact check that proves it: `npm run test -w ui`, a curl, a link.
 ```
 
 Then set the **task contract** with `janosik_set_card_task_spec`:
@@ -56,7 +56,7 @@ Your best guess, or "unknown".
 
 Link the bug to whatever it blocks with `janosik_add_card_link` (`blocks`), and
 set a **task contract** with `janosik_set_card_task_spec` (`definitionOfDone`:
-"repro no longer fails", "regression test added") so the fix has a finish line.
+`["Reproduction no longer fails", "Relevant regression check passes"]`) so the fix has a finish line.
 
 ## Card: spike / research
 
@@ -75,7 +75,8 @@ How much effort before we stop and report.
 Filled in as you go. End with a recommendation and the evidence for it.
 ```
 
-A spike ends in a **comment with a recommendation**, not in code.
+A spike normally ends in findings and a recommendation, with `kind: "evidence"`
+for supporting checks. Follow its scope if a prototype is also requested.
 
 ## Card: chore
 
@@ -95,7 +96,7 @@ The command that proves it: `npm test`, a build, a smoke check.
 ```
 
 Set the **task contract** with `janosik_set_card_task_spec` (`acceptanceCriteria`:
-"change applied", "nothing regressed").
+`["Change applied", "Relevant checks pass"]`).
 
 Each comment carries a `kind` — pass it to `janosik_add_comment` (`status`,
 `question`, `blocker`, `evidence`, `handoff`); omit it for a plain note. The
@@ -113,6 +114,7 @@ Plan — <the approach in one or two lines>. Steps: <a, b, c>.
 ```
 Claimed until <lease expiry> — <how I read the task>.
 ```
+
 (kind `status`)
 
 ## Comment: claim refused
@@ -121,14 +123,16 @@ Claimed until <lease expiry> — <how I read the task>.
 @<holder> holds a live claim on this card (lease to <time>). Leaving it to them;
 picking up <another card> instead.
 ```
+
 (kind `question`)
 
 ## Comment: evidence
 
 ```
 <what shipped>, verified by <test/commit/link>. <Any number that proves it>.
-Definition of done met.
+Definition of done: <verified criteria; state any remaining checks honestly>.
 ```
+
 (kind `evidence`)
 
 ## Comment: bug found (the "return it" note)
@@ -140,6 +144,7 @@ Definition of done met.
 - Tried: <what you attempted>.
 Returning the card to <column>; remaining work is in the task contract.
 ```
+
 (kind `blocker`)
 
 ## Comment: blocked
@@ -148,6 +153,7 @@ Returning the card to <column>; remaining work is in the task contract.
 <the blocker>. Needs <a decision / an access / another card>. Not moving this
 forward until that lands; see <link>.
 ```
+
 (kind `blocker`)
 
 ## Comment: question
@@ -156,6 +162,7 @@ forward until that lands; see <link>.
 <the decision you need>, from <a human / another agent>. Blocking until answered;
 card left in <column>.
 ```
+
 (kind `question`)
 
 ## Comment: handoff to review
@@ -164,6 +171,7 @@ card left in <column>.
 Ready for review — <what to check>, on <board/column>. Evidence: <link or number>.
 Please look at <the risky part>.
 ```
+
 (kind `handoff`)
 
 ## Label conventions
@@ -171,16 +179,19 @@ Please look at <the risky part>.
 Use the labels the board already defines (`janosik_list_labels`) before adding
 new ones. A small, consistent set beats a big, improvised one:
 
-| Label | Means |
-| --- | --- |
-| `bug` | a defect |
-| `feature` | new capability |
-| `chore` | upkeep, no behaviour change |
-| `docs` | documentation only |
-| `blocked` | cannot proceed (pair with the Blocked column) |
-| `agent` | a card worked by an agent (the **Agent** badge already marks this from `actorType`; the label is optional) |
-| `agent:blocked` | an agent is stuck and needs help |
-| `agent:needs-human` | waiting on a human decision |
-| `agent:verified` | an agent checked it and trusts the result |
+| Label               | Means                                                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| `bug`               | a defect                                                                                 |
+| `feature`           | new capability                                                                           |
+| `chore`             | upkeep, no behaviour change                                                              |
+| `docs`              | documentation only                                                                       |
+| `blocked`           | cannot proceed (pair with the Blocked column)                                            |
+| `agent`             | optional card categorization; activity badges identify agent actions, not card ownership |
+| `agent:blocked`     | an agent is stuck and needs help                                                         |
+| `agent:needs-human` | waiting on a human decision                                                              |
+| `agent:verified`    | an agent checked it and trusts the result                                                |
 
-Colour is cosmetic; keep the meaning in the name.
+These are optional conventions, not reserved application states. Reuse the
+board's vocabulary; do not automatically create this whole set. Clear stale
+state labels when their meaning no longer holds. Colour is cosmetic; keep the
+meaning in the name.

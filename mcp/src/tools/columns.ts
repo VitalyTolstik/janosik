@@ -9,7 +9,7 @@ import { z } from "zod";
 
 import type { JanosikClient } from "../client.js";
 import { errorResult, textOnly } from "../format.js";
-import { newId } from "../ids.js";
+import { newId, stableCommandId } from "../ids.js";
 import { findColumnIndex } from "../locate.js";
 import {
   boardIdSchema,
@@ -46,7 +46,7 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         columnId: columnIdSchema
           .optional()
           .describe(
-            "Client id for the new column (TASK-157, E14) — a retry then " +
+            "Client id for the new column — a retry then " +
               "returns the first column instead of a duplicate.",
           ),
         title: z
@@ -69,7 +69,9 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         },
         {
           ifMatch: expectedVersion,
-          ...(columnId ? { commandId: columnId } : {}),
+          ...(columnId
+            ? { commandId: stableCommandId(columnId, "create") }
+            : {}),
         },
       );
       return textOnly(`Created column "${title}" — \`${newColumnId}\`.`);
@@ -203,8 +205,8 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
     {
       title: "Sort a column",
       description:
-        "Sort a column's cards by a criterion. This rewrites the manual " +
-        "order; dragging a card afterwards restores manual ordering.",
+        "Sort a column's cards by a criterion. This replaces the current " +
+        "manual order; a later drag changes only the dragged card's place.",
       inputSchema: {
         boardId: boardIdSchema,
         columnId: columnIdSchema,
@@ -269,8 +271,9 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
     {
       title: "Clear a column",
       description:
-        "Archive every card in a column in one undoable step (a common way " +
-        "to empty a 'Done' column without deleting the cards).",
+        "Archive every card in a column in one command (a common way " +
+        "to empty a 'Done' column without deleting the cards). Restore " +
+        "individual cards with janosik_unarchive_card; MCP does not expose undo.",
       inputSchema: {
         boardId: boardIdSchema,
         columnId: columnIdSchema,
@@ -297,9 +300,9 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
     {
       title: "Delete a column",
       description:
-        "Delete a column and its cards. Destructive — prefer " +
-        "janosik_clear_column or janosik_archive_card when the cards should " +
-        "survive.",
+        "Remove a column and its cards. To keep the cards, archive them " +
+        "with janosik_clear_column before deleting the empty column. Use " +
+        "deletion when removing the column is specifically intended.",
       inputSchema: {
         boardId: boardIdSchema,
         columnId: columnIdSchema,

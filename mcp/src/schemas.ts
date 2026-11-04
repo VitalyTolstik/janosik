@@ -61,7 +61,7 @@ export const prioritySchema = z
 export const commentKindSchema = z
   .enum(COMMENT_KINDS)
   .describe(
-    "Comment kind (TASK-157): 'note' (default), 'status', 'question', " +
+    "Comment kind: 'note' (default), 'status', 'question', " +
       "'blocker', 'evidence' or 'handoff'.",
   );
 

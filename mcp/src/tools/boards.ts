@@ -51,6 +51,7 @@ export function registerBoardTools(
   server: McpServer,
   client: JanosikClient,
   fsOptions: FsOptions,
+  readOnly = false,
 ) {
   defineTool(
     server,
@@ -58,8 +59,9 @@ export function registerBoardTools(
     {
       title: "List Janosik boards",
       description:
-        "List every board the authenticated user can access, with the " +
-        "caller's role and card/column counters. Use it first to find a " +
+        "List every board the authenticated user can access, including " +
+        "archived boards, with the caller's role and active card/column " +
+        "counters. Use it first to find a " +
         "board id for the other tools.",
       inputSchema: { response_format: responseFormatSchema },
       annotations: READ,
@@ -81,7 +83,9 @@ export function registerBoardTools(
         "here are what the other tools expect; pass `seq` as a write's " +
         "expectedVersion to refuse a write that would clobber a concurrent " +
         "change. On a large board pass columnId to read one column; archived " +
-        "cards are listed only with include_archived. Pass detail='summary' to " +
+        "cards are listed only with include_archived; when columnId is set, " +
+        "archived cards still come from the whole board because they have " +
+        "no active column. Pass detail='summary' to " +
         "skip each card's description and checklists.",
       inputSchema: {
         boardId: boardIdSchema,
@@ -91,7 +95,9 @@ export function registerBoardTools(
         include_archived: z
           .boolean()
           .default(false)
-          .describe("Also list the board's archived cards."),
+          .describe(
+            "Also list the board's archived cards, even with columnId set.",
+          ),
         detail: detailSchema
           .default("full")
           .describe(
@@ -191,8 +197,9 @@ export function registerBoardTools(
     {
       title: "Archive a Janosik board",
       description:
-        "Archive a board: its data is kept but it disappears from the " +
-        "normal board list. Reverse it with janosik_unarchive_board.",
+        "Archive a board: its data is kept and it is marked archived in " +
+        "board listings. Requires ADMIN. Reverse it with " +
+        "janosik_unarchive_board.",
       inputSchema: {
         boardId: boardIdSchema,
         expectedVersion: expectedVersionSchema,
@@ -214,7 +221,7 @@ export function registerBoardTools(
     "janosik_unarchive_board",
     {
       title: "Unarchive a Janosik board",
-      description: "Bring an archived board back to the active list.",
+      description: "Restore an archived board to active status (ADMIN only).",
       inputSchema: {
         boardId: boardIdSchema,
         expectedVersion: expectedVersionSchema,
@@ -237,9 +244,10 @@ export function registerBoardTools(
     {
       title: "Delete a Janosik board",
       description:
-        "Delete a board (ADMIN only). This is destructive: the board and its " +
-        "cards are removed. Prefer janosik_archive_board when you may need it " +
-        "back.",
+        "Remove a board and its cards from normal access (ADMIN only). " +
+        "For routine cleanup, use janosik_archive_board so the board can " +
+        "be restored through normal board tools. Use deletion only when " +
+        "removal is specifically intended.",
       inputSchema: { boardId: boardIdSchema },
       annotations: DESTRUCTIVE,
     },
@@ -271,10 +279,16 @@ export function registerBoardTools(
           ),
         response_format: responseFormatSchema,
       },
-      // With outputPath it writes a local file, so it is not read-only.
-      annotations: WRITE,
+      // Exporting JSON is a read; outputPath also writes a local file. In
+      // read-only mode expose the read path and reject the file-writing path.
+      annotations: readOnly ? READ : WRITE,
     },
     async ({ boardId, outputPath, response_format }) => {
+      if (readOnly && outputPath !== undefined) {
+        return errorResult(
+          "Error: outputPath writes a local file and is unavailable in read-only mode.",
+        );
+      }
       const envelope = await client.exportBoard(boardId);
       const text = JSON.stringify(envelope, null, 2);
       if (outputPath !== undefined) {

@@ -34,6 +34,10 @@ function respond(
 let boardSeq: number;
 let staleWrites: number;
 let commandPayload: string;
+let cardOverrides: Record<string, unknown>;
+let searchFailure: number | null;
+let archivedBoard: boolean;
+let reorderOnConflict: boolean;
 
 function board(cards: Record<string, unknown> = {}) {
   return {
@@ -134,7 +138,25 @@ function fakeApi(
     ]);
   }
   if (path === "/boards/b1" && method === "GET") {
-    return respond(board(), 200, { "X-Board-Seq": String(boardSeq) });
+    const snapshot = board(cardOverrides);
+    if (reorderOnConflict) {
+      snapshot.columns.splice(boardSeq > 3 ? 1 : 2, 0, {
+        id: "col3",
+        title: "Other",
+        cardIds: [],
+        createdAt: 1,
+      });
+    }
+    return respond(
+      { ...snapshot, ...(archivedBoard ? { archivedAt: 5 } : {}) },
+      200,
+      {
+        "X-Board-Seq": String(boardSeq),
+      },
+    );
+  }
+  if (path === "/boards/b1/export" && method === "GET") {
+    return respond({ formatVersion: 1, boards: [board()] });
   }
   if (path === "/boards/b2" && method === "GET") {
     // A board too large for one JSON response.
@@ -166,6 +188,9 @@ function fakeApi(
   }
   if (path === "/boards/b1/members" && method === "GET") {
     return respond([{ userId: "u1", role: "ADMIN" }]);
+  }
+  if (path === "/auth/me" && method === "GET") {
+    return respond({ id: "u1", displayName: "Test user" });
   }
   if (path === "/invitations/inv1/accept" && method === "POST") {
     // The real endpoint answers 200 with an empty body.
@@ -263,6 +288,8 @@ function fakeApi(
   }
   const searchMatch = /^\/boards\/([^/]+)\/search$/.exec(path);
   if (searchMatch && method === "GET") {
+    if (searchFailure !== null)
+      return respond({ message: "search failed" }, searchFailure);
     // Only a comment-only match is modelled; everything else falls through
     // to the client-side title/description/checklist match.
     const q = searchParams.get("q") ?? "";
@@ -302,6 +329,10 @@ beforeEach(() => {
   boardSeq = 3;
   staleWrites = 0;
   commandPayload = "";
+  cardOverrides = {};
+  searchFailure = null;
+  archivedBoard = false;
+  reorderOnConflict = false;
   vi.stubGlobal("fetch", (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
@@ -437,6 +468,18 @@ describe("janosik MCP server", () => {
     const { tools } = await client.listTools();
     expect(tools.length).toBeGreaterThan(0);
     expect(tools.every((tool) => tool.annotations?.readOnlyHint)).toBe(true);
+    expect(tools.map((tool) => tool.name)).toContain("janosik_export_board");
+    const exportResult = await client.callTool({
+      name: "janosik_export_board",
+      arguments: { boardId: "b1", response_format: "json" },
+    });
+    expect(exportResult.isError).toBeFalsy();
+    const fileResult = await client.callTool({
+      name: "janosik_export_board",
+      arguments: { boardId: "b1", outputPath: "/tmp/export.json" },
+    });
+    expect(fileResult.isError).toBe(true);
+    expect(firstText(fileResult)).toMatch(/read-only mode/);
     await client.close();
   });
 
@@ -510,7 +553,7 @@ describe("janosik MCP server", () => {
     const client = await connect();
     const result = await client.callTool({
       name: "janosik_move_card",
-      arguments: { boardId: "b1", cardId: "k1", toColumnId: "col2" },
+      arguments: { boardId: "b1", cardId: "k1", position: 2 },
     });
     expect(result.isError).toBeFalsy();
     const writes = calls.filter((call) => call.path === "/boards/b1/commands");
@@ -521,8 +564,8 @@ describe("janosik MCP server", () => {
       type: "MOVE_CARD",
       fromColumnId: "col1",
       fromIndex: 0,
-      toColumnId: "col2",
-      toIndex: 0,
+      toColumnId: "col1",
+      toIndex: 2,
     });
     await client.close();
   });
@@ -662,6 +705,18 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
+  it("reports search API failures instead of silently omitting comment matches", async () => {
+    searchFailure = 429;
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_search_cards",
+      arguments: { boardId: "b1", query: "incomment" },
+    });
+    expect(result.isError).toBe(true);
+    expect(firstText(result)).toMatch(/rate limit/i);
+    await client.close();
+  });
+
   it("returns the board version so a write can pin it", async () => {
     const client = await connect();
     const result = await client.callTool({
@@ -739,6 +794,53 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
+  it("reuses field command keys when a create-card call is retried", async () => {
+    const client = await connect();
+    const args = {
+      boardId: "b1",
+      columnId: "col1",
+      cardId: "stable-card",
+      title: "Stable",
+      description: "Details",
+      priority: "high",
+    };
+    await client.callTool({ name: "janosik_create_card", arguments: args });
+    await client.callTool({ name: "janosik_create_card", arguments: args });
+    const batches = calls.filter(
+      (call) => call.path === "/boards/b1/commands/batch",
+    );
+    const keys = batches.map((call) =>
+      (call.body as { commands: Array<{ commandId: string }> }).commands.map(
+        (command) => command.commandId,
+      ),
+    );
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toEqual(keys[1]);
+    expect(new Set(keys[0]).size).toBe(3);
+    expect(keys[0]?.every((key) => key.length <= 64)).toBe(true);
+    await client.close();
+  });
+
+  it("keeps a long client entity id within the command-id limit", async () => {
+    const client = await connect();
+    const cardId = "x".repeat(128);
+    await client.callTool({
+      name: "janosik_create_card",
+      arguments: { boardId: "b1", columnId: "col1", cardId, title: "Long id" },
+    });
+    const batch = calls.find(
+      (call) => call.path === "/boards/b1/commands/batch",
+    );
+    const command = (
+      batch?.body as {
+        commands: Array<{ commandId: string; action: { newCardId: string } }>;
+      }
+    ).commands[0]!;
+    expect(command.action.newCardId).toBe(cardId);
+    expect(command.commandId.length).toBeLessThanOrEqual(64);
+    await client.close();
+  });
+
   it("refuses to move a card into Done with an unticked Definition of Done", async () => {
     const client = await connect();
     const result = await client.callTool({
@@ -764,6 +866,47 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
+  it("rechecks Done after a concurrent column reorder", async () => {
+    staleWrites = 1;
+    reorderOnConflict = true;
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_move_card",
+      arguments: { boardId: "b1", cardId: "k3", toColumnId: "col2" },
+    });
+    expect(result.isError).toBe(true);
+    expect(firstText(result)).toMatch(/Definition of Done/i);
+    expect(
+      calls.filter((call) => call.path === "/boards/b1/commands"),
+    ).toHaveLength(1);
+    await client.close();
+  });
+
+  it("refuses to release another user's live card claim", async () => {
+    cardOverrides = {
+      k1: {
+        id: "k1",
+        title: "First",
+        labelIds: [],
+        claimedBy: "u2",
+        leaseUntil: Date.now() + 60_000,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_release_card",
+      arguments: { boardId: "b1", cardId: "k1" },
+    });
+    expect(result.isError).toBe(true);
+    expect(firstText(result)).toMatch(/live claim held by another user/i);
+    expect(calls.some((call) => call.path === "/boards/b1/commands")).toBe(
+      false,
+    );
+    await client.close();
+  });
+
   it("moves a card without a task contract into Done", async () => {
     const client = await connect();
     const result = await client.callTool({
@@ -784,6 +927,17 @@ describe("janosik MCP server", () => {
       result.structuredContent as { results: Array<{ id: string }> }
     ).results;
     expect(results.map((entry) => entry.id)).toContain("k1");
+    await client.close();
+  });
+
+  it("does not offer work from an archived board", async () => {
+    archivedBoard = true;
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_list_ready_cards",
+      arguments: { boardId: "b1", response_format: "json" },
+    });
+    expect(result.structuredContent).toMatchObject({ results: [] });
     await client.close();
   });
 
