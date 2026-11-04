@@ -7,6 +7,7 @@ import {
   MoreHorizontal,
   ShieldOff,
   ShieldCheck,
+  Shield,
   Trash2,
   Unlock,
   UserPlus,
@@ -38,6 +39,7 @@ import { useAdminList } from "./use-admin-list";
 import { TextCell } from "./cells";
 import { fieldError, isValid } from "./validation";
 import { Input } from "@/components/ui/input";
+import { MasterAllowlistDialog } from "./MasterAllowlistDialog";
 import {
   Badge,
   CharCount,
@@ -304,6 +306,9 @@ export function MastersPage() {
   const list = useAdminList<AdminMasterRowDto>(() => adminApi.listMasters());
   const [pending, setPending] = useState<PendingAction>(null);
   const [creating, setCreating] = useState(false);
+  const [allowlistMaster, setAllowlistMaster] =
+    useState<AdminMasterRowDto | null>(null);
+  const [allowlistOpen, setAllowlistOpen] = useState(false);
   const [revealed, setRevealed] = useState<{
     email: string;
     password: string;
@@ -512,6 +517,15 @@ export function MastersPage() {
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-56 text-xs">
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setAllowlistMaster(master);
+                            setAllowlistOpen(true);
+                          }}
+                        >
+                          <Shield className="h-3.5 w-3.5" aria-hidden />
+                          {t("admin.masters.action.allowlist")}
+                        </DropdownMenuItem>
                         {master.disabledAt === null ? (
                           <DropdownMenuItem
                             disabled={master.id === current?.id}
@@ -583,6 +597,12 @@ export function MastersPage() {
         open={creating}
         onClose={() => setCreating(false)}
         onCreated={list.reload}
+      />
+
+      <MasterAllowlistDialog
+        master={allowlistMaster}
+        open={allowlistOpen}
+        onClose={() => setAllowlistOpen(false)}
       />
 
       <ConfirmDialog

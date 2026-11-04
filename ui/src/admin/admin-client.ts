@@ -27,6 +27,7 @@ import type {
   AdminEntityRowMap,
   AdminGlobalSearchDto,
   AdminMasterRowDto,
+  AdminMasterAllowlistDto,
   AdminSessionRowDto,
   AdminTokenRowDto,
   AdminMetricsDto,
@@ -235,6 +236,25 @@ export class AdminApiClient {
 
   listMasters(): Promise<AdminPage<AdminMasterRowDto>> {
     return this.request<AdminPage<AdminMasterRowDto>>("/admin/admins");
+  }
+
+  getMasterAllowlist(masterId: string): Promise<AdminMasterAllowlistDto> {
+    return this.request<AdminMasterAllowlistDto>(
+      `/admin/masters/${encodeURIComponent(masterId)}/allowlist`,
+    );
+  }
+
+  updateMasterAllowlist(
+    masterId: string,
+    body: AdminMasterAllowlistDto,
+  ): Promise<AdminMasterAllowlistDto> {
+    return this.request<AdminMasterAllowlistDto>(
+      `/admin/masters/${encodeURIComponent(masterId)}/allowlist`,
+      {
+        method: "PUT",
+        body,
+      },
+    );
   }
 
   createMaster(

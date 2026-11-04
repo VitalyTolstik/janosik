@@ -101,7 +101,10 @@ export class AdminAuthService {
       await this.auditLoginFailed(dto.email, admin.id, "ip not allowed", {
         ip: context.ip ?? null,
       });
-      throw new ForbiddenException("Sign-in from this IP is not allowed");
+      throw new ForbiddenException({
+        message: "Sign-in from this IP is not allowed",
+        code: "ip_not_allowed",
+      });
     }
 
     // Two-factor (TASK-65): when enabled, the password alone is not enough.

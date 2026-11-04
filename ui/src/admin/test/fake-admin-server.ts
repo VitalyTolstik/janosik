@@ -278,6 +278,7 @@ export class FakeAdminServer {
    * (and rejects a missing/wrong one with `code: "totp_required"`).
    */
   loginTotpCode: string | null = null;
+  loginIpDenied = false;
   /**
    * Role of the session the fake serves. `listMasters`-style endpoints
    * answer 403 unless it is OWNER, mirroring the server guard.
@@ -285,6 +286,7 @@ export class FakeAdminServer {
   sessionRole: AdminRole = "OWNER";
   /** Extra master rows returned by `GET /admin/admins` (besides the owner). */
   masters: AdminMasterRowDto[] = [];
+  masterAllowlists: Record<string, string | null> = {};
   /** Saved mail transport settings (TASK-52); bootstrapped to log mode. */
   emailSettings: AdminEmailSettingsDto = {
     provider: "custom",
@@ -502,6 +504,15 @@ export class FakeAdminServer {
       if (jsonBody?.password !== "secret pass") {
         return this.json({ message: "Invalid credentials" }, 401);
       }
+      if (this.loginIpDenied) {
+        return this.json(
+          {
+            message: "Sign-in from this IP is not allowed",
+            code: "ip_not_allowed",
+          },
+          403,
+        );
+      }
       // TASK-65: when a code is required, the password alone is not enough —
       // mirrors the backend's `code: "totp_required"` signal.
       if (
@@ -570,6 +581,20 @@ export class FakeAdminServer {
         { admin: created, temporaryPassword: "one-time-master-pass" },
         201,
       );
+    }
+    const masterAllowlist = path.match(
+      /^\/admin\/masters\/([^/]+)\/allowlist$/,
+    );
+    if (masterAllowlist) {
+      if (this.sessionRole !== "OWNER")
+        return this.json({ message: "Owner rights are required" }, 403);
+      const id = decodeURIComponent(masterAllowlist[1]);
+      if (id !== admin.id && !this.masters.some((master) => master.id === id))
+        return this.json({ message: "Master not found" }, 404);
+      if (method === "PUT") {
+        this.masterAllowlists[id] = jsonBody?.ipAllowlist as string | null;
+      }
+      return this.json({ ipAllowlist: this.masterAllowlists[id] ?? null });
     }
     const masterPatch = path.match(/^\/admin\/admins\/([^/]+)$/);
     if (masterPatch && method === "PATCH") {

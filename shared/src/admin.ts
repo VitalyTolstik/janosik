@@ -75,6 +75,11 @@ export interface AdminUpdateMasterRequest {
   unlock?: boolean;
 }
 
+/** IP restrictions for a master; null means no restriction. */
+export interface AdminMasterAllowlistDto {
+  ipAllowlist: string | null;
+}
+
 /** Body of `POST /admin/auth/login|refresh` — token + public projection. */
 export interface AdminAuthResponseDto {
   accessToken: string;
