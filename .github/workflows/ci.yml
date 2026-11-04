@@ -135,10 +135,18 @@ jobs:
 
   # Publish the self-host image to GitHub Container Registry on a version tag
   # (TASK-38b). Without published images a self-hoster must build from source.
-  # Exercise the image (amd64 only, no push) on PRs and before a release.
+  # Exercise each image on native hardware on PRs and before a release.
   docker:
     if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     permissions:
       contents: read
@@ -149,27 +157,34 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/${{ matrix.arch }}
           push: false
           load: true
           tags: janosik-selfhost-local:codex
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=janosik-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=janosik-${{ matrix.arch }}
       - name: Smoke test self-host installation
         run: bash scripts/self-host-smoke.sh
 
-  publish:
+  publish-images:
     if: startsWith(github.ref, 'refs/tags/v')
     # Never ship an image the test suite rejected.
     needs: [verify, docker]
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
@@ -178,6 +193,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build and push platform image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          build-args: GIT_COMMIT=${{ github.sha }}
+          push: true
+          tags: ghcr.io/vitalytolstik/janosik:${{ github.ref_name }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/VitalyTolstik/janosik
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=janosik-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=janosik-${{ matrix.arch }}
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [publish-images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Image metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
@@ -189,19 +233,17 @@ jobs:
             type=ref,event=tag
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
-      - name: Build and push
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          # Native images for both server (amd64) and Apple Silicon / ARM hosts.
-          platforms: linux/amd64,linux/arm64
-          # Stamped into the app's `version.json` and the panel's deploy.commit.
-          build-args: GIT_COMMIT=${{ github.sha }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Publish multi-platform manifest
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          args=()
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] && args+=(--tag "$tag")
+          done <<< "$IMAGE_TAGS"
+          docker buildx imagetools create "${args[@]}" \
+            "ghcr.io/vitalytolstik/janosik:${GITHUB_REF_NAME}-amd64" \
+            "ghcr.io/vitalytolstik/janosik:${GITHUB_REF_NAME}-arm64"
 
   # Publish the MCP server to npm and to the MCP Registry on a `mcp-v*` tag
   # (TASK-136). The registry only hosts metadata; the npm package is the

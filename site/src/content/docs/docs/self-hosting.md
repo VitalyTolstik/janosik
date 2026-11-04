@@ -11,11 +11,13 @@ separate web server is required, and SSE and cookies work on a single origin.
 
 `docker compose up -d` starts three containers:
 
-| Service | Image | Role |
-| --- | --- | --- |
-| `app` | `ghcr.io/vitalytolstik/janosik:${JANOSIK_TAG:-latest}` | The whole application: the NestJS API under `/api/v1`, the built SPA under `/app/`, the master panel, and background jobs. Listens on port `3000`. |
-| `postgres` | `postgres:16-alpine` | The database: boards, users, command log, audit. |
-| `redis` | `redis:7-alpine` | Job queues (mail, transcoding, maintenance, exports). |
+- **`app`** — the site, application, API, master panel and background jobs.
+  It listens on port `3000`. Its image is `ghcr.io/vitalytolstik/janosik`;
+  `JANOSIK_TAG` selects the version and defaults to `latest`.
+- **`postgres`** — the `postgres:16-alpine` database for boards, users,
+  commands and the audit log.
+- **`redis`** — the `redis:7-alpine` service for background jobs, including
+  mail, transcoding, maintenance and exports.
 
 Only the app port is published to the host; `postgres` and `redis` stay
 internal. On boot the `app` container applies database migrations, then starts
