@@ -6,10 +6,11 @@ import {
   Link2,
   RefreshCw,
   Trash2,
+  X,
 } from "lucide-react";
 
 import type { BoardShareDto, BoardShareMode } from "@janosik/shared";
-import { SHARE_TTL_HOURS } from "@janosik/shared";
+import { SHARE_LIMITS, SHARE_TTL_HOURS } from "@janosik/shared";
 import { api, ApiError, isApiEnabled } from "@/api/client";
 import { appShareUrl } from "@/utils/app-path";
 import { useToast } from "@/components/Toast";
@@ -64,13 +65,13 @@ export function ShareDialog() {
               aria-label={t("share.button")}
               data-testid="share-trigger"
             >
-              <LazyAnimatedIcon name="external-link" size={20} aria-hidden />
+              <LazyAnimatedIcon name="external-link" size={18} aria-hidden />
             </Button>
           </DialogTrigger>
         </TooltipTrigger>
         <TooltipContent>{t("share.button")}</TooltipContent>
       </Tooltip>
-      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+      <DialogContent className="h-[min(800px,calc(100dvh-2rem))] max-w-lg overflow-hidden">
         <DialogHeader>
           <DialogTitle>{t("share.title")}</DialogTitle>
           <DialogDescription>{t("share.description")}</DialogDescription>
@@ -89,8 +90,10 @@ function routesShare(token: string): string {
   return `/s/${token}`;
 }
 
-function buildEmbed(token: string): string {
-  return `<iframe src="${appShareUrl(`/s/${token}?embed=1`)}" width="100%" height="600" style="border:0" loading="lazy" title="Janosik board"></iframe>`;
+type EmbedTheme = "system" | "light" | "dark";
+
+function buildEmbed(token: string, theme: EmbedTheme): string {
+  return `<iframe src="${appShareUrl(`/s/${token}?embed=1&theme=${theme}`)}" width="100%" height="600" style="border:0" loading="lazy" title="Janosik board"></iframe>`;
 }
 
 function SharePanel({ boardId }: { boardId: string }) {
@@ -98,6 +101,13 @@ function SharePanel({ boardId }: { boardId: string }) {
   const toast = useToast();
   const [shares, setShares] = useState<BoardShareDto[] | null>(null);
   const [creating, setCreating] = useState(false);
+  const [mode, setMode] = useState<BoardShareMode>("live");
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -114,9 +124,13 @@ function SharePanel({ boardId }: { boardId: string }) {
   }, [load]);
 
   return (
-    <div className="space-y-4">
+    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
       <CreateForm
         busy={creating}
+        shares={shares}
+        now={now}
+        mode={mode}
+        onModeChange={setMode}
         onCreate={async (request) => {
           setCreating(true);
           try {
@@ -126,10 +140,13 @@ function SharePanel({ boardId }: { boardId: string }) {
             await load();
           } catch (error) {
             toast.error(
-              error instanceof ApiError && error.offline
-                ? t("share.offline")
-                : t("share.actionError"),
+              error instanceof ApiError && error.status === 409
+                ? t("share.limitReached")
+                : error instanceof ApiError && error.offline
+                  ? t("share.offline")
+                  : t("share.actionError"),
             );
+            if (error instanceof ApiError && error.status === 409) await load();
           } finally {
             setCreating(false);
           }
@@ -142,18 +159,21 @@ function SharePanel({ boardId }: { boardId: string }) {
         </p>
         {shares === null ? (
           <p className="text-sm text-muted-foreground">{t("share.loading")}</p>
-        ) : shares.length === 0 ? (
+        ) : !shares.some((share) => share.mode === mode) ? (
           <p className="text-sm text-muted-foreground">{t("share.empty")}</p>
         ) : (
           <ul className="space-y-2" data-testid="share-list">
-            {shares.map((share) => (
-              <ShareRow
-                key={share.id}
-                share={share}
-                boardId={boardId}
-                onChanged={load}
-              />
-            ))}
+            {shares
+              .filter((share) => share.mode === mode)
+              .map((share) => (
+                <ShareRow
+                  key={share.id}
+                  share={share}
+                  boardId={boardId}
+                  now={now}
+                  onChanged={load}
+                />
+              ))}
           </ul>
         )}
       </div>
@@ -165,14 +185,19 @@ function ShareRow({
   share,
   boardId,
   onChanged,
+  now,
 }: {
   share: BoardShareDto;
   boardId: string;
   onChanged: () => Promise<void>;
+  now: number;
 }) {
   const { t } = useI18n();
   const toast = useToast();
   const revoked = share.revokedAt !== null;
+  const expired = share.expiresAt !== null && share.expiresAt <= now;
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   return (
     <li
@@ -188,32 +213,82 @@ function ShareRow({
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
           /s/{share.token}
         </span>
-        {revoked ? (
-          <span className="text-xs text-destructive">{t("share.revoked")}</span>
+        {revoked || expired ? (
+          <span className="text-xs text-destructive">
+            {revoked ? t("share.revoked") : t("share.expired")}
+          </span>
         ) : null}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1">
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 gap-1 px-2 text-xs"
-          onClick={() => void copy(shareLink(share.token))}
-        >
-          <Copy className="h-3.5 w-3.5" aria-hidden />
-          {t("share.copy")}
-        </Button>
-        {!revoked ? (
-          <>
+        {revoked &&
+          (confirmDelete ? (
+            <div className="flex shrink-0 items-center gap-0.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-success hover:text-success"
+                aria-label={t("share.deleteConfirm")}
+                disabled={deleting}
+                onClick={async () => {
+                  setDeleting(true);
+                  try {
+                    await api.deleteRevokedShare(boardId, share.id);
+                    await onChanged();
+                  } catch {
+                    toast.error(t("share.actionError"));
+                    setDeleting(false);
+                  }
+                }}
+              >
+                <Check className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground"
+                aria-label={t("share.deleteCancel")}
+                disabled={deleting}
+                onClick={() => setConfirmDelete(false)}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ) : (
             <Button
               variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-muted-foreground hover:text-destructive"
+              aria-label={t("share.delete")}
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          ))}
+      </div>
+      {share.title && (
+        <p className="truncate font-medium" title={share.title}>
+          {share.title}
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground">
+        {share.expiresAt === null
+          ? t("share.expiresNever")
+          : t("share.expiresAt", {
+              date: new Date(share.expiresAt).toLocaleString(),
+            })}
+      </p>
+
+      <div className="flex flex-wrap items-center gap-1">
+        {!revoked && !expired ? (
+          <>
+            <Button
+              variant="outline"
               size="sm"
               className="h-7 gap-1 px-2 text-xs"
-              onClick={() => void copy(buildEmbed(share.token))}
+              onClick={() => void copy(shareLink(share.token))}
             >
-              <Link2 className="h-3.5 w-3.5" aria-hidden />
-              {t("share.embed")}
+              <Copy className="h-3.5 w-3.5" aria-hidden />
+              {t("share.copy")}
             </Button>
+            <EmbedPicker token={share.token} />
             {share.mode === "snapshot" ? (
               <Button
                 variant="ghost"
@@ -258,14 +333,79 @@ function ShareRow({
         {t("share.meta", {
           views: share.views,
           flags: [
-            share.includeComments ? t("share.flag.comments") : null,
-            share.includeAttachments ? t("share.flag.attachments") : null,
+            share.includeComments ? t("share.visible.comments") : null,
+            share.includeAttachments ? t("share.visible.attachments") : null,
           ]
             .filter(Boolean)
             .join(" · "),
         })}
       </p>
     </li>
+  );
+}
+
+function EmbedPicker({ token }: { token: string }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [theme, setTheme] = useState<EmbedTheme>("system");
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs">
+          <Link2 className="h-3.5 w-3.5" aria-hidden />
+          {t("share.embed")}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 space-y-3 p-3">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">{t("share.embedTheme.title")}</p>
+          <p className="text-xs text-muted-foreground">
+            {t("share.embedTheme.hint")}
+          </p>
+        </div>
+        <div
+          role="radiogroup"
+          aria-label={t("share.embedTheme.title")}
+          className="space-y-1"
+        >
+          {(["system", "light", "dark"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={theme === option}
+              onClick={() => setTheme(option)}
+              className={cn(
+                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-hover",
+                theme === option && "bg-muted font-medium",
+              )}
+            >
+              {t(`share.embedTheme.${option}`)}
+              {theme === option && (
+                <Check className="h-4 w-4 text-primary" aria-hidden />
+              )}
+            </button>
+          ))}
+        </div>
+        <Button
+          size="sm"
+          className="w-full gap-2"
+          onClick={async () => {
+            if (await copy(buildEmbed(token, theme))) {
+              toast.success(t("share.embedTheme.copied"));
+              setOpen(false);
+            } else {
+              toast.error(t("share.embedTheme.copyError"));
+            }
+          }}
+        >
+          <Copy className="h-3.5 w-3.5" aria-hidden />
+          {t("share.embedTheme.copy")}
+        </Button>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -337,9 +477,17 @@ function TtlPicker({
 
 function CreateForm({
   busy,
+  shares,
+  now,
+  mode,
+  onModeChange,
   onCreate,
 }: {
   busy: boolean;
+  shares: BoardShareDto[] | null;
+  now: number;
+  mode: BoardShareMode;
+  onModeChange: (mode: BoardShareMode) => void;
   onCreate: (request: {
     mode: BoardShareMode;
     title?: string;
@@ -349,11 +497,28 @@ function CreateForm({
   }) => Promise<void>;
 }) {
   const { t } = useI18n();
-  const [mode, setMode] = useState<BoardShareMode>("live");
   const [title, setTitle] = useState("");
   const [includeComments, setIncludeComments] = useState(true);
   const [includeAttachments, setIncludeAttachments] = useState(false);
   const [ttlHours, setTtlHours] = useState<number>(SHARE_TTL_HOURS[1]);
+  const active = (shares ?? []).filter(
+    (share) =>
+      !share.revokedAt && (share.expiresAt === null || share.expiresAt > now),
+  );
+  const count = active.filter((share) => share.mode === mode).length;
+  const limit = SHARE_LIMITS.activePerBoard[mode];
+  const similar = active.find(
+    (share) =>
+      share.mode === mode &&
+      (share.title ?? "") === title.trim() &&
+      share.includeComments === includeComments &&
+      share.includeAttachments === includeAttachments &&
+      (ttlHours === 0
+        ? share.expiresAt === null
+        : share.expiresAt !== null &&
+          Math.abs(share.expiresAt - share.createdAt - ttlHours * 3_600_000) <
+            60_000),
+  );
 
   return (
     <div className="space-y-3 rounded-md border bg-muted/30 p-3">
@@ -366,7 +531,8 @@ function CreateForm({
             size="sm"
             className="flex-1"
             data-testid={`share-mode-${option}`}
-            onClick={() => setMode(option)}
+            aria-pressed={mode === option}
+            onClick={() => onModeChange(option)}
           >
             {t(`share.mode.${option}`)}
           </Button>
@@ -376,6 +542,9 @@ function CreateForm({
         {mode === "live"
           ? t("share.mode.liveHint")
           : t("share.mode.snapshotHint")}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {t("share.count", { count, limit })}
       </p>
 
       <Input
@@ -409,10 +578,19 @@ function CreateForm({
         <TtlPicker value={ttlHours} onChange={setTtlHours} />
       </div>
 
+      {similar && (
+        <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
+          {t(mode === "snapshot" ? "share.similarSnapshot" : "share.similar")}
+        </p>
+      )}
+      {count >= limit && (
+        <p className="text-xs text-destructive">{t("share.limitReached")}</p>
+      )}
+
       <Button
         type="button"
         className="w-full gap-1.5"
-        disabled={busy}
+        disabled={busy || shares === null || count >= limit}
         data-testid="share-create"
         onClick={() =>
           void onCreate({
@@ -428,16 +606,17 @@ function CreateForm({
         }
       >
         <Check className="h-4 w-4" aria-hidden />
-        {t("share.create")}
+        {similar ? t("share.createAnother") : t("share.create")}
       </Button>
     </div>
   );
 }
 
-async function copy(text: string): Promise<void> {
+async function copy(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
+    return true;
   } catch {
-    /* clipboard unavailable — the link is still visible in the row */
+    return false;
   }
 }

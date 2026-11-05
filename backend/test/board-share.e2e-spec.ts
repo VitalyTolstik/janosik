@@ -27,6 +27,7 @@ const OUTSIDER_PASSWORD = "share outsider correct horse";
  */
 /** Delete every table this suite touches, so no leftovers seed a later one. */
 async function wipe(db: PrismaService): Promise<void> {
+  await db.boardShareAuditLog.deleteMany();
   await db.boardShare.deleteMany();
   await db.command.deleteMany();
   await db.activity.deleteMany();
@@ -175,6 +176,63 @@ describe("Public board shares (e2e)", () => {
   afterAll(async () => {
     await wipe(prisma);
     await app.close();
+  });
+
+  it("enforces the live limit under concurrent creation and permits a replacement after revocation", async () => {
+    const { boardId } = await newBoard("Share limits");
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        server()
+          .post(`/api/v1/boards/${boardId}/shares`)
+          .set(auth(adminToken))
+          .send({ mode: "live" }),
+      ),
+    );
+    expect(
+      responses.filter((response) => response.status === 201),
+    ).toHaveLength(5);
+    expect(
+      responses.filter((response) => response.status === 409),
+    ).toHaveLength(3);
+    const first = responses.find((response) => response.status === 201)!;
+    await server()
+      .delete(`/api/v1/boards/${boardId}/shares/${first.body.id}/permanent`)
+      .set(auth(adminToken))
+      .expect(400);
+    await server()
+      .delete(`/api/v1/boards/${boardId}/shares/${first.body.id}`)
+      .set(auth(adminToken))
+      .expect(200);
+    await server()
+      .delete(`/api/v1/boards/${boardId}/shares/${first.body.id}`)
+      .set(auth(adminToken))
+      .expect(200);
+    await server()
+      .delete(`/api/v1/boards/${boardId}/shares/${first.body.id}/permanent`)
+      .set(auth(adminToken))
+      .expect(204);
+    expect(
+      await prisma.boardShare.findUnique({ where: { id: first.body.id } }),
+    ).toBeNull();
+    const history = await prisma.boardShareAuditLog.findMany({
+      where: { shareId: first.body.id },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(history.map((event) => event.action)).toEqual([
+      "created",
+      "revoked",
+      "deleted",
+    ]);
+    expect(
+      history.every(
+        (event) =>
+          event.boardId === boardId &&
+          event.actorId === adminId &&
+          event.actorType === "user",
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(history)).not.toContain(first.body.token);
+    await createShare(boardId, { mode: "live" });
   });
 
   it("only board ADMINs can create shares (viewer and outsider denied)", async () => {

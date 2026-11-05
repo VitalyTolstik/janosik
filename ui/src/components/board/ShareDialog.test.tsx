@@ -100,6 +100,11 @@ function router(input: RequestInfo | URL, init?: RequestInit): Response {
     return json(created, 201);
   }
   const revoke = path.match(/^\/boards\/b1\/shares\/([^/]+)$/);
+  const permanent = path.match(/^\/boards\/b1\/shares\/([^/]+)\/permanent$/);
+  if (permanent && method === "DELETE") {
+    shares = shares.filter((s) => s.id !== permanent[1]);
+    return new Response(null, { status: 204 });
+  }
   if (revoke && method === "DELETE") {
     const id = revoke[1] ?? "";
     shares = shares.map((s) => (s.id === id ? { ...s, revokedAt: 1 } : s));
@@ -145,6 +150,99 @@ afterEach(() => {
 });
 
 describe("ShareDialog", () => {
+  it("does not offer copying an expired link", async () => {
+    shares = [share({ expiresAt: Date.now() - 1000 })];
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    expect(await screen.findByText("Expired")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Copy link" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Embed code" }),
+    ).not.toBeInTheDocument();
+  });
+  it("shows only links of the selected mode", async () => {
+    shares = [
+      share({ id: "live", token: "live-token", mode: "live" }),
+      share({
+        id: "snap",
+        token: "snapshot-token",
+        mode: "snapshot",
+        revokedAt: 1,
+      }),
+    ];
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    expect(await screen.findByText("/s/live-token")).toBeInTheDocument();
+    expect(screen.queryByText("/s/snapshot-token")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("share-mode-snapshot"));
+    expect(screen.getByText("/s/snapshot-token")).toBeInTheDocument();
+    expect(screen.queryByText("/s/live-token")).not.toBeInTheDocument();
+    expect(screen.getByTestId("share-mode-snapshot")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+  it("confirms before removing a revoked link", async () => {
+    shares = [share({ revokedAt: 1 })];
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete revoked link" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel deletion" }));
+    expect(requests.some((r) => r.path.endsWith("/permanent"))).toBe(false);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Delete revoked link" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Confirm deletion" }));
+    await waitFor(() =>
+      expect(screen.queryByTestId("share-row")).not.toBeInTheDocument(),
+    );
+    expect(
+      requests.some(
+        (r) => r.method === "DELETE" && r.path.endsWith("/permanent"),
+      ),
+    ).toBe(true);
+  });
+
+  it("shows the active limit and warns about a similar link", async () => {
+    shares = Array.from({ length: 5 }, (_, i) =>
+      share({
+        id: `s${i}`,
+        token: `t${i}`,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 24 * 3_600_000,
+      }),
+    );
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    expect(await screen.findByText("Active links: 5 / 5")).toBeInTheDocument();
+    expect(
+      screen.getByText(/A link with similar settings already exists/),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("share-create")).toBeDisabled();
+  });
+  it("copies embed code with the selected theme", async () => {
+    shares = [share()];
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    fireEvent.click(await screen.findByText("Embed code"));
+    expect(screen.getByRole("radio", { name: "System" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Light" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy embed code" }));
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        expect.stringContaining("/s/tok1?embed=1&theme=light"),
+      ),
+    );
+  });
   it("creates a link, copies it and lists it", async () => {
     renderDialog();
     fireEvent.click(await screen.findByTestId("share-trigger"));
@@ -191,5 +289,11 @@ describe("ShareDialog", () => {
     await waitFor(() =>
       expect(screen.getByTestId("share-row")).toHaveTextContent(/revoked/i),
     );
+    expect(
+      screen.queryByRole("button", { name: "Copy link" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Embed code" }),
+    ).not.toBeInTheDocument();
   });
 });

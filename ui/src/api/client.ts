@@ -584,6 +584,13 @@ export class ApiClient {
     });
   }
 
+  deleteRevokedShare(boardId: string, shareId: string): Promise<void> {
+    return this.request<void>(
+      `/boards/${boardId}/shares/${shareId}/permanent`,
+      { method: "DELETE" },
+    );
+  }
+
   sendCommand(
     boardId: string,
     request: CommandRequest,

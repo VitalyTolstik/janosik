@@ -25,6 +25,7 @@ export const SHARE_TTL_HOURS = [1, 24, 168, 720] as const;
 
 /** Hard caps and defaults for share creation (mirrored by the backend DTOs). */
 export const SHARE_LIMITS = {
+  activePerBoard: { live: 5, snapshot: 10 },
   /** Random bytes behind a token → 128 bits, base64url ≈ 22 chars. */
   tokenBytes: 16,
   /** Owner-side label length. */

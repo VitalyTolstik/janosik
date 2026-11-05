@@ -81,8 +81,8 @@ function SortableCardView({
         // after the drop.
         transition: isDragging ? undefined : transition,
       }}
-      {...attributes}
-      {...listeners}
+      {...(readOnly ? {} : attributes)}
+      {...(readOnly ? {} : listeners)}
       // dnd-kit marks the wrapper `role="button"`; the card face already is
       // a button and carries its own controls, so nested buttons were
       // announced (TASK-152, C17). Keep focusability/keys and the

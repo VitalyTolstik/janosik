@@ -32,6 +32,25 @@
        */
       (function () {
         try {
+          var params = new URLSearchParams(window.location.search);
+          var embedTheme =
+            /\/s\/[^/]+\/?$/.test(window.location.pathname) &&
+            params.get("embed") === "1"
+              ? params.get("theme")
+              : null;
+          if (
+            embedTheme === "light" ||
+            embedTheme === "dark" ||
+            embedTheme === "system"
+          ) {
+            var embedDark =
+              embedTheme === "system"
+                ? window.matchMedia("(prefers-color-scheme: dark)").matches
+                : embedTheme === "dark";
+            document.documentElement.classList.toggle("dark", embedDark);
+            document.documentElement.classList.toggle("light", !embedDark);
+            return;
+          }
           var saved = localStorage.getItem("janosik-theme");
           if (saved === null) {
             var legacy = localStorage.getItem("vortex-theme");

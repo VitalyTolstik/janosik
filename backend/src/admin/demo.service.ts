@@ -256,12 +256,17 @@ export class DemoService implements OnModuleDestroy {
     // 3b. Live observation share (TASK-58): the whole point of replacing the
     //     watcher account — open `/s/<token>` with no login and watch the
     //     swarm move. Comments are on (this is "watch how we work").
-    const share = await this.shares.create(boardId, startedBy, {
-      mode: "live",
-      title: "Демо-рой · живой просмотр",
-      includeComments: true,
-      includeAttachments: false,
-    });
+    const share = await this.shares.create(
+      boardId,
+      startedBy,
+      {
+        mode: "live",
+        title: "Демо-рой · живой просмотр",
+        includeComments: true,
+        includeAttachments: false,
+      },
+      "admin",
+    );
     manifest.shareId = share.id;
     manifest.shareToken = share.token;
 

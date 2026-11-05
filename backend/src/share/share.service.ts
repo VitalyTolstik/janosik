@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   GoneException,
   Injectable,
@@ -78,6 +79,7 @@ export class ShareService {
     boardId: string,
     createdBy: string,
     dto: CreateShareDto,
+    actorType: "user" | "admin" = "user",
   ): Promise<BoardShareDto> {
     const board = await this.prisma.board.findFirst({
       where: { id: boardId, deletedAt: null },
@@ -113,8 +115,66 @@ export class ShareService {
       data.snapshotVersion = version;
     }
 
-    const row = await this.prisma.boardShare.create({ data });
+    const row = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`board-shares:${boardId}`}, 0))`;
+      await this.assertShareCapacity(tx, boardId, mode);
+      const created = await tx.boardShare.create({ data });
+      await this.auditShare(
+        tx,
+        created,
+        boardId,
+        createdBy,
+        actorType,
+        "created",
+      );
+      return created;
+    });
     return this.toDto(row);
+  }
+
+  private async auditShare(
+    tx: Prisma.TransactionClient,
+    share: BoardShare,
+    boardId: string,
+    actorId: string,
+    actorType: "user" | "admin",
+    action: "created" | "revoked" | "deleted",
+  ): Promise<void> {
+    await tx.boardShareAuditLog.create({
+      data: {
+        shareId: share.id,
+        boardId,
+        actorId,
+        actorType,
+        action,
+        details: {
+          mode: share.mode,
+          title: share.title,
+          includeComments: share.includeComments,
+          includeAttachments: share.includeAttachments,
+          expiresAt: share.expiresAt?.toISOString() ?? null,
+          views: share.views,
+        },
+      },
+    });
+  }
+
+  private async assertShareCapacity(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    mode: BoardShareMode,
+  ): Promise<void> {
+    const count = await tx.boardShare.count({
+      where: {
+        boardId,
+        mode,
+        revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+    });
+    if (count >= SHARE_LIMITS.activePerBoard[mode]) {
+      throw new ConflictException("Active share limit reached");
+    }
   }
 
   /** Every share of a board (owner's "Share" dialog). */
@@ -161,21 +221,70 @@ export class ShareService {
     if (dto.expiresAt !== undefined) {
       data.expiresAt = this.parseExpiry(dto.expiresAt);
     }
-    const updated = await this.prisma.boardShare.update({
-      where: { id: row.id },
-      data,
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (row.boardId) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`board-shares:${row.boardId}`}, 0))`;
+        const current = await tx.boardShare.findUniqueOrThrow({
+          where: { id: row.id },
+        });
+        if (
+          dto.expiresAt !== undefined &&
+          !current.revokedAt &&
+          current.expiresAt &&
+          current.expiresAt <= new Date()
+        ) {
+          await this.assertShareCapacity(
+            tx,
+            row.boardId,
+            current.mode as BoardShareMode,
+          );
+        }
+      }
+      return tx.boardShare.update({ where: { id: row.id }, data });
     });
     return this.toDto(updated);
   }
 
   /** Revoke a share: its token stops resolving at once. Idempotent. */
-  async revoke(shareId: string): Promise<BoardShareDto> {
+  async revoke(shareId: string, actorId: string): Promise<BoardShareDto> {
     const row = await this.requireShare(shareId);
-    const updated = await this.prisma.boardShare.update({
-      where: { id: row.id },
-      data: { revokedAt: row.revokedAt ?? new Date() },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const changed = await tx.boardShare.updateMany({
+        where: { id: row.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      const current = await tx.boardShare.findUniqueOrThrow({
+        where: { id: row.id },
+      });
+      if (changed.count && row.boardId)
+        await this.auditShare(
+          tx,
+          current,
+          row.boardId,
+          actorId,
+          "user",
+          "revoked",
+        );
+      return current;
     });
     return this.toDto(updated);
+  }
+
+  async deleteRevoked(
+    boardId: string,
+    shareId: string,
+    actorId: string,
+  ): Promise<void> {
+    const row = await this.requireShareOnBoard(shareId, boardId);
+    if (!row.revokedAt)
+      throw new BadRequestException("Only revoked shares can be deleted");
+    await this.prisma.$transaction(async (tx) => {
+      const deleted = await tx.boardShare.deleteMany({
+        where: { id: shareId, boardId, revokedAt: { not: null } },
+      });
+      if (!deleted.count) throw new NotFoundException("Share not found");
+      await this.auditShare(tx, row, boardId, actorId, "user", "deleted");
+    });
   }
 
   /** The share row a board-owner operation targets, or 404. */

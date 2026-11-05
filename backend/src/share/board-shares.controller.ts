@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -68,9 +69,20 @@ export class BoardSharesController {
   revoke(
     @Param("id") id: string,
     @Param("shareId") shareId: string,
+    @CurrentUser() user: AuthUser,
   ): Promise<BoardShareDto> {
     return this.shares
       .requireShareOnBoard(shareId, id)
-      .then(() => this.shares.revoke(shareId));
+      .then(() => this.shares.revoke(shareId, user.id));
+  }
+
+  @Delete(":shareId/permanent")
+  @HttpCode(204)
+  async deleteRevoked(
+    @Param("id") id: string,
+    @Param("shareId") shareId: string,
+    @CurrentUser() user: AuthUser,
+  ): Promise<void> {
+    await this.shares.deleteRevoked(id, shareId, user.id);
   }
 }
