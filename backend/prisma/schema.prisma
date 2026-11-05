@@ -44,6 +44,16 @@ model User {
   assignedCards   Card[]                  @relation("CardAssignee")
   emailChanges    EmailChangeCode[]
   verifications   EmailVerificationCode[]
+  passwordReset   PasswordResetToken?
+}
+
+model PasswordResetToken {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+
+  @@index([expiresAt])
 }
 
 model RefreshToken {

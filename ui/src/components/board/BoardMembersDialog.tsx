@@ -346,6 +346,7 @@ export function BoardMembersPanel({
 
   // Invite draft — remount-reset (see the file header), never `open`-reset.
   const [email, setEmail] = useState("");
+  const [inviteEmailError, setInviteEmailError] = useState(false);
   const [role, setRole] = useState<BoardRole>("MEMBER");
   const [expiry, setExpiry] = useState<number | null>(null);
   const [inviting, setInviting] = useState(false);
@@ -397,7 +398,15 @@ export function BoardMembersPanel({
 
   async function handleInvite(event: FormEvent) {
     event.preventDefault();
-    if (email.trim() === "") return;
+    const input = event.currentTarget.querySelector<HTMLInputElement>(
+      'input[type="email"]',
+    );
+    if (!input || !input.validity.valid) {
+      setInviteEmailError(true);
+      input?.focus();
+      return;
+    }
+    setInviteEmailError(false);
     setInviting(true);
     try {
       const address = email.trim();
@@ -687,6 +696,7 @@ export function BoardMembersPanel({
 
       {canManage ? (
         <form
+          noValidate
           onSubmit={handleInvite}
           data-testid="board-members-invite"
           className="shrink-0 space-y-3 rounded-lg border bg-muted/30 p-4"
@@ -697,11 +707,18 @@ export function BoardMembersPanel({
           <div className="flex gap-2">
             <Input
               type="email"
+              invalid={inviteEmailError}
+              aria-describedby={
+                inviteEmailError ? "invite-email-error" : undefined
+              }
               required
               value={email}
               aria-label={t("board.members.invite.email")}
               placeholder={t("board.members.invite.emailPlaceholder")}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setInviteEmailError(false);
+              }}
               className="h-9 flex-1"
             />
             <RolePicker
@@ -710,6 +727,15 @@ export function BoardMembersPanel({
               onChange={setRole}
             />
           </div>
+          {inviteEmailError && (
+            <p
+              id="invite-email-error"
+              role="alert"
+              className="text-sm text-danger"
+            >
+              {t("auth.validation.emailInvalid")}
+            </p>
+          )}
           {role === "VIEWER" ? (
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               {t("board.members.invite.expires")}

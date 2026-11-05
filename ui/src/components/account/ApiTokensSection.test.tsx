@@ -114,6 +114,26 @@ describe("ApiTokensSection (TASK-36.1)", () => {
     expect(new Date(body.expiresAt).getTime()).toBeGreaterThan(Date.now());
   });
 
+  it("shows an inline error for an invalid API key rate limit", async () => {
+    const server = new FakeServer();
+    renderTokens(server);
+    await screen.findByText("No API keys yet");
+    await userEvent.click(screen.getByTestId("token-create"));
+    await userEvent.type(screen.getByTestId("token-name"), "Agent");
+    await userEvent.type(screen.getByTestId("token-rate"), "0");
+    await userEvent.click(screen.getByTestId("token-create-submit"));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Enter a whole number between",
+    );
+    expect(
+      server.requests.some(
+        (request) =>
+          request.method === "POST" &&
+          request.path === "/api/v1/users/me/tokens",
+      ),
+    ).toBe(false);
+  });
+
   it("sends read-only and a rate limit (TASK-157)", async () => {
     const server = new FakeServer();
     renderTokens(server);

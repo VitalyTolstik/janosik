@@ -92,6 +92,7 @@ export function AdminLoginPage() {
         </div>
 
         <form
+          noValidate
           onSubmit={(event) => void submit(event)}
           data-testid="admin-login-form"
           className="space-y-3 rounded-2xl border border-border bg-card/80 p-5 shadow-xl shadow-black/20 backdrop-blur"

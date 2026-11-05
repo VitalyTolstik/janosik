@@ -214,7 +214,11 @@ function CreateMasterDialog({
             onDone={closeAll}
           />
         ) : (
-          <form onSubmit={(event) => void submit(event)} className="space-y-3">
+          <form
+            noValidate
+            onSubmit={(event) => void submit(event)}
+            className="space-y-3"
+          >
             <DialogHeader>
               <DialogTitle className="text-sm">
                 {t("admin.masters.create.title")}

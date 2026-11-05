@@ -71,6 +71,7 @@ export function ApiTokensSection() {
   const [boardId, setBoardId] = useState("");
   const [readOnly, setReadOnly] = useState(false);
   const [rateLimit, setRateLimit] = useState("");
+  const [rateError, setRateError] = useState(false);
   const [creating, setCreating] = useState(false);
   const [reveal, setReveal] = useState<CreateUserTokenResponse | null>(null);
   const [copied, setCopied] = useState(false);
@@ -108,9 +109,19 @@ export function ApiTokensSection() {
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
     if (name.trim() === "" || creating) return;
+    const rate = rateLimit.trim() === "" ? null : Number(rateLimit);
+    if (
+      rate !== null &&
+      (!Number.isInteger(rate) ||
+        rate < API_TOKEN_RATE_MIN ||
+        rate > API_TOKEN_RATE_MAX)
+    ) {
+      setRateError(true);
+      return;
+    }
+    setRateError(false);
     setCreating(true);
     try {
-      const rate = rateLimit.trim() === "" ? null : Number(rateLimit);
       const created = await api.createToken({
         name: name.trim(),
         expiresAt: expiryIso(preset),
@@ -213,7 +224,7 @@ export function ApiTokensSection() {
       <Dialog open={createOpen} onOpenChange={closeCreate}>
         <DialogContent className="sm:max-w-md" data-testid="token-dialog">
           {reveal === null ? (
-            <form onSubmit={handleCreate} className="space-y-4">
+            <form noValidate onSubmit={handleCreate} className="space-y-4">
               <DialogHeader>
                 <DialogTitle>{t("account.tokens.createTitle")}</DialogTitle>
                 <DialogDescription>
@@ -313,13 +324,34 @@ export function ApiTokensSection() {
                 <Input
                   id="token-rate"
                   data-testid="token-rate"
+                  invalid={rateError && rateLimit !== ""}
+                  aria-describedby={
+                    rateError && rateLimit !== ""
+                      ? "token-rate-error"
+                      : undefined
+                  }
                   type="number"
                   min={API_TOKEN_RATE_MIN}
                   max={API_TOKEN_RATE_MAX}
                   value={rateLimit}
                   placeholder={t("account.tokens.ratePlaceholder")}
-                  onChange={(event) => setRateLimit(event.target.value)}
+                  onChange={(event) => {
+                    setRateLimit(event.target.value);
+                    setRateError(false);
+                  }}
                 />
+                {rateError && rateLimit !== "" && (
+                  <p
+                    id="token-rate-error"
+                    role="alert"
+                    className="text-sm text-danger"
+                  >
+                    {t("account.tokens.rateInvalid", {
+                      min: API_TOKEN_RATE_MIN,
+                      max: API_TOKEN_RATE_MAX,
+                    })}
+                  </p>
+                )}
               </div>
               <DialogFooter>
                 <Button

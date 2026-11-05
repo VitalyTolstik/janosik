@@ -17,6 +17,7 @@ import { cookieSecure } from "@/config/security";
 import { pickLocale } from "@/mailer/mail.types";
 import { REFRESH_COOKIE } from "./auth.types";
 import type { AuthResult, AuthResponse, AuthUser } from "./auth.types";
+import { PasswordResetAuditService } from "./password-reset-audit.service";
 import { AuthService } from "./auth.service";
 import {
   type AuthPrincipal,
@@ -26,6 +27,10 @@ import {
 import { CurrentUser } from "./current-user.decorator";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { ConfirmEmailChangeDto } from "./dto/confirm-email-change.dto";
+import {
+  ConfirmPasswordResetDto,
+  RequestPasswordResetDto,
+} from "./dto/password-reset.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
 import { RequestEmailChangeDto } from "./dto/request-email-change.dto";
@@ -40,7 +45,10 @@ import { RefreshToken } from "./refresh-token.decorator";
  */
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly resetAudit: PasswordResetAuditService,
+  ) {}
 
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post("register")
@@ -66,6 +74,42 @@ export class AuthController {
     const result = await this.auth.login(dto);
     await this.tagSession(req, result);
     return this.withRefreshCookie(res, result);
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 3_600_000 } })
+  @Post("password/reset/request")
+  @HttpCode(HttpStatus.OK)
+  async requestPasswordReset(
+    @Body() dto: RequestPasswordResetDto,
+    @Headers("accept-language") language: string | undefined,
+    @Req() req: Request,
+  ): Promise<{ status: "ok" }> {
+    const limited = await this.auth.requestPasswordReset(
+      dto.email,
+      pickLocale(language),
+    );
+    await this.resetAudit.record(
+      limited ? "account_limited" : "requested",
+      req.ip ?? null,
+    );
+    return { status: "ok" };
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post("password/reset/confirm")
+  @HttpCode(HttpStatus.OK)
+  async confirmPasswordReset(
+    @Body() dto: ConfirmPasswordResetDto,
+    @Req() req: Request,
+  ): Promise<{ status: "ok" }> {
+    try {
+      await this.auth.confirmPasswordReset(dto);
+    } catch (error) {
+      await this.resetAudit.record("failed", req.ip ?? null);
+      throw error;
+    }
+    await this.resetAudit.record("completed", req.ip ?? null);
+    return { status: "ok" };
   }
 
   @Post("refresh")

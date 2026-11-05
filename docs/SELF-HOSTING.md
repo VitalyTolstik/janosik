@@ -478,3 +478,11 @@ smoke jobs pass. A tag alone does not create a GitHub Release.
 For pre-release tags, CI publishes a tag-specific image but does not move
 `:latest`. GitHub's latest release endpoint excludes pre-releases; the installer
 uses stable releases only.
+
+### Password recovery
+
+Users with a verified email address and a local password can choose **Forgot password?** on the sign-in screen. When outgoing email is enabled, they receive a single-use recovery code valid for 15 minutes. A new request after the one-minute per-account cooldown replaces the previous code. The response does not disclose whether the account exists. Disabled accounts and OAuth-only accounts cannot use this flow; OAuth users should sign in with their provider.
+
+A successful reset revokes all refresh sessions and personal API keys. Already issued access tokens remain valid until they expire (15 minutes by default). If email is disabled or delivery is unavailable, an instance owner can reset the user's password from the admin panel. Configure and test SMTP in the admin panel before relying on recovery.
+
+Password recovery requests, successful and failed confirmations, and rate-limit violations appear in the admin audit log as `user.password_reset_*` events. Events are aggregated by IP and minute; codes and passwords are never recorded. Recovery emails are limited to one per account per minute, and requests are limited to three per IP per hour and confirmations to ten per IP per minute. Redis shares rate limits between instances when configured; otherwise limits are held in process.

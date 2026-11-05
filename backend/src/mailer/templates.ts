@@ -88,6 +88,29 @@ export function verificationCodeEmail(
   };
 }
 
+/** A single-use, high-entropy password recovery code. */
+export function passwordResetEmail(
+  code: string,
+  locale: MailLocale,
+): { subject: string; text: string; html: string } {
+  const ru = locale === "ru";
+  const title = ru ? "Восстановление пароля" : "Reset your password";
+  const instruction = ru
+    ? "Введите этот код на странице восстановления пароля:"
+    : "Enter this code on the password recovery page:";
+  const notice = ru
+    ? "Код действует 15 минут и используется один раз. Если вы не запрашивали восстановление, проигнорируйте письмо."
+    : "This code expires in 15 minutes and can be used once. If you did not request a reset, ignore this email.";
+  return {
+    subject: `${BRAND}: ${title}`,
+    text: `${title}\n\n${instruction}\n${code}\n\n${notice}`,
+    html: shell(
+      title,
+      `<p>${instruction}</p><p style="font-family:monospace;font-size:18px;word-break:break-all">${code}</p><p>${notice}</p>`,
+    ),
+  };
+}
+
 /** The verification code email — sent to the NEW address. */
 export function emailChangeCodeEmail(
   code: string,

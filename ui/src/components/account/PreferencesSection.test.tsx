@@ -56,8 +56,8 @@ describe("PreferencesSection (TASK-36.1)", () => {
     await userEvent.click(row);
     await userEvent.click(await screen.findByText("Русский"));
 
-    expect(row).toHaveTextContent("Русский");
     expect(await screen.findByText("Настройки")).toBeInTheDocument();
+    expect(row).toHaveTextContent("Русский");
   });
 
   it("changes the time format and persists it", async () => {

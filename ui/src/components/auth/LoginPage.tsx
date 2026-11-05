@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 
 import { api, ApiError } from "@/api/client";
+import { PasswordRecovery } from "./PasswordRecovery";
 import { BrandMark } from "@/components/BrandMark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,10 +70,12 @@ export function LoginPage() {
   const [mode, setMode] = useState<Mode>(
     searchParams.get("mode") === "register" ? "register" : "login",
   );
+  const [recovering, setRecovering] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [invalidField, setInvalidField] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [oauthProviders, setOauthProviders] = useState<OAuthProviderDto[]>([]);
   const [allowRegistration, setAllowRegistration] = useState(true);
@@ -125,8 +128,26 @@ export function LoginPage() {
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (pending) return;
-    setPending(true);
     setError(null);
+    setInvalidField(null);
+    const invalid = Array.from(
+      event.currentTarget.querySelectorAll("input"),
+    ).find((input) => !input.validity.valid);
+    if (invalid) {
+      setInvalidField(invalid.id);
+      if (invalid.id === "auth-email")
+        setError(
+          t(
+            invalid.validity.valueMissing
+              ? "auth.validation.emailRequired"
+              : "auth.validation.emailInvalid",
+          ),
+        );
+      else setError(t("auth.validation.passwordRequired"));
+      invalid.focus();
+      return;
+    }
+    setPending(true);
     try {
       if (isRegister) {
         const name = displayName.trim();
@@ -145,6 +166,7 @@ export function LoginPage() {
     const next: Mode = isRegister ? "login" : "register";
     setMode(next);
     setError(null);
+    setInvalidField(null);
     // Keep the URL in step so a reload lands on the same form.
     const params = new URLSearchParams(searchParams);
     if (next === "register") params.set("mode", "register");
@@ -164,130 +186,157 @@ export function LoginPage() {
           {t("auth.backToSite")}
         </a>
       )}
-      <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <span aria-hidden className="group">
-            <BrandMark size="large" />
-          </span>
-          <h1 className="text-lg font-semibold text-foreground">
-            {isRegister ? t("auth.registerTitle") : t("auth.title")}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {isRegister ? t("auth.registerSubtitle") : t("auth.subtitle")}
-          </p>
-        </div>
-
-        <form
-          onSubmit={handleSubmit}
-          className="flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-sm"
-        >
-          {isRegister ? (
-            <>
-              <label
-                className="text-sm font-medium text-foreground"
-                htmlFor="auth-display-name"
-              >
-                {t("auth.displayName")}
-              </label>
-              <Input
-                id="auth-display-name"
-                data-testid="login-display-name"
-                name="displayName"
-                value={displayName}
-                maxLength={50}
-                autoComplete="name"
-                onChange={(e) => setDisplayName(e.target.value)}
-              />
-            </>
-          ) : null}
-
-          <label
-            className="text-sm font-medium text-foreground"
-            htmlFor="auth-email"
-          >
-            {t("auth.email")}
-          </label>
-          <Input
-            id="auth-email"
-            data-testid="login-email"
-            name="email"
-            type="email"
-            required
-            autoFocus
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-
-          <label
-            className="text-sm font-medium text-foreground"
-            htmlFor="auth-password"
-          >
-            {t("auth.password")}
-          </label>
-          <Input
-            id="auth-password"
-            data-testid="login-password"
-            name="password"
-            type="password"
-            required
-            autoComplete={isRegister ? "new-password" : "current-password"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-
-          {error !== null ? (
-            <p
-              role="alert"
-              data-testid="login-error"
-              className="text-sm text-danger"
-            >
-              {error}
+      {recovering ? (
+        <PasswordRecovery
+          initialEmail={email}
+          onBack={() => setRecovering(false)}
+        />
+      ) : (
+        <div className="w-full max-w-sm">
+          <div className="mb-6 flex flex-col items-center gap-2 text-center">
+            <span aria-hidden className="group">
+              <BrandMark size="large" />
+            </span>
+            <h1 className="text-lg font-semibold text-foreground">
+              {isRegister ? t("auth.registerTitle") : t("auth.title")}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {isRegister ? t("auth.registerSubtitle") : t("auth.subtitle")}
             </p>
-          ) : null}
+          </div>
 
-          <Button type="submit" data-testid="login-submit" disabled={pending}>
-            {isRegister ? t("auth.register") : t("auth.login")}
-          </Button>
-
-          {oauthProviders.length > 0 ? (
-            <>
-              <div className="my-1 flex items-center gap-3">
-                <span className="h-px flex-1 bg-border" />
-                <span className="text-xs text-muted-foreground">
-                  {t("auth.oauthDivider")}
-                </span>
-                <span className="h-px flex-1 bg-border" />
-              </div>
-              {oauthProviders.map((provider) => (
-                <Button
-                  key={provider.id}
-                  variant="outline"
-                  asChild
-                  data-testid={`login-oauth-${provider.id}`}
+          <form
+            noValidate
+            onSubmit={handleSubmit}
+            className="flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-sm"
+          >
+            {isRegister ? (
+              <>
+                <label
+                  className="text-sm font-medium text-foreground"
+                  htmlFor="auth-display-name"
                 >
-                  <a href={api.oauthStartUrl(provider.id)}>
-                    {t("auth.oauthThrough", { provider: provider.label })}
-                  </a>
-                </Button>
-              ))}
-            </>
-          ) : null}
+                  {t("auth.displayName")}
+                </label>
+                <Input
+                  id="auth-display-name"
+                  data-testid="login-display-name"
+                  name="displayName"
+                  value={displayName}
+                  maxLength={50}
+                  autoComplete="name"
+                  onChange={(e) => setDisplayName(e.target.value)}
+                />
+              </>
+            ) : null}
 
-          {allowRegistration ? (
-            <button
-              type="button"
-              data-testid="login-toggle"
-              onClick={toggleMode}
-              className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+            <label
+              className="text-sm font-medium text-foreground"
+              htmlFor="auth-email"
             >
-              {isRegister
-                ? t("auth.switchToLogin")
-                : t("auth.switchToRegister")}
-            </button>
-          ) : null}
-        </form>
-      </div>
+              {t("auth.email")}
+            </label>
+            <Input
+              id="auth-email"
+              invalid={invalidField === "auth-email"}
+              aria-describedby={
+                invalidField === "auth-email" ? "login-error" : undefined
+              }
+              data-testid="login-email"
+              name="email"
+              type="email"
+              required
+              autoFocus
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+
+            <label
+              className="text-sm font-medium text-foreground"
+              htmlFor="auth-password"
+            >
+              {t("auth.password")}
+            </label>
+            <Input
+              id="auth-password"
+              invalid={invalidField === "auth-password"}
+              aria-describedby={
+                invalidField === "auth-password" ? "login-error" : undefined
+              }
+              data-testid="login-password"
+              name="password"
+              type="password"
+              required
+              autoComplete={isRegister ? "new-password" : "current-password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+
+            {!isRegister && (
+              <button
+                type="button"
+                data-testid="forgot-password"
+                onClick={() => setRecovering(true)}
+                className="self-end text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              >
+                {t("auth.recovery.forgot")}
+              </button>
+            )}
+
+            {error !== null ? (
+              <p
+                role="alert"
+                data-testid="login-error"
+                className="text-sm text-danger"
+              >
+                {error}
+              </p>
+            ) : null}
+
+            <Button type="submit" data-testid="login-submit" disabled={pending}>
+              {isRegister ? t("auth.register") : t("auth.login")}
+            </Button>
+
+            {oauthProviders.length > 0 ? (
+              <>
+                <div className="my-1 flex items-center gap-3">
+                  <span className="h-px flex-1 bg-border" />
+                  <span className="text-xs text-muted-foreground">
+                    {t("auth.oauthDivider")}
+                  </span>
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+                {oauthProviders.map((provider) => (
+                  <Button
+                    key={provider.id}
+                    variant="outline"
+                    asChild
+                    data-testid={`login-oauth-${provider.id}`}
+                  >
+                    <a href={api.oauthStartUrl(provider.id)}>
+                      {t("auth.oauthThrough", { provider: provider.label })}
+                    </a>
+                  </Button>
+                ))}
+              </>
+            ) : null}
+
+            {allowRegistration ? (
+              <button
+                type="button"
+                data-testid="login-toggle"
+                onClick={toggleMode}
+                className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+              >
+                {isRegister
+                  ? t("auth.switchToLogin")
+                  : t("auth.switchToRegister")}
+              </button>
+            ) : null}
+          </form>
+        </div>
+      )}
     </main>
   );
 }

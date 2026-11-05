@@ -108,6 +108,21 @@ describe("BoardMembersPanel (TASK-35)", () => {
     expect(screen.getByText("Boris")).toBeInTheDocument();
   });
 
+  it("shows an inline error for an invalid invitation email", async () => {
+    vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN]);
+    const invite = vi.spyOn(api, "inviteMember");
+    renderPanel(true);
+    await screen.findByText("Boris");
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "invalid-email" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Invite" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Enter a valid email address.",
+    );
+    expect(invite).not.toHaveBeenCalled();
+  });
+
   it("invites by email and keeps the pending invitation out of the list", async () => {
     const list = vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN]);
     // The server answers every address with the same masked projection

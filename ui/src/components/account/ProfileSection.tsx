@@ -187,7 +187,7 @@ export function ProfileSection() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form noValidate onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <label
             htmlFor="account-display-name"

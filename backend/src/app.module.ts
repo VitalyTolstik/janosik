@@ -1,11 +1,7 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { BullModule } from "@nestjs/bullmq";
-import {
-  ThrottlerGuard,
-  ThrottlerModule,
-  ThrottlerStorageService,
-} from "@nestjs/throttler";
+import { ThrottlerModule, ThrottlerStorageService } from "@nestjs/throttler";
 import { env } from "@/config/env";
 import { throttleLimit } from "@/config/throttle";
 import Redis from "ioredis";
@@ -16,6 +12,8 @@ import { BoardWriteModule } from "@/common/board-write.module";
 import { TrafficModule } from "@/common/traffic.module";
 import { HealthModule } from "@/health/health.module";
 import { MailerModule } from "@/mailer/mailer.module";
+import { PasswordResetThrottlerGuard } from "@/auth/password-reset-throttler.guard";
+import { PasswordResetAuditService } from "@/auth/password-reset-audit.service";
 import { AuthModule } from "@/auth/auth.module";
 import { UsersModule } from "@/users/users.module";
 import { BoardsModule } from "@/boards/boards.module";
@@ -91,7 +89,8 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
       : []),
   ],
   providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    PasswordResetAuditService,
+    { provide: APP_GUARD, useClass: PasswordResetThrottlerGuard },
     { provide: APP_GUARD, useClass: MaintenanceGuard },
     { provide: APP_INTERCEPTOR, useClass: PerUserRateLimitInterceptor },
   ],

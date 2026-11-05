@@ -28,6 +28,10 @@ If its email was never confirmed, the server removes the password, signs out
 every device and revokes all API keys before linking the provider. You then sign
 in through that provider.
 
+## Forgot your password?
+
+On the sign-in screen, choose **Forgot password?** and enter your email. If an eligible account exists, you will receive a single-use recovery code. Enter the code and your new password within 15 minutes. Check your spam folder if the email does not arrive. This works for accounts with a verified email and a local password. After a reset, all refresh sessions and API keys are revoked. If email recovery is unavailable, contact your administrator; OAuth-only accounts should sign in through their provider.
+
 ## Confirm your email
 
 When email delivery is configured, the app asks you to `Confirm your email` after registration. It sends a

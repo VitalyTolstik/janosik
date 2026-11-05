@@ -112,7 +112,7 @@ export function EmailVerificationGate() {
           </p>
         </div>
 
-        <form onSubmit={handleVerify} className="mt-5 space-y-4">
+        <form noValidate onSubmit={handleVerify} className="mt-5 space-y-4">
           <div className="flex flex-col items-center gap-3">
             <div className="flex gap-2" data-testid="email-verify-code">
               <OTPInput
