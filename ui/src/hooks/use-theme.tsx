@@ -20,6 +20,19 @@ import { THEME_STORAGE_KEY } from "@janosik/shared";
 
 export type Theme = "dark" | "light";
 
+function embedTheme(): Theme | "system" | null {
+  const params = new URLSearchParams(window.location.search);
+  const value = params.get("theme");
+  if (
+    !/\/s\/[^/]+\/?$/.test(window.location.pathname) ||
+    params.get("embed") !== "1"
+  )
+    return null;
+  return value === "light" || value === "dark" || value === "system"
+    ? value
+    : null;
+}
+
 const root = () => document.documentElement;
 
 function readStoredTheme(): Theme | null {
@@ -46,6 +59,8 @@ function systemTheme(): Theme {
  * and then the system preference.
  */
 function readInitialTheme(): Theme {
+  const embed = embedTheme();
+  if (embed) return embed === "system" ? systemTheme() : embed;
   const html = root();
   if (html.classList.contains("light")) return "light";
   if (html.classList.contains("dark")) return "dark";
@@ -61,14 +76,24 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [embedded] = useState(embedTheme);
   const [theme, setThemeState] = useState<Theme>(readInitialTheme);
+
+  useEffect(() => {
+    if (embedded !== "system") return;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = (event: MediaQueryListEvent) =>
+      setThemeState(event.matches ? "dark" : "light");
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [embedded]);
 
   useEffect(() => {
     const html = root();
     html.classList.toggle("light", theme === "light");
     html.classList.toggle("dark", theme === "dark");
     try {
-      localStorage.setItem(THEME_STORAGE_KEY, theme);
+      if (!embedded) localStorage.setItem(THEME_STORAGE_KEY, theme);
     } catch {
       /* storage unavailable — theme still works for the session */
     }
@@ -82,7 +107,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       .getPropertyValue("--background")
       .trim();
     if (background) meta.setAttribute("content", background);
-  }, [theme]);
+  }, [theme, embedded]);
 
   const setTheme = useCallback((next: Theme) => setThemeState(next), []);
   const toggleTheme = useCallback(

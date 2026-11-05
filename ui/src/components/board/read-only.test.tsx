@@ -113,8 +113,9 @@ describe("VIEWER read-only UI (TASK-35)", () => {
   });
 
   it("DndBoard: mounts no sensors and hides composers/column controls", () => {
+    const openCard = vi.fn();
     const { container } = render(
-      tree(<DndBoard readOnly onCardClick={() => {}} />),
+      tree(<DndBoard readOnly onCardClick={openCard} />),
     );
 
     expect(dnd.sensors).toEqual([]);
@@ -122,6 +123,10 @@ describe("VIEWER read-only UI (TASK-35)", () => {
     expect(container.querySelector("[data-add-column-trigger]")).toBeNull();
     // Content stays visible and clickable for reading.
     expect(screen.getByText("Careful card")).toBeInTheDocument();
+    const card = screen.getByRole("button", { name: /Careful card/i });
+    expect(card.closest('[aria-disabled="true"]')).toBeNull();
+    fireEvent.click(card);
+    expect(openCard).toHaveBeenCalledWith("card-1");
   });
 
   it("DndBoard: keeps the full sensor trio without readOnly (control)", () => {

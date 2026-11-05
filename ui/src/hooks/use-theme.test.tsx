@@ -38,6 +38,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  window.history.replaceState(null, "", "/");
   vi.restoreAllMocks();
   localStorage.clear();
   document.documentElement.className = "";
@@ -48,6 +49,43 @@ afterEach(() => {
 });
 
 describe("useTheme", () => {
+  it.each(["light", "dark"] as const)(
+    "applies the %s embed theme without changing the saved preference",
+    (theme) => {
+      window.history.replaceState(null, "", `/s/token?embed=1&theme=${theme}`);
+      localStorage.setItem(
+        THEME_STORAGE_KEY,
+        theme === "light" ? "dark" : "light",
+      );
+      const { result } = renderHook(() => useTheme(), { wrapper });
+      expect(result.current.theme).toBe(theme);
+      expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe(
+        theme === "light" ? "dark" : "light",
+      );
+    },
+  );
+
+  it("tracks system changes for a system-themed embed without saving them", () => {
+    window.history.replaceState(null, "", "/s/token?embed=1&theme=system");
+    localStorage.setItem(THEME_STORAGE_KEY, "light");
+    mockSystemPrefersDark(true);
+    let listener: ((event: MediaQueryListEvent) => void) | undefined;
+    vi.mocked(window.matchMedia).mockReturnValue({
+      matches: true,
+      addEventListener: (
+        _name: string,
+        callback: (event: MediaQueryListEvent) => void,
+      ) => {
+        listener = callback;
+      },
+      removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList);
+    const { result } = renderHook(() => useTheme(), { wrapper });
+    expect(result.current.theme).toBe("dark");
+    act(() => listener?.({ matches: false } as MediaQueryListEvent));
+    expect(result.current.theme).toBe("light");
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
+  });
   it("defaults to the system preference when nothing is stored", () => {
     mockSystemPrefersDark(true);
     const dark = renderHook(() => useTheme(), { wrapper });

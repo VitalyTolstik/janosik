@@ -49,6 +49,7 @@ interface ShareRow {
 function makeHarness(options: { alive?: boolean } = {}) {
   let alive = options.alive ?? true;
   const shares: ShareRow[] = [];
+  const audit: Array<Record<string, unknown>> = [];
   let counter = 0;
 
   const boardRow = {
@@ -64,6 +65,31 @@ function makeHarness(options: { alive?: boolean } = {}) {
         alive && where.id === boardRow.id ? boardRow : null,
     },
     boardShare: {
+      findUniqueOrThrow: async ({ where }: { where: { id: string } }) => {
+        const row = shares.find((s) => s.id === where.id);
+        if (!row) throw new NotFoundException();
+        return row;
+      },
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: { revokedAt: Date };
+      }) => {
+        const row = shares.find((s) => s.id === where.id && !s.revokedAt);
+        if (!row) return { count: 0 };
+        row.revokedAt = data.revokedAt;
+        return { count: 1 };
+      },
+      count: async ({ where }: { where: { boardId: string; mode: string } }) =>
+        shares.filter(
+          (s) =>
+            s.boardId === where.boardId &&
+            s.mode === where.mode &&
+            !s.revokedAt &&
+            (!s.expiresAt || s.expiresAt > new Date()),
+        ).length,
       create: async ({
         data,
       }: {
@@ -134,6 +160,14 @@ function makeHarness(options: { alive?: boolean } = {}) {
       ],
     },
     card: { findFirst: async () => null },
+    boardShareAuditLog: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        audit.push(data);
+        return data;
+      },
+    },
+    $executeRaw: async () => 0,
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma),
   };
 
   const boards = {
@@ -168,6 +202,7 @@ function makeHarness(options: { alive?: boolean } = {}) {
   return {
     service,
     shares,
+    audit,
     prisma,
     setAlive: (next: boolean) => (alive = next),
   };
@@ -182,8 +217,27 @@ describe("ShareService (unit)", () => {
       expect(share.token).toMatch(/^[A-Za-z0-9_-]+$/);
       expect(share.token.length).toBeGreaterThanOrEqual(20);
       tokens.add(share.token);
+      await service.revoke(share.id, "u1");
     }
     expect(tokens.size).toBe(40);
+  });
+
+  it("limits active links by mode and frees slots on revoke or expiry", async () => {
+    const { service, shares } = makeHarness();
+    for (let i = 0; i < 5; i++)
+      await service.create("b1", "u1", { mode: "live" });
+    await expect(
+      service.create("b1", "u1", { mode: "live" }),
+    ).rejects.toMatchObject({ status: 409 });
+    await service.revoke(shares[0]!.id, "u1");
+    await service.create("b1", "u1", { mode: "live" });
+    for (let i = 0; i < 10; i++)
+      await service.create("b1", "u1", { mode: "snapshot" });
+    await expect(
+      service.create("b1", "u1", { mode: "snapshot" }),
+    ).rejects.toMatchObject({ status: 409 });
+    shares.find((share) => share.mode === "snapshot")!.expiresAt = new Date(0);
+    await service.create("b1", "u1", { mode: "snapshot" });
   });
 
   it("defaults: live keeps comments, snapshot hides them; attachments off", async () => {
@@ -242,7 +296,7 @@ describe("ShareService (unit)", () => {
   it("gates on revoke and expiry with a bare 404", async () => {
     const { service } = makeHarness();
     const share = await service.create("b1", "u1", { mode: "live" });
-    await service.revoke(share.id);
+    await service.revoke(share.id, "u1");
     await expect(service.resolveToken(share.token)).rejects.toBeInstanceOf(
       NotFoundException,
     );

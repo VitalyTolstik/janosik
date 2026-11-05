@@ -28,6 +28,10 @@ Concurrent Playwright runs also need separate output directories: set
 Each run creates an isolated master account (`master@e2e.example`, password
 `e2e-master-password`), intended solely for the disposable test stack.
 
+`tests/app/sharing/` covers public live and snapshot boards, read-only content,
+link limits and revocation, and iframe themes on a separate local origin. Its
+fixtures create a fresh user and board per test.
+
 To use already-running development servers instead, provide the site and app
 URLs separately; point the app URL at the dev server root, not `/app/`:
 

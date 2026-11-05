@@ -227,6 +227,21 @@ model BoardShare {
   @@index([revokedAt]) // revoked-share sweep (TASK-148)
 }
 
+// Independent of the share and board rows so history survives their removal.
+model BoardShareAuditLog {
+  id        String   @id @default(cuid())
+  shareId   String
+  boardId   String
+  actorId   String
+  actorType String
+  action    String
+  details   Json
+  createdAt DateTime @default(now())
+
+  @@index([boardId, createdAt])
+  @@index([shareId, createdAt])
+}
+
 model BoardMember {
   id          String    @id @default(cuid())
   board       Board     @relation(fields: [boardId], references: [id])

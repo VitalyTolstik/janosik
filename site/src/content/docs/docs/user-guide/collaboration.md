@@ -85,14 +85,28 @@ Choose a mode:
   board, so they also stop being available once the source board is purged
   (30 days after deletion); refresh or copy anything you need before then.
 
-Each link can include `Comments` and `Attachments`, and can be given an
+Each link can show existing comments and attachments, and can be given an
 expiry: `Never`, 1 hour, 24 hours, one week or about a month. Optionally give
 the link a label for your own list.
+
+Each board can have up to 5 active live links and 10 active snapshots. Expired
+and revoked links do not count toward these limits. Similar links can still be
+created when separate access or snapshots are needed.
+
+Creating, revoking or permanently deleting a link from a board records an
+audit event in the server database. The record keeps the actor, time and link
+settings without storing the access token, and survives removal of the link.
+Events before this audit was introduced cannot be reconstructed.
 
 `Create link` copies the new link to your clipboard. The active-links list
 lets you `Copy link`, copy an `Embed code` (an `<iframe>` snippet), `Refresh`
 a snapshot, or `Revoke` a link. A revoked or expired link stops working, and
 a visitor already watching a live link is disconnected.
+Select Live or Snapshot to see links of that type.
+
+When copying an embed code, choose System, Light or Dark. System follows the
+visitor's device preference; Light and Dark keep a fixed appearance. The
+embedded board does not automatically follow a theme chosen on the host site.
 
 ![A live share link opened without an account: the board read-only, marked Live · read-only.](/screens/public-share.png)
 
