@@ -107,10 +107,14 @@ describe("sentenceFor", () => {
 
   it.each([
     "member_invited",
+    "member_invite_accepted",
+    "member_invite_declined",
+    "attachment_added",
+    "attachment_deleted",
     "member_role_changed",
     "member_expiry_changed",
     "member_removed",
-  ] as const)("maps the membership event %s to a real sentence", (type) => {
+  ] as const)("maps the activity event %s to a real sentence", (type) => {
     const { key } = sentenceFor(entry(type), "en", false);
     expect(key).not.toBe("activity.changed");
     expect(en).toHaveProperty(key);

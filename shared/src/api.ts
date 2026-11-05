@@ -89,10 +89,11 @@ export interface ConflictError {
 /**
  * Who performed a command (TASK-157): a person at a browser session
  * (`"human"`) or an agent/integration authenticating with a personal API
- * token (`"agent"`). Recorded on the command and activity rows so the feed
- * can tell a swarm's edits from a teammate's.
+ * token (`"agent"`), or a platform administrator (`"admin"`). Administrative
+ * commands retain a board user as the storage actor; the administrative
+ * audit identifies the actual administrator.
  */
-export type ActorType = "human" | "agent";
+export type ActorType = "human" | "agent" | "admin";
 
 /**
  * One entry of `GET /boards/:id/commands?since=<seq>` — the delta catch-up

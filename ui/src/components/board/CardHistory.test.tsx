@@ -97,6 +97,18 @@ describe("foldHistory", () => {
 });
 
 describe("CardHistory", () => {
+  it("shows an administrator without linking to the board owner's profile", async () => {
+    const server = new FakeServer();
+    server.seedActivity("card-1", [
+      commandEntry({ id: "admin", actorType: "admin" }),
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+    renderHistory();
+    expect(await screen.findByText("Administrator")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /administrator/i }),
+    ).not.toBeInTheDocument();
+  });
   it("renders sentences and from → to diffs from the server feed", async () => {
     const server = new FakeServer();
     server.seedActivity("card-1", [

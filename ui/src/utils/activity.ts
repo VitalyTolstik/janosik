@@ -62,7 +62,7 @@ const COMMAND_KEYS: Record<string, MessageKey> = {
   ARCHIVE_CARD: "activity.archived",
   UNARCHIVE_CARD: "activity.unarchived",
   DELETE_CARD: "activity.deleted",
-  DUPLICATE_CARD: "activity.created",
+  DUPLICATE_CARD: "activity.card-duplicated",
   // Bookkeeping only (filtered out of the watch feed); the card history still
   // shows it.
   TOUCH_CARD: "history.updated",
@@ -74,7 +74,7 @@ const COMMAND_KEYS: Record<string, MessageKey> = {
   // Board- and column-level commands (no card): without these they fell back
   // to the card-centric "Updated the card".
   ADD_COLUMN: "activity.column-added",
-  DUPLICATE_COLUMN: "activity.column-added",
+  DUPLICATE_COLUMN: "activity.column-duplicated",
   RENAME_COLUMN: "activity.column-renamed",
   DELETE_COLUMN: "activity.column-removed",
   MOVE_COLUMN: "activity.column-moved",
@@ -91,7 +91,7 @@ const COMMAND_KEYS: Record<string, MessageKey> = {
   // Restores (undo / admin): rare, but they still deserve a sentence.
   RESTORE_CARD: "activity.restored",
   RESTORE_COLUMN: "activity.column-restored",
-  RESTORE_COLUMN_CARDS: "activity.column-restored",
+  RESTORE_COLUMN_CARDS: "activity.column-cards-restored",
   RESTORE_LABEL: "activity.label-restored",
   RESTORE_CHECKLIST: "activity.checklist-restored",
   RESTORE_CHECKLIST_ITEM: "activity.checklist-item-restored",
@@ -101,6 +101,8 @@ const COMMAND_KEYS: Record<string, MessageKey> = {
 /** Membership activity types (invite / role / expiry / removal) → keys. */
 const MEMBERSHIP_KEYS: Record<string, MessageKey> = {
   member_invited: "activity.member-invited",
+  member_invite_accepted: "activity.member-invite-accepted",
+  member_invite_declined: "activity.member-invite-declined",
   member_role_changed: "activity.member-role-changed",
   member_expiry_changed: "activity.member-expiry-changed",
   member_removed: "activity.member-removed",
@@ -126,6 +128,9 @@ export const FIELD_KEYS: Record<string, MessageKey> = {
   cover: "history.field.cover",
   role: "history.field.role",
   expiresAt: "history.field.expiresAt",
+  wipLimit: "history.field.wipLimit",
+  position: "history.field.position",
+  cardOrder: "history.field.cardOrder",
 };
 
 /**
@@ -254,6 +259,13 @@ export function sentenceFor(
         : "activity.checklist-item-unchecked",
       params: { detail: entry.detail ?? "" },
     };
+  }
+
+  if (entry.type === "attachment_added") {
+    return { key: "activity.attachment-added" };
+  }
+  if (entry.type === "attachment_deleted") {
+    return { key: "activity.attachment-deleted" };
   }
 
   if (entry.type === "comment_added") {

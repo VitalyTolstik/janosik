@@ -326,6 +326,7 @@ export class AttachmentsService {
         cardId: true,
         boardId: true,
         uploadedById: true,
+        fileName: true,
         isInline: true,
         card: { select: { deletedAt: true } },
       },
@@ -371,7 +372,7 @@ export class AttachmentsService {
           type: "attachment_deleted",
           actorId: user.id,
           actorType,
-          details: { attachmentId },
+          details: { attachmentId, fileName: row.fileName },
         },
       });
       return activity.id;

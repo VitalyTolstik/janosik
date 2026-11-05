@@ -224,9 +224,12 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
   const hour12 = useHour12();
   const openProfile = useOpenProfile();
   const member = useBoardMember(boardId, entry.actorId || undefined);
-  const name = entry.actorId
-    ? userLabel(member?.displayName ?? null, member?.email ?? "")
-    : "";
+  const name =
+    entry.actorType === "admin"
+      ? t("activity.administrator")
+      : entry.actorId
+        ? userLabel(member?.displayName ?? null, member?.email ?? "")
+        : "";
 
   // An assignee entry names its subject in the sentence (TASK-49) — the
   // raw id from the change log resolves through the member directory. The
@@ -257,7 +260,7 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
       className="flex items-start gap-2.5 text-sm"
       data-testid="history-entry"
     >
-      {entry.actorId ? (
+      {entry.actorId && entry.actorType !== "admin" ? (
         <button
           type="button"
           aria-label={t("profile.open", { name })}
@@ -282,13 +285,17 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
           <p className="min-w-0 flex-1 text-foreground/90">
             {name ? (
               <>
-                <button
-                  type="button"
-                  onClick={() => openProfile(entry.actorId)}
-                  className="font-medium hover:underline"
-                >
-                  {name}
-                </button>
+                {entry.actorType === "admin" ? (
+                  <span className="font-medium">{name}</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => openProfile(entry.actorId)}
+                    className="font-medium hover:underline"
+                  >
+                    {name}
+                  </button>
+                )}
                 <span className="text-muted-foreground/60"> · </span>
               </>
             ) : null}

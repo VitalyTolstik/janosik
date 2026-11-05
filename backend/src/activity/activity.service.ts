@@ -10,7 +10,7 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 
 /** A stored actor type, defaulting to "human" for legacy/garbage rows. */
 function toActorType(value: string): ActorType {
-  return value === "agent" ? "agent" : "human";
+  return value === "agent" || value === "admin" ? value : "human";
 }
 
 /** Default page size of an activity feed (`?limit=`). */
@@ -266,9 +266,18 @@ function readActivitySnapshot(
   type: string,
   value: Prisma.JsonValue | null,
 ): { detail?: string; changes?: ActivityChange[] } {
+  const attachment =
+    (type === "attachment_added" || type === "attachment_deleted") &&
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof value.fileName === "string"
+      ? value.fileName
+      : undefined;
   return {
     ...readCommentSnapshot(type, value),
     ...readMembershipSnapshot(type, value),
+    ...(attachment !== undefined ? { detail: attachment } : {}),
   };
 }
 

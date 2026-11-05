@@ -1,5 +1,5 @@
 import type { Board, BoardAction, Card } from "@janosik/shared";
-import { commandDetails } from "./command-details";
+import { commandDetails } from "@/commands/command-details";
 
 /**
  * The display snapshot the history feed renders (TASK-37): pure before →
@@ -40,6 +40,91 @@ function makeBoard(card: Card = makeCard()): Board {
 const base = { boardId: "board-1", at: AT } as const;
 
 describe("commandDetails", () => {
+  it("preserves a change at the end of a long card order", () => {
+    const before = makeBoard();
+    const after = makeBoard();
+    const ids = Array.from({ length: 100 }, (_, index) => `card-${index}`);
+    for (const id of ids) {
+      before.cards[id] = makeCard({ id, title: `${id}-${"x".repeat(120)}` });
+      after.cards[id] = before.cards[id]!;
+    }
+    before.columns[0]!.cardIds = ids;
+    after.columns[0]!.cardIds = [...ids.slice(0, -2), ids[99]!, ids[98]!];
+    const action = {
+      ...base,
+      type: "SET_COLUMN_CARD_ORDER",
+      columnId: "col-1",
+      cardIds: after.columns[0]!.cardIds,
+    } as BoardAction;
+    const change = commandDetails(action, before, after)?.changes?.[0];
+    expect(change?.from?.length).toBeGreaterThan(10000);
+    expect(change?.to?.endsWith(before.cards["card-98"]!.title)).toBe(true);
+    expect(change?.from).not.toBe(change?.to);
+  });
+  it("freezes the card order before and after a reorder", () => {
+    const before = makeBoard();
+    const after = makeBoard();
+    before.cards["card-2"] = makeCard({ id: "card-2", title: "Second" });
+    after.cards["card-2"] = makeCard({ id: "card-2", title: "Second" });
+    before.columns[0]!.cardIds = ["card-1", "card-2"];
+    after.columns[0]!.cardIds = ["card-2", "card-1"];
+    const action = {
+      ...base,
+      type: "SET_COLUMN_CARD_ORDER",
+      columnId: "col-1",
+      cardIds: ["card-2", "card-1"],
+    } as BoardAction;
+    expect(commandDetails(action, before, after)).toEqual({
+      detail: "Todo",
+      changes: [
+        {
+          field: "cardOrder",
+          from: "Old title, Second",
+          to: "Second, Old title",
+        },
+      ],
+    });
+  });
+  it("captures WIP changes, including clearing the limit", () => {
+    const before = makeBoard();
+    const after = makeBoard();
+    before.columns[0]!.wipLimit = 3;
+    after.columns[0]!.wipLimit = 5;
+    const action = {
+      ...base,
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: "col-1",
+      wipLimit: 5,
+    } as BoardAction;
+    expect(commandDetails(action, before, after)).toEqual({
+      detail: "Todo",
+      changes: [{ field: "wipLimit", from: "3", to: "5" }],
+    });
+    delete after.columns[0]!.wipLimit;
+    expect(commandDetails(action, before, after)?.changes).toEqual([
+      { field: "wipLimit", from: "3", to: null },
+    ]);
+  });
+
+  it("captures actual positions for a move within the same column", () => {
+    const before = makeBoard();
+    const after = makeBoard();
+    before.columns[0]!.cardIds = ["card-1", "card-2"];
+    after.columns[0]!.cardIds = ["card-2", "card-1"];
+    const action = {
+      ...base,
+      type: "MOVE_CARD",
+      cardId: "card-1",
+      fromColumnId: "col-1",
+      toColumnId: "col-1",
+      fromIndex: 0,
+      toIndex: 1,
+    } as BoardAction;
+    expect(commandDetails(action, before, after)).toEqual({
+      detail: "Todo",
+      changes: [{ field: "position", from: "1", to: "2" }],
+    });
+  });
   it("captures a title rename as from → to", () => {
     const before = makeBoard(makeCard({ title: "Old title" }));
     const after = makeBoard(makeCard({ title: "New title" }));

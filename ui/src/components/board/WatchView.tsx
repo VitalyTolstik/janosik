@@ -23,8 +23,6 @@ const PAGE_SIZE = 50;
 const POLL_MS = 3000;
 /** Coalesce SSE-triggered refreshes so a busy board cannot storm the API. */
 const REFRESH_COALESCE_MS = 1000;
-/** The most changed fields rendered inline (the rest stay off the line). */
-const MAX_CHANGE_LINES = 3;
 /** A feed value is a display snippet, not the whole field: cap its width. */
 const MAX_VALUE_CHARS = 120;
 /** Page buttons kept around the current one before an ellipsis. */
@@ -701,10 +699,14 @@ function WatchRow({
   hour12: boolean;
 }) {
   const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
   const actor = entry.actorId ? members.get(entry.actorId) : undefined;
-  const actorName = entry.actorId
-    ? userLabel(actor?.displayName ?? null, actor?.email ?? entry.actorId)
-    : "—";
+  const actorName =
+    entry.actorType === "admin"
+      ? t("activity.administrator")
+      : entry.actorId
+        ? userLabel(actor?.displayName ?? null, actor?.email ?? entry.actorId)
+        : "—";
 
   const card = entry.cardId ? cards[entry.cardId] : undefined;
 
@@ -723,7 +725,13 @@ function WatchRow({
   const assigneeName = assigneeTo === null ? null : memberName(assigneeTo);
 
   const sentence = sentenceFor(entry, lang, hour12, assigneeName);
-  const details = detailsFor(entry, t, memberName, lang, hour12);
+  const details = detailsFor(entry, t, memberName, lang, hour12, expanded);
+  const canExpand =
+    (entry.changes ?? []).some(
+      (change) =>
+        (change.from?.length ?? 0) > MAX_VALUE_CHARS ||
+        (change.to?.length ?? 0) > MAX_VALUE_CHARS,
+    ) || (entry.detail?.length ?? 0) > MAX_VALUE_CHARS;
   const clock = new Date(entry.at).toLocaleTimeString(
     lang === "ru" ? "ru-RU" : "en-US",
     { hour12, hour: "2-digit", minute: "2-digit", second: "2-digit" },
@@ -789,6 +797,15 @@ function WatchRow({
             ))}
           </span>
         ) : null}
+        {canExpand ? (
+          <button
+            type="button"
+            className="ml-2 text-xs text-primary underline"
+            onClick={() => setExpanded(!expanded)}
+          >
+            {t(expanded ? "watch.showLess" : "watch.showMore")}
+          </button>
+        ) : null}
       </span>
     </li>
   );
@@ -801,21 +818,37 @@ function detailsFor(
   memberName: (userId: string) => string,
   lang: "en" | "ru",
   hour12: boolean,
+  expanded: boolean,
 ): DetailPart[] {
+  const display = (value: string) => (expanded ? value : shorten(value));
   const changes: ActivityChange[] = (entry.changes ?? []).filter(
     (change) => change.field !== "checklistItemDone",
   );
   const parts: DetailPart[] = [];
-  for (const change of changes.slice(0, MAX_CHANGE_LINES)) {
+  if (
+    (entry.type === "member_role_changed" ||
+      entry.type === "member_expiry_changed" ||
+      entry.type === "SET_COLUMN_WIP_LIMIT" ||
+      entry.type === "SORT_COLUMN" ||
+      entry.type === "SET_COLUMN_CARD_ORDER") &&
+    entry.detail
+  ) {
+    parts.push({ label: "", to: display(entry.detail) });
+  }
+  for (const change of changes) {
     if (change.field === "comment") {
-      parts.push({ label: "", to: `“${shorten(change.to ?? "")}”` });
+      parts.push({
+        label: "",
+        ...(change.from !== null ? { from: `“${display(change.from)}”` } : {}),
+        to: change.to === null ? "—" : `“${display(change.to)}”`,
+      });
       continue;
     }
     parts.push({
       label: t(FIELD_KEYS[change.field] ?? "history.field.title"),
       ...(change.from !== null
         ? {
-            from: shorten(
+            from: display(
               formatChangeValue(
                 change.field,
                 change.from,
@@ -826,13 +859,13 @@ function detailsFor(
             ),
           }
         : {}),
-      to: shorten(
+      to: display(
         formatChangeValue(change.field, change.to, lang, hour12, memberName),
       ),
     });
   }
   if (parts.length === 0 && entry.detail) {
-    parts.push({ label: "", to: shorten(entry.detail) });
+    parts.push({ label: "", to: display(entry.detail) });
   }
   return parts;
 }

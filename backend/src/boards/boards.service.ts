@@ -504,23 +504,34 @@ export class BoardsService {
         data: { role, expiresAt },
         include: { user: true },
       });
-      if (roleChanged || expiryChanged) {
+      if (roleChanged) {
         await tx.activity.create({
           data: {
             boardId,
-            type: roleChanged ? "member_role_changed" : "member_expiry_changed",
+            type: "member_role_changed",
             actorId,
             actorType,
             details: {
               userId: member.userId,
               email: member.user.email,
-              ...(roleChanged ? { from: member.role, to: role } : {}),
-              ...(expiryChanged
-                ? {
-                    from: member.expiresAt?.toISOString() ?? null,
-                    to: expiresAt?.toISOString() ?? null,
-                  }
-                : {}),
+              from: member.role,
+              to: role,
+            },
+          },
+        });
+      }
+      if (expiryChanged) {
+        await tx.activity.create({
+          data: {
+            boardId,
+            type: "member_expiry_changed",
+            actorId,
+            actorType,
+            details: {
+              userId: member.userId,
+              email: member.user.email,
+              from: member.expiresAt?.toISOString() ?? null,
+              to: expiresAt?.toISOString() ?? null,
             },
           },
         });
