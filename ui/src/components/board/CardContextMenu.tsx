@@ -54,6 +54,7 @@ import {
   ContextMenu,
   ContextMenuCheckboxItem,
   ContextMenuContent,
+  ContextMenuGroup,
   ContextMenuItem,
   ContextMenuLabel,
   ContextMenuRadioGroup,
@@ -698,48 +699,52 @@ function CoverSub({
         className="w-56 p-2"
         data-testid="ctx-cover-content"
       >
-        <ContextMenuLabel className="px-0 py-0 text-xs font-medium text-muted-foreground">
-          {t("card.coverColors")}
-        </ContextMenuLabel>
-        <div className="mt-1 flex flex-wrap gap-1.5">
-          {COVER_COLORS.map((entry) => (
-            <button
-              key={entry}
-              type="button"
-              aria-label={t(COVER_COLOR_KEYS[entry])}
-              data-testid={`ctx-cover-color-${entry}`}
-              onClick={() => onPick({ type: "color", value: entry })}
-              style={{ backgroundColor: COVER_COLOR_CSS[entry] }}
-              className={cn(
-                "size-6 rounded-md border border-border/40 transition-transform hover:scale-105",
-                cover?.type === "color" &&
-                  cover.value === entry &&
-                  "ring-2 ring-ring ring-offset-1 ring-offset-popover",
-              )}
-            />
-          ))}
-        </div>
-        <ContextMenuLabel className="mt-2 px-0 py-0 text-xs font-medium text-muted-foreground">
-          {t("card.coverGradients")}
-        </ContextMenuLabel>
-        <div className="mt-1 flex flex-wrap gap-1.5">
-          {COVER_GRADIENTS.map((entry) => (
-            <button
-              key={entry}
-              type="button"
-              aria-label={t(COVER_GRADIENT_KEYS[entry])}
-              data-testid={`ctx-cover-gradient-${entry}`}
-              onClick={() => onPick({ type: "gradient", value: entry })}
-              style={{ backgroundImage: COVER_GRADIENT_CSS[entry] }}
-              className={cn(
-                "size-6 rounded-md border border-border/40 transition-transform hover:scale-105",
-                cover?.type === "gradient" &&
-                  cover.value === entry &&
-                  "ring-2 ring-ring ring-offset-1 ring-offset-popover",
-              )}
-            />
-          ))}
-        </div>
+        <ContextMenuGroup>
+          <ContextMenuLabel className="px-0 py-0 text-xs font-medium text-muted-foreground">
+            {t("card.coverColors")}
+          </ContextMenuLabel>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {COVER_COLORS.map((entry) => (
+              <button
+                key={entry}
+                type="button"
+                aria-label={t(COVER_COLOR_KEYS[entry])}
+                data-testid={`ctx-cover-color-${entry}`}
+                onClick={() => onPick({ type: "color", value: entry })}
+                style={{ backgroundColor: COVER_COLOR_CSS[entry] }}
+                className={cn(
+                  "size-6 rounded-md border border-border/40 transition-transform hover:scale-105",
+                  cover?.type === "color" &&
+                    cover.value === entry &&
+                    "ring-2 ring-ring ring-offset-1 ring-offset-popover",
+                )}
+              />
+            ))}
+          </div>
+        </ContextMenuGroup>
+        <ContextMenuGroup>
+          <ContextMenuLabel className="mt-2 px-0 py-0 text-xs font-medium text-muted-foreground">
+            {t("card.coverGradients")}
+          </ContextMenuLabel>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {COVER_GRADIENTS.map((entry) => (
+              <button
+                key={entry}
+                type="button"
+                aria-label={t(COVER_GRADIENT_KEYS[entry])}
+                data-testid={`ctx-cover-gradient-${entry}`}
+                onClick={() => onPick({ type: "gradient", value: entry })}
+                style={{ backgroundImage: COVER_GRADIENT_CSS[entry] }}
+                className={cn(
+                  "size-6 rounded-md border border-border/40 transition-transform hover:scale-105",
+                  cover?.type === "gradient" &&
+                    cover.value === entry &&
+                    "ring-2 ring-ring ring-offset-1 ring-offset-popover",
+                )}
+              />
+            ))}
+          </div>
+        </ContextMenuGroup>
         {cover ? (
           <Button
             type="button"
