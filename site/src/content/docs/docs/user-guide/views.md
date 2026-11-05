@@ -56,16 +56,49 @@ showing a summary and a live activity feed.
   agents) are online right now.
 - **Columns** (left): each column's card count, with its WIP limit when set.
 - **Online** (left): who is connected at this moment.
-- **Live activity** (right): a newest-first feed of every change — created and
+- **Live activity** (right): a newest-first feed of board activity — created and
   moved cards, edits with `from → to` diffs, labels, priorities, due dates,
   assignees, checklists and comments. New events arrive on their own; the page
   never reloads.
+- Long values are shortened initially; `Show full values` reveals the saved
+  values. Older entries may lack snapshots and cannot recover missing details.
 - **Paging**: the feed pages with `‹ 1 2 3 ›`, and `Per page` sets 20, 50 or
   100 rows. The first page stays live; browsing older pages pauses the stream.
 
 The watch view is deliberately plain — no animations, no hover effects, no
 color beyond the diff markers — so it can stay open on a screen as a status
 board.
+
+Watch is a collaboration feed, not a complete security audit. Board members
+with access to the board can see its command and activity history, including
+membership changes, comments and attachment events. Undo and redo appear as
+the resulting commands. The feed omits bookkeeping touches and old card edits
+without a recorded diff. Online presence is current state, not a history.
+Public link audits and administrative audit logs are separate and are not shown
+in Watch. New administrative actions that use board commands are labelled
+Administrator; older entries may show the board owner. Consult the
+administrative audit for the actual actor.
+Link views, automatic expiry and background file processing are not a complete
+event history in Watch. When a board is deleted its feed is unavailable.
+Archiving also closes the board view; its retained activity becomes visible
+again when the board is restored, subject to the retention period.
+Inline files in card descriptions follow the description edit and are not
+separate upload or removal events in Watch. Board creation and final deletion
+are not events that can be relied on in a surviving Watch feed.
+Command and activity records are cleaned up after the configured retention
+period (30 days by default); administrators can change that setting.
+
+| Event | Source | Watch |
+| --- | --- | --- |
+| Board, column, card, label and checklist commands | Command log | Visible to board members, except bookkeeping touches and edits without a snapshot |
+| Membership, comments and attachment uploads/deletions | Board activity | Visible to board members |
+| Public link creation, revocation and removal | Share audit | Separate from Watch |
+| Administrative actions | Administrative audit; some also use board commands | Only resulting board commands appear in Watch |
+| Presence, link views, automatic expiry and file processing | Current state or service-specific records | No complete event history in Watch |
+
+The share audit records link creation, revocation and deletion. Updating link
+settings, refreshing a snapshot and automatic expiry are not recorded as share
+audit events; it is not a complete log of the link lifecycle.
 
 ## Card density
 

@@ -28,6 +28,15 @@ Concurrent Playwright runs also need separate output directories: set
 Each run creates an isolated master account (`master@e2e.example`, password
 `e2e-master-password`), intended solely for the disposable test stack.
 
+`tests/app/views/` covers calendar and table card actions, watch column counts,
+view switching and persistence after reload. The watch scenarios cover board,
+column and card activity, diffs, comments, attachments, membership and paging.
+They also check the Undo/Redo controls, administrator attribution, viewer
+access and public-link secrecy. Each test has its own user and board.
+The retention and legacy-record scenarios additionally adjust their own feed
+rows in the disposable Docker database; they are skipped when using external
+development servers. E2E imports use `@/` for paths relative to `e2e/`.
+
 `tests/app/sharing/` covers public live and snapshot boards, read-only content,
 link limits and revocation, and iframe themes on a separate local origin. Its
 fixtures create a fresh user and board per test.

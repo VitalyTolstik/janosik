@@ -42,6 +42,7 @@ compose exec -T -e ADMIN_PASSWORD=e2e-master-password app \
 export E2E_SITE_URL="http://127.0.0.1:$port/"
 export E2E_APP_URL="${E2E_SITE_URL}app/"
 export E2E_MAIL_URL="http://127.0.0.1:$mail_port/"
+export E2E_COMPOSE_PROJECT="$project"
 export E2E_MASTER_EMAIL=master@e2e.example
 export E2E_MASTER_PASSWORD=e2e-master-password
 cd "$root"

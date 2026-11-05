@@ -934,12 +934,17 @@ export class AdminService {
       throw new BadRequestException("Board has no owner to act for");
     }
 
-    const response = await this.commands.apply(boardId, owner.user.id, {
-      commandId: dto.commandId ?? randomUUID(),
-      // `CreateCommandDto.action` is deliberately loose (the strict shared
-      // validator owns its shape); the wire type is already a BoardAction.
-      action: dto.action as unknown as Record<string, unknown>,
-    });
+    const response = await this.commands.apply(
+      boardId,
+      owner.user.id,
+      {
+        commandId: dto.commandId ?? randomUUID(),
+        // `CreateCommandDto.action` is deliberately loose (the strict shared
+        // validator owns its shape); the wire type is already a BoardAction.
+        action: dto.action as unknown as Record<string, unknown>,
+      },
+      { actorType: "admin" },
+    );
     await this.audit(admin, "board.command", "board", boardId, {
       title: board.title,
       type: dto.action.type,
@@ -975,7 +980,7 @@ export class AdminService {
         commandId: randomUUID(),
         action: { ...action, boardId, at: Date.now() },
       },
-      { allowOversize: true },
+      { allowOversize: true, actorType: "admin" },
     );
     return { response, actorEmail: owner.user.email };
   }

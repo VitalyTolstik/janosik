@@ -187,6 +187,79 @@ describe("WatchView (TASK-142)", () => {
     expect(feed).toHaveTextContent("Looks good");
   });
 
+  it("shows deleted comment text as the previous value", async () => {
+    hoisted.enabled.value = true;
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "activity",
+          id: "deleted",
+          at: Date.now(),
+          type: "comment_deleted",
+          actorId: "u-1",
+          cardId: "card-1",
+          changes: [{ field: "comment", from: "Old text", to: null }],
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWatch();
+    const entry = await screen.findByTestId("watch-entry");
+    expect(entry).toHaveTextContent("Old text");
+    expect(entry.querySelector(".line-through")).toHaveTextContent("Old text");
+    expect(entry).toHaveTextContent("→—");
+  });
+
+  it("does not drop fields when an entry has more than three changes", async () => {
+    hoisted.enabled.value = true;
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "command",
+          id: "many",
+          at: Date.now(),
+          type: "UPDATE_CARD",
+          actorId: "u-1",
+          cardId: "card-1",
+          changes: ["title", "description", "priority", "label"].map(
+            (field, index) => ({
+              field,
+              from: `old-${index}`,
+              to: `new-${index}`,
+            }),
+          ),
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWatch();
+    const entry = await screen.findByTestId("watch-entry");
+    expect(entry).toHaveTextContent("old-3");
+    expect(entry).toHaveTextContent("new-3");
+  });
+
+  it("names the member alongside their role change", async () => {
+    hoisted.enabled.value = true;
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "activity",
+          id: "role",
+          at: Date.now(),
+          type: "member_role_changed",
+          actorId: "u-1",
+          detail: "member@example.com",
+          changes: [{ field: "role", from: "MEMBER", to: "VIEWER" }],
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWatch();
+    const entry = await screen.findByTestId("watch-entry");
+    expect(entry).toHaveTextContent("member@example.com");
+    expect(entry).toHaveTextContent("MEMBER→VIEWER");
+  });
+
   it("pages the feed with numbered page buttons", async () => {
     hoisted.enabled.value = true;
     const now = Date.now();

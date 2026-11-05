@@ -102,6 +102,27 @@ export function commandDetails(
     case "MOVE_CARD": {
       const from = columnTitle(before, action.cardId);
       const to = columnTitle(after, action.cardId);
+      if (action.fromColumnId === action.toColumnId) {
+        const fromIndex =
+          before.columns
+            .find((column) => column.id === action.fromColumnId)
+            ?.cardIds.indexOf(action.cardId) ?? -1;
+        const toIndex =
+          after.columns
+            .find((column) => column.id === action.toColumnId)
+            ?.cardIds.indexOf(action.cardId) ?? -1;
+        if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return null;
+        return {
+          ...(to !== null ? { detail: to } : {}),
+          changes: [
+            {
+              field: "position",
+              from: String(fromIndex + 1),
+              to: String(toIndex + 1),
+            },
+          ],
+        };
+      }
       if (from === to) return null;
       return {
         ...(to !== null ? { detail: to } : {}),
@@ -150,8 +171,6 @@ export function commandDetails(
 
     // Column commands that are not a value diff still name the column.
     case "MOVE_COLUMN":
-    case "SORT_COLUMN":
-    case "SET_COLUMN_CARD_ORDER":
     case "ARCHIVE_COLUMN_CARDS": {
       const title =
         after.columns.find((column) => column.id === action.columnId)?.title ??
@@ -160,11 +179,47 @@ export function commandDetails(
       return { detail: clip(title) ?? undefined };
     }
 
+    case "SORT_COLUMN":
+    case "SET_COLUMN_CARD_ORDER": {
+      const previous = before.columns.find(
+        (column) => column.id === action.columnId,
+      );
+      const current = after.columns.find(
+        (column) => column.id === action.columnId,
+      );
+      const names = (board: Board, ids: string[]) =>
+        ids.map((id) => board.cards[id]?.title ?? id).join(", ");
+      const from = names(before, previous?.cardIds ?? []);
+      const to = names(after, current?.cardIds ?? []);
+      return {
+        detail: clip(current?.title ?? previous?.title ?? null) ?? undefined,
+        ...(from === to
+          ? {}
+          : {
+              // Column size and card titles are already bounded by LIMITS.
+              // Truncating here would hide changes near the end of the order.
+              changes: [{ field: "cardOrder", from, to }],
+            }),
+      };
+    }
+
     case "SET_COLUMN_WIP_LIMIT": {
-      const title =
-        after.columns.find((column) => column.id === action.columnId)?.title ??
-        null;
-      return { detail: clip(title) ?? undefined };
+      const previous = before.columns.find(
+        (column) => column.id === action.columnId,
+      );
+      const current = after.columns.find(
+        (column) => column.id === action.columnId,
+      );
+      return {
+        detail: clip(current?.title ?? null) ?? undefined,
+        changes: [
+          {
+            field: "wipLimit",
+            from: previous?.wipLimit == null ? null : String(previous.wipLimit),
+            to: current?.wipLimit == null ? null : String(current.wipLimit),
+          },
+        ],
+      };
     }
 
     case "DUPLICATE_CARD": {
