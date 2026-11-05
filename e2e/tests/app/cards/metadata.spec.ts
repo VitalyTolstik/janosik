@@ -15,12 +15,18 @@ test("edit description, labels, due date, assignee and linked cards", async ({
     .filter({ has: page.getByTestId("card-description-toggle") })
     .locator('[contenteditable="true"]');
   await description.fill("A detailed description");
-  await dialog.getByRole("button", { name: "New label" }).click();
-  await dialog.getByPlaceholder("Label name").fill("Important");
-  await dialog.getByRole("button", { name: "Create", exact: true }).click();
+  await dialog.getByRole("button", { name: "Labels" }).click();
+  await page.getByRole("button", { name: "New label" }).click();
+  await page.getByPlaceholder("Label name").fill("Important");
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Important" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.keyboard.press("Escape");
   await expect(
-    dialog.getByRole("button", { name: "Important" }),
-  ).toHaveAttribute("aria-pressed", "true");
+    dialog.getByText("Important", { exact: true }).first(),
+  ).toBeVisible();
   await dialog.getByTestId("due-date-trigger").click();
   await page.locator('[data-slot="calendar"] button[data-day]').nth(15).click();
   await expect(page.getByTestId("due-date-remove")).toBeVisible();
@@ -30,6 +36,8 @@ test("edit description, labels, due date, assignee and linked cards", async ({
   await expect(dialog.getByTestId("card-assignee-trigger")).not.toContainText(
     "Unassigned",
   );
+  await expect(dialog.getByTestId("card-links")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Link card" }).click();
   await dialog.getByTestId("card-links-input").fill("Related task");
   await dialog.getByTestId("card-links-suggestion").click();
   await expect(dialog.getByTestId("card-link-row")).toContainText(
@@ -43,8 +51,8 @@ test("edit description, labels, due date, assignee and linked cards", async ({
   await page.getByTestId("card-title").filter({ hasText: "Main task" }).click();
   await expect(description).toContainText("A detailed description");
   await expect(
-    dialog.getByRole("button", { name: "Important" }),
-  ).toHaveAttribute("aria-pressed", "true");
+    dialog.getByText("Important", { exact: true }).first(),
+  ).toBeVisible();
   await expect(dialog.getByTestId("due-date-trigger")).not.toContainText(
     "Set due date",
   );

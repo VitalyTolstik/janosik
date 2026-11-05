@@ -49,7 +49,8 @@ test("create, edit, drag, duplicate, archive, restore and delete a card", async 
   await page.reload();
   await doing.getByRole("group", { name: "Updated task", exact: true }).focus();
   await page.keyboard.press("Enter");
-  await dialog.getByRole("button", { name: "Duplicate card" }).click();
+  await dialog.getByRole("button", { name: "Card actions" }).click();
+  await page.getByRole("menuitem", { name: "Duplicate card" }).click();
   await expect(
     doing.getByTestId("card-title").filter({ hasText: "Copy of Updated task" }),
   ).toBeVisible();
@@ -57,7 +58,8 @@ test("create, edit, drag, duplicate, archive, restore and delete a card", async 
     .getByTestId("card-title")
     .filter({ hasText: /^Updated task$/ })
     .click();
-  await dialog.getByRole("button", { name: "Archive", exact: true }).click();
+  await dialog.getByRole("button", { name: "Card actions" }).click();
+  await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
   await dialog
     .getByRole("button", { name: "Close", exact: true })
     .first()
@@ -77,7 +79,8 @@ test("create, edit, drag, duplicate, archive, restore and delete a card", async 
   await page.reload();
   await expect(todo.getByTestId("card-title")).toBeVisible();
   await todo.getByTestId("card-title").click();
-  await dialog.getByRole("button", { name: "Delete card" }).click();
+  await dialog.getByRole("button", { name: "Card actions" }).click();
+  await page.getByRole("menuitem", { name: "Delete card" }).click();
   await page
     .getByRole("dialog", { name: "Delete this card?" })
     .getByRole("button", { name: "Delete", exact: true })

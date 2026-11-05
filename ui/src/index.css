@@ -122,8 +122,7 @@
     background: color-mix(in oklab, var(--primary) 30%, transparent);
   }
 
-  /* Tactile press feedback on every pressable control — a subtle scale-down
-     confirms the interface heard the press (design-engineering rule). */
+  /* Popup anchors stay still so their menus do not move after opening. */
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]) {
     transition:
@@ -132,8 +131,12 @@
       color var(--janosik-duration-fast) var(--janosik-ease-out),
       transform var(--janosik-duration-press) var(--janosik-ease-out);
   }
-  button:not(:disabled):active,
-  [role="button"]:not([aria-disabled="true"]):active {
+  button:not(:disabled):not(
+      [aria-haspopup]:not([aria-haspopup="false"])
+    ):active,
+  [role="button"]:not([aria-disabled="true"]):not(
+      [aria-haspopup]:not([aria-haspopup="false"])
+    ):active {
     transform: scale(0.97);
   }
 
@@ -1096,4 +1099,67 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
 [data-watch] *::after {
   animation: none !important;
   transition: none !important;
+}
+
+/* Card details: one quiet property rhythm, without button-sized gaps. */
+.card-details-properties > div:has(> span:first-child) {
+  display: grid;
+  grid-template-columns: 5.25rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+.card-details-properties > div:has(> span:first-child) > button,
+.card-details-properties > div:has(> span:first-child) > [data-state] {
+  min-width: 0;
+  width: 100%;
+  justify-content: flex-start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 767px) {
+  .card-details-properties {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 1rem;
+  }
+  .card-details-properties > div:has(> span:first-child) {
+    display: block;
+    min-width: 0;
+  }
+  .card-details-properties > div:has(> span:first-child) > span:first-child {
+    display: block;
+    margin-bottom: 0.35rem;
+  }
+  .card-details-properties > button,
+  .card-details-properties > div:has(> span:first-child):last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+.card-details-dialog
+  .mdxeditor.janosik-mdx
+  .janosik-md-content:not(.janosik-md-compact):not(.janosik-md-flush) {
+  min-height: 128px;
+}
+
+/* Reveal the copy action on pointer hover as well as keyboard focus. */
+.card-title-row:hover .card-title-copy,
+.card-title-row:focus-within .card-title-copy {
+  opacity: 1;
+}
+
+@keyframes card-copy-success {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .card-copy-success {
+    animation: card-copy-success 180ms ease-out;
+  }
 }

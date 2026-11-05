@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ArrowUpRight, CornerDownLeft, Link2, X } from "lucide-react";
 
@@ -36,6 +36,9 @@ interface CardLinksProps {
   cardId: string;
   board: Board;
   readOnly?: boolean;
+  showEmpty?: boolean;
+  onAdd?: () => void;
+  onCancel?: () => void;
 }
 
 /**
@@ -50,7 +53,14 @@ interface CardLinksProps {
  * cycles); the UI checks the two refusable ones up front so the user gets
  * a toast instead of a silently dropped command.
  */
-export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
+export function CardLinks({
+  cardId,
+  board,
+  readOnly = false,
+  showEmpty = true,
+  onAdd,
+  onCancel,
+}: CardLinksProps) {
   const { t } = useI18n();
   const { addCardLink, removeCardLink } = useBoardActions();
   const toast = useToast();
@@ -76,6 +86,25 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
     setCursor(0);
   }
   const inputRef = useRef<HTMLInputElement>(null);
+  const sectionRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showEmpty || !onCancel) return;
+    const handleOutside = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        !(target instanceof Element) ||
+        sectionRef.current?.contains(target) ||
+        target.closest("[data-card-links-picker]")
+      )
+        return;
+      setQuery("");
+      setCursor(0);
+      onCancel();
+    };
+    document.addEventListener("pointerdown", handleOutside, true);
+    return () =>
+      document.removeEventListener("pointerdown", handleOutside, true);
+  }, [showEmpty, onCancel]);
   const listId = useId();
 
   const facts = useMemo(
@@ -109,6 +138,7 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
   // an editor also needs it when the card holds nothing but dangling rows,
   // because those are what is holding the cap.
   if (readOnly && facts.degree === 0) return null;
+  if (!onAdd && !showEmpty && groups.length === 0) return null;
 
   const pick = (target: { id: string; title: string }) => {
     // "is blocked by X" stores a blocks row on X pointing back here, so the
@@ -130,7 +160,8 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
     addCardLink(holderId, otherId, option.linkType);
     setQuery("");
     setCursor(0);
-    inputRef.current?.focus();
+    if (onCancel) onCancel();
+    else inputRef.current?.focus();
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -172,12 +203,39 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
     option.holder === "source" && linkCount(cardId) >= LIMITS.linksPerCard;
 
   return (
-    <div className="space-y-1.5" data-testid="card-links">
-      <span className="text-xs font-medium text-muted-foreground">
-        {t("card.links.title")}
-      </span>
+    <div ref={sectionRef} className="space-y-1.5" data-testid="card-links">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-muted-foreground">
+          {t("card.links.title")}
+        </span>
+        {!readOnly && onAdd && !showEmpty && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground"
+            onClick={onAdd}
+          >
+            <Link2 className="h-3.5 w-3.5" />
+            {t("card.menu.linkCard")}
+          </Button>
+        )}
+        {!readOnly && onCancel && showEmpty && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground"
+            onClick={() => {
+              setQuery("");
+              setCursor(0);
+              onCancel();
+            }}
+          >
+            {t("common.cancel")}
+          </Button>
+        )}
+      </div>
 
-      {groups.length === 0 ? (
+      {groups.length === 0 && !showEmpty ? null : groups.length === 0 ? (
         <p
           className="text-sm text-muted-foreground/70"
           data-testid="card-links-empty"
@@ -266,7 +324,7 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
         </div>
       )}
 
-      {!readOnly ? (
+      {!readOnly && (showEmpty || (!onAdd && groups.length > 0)) ? (
         <div className="flex items-center gap-1.5">
           <DropdownPicker
             value={option}
@@ -396,7 +454,11 @@ function DropdownPicker({
           </span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-52">
+      <DropdownMenuContent
+        align="start"
+        className="w-52"
+        data-card-links-picker
+      >
         <DropdownMenuLabel>{t("card.links.typeAria")}</DropdownMenuLabel>
         {LINK_TYPE_OPTIONS.map((entry) => (
           <DropdownMenuItem

@@ -116,7 +116,16 @@ async function openCardDialog(title: string) {
   return await screen.findByRole("dialog");
 }
 
+async function ensureLinkEditor(dialog: HTMLElement) {
+  if (!within(dialog).queryByTestId("card-links-input")) {
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Link card" }),
+    );
+  }
+}
+
 async function linkCard(dialog: HTMLElement, query: string) {
+  await ensureLinkEditor(dialog);
   const input = within(dialog).getByTestId("card-links-input");
   await userEvent.type(input, query);
   const list = await within(dialog).findByTestId("card-links-suggestions");
@@ -125,22 +134,50 @@ async function linkCard(dialog: HTMLElement, query: string) {
 }
 
 async function chooseRelation(dialog: HTMLElement, option: string) {
+  await ensureLinkEditor(dialog);
   await userEvent.click(within(dialog).getByTestId("card-links-type"));
   await userEvent.click(await screen.findByTestId(`card-links-type-${option}`));
 }
 
 describe("CardLinks (TASK-46)", () => {
+  it("keeps the editor open while choosing a relation, then closes on an outside click", async () => {
+    renderBoard();
+    const dialog = await openCardDialog("Set up CI/CD pipeline");
+    await ensureLinkEditor(dialog);
+    await userEvent.type(within(dialog).getByTestId("card-links-input"), "Fix");
+    await chooseRelation(dialog, "blocks");
+    expect(within(dialog).getByTestId("card-links-input")).toHaveValue("Fix");
+    await userEvent.click(within(dialog).getByText("Description"));
+    expect(within(dialog).queryByTestId("card-links-input")).toBeNull();
+    await ensureLinkEditor(dialog);
+    expect(within(dialog).getByTestId("card-links-input")).toHaveValue("");
+  });
+
+  it("cancels the link editor and clears its search", async () => {
+    renderBoard();
+    const dialog = await openCardDialog("Set up CI/CD pipeline");
+    await ensureLinkEditor(dialog);
+    await userEvent.type(within(dialog).getByTestId("card-links-input"), "Fix");
+    await userEvent.click(
+      within(within(dialog).getByTestId("card-links")).getByRole("button", {
+        name: "Cancel",
+      }),
+    );
+    expect(within(dialog).queryByTestId("card-links-input")).toBeNull();
+    await ensureLinkEditor(dialog);
+    expect(within(dialog).getByTestId("card-links-input")).toHaveValue("");
+  });
   it("adds a link through the autocomplete and shows it on both cards", async () => {
     renderBoard();
     const dialog = await openCardDialog("Set up CI/CD pipeline");
 
     await linkCard(dialog, "Fix critical");
-    // The row lands under "relates to", the input resets.
+    // The row lands under "relates to" and the editor closes.
     expect(await within(dialog).findByTestId("card-link-row")).toHaveAttribute(
       "data-link-type",
       "relates_to",
     );
-    expect(within(dialog).getByTestId("card-links-input")).toHaveValue("");
+    expect(within(dialog).queryByTestId("card-links-input")).toBeNull();
 
     // Opening the linked card re-points the `?card=` deep link; the dialog
     // then reads the same pair from the other end.
@@ -157,6 +194,7 @@ describe("CardLinks (TASK-46)", () => {
     const dialog = await openCardDialog("Set up CI/CD pipeline");
     await linkCard(dialog, "Fix critical");
 
+    await ensureLinkEditor(dialog);
     const input = within(dialog).getByTestId("card-links-input");
     await userEvent.type(input, "Fix");
     // The only "Fix critical …" card is taken — no suggestions remain.
@@ -170,7 +208,12 @@ describe("CardLinks (TASK-46)", () => {
     expect(await within(dialog).findByTestId("card-link-row")).toBeDefined();
 
     fireEvent.click(within(dialog).getByTestId("card-link-remove"));
-    expect(await within(dialog).findByTestId("card-links-empty")).toBeDefined();
+    await waitFor(() =>
+      expect(within(dialog).queryByTestId("card-link-row")).toBeNull(),
+    );
+    expect(
+      within(dialog).getByRole("button", { name: "Link card" }),
+    ).toBeDefined();
   });
 
   it("renders a row towards a deleted card so its cap can be freed", async () => {
@@ -192,7 +235,9 @@ describe("CardLinks (TASK-46)", () => {
 
     // Removing it is what frees the card's row cap.
     fireEvent.click(within(row).getByTestId("card-link-remove"));
-    expect(await within(dialog).findByTestId("card-links-empty")).toBeDefined();
+    await waitFor(() =>
+      expect(within(dialog).queryByTestId("card-link-row")).toBeNull(),
+    );
   });
 
   it("does not count a deleted target on the card front badge", async () => {

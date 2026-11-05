@@ -32,11 +32,10 @@ A viewer sees only the read-only actions: `Open card`, `Copy card link` and
 
 ## The card dialog
 
-![The card dialog: title, description editor, labels, priority, due date, assignee and linked cards.](/screens/card-dialog.png)
-
-The dialog opens as a near full-height panel. Its header reads `Card details`,
-and a copy-link button appears when you hover it. The body scrolls while the
-action footer stays reachable.
+The dialog opens as a near full-height panel. The title and selected labels are
+at the top; hover or focus the title to copy a link to the card. The content
+scrolls, with properties alongside it on wider screens and directly below the
+header on smaller screens. Use the actions menu next to the close button for card actions.
 
 ### Title
 
@@ -61,7 +60,7 @@ the server.
 
 ### Labels
 
-The `Label` row is a multi-select picker. Click a chip to toggle it, or use
+Use `New label` under the title to open the label picker. Click a chip to toggle it, or use
 `New label` to create one with a name and a color. Each chip has a menu to
 rename, change its color or delete it (deleting removes the label from every card).
 
@@ -99,7 +98,8 @@ no contract.
 
 ### Linked cards
 
-The `Linked cards` section connects cards with a relation. Pick a relation
+Choose `Link card` in the linked cards section to connect cards. The `Linked cards`
+section appears when there are links to show. Pick a relation
 from `blocks`, `is blocked by`, `relates to`, `duplicates` or `is duplicated
 by`, then search for a card and press Enter. A link row opens the linked card;
 a remove button appears on hover. A `blocks` link that would create a circular
@@ -153,14 +153,14 @@ is disabled in the list.
 
 ## Duplicate, archive and delete
 
-At the foot of the dialog you can `Duplicate card`, `Archive` the card, or
-delete it.
+Open the actions menu next to the close button to `Duplicate card`, `Archive`
+the card, or delete it.
 
 - **Duplicate** copies the card's content into the same column, immediately
   below the original. It is disabled when the column has reached its card limit.
 - **Archive** takes a card off the board but keeps it: archived cards stay in
-  search and in the card archive, and the dialog footer flips to `Send back to
-  board`, which restores the card to a column you pick.
+  search and in the card archive, and the dialog shows `Send back to board`, which restores the card to a
+  column you pick.
 - **Delete** asks for confirmation and removes the card permanently. From the
   archive, the same action reads `Delete forever`.
 

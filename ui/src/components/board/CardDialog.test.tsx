@@ -463,7 +463,10 @@ describe("CardDialog duplicate", () => {
   it("duplicates a card from the dialog: copy appears right below the original", async () => {
     const dialog = await openCardDialog("Design the new onboarding flow");
     await userEvent.click(
-      within(dialog).getByRole("button", { name: "Duplicate card" }),
+      within(dialog).getByRole("button", { name: "Card actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Duplicate card" }),
     );
     // Dialog closes and the copy renders on the board below the original.
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -632,9 +635,12 @@ describe("CardDialog duplicate (column limits)", () => {
     renderBoard();
     fireEvent.click(await screen.findByText("Packed card"));
     const dialog = await screen.findByRole("dialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Card actions" }),
+    );
     expect(
-      within(dialog).getByRole("button", { name: "Duplicate card" }),
-    ).toBeDisabled();
+      await screen.findByRole("menuitem", { name: "Duplicate card" }),
+    ).toHaveAttribute("aria-disabled", "true");
   });
 
   it("keeps Duplicate card enabled while the column has room", async () => {
@@ -642,9 +648,12 @@ describe("CardDialog duplicate (column limits)", () => {
     renderBoard();
     fireEvent.click(await screen.findByText("Packed card"));
     const dialog = await screen.findByRole("dialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Card actions" }),
+    );
     expect(
-      within(dialog).getByRole("button", { name: "Duplicate card" }),
-    ).toBeEnabled();
+      await screen.findByRole("menuitem", { name: "Duplicate card" }),
+    ).not.toHaveAttribute("aria-disabled");
   });
 });
 
@@ -722,7 +731,10 @@ describe("CardDialog delete confirmation (TASK-21.11)", () => {
     const dialog = await openCardDialog("Design the new onboarding flow");
 
     await userEvent.click(
-      within(dialog).getByRole("button", { name: "Delete card" }),
+      within(dialog).getByRole("button", { name: "Card actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Delete card" }),
     );
     const confirm = await screen.findByRole("dialog", {
       name: "Delete this card?",
@@ -740,7 +752,10 @@ describe("CardDialog delete confirmation (TASK-21.11)", () => {
     const dialog = await openCardDialog("Design the new onboarding flow");
 
     await userEvent.click(
-      within(dialog).getByRole("button", { name: "Delete card" }),
+      within(dialog).getByRole("button", { name: "Card actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Delete card" }),
     );
     const confirm = await screen.findByRole("dialog", {
       name: "Delete this card?",
@@ -771,7 +786,10 @@ describe("CardDialog archive", () => {
     const dialog = await openCardDialog("Design the new onboarding flow");
 
     await userEvent.click(
-      within(dialog).getByRole("button", { name: "Archive" }),
+      within(dialog).getByRole("button", { name: "Card actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Archive" }),
     );
 
     // The card leaves the board but the dialog stays, offering the restore.
@@ -788,23 +806,25 @@ describe("CardDialog layout (fixed visual order)", () => {
     localStorage.clear();
   });
 
-  it("orders the body: title, created/updated, description, labels, priority, due date", async () => {
+  it("keeps the title and labels above the content, with properties in the sidebar", async () => {
     const dialog = await openCardDialog("Design the new onboarding flow");
-
-    const chain = [
-      within(dialog).getByLabelText("Title"),
-      within(dialog).getByText(/Created /),
-      within(dialog).getAllByText("Description")[0],
-      within(dialog).getByText("Label"),
-      within(dialog).getByText("Priority"),
-      within(dialog).getByText("Due date"),
-    ];
-    for (let i = 1; i < chain.length; i += 1) {
-      expect(
-        chain[i - 1].compareDocumentPosition(chain[i]) &
-          Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
-    }
+    const title = within(dialog).getByLabelText("Title");
+    const labels = within(dialog).getByRole("button", { name: "Labels" });
+    const content = within(dialog).getByRole("main");
+    const sidebar = within(dialog).getByRole("complementary");
+    expect(
+      title.compareDocumentPosition(labels) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      labels.compareDocumentPosition(content) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(within(content).getByText("Description")).toBeInTheDocument();
+    expect(within(sidebar).getByText("Priority")).toBeInTheDocument();
+    expect(within(sidebar).getByText("Due date")).toBeInTheDocument();
+    expect(within(sidebar).getByTestId("card-dates")).toHaveTextContent(
+      "Created",
+    );
   });
 
   it("keeps copy link in the header, next to the title, revealed on hover", async () => {
@@ -814,10 +834,14 @@ describe("CardDialog layout (fixed visual order)", () => {
     // Hover-reveal: transparent until the header is hovered (or focused).
     const wrapper = button.closest("span");
     expect(wrapper?.className).toContain("opacity-0");
-    expect(wrapper?.className).toContain("group-hover/header:opacity-100");
+    expect(wrapper?.className).toContain("group-hover/title:opacity-100");
+    expect(wrapper?.className).toContain(
+      "group-focus-within/title:opacity-100",
+    );
     // …and it lives in the fixed header, not the scrollable body.
     const title = within(dialog).getByText("Card details");
-    expect(button.closest(".overflow-y-auto")).toBeNull();
-    expect(title.closest(".overflow-y-auto")).toBeNull();
+    expect(button.closest(".overflow-y-auto")).toBe(
+      title.closest(".overflow-y-auto"),
+    );
   });
 });
