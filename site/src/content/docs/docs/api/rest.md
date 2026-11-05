@@ -130,6 +130,13 @@ part. `CardAccessGuard` resolves the owning board from the card or attachment.
 
 `POST` accepts `?inline=1` (or `?inline=true`) to mark the blob as
 body-embedded media: hidden from the list, no counter and no activity. The
+`?description=1` option marks a file pasted into a description: it appears in
+the list when referenced and is hidden when no live description or comment
+references it. Hidden files remain accessible and count toward the limit, so
+description undo/redo and existing snapshots can restore them. Use
+`GET /cards/:cardId/attachments?detached=1` to list hidden files for cleanup.
+The options
+are mutually exclusive; `inline` takes precedence. The
 file is at most `LIMITS.attachmentSize` (25 MB). The server enforces a MIME
 allowlist and sniffs the magic bytes for image, video, audio and archive
 types; a client that declares one of those types but uploads unrecognizable

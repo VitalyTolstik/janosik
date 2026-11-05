@@ -168,6 +168,7 @@ export class TranscodeService implements OnModuleInit {
         cardId: true,
         boardId: true,
         storedName: true,
+        mimeType: true,
         transcodeStatus: true,
       },
     });
@@ -182,6 +183,23 @@ export class TranscodeService implements OnModuleInit {
     try {
       await this.encode(original, tmpOutput);
 
+      const [encoded, source] = await Promise.all([
+        stat(tmpOutput),
+        stat(original),
+      ]);
+      if (row.mimeType === "video/mp4" && encoded.size >= source.size) {
+        await rm(tmpOutput, { force: true });
+        const updated = await this.prisma.attachment.updateMany({
+          where: { id: row.id, deletedAt: null, transcodeStatus: "pending" },
+          data: { transcodeStatus: "done" },
+        });
+        if (updated.count > 0) {
+          this.processed += 1;
+          this.publish(row);
+        }
+        return;
+      }
+
       // A poster-quality re-encode: swap the blob, update the metadata —
       // the content URL never changes, so players just keep working.
       const finalName = `${randomUUID()}.mp4`;
@@ -189,7 +207,7 @@ export class TranscodeService implements OnModuleInit {
       await rename(tmpOutput, finalPath);
       const { size } = await stat(finalPath);
       const updated = await this.prisma.attachment.updateMany({
-        where: { id: row.id, deletedAt: null },
+        where: { id: row.id, deletedAt: null, transcodeStatus: "pending" },
         data: {
           storedName: finalName,
           mimeType: "video/mp4",

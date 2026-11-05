@@ -360,6 +360,19 @@ export class CommandsService {
     // before this, so nothing half-applied is ever announced.
     for (const event of applied.events) {
       this.realtime.publish(boardId, event);
+      if (
+        event.action.type === "UPDATE_CARD" &&
+        event.action.description !== undefined
+      ) {
+        this.realtime.publish(boardId, {
+          type: "activity",
+          id: event.commandId ?? String(event.seq),
+          boardId,
+          actorId,
+          at: Date.now(),
+          kind: "attachment_updated",
+        });
+      }
     }
     return applied.responses;
   }

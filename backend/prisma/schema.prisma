@@ -531,6 +531,9 @@ model Attachment {
   // via its `content` URL instead of the attachment list — hidden from
   // `list()` and excluded from the card-face `attachmentCount`.
   isInline         Boolean   @default(false)
+  // Description uploads remain available for undo and snapshots when detached.
+  descriptionEmbed Boolean   @default(false)
+  descriptionDetached Boolean @default(false)
   // TASK-50 video "ужиматор": video uploads re-encode to a compact H.264
   // MP4 in a background job (original kept until the encode succeeds).
   // `none` — not a video (or transcode disabled), `pending` — queued/

@@ -66,6 +66,7 @@ export class AttachmentsController {
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @UploadedFile() file: UploadedBlob,
     @Query("inline") inline?: string,
+    @Query("description") description?: string,
   ): Promise<AttachmentDto> {
     return this.attachments.create(
       cardId,
@@ -73,13 +74,17 @@ export class AttachmentsController {
       file,
       inline === "1" || inline === "true",
       actorTypeOf(principal),
+      description === "1",
     );
   }
 
   /** Live attachments of one card, newest-first. */
   @Get("cards/:cardId/attachments")
-  list(@Param("cardId") cardId: string): Promise<AttachmentDto[]> {
-    return this.attachments.list(cardId);
+  list(
+    @Param("cardId") cardId: string,
+    @Query("detached") detached?: string,
+  ): Promise<AttachmentDto[]> {
+    return this.attachments.list(cardId, undefined, detached === "1");
   }
 
   /**

@@ -124,6 +124,32 @@ describe("BoardHistory", () => {
     expect(history.steps()).toHaveLength(1);
   });
 
+  it("starts a new undo step when editing resumes after the touch", () => {
+    const history = new BoardHistory();
+    let board = freshBoard();
+    const original = board.cards["card-1"].title;
+    const first = updateCard("card-1", "First", { quiet: true });
+    history.push(board, first);
+    board = apply(board, first);
+    const touch: BoardAction = {
+      type: "TOUCH_CARD",
+      cardId: "card-1",
+      at: AT + 1,
+    };
+    history.push(board, touch);
+    board = apply(board, touch);
+    const second = updateCard("card-1", "Second", { quiet: true });
+    history.push(board, second);
+    board = apply(board, second);
+    board = apply(board, history.undo()!);
+    expect(board.cards["card-1"].title).toBe("First");
+    board = apply(board, history.undo()!);
+    expect(board.cards["card-1"].title).toBe(original);
+    board = apply(board, history.redo()!);
+    board = apply(board, history.redo()!);
+    expect(board.cards["card-1"].title).toBe("Second");
+  });
+
   it("redo replays the text, not the debounced touch", () => {
     const history = new BoardHistory();
     const before = freshBoard();

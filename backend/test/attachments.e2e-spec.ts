@@ -170,6 +170,83 @@ describe("Attachments (TASK-47)", () => {
     await db.user.deleteMany();
   }
 
+  it("detaches description uploads reversibly while preserving ordinary files and shared references", async () => {
+    const id = randomUUID();
+    const command = async (action: Record<string, unknown>) =>
+      server()
+        .post(`/api/v1/boards/${boardId}/commands`)
+        .set(auth(admin.token))
+        .send({
+          commandId: randomUUID(),
+          action: { ...action, at: Date.now() },
+        })
+        .expect(200);
+    await command({
+      type: "ADD_CARD",
+      newCardId: id,
+      columnId: "col-1",
+      title: "Description media",
+    });
+    const uploaded = await server()
+      .post(`/api/v1/cards/${id}/attachments?description=1`)
+      .set(auth(admin.token))
+      .attach("file", png, { filename: "inline.png", contentType: "image/png" })
+      .expect(201);
+    const ordinary = await server()
+      .post(`/api/v1/cards/${id}/attachments`)
+      .set(auth(admin.token))
+      .attach("file", png, {
+        filename: "ordinary.png",
+        contentType: "image/png",
+      })
+      .expect(201);
+    const embedded = `![image](/api/v1/attachments/${uploaded.body.id}/content)`;
+    const update = (description: string) =>
+      command({ type: "UPDATE_CARD", cardId: id, description });
+    const listed = async () =>
+      (
+        await server()
+          .get(`/api/v1/cards/${id}/attachments`)
+          .set(auth(admin.token))
+          .expect(200)
+      ).body.map((file: { id: string }) => file.id);
+    await update(embedded);
+    await update("");
+    expect(await listed()).toEqual([ordinary.body.id]);
+    await server()
+      .get(`/api/v1/attachments/${uploaded.body.id}/content`)
+      .set(auth(admin.token))
+      .expect(200);
+    await update(embedded); // undo
+    expect(await listed()).toEqual(
+      expect.arrayContaining([ordinary.body.id, uploaded.body.id]),
+    );
+    await update(""); // redo
+    expect(await listed()).toEqual([ordinary.body.id]);
+    const detached = await server()
+      .get(`/api/v1/cards/${id}/attachments?detached=1`)
+      .set(auth(admin.token))
+      .expect(200);
+    expect(detached.body.map((file: { id: string }) => file.id)).toEqual([
+      uploaded.body.id,
+    ]);
+    await update(embedded);
+    const comment = await server()
+      .post(`/api/v1/cards/${id}/comments`)
+      .set(auth(admin.token))
+      .send({ text: embedded })
+      .expect(201);
+    await update("");
+    expect(await listed()).toContain(uploaded.body.id);
+    await server()
+      .delete(`/api/v1/comments/${comment.body.id}`)
+      .set(auth(admin.token))
+      .expect(200);
+    expect(await listed()).toEqual([ordinary.body.id]);
+    await update(embedded);
+    expect(await listed()).toContain(uploaded.body.id);
+  });
+
   it("uploads, lists and streams a file (members only)", async () => {
     const res = await server()
       .post(`/api/v1/cards/${cardId}/attachments`)

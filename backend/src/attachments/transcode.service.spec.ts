@@ -1,4 +1,7 @@
 import { buildTranscodeArgs, TranscodeService } from "./transcode.service";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 /**
  * The TASK-50 encode profile: ≤1080p x264 CRF 25 + faststart — the actual
@@ -19,6 +22,67 @@ describe("buildTranscodeArgs", () => {
     expect(args[args.indexOf("-c:a") + 1]).toBe("aac");
     expect(args[args.indexOf("-vf") + 1]).toContain("min(1920,iw)");
   });
+});
+
+describe("transcode output size", () => {
+  it.each([
+    ["video/mp4", 5, true],
+    ["video/mp4", 10, false],
+    ["video/mp4", 15, false],
+    ["video/quicktime", 15, true],
+  ])(
+    "converts %s with a %i-byte result (replace: %s)",
+    async (mimeType, size, shouldReplace) => {
+      const dir = await mkdtemp(path.join(tmpdir(), "transcode-test-"));
+      try {
+        const original = path.join(dir, "original.mov");
+        await writeFile(original, Buffer.alloc(10, 1));
+        const prisma = {
+          attachment: {
+            findFirst: jest.fn().mockResolvedValue({
+              id: "a",
+              cardId: "c",
+              boardId: "b",
+              storedName: "original.mov",
+              mimeType,
+              transcodeStatus: "pending",
+            }),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          },
+        };
+        const realtime = { publish: jest.fn() };
+        const service = new TranscodeService(
+          prisma as never,
+          { attachmentPath: (name: string) => path.join(dir, name) } as never,
+          realtime as never,
+        );
+        jest
+          .spyOn(
+            service as unknown as {
+              encode: (input: string, output: string) => Promise<void>;
+            },
+            "encode",
+          )
+          .mockImplementation(async (_input, output) =>
+            writeFile(output, Buffer.alloc(size, 2)),
+          );
+        await service.process("a");
+        const data = prisma.attachment.updateMany.mock.calls[0][0].data;
+        expect(data.transcodeStatus).toBe("done");
+        if (shouldReplace) {
+          expect(data.mimeType).toBe("video/mp4");
+          expect((await readFile(path.join(dir, data.storedName))).length).toBe(
+            size,
+          );
+        } else {
+          expect(data.storedName).toBeUndefined();
+          expect(await readFile(original)).toEqual(Buffer.alloc(10, 1));
+        }
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 /**

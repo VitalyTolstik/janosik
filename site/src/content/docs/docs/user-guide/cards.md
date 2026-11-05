@@ -125,8 +125,25 @@ with a `done of total tasks` count.
 The `Attachments` section lists the card's files. Use `Add file` to upload
 one, `Download` to save it, and the trash button to delete it (only the
 uploader or a board admin can delete). Images show a thumbnail; other files
-show a type icon, their size and their date. A large image or video may show
-`Encoding…` while the server prepares a smaller copy.
+show a type icon, their size and their date. Files pasted into a description
+also appear here after the description is saved. Removing one from the
+description hides it from this list if it is no longer referenced by another
+description or comment. Undo restores it; redo hides it again. Files added
+directly stay until explicitly deleted. Older uploads are not automatically
+classified as description uploads.
+
+For undo and saved snapshots, hidden files remain stored and count toward the
+20-file limit. Expand `Removed from descriptions` to permanently delete them
+and free space; undo and snapshots can no longer restore a deleted file.
+Deleting a file explicitly can make it unavailable wherever it is referenced.
+
+When video processing is enabled, uploaded videos are converted in the
+background to H.264/AAC MP4. An MP4 original is kept if the result is no
+smaller; other video formats are converted for compatibility even if the
+result is larger. If conversion fails, the original stays available. Other
+files are not compressed. An MP4 container can contain codecs that a given
+browser cannot play, including when the original is kept. `Encoding…` appears
+while a video is processed.
 
 ### Move to column
 

@@ -148,8 +148,9 @@ describe("Video transcode (TASK-50)", () => {
       .expect(200);
     expect(content.headers["content-type"]).toBe("video/mp4");
     expect(content.body.length).toBeGreaterThan(0);
+    expect(content.body.length).toBeLessThanOrEqual(readFileSync(clip).length);
 
-    // The original blob is gone — the MP4 replaced it on disk.
+    // Either the smaller MP4 or the original remains available on disk.
     const stored = await db.attachment.findUniqueOrThrow({
       where: { id: original.body.id },
       select: { storedName: true },
@@ -174,6 +175,23 @@ describe("Video transcode (TASK-50)", () => {
       .set(auth(token))
       .expect(200);
     expect(Buffer.from(content.body).equals(broken)).toBe(true);
+  }, 120_000);
+
+  it("converts a QuickTime video to MP4 for browser playback", async () => {
+    const mov = Buffer.from(readFileSync(clip));
+    mov.write("qt  ", 8, "ascii");
+    const original = await upload("clip.mov", "video/quicktime", mov);
+    expect(original.body.mimeType).toBe("video/quicktime");
+    const converted = await waitStatus(original.body.id, "done");
+    expect((converted as unknown as { mimeType: string }).mimeType).toBe(
+      "video/mp4",
+    );
+    const content = await server()
+      .get(`/api/v1/attachments/${original.body.id}/content`)
+      .set(auth(token))
+      .expect(200);
+    expect(content.headers["content-type"]).toBe("video/mp4");
+    expect(content.body.length).toBeGreaterThan(0);
   }, 120_000);
 
   it("leaves non-video files at transcodeStatus none", async () => {

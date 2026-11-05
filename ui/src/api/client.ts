@@ -712,6 +712,12 @@ export class ApiClient {
     );
   }
 
+  listDetachedAttachments(cardId: string): Promise<AttachmentDto[]> {
+    return this.request<AttachmentDto[]>(
+      `/cards/${encodeURIComponent(cardId)}/attachments?detached=1`,
+    );
+  }
+
   /**
    * Upload one file (multipart); the server answers 400/413 on limits.
    * `inline` marks body-embedded media (pasted into a description/comment):
@@ -720,12 +726,12 @@ export class ApiClient {
   uploadAttachment(
     cardId: string,
     file: File,
-    opts: { inline?: boolean } = {},
+    opts: { inline?: boolean; description?: boolean } = {},
   ): Promise<AttachmentDto> {
     const form = new FormData();
     form.append("file", file, file.name);
     return this.request<AttachmentDto>(
-      `/cards/${encodeURIComponent(cardId)}/attachments${opts.inline ? "?inline=1" : ""}`,
+      `/cards/${encodeURIComponent(cardId)}/attachments${opts.inline ? "?inline=1" : opts.description ? "?description=1" : ""}`,
       { method: "POST", form },
     );
   }

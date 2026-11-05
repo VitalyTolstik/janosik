@@ -386,7 +386,9 @@ export function CardDialog({
       let ok = 0;
       for (const file of files) {
         try {
-          const attachment = await api.uploadAttachment(card.id, file);
+          const attachment = await api.uploadAttachment(card.id, file, {
+            description: true,
+          });
           descriptionEditorRef.current?.insertMarkdown(
             embedMarkdown(file, attachment.id),
           );
