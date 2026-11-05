@@ -19,6 +19,7 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import type { CreateCommentDto } from "./dto/create-comment.dto";
+import { reconcileDescriptionAttachments } from "@/commands/command-writers";
 
 /** Default page size of `GET /cards/:id/comments` (`?limit=`). */
 const DEFAULT_LIMIT = 50;
@@ -100,6 +101,7 @@ export class CommentsService {
             kind: dto.kind ?? DEFAULT_COMMENT_KIND,
           },
         });
+        await reconcileDescriptionAttachments(tx, boardId, undefined, text);
         // The comment changes the card face as well (TASK-36 attribution):
         // the commenter becomes `Card.lastActorId`, so a reload seeds the
         // same face the live SSE stamp just showed. `updatedAt` follows
@@ -233,6 +235,12 @@ export class CommentsService {
           where: { id: comment.id },
           data: { deletedAt: new Date() },
         });
+        await reconcileDescriptionAttachments(
+          tx,
+          comment.card.column.boardId,
+          comment.text,
+          undefined,
+        );
         const activity = await tx.activity.create({
           data: {
             boardId: comment.card.column.boardId,

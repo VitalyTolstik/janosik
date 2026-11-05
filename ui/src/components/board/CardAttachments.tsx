@@ -129,6 +129,7 @@ export function CardAttachments({
   const { activity } = useBoardLive();
 
   const [items, setItems] = useState<AttachmentDto[]>([]);
+  const [detachedItems, setDetachedItems] = useState<AttachmentDto[]>([]);
   const [uploading, setUploading] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<AttachmentDto | null>(
     null,
@@ -139,6 +140,7 @@ export function CardAttachments({
     if (!serverMode) return;
     try {
       setItems(await api.listAttachments(cardId));
+      setDetachedItems(await api.listDetachedAttachments(cardId));
     } catch {
       toast.error(t("card.attachments.loadError"));
     }
@@ -157,6 +159,7 @@ export function CardAttachments({
     if (!serverMode) return;
     try {
       setItems(await api.listAttachments(cardId));
+      setDetachedItems(await api.listDetachedAttachments(cardId));
     } catch {
       /* best effort: the next open or frame retries */
     }
@@ -165,10 +168,19 @@ export function CardAttachments({
   useEffect(() => {
     if (!serverMode) return;
     return activity.subscribe((event: ActivitySseEvent) => {
-      if (event.boardId !== boardId || event.cardId !== cardId) return;
+      if (
+        event.boardId !== boardId ||
+        (event.kind !== "comment_deleted" &&
+          event.kind !== "comment_added" &&
+          event.cardId &&
+          event.cardId !== cardId)
+      )
+        return;
       if (
         event.kind === "attachment_added" ||
         event.kind === "attachment_deleted" ||
+        event.kind === "comment_added" ||
+        event.kind === "comment_deleted" ||
         // TASK-50: the background encode swapped the blob — re-read the
         // row for the new size/mime/status (the content URL is unchanged).
         event.kind === "attachment_updated"
@@ -179,7 +191,8 @@ export function CardAttachments({
   }, [activity, boardId, cardId, serverMode, refreshNewest]);
 
   const canWrite = serverMode && !readOnly;
-  const atCap = items.length >= LIMITS.attachmentsPerCard;
+  const atCap =
+    items.length + detachedItems.length >= LIMITS.attachmentsPerCard;
 
   const onPick = async (file: File | undefined) => {
     if (!file || uploading) return;
@@ -218,6 +231,7 @@ export function CardAttachments({
     try {
       await api.deleteAttachment(target.id);
       setItems((prev) => prev.filter((item) => item.id !== target.id));
+      setDetachedItems((prev) => prev.filter((item) => item.id !== target.id));
     } catch {
       toast.error(t("card.attachments.deleteError"));
     }
@@ -299,6 +313,48 @@ export function CardAttachments({
         </ul>
       )}
 
+      {detachedItems.length > 0 && !readOnly ? (
+        <details
+          className="text-xs text-muted-foreground"
+          data-testid="card-detached-attachments"
+        >
+          <summary className="cursor-pointer">
+            {t("card.attachments.removedFromDescription", {
+              count: detachedItems.length,
+            })}
+          </summary>
+          <p className="mt-1">{t("card.attachments.removedHelp")}</p>
+          <ul className="space-y-1">
+            {detachedItems.map((attachment) => (
+              <li
+                key={attachment.id}
+                className="flex items-center gap-2 py-1"
+                data-testid="card-detached-attachment-row"
+              >
+                <span
+                  className="min-w-0 flex-1 truncate"
+                  title={attachment.fileName}
+                >
+                  {attachment.fileName}
+                </span>
+                {user?.id === attachment.uploadedById ||
+                me?.role === "ADMIN" ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    aria-label={t("card.attachments.remove")}
+                    onClick={() => setPendingDelete(attachment)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
       {canWrite ? (
         <>
           <input
@@ -331,7 +387,11 @@ export function CardAttachments({
       <ConfirmDialog
         open={pendingDelete !== null}
         title={t("card.attachments.deleteTitle")}
-        description={pendingDelete?.fileName}
+        description={
+          pendingDelete
+            ? `${pendingDelete.fileName} — ${t("card.attachments.deleteWarning")}`
+            : undefined
+        }
         confirmLabel={t("card.attachments.remove")}
         destructive
         onConfirm={() => void onConfirmDelete()}

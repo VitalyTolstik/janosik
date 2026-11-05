@@ -75,6 +75,7 @@ export class AttachmentsService {
     file: UploadedBlob,
     isInline = false,
     actorType: ActorType = "human",
+    descriptionEmbed = false,
   ): Promise<AttachmentDto> {
     // multer streamed the body to a `.tmp-*` file (TASK-155). Every exit path
     // removes it; a successful upload renamed it into the blob tree already.
@@ -85,7 +86,14 @@ export class AttachmentsService {
       });
     }
     try {
-      return await this.persist(cardId, user, file, isInline, actorType);
+      return await this.persist(
+        cardId,
+        user,
+        file,
+        isInline,
+        actorType,
+        descriptionEmbed && !isInline,
+      );
     } finally {
       await rm(file.path, { force: true }).catch(() => undefined);
     }
@@ -97,6 +105,7 @@ export class AttachmentsService {
     file: UploadedBlob,
     isInline = false,
     actorType: ActorType = "human",
+    descriptionEmbed = false,
   ): Promise<AttachmentDto> {
     if (file.size <= 0) {
       throw new BadRequestException({
@@ -214,12 +223,14 @@ export class AttachmentsService {
               sizeBytes: file.size,
               uploadedById: user.id,
               isInline,
+              descriptionEmbed,
+              descriptionDetached: descriptionEmbed,
               transcodeStatus,
               derivativeStatus,
               createdAt: now,
             },
           });
-          if (!isInline) {
+          if (!isInline && !descriptionEmbed) {
             await tx.card.update({
               where: { id: cardId },
               data: { attachmentCount: { increment: 1 } },
@@ -269,12 +280,17 @@ export class AttachmentsService {
     }
   }
 
-  async list(cardId: string, createdUpTo?: Date): Promise<AttachmentDto[]> {
+  async list(
+    cardId: string,
+    createdUpTo?: Date,
+    detached = false,
+  ): Promise<AttachmentDto[]> {
     const rows = await this.prisma.attachment.findMany({
       where: {
         cardId,
         deletedAt: null,
         isInline: false,
+        ...(!createdUpTo ? { descriptionDetached: detached } : {}),
         // Snapshot shares only show what existed at capture time.
         ...(createdUpTo ? { createdAt: { lte: createdUpTo } } : {}),
       },
@@ -331,6 +347,10 @@ export class AttachmentsService {
     }
 
     const removed = await this.boardWrite.run(row.boardId, async (tx) => {
+      const current = await tx.attachment.findUnique({
+        where: { id: attachmentId },
+        select: { descriptionDetached: true },
+      });
       const updated = await tx.attachment.updateMany({
         where: { id: attachmentId, deletedAt: null },
         data: { deletedAt: new Date() },
@@ -338,7 +358,7 @@ export class AttachmentsService {
       if (updated.count === 0) return null;
       // TASK-108: inline media never incremented the counter, so they must
       // not decrement it either — that drift went negative over time.
-      if (!row.isInline) {
+      if (!row.isInline && !current?.descriptionDetached) {
         await tx.card.update({
           where: { id: row.cardId },
           data: { attachmentCount: { decrement: 1 } },

@@ -85,6 +85,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 - **Card density** — a `Simplify design` toggle switches every card to a compact one-line tile (title, label dots, blocked marker, checklist progress, priority and assignee) with far fewer elements; the full face stays one click away in the card dialog.
 - **Drag & drop** — move cards within/between columns and reorder columns (`@dnd-kit`), inline Trello-style "+" zones, keyboard sensor and drag overlay.
 - **Rich card content** — WYSIWYG description (MDXEditor) that is the card's document (up to 64k characters), checklists with progress badges (items up to 500 characters), due dates with overdue/soon badges, color/gradient covers, 14-color labels, and a read-only machine-readable acceptance-criteria / definition-of-done contract.
+- **Attachments** — paste files into descriptions or add them directly; description uploads follow edits and undo/redo. Video uploads can be processed in the background for browser playback; see the [card guide](./site/src/content/docs/docs/user-guide/cards.md#attachments) for limits and retention.
 - **Card & board archive** — Trello-style archiving with restore (WIP-aware) and permanent delete; board archive with restore.
 - **Multi-boards** — switcher, create/rename/archive/delete, deep links `/board/:id`, global search across boards with snippets.
 - **Search & filters** — by title/description/labels, label ANY/ALL matching, due status, creation date; hotkeys `/` and `Ctrl/Cmd+K`, match counter.

@@ -35,6 +35,85 @@ import { cardOf } from "@janosik/shared";
 
 type Tx = Prisma.TransactionClient;
 
+const attachmentIds = (text: string | undefined): Set<string> =>
+  new Set(
+    [...(text ?? "").matchAll(/\/attachments\/([A-Za-z0-9-]+)\/content/g)].map(
+      (match) => match[1],
+    ),
+  );
+
+/** Keep description uploads reversible: detached blobs remain readable for
+ * undo and snapshots, but disappear from the live attachment list. */
+export async function reconcileDescriptionAttachments(
+  tx: Tx,
+  boardId: string,
+  before: string | undefined,
+  after: string | undefined,
+): Promise<void> {
+  const candidates = [
+    ...new Set([...attachmentIds(before), ...attachmentIds(after)]),
+  ];
+  if (!candidates.length) return;
+  const files = await tx.attachment.findMany({
+    where: {
+      id: { in: candidates },
+      boardId,
+      descriptionEmbed: true,
+      deletedAt: null,
+    },
+    select: { id: true, cardId: true, descriptionDetached: true },
+  });
+  if (!files.length) return;
+  const urls = files.map((file) => `/attachments/${file.id}/content`);
+  const [cards, comments] = await Promise.all([
+    tx.card.findMany({
+      where: {
+        column: { boardId },
+        deletedAt: null,
+        OR: urls.map((url) => ({ description: { contains: url } })),
+      },
+      select: { description: true },
+    }),
+    tx.comment.findMany({
+      where: {
+        card: { column: { boardId }, deletedAt: null },
+        deletedAt: null,
+        OR: urls.map((url) => ({ text: { contains: url } })),
+      },
+      select: { text: true },
+    }),
+  ]);
+  const used = new Set<string>();
+  for (const text of [
+    ...cards.map((card) => card.description ?? ""),
+    ...comments.map((comment) => comment.text),
+  ]) {
+    for (const id of attachmentIds(text)) used.add(id);
+  }
+  const changedCards = new Set<string>();
+  for (const file of files) {
+    const detached = !used.has(file.id);
+    if (detached === file.descriptionDetached) continue;
+    await tx.attachment.update({
+      where: { id: file.id },
+      data: { descriptionDetached: detached },
+    });
+    changedCards.add(file.cardId);
+  }
+  for (const cardId of changedCards) {
+    const count = await tx.attachment.count({
+      where: {
+        cardId,
+        deletedAt: null,
+        isInline: false,
+        descriptionDetached: false,
+      },
+    });
+    // Avoid changing updatedAt or version for attachment bookkeeping.
+    await tx.$executeRaw`UPDATE "Card" SET "attachmentCount" = ${count} WHERE "id" = ${cardId}`;
+  }
+}
+
 export interface WriteContext {
   boardId: string;
   action: BoardAction;
@@ -235,7 +314,12 @@ async function upsertCard(
   // it in the same statement — a second `update` would stamp `updatedAt`
   // and break the aggregate/inverse equality.
   const liveAttachments = await tx.attachment.count({
-    where: { cardId: card.id, deletedAt: null, isInline: false },
+    where: {
+      cardId: card.id,
+      deletedAt: null,
+      isInline: false,
+      descriptionDetached: false,
+    },
   });
   await tx.card.upsert({
     where: { id: card.id },
@@ -1224,6 +1308,14 @@ async function writeCardAction(
           version: { increment: 1 },
         },
       });
+      if (action.type === "UPDATE_CARD" && action.description !== undefined) {
+        await reconcileDescriptionAttachments(
+          tx,
+          boardId,
+          cardOf(before, card.id)?.description,
+          card.description,
+        );
+      }
       return [boardTouch, touch.card(card.id)];
     }
 

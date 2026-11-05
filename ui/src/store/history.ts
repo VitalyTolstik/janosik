@@ -127,6 +127,9 @@ export class BoardHistory {
       // resurrecting a range whose undo would clobber that edit.
       !previous.dead &&
       this.lastAction !== null &&
+      !(
+        this.lastAction.type === "TOUCH_CARD" && action.type === "UPDATE_CARD"
+      ) &&
       coalescibleCardId(this.lastAction) === cardId;
 
     if (coalesce && previous) {

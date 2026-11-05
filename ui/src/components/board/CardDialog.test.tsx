@@ -172,7 +172,13 @@ describe("CardDialog description editor", () => {
     });
 
     await waitFor(() => {
-      expect(upload).toHaveBeenCalledWith(expect.any(String), expect.any(File));
+      expect(upload).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(File),
+        {
+          description: true,
+        },
+      );
     });
     // The image embeds into the description markdown at the cursor…
     await waitFor(() => {
@@ -208,7 +214,13 @@ describe("CardDialog description editor", () => {
     });
 
     await waitFor(() => {
-      expect(upload).toHaveBeenCalledWith(expect.any(String), expect.any(File));
+      expect(upload).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(File),
+        {
+          description: true,
+        },
+      );
       expect(inserted.markdown[0]).toBe(
         "\n\n[spec.pdf](/api/v1/attachments/att-file/content)\n\n",
       );

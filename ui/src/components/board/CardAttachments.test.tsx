@@ -70,6 +70,7 @@ function renderSection(
 describe("CardAttachments", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(api, "listDetachedAttachments").mockResolvedValue([]);
   });
 
   it("renders the list with size and offers upload", async () => {
@@ -179,6 +180,23 @@ describe("CardAttachments", () => {
         screen.queryByTestId("card-attachment-row"),
       ).not.toBeInTheDocument(),
     );
+    expect(api.deleteAttachment).toHaveBeenCalledWith("att-1");
+  });
+
+  it("lets the uploader permanently remove files retained after description edits", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
+    vi.spyOn(api, "deleteAttachment").mockResolvedValue({ status: "ok" });
+    renderSection();
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    expect(group).toHaveTextContent("spec.pdf");
+    await user.click(screen.getByRole("button", { name: "Delete file" }));
+    expect(screen.getByText(/no longer be available/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Delete file" }));
+    await waitFor(() => expect(group).not.toBeInTheDocument());
     expect(api.deleteAttachment).toHaveBeenCalledWith("att-1");
   });
 });
