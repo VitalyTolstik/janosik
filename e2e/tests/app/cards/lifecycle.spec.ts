@@ -86,6 +86,12 @@ test("create, edit, drag, duplicate, archive, restore and delete a card", async 
     .getByRole("button", { name: "Delete", exact: true })
     .click();
   await expect(todo.getByTestId("card-title")).toHaveCount(0);
+  // Deleting the open card must not look like a stale deep link: the dialog
+  // clears ?card= itself, so the board never reports "Card not found".
+  await expect(page).not.toHaveURL(/[?&]card=/);
+  await expect(
+    page.getByRole("status").filter({ hasText: "Card not found" }),
+  ).toHaveCount(0);
   await page.reload();
   await expect(todo.getByTestId("card-title")).toHaveCount(0);
   await expect(doing.getByTestId("card-title")).toHaveCount(1);

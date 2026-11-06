@@ -118,7 +118,12 @@ export function BoardSection() {
     // cannot open, and say why nothing happened. The board must be loaded
     // first, or a cold boot would strip a valid deep link before it resolves.
     if (cardParam && board && !board.cards[cardParam]) {
-      if (missingCardRef.current !== cardParam) {
+      // The card the user just closed (or deleted) is not "missing": the
+      // close handler clears the deep link, but the board update can land
+      // one render before the param cleanup settles. Only a card that was
+      // not just closed with the dialog still reports.
+      const justClosed = closedCardRef.current === cardParam;
+      if (!justClosed && missingCardRef.current !== cardParam) {
         missingCardRef.current = cardParam;
         toast.error(t("card.notFound"));
       }
@@ -127,13 +132,18 @@ export function BoardSection() {
       setSearchParams(next, { replace: true });
       return;
     }
-    if (
-      cardParam &&
-      board?.cards[cardParam] &&
-      openCardId !== cardParam &&
-      closedCardRef.current !== cardParam
-    ) {
-      setOpenCardId(cardParam);
+    if (cardParam && board?.cards[cardParam]) {
+      // A marker for a different card must not outlive the navigation: it
+      // could otherwise suppress a later genuine "missing card" toast.
+      if (
+        closedCardRef.current !== null &&
+        closedCardRef.current !== cardParam
+      ) {
+        closedCardRef.current = null;
+      }
+      if (openCardId !== cardParam && closedCardRef.current !== cardParam) {
+        setOpenCardId(cardParam);
+      }
     } else if (!cardParam && openCardId) {
       // The param disappeared without the dialog closing itself (browser
       // Back after a click-open) — close the dialog with it.

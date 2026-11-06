@@ -18,7 +18,7 @@ import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useBoardState } from "@/store/BoardContext";
 import { useBoardMember } from "@/store/board-live";
-import { routes } from "@/routes";
+import { cardHref, shouldLeaveToBrowser } from "@/utils/card-nav";
 import { linkRowGroups, type CardLinkFacts, type LinkRow } from "@/utils/links";
 
 interface LinkedCardsPopoverProps {
@@ -210,8 +210,9 @@ function LinkedCardRow({
   // tab, because there is a genuine href to navigate to. The left click
   // stays an SPA transition: preventDefault + the `?card=` deep link, so
   // the dialog swaps in place instead of a full page load.
-  const boardPath = board ? routes.board(board.id) : "";
-  const href = `${boardPath}?card=${row.targetCardId}`;
+  // `cardHref` includes the deploy base (`/app/...`), unlike the raw router
+  // path, so a modifier-click opens the right address on every deployment.
+  const href = board ? cardHref(board.id, row.targetCardId) : undefined;
   return (
     <li>
       <a
@@ -229,7 +230,7 @@ function LinkedCardRow({
         onClick={(event) => {
           // Left click only; modifier clicks keep the browser's behavior
           // (new tab) and default is what the new tab navigates to.
-          if (event.button !== 0 || event.metaKey || event.ctrlKey) return;
+          if (shouldLeaveToBrowser(event)) return;
           event.preventDefault();
           onOpen(row.targetCardId);
         }}

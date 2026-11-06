@@ -36,7 +36,9 @@ test("edit description, labels, due date, assignee and linked cards", async ({
   await expect(dialog.getByTestId("card-assignee-trigger")).not.toContainText(
     "Unassigned",
   );
-  await expect(dialog.getByTestId("card-links")).toHaveCount(0);
+  // The section and its "Link card" action stay available; only the editor
+  // itself is collapsed until the user asks for it.
+  await expect(dialog.getByTestId("card-links-input")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Link card" }).click();
   await dialog.getByTestId("card-links-input").fill("Related task");
   await dialog.getByTestId("card-links-suggestion").click();

@@ -309,7 +309,7 @@ function CardContextMenuBody({
                 ))}
                 {linkQuery.trim() !== "" && linkTargets.length === 0 ? (
                   <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                    {t("card.links.empty")}
+                    {t("card.links.noMatches")}
                   </p>
                 ) : null}
               </div>

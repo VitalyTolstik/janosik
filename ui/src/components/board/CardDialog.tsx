@@ -181,6 +181,10 @@ export function CardDialog({
   if (previousLinkCardId !== cardId) {
     setPreviousLinkCardId(cardId);
     setLinkEditorCardId(null);
+    // The pending delete belongs to the previous card. Without this reset a
+    // card switch (Back/Forward, a link row) would reopen the confirmation
+    // for the new card and its Delete button would remove the wrong one.
+    setDeleteConfirm(false);
   }
   const contentRef = useRef<HTMLElement>(null);
   const hour12 = useHour12();
@@ -743,19 +747,32 @@ export function CardDialog({
       <Dialog
         open={open}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen) setLinkEditorCardId(null);
+          if (!nextOpen) {
+            setLinkEditorCardId(null);
+            setDeleteConfirm(false);
+          }
           onOpenChange(nextOpen);
         }}
       >
-        <DialogContent className="card-details-dialog h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] gap-0 overflow-hidden sm:max-w-5xl">
-          <DialogHeader className="shrink-0 pr-10 text-left">
+        <DialogContent
+          className="card-details-dialog h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] gap-0 overflow-hidden sm:max-w-5xl"
+          closeClassName="right-3 top-3 flex h-8 w-8 items-center justify-center"
+          onEscapeKeyDown={(event) => {
+            // The inline link editor closes first; the card stays open.
+            if (linkEditorCardId === card.id) {
+              event.preventDefault();
+              setLinkEditorCardId(null);
+            }
+          }}
+        >
+          <DialogHeader className="shrink-0 pr-16 text-left">
             <DialogTitle className="sr-only">
               {t("card.detailsTitle")}
             </DialogTitle>
             <DialogDescription className="sr-only">
               {t("card.detailsSubtitle")}
             </DialogDescription>
-            <div className="absolute right-11 top-3">
+            <div className="absolute right-12 top-3">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -784,13 +801,21 @@ export function CardDialog({
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
-                        disabled={duplicateDisabled}
+                        // Keep the item focusable: a truly disabled menu item
+                        // skips keyboard focus, so neither keyboard nor touch
+                        // users could learn why duplication is unavailable.
+                        aria-disabled={duplicateDisabled || undefined}
+                        className={duplicateDisabled ? "opacity-50" : undefined}
                         title={
                           duplicateDisabled
                             ? duplicateDisabledReason
                             : undefined
                         }
-                        onSelect={handleDuplicate}
+                        onSelect={
+                          duplicateDisabled
+                            ? () => toast.info(duplicateDisabledReason)
+                            : handleDuplicate
+                        }
                       >
                         <CopyPlus className="h-4 w-4" />
                         {t("card.duplicate")}
@@ -823,10 +848,10 @@ export function CardDialog({
                 {t("card.titleLabel")}
               </label>
               <div className="card-title-row group/title flex w-fit max-w-full items-start gap-0">
-                <div className="grid w-max min-w-0 max-w-[calc(100%-1.75rem)]">
+                <div className="grid w-max min-w-0 max-w-[calc(100%-1.75rem)] grid-cols-[minmax(0,1fr)]">
                   <span
                     aria-hidden="true"
-                    className="invisible col-start-1 row-start-1 max-h-[100px] w-max max-w-full overflow-hidden whitespace-pre border border-transparent px-2 py-2 text-xl font-semibold"
+                    className="invisible col-start-1 row-start-1 max-h-[100px] w-max max-w-full overflow-hidden whitespace-pre-wrap break-words border border-transparent px-2 py-2 text-xl font-semibold"
                   >
                     {titleDraft || t("card.titlePlaceholder")}
                   </span>
@@ -834,6 +859,7 @@ export function CardDialog({
                     id="card-title-input"
                     ref={titleRef}
                     name="card-title"
+                    autoFocus
                     readOnly={readOnly}
                     value={titleDraft}
                     maxLength={LIMITS.cardTitle}
@@ -855,7 +881,7 @@ export function CardDialog({
                   />
                 </div>
                 <span className="card-title-copy shrink-0 text-muted-foreground opacity-100 transition-opacity sm:opacity-0 sm:group-hover/title:opacity-100 sm:group-focus-within/title:opacity-100">
-                  <CopyCardLinkButton />
+                  <CopyCardLinkButton key={card.id} />
                 </span>
               </div>
               {/* Live counter appears only near the limit — constant
@@ -919,10 +945,9 @@ export function CardDialog({
                         variant="outline"
                         size="sm"
                         className="h-7 gap-1 rounded-md px-2 text-xs text-muted-foreground"
-                        aria-label={t("card.menu.labels")}
                       >
                         <Plus className="h-3.5 w-3.5" />
-                        {t("label.new")}
+                        {t("card.menu.labels")}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent
@@ -949,9 +974,126 @@ export function CardDialog({
           </DialogHeader>
           <div className="-mx-6 mt-4 min-h-0 flex-1 overflow-y-auto border-t border-border/60">
             <div className="grid min-w-0 md:grid-cols-[minmax(0,1fr)_280px]">
+              <aside
+                aria-label={t("card.properties")}
+                className="card-details-properties space-y-3 border-b border-border/60 bg-muted/20 px-6 py-4 md:col-start-2 md:row-start-1 md:border-b-0 md:border-l md:py-5"
+              >
+                {card.archivedAt && !readOnly ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <ArchiveRestore className="h-4 w-4" />
+                        {t("card.unarchive")}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-48">
+                      <DropdownMenuLabel>
+                        {t("card.restoreTo")}
+                      </DropdownMenuLabel>
+                      {board.columns.map((column) => (
+                        <DropdownMenuItem
+                          key={column.id}
+                          disabled={isColumnFull(column)}
+                          onSelect={() => handleRestore(column.id)}
+                        >
+                          <span className="truncate">{column.title}</span>
+                          {column.wipLimit !== undefined && (
+                            <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                              {column.cardIds.length}/{column.wipLimit}
+                            </span>
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
+                {!readOnly && !card.archivedAt && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {t("card.columnLabel")}
+                    </span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <ArrowRightLeft className="h-3.5 w-3.5" />
+                          {currentColumn?.title ?? "—"}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuLabel>
+                          {t("card.moveTo")}
+                        </DropdownMenuLabel>
+                        {board.columns.map((column) => {
+                          const full =
+                            column.id !== currentColumn?.id &&
+                            isColumnFull(column);
+                          return (
+                            <DropdownMenuItem
+                              key={column.id}
+                              disabled={column.id === currentColumn?.id || full}
+                              onSelect={() => handleMove(column.id)}
+                            >
+                              {column.id === currentColumn?.id ? "✓ " : ""}
+                              <span className="truncate">{column.title}</span>
+                              {column.wipLimit !== undefined && (
+                                <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                                  {column.cardIds.length}/{column.wipLimit}
+                                </span>
+                              )}
+                            </DropdownMenuItem>
+                          );
+                        })}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )}
+
+                <CardPriority
+                  cardId={card.id}
+                  priority={card.priority}
+                  readOnly={readOnly}
+                />
+
+                <CardDueDate
+                  cardId={card.id}
+                  dueDate={card.dueDate}
+                  readOnly={readOnly}
+                />
+
+                <CardAssignee
+                  boardId={board.id}
+                  cardId={card.id}
+                  assigneeId={card.assigneeId}
+                  readOnly={readOnly}
+                />
+
+                {readOnly ? null : (
+                  <>
+                    <CardCoverPicker cardId={card.id} cover={card.cover} />
+                  </>
+                )}
+
+                <div
+                  className="col-span-full space-y-1 border-t border-border/60 pt-3 text-xs text-muted-foreground"
+                  data-testid="card-dates"
+                >
+                  <p>
+                    {t("card.created", {
+                      date: formatDate(card.createdAt, lang, hour12),
+                    })}
+                  </p>
+                  {card.updatedAt > card.createdAt && (
+                    <p>
+                      {t("card.updated", {
+                        date: formatDate(card.updatedAt, lang, hour12),
+                      })}
+                    </p>
+                  )}
+                </div>
+              </aside>
               <main
                 ref={contentRef}
-                className="order-2 min-w-0 space-y-6 px-6 py-5 md:order-1"
+                className="min-w-0 space-y-6 px-6 py-5 md:col-start-1 md:row-start-1"
               >
                 <CollapsibleSection
                   title={t("card.descriptionLabel")}
@@ -966,7 +1108,7 @@ export function CardDialog({
                     fallback={
                       /* Same footprint as the empty editor so the dialog rows
                      don't jump while the chunk streams in (first open only). */
-                      <div className="h-16 animate-pulse rounded-md bg-muted/40" />
+                      <div className="h-32 animate-pulse rounded-md bg-muted/40" />
                     }
                   >
                     {/* The blur wrapper closes the staging window: leaving the
@@ -1077,125 +1219,11 @@ export function CardDialog({
                   readOnly={readOnly}
                 />
               </main>
-              <aside className="card-details-properties order-1 space-y-3 border-b border-border/60 bg-muted/20 px-6 py-4 md:order-2 md:border-b-0 md:border-l md:py-5">
-                {card.archivedAt && !readOnly ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        <ArchiveRestore className="h-4 w-4" />
-                        {t("card.unarchive")}
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-48">
-                      <DropdownMenuLabel>
-                        {t("card.restoreTo")}
-                      </DropdownMenuLabel>
-                      {board.columns.map((column) => (
-                        <DropdownMenuItem
-                          key={column.id}
-                          disabled={isColumnFull(column)}
-                          onSelect={() => handleRestore(column.id)}
-                        >
-                          <span className="truncate">{column.title}</span>
-                          {column.wipLimit !== undefined && (
-                            <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
-                              {column.cardIds.length}/{column.wipLimit}
-                            </span>
-                          )}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : null}
-                {!readOnly && !card.archivedAt && (
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-muted-foreground">
-                      {t("card.columnLabel")}
-                    </span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm">
-                          <ArrowRightLeft className="h-3.5 w-3.5" />
-                          {currentColumn?.title ?? "—"}
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-48">
-                        <DropdownMenuLabel>
-                          {t("card.moveTo")}
-                        </DropdownMenuLabel>
-                        {board.columns.map((column) => {
-                          const full =
-                            column.id !== currentColumn?.id &&
-                            isColumnFull(column);
-                          return (
-                            <DropdownMenuItem
-                              key={column.id}
-                              disabled={column.id === currentColumn?.id || full}
-                              onClick={() => handleMove(column.id)}
-                            >
-                              {column.id === currentColumn?.id ? "✓ " : ""}
-                              <span className="truncate">{column.title}</span>
-                              {column.wipLimit !== undefined && (
-                                <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
-                                  {column.cardIds.length}/{column.wipLimit}
-                                </span>
-                              )}
-                            </DropdownMenuItem>
-                          );
-                        })}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                )}
-
-                <CardPriority
-                  cardId={card.id}
-                  priority={card.priority}
-                  readOnly={readOnly}
-                />
-
-                <CardDueDate
-                  cardId={card.id}
-                  dueDate={card.dueDate}
-                  readOnly={readOnly}
-                />
-
-                <CardAssignee
-                  boardId={board.id}
-                  cardId={card.id}
-                  assigneeId={card.assigneeId}
-                  readOnly={readOnly}
-                />
-
-                {readOnly ? null : (
-                  <>
-                    <CardCoverPicker cardId={card.id} cover={card.cover} />
-                  </>
-                )}
-
-                <div
-                  className="col-span-full space-y-1 border-t border-border/60 pt-3 text-xs text-muted-foreground"
-                  data-testid="card-dates"
-                >
-                  <p>
-                    {t("card.created", {
-                      date: formatDate(card.createdAt, lang, hour12),
-                    })}
-                  </p>
-                  {card.updatedAt > card.createdAt && (
-                    <p>
-                      {t("card.updated", {
-                        date: formatDate(card.updatedAt, lang, hour12),
-                      })}
-                    </p>
-                  )}
-                </div>
-              </aside>
             </div>
           </div>
         </DialogContent>
         <ConfirmDialog
-          open={deleteConfirm}
+          open={deleteConfirm && !readOnly}
           onOpenChange={setDeleteConfirm}
           title={
             card.archivedAt

@@ -60,7 +60,7 @@ the server.
 
 ### Labels
 
-Use `New label` under the title to open the label picker. Click a chip to toggle it, or use
+Use `Labels` under the title to open the label picker. Click a chip to toggle it, or use
 `New label` to create one with a name and a color. Each chip has a menu to
 rename, change its color or delete it (deleting removes the label from every card).
 
@@ -83,7 +83,7 @@ The `Assignee` row searches the board's members. Pick a person to assign the
 card, or `Unassigned` to clear it. The assignee's avatar shows on the card
 face and in the table.
 
-A card can also be *claimed*: it is reserved for one agent while that agent
+A card can also be _claimed_: it is reserved for one agent while that agent
 works on it, so another agent cannot claim it at the same time. A claim is not
 an assignment and expires automatically. The `History` tab shows who claimed
 or released the card.
@@ -98,12 +98,12 @@ no contract.
 
 ### Linked cards
 
-Choose `Link card` in the linked cards section to connect cards. The `Linked cards`
-section appears when there are links to show. Pick a relation
+Choose `Link card` in the linked cards section to connect cards. Pick a relation
 from `blocks`, `is blocked by`, `relates to`, `duplicates` or `is duplicated
-by`, then search for a card and press Enter. A link row opens the linked card;
-a remove button appears on hover. A `blocks` link that would create a circular
-dependency is refused.
+by`, then search for a card and press Enter. The editor closes after you add a
+link, press `Cancel`, or click outside it; existing links stay listed. A link
+row opens the linked card; a remove button appears on hover. A `blocks` link
+that would create a circular dependency is refused.
 
 ### Cover
 

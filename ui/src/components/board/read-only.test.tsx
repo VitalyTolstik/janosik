@@ -166,6 +166,16 @@ describe("VIEWER read-only UI (TASK-35)", () => {
     expect(
       within(dialog).getAllByRole("button", { name: /close/i }).length,
     ).toBeGreaterThan(0);
+    // The actions menu keeps only the read-only entry; no mutation leaks in.
+    fireEvent.pointerDown(
+      within(dialog).getByRole("button", { name: "Card actions" }),
+    );
+    expect(
+      await screen.findByRole("menuitem", { name: "Open in new tab" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /duplicate/i })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /archive/i })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /delete/i })).toBeNull();
   });
 
   it("TableView: no add card, no inline editors, no archive/move menus", () => {

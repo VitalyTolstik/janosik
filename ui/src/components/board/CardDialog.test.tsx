@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   fireEvent,
   render,
@@ -10,6 +11,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
+import { CardDialog } from "@/components/board/CardDialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
@@ -76,6 +78,41 @@ function renderBoard() {
                 <ToastProvider>
                   <BoardProvider>
                     <BoardSection />
+                  </BoardProvider>
+                </ToastProvider>
+              </MemoryRouter>
+            </TooltipProvider>
+          </I18nProvider>
+        </BoardGlassProvider>
+      </BoardBackgroundProvider>
+    </ThemeProvider>,
+  );
+}
+
+/** CardDialog with a control that swaps the open card without closing it. */
+function CardSwitchHarness() {
+  const [cardId, setCardId] = useState("card-1");
+  return (
+    <>
+      <button type="button" onClick={() => setCardId("card-2")}>
+        switch card
+      </button>
+      <CardDialog cardId={cardId} open onOpenChange={() => {}} />
+    </>
+  );
+}
+
+function renderCardSwitchHarness() {
+  return render(
+    <ThemeProvider>
+      <BoardBackgroundProvider>
+        <BoardGlassProvider>
+          <I18nProvider>
+            <TooltipProvider>
+              <MemoryRouter>
+                <ToastProvider>
+                  <BoardProvider>
+                    <CardSwitchHarness />
                   </BoardProvider>
                 </ToastProvider>
               </MemoryRouter>
@@ -638,9 +675,15 @@ describe("CardDialog duplicate (column limits)", () => {
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Card actions" }),
     );
-    expect(
-      await screen.findByRole("menuitem", { name: "Duplicate card" }),
-    ).toHaveAttribute("aria-disabled", "true");
+    const duplicate = await screen.findByRole("menuitem", {
+      name: "Duplicate card",
+    });
+    expect(duplicate).toHaveAttribute("aria-disabled", "true");
+
+    // The item stays selectable so mouse, keyboard and touch users get the
+    // reason instead of a silently dead control.
+    await userEvent.click(duplicate);
+    expect(await screen.findByText(/WIP limit reached/i)).toBeInTheDocument();
   });
 
   it("keeps Duplicate card enabled while the column has room", async () => {
@@ -748,7 +791,7 @@ describe("CardDialog delete confirmation (TASK-21.11)", () => {
     );
   });
 
-  it("drops a cancelled confirmation on reopen (reset by remount)", async () => {
+  it("drops a cancelled confirmation on reopen", async () => {
     const dialog = await openCardDialog("Design the new onboarding flow");
 
     await userEvent.click(
@@ -774,6 +817,34 @@ describe("CardDialog delete confirmation (TASK-21.11)", () => {
     expect(
       screen.queryByRole("dialog", { name: "Delete this card?" }),
     ).toBeNull();
+  });
+
+  it("does not carry a pending delete onto the next card", async () => {
+    renderCardSwitchHarness();
+    const dialog = await screen.findByRole("dialog", { name: "Card details" });
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Card actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Delete card" }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Delete this card?" }),
+    ).toBeInTheDocument();
+
+    // Navigating to another card while the confirmation is open must not
+    // retarget the pending delete at the new card.
+    // The modal aria-hides the rest of the page, so the harness control is
+    // not in the accessibility tree; click it by its visible text.
+    fireEvent.click(screen.getByText("switch card"));
+
+    expect(
+      screen.queryByRole("dialog", { name: "Delete this card?" }),
+    ).toBeNull();
+    expect(
+      within(dialog).getByDisplayValue("Set up CI/CD pipeline"),
+    ).toBeInTheDocument();
   });
 });
 
@@ -806,6 +877,13 @@ describe("CardDialog layout (fixed visual order)", () => {
     localStorage.clear();
   });
 
+  it("focuses the title when the card opens", async () => {
+    const dialog = await openCardDialog("Design the new onboarding flow");
+    await waitFor(() =>
+      expect(within(dialog).getByLabelText("Title")).toHaveFocus(),
+    );
+  });
+
   it("keeps the title and labels above the content, with properties in the sidebar", async () => {
     const dialog = await openCardDialog("Design the new onboarding flow");
     const title = within(dialog).getByLabelText("Title");
@@ -817,6 +895,13 @@ describe("CardDialog layout (fixed visual order)", () => {
     ).toBeTruthy();
     expect(
       labels.compareDocumentPosition(content) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // The aside comes first in the DOM so the mobile visual order (properties
+    // above content) matches the reading/focus order; wide screens place it
+    // in the right-hand grid column.
+    expect(
+      sidebar.compareDocumentPosition(content) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(within(content).getByText("Description")).toBeInTheDocument();
@@ -838,10 +923,11 @@ describe("CardDialog layout (fixed visual order)", () => {
     expect(wrapper?.className).toContain(
       "group-focus-within/title:opacity-100",
     );
-    // …and it lives in the fixed header, not the scrollable body.
+    // …and it lives in the fixed header, not the scrollable body. Asserting
+    // null on both sides matters: comparing them would also pass when both
+    // accidentally sat inside the same scroll container.
     const title = within(dialog).getByText("Card details");
-    expect(button.closest(".overflow-y-auto")).toBe(
-      title.closest(".overflow-y-auto"),
-    );
+    expect(button.closest(".overflow-y-auto")).toBeNull();
+    expect(title.closest(".overflow-y-auto")).toBeNull();
   });
 });
