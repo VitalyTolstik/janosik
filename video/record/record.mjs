@@ -138,18 +138,31 @@ async function sceneBoard(page) {
 }
 
 async function sceneCards(page) {
-  await wait(700);
+  await wait(600);
   await card(page, "Realtime cursors on the board").click();
-  await wait(1100);
-  await page.getByText("Presence avatars", { exact: false }).first().click();
-  await wait(700);
+  // The redesigned dialog puts the title and properties rail up front and the
+  // checklists and activity below the fold; give the detail view a beat.
+  await wait(1600);
+  await page
+    .locator("li", { hasText: "Presence avatars" })
+    .getByRole("button")
+    .first()
+    .click();
+  await wait(800);
   const comment = page.getByTestId("comment-input");
   await comment.scrollIntoViewIfNeeded();
   await comment.click();
   await page.keyboard.type("Cursor colours now match the presence stack.");
   await wait(500);
   await page.getByTestId("comment-send").click();
-  await wait(900);
+  await wait(1400);
+  // Return to the top before closing so the clip rests on the full redesigned
+  // card — title, labels, description and the property rail — not the tail.
+  await page
+    .locator('[role="dialog"] .overflow-y-auto')
+    .first()
+    .evaluate((node) => (node.scrollTop = 0));
+  await wait(700);
   await page.keyboard.press("Escape");
   await wait(700);
 }
@@ -273,7 +286,9 @@ const SCENES = {
     run: sceneHero,
   },
   "feature-board": { audience: [], run: sceneBoard },
-  "feature-cards": { audience: [], run: sceneCards },
+  // The card dialog is the payoff, so the poster is grabbed once it is open
+  // rather than from the board behind it.
+  "feature-cards": { audience: [], run: sceneCards, poster: 1700 },
   "feature-realtime": { audience: ["grace"], run: sceneRealtime },
   "feature-sharing": { audience: [], run: sceneSharing },
   "feature-watch": {
