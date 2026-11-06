@@ -41,6 +41,14 @@ development servers. E2E imports use `@/` for paths relative to `e2e/`.
 link limits and revocation, and iframe themes on a separate local origin. Its
 fixtures create a fresh user and board per test.
 
+`tests/app/filters/` covers the board filter toolbar: title, description, label
+and checklist search; the due, created, label, priority, assignee and link
+facets; removable chips; reset; the active-facet count; per-column empty states;
+disabled drag & drop; and the same filter in the table and calendar views (the
+watch view hides the toolbar). Tests are independent and cover one behaviour
+each. Creation-date cases age cards in the disposable Docker database, so they
+are skipped when running against external development servers.
+
 To use already-running development servers instead, provide the site and app
 URLs separately; point the app URL at the dev server root, not `/app/`:
 

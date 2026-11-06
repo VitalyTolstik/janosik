@@ -28,6 +28,30 @@ function validateIds(boardId: string, commandId: string) {
     throw new Error("Invalid feed identifiers");
 }
 
+function validateBoardAndCards(boardId: string, cardIds: string[]) {
+  if (!/^[a-z0-9]+$/i.test(boardId) || cardIds.length === 0)
+    throw new Error("Invalid board or card identifiers");
+  for (const id of cardIds) {
+    if (!/^[a-f0-9-]{36}$/i.test(id))
+      throw new Error("Invalid card identifier");
+  }
+}
+
+/** Move a card's creation day back by `days` in the disposable database. */
+export async function ageCards(
+  boardId: string,
+  cardIds: string[],
+  days: number,
+) {
+  validateBoardAndCards(boardId, cardIds);
+  if (!Number.isInteger(days) || days < 1 || days > 3650)
+    throw new Error("Invalid age in days");
+  const ids = cardIds.map((id) => `'${id}'`).join(", ");
+  await runSql(
+    `UPDATE "Card" SET "createdAt" = NOW() - INTERVAL '${days} days' WHERE id IN (${ids}) AND "columnId" IN (SELECT id FROM "Column" WHERE "boardId" = '${boardId}');`,
+  );
+}
+
 export async function ageFeedEntries(
   boardId: string,
   commandId: string,

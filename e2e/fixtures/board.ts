@@ -6,10 +6,13 @@ import { appUrl, siteUrl } from "../helpers/urls.js";
 type BoardFixture = {
   id: string;
   api: APIRequestContext;
+  userId: string;
+  email: string;
   open: (page: Page) => Promise<void>;
   command: (action: Record<string, unknown>) => Promise<void>;
   column: (title: string) => Promise<string>;
   card: (columnId: string, title: string) => Promise<string>;
+  label: (name: string, color?: string) => Promise<string>;
 };
 
 export const test = authTest.extend<{ board: BoardFixture }>({
@@ -36,6 +39,9 @@ export const test = authTest.extend<{ board: BoardFixture }>({
       });
       expect(created.status()).toBe(201);
       const { id } = (await created.json()) as { id: string };
+      const meResponse = await api.get("/api/v1/auth/me");
+      expect(meResponse.ok()).toBeTruthy();
+      const me = (await meResponse.json()) as { id: string; email: string };
       const command = async (action: Record<string, unknown>) => {
         const response = await api.post(`/api/v1/boards/${id}/commands`, {
           data: {
@@ -48,6 +54,8 @@ export const test = authTest.extend<{ board: BoardFixture }>({
       await use({
         id,
         api,
+        userId: me.id,
+        email: me.email,
         command,
         open: async (page) => {
           await login(page, user);
@@ -66,6 +74,14 @@ export const test = authTest.extend<{ board: BoardFixture }>({
           const newCardId = randomUUID();
           await command({ type: "ADD_CARD", newCardId, columnId, title });
           return newCardId;
+        },
+        label: async (name, color = "red") => {
+          const labelId = randomUUID();
+          await command({
+            type: "ADD_LABEL",
+            label: { id: labelId, name, color },
+          });
+          return labelId;
         },
       });
     } finally {
