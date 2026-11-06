@@ -215,7 +215,7 @@ export function CardComments({
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {!readOnly && serverMode && user !== null ? (
         <CommentComposer
           user={user}
@@ -232,13 +232,13 @@ export function CardComments({
         />
       ) : null}
 
-      {/* The empty state aligns with the comment column, not the avatar. */}
-      {items.length === 0 ? (
+      {/* An editable empty thread already has the composer as its prompt. */}
+      {items.length === 0 && (readOnly || !serverMode || user === null) ? (
         <p className="py-1 pl-[36px] text-sm text-muted-foreground/70">
           {t("comment.empty")}
         </p>
-      ) : (
-        <ol className="space-y-4" data-testid="comment-list">
+      ) : items.length > 0 ? (
+        <ol className="space-y-1" data-testid="comment-list">
           {items.map((comment) => (
             <CommentRow
               key={comment.id}
@@ -250,7 +250,7 @@ export function CardComments({
             />
           ))}
         </ol>
-      )}
+      ) : null}
 
       {nextCursor !== null ? (
         <div className="pl-[36px]">

@@ -11,10 +11,13 @@ import {
 import {
   Archive,
   ArchiveRestore,
+  Check,
   ArrowRightLeft,
-  CalendarClock,
+  Copy,
   CopyPlus,
-  Link2,
+  MoreHorizontal,
+  ExternalLink,
+  Plus,
   Trash2,
 } from "lucide-react";
 
@@ -49,15 +52,20 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -66,6 +74,8 @@ import { embedMarkdown } from "@/utils/embedAttachments";
 import type { DescriptionEditorHandle } from "@/components/editor/DescriptionEditor";
 import { useBoard } from "@/store/BoardContext";
 import { createId } from "@/utils/id";
+import { appShareUrl } from "@/utils/app-path";
+import { cardPath } from "@/utils/card-nav";
 import type { LabelColor } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 import { isColumnFull } from "@janosik/shared";
@@ -165,6 +175,20 @@ export function CardDialog({
   // a temporal-dead-zone access (TASK-156).
   const card = board && cardId ? board.cards[cardId] : undefined;
   const { t, lang } = useI18n();
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [labelPickerOpen, setLabelPickerOpen] = useState(false);
+  const [linkEditorCardId, setLinkEditorCardId] = useState<string | null>(null);
+  const [previousLinkCardId, setPreviousLinkCardId] = useState(cardId);
+  if (previousLinkCardId !== cardId) {
+    setPreviousLinkCardId(cardId);
+    setLinkEditorCardId(null);
+    setLabelPickerOpen(false);
+    // The pending delete belongs to the previous card. Without this reset a
+    // card switch (Back/Forward, a link row) would reopen the confirmation
+    // for the new card and its Delete button would remove the wrong one.
+    setDeleteConfirm(false);
+  }
+  const contentRef = useRef<HTMLElement>(null);
   const hour12 = useHour12();
   const toast = useToast();
   // Fires the "too long" toast once per crossing (not on every keystroke
@@ -709,7 +733,7 @@ export function CardDialog({
   };
 
   // Archive keeps the dialog open: the card is still here (archived cards
-  // stay in `board.cards`), so the footer flips to "Unarchive" and the user
+  // stay in `board.cards`), so the sidebar offers "Unarchive" and the user
   // can put it right back without hunting through the archive (TASK-18.1).
   const handleArchive = () => {
     archiveCard(card.id);
@@ -722,64 +746,147 @@ export function CardDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        {/* Fixed, viewport-bound height (TASK-44): the card always opens as
-            the same near-full-height panel (1rem breathing room top and
-            bottom) — long descriptions and checklists scroll in the body
-            instead of growing the dialog from both ends. */}
-        <DialogContent className="h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] sm:max-w-3xl">
-          <DialogHeader className="group/header shrink-0 pr-8">
-            {/* Copy link hugs the title text (Jira-style): it pops out
-                immediately after "Card details" while the header is
-                hovered — not after the (much wider) subtitle block. */}
-            <div className="flex items-center gap-1.5">
-              <DialogTitle className="text-base">
-                {t("card.detailsTitle")}
-              </DialogTitle>
-              <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover/header:opacity-100">
-                <CopyCardLinkButton />
-              </span>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setLinkEditorCardId(null);
+            setLabelPickerOpen(false);
+            setDeleteConfirm(false);
+          }
+          onOpenChange(nextOpen);
+        }}
+      >
+        <DialogContent
+          className="card-details-dialog h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] gap-0 overflow-hidden sm:max-w-5xl"
+          closeClassName="right-3 top-3 flex h-8 w-8 items-center justify-center"
+          onEscapeKeyDown={(event) => {
+            // The inline link editor closes first; the card stays open.
+            if (linkEditorCardId === card.id) {
+              event.preventDefault();
+              setLinkEditorCardId(null);
+            }
+          }}
+        >
+          <DialogHeader className="shrink-0 pr-16 text-left">
+            <DialogTitle className="sr-only">
+              {t("card.detailsTitle")}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              {t("card.detailsSubtitle")}
+            </DialogDescription>
+            <div className="absolute right-12 top-3">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    aria-label={t("card.actions")}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      window.open(
+                        appShareUrl(cardPath(board.id, card.id)),
+                        "_blank",
+                        "noopener,noreferrer",
+                      )
+                    }
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    {t("card.menu.openNewTab")}
+                  </DropdownMenuItem>
+                  {!readOnly && !card.archivedAt && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        // Keep the item focusable: a truly disabled menu item
+                        // skips keyboard focus, so neither keyboard nor touch
+                        // users could learn why duplication is unavailable.
+                        aria-disabled={duplicateDisabled || undefined}
+                        className={duplicateDisabled ? "opacity-50" : undefined}
+                        title={
+                          duplicateDisabled
+                            ? duplicateDisabledReason
+                            : undefined
+                        }
+                        onSelect={
+                          duplicateDisabled
+                            ? () => toast.info(duplicateDisabledReason)
+                            : handleDuplicate
+                        }
+                      >
+                        <CopyPlus className="h-4 w-4" />
+                        {t("card.duplicate")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={handleArchive}>
+                        <Archive className="h-4 w-4" />
+                        {t("card.archive")}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  {!readOnly && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onSelect={() => setDeleteConfirm(true)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        {card.archivedAt
+                          ? t("card.deleteForever")
+                          : t("card.delete")}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-            <DialogDescription>{t("card.detailsSubtitle")}</DialogDescription>
-          </DialogHeader>
-
-          {/* Scrollable body: the dialog caps itself to the viewport height
-              (see ui/dialog.tsx), so tall cards (long descriptions, many
-              checklists) scroll here while the header and the action footer
-              below stay reachable. The negative/positive margin pair keeps
-              the scrollbar at the dialog edge instead of inside the padding. */}
-          <div className="-mx-6 min-h-0 flex-1 space-y-5 overflow-y-auto px-6">
             <div className="space-y-1.5">
-              <label
-                htmlFor="card-title-input"
-                className="text-xs font-medium text-muted-foreground"
-              >
+              <label htmlFor="card-title-input" className="sr-only">
                 {t("card.titleLabel")}
               </label>
-              <Textarea
-                id="card-title-input"
-                ref={titleRef}
-                name="card-title"
-                autoFocus
-                readOnly={readOnly}
-                value={titleDraft}
-                maxLength={LIMITS.cardTitle}
-                onChange={(e) => {
-                  onTitleChange(e.target.value);
-                }}
-                onBlur={() => {
-                  if (!readOnly) flushTitle();
-                }}
-                onFocus={(e) => e.target.select()}
-                rows={1}
-                className="min-h-9 resize-none break-words"
-                placeholder={t("card.titlePlaceholder")}
-                aria-describedby={
-                  showRemaining(titleDraft.length, LIMITS.cardTitle)
-                    ? "card-title-counter"
-                    : undefined
-                }
-              />
+              <div className="card-title-row group/title flex w-fit max-w-full items-start gap-0">
+                <div className="grid w-max min-w-0 max-w-[calc(100%-1.75rem)] grid-cols-[minmax(0,1fr)]">
+                  <span
+                    aria-hidden="true"
+                    className="invisible col-start-1 row-start-1 max-h-[100px] w-max max-w-full overflow-hidden whitespace-pre-wrap break-words border border-transparent px-2 py-2 text-xl font-semibold"
+                  >
+                    {titleDraft || t("card.titlePlaceholder")}
+                  </span>
+                  <Textarea
+                    id="card-title-input"
+                    ref={titleRef}
+                    name="card-title"
+                    autoFocus
+                    readOnly={readOnly}
+                    value={titleDraft}
+                    maxLength={LIMITS.cardTitle}
+                    onChange={(e) => {
+                      onTitleChange(e.target.value);
+                    }}
+                    onBlur={() => {
+                      if (!readOnly) flushTitle();
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    rows={1}
+                    className="col-start-1 row-start-1 min-h-10 min-w-0 resize-none break-words border-transparent bg-transparent px-2 text-xl font-semibold shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                    placeholder={t("card.titlePlaceholder")}
+                    aria-describedby={
+                      showRemaining(titleDraft.length, LIMITS.cardTitle)
+                        ? "card-title-counter"
+                        : undefined
+                    }
+                  />
+                </div>
+                <span className="card-title-copy shrink-0 text-muted-foreground opacity-100 transition-opacity sm:opacity-0 sm:group-hover/title:opacity-100 sm:group-focus-within/title:opacity-100">
+                  <CopyCardLinkButton key={card.id} />
+                </span>
+              </div>
               {/* Live counter appears only near the limit — constant
                   character counts are noise for a 300-char title. */}
               <LimitCounter
@@ -821,238 +928,70 @@ export function CardDialog({
               ) : null}
             </div>
 
-            {/* Attribution line: directly under the title (owner's layout),
-                before the content sections begin. */}
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
-              <CalendarClock className="h-3.5 w-3.5" />
-              {t("card.created", {
-                date: formatDate(card.createdAt, lang, hour12),
-              })}
-              {card.updatedAt > card.createdAt
-                ? ` · ${t("card.updated", { date: formatDate(card.updatedAt, lang, hour12) })}`
-                : ""}
-            </div>
-
-            <CollapsibleSection
-              title={t("card.descriptionLabel")}
-              testId="card-description-toggle"
-              contentClassName="mt-1.5 space-y-1.5"
-            >
-              {/* WYSIWYG Markdown (MDXEditor) — formatting lives in the
-                  editor toolbar; no separate preview toggle needed. The
-                  editor surface can't take maxLength (contenteditable), so
-                  oversized pastes are clamped here with a visible toast. */}
-              <Suspense
-                fallback={
-                  /* Same footprint as the empty editor so the dialog rows
-                     don't jump while the chunk streams in (first open only). */
-                  <div className="h-16 animate-pulse rounded-md bg-muted/40" />
-                }
-              >
-                {/* The blur wrapper closes the staging window: leaving the
-                    editor is what commits the description. */}
-                {descriptionSync.conflict && !readOnly ? (
-                  <div
-                    role="alert"
-                    data-testid="card-description-conflict"
-                    className="mb-1.5 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-foreground"
+            <div className="space-y-1.5 pl-2">
+              <span className="sr-only">{t("card.labelLabel")}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <LabelPicker
+                  labels={board.labels}
+                  selected={card.labelIds}
+                  // While the full picker is open its buttons own the label
+                  // names; keep the header chips display-only so the same
+                  // label is not exposed as two competing controls.
+                  readOnly={readOnly || labelPickerOpen}
+                  chipsOnly
+                  onToggle={(labelId) => toggleCardLabel(card.id, labelId)}
+                  onCreate={() => {}}
+                  onRename={() => {}}
+                  onRecolor={() => {}}
+                  onDelete={() => {}}
+                />
+                {!readOnly && (
+                  <Popover
+                    open={labelPickerOpen}
+                    onOpenChange={setLabelPickerOpen}
                   >
-                    <span className="min-w-0 flex-1">
-                      {t("card.descriptionConflict")}
-                    </span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7"
-                      data-testid="card-description-conflict-reload"
-                      onClick={reloadDescription}
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1 rounded-md px-2 text-xs text-muted-foreground"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        {t("card.menu.labels")}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      className="w-80 max-w-[calc(100vw-3rem)]"
                     >
-                      {t("card.descriptionConflictReload")}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-7"
-                      data-testid="card-description-conflict-keep"
-                      onClick={keepMyDescription}
-                    >
-                      {t("card.descriptionConflictKeep")}
-                    </Button>
-                  </div>
-                ) : null}
-                <div
-                  onBlur={() => {
-                    // A pending conflict is decided by the notice, not by
-                    // leaving the editor.
-                    if (!descriptionSync.conflict) flushStagedDescription();
-                  }}
-                  onPasteCapture={onDescriptionPaste}
-                >
-                  <MemoDescriptionEditor
-                    ref={descriptionEditorRef}
-                    key={`${card.id}:${overflowTick}:${descriptionSync.epoch}`}
-                    value={
-                      descriptionSync.conflict && heldDraft !== null
-                        ? heldDraft
-                        : (card.description ?? "")
-                    }
-                    readOnly={readOnly}
-                    onChange={onDescriptionChange}
-                    placeholder={t("card.descriptionPlaceholder")}
-                  />
-                </div>
-              </Suspense>
-              <LimitCounter
-                length={(card.description ?? "").length}
-                limit={LIMITS.description}
-                testId="card-description-counter"
-              />
-            </CollapsibleSection>
-
-            <div className="space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">
-                {t("card.labelLabel")}
-              </span>
-              <LabelPicker
-                labels={board.labels}
-                selected={card.labelIds}
-                readOnly={readOnly}
-                onToggle={(labelId) => toggleCardLabel(card.id, labelId)}
-                onCreate={handleCreateLabel}
-                onRename={renameLabel}
-                onRecolor={setLabelColor}
-                onDelete={deleteLabel}
-              />
-            </div>
-
-            <CardPriority
-              cardId={card.id}
-              priority={card.priority}
-              readOnly={readOnly}
-            />
-
-            <CardDueDate
-              cardId={card.id}
-              dueDate={card.dueDate}
-              readOnly={readOnly}
-            />
-
-            <CardAssignee
-              boardId={board.id}
-              cardId={card.id}
-              assigneeId={card.assigneeId}
-              readOnly={readOnly}
-            />
-
-            <CardTaskSpec
-              acceptanceCriteria={card.acceptanceCriteria}
-              definitionOfDone={card.definitionOfDone}
-            />
-
-            <CardLinks cardId={card.id} board={board} readOnly={readOnly} />
-
-            {readOnly ? null : (
-              <CardCoverPicker cardId={card.id} cover={card.cover} />
-            )}
-
-            <CardChecklists
-              cardId={card.id}
-              checklists={card.checklists ?? []}
-              readOnly={readOnly}
-            />
-
-            <CardAttachments
-              cardId={card.id}
-              boardId={board.id}
-              readOnly={readOnly}
-            />
-
-            {!readOnly && !card.archivedAt && (
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-muted-foreground">
-                  {t("card.columnLabel")}
-                </span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <ArrowRightLeft className="h-3.5 w-3.5" />
-                      {currentColumn?.title ?? "—"}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuLabel>{t("card.moveTo")}</DropdownMenuLabel>
-                    {board.columns.map((column) => {
-                      const full =
-                        column.id !== currentColumn?.id && isColumnFull(column);
-                      return (
-                        <DropdownMenuItem
-                          key={column.id}
-                          disabled={column.id === currentColumn?.id || full}
-                          onClick={() => handleMove(column.id)}
-                        >
-                          {column.id === currentColumn?.id ? "✓ " : ""}
-                          <span className="truncate">{column.title}</span>
-                          {column.wipLimit !== undefined && (
-                            <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
-                              {column.cardIds.length}/{column.wipLimit}
-                            </span>
-                          )}
-                        </DropdownMenuItem>
-                      );
-                    })}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      <LabelPicker
+                        labels={board.labels}
+                        selected={card.labelIds}
+                        readOnly={readOnly}
+                        onToggle={(labelId) =>
+                          toggleCardLabel(card.id, labelId)
+                        }
+                        onCreate={handleCreateLabel}
+                        onRename={renameLabel}
+                        onRecolor={setLabelColor}
+                        onDelete={deleteLabel}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                )}
               </div>
-            )}
-
-            {/* Last on purpose: the thread is the part that grows and
-                scrolls, everything above stays put. */}
-            <CardActivity
-              key={card.id}
-              cardId={card.id}
-              boardId={board.id}
-              updatedAt={card.updatedAt}
-              localActivity={card.activity}
-              readOnly={readOnly}
-            />
-          </div>
-
-          <DialogFooter className="mt-2 shrink-0">
-            {readOnly ? null : (
-              <>
-                {card.archivedAt === undefined ? (
-                  duplicateDisabled ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        {/* Disabled buttons drop pointer events — the tooltip
-                            needs a wrapper that still receives them. */}
-                        <span className="inline-flex">
-                          <Button variant="ghost" disabled>
-                            <CopyPlus className="h-4 w-4" />
-                            {t("card.duplicate")}
-                          </Button>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent>{duplicateDisabledReason}</TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <Button variant="ghost" onClick={handleDuplicate}>
-                      <CopyPlus className="h-4 w-4" />
-                      {t("card.duplicate")}
-                    </Button>
-                  )
-                ) : null}
-                {card.archivedAt === undefined ? (
-                  <Button variant="ghost" onClick={handleArchive}>
-                    <Archive className="h-4 w-4" />
-                    {t("card.archive")}
-                  </Button>
-                ) : (
+            </div>
+          </DialogHeader>
+          <div className="-mx-6 mt-4 min-h-0 flex-1 overflow-y-auto border-t border-border/60">
+            <div className="grid min-w-0 md:grid-cols-[minmax(0,1fr)_280px]">
+              <aside
+                aria-label={t("card.properties")}
+                className="card-details-properties space-y-3 border-b border-border/60 bg-muted/20 px-6 py-4 md:col-start-2 md:row-start-1 md:border-b-0 md:border-l md:py-5"
+              >
+                {card.archivedAt && !readOnly ? (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost">
+                      <Button variant="outline" size="sm">
                         <ArchiveRestore className="h-4 w-4" />
                         {t("card.unarchive")}
                       </Button>
@@ -1061,86 +1000,256 @@ export function CardDialog({
                       <DropdownMenuLabel>
                         {t("card.restoreTo")}
                       </DropdownMenuLabel>
-                      {board.columns.map((column) => {
-                        const full = isColumnFull(column);
-                        return (
-                          <DropdownMenuItem
-                            key={column.id}
-                            disabled={full}
-                            onClick={() => handleRestore(column.id)}
-                          >
-                            <span className="truncate">{column.title}</span>
-                            {column.wipLimit !== undefined && (
-                              <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
-                                {column.cardIds.length}/{column.wipLimit}
-                              </span>
-                            )}
-                          </DropdownMenuItem>
-                        );
-                      })}
+                      {board.columns.map((column) => (
+                        <DropdownMenuItem
+                          key={column.id}
+                          disabled={isColumnFull(column)}
+                          onSelect={() => handleRestore(column.id)}
+                        >
+                          <span className="truncate">{column.title}</span>
+                          {column.wipLimit !== undefined && (
+                            <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                              {column.cardIds.length}/{column.wipLimit}
+                            </span>
+                          )}
+                        </DropdownMenuItem>
+                      ))}
                     </DropdownMenuContent>
                   </DropdownMenu>
+                ) : null}
+                {!readOnly && !card.archivedAt && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {t("card.columnLabel")}
+                    </span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <ArrowRightLeft className="h-3.5 w-3.5" />
+                          {currentColumn?.title ?? "—"}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuLabel>
+                          {t("card.moveTo")}
+                        </DropdownMenuLabel>
+                        {board.columns.map((column) => {
+                          const full =
+                            column.id !== currentColumn?.id &&
+                            isColumnFull(column);
+                          return (
+                            <DropdownMenuItem
+                              key={column.id}
+                              disabled={column.id === currentColumn?.id || full}
+                              onSelect={() => handleMove(column.id)}
+                            >
+                              {column.id === currentColumn?.id ? "✓ " : ""}
+                              <span className="truncate">{column.title}</span>
+                              {column.wipLimit !== undefined && (
+                                <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                                  {column.cardIds.length}/{column.wipLimit}
+                                </span>
+                              )}
+                            </DropdownMenuItem>
+                          );
+                        })}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 )}
-                <CardDeleteAction
-                  archived={card.archivedAt !== undefined}
-                  title={card.title}
-                  onConfirm={handleDelete}
+
+                <CardPriority
+                  cardId={card.id}
+                  priority={card.priority}
+                  readOnly={readOnly}
                 />
-              </>
-            )}
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              {t("card.close")}
-            </Button>
-          </DialogFooter>
+
+                <CardDueDate
+                  cardId={card.id}
+                  dueDate={card.dueDate}
+                  readOnly={readOnly}
+                />
+
+                <CardAssignee
+                  boardId={board.id}
+                  cardId={card.id}
+                  assigneeId={card.assigneeId}
+                  readOnly={readOnly}
+                />
+
+                {readOnly ? null : (
+                  <>
+                    <CardCoverPicker cardId={card.id} cover={card.cover} />
+                  </>
+                )}
+
+                <div
+                  className="col-span-full space-y-1 border-t border-border/60 pt-3 text-xs text-muted-foreground"
+                  data-testid="card-dates"
+                >
+                  <p>
+                    {t("card.created", {
+                      date: formatDate(card.createdAt, lang, hour12),
+                    })}
+                  </p>
+                  {card.updatedAt > card.createdAt && (
+                    <p>
+                      {t("card.updated", {
+                        date: formatDate(card.updatedAt, lang, hour12),
+                      })}
+                    </p>
+                  )}
+                </div>
+              </aside>
+              <main
+                ref={contentRef}
+                className="min-w-0 space-y-6 px-6 py-5 md:col-start-1 md:row-start-1"
+              >
+                <CollapsibleSection
+                  title={t("card.descriptionLabel")}
+                  testId="card-description-toggle"
+                  contentClassName="mt-1.5 space-y-1.5"
+                >
+                  {/* WYSIWYG Markdown (MDXEditor) — formatting lives in the
+                  editor toolbar; no separate preview toggle needed. The
+                  editor surface can't take maxLength (contenteditable), so
+                  oversized pastes are clamped here with a visible toast. */}
+                  <Suspense
+                    fallback={
+                      /* Same footprint as the empty editor so the dialog rows
+                     don't jump while the chunk streams in (first open only). */
+                      <div className="h-32 animate-pulse rounded-md bg-muted/40" />
+                    }
+                  >
+                    {/* The blur wrapper closes the staging window: leaving the
+                    editor is what commits the description. */}
+                    {descriptionSync.conflict && !readOnly ? (
+                      <div
+                        role="alert"
+                        data-testid="card-description-conflict"
+                        className="mb-1.5 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-foreground"
+                      >
+                        <span className="min-w-0 flex-1">
+                          {t("card.descriptionConflict")}
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7"
+                          data-testid="card-description-conflict-reload"
+                          onClick={reloadDescription}
+                        >
+                          {t("card.descriptionConflictReload")}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7"
+                          data-testid="card-description-conflict-keep"
+                          onClick={keepMyDescription}
+                        >
+                          {t("card.descriptionConflictKeep")}
+                        </Button>
+                      </div>
+                    ) : null}
+                    <div
+                      onBlur={() => {
+                        // A pending conflict is decided by the notice, not by
+                        // leaving the editor.
+                        if (!descriptionSync.conflict) flushStagedDescription();
+                      }}
+                      onPasteCapture={onDescriptionPaste}
+                    >
+                      <MemoDescriptionEditor
+                        ref={descriptionEditorRef}
+                        key={`${card.id}:${overflowTick}:${descriptionSync.epoch}`}
+                        value={
+                          descriptionSync.conflict && heldDraft !== null
+                            ? heldDraft
+                            : (card.description ?? "")
+                        }
+                        readOnly={readOnly}
+                        onChange={onDescriptionChange}
+                        placeholder={t("card.descriptionPlaceholder")}
+                      />
+                    </div>
+                  </Suspense>
+                  <LimitCounter
+                    length={(card.description ?? "").length}
+                    limit={LIMITS.description}
+                    testId="card-description-counter"
+                  />
+                </CollapsibleSection>
+
+                <CardTaskSpec
+                  acceptanceCriteria={card.acceptanceCriteria}
+                  definitionOfDone={card.definitionOfDone}
+                />
+
+                <CardLinks
+                  cardId={card.id}
+                  board={board}
+                  readOnly={readOnly}
+                  showEmpty={linkEditorCardId === card.id}
+                  onCancel={() => setLinkEditorCardId(null)}
+                  onAdd={() => {
+                    setLinkEditorCardId(card.id);
+                    requestAnimationFrame(() => {
+                      contentRef.current
+                        ?.querySelector<HTMLInputElement>(
+                          "[data-testid=card-links-input]",
+                        )
+                        ?.focus();
+                    });
+                  }}
+                />
+
+                <CardAttachments
+                  cardId={card.id}
+                  boardId={board.id}
+                  readOnly={readOnly}
+                />
+
+                <CardChecklists
+                  cardId={card.id}
+                  checklists={card.checklists ?? []}
+                  readOnly={readOnly}
+                />
+
+                {/* Last on purpose: the thread is the part that grows and
+                scrolls, everything above stays put. */}
+                <CardActivity
+                  key={card.id}
+                  cardId={card.id}
+                  boardId={board.id}
+                  updatedAt={card.updatedAt}
+                  localActivity={card.activity}
+                  readOnly={readOnly}
+                />
+              </main>
+            </div>
+          </div>
         </DialogContent>
+        <ConfirmDialog
+          open={deleteConfirm && !readOnly}
+          onOpenChange={setDeleteConfirm}
+          title={
+            card.archivedAt
+              ? t("card.deleteForeverTitle")
+              : t("card.deleteTitle")
+          }
+          description={
+            card.archivedAt
+              ? t("card.deleteForeverDescription", { title: card.title })
+              : t("card.deleteDescription", { title: card.title })
+          }
+          confirmLabel={t("card.deleteConfirm")}
+          destructive
+          onConfirm={handleDelete}
+        />
       </Dialog>
-    </>
-  );
-}
-
-interface CardDeleteActionProps {
-  archived: boolean;
-  title: string;
-  onConfirm: () => void;
-}
-
-/**
- * Delete button + its confirmation dialog. The pending-confirm flag lives
- * here, inside the card's `DialogContent`, so closing the card dialog
- * unmounts it and the next open never re-opens a stale confirmation
- * (AGENT.md: reset by remount — no `open` effect).
- */
-function CardDeleteAction({
-  archived,
-  title,
-  onConfirm,
-}: CardDeleteActionProps) {
-  const { t } = useI18n();
-  const [confirm, setConfirm] = useState(false);
-
-  return (
-    <>
-      <Button
-        variant="ghost"
-        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-        onClick={() => setConfirm(true)}
-      >
-        <Trash2 className="h-4 w-4" />
-        {archived ? t("card.deleteForever") : t("card.delete")}
-      </Button>
-      <ConfirmDialog
-        open={confirm}
-        onOpenChange={setConfirm}
-        title={archived ? t("card.deleteForeverTitle") : t("card.deleteTitle")}
-        description={
-          archived
-            ? t("card.deleteForeverDescription", { title })
-            : t("card.deleteDescription", { title })
-        }
-        confirmLabel={t("card.deleteConfirm")}
-        destructive
-        onConfirm={onConfirm}
-      />
     </>
   );
 }
@@ -1153,11 +1262,23 @@ function CardDeleteAction({
 function CopyCardLinkButton() {
   const { t } = useI18n();
   const toast = useToast();
+  const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    },
+    [],
+  );
 
   const handleCopy = async () => {
     try {
       if (!navigator.clipboard) throw new Error("clipboard unavailable");
       await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
       toast.success(t("card.linkCopied"));
     } catch {
       toast.error(t("card.linkCopyError"));
@@ -1170,15 +1291,21 @@ function CopyCardLinkButton() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0 text-muted-foreground"
-          aria-label={t("card.copyLink")}
+          className="h-10 w-7 shrink-0 text-foreground/70"
+          aria-label={t(copied ? "card.linkCopied" : "card.copyLink")}
           data-testid="card-copy-link"
           onClick={() => void handleCopy()}
         >
-          <Link2 className="h-4 w-4 -rotate-45" />
+          {copied ? (
+            <Check className="card-copy-success h-3.5 w-3.5 text-primary" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" />
+          )}
         </Button>
       </TooltipTrigger>
-      <TooltipContent>{t("card.copyLink")}</TooltipContent>
+      <TooltipContent>
+        {t(copied ? "card.linkCopied" : "card.copyLink")}
+      </TooltipContent>
     </Tooltip>
   );
 }

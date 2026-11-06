@@ -16,6 +16,12 @@ test("copy a card link from its details and open it in another tab", async ({
   const dialog = page.getByRole("dialog", { name: "Card details" });
   await dialog.getByRole("textbox", { name: "Title" }).hover();
   await dialog.getByTestId("card-copy-link").click();
+  await expect(dialog.getByTestId("card-copy-link")).toHaveAccessibleName(
+    "Card link copied",
+  );
+  await expect(
+    dialog.getByTestId("card-copy-link").locator(".card-copy-success"),
+  ).toBeVisible();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   const url = new URL(copied);
   expect(url.pathname).toContain(`/board/${board.id}`);

@@ -297,12 +297,12 @@ function ChecklistCard({
       {expanded ? (
         <ul className="mt-2 max-h-48 space-y-0.5 overflow-y-auto pr-1">
           {checklist.items.map((item) => (
-            <li key={item.id} className="group/item flex items-center gap-2">
+            <li key={item.id} className="group/item flex items-start gap-2">
               {readOnly ? (
                 <span
                   aria-hidden
                   className={cn(
-                    "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                    "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border",
                     item.done
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border/80 bg-background",
@@ -316,7 +316,7 @@ function ChecklistCard({
                   onClick={() => onToggleItem(item.id)}
                   aria-pressed={item.done}
                   className={cn(
-                    "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
+                    "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
                     item.done
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border/80 bg-background hover:border-primary/60",
@@ -352,7 +352,7 @@ function ChecklistCard({
                   type="button"
                   onClick={() => onDeleteItem(item.id)}
                   aria-label={t("checklist.itemDelete")}
-                  className="no-hover:opacity-100 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/item:opacity-100"
+                  className="no-hover:opacity-100 mt-px shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/item:opacity-100"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>

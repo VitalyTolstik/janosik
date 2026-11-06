@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ArrowUpRight, CornerDownLeft, Link2, X } from "lucide-react";
 
@@ -19,7 +19,7 @@ import {
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
-import { routes } from "@/routes";
+import { cardHref, shouldLeaveToBrowser } from "@/utils/card-nav";
 import { useBoardActions } from "@/store/BoardContext";
 import { splitHighlight } from "@/utils/filter";
 import {
@@ -36,6 +36,9 @@ interface CardLinksProps {
   cardId: string;
   board: Board;
   readOnly?: boolean;
+  showEmpty?: boolean;
+  onAdd?: () => void;
+  onCancel?: () => void;
 }
 
 /**
@@ -50,7 +53,14 @@ interface CardLinksProps {
  * cycles); the UI checks the two refusable ones up front so the user gets
  * a toast instead of a silently dropped command.
  */
-export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
+export function CardLinks({
+  cardId,
+  board,
+  readOnly = false,
+  showEmpty = true,
+  onAdd,
+  onCancel,
+}: CardLinksProps) {
   const { t } = useI18n();
   const { addCardLink, removeCardLink } = useBoardActions();
   const toast = useToast();
@@ -75,7 +85,64 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
     setQuery("");
     setCursor(0);
   }
+  // The editor can also be closed by the dialog (Escape); clear its draft the
+  // same way the Cancel path does.
+  const [prevShowEmpty, setPrevShowEmpty] = useState(showEmpty);
+  if (prevShowEmpty !== showEmpty) {
+    setPrevShowEmpty(showEmpty);
+    if (!showEmpty) {
+      setQuery("");
+      setCursor(0);
+    }
+  }
   const inputRef = useRef<HTMLInputElement>(null);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const wasEditingRef = useRef(showEmpty);
+  const cardIdRef = useRef(cardId);
+  useEffect(() => {
+    const sameCard = cardIdRef.current === cardId;
+    cardIdRef.current = cardId;
+    // Restore the opener only when the editor closed itself and the focus
+    // was actually lost. An outside click already focused its own target
+    // (title, Labels trigger, …), which must keep it.
+    if (wasEditingRef.current && !showEmpty && sameCard) {
+      const active = document.activeElement;
+      if (active === null || active === document.body) {
+        requestAnimationFrame(() =>
+          addButtonRef.current?.focus({ preventScroll: true }),
+        );
+      }
+    }
+    wasEditingRef.current = showEmpty;
+  }, [showEmpty, cardId]);
+  useEffect(() => {
+    if (!showEmpty || !onCancel) return;
+    const handleOutside = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      // Use the dispatch-time path, not the live DOM: the control that opened
+      // the editor unmounts during this same click, so `contains` would no
+      // longer find its (now detached) target.
+      const path = event.composedPath();
+      const section = sectionRef.current;
+      if (
+        (section !== null && path.includes(section)) ||
+        path.some(
+          (node) =>
+            node instanceof Element && node.matches("[data-card-links-picker]"),
+        )
+      )
+        return;
+      setQuery("");
+      setCursor(0);
+      onCancel();
+    };
+    // Bubble phase, not capture: the clicked control must receive its click
+    // before the editor collapses and reflows the content below it.
+    document.addEventListener("click", handleOutside);
+    return () => document.removeEventListener("click", handleOutside);
+  }, [showEmpty, onCancel]);
   const listId = useId();
 
   const facts = useMemo(
@@ -109,6 +176,22 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
   // an editor also needs it when the card holds nothing but dangling rows,
   // because those are what is holding the cap.
   if (readOnly && facts.degree === 0) return null;
+  if (!onAdd && !showEmpty && groups.length === 0) return null;
+
+  // The editor unmounts on close; put focus back on the control that opened
+  // it so the next Tab does not jump to the end of the dialog.
+  const focusAddButton = () => {
+    requestAnimationFrame(() =>
+      addButtonRef.current?.focus({ preventScroll: true }),
+    );
+  };
+
+  const closeEditor = () => {
+    setQuery("");
+    setCursor(0);
+    onCancel?.();
+    focusAddButton();
+  };
 
   const pick = (target: { id: string; title: string }) => {
     // "is blocked by X" stores a blocks row on X pointing back here, so the
@@ -130,11 +213,17 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
     addCardLink(holderId, otherId, option.linkType);
     setQuery("");
     setCursor(0);
-    inputRef.current?.focus();
+    if (onCancel) {
+      onCancel();
+      focusAddButton();
+    } else inputRef.current?.focus();
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (suggestions.length === 0) return;
+    if (suggestions.length === 0) {
+      if (event.key === "Escape") setQuery("");
+      return;
+    }
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setCursor((rawCursor + 1) % suggestions.length);
@@ -172,12 +261,36 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
     option.holder === "source" && linkCount(cardId) >= LIMITS.linksPerCard;
 
   return (
-    <div className="space-y-1.5" data-testid="card-links">
-      <span className="text-xs font-medium text-muted-foreground">
-        {t("card.links.title")}
-      </span>
+    <div ref={sectionRef} className="space-y-1.5" data-testid="card-links">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-muted-foreground">
+          {t("card.links.title")}
+        </span>
+        {!readOnly && onAdd && !showEmpty && (
+          <Button
+            ref={addButtonRef}
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground"
+            onClick={onAdd}
+          >
+            <Link2 className="h-3.5 w-3.5" />
+            {t("card.menu.linkCard")}
+          </Button>
+        )}
+        {!readOnly && onCancel && showEmpty && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground"
+            onClick={closeEditor}
+          >
+            {t("common.cancel")}
+          </Button>
+        )}
+      </div>
 
-      {groups.length === 0 ? (
+      {groups.length === 0 && !showEmpty ? null : groups.length === 0 ? (
         <p
           className="text-sm text-muted-foreground/70"
           data-testid="card-links-empty"
@@ -207,16 +320,12 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
                         have nowhere to navigate — a muted span instead. */}
                       {row.live ? (
                         <a
-                          href={`${routes.board(board.id)}?card=${row.targetCardId}`}
+                          href={cardHref(board.id, row.targetCardId)}
                           className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm text-foreground/90 transition-colors hover:bg-hover"
                           onClick={(event) => {
-                            if (
-                              event.button !== 0 ||
-                              event.metaKey ||
-                              event.ctrlKey
-                            ) {
-                              return;
-                            }
+                            // Modifier/middle clicks keep the browser's href
+                            // behavior (new tab), including the deploy base.
+                            if (shouldLeaveToBrowser(event)) return;
                             event.preventDefault();
                             openCard(row.targetCardId);
                           }}
@@ -266,14 +375,12 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
         </div>
       )}
 
-      {!readOnly ? (
+      {!readOnly && (showEmpty || (!onAdd && groups.length > 0)) ? (
         <div className="flex items-center gap-1.5">
           <DropdownPicker
             value={option}
-            onChange={(next) => {
-              setOption(next);
-              inputRef.current?.focus();
-            }}
+            onChange={(next) => setOption(next)}
+            onSelected={() => inputRef.current?.focus()}
           />
           <div className="relative min-w-0 flex-1">
             <Input
@@ -291,6 +398,11 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
               aria-expanded={suggestions.length > 0}
               aria-controls={listId}
               aria-autocomplete="list"
+              aria-activedescendant={
+                suggestions.length > 0
+                  ? `${listId}-option-${cursor}`
+                  : undefined
+              }
               className="h-8 text-sm"
               data-testid="card-links-input"
             />
@@ -305,6 +417,7 @@ export function CardLinks({ cardId, board, readOnly = false }: CardLinksProps) {
                   <li key={hit.id} role="presentation">
                     <button
                       type="button"
+                      id={`${listId}-option-${index}`}
                       role="option"
                       aria-selected={index === cursor}
                       className={cn(
@@ -376,11 +489,16 @@ function HighlightedTitle({ title, query }: { title: string; query?: string }) {
 function DropdownPicker({
   value,
   onChange,
+  onSelected,
 }: {
   value: (typeof LINK_TYPE_OPTIONS)[number];
   onChange: (next: (typeof LINK_TYPE_OPTIONS)[number]) => void;
+  onSelected?: () => void;
 }) {
   const { t } = useI18n();
+  // Radix would focus the trigger on close; after a pick we want the search
+  // input instead. Remember whether the menu closed by selection.
+  const selectedRef = useRef(false);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -396,7 +514,17 @@ function DropdownPicker({
           </span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-52">
+      <DropdownMenuContent
+        align="start"
+        className="w-52"
+        data-card-links-picker
+        onCloseAutoFocus={(event) => {
+          if (!selectedRef.current) return;
+          selectedRef.current = false;
+          event.preventDefault();
+          onSelected?.();
+        }}
+      >
         <DropdownMenuLabel>{t("card.links.typeAria")}</DropdownMenuLabel>
         {LINK_TYPE_OPTIONS.map((entry) => (
           <DropdownMenuItem
@@ -406,7 +534,10 @@ function DropdownPicker({
                 "bg-primary/10 font-medium text-primary",
             )}
             data-testid={`card-links-type-${entry.option}`}
-            onSelect={() => onChange(entry)}
+            onSelect={() => {
+              selectedRef.current = true;
+              onChange(entry);
+            }}
           >
             {entry.option === value.option ? "✓ " : ""}
             {t(`card.links.type.${entry.option}`)}

@@ -49,6 +49,11 @@ interface LabelPickerProps {
   onDelete: (labelId: string) => void;
   /** VIEWER mode (TASK-35): shows the selected chips only, nothing to click. */
   readOnly?: boolean;
+  /**
+   * Compact header mode: render only the selected labels as toggle buttons.
+   * The full picker (create/rename/recolor) stays behind the Labels popover.
+   */
+  chipsOnly?: boolean;
 }
 
 /** Row of color swatches — used for the "new label" form and recolor menu. */
@@ -103,6 +108,7 @@ export function LabelPicker({
   onRecolor,
   onDelete,
   readOnly = false,
+  chipsOnly = false,
 }: LabelPickerProps) {
   const { t } = useI18n();
   const toast = useToast();
@@ -147,6 +153,36 @@ export function LabelPicker({
             />
             {label.name}
           </span>
+        ))}
+      </div>
+    );
+  }
+
+  // Compact header chips: a selected label is a toggle button, so removing a
+  // label does not require opening the full picker.
+  if (chipsOnly) {
+    const selectedLabels = labels.filter((label) =>
+      selected.includes(label.id),
+    );
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {selectedLabels.map((label) => (
+          <button
+            key={label.id}
+            type="button"
+            aria-pressed={true}
+            onClick={() => onToggle(label.id)}
+            className="inline-flex h-6 items-center gap-1.5 rounded-full border border-border px-2 text-[11px] font-medium transition-colors hover:border-foreground/30 hover:bg-hover"
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "h-2 w-2 shrink-0 rounded-full",
+                LABEL_COLOR_DOT[label.color],
+              )}
+            />
+            {label.name}
+          </button>
         ))}
       </div>
     );

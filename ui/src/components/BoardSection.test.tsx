@@ -257,7 +257,7 @@ describe("BoardSection", () => {
     fireEvent.click(screen.getByText("Dated card"));
 
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText("Dated card")).toBeInTheDocument();
+    expect(within(dialog).getByDisplayValue("Dated card")).toBeInTheDocument();
   });
 
   it("shows the table view with column, due badge and labels", async () => {
@@ -343,7 +343,7 @@ describe("BoardSection", () => {
 
     // The deep link opens the dialog directly, in the default board view.
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("Plain card")).toBeInTheDocument();
+    expect(within(dialog).getByDisplayValue("Plain card")).toBeInTheDocument();
 
     // While a modal dialog is open the rest of the page is aria-hidden —
     // close it first (Escape), then switch to the table view.
@@ -355,7 +355,7 @@ describe("BoardSection", () => {
 
     // The row click opens the same dialog from the table projection.
     expect(
-      within(screen.getByRole("dialog")).getByText("Plain card"),
+      within(screen.getByRole("dialog")).getByDisplayValue("Plain card"),
     ).toBeInTheDocument();
   });
 
@@ -367,7 +367,7 @@ describe("BoardSection", () => {
     // the address bar (the same behaviour as the search/archive paths).
     fireEvent.click(await screen.findByText("Plain card"));
     expect(
-      within(screen.getByRole("dialog")).getByText("Plain card"),
+      within(screen.getByRole("dialog")).getByDisplayValue("Plain card"),
     ).toBeInTheDocument();
     expect(screen.getByTestId("route-probe")).toHaveTextContent(
       "card=card-plain",
@@ -393,6 +393,32 @@ describe("BoardSection", () => {
     expect(await screen.findByText("Card not found")).toBeInTheDocument();
   });
 
+  it("deletes the open card without reporting it as missing", async () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard("/board/board-view?card=card-plain");
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.pointerDown(
+      within(dialog).getByRole("button", { name: "Card actions" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Delete card" }),
+    );
+    const confirm = await screen.findByRole("dialog", {
+      name: "Delete this card?",
+    });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Delete" }));
+
+    // The card leaves the board and the dialog closes…
+    await waitFor(() => expect(screen.queryByText("Plain card")).toBeNull());
+    // …the deep-link param is cleared…
+    await waitFor(() =>
+      expect(screen.getByTestId("route-probe")).toHaveTextContent(""),
+    );
+    // …without the stale param blaming the user for a missing card.
+    expect(screen.queryByText("Card not found")).toBeNull();
+  });
+
   // Regression: a server commit landing right after a deliberate close
   // (e.g. the "Duplicate card" click) must not flash the dialog back open
   // while the ?card= cleanup is still settling.
@@ -400,7 +426,7 @@ describe("BoardSection", () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard("/board/board-view?card=card-plain");
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("Plain card")).toBeInTheDocument();
+    expect(within(dialog).getByDisplayValue("Plain card")).toBeInTheDocument();
 
     // Close, then immediately touch the board state (a rename) — the same
     // interleaving a live command commit produces.
@@ -420,7 +446,7 @@ describe("BoardSection", () => {
     // A fresh deep link still opens the dialog after all that.
     fireEvent.click(screen.getByText("Plain card"));
     expect(
-      within(screen.getByRole("dialog")).getByText("Plain card"),
+      within(screen.getByRole("dialog")).getByDisplayValue("Plain card"),
     ).toBeInTheDocument();
   });
 });
@@ -514,7 +540,7 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
     // itself is aria-hidden under the modal dialog).
     fireEvent.click(within(panel).getByText("Dated card"));
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText("Dated card")).toBeInTheDocument();
+    expect(within(dialog).getByDisplayValue("Dated card")).toBeInTheDocument();
   });
 
   it("quick-adds a card from the unscheduled panel", async () => {
@@ -553,7 +579,7 @@ describe("CalendarView interactivity (TASK-14.1)", () => {
 
     // The card dialog opens for the freshly created card.
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText("Brand new")).toBeInTheDocument();
+    expect(within(dialog).getByDisplayValue("Brand new")).toBeInTheDocument();
 
     fireEvent.keyDown(dialog, { key: "Escape" });
     // The new card now sits on the target day, no longer unscheduled.

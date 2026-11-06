@@ -116,7 +116,16 @@ async function openCardDialog(title: string) {
   return await screen.findByRole("dialog");
 }
 
+async function ensureLinkEditor(dialog: HTMLElement) {
+  if (!within(dialog).queryByTestId("card-links-input")) {
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Link card" }),
+    );
+  }
+}
+
 async function linkCard(dialog: HTMLElement, query: string) {
+  await ensureLinkEditor(dialog);
   const input = within(dialog).getByTestId("card-links-input");
   await userEvent.type(input, query);
   const list = await within(dialog).findByTestId("card-links-suggestions");
@@ -125,22 +134,113 @@ async function linkCard(dialog: HTMLElement, query: string) {
 }
 
 async function chooseRelation(dialog: HTMLElement, option: string) {
+  await ensureLinkEditor(dialog);
   await userEvent.click(within(dialog).getByTestId("card-links-type"));
   await userEvent.click(await screen.findByTestId(`card-links-type-${option}`));
 }
 
 describe("CardLinks (TASK-46)", () => {
+  it("keeps the editor open while choosing a relation, then closes on an outside click", async () => {
+    renderBoard();
+    const dialog = await openCardDialog("Set up CI/CD pipeline");
+    await ensureLinkEditor(dialog);
+    const input = within(dialog).getByTestId("card-links-input");
+    await waitFor(() => expect(input).toHaveFocus());
+    await userEvent.type(input, "Fix");
+    const firstOption = within(dialog).getAllByTestId(
+      "card-links-suggestion",
+    )[0];
+    expect(input).toHaveAttribute("aria-activedescendant", firstOption.id);
+    await chooseRelation(dialog, "blocks");
+    expect(input).toHaveValue("Fix");
+    await waitFor(() => expect(input).toHaveFocus());
+    await userEvent.click(within(dialog).getByText("Description"));
+    expect(within(dialog).queryByTestId("card-links-input")).toBeNull();
+    await ensureLinkEditor(dialog);
+    expect(within(dialog).getByTestId("card-links-input")).toHaveValue("");
+  });
+
+  it("closes on an outside click without swallowing that click", async () => {
+    renderBoard();
+    const dialog = await openCardDialog("Set up CI/CD pipeline");
+    await ensureLinkEditor(dialog);
+    const toggle = within(dialog).getByTestId("checklists-toggle");
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    await userEvent.click(toggle);
+
+    expect(within(dialog).queryByTestId("card-links-input")).toBeNull();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("keeps the focus of the control clicked outside the editor", async () => {
+    renderBoard();
+    const dialog = await openCardDialog("Set up CI/CD pipeline");
+    await ensureLinkEditor(dialog);
+    const title = within(dialog).getByLabelText("Title");
+
+    await userEvent.click(title);
+
+    expect(within(dialog).queryByTestId("card-links-input")).toBeNull();
+    expect(title).toHaveFocus();
+  });
+
+  it("cancels the link editor and clears its search", async () => {
+    renderBoard();
+    const dialog = await openCardDialog("Set up CI/CD pipeline");
+    await ensureLinkEditor(dialog);
+    await userEvent.type(within(dialog).getByTestId("card-links-input"), "Fix");
+    await userEvent.click(
+      within(within(dialog).getByTestId("card-links")).getByRole("button", {
+        name: "Cancel",
+      }),
+    );
+    expect(within(dialog).queryByTestId("card-links-input")).toBeNull();
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Link card" }),
+      ).toHaveFocus(),
+    );
+    await ensureLinkEditor(dialog);
+    expect(within(dialog).getByTestId("card-links-input")).toHaveValue("");
+  });
+
+  it("closes the editor on Escape without closing the card", async () => {
+    renderBoard();
+    const dialog = await openCardDialog("Set up CI/CD pipeline");
+    await ensureLinkEditor(dialog);
+    const input = within(dialog).getByTestId("card-links-input");
+    await userEvent.type(input, "Fix");
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(within(dialog).queryByTestId("card-links-input")).toBeNull();
+    expect(
+      screen.getByRole("dialog", { name: "Card details" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Link card" }),
+      ).toHaveFocus(),
+    );
+  });
+
   it("adds a link through the autocomplete and shows it on both cards", async () => {
     renderBoard();
     const dialog = await openCardDialog("Set up CI/CD pipeline");
 
     await linkCard(dialog, "Fix critical");
-    // The row lands under "relates to", the input resets.
+    // The row lands under "relates to" and the editor closes.
     expect(await within(dialog).findByTestId("card-link-row")).toHaveAttribute(
       "data-link-type",
       "relates_to",
     );
-    expect(within(dialog).getByTestId("card-links-input")).toHaveValue("");
+    expect(within(dialog).queryByTestId("card-links-input")).toBeNull();
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Link card" }),
+      ).toHaveFocus(),
+    );
 
     // Opening the linked card re-points the `?card=` deep link; the dialog
     // then reads the same pair from the other end.
@@ -152,25 +252,58 @@ describe("CardLinks (TASK-46)", () => {
     });
   });
 
+  it("closes the editor when the dialog navigates to a linked card", async () => {
+    renderBoard();
+    const dialog = await openCardDialog("Set up CI/CD pipeline");
+    await linkCard(dialog, "Fix critical");
+    await ensureLinkEditor(dialog);
+    expect(within(dialog).getByTestId("card-links-input")).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getAllByTestId("card-link-open")[0]);
+
+    await waitFor(() =>
+      expect(within(dialog).queryByTestId("card-links-input")).toBeNull(),
+    );
+    expect(
+      within(dialog).getByDisplayValue("Fix critical auth bug"),
+    ).toBeInTheDocument();
+  });
+
   it("hides an already-linked card from the suggestions", async () => {
     renderBoard();
     const dialog = await openCardDialog("Set up CI/CD pipeline");
     await linkCard(dialog, "Fix critical");
 
+    await ensureLinkEditor(dialog);
     const input = within(dialog).getByTestId("card-links-input");
     await userEvent.type(input, "Fix");
     // The only "Fix critical …" card is taken — no suggestions remain.
     expect(within(dialog).queryByTestId("card-links-suggestions")).toBeNull();
   });
 
-  it("removes a link and falls back to the empty state", async () => {
+  it("shows the empty prompt only while the editor is open", async () => {
+    renderBoard();
+    const dialog = await openCardDialog("Set up CI/CD pipeline");
+    expect(within(dialog).queryByTestId("card-links-empty")).toBeNull();
+    await ensureLinkEditor(dialog);
+    expect(within(dialog).getByTestId("card-links-empty")).toBeInTheDocument();
+  });
+
+  it("removes a link and collapses back to the Link card action", async () => {
     renderBoard();
     const dialog = await openCardDialog("Set up CI/CD pipeline");
     await linkCard(dialog, "Fix critical");
-    expect(await within(dialog).findByTestId("card-link-row")).toBeDefined();
+    expect(
+      await within(dialog).findByTestId("card-link-row"),
+    ).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByTestId("card-link-remove"));
-    expect(await within(dialog).findByTestId("card-links-empty")).toBeDefined();
+    await waitFor(() =>
+      expect(within(dialog).queryByTestId("card-link-row")).toBeNull(),
+    );
+    expect(
+      within(dialog).getByRole("button", { name: "Link card" }),
+    ).toBeInTheDocument();
   });
 
   it("renders a row towards a deleted card so its cap can be freed", async () => {
@@ -182,7 +315,7 @@ describe("CardLinks (TASK-46)", () => {
     // hidden the way the live-only index used to hide it.
     const row = await within(dialog).findByTestId("card-link-row");
     expect(row).toHaveAttribute("data-link-type", "relates_to");
-    expect(within(row).getByText(/deleted card/i)).toBeDefined();
+    expect(within(row).getByText(/deleted card/i)).toBeInTheDocument();
     // Nowhere to navigate: the target is gone (a muted, aria-disabled
     // span — an anchor needs a href to be disabled from).
     expect(within(row).getByTestId("card-link-open")).toHaveAttribute(
@@ -192,7 +325,9 @@ describe("CardLinks (TASK-46)", () => {
 
     // Removing it is what frees the card's row cap.
     fireEvent.click(within(row).getByTestId("card-link-remove"));
-    expect(await within(dialog).findByTestId("card-links-empty")).toBeDefined();
+    await waitFor(() =>
+      expect(within(dialog).queryByTestId("card-link-row")).toBeNull(),
+    );
   });
 
   it("does not count a deleted target on the card front badge", async () => {
@@ -232,7 +367,9 @@ describe("CardLinks (TASK-46)", () => {
     const target = screen
       .getByText("Fix critical auth bug")
       .closest("article") as HTMLElement;
-    expect(within(target).getByTestId("card-blocked-badge")).toBeDefined();
+    expect(
+      within(target).getByTestId("card-blocked-badge"),
+    ).toBeInTheDocument();
     expect(within(target).getByTestId("card-links-badge")).toHaveTextContent(
       "2",
     );
@@ -242,7 +379,7 @@ describe("CardLinks (TASK-46)", () => {
     dialog = await openCardDialog("Investigate flaky test suite");
     await chooseRelation(dialog, "blocks");
     await linkCard(dialog, "CI/CD");
-    expect(await screen.findByText(/circular dependency/i)).toBeDefined();
+    expect(await screen.findByText(/circular dependency/i)).toBeInTheDocument();
     expect(within(dialog).getAllByTestId("card-link-row")).toHaveLength(1);
   });
 });
