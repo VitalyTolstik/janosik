@@ -176,11 +176,13 @@ export function CardDialog({
   const card = board && cardId ? board.cards[cardId] : undefined;
   const { t, lang } = useI18n();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [labelPickerOpen, setLabelPickerOpen] = useState(false);
   const [linkEditorCardId, setLinkEditorCardId] = useState<string | null>(null);
   const [previousLinkCardId, setPreviousLinkCardId] = useState(cardId);
   if (previousLinkCardId !== cardId) {
     setPreviousLinkCardId(cardId);
     setLinkEditorCardId(null);
+    setLabelPickerOpen(false);
     // The pending delete belongs to the previous card. Without this reset a
     // card switch (Back/Forward, a link row) would reopen the confirmation
     // for the new card and its Delete button would remove the wrong one.
@@ -749,6 +751,7 @@ export function CardDialog({
         onOpenChange={(nextOpen) => {
           if (!nextOpen) {
             setLinkEditorCardId(null);
+            setLabelPickerOpen(false);
             setDeleteConfirm(false);
           }
           onOpenChange(nextOpen);
@@ -931,7 +934,10 @@ export function CardDialog({
                 <LabelPicker
                   labels={board.labels}
                   selected={card.labelIds}
-                  readOnly={readOnly}
+                  // While the full picker is open its buttons own the label
+                  // names; keep the header chips display-only so the same
+                  // label is not exposed as two competing controls.
+                  readOnly={readOnly || labelPickerOpen}
                   chipsOnly
                   onToggle={(labelId) => toggleCardLabel(card.id, labelId)}
                   onCreate={() => {}}
@@ -940,7 +946,10 @@ export function CardDialog({
                   onDelete={() => {}}
                 />
                 {!readOnly && (
-                  <Popover>
+                  <Popover
+                    open={labelPickerOpen}
+                    onOpenChange={setLabelPickerOpen}
+                  >
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
