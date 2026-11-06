@@ -145,14 +145,6 @@ const SHOTS = {
     await shot(page, "card-quick-menu");
   },
 
-  async "card-dialog"(page) {
-    await openBoard(page);
-    await card(page, "Realtime cursors on the board").click();
-    await page.getByText("Card details", { exact: false }).first().waitFor();
-    await wait(800);
-    await shot(page, "card-dialog");
-  },
-
   async "card-activity"(page) {
     await openBoard(page);
     await card(page, "Realtime cursors on the board").click();
