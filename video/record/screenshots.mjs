@@ -72,9 +72,12 @@ function storageFor(key) {
   };
 }
 
-async function newContext(browser, { auth = true, theme = "light" } = {}) {
+async function newContext(
+  browser,
+  { auth = true, theme = "light", height = HEIGHT } = {},
+) {
   const context = await browser.newContext({
-    viewport: { width: WIDTH, height: HEIGHT },
+    viewport: { width: WIDTH, height },
     deviceScaleFactor: 2,
     ...(auth ? { storageState: storageFor("ada") } : {}),
   });
@@ -153,18 +156,25 @@ const SHOTS = {
   async "card-activity"(page) {
     await openBoard(page);
     await card(page, "Realtime cursors on the board").click();
-    await wait(700);
-    const body = page
-      .locator('[data-testid="card-dialog"] [role="dialog"], [role="dialog"]')
-      .first();
-    await page
-      .getByText("Comments", { exact: false })
-      .last()
-      .scrollIntoViewIfNeeded();
+    await page.getByTestId("activity-tab-comments").waitFor();
+    await wait(900);
+    // The dialog body is the scroll container; put the Activity section at
+    // the top of it so the shot shows the tabs, composer and thread.
+    const activity = page.getByTestId("activity-toggle");
+    await activity.scrollIntoViewIfNeeded();
     await wait(400);
-    if (await body.count())
-      await body.evaluate((el) => (el.scrollTop = el.scrollHeight));
-    await wait(400);
+    await activity.evaluate((node) => {
+      const scroller = node.closest(".overflow-y-auto");
+      if (!scroller || scroller.scrollHeight <= scroller.clientHeight + 4) {
+        return;
+      }
+      const top =
+        node.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top +
+        scroller.scrollTop;
+      scroller.scrollTop = Math.max(0, top - 16);
+    });
+    await wait(500);
     await shot(page, "card-activity");
   },
 
@@ -314,7 +324,12 @@ async function main() {
   const failures = [];
   for (const name of names) {
     if (!SHOTS[name]) throw new Error(`unknown shot ${name}`);
-    const context = await newContext(browser, { auth: name !== "login" });
+    const context = await newContext(browser, {
+      auth: name !== "login",
+      // The activity thread lives at the tail of the dialog; a taller viewport
+      // shows it together with the property rail instead of an empty column.
+      height: name === "card-activity" ? 1200 : HEIGHT,
+    });
     const page = await context.newPage();
     try {
       await SHOTS[name](page);
