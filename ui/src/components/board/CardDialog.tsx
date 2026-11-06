@@ -931,8 +931,9 @@ export function CardDialog({
                 <LabelPicker
                   labels={board.labels}
                   selected={card.labelIds}
-                  readOnly
-                  onToggle={() => {}}
+                  readOnly={readOnly}
+                  chipsOnly
+                  onToggle={(labelId) => toggleCardLabel(card.id, labelId)}
                   onCreate={() => {}}
                   onRename={() => {}}
                   onRecolor={() => {}}
