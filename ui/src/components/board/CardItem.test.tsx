@@ -189,6 +189,41 @@ describe("CardItem search highlight", () => {
     renderCard();
     expect(screen.getByTestId("card-title").querySelector("mark")).toBeNull();
   });
+
+  it("marks the description badge for a description-only match", () => {
+    renderCard({ ...baseCard, description: "Under the sofa" }, [], "sofa");
+    expect(screen.getByTestId("card-description-badge")).toHaveAttribute(
+      "data-highlight",
+      "description",
+    );
+  });
+
+  it("does not mark the description badge when only a checklist item matches", () => {
+    renderCard(
+      {
+        ...baseCard,
+        description: "Release notes",
+        checklists: [
+          {
+            id: "cl-1",
+            title: "DoD",
+            items: [
+              {
+                id: "item-1",
+                text: "run the widget migration",
+                done: false,
+              },
+            ],
+          },
+        ],
+      },
+      [],
+      "widget migration",
+    );
+    expect(screen.getByTestId("card-description-badge")).not.toHaveAttribute(
+      "data-highlight",
+    );
+  });
 });
 
 describe("CardItem render isolation (TASK-21.4)", () => {

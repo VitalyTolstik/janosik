@@ -18,7 +18,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { useBoardMember, useEntityAttribution } from "@/store/board-live";
-import { descriptionSnippet } from "@/utils/filter";
+import { checklistMatch, descriptionSnippet } from "@/utils/filter";
 import {
   cardHref,
   openCardInNewTab,
@@ -206,8 +206,13 @@ function CardItemView({
         (label) => label.id === id && label.name.toLowerCase().includes(query),
       ),
     );
+  const checklistMatched = query !== "" && checklistMatch(card, query) !== null;
   const descriptionOnly =
-    query !== "" && !titleMatched && !labelMatched && hasDescription;
+    query !== "" &&
+    !titleMatched &&
+    !labelMatched &&
+    !checklistMatched &&
+    hasDescription;
   const snippet = descriptionOnly
     ? descriptionSnippet(card.description ?? "", query)
     : null;

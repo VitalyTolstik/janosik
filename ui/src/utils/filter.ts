@@ -200,7 +200,7 @@ function cardTextMatches(card: Card, labels: Label[], query: string): boolean {
 }
 
 /** The first checklist-item text containing `needle`, or null. */
-function checklistMatch(card: Card, needle: string): string | null {
+export function checklistMatch(card: Card, needle: string): string | null {
   for (const list of card.checklists ?? []) {
     for (const item of list.items) {
       if (item.text.toLowerCase().includes(needle)) return item.text;
