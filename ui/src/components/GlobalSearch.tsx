@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/Toast";
 import {
   Dialog,
   DialogContent,
@@ -125,6 +126,7 @@ interface GlobalSearchPaletteProps {
 
 function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
   const { t } = useI18n();
+  const toast = useToast();
   const { boards } = useBoard();
   const navigate = useNavigate();
 
@@ -132,6 +134,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   // Debounce the query before the (synchronous) search runs over it.
   useEffect(() => {
@@ -152,7 +155,19 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
 
   useEffect(() => setActiveIndex(0), [query]);
 
+  useEffect(() => {
+    const row = resultsRef.current?.querySelector<HTMLElement>(
+      '[aria-selected="true"]',
+    );
+    if (!row || typeof row.scrollIntoView !== "function") return;
+    row.scrollIntoView({ block: "nearest" });
+  }, [activeIndex]);
+
   const openHit = (hit: SearchHit) => {
+    if (hit.kind === "board" && hit.boardArchived) {
+      toast.info(t("search.archivedBoard"));
+      return;
+    }
     onClose();
     navigate(
       hit.kind === "card"
@@ -204,6 +219,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
       </div>
 
       <div
+        ref={resultsRef}
         className="max-h-[60vh] overflow-y-auto p-2"
         data-testid="global-search-results"
       >

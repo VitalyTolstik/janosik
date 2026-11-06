@@ -49,6 +49,14 @@ watch view hides the toolbar). Tests are independent and cover one behaviour
 each. Creation-date cases age cards in the disposable Docker database, so they
 are skipped when running against external development servers.
 
+`tests/app/search/` covers the header global search (button and Ctrl/Cmd+K,
+cross-board card and board hits, title/description/label/checklist matches,
+highlights, archived badges and ranking, keyboard navigation and the 20-result
+cap, opening the card dialog or the board), whitespace trimming in the board
+query and the card archive search (filtering, no matches, empty archive, reset
+and opening an archived card). Each test starts from its own user and board;
+extra boards are created through the API.
+
 To use already-running development servers instead, provide the site and app
 URLs separately; point the app URL at the dev server root, not `/app/`:
 
