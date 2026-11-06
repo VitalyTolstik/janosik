@@ -98,6 +98,7 @@ export function CardLinks({
   const inputRef = useRef<HTMLInputElement>(null);
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const sectionRef = useRef<HTMLDivElement>(null);
+  const pickerOpenRef = useRef(false);
   const wasEditingRef = useRef(showEmpty);
   const cardIdRef = useRef(cardId);
   useEffect(() => {
@@ -116,11 +117,28 @@ export function CardLinks({
     }
     wasEditingRef.current = showEmpty;
   }, [showEmpty, cardId]);
+  const handlePickerOpenChange = (open: boolean) => {
+    if (open) {
+      pickerOpenRef.current = true;
+      return;
+    }
+    // Radix closes the menu before the same click bubbles to the document
+    // handler; keep the guard until the next frame so that click cannot close
+    // the whole editor. A later outside click closes it normally.
+    requestAnimationFrame(() => {
+      pickerOpenRef.current = false;
+    });
+  };
   useEffect(() => {
     if (!showEmpty || !onCancel) return;
     const handleOutside = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
+      // A click that closes the relation menu (or lands on its item) must not
+      // also close the whole link editor — the picker is a nested popover.
+      if (pickerOpenRef.current) {
+        return;
+      }
       // Use the dispatch-time path, not the live DOM: the control that opened
       // the editor unmounts during this same click, so `contains` would no
       // longer find its (now detached) target.
@@ -381,6 +399,7 @@ export function CardLinks({
             value={option}
             onChange={(next) => setOption(next)}
             onSelected={() => inputRef.current?.focus()}
+            onOpenChange={handlePickerOpenChange}
           />
           <div className="relative min-w-0 flex-1">
             <Input
@@ -490,17 +509,19 @@ function DropdownPicker({
   value,
   onChange,
   onSelected,
+  onOpenChange,
 }: {
   value: (typeof LINK_TYPE_OPTIONS)[number];
   onChange: (next: (typeof LINK_TYPE_OPTIONS)[number]) => void;
   onSelected?: () => void;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const { t } = useI18n();
   // Radix would focus the trigger on close; after a pick we want the search
   // input instead. Remember whether the menu closed by selection.
   const selectedRef = useRef(false);
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
