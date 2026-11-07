@@ -57,6 +57,17 @@ query and the card archive search (filtering, no matches, empty archive, reset
 and opening an archived card). Each test starts from its own user and board;
 extra boards are created through the API.
 
+`tests/app/history/` covers undo and redo through the header buttons and the
+Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl+Y shortcuts: button availability, clearing
+the redo stack with a new edit, multi-step replay, per-board stacks, and the
+saved result (but not the stack) surviving reload. It exercises every UI inverse
+for cards, columns, labels, checklists and board rename, including nested
+restores (a deleted card with its checklist, a deleted column with its cards,
+a deleted label with its assignments). Two independent contexts verify that a
+foreign card or board edit marks the overtaken step dead and undo leaves the
+other member's text untouched; an unrelated foreign edit does not block local
+undo. Each test starts from its own user and board.
+
 To use already-running development servers instead, provide the site and app
 URLs separately; point the app URL at the dev server root, not `/app/`:
 

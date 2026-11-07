@@ -367,6 +367,23 @@ describe("BoardHistory", () => {
     });
   });
 
+  it("marks a local board rename dead when someone else renames it", () => {
+    const history = new BoardHistory();
+    const board = freshBoard();
+    history.push(board, {
+      type: "RENAME_BOARD",
+      boardId: board.id,
+      title: "Mine",
+      at: AT,
+    } as BoardAction);
+
+    // The server's board touch is the plain board id.
+    history.markForeign([board.id]);
+
+    expect(history.canUndo()).toBe(false);
+    expect(history.undo()).toBeNull();
+  });
+
   it("keeps commands, not boards — 50 steps stay in kilobytes", () => {
     const history = new BoardHistory();
     const board = freshBoard();
