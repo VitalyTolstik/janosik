@@ -68,6 +68,20 @@ foreign card or board edit marks the overtaken step dead and undo leaves the
 other member's text untouched; an unrelated foreign edit does not block local
 undo. Each test starts from its own user and board.
 
+`tests/app/collaboration/` covers the two-account flows: an admin invites an
+account by email, the invitee sees the invitation in the bell with board,
+inviter and role, accepts it (the board appears without a reload) or declines
+it, and a pending invitation grants no access. Roles are exercised end to end:
+a live promotion to ADMIN, a live demotion to a read-only VIEWER, the
+last-ADMIN guard and a live removal that revokes access on an open board. Two
+independent Chrome contexts verify realtime updates in under two seconds, the
+presence roster and its departure within a minute, delta catch-up through
+`?since=` after the stream is closed and reopened, and `commandId` retry
+idempotency. Description conflicts are surfaced rather than silently
+overwritten, «Keep mine» and «Reload» resolve them, and undo skips an edit made
+in the other context. Each test starts from its own owner, invited account and
+board.
+
 To use already-running development servers instead, provide the site and app
 URLs separately; point the app URL at the dev server root, not `/app/`:
 
