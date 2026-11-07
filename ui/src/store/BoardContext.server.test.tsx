@@ -77,6 +77,7 @@ function Probe() {
       </div>
       <div data-testid="newcomer">{newcomer?.displayName ?? ""}</div>
       <div data-testid="title">{board?.title ?? ""}</div>
+      <div data-testid="role">{actions.roleOf(board?.id ?? "") ?? ""}</div>
       <div data-testid="card-title">{board?.cards["c-1"]?.title ?? ""}</div>
       <div data-testid="columns">
         {board?.columns.map((column) => column.title).join(",") ?? ""}
@@ -603,6 +604,26 @@ describe("BoardProvider realtime (SSE, TASK-30)", () => {
     });
     await waitFor(() =>
       expect(screen.getByTestId("presence").textContent).toBe("Admin,Boris"),
+    );
+  });
+
+  it("refreshes the caller's role on a live membership update", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.role = "MEMBER";
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitStreamOpen(server);
+    expect(screen.getByTestId("role").textContent).toBe("MEMBER");
+
+    server.roles.set("b-1", "VIEWER");
+    act(() => {
+      server.publishMembership("b-1", "user-1", "updated");
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("role").textContent).toBe("VIEWER"),
     );
   });
 

@@ -963,6 +963,27 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     [live],
   );
 
+  /**
+   * The caller's own role is not part of the board aggregate (`roleOf` comes
+   * from `GET /boards`). A live role/expiry change would otherwise leave the
+   * old permission UI in place — composers for a demoted VIEWER, a read-only
+   * member list for a promoted ADMIN — until the next reload. Refresh only
+   * the role map, never the board snapshots: an in-progress optimistic edit
+   * must survive the event.
+   */
+  const refreshRoles = useCallback(async (): Promise<void> => {
+    try {
+      const summaries = await api.listBoards();
+      if (!aliveRef.current) return;
+      const nextRoles: Record<string, BoardRole> = {};
+      for (const summary of summaries) nextRoles[summary.id] = summary.role;
+      setRoles(nextRoles);
+    } catch {
+      // Best-effort: a transient failure keeps the previous role and the
+      // next focus/refetch cycle has another chance.
+    }
+  }, []);
+
   useEffect(() => {
     if (!serverMode || board?.id === undefined) return;
     void loadMembers(board.id);
@@ -1172,9 +1193,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         revokeBoard(boardId);
         return;
       }
+      // A role or expiry move of the caller changes what the UI may offer.
+      if (change === "updated" && userId === userIdRef.current) {
+        void refreshRoles();
+      }
       void loadMembers(boardId);
     },
-    [revokeBoard, loadMembers],
+    [revokeBoard, loadMembers, refreshRoles],
   );
 
   const onAccessRevoked = useCallback(
