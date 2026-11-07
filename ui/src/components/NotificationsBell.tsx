@@ -100,6 +100,7 @@ export function NotificationsBell() {
         align="start"
         sideOffset={8}
         collisionPadding={8}
+        data-testid="invitations-panel"
         className="w-80 overflow-hidden rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
       >
         <NotificationsPanel

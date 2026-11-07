@@ -5,6 +5,7 @@ import { appUrl, siteUrl } from "../helpers/urls.js";
 
 type BoardFixture = {
   id: string;
+  title: string;
   api: APIRequestContext;
   userId: string;
   email: string;
@@ -34,8 +35,9 @@ export const test = authTest.extend<{ board: BoardFixture }>({
       },
     });
     try {
+      const title = `Board ${randomUUID()}`;
       const created = await api.post("/api/v1/boards", {
-        data: { title: `Board ${randomUUID()}` },
+        data: { title },
       });
       expect(created.status()).toBe(201);
       const { id } = (await created.json()) as { id: string };
@@ -53,6 +55,7 @@ export const test = authTest.extend<{ board: BoardFixture }>({
       };
       await use({
         id,
+        title,
         api,
         userId: me.id,
         email: me.email,
