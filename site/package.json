@@ -1,6 +1,6 @@
 {
   "name": "@janosik/site",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Janosik marketing site and documentation — Astro + Starlight, built on @janosik/brand tokens.",
   "license": "AGPL-3.0-or-later",
@@ -21,7 +21,7 @@
     "@astrojs/sitemap": "^3.7.4",
     "@astrojs/starlight": "^0.42.7",
     "@fontsource/space-grotesk": "^5.3.0",
-    "@janosik/brand": "^0.1.0",
+    "@janosik/brand": "*",
     "astro": "^7.4.2"
   },
   "devDependencies": {

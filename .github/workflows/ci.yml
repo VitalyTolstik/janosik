@@ -251,7 +251,9 @@ jobs:
         with:
           context: .
           platforms: linux/${{ matrix.arch }}
-          build-args: GIT_COMMIT=${{ github.sha }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+            APP_VERSION=${{ github.ref_name }}
           push: true
           tags: ghcr.io/vitalytolstik/janosik:${{ github.ref_name }}-${{ matrix.arch }}
           labels: |

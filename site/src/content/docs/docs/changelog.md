@@ -8,10 +8,52 @@ description: The release history and the versioning scheme.
 Notable changes are documented here in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Releases are tagged
-in git as `v<version>` (for example `v0.1.1`), and the container image is
+in git as `v<version>` (for example `v0.2.0`), and the container image is
 published to `ghcr.io/vitalytolstik/janosik` from CI on a version tag. To run a
 specific release, set `JANOSIK_TAG` in `.env` (see
 [Self-hosting](/docs/self-hosting/)).
+
+## 0.2.0 - 2026-11-08
+
+### Added
+
+- **Secure password recovery.** Sign-in has a `Forgot password?` flow: an
+  eligible account receives a single-use recovery code by e-mail, and the new
+  password is accepted only inside its 15-minute window. A reset revokes every
+  other session and every API key.
+- **Richer public sharing.** Read-only links can now expose existing comments
+  and attachments, keep a snapshot's comments and files frozen at capture time,
+  and embed the board through an `<iframe>` with system, light or dark theme.
+  Revoked links can be deleted from the owner's list, while the audit trail
+  keeps the creation, revocation and deletion record.
+- **Admin security tools.** The master panel records security events and lets
+  an owner restrict master access by IP allowlist.
+
+### Changed
+
+- **Redesigned card details.** The dialog now keeps the title and labels in an
+  inline header, moves destructive and less-used actions into a menu, splits
+  content and properties into two columns, and collapses the link editor until
+  it is needed. Long titles wrap, and comments and checklists sit tighter
+  without losing their actions. Mobile puts the properties first.
+- **Broader browser coverage.** The Chrome suite now covers authentication,
+  boards, cards, calendar/table/watch views, filters, global and archive
+  search, undo/redo history and two-account collaboration, including realtime
+  updates, presence and conflicts.
+
+### Fixed
+
+- Deleting the open card no longer shows a false `Card not found` toast or
+  leaves a stale `?card=` parameter behind.
+- The card link editor keeps its focus and first click, closes on Escape, and
+  stays open while the relation type is chosen.
+- A fast Escape after creating a card from the calendar no longer lands on the
+  board instead of the dialog.
+- Undo after another member renamed the board marks the step dead instead of
+  overwriting the newer name, and a live role change refreshes the caller's
+  permissions without a reload.
+- Description attachments are removed together with the description text and
+  remain reversible through undo.
 
 ## 0.1.1 - 2026-11-04
 

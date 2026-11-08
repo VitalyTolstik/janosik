@@ -8,7 +8,7 @@ Two ways to run Janosik:
 | You need | Docker Desktop / Docker Engine | Node.js 22.17+, npm |
 | Best for | Running Janosik, including self-hosting | Developing Janosik |
 
-The released Docker images target Linux `amd64` and `arm64`; Docker Desktop runs them on macOS and Windows. There are no standalone `.exe` or `.dmg` installers. Version v0.1.1 was tested on WSL and in Linux CI on both architectures.
+The released Docker images target Linux `amd64` and `arm64`; Docker Desktop runs them on macOS and Windows. There are no standalone `.exe` or `.dmg` installers. Version v0.2.0 was tested on WSL and in Linux CI on both architectures.
 
 Choose the option that fits your setup. For a **server** (VPS), see the
 [self-hosting guide](./SELF-HOSTING.md). This page covers running Janosik on
@@ -34,7 +34,7 @@ your own computer.
 
 2. With `curl` and OpenSSL installed, run the [local installer](./SELF-HOSTING.md) in Terminal. It opens `http://localhost:3210/app/` and generates the configuration.
 
-The published image supports `arm64` and `amd64`. Version v0.1.1 has not been separately tested on a physical Mac.
+The published image supports `arm64` and `amd64`. Version v0.2.0 has not been separately tested on a physical Mac.
 
 ### From source
 
