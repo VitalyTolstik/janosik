@@ -54,6 +54,11 @@ const { label } = Astro.props;
    * docs pages (and back) without a flash.
    */
   document.querySelectorAll("[data-theme-toggle]").forEach(function (button) {
+    // The 404 renders both language headers, and each toggle carries its own
+    // copy of this script. Bind once per button: a second listener would flip
+    // the theme twice per click and leave it unchanged.
+    if (button.dataset.themeToggleBound === "true") return;
+    button.dataset.themeToggleBound = "true";
     button.addEventListener("click", function () {
       var root = document.documentElement;
       var next = root.dataset.theme === "dark" ? "light" : "dark";

@@ -148,10 +148,29 @@ and assertions filter by a unique email or id; the shared owner session is used
 only for setup and reading. The suite never changes global email, OAuth,
 traffic or security settings.
 
+`tests/site/` covers the public marketing site. The landing checks the hero,
+every section heading, the feature rows and an expandable FAQ answer; pricing
+checks the plan cards with prices and limits, the comparison table, both plan
+CTAs and the closing CTA. Navigation covers the header and footer links to
+home, pricing and documentation (including the home features anchor, the
+self-hosting guide and browser Back), while the CTA suite clicks Sign in,
+Create account, hero and pricing links and verifies that the app really opens
+its login or registration screen under the `/app/` base, with the Russian
+`?lng=ru` handoff. Language tests switch home and pricing between English and
+Russian in place and check `<html lang>` and translated content. The theme test
+toggles light/dark, survives a reload and carries the shared `starlight-theme`
+choice into the documentation; the dual-language 404 page gets its own theme
+test. The 404 tests verify the status, English and Russian copy and the link
+home. The site is public, so these tests need no account, fixture or API setup.
+
 To use already-running development servers instead, provide the site and app
-URLs separately; point the app URL at the dev server root, not `/app/`:
+URLs separately; point the app URL at the dev server root, not `/app/`. The
+marketing CTAs must point at the same dev app, so start the site with
+`PUBLIC_APP_URL` as well — otherwise it builds `/app/` links for the self-host
+image and the CTA tests land on the site's 404:
 
 ```bash
+PUBLIC_APP_URL=http://localhost:5173 npm run dev:site
 E2E_SITE_URL=http://localhost:4321/ E2E_APP_URL=http://localhost:5173/ npm run test:e2e
 ```
 
