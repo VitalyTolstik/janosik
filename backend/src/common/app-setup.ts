@@ -44,13 +44,15 @@ export function setupApp(app: INestApplication): void {
   // load as blob:, the service worker is same-origin, and
   // `upgrade-insecure-requests` is dropped so a plain-HTTP self-host works
   // (helmet would otherwise rewrite every subresource to https).
+  // `wasm-unsafe-eval` lets Pagefind compile its search index in the docs
+  // (a worker wasm module); without it the dialog stays on "Searching...".
   const scriptHashes = inlineScriptHashes([env.STATIC_DIR, env.SITE_DIR]);
   app.use(
     helmet({
       contentSecurityPolicy: {
         useDefaults: true,
         directives: {
-          "script-src": ["'self'", ...scriptHashes],
+          "script-src": ["'self'", "'wasm-unsafe-eval'", ...scriptHashes],
           "style-src": ["'self'", "'unsafe-inline'"],
           "img-src": ["'self'", "data:", "blob:"],
           "media-src": ["'self'", "blob:"],

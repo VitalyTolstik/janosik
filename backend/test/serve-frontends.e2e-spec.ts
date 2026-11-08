@@ -110,6 +110,12 @@ describe("Static frontends serving (e2e)", () => {
     expect(res.text).not.toContain("Janosik");
   });
 
+  it("allows the docs search WebAssembly under the CSP", async () => {
+    const res = await server().get("/").expect(200);
+    const csp = res.headers["content-security-policy"];
+    expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval'");
+  });
+
   it("keeps public share pages framable and unindexed", async () => {
     const res = await server().get("/app/s/token123").expect(200);
     expect(res.text).toContain("Janosik app");

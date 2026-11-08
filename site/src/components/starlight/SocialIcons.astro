@@ -1,0 +1,34 @@
+---
+import { Icon } from "@astrojs/starlight/components";
+import config from "virtual:starlight/user-config";
+
+import { appLink } from "../../config";
+
+/**
+ * Starlight social icons plus a direct entry point to the app. The docs are
+ * served next to the app (`/app/`), and the app's Help menu links back here;
+ * this closes the loop without sending readers through the marketing shell.
+ * The link carries the current docs locale so the app opens in the same
+ * language.
+ */
+const links = config.social || [];
+const lang = Astro.locals.starlightRoute.lang === "ru" ? "ru" : "en";
+const appLabel = lang === "ru" ? "Открыть приложение" : "Open app";
+---
+
+{links.map(({ label, href, icon }) => (
+  <a {href} rel="me" class="sl-flex">
+    <span class="sr-only">{label}</span>
+    <Icon name={icon} />
+  </a>
+))}
+
+<a
+  href={appLink(lang)}
+  class="sl-flex"
+  title={appLabel}
+  data-testid="docs-open-app"
+>
+  <span class="sr-only">{appLabel}</span>
+  <Icon name="external" />
+</a>
