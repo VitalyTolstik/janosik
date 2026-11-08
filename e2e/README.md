@@ -153,26 +153,41 @@ every section heading, the feature rows and an expandable FAQ answer; pricing
 checks the plan cards with prices and limits, the comparison table, both plan
 CTAs and the closing CTA. Navigation covers the header and footer links to
 home, pricing and documentation (including the home features anchor, the
-self-hosting guide and browser Back), while the CTA suite clicks Sign in,
-Create account, hero and pricing links and verifies that the app really opens
-its login or registration screen under the `/app/` base, with the Russian
-`?lng=ru` handoff. Language tests switch home and pricing between English and
-Russian in place and check `<html lang>` and translated content. The theme test
-toggles light/dark, survives a reload and carries the shared `starlight-theme`
-choice into the documentation; the dual-language 404 page gets its own theme
-test. The 404 tests verify the status, English and Russian copy and the link
-home. The site is public, so these tests need no account, fixture or API setup.
+self-hosting guide, external project URLs and browser Back), while the CTA
+suite clicks Sign in, Create account, hero and pricing links and verifies that
+the app really opens its login or registration screen under the `/app/` base,
+with the Russian `?lng=ru` handoff. Language tests switch home and pricing
+between English and Russian in place and check `<html lang>`, translated
+content and hreflang alternates. The theme tests toggle light/dark, survive a
+reload, follow the system colour scheme until the visitor chooses, and carry
+the shared `starlight-theme` choice into the documentation; the dual-language
+404 page gets its own theme test. SEO tests assert title, description,
+canonical, hreflang, Open Graph, Twitter and JSON-LD on the home, pricing, RU
+and 404 pages, plus sitemap.xml, robots.txt, llms.txt, pricing.md and the
+social cards. A mobile test checks 375px and the 720–879px tablet range (no
+horizontal overflow, both auth CTAs reachable), analytics tests check the
+delegated `dataLayer` event, Do Not Track and the CSP allow-list for the
+optional Plausible script, and reduced-motion/accessibility tests cover paused
+clips, the skip link, landmarks and visible focus. The 404 tests verify the
+status, English and Russian copy, the docs link, language switch and noindex.
+The site is public, so these tests need no account, fixture or API setup.
 
 `tests/docs/` covers the Starlight documentation under `/docs/` and
-`/ru/docs/`: the landing and the five sidebar groups, a key page per group,
+`/ru/docs/`: all 22 English and 22 Russian pages (status, `<html lang>`, one
+H1, title, description and canonical), a full crawl of every internal link and
+`#fragment` across those 44 pages, the landing and the five sidebar groups,
 Pagefind search (header button and Ctrl/Cmd+K, English and Russian indexes,
-opening a result, empty query and no matches), inline link integrity on sampled
-pages in both locales, previous/next pagination, language switching with
-translated content and `<html lang>`, explicit and automatic theme persistence
-between the docs and the marketing site (including after reload), and the
-site ↔ docs ↔ app links (header/footer «Docs», the docs brand, the docs app
-entry point and the app Help menu). Most tests need no account; the app Help
-entry point signs in with its own isolated account. Run just this set with
+opening a result, keyboard navigation and focus return, empty query, no matches
+and a recoverable bundle failure), code-block copy, tables, heading anchors,
+the table of contents and the version badge, previous/next pagination,
+language switching across user-guide, admin and API sections, docs SEO
+(canonical, hreflang, docs social card), the localized 404 for unknown docs
+paths, mobile search/sidebar and skip-link/landmark/keyboard basics. Explicit
+and automatic theme persistence between the docs and the marketing site
+(including after reload) and the site ↔ docs ↔ app links (header/footer
+«Docs», the docs brand, the docs app entry point and the app Help menu) are
+covered too. Most tests need no account; the app Help entry point signs in
+with its own isolated account. Run just this set with
 `npm run test:docker -w e2e -- tests/docs`.
 
 To use already-running development servers instead, provide the site and app

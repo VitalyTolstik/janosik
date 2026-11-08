@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { sitePage } from "@/helpers/urls.js";
+import { sitePage, sitePath } from "@/helpers/urls.js";
 
 /**
  * Marketing-site navigation: the header and footer reach the landing page,
@@ -118,6 +118,48 @@ test("footer self-hosting guide opens the documentation", async ({ page }) => {
   await expect(
     page.getByRole("heading", { level: 1, name: "Self-hosting" }),
   ).toBeVisible();
+});
+
+test("footer and home external links point at the canonical project URLs", async ({
+  page,
+}) => {
+  const github = "https://github.com/VitalyTolstik/janosik";
+  await page.goto(sitePage("/"));
+
+  const footer = page.getByRole("contentinfo");
+  await expect(
+    footer.getByRole("link", { name: "GitHub", exact: true }),
+  ).toHaveAttribute("href", github);
+  await expect(
+    footer.getByRole("link", { name: "Changelog", exact: true }),
+  ).toHaveAttribute("href", `${github}/blob/main/CHANGELOG.md`);
+  await expect(
+    footer.getByRole("link", { name: "Security", exact: true }),
+  ).toHaveAttribute("href", `${github}/blob/main/SECURITY.md`);
+  await expect(
+    footer.getByRole("link", { name: "Self-hosting guide" }),
+  ).toHaveAttribute("href", sitePath("/docs/self-hosting/"));
+
+  await expect(page.locator('[data-cta="hero-github"]')).toHaveAttribute(
+    "href",
+    github,
+  );
+  await expect(page.locator('[data-cta="oss-github"]')).toHaveAttribute(
+    "href",
+    github,
+  );
+
+  // Every new-tab link on the page must be safe against tab-nabbing.
+  const unsafe = await page
+    .locator('a[target="_blank"]')
+    .evaluateAll((links) =>
+      links
+        .filter(
+          (link) => !(link.getAttribute("rel") ?? "").includes("noopener"),
+        )
+        .map((link) => link.getAttribute("href")),
+    );
+  expect(unsafe).toEqual([]);
 });
 
 test("browser Back returns to the page the visitor came from", async ({
