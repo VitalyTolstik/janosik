@@ -79,8 +79,9 @@ presence roster and its departure within a minute, delta catch-up through
 `?since=` after the stream is closed and reopened, and `commandId` retry
 idempotency. Description conflicts are surfaced rather than silently
 overwritten, «Keep mine» and «Reload» resolve them, and undo skips an edit made
-in the other context. Each test starts from its own owner, invited account and
-board.
+in the other context. Each test starts from its own owner and board; the
+two-account tests also get their own invited account and an independent browser
+context.
 
 `tests/app/account/` covers the personal account panel: profile name, avatar
 color, photo upload (including a rejected non-image), the digest opt-out and

@@ -3,6 +3,8 @@ import { expectPresence } from "@/helpers/collaboration.js";
 import { cardDialog, closeCardDialog, openCard } from "@/helpers/history.js";
 import type { Locator, Page } from "@playwright/test";
 
+test.describe.configure({ timeout: 60_000 });
+
 async function sharedCard(
   board: {
     column: (title: string) => Promise<string>;

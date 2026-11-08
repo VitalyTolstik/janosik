@@ -3,6 +3,96 @@ import { cardTitle, columnSection } from "@/helpers/history.js";
 
 /** Shared UI steps for the two-account collaboration suite. */
 
+type AliveWindow = Window & { __e2eAlive?: string };
+
+/**
+ * A marker that only survives in the current document. A full page reload
+ * wipes it, which is exactly what the «live, without a reload» requirements
+ * need to prove: the UI updated in place.
+ */
+export async function markAlive(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (window as AliveWindow).__e2eAlive = "alive";
+  });
+}
+
+export async function expectStillAlive(page: Page): Promise<void> {
+  await expect
+    .poll(() => page.evaluate(() => (window as AliveWindow).__e2eAlive ?? null))
+    .toBe("alive");
+}
+
+interface StreamHook {
+  attempts: number;
+  blocked: boolean;
+  cut: (() => void) | null;
+}
+type StreamWindow = Window & { __e2eStream?: StreamHook };
+
+/**
+ * Test-only instrumentation around the app's `/events` fetch. It lets a test
+ * cut the live stream and hold the retries while a command commits, so the
+ * reconnect reads the missed delta from `?since=` instead of a board
+ * snapshot. Installed before navigation; the app resolves `fetch` at call
+ * time, so the wrapper is the one the realtime module uses.
+ */
+export async function installStreamBreak(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window);
+    const state: StreamHook = { attempts: 0, blocked: false, cut: null };
+    (window as StreamWindow).__e2eStream = state;
+    window.fetch = (input, init) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (!url.includes("/events?")) return original(input, init);
+      state.attempts += 1;
+      // While blocked, a reopen fails exactly like an unreachable server:
+      // the realtime loop keeps its backoff and retries later.
+      if (state.blocked) {
+        return Promise.reject(new TypeError("stream blocked by test"));
+      }
+      const cut = new AbortController();
+      state.cut = () => cut.abort();
+      init?.signal?.addEventListener("abort", () => cut.abort(), {
+        once: true,
+      });
+      return original(input, { ...init, signal: cut.signal });
+    };
+  });
+}
+
+/** Cut the live stream and block its retries; returns the attempt counter. */
+export async function breakStream(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const state = (window as StreamWindow).__e2eStream;
+    if (state === undefined) throw new Error("stream hook was not installed");
+    state.blocked = true;
+    const before = state.attempts;
+    state.cut?.();
+    return before;
+  });
+}
+
+export function streamAttempts(page: Page): Promise<number> {
+  return page.evaluate(
+    () => (window as StreamWindow).__e2eStream?.attempts ?? 0,
+  );
+}
+
+/** Let the next retry through and wake the backoff immediately. */
+export async function resumeStream(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const state = (window as StreamWindow).__e2eStream;
+    if (state === undefined) throw new Error("stream hook was not installed");
+    state.blocked = false;
+    window.dispatchEvent(new Event("online"));
+  });
+}
+
 export function membersDialog(page: Page): Locator {
   return page.getByRole("dialog", { name: /^Members/ });
 }
