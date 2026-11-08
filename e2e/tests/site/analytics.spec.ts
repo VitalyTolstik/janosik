@@ -98,5 +98,7 @@ test("honours Do Not Track and loads no provider script", async ({ page }) => {
   await page.locator('[data-cta="hero-signup"]').click();
 
   expect(await page.evaluate(() => window.dataLayer)).toEqual([]);
-  expect(external.filter((url) => url.includes("plausible.io"))).toEqual([]);
+  expect(external.map((url) => new URL(url).hostname)).not.toContain(
+    "plausible.io",
+  );
 });

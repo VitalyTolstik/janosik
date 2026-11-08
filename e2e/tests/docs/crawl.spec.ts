@@ -39,15 +39,11 @@ test("every internal docs link and fragment resolves", async ({ request }) => {
 
       for (const href of hrefs) {
         expect(href, pageUrl).not.toBe("#");
-        if (
-          href === "" ||
-          href.startsWith("mailto:") ||
-          href.startsWith("tel:") ||
-          href.startsWith("javascript:")
-        ) {
+        if (href === "") continue;
+        const target = new URL(href, pageUrl);
+        if (target.protocol !== "http:" && target.protocol !== "https:") {
           continue;
         }
-        const target = new URL(href, pageUrl);
         if (target.origin !== origin) continue;
         targets.add(target.href);
       }
