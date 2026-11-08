@@ -291,8 +291,9 @@ Returns `{ expiresAt, queued }` and sends a 6-digit code to the new address.
 | ------ | ------ | -------- | ---------------- |
 | `code` | string | required | exactly 6 digits |
 
-On success the address is swapped, every other session is revoked, and a
-fresh `AuthResponseDto` is returned with the refresh cookie.
+On success the address is swapped, every refresh session (including the
+caller's old cookie) is revoked, and a fresh `AuthResponseDto` with a new
+refresh cookie is returned.
 
 ### Email verification
 
@@ -367,6 +368,7 @@ answers `429`).
 | ------------- | -------------- | -------- | -------------------------------------------------------- |
 | `displayName` | string or null | optional | at most 50 characters; `null` clears it                  |
 | `avatarColor` | string or null | optional | one of `USER_AVATAR_COLORS`; `null` restores the default |
+| `notifyDigest` | boolean       | optional | `false` opts out of scheduled digests and due reminders   |
 
 Only provided keys are written.
 

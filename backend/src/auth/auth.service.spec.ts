@@ -655,7 +655,7 @@ describe("AuthService", () => {
         prismaMock.emailChangeCode.findFirst.mockResolvedValue(stored);
       };
 
-      it("moves the email, consumes the code and keeps only the caller's session", async () => {
+      it("moves the email, consumes the code and revokes every session", async () => {
         await expectConfirmation(pendingRow());
         const updatedUser = makeUser({ email: "new@example.com" });
         const txUserUpdate = jest.fn().mockResolvedValue(updatedUser);
@@ -674,7 +674,6 @@ describe("AuthService", () => {
         const result = await service.confirmEmailChange(
           "user-1",
           { code },
-          "caller-cookie",
           "ru",
         );
 
@@ -690,7 +689,6 @@ describe("AuthService", () => {
           where: {
             userId: "user-1",
             revokedAt: null,
-            tokenHash: { not: sha256("caller-cookie") },
           },
           data: { revokedAt: expect.any(Date) },
         });
@@ -707,12 +705,7 @@ describe("AuthService", () => {
         prismaMock.emailChangeCode.update.mockResolvedValue({});
 
         await expect(
-          service.confirmEmailChange(
-            "user-1",
-            { code: "000000" },
-            undefined,
-            "en",
-          ),
+          service.confirmEmailChange("user-1", { code: "000000" }, "en"),
         ).rejects.toThrow("Invalid verification code");
         expect(prismaMock.emailChangeCode.update).toHaveBeenCalledWith({
           where: { id: "change-1" },
@@ -726,12 +719,7 @@ describe("AuthService", () => {
         prismaMock.emailChangeCode.deleteMany.mockResolvedValue({ count: 1 });
 
         await expect(
-          service.confirmEmailChange(
-            "user-1",
-            { code: "000000" },
-            undefined,
-            "en",
-          ),
+          service.confirmEmailChange("user-1", { code: "000000" }, "en"),
         ).rejects.toBeInstanceOf(BadRequestException);
         expect(prismaMock.emailChangeCode.deleteMany).toHaveBeenCalledWith({
           where: { userId: "user-1" },
@@ -750,7 +738,7 @@ describe("AuthService", () => {
         await expectConfirmation(row());
 
         await expect(
-          service.confirmEmailChange("user-1", { code }, undefined, "en"),
+          service.confirmEmailChange("user-1", { code }, "en"),
         ).rejects.toThrow("No pending email change");
         expect(prismaMock.user.update).not.toHaveBeenCalled();
       });
@@ -765,7 +753,7 @@ describe("AuthService", () => {
         );
 
         await expect(
-          service.confirmEmailChange("user-1", { code }, undefined, "en"),
+          service.confirmEmailChange("user-1", { code }, "en"),
         ).rejects.toBeInstanceOf(ConflictException);
         expect(mailerMock.send).not.toHaveBeenCalled();
       });

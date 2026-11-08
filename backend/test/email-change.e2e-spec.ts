@@ -176,8 +176,12 @@ describe("Email change API (e2e)", () => {
 
     expect(res.body.user.email).toBe(NEW_EMAIL);
     expect(typeof res.body.accessToken).toBe("string");
-    // The caller's session is rotated, not killed.
+    // The caller's session is rotated: the old caller cookie is dead too.
     expect(refreshCookie(res)).toBeDefined();
+    await server()
+      .post("/api/v1/auth/refresh")
+      .set("Cookie", `refresh_token=${callerRefresh}`)
+      .expect(401);
 
     // The other device's refresh token is revoked.
     await server()

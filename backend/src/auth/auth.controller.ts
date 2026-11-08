@@ -215,14 +215,12 @@ export class AuthController {
   async confirmEmailChange(
     @CurrentUser() user: AuthUser,
     @Body() dto: ConfirmEmailChangeDto,
-    @RefreshToken() refreshToken: string | undefined,
     @Headers("accept-language") acceptLanguage: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
     const result = await this.auth.confirmEmailChange(
       user.id,
       dto,
-      refreshToken,
       pickLocale(acceptLanguage),
     );
     return this.withRefreshCookie(res, result);

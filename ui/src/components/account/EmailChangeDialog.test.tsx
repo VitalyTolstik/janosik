@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "@/api/client";
@@ -110,6 +111,54 @@ describe("EmailChangeDialog (TASK-51)", () => {
     });
     // The identity really moved: the account email changed server-side.
     expect(server.account.email).toBe("new@example.com");
+  });
+
+  it("starts from a clean form after a successful change", async () => {
+    const server = new FakeServer();
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button
+            type="button"
+            data-testid="reopen-email-change"
+            onClick={() => setOpen(true)}
+          >
+            reopen
+          </button>
+          <EmailChangeDialog open={open} onOpenChange={setOpen} />
+        </>
+      );
+    }
+    vi.stubGlobal("fetch", server.handle);
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <Harness />
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    await userEvent.type(
+      screen.getByTestId("email-change-new"),
+      "new@example.com",
+    );
+    await userEvent.type(
+      screen.getByTestId("email-change-password"),
+      server.account.password,
+    );
+    await userEvent.click(screen.getByTestId("email-change-send"));
+    await screen.findByTestId("email-change-code");
+    await typeCode(server.emailChangeCode);
+    await userEvent.click(screen.getByTestId("email-change-verify"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("email-change-code")).toBeNull(),
+    );
+
+    await userEvent.click(screen.getByTestId("reopen-email-change"));
+    expect(await screen.findByTestId("email-change-new")).toHaveValue("");
   });
 
   it("shows an inline error for a wrong current password and stays open", async () => {

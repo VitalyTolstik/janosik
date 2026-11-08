@@ -134,7 +134,7 @@ export function EmailChangeDialog({
     try {
       const response = await api.confirmEmailChange(code);
       updateUser(response.user);
-      onOpenChange(false);
+      handleChangeOpen(false);
       toast.success(t("account.email.success"));
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
@@ -220,7 +220,7 @@ export function EmailChangeDialog({
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => onOpenChange(false)}
+                onClick={() => handleChangeOpen(false)}
               >
                 {t("common.cancel")}
               </Button>

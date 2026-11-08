@@ -442,15 +442,14 @@ export class AuthService {
 
   /**
    * Email change, step 2 (TASK-51): swap the address once the code from the
-   * new inbox is presented, revoke every other refresh session, and notify
-   * the old address (best-effort). The caller keeps their session via a
-   * fresh token pair; the route lives under `/auth` so the cookie that
-   * identifies it is actually sent.
+   * new inbox is presented, revoke every refresh session, and notify the old
+   * address (best-effort). The caller gets a fresh token pair; revoking the
+   * old caller cookie too means an identity change never leaves a second
+   * live refresh token behind.
    */
   async confirmEmailChange(
     userId: string,
     dto: ConfirmEmailChangeDto,
-    refreshToken: string | undefined,
     locale: MailLocale,
   ): Promise<AuthResult> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -510,16 +509,14 @@ export class AuthService {
       }
       throw error;
     }
-    if (refreshToken !== undefined) {
-      await this.prisma.refreshToken.updateMany({
-        where: {
-          userId,
-          revokedAt: null,
-          tokenHash: { not: this.hashToken(refreshToken) },
-        },
-        data: { revokedAt: new Date() },
-      });
-    }
+    // Every refresh session dies, including the caller's old cookie: the
+    // response issues a fresh pair below, so keeping the old one alive would
+    // leave a second valid refresh token in the wild after a security-
+    // sensitive identity change.
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
     const notice = await this.emailTemplates.emailChangedNotice(
       updated.email,
       locale,
