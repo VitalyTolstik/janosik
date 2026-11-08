@@ -1,0 +1,23 @@
+{
+  "app": "janosik",
+  "schemaVersion": 1,
+  "exportedAt": 1,
+  "boards": [
+    {
+      "id": "broken-board",
+      "title": "Broken board",
+      "columns": [
+        {
+          "id": "broken-column",
+          "title": "Todo",
+          "cardIds": ["missing-card"],
+          "createdAt": 1
+        }
+      ],
+      "cards": {},
+      "labels": [],
+      "createdAt": 1,
+      "updatedAt": 1
+    }
+  ]
+}

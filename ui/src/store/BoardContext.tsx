@@ -253,8 +253,12 @@ interface BoardActionsValue {
   /* Undo / redo (scoped to the active board) */
   undo: () => void;
   redo: () => void;
-  /* Import replaces the whole data set (and resets history). */
-  importBoards: (boards: BoardState) => void | Promise<void>;
+  /**
+   * Import replaces the whole data set locally and appends the boards on the
+   * server. Server mode resolves `false` when the request was refused (the
+   * error toast is already shown), so the caller can skip its success toast.
+   */
+  importBoards: (boards: BoardState) => void | Promise<boolean>;
   /**
    * Re-runs server hydration (`GET /boards` + aggregates) — used after
    * accepting an invitation so the fresh board shows up without a reload.
@@ -1440,17 +1444,20 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   );
 
   const importBoards = useCallback(
-    (boards: BoardState): void | Promise<void> => {
+    (boards: BoardState): void | Promise<boolean> => {
       if (serverMode) {
         // The server keeps the existing boards and adds the imported ones;
         // re-hydrating shows the whole set (import resets history, exactly
         // as it always did locally). Nothing local changed yet, so a failure
-        // needs no rollback — it is a toast.
+        // needs no rollback — it is a toast. `false` tells the caller not to
+        // announce success on top of that refusal.
         return api
           .importBoards(toEnvelope(normalizeBoards(boards)))
           .then(() => hydrateBoards())
+          .then(() => true)
           .catch(() => {
             toast.error(t("data.importError"));
+            return false;
           });
       }
       // A new data set invalidates any previous history.

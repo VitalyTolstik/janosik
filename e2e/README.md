@@ -93,6 +93,17 @@ code from Mailpit. API keys are created and copied through the UI, used for a
 real API request, revoked with confirmation, refused afterwards, and refused
 the right to mint more keys. Each test starts from its own verified account.
 
+`tests/app/data/` covers the JSON data menu in server mode: exporting the whole
+workspace and the columns, cards and labels of a board; importing a valid file,
+several boards from one file, the preserved content and the board surviving a
+reload; a workspace exported through the UI importing back; and the rejection of
+malformed JSON, foreign files, unsupported schema versions, structurally
+invalid board data, files over the 5 MB limit and an empty envelope the server
+refuses (with no success toast). It also checks that restoring a local backup
+stays unavailable in server mode. Each test starts from its own account and
+board; fixtures build import envelopes through the API and delete their source
+boards.
+
 To use already-running development servers instead, provide the site and app
 URLs separately; point the app URL at the dev server root, not `/app/`:
 
