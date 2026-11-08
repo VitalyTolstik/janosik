@@ -60,7 +60,9 @@ test("serves the app shell and entry assets from cache on an offline boot", asyn
       timeout: 15_000,
     });
     await expect(page.locator("#root > *").first()).toBeVisible();
-    expect(new URL(page.url()).pathname).toBe(`/app/board/${board.id}`);
+    expect(new URL(page.url()).pathname).toBe(
+      new URL(`board/${board.id}`, pwaScope).pathname,
+    );
   } finally {
     await goOnline(context, page);
   }

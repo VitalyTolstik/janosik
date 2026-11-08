@@ -121,8 +121,9 @@ card on the server; reconnecting applies a change made by another writer during
 the outage; an offline reload followed by a reconnect restores the session and
 the saved board; API and event-stream responses never enter Cache Storage; and
 the manifest and its icons resolve under `/app/`. The suite needs the production
-self-host build (`E2E_APP_URL` ending in `/app/`) and skips itself when pointed
-at a dev server. Only the shell is cached: boards require a connection, so an
+self-host build (`E2E_APP_URL` ending in `/app/`) and skips itself when the app
+is not served from that layout (for example, a dev server at the root). Only the
+shell is cached: boards require a connection, so an
 offline reload lands on the sign-in screen, as documented in the user guide.
 
 Offline testing found a real crash: animated header icon chunks are prefetched

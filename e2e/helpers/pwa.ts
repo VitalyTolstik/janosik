@@ -17,7 +17,14 @@ export const pwaScope = (() => {
 /** Absolute URL of the stamped service worker. */
 export const serviceWorkerUrl = new URL("sw.js", pwaScope).href;
 
-/** True when the suite points at the production self-host layout. */
+/**
+ * True when the suite points at the production self-host layout.
+ *
+ * Path-only on purpose: the shipped Compose image serves the app at `/app/`,
+ * and the suite pins that layout. A standalone production build at `/` also
+ * registers a worker, but silently running the checks there would hide a
+ * deploy-base regression, so the skip is explicit in the run report.
+ */
 export const pwaBuildAvailable = new URL(appUrl).pathname.endsWith("/app/");
 
 export interface ServiceWorkerInfo {
@@ -50,10 +57,17 @@ export async function waitForServiceWorker(
     }
     const registration = await navigator.serviceWorker.ready;
     if (navigator.serviceWorker.controller === null) {
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(
+          () => reject(new Error("Service worker did not claim the page")),
+          15_000,
+        );
         navigator.serviceWorker.addEventListener(
           "controllerchange",
-          () => resolve(),
+          () => {
+            window.clearTimeout(timer);
+            resolve();
+          },
           { once: true },
         );
       });
