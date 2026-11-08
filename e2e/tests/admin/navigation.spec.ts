@@ -68,9 +68,7 @@ test("finds a user through the omnibox and opens the detail page", async ({
   await expect(result).toContainText(user.email);
   await result.click();
 
-  await expect(page).toHaveURL(
-    new RegExp(`/admin/users/${user.id.replaceAll("-", "\\-")}$`),
-  );
+  await expect(page).toHaveURL(new RegExp(`/admin/users/${user.id}$`));
   await expect(
     page.getByRole("heading", { name: user.email, exact: true }),
   ).toBeVisible();

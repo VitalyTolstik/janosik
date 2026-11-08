@@ -37,7 +37,13 @@ test("refuses the masters area to an operator on a direct URL", async ({
   const operator = await createMasterViaAdmin(admin);
   await loginAsMaster(page, operator);
 
+  const forbidden = page.waitForResponse(
+    (candidate) =>
+      candidate.url().includes("/api/v1/admin/admins") &&
+      candidate.status() === 403,
+  );
   await page.goto(adminPath("masters"), { waitUntil: "domcontentloaded" });
+  await forbidden;
 
   await expect(page.getByText("Could not load the data")).toBeVisible();
   await expect(page.getByTestId("admin-master-password")).toHaveCount(0);
