@@ -113,6 +113,20 @@ menu trigger), the `j`/`k` cursor, `e`/Enter, the `n` and `c` composers, Escape,
 and the guards that keep shortcuts out of text fields and open menus. Each test
 starts from its own account and board; extra boards are created through the API.
 
+`tests/admin/` covers the master panel under `/app/admin`: signing in (a wrong
+password, a regular account, session restore after a reload and sign-out), the
+sidebar sections and direct URLs, the global omnibox and the return to the
+boards app. Owner-only rights are checked from both sides: an operator does not
+see the masters, email and OAuth entries, gets the 403 screen from the masters
+URL, sees the IP allowlist read-only and no owner-only user actions, while the
+operator can still block a user. Owners create a user, block and unblock one,
+delete with the typed confirmation, mint an operator master and open a support
+impersonation session in a new tab. Audit and Security are asserted with events
+the test itself creates: a successful master sign-in, a failed sign-in (matched
+by email and test IP) and user block/delete entries. Every test provisions its
+own masters and users through the admin API and filters by a unique email or id;
+the suite never changes global email, OAuth, traffic or security settings.
+
 To use already-running development servers instead, provide the site and app
 URLs separately; point the app URL at the dev server root, not `/app/`:
 
