@@ -13,7 +13,7 @@ import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
-import { cardHref } from "@/utils/card-nav";
+import { cardHref, hasCard } from "@/utils/card-nav";
 import type { Board } from "@janosik/shared";
 
 /**
@@ -89,7 +89,27 @@ function middleClick(el: Element) {
   );
 }
 
-describe("middle-click opens a card in a new tab", () => {
+describe("hasCard", () => {
+  it("accepts own ids and rejects inherited prototype properties", () => {
+    const cards: Board["cards"] = {
+      "c-1": {
+        id: "c-1",
+        title: "Card",
+        labelIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+
+    expect(hasCard({ cards }, "c-1")).toBe(true);
+    for (const id of ["constructor", "__proto__", "toString"]) {
+      expect(hasCard({ cards }, id)).toBe(false);
+    }
+    expect(hasCard({ cards }, null)).toBe(false);
+  });
+});
+
+describe("modifier and middle-click open a card in a new tab", () => {
   beforeEach(() => {
     localStorage.clear();
     localStorage.setItem("janosik-boards", JSON.stringify([BOARD]));
@@ -167,6 +187,44 @@ describe("middle-click opens a card in a new tab", () => {
       "_blank",
       "noopener,noreferrer",
     );
+  });
+
+  it("TableView: Ctrl+click opens the card in a new tab", () => {
+    const onCardClick = vi.fn();
+    render(tree(<TableView onCardClick={onCardClick} />));
+    const row = screen
+      .getAllByTestId("table-row")
+      .find(
+        (el) =>
+          el.getAttribute("data-card-href") === cardHref("b-nav", "c-plain"),
+      );
+    expect(row).toBeDefined();
+
+    fireEvent.click(row as Element, { ctrlKey: true });
+
+    expect(window.open).toHaveBeenCalledWith(
+      cardHref("b-nav", "c-plain"),
+      "_blank",
+      "noopener,noreferrer",
+    );
+    expect(onCardClick).not.toHaveBeenCalled();
+  });
+
+  it("CalendarView: Ctrl+click on a chip opens the card in a new tab", () => {
+    const onCardClick = vi.fn();
+    render(tree(<CalendarView onCardClick={onCardClick} />));
+    const chip = screen.getByTestId("calendar-chip");
+
+    fireEvent.click(chip, { ctrlKey: true });
+
+    expect(window.open).toHaveBeenCalledWith(
+      cardHref("b-nav", "c-chip"),
+      "_blank",
+      "noopener,noreferrer",
+    );
+    expect(onCardClick).not.toHaveBeenCalled();
+    // The modifier click must not also open the day panel behind the chip.
+    expect(screen.queryByTestId("day-panel")).not.toBeInTheDocument();
   });
 
   it("plain left click still opens the dialog instead of a new tab", () => {

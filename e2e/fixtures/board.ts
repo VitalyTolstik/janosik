@@ -3,10 +3,11 @@ import { type APIRequestContext, type Page } from "@playwright/test";
 import { test as authTest, expect, login } from "./auth.js";
 import { appUrl, siteUrl } from "../helpers/urls.js";
 
-type BoardFixture = {
+export type BoardFixture = {
   id: string;
   title: string;
   api: APIRequestContext;
+  user: { email: string; password: string };
   userId: string;
   email: string;
   open: (page: Page) => Promise<void>;
@@ -61,6 +62,7 @@ export const test = authTest.extend<{ board: BoardFixture }>({
         id,
         title,
         api,
+        user,
         userId: me.id,
         email: me.email,
         command,

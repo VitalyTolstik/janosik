@@ -29,6 +29,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { routes } from "@/routes";
 import { useI18n } from "@/i18n";
 import { APP_BASE } from "@/utils/app-path";
+import { allBoardsArchived } from "@/utils/board-list";
 import { UPDATE_EVENT, applyServiceWorkerUpdate } from "@/pwa/register-sw";
 
 /**
@@ -60,7 +61,7 @@ export function NoBoardRoute() {
   const { boards, addBoard } = useBoard();
   const navigate = useNavigate();
 
-  const allArchived = boards.length > 0;
+  const allArchived = allBoardsArchived(boards);
   const handleCreate = () => {
     void (async () => {
       const id = await addBoard(t("board.switcher.new"), t("board.untitled"));

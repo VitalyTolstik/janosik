@@ -1,5 +1,7 @@
 import type { MouseEvent } from "react";
 
+import type { Board } from "@janosik/shared";
+
 import { appPath } from "./app-path";
 
 /**
@@ -21,6 +23,21 @@ import { appPath } from "./app-path";
  * A `window.open(..., "_blank", "noopener")` inside `auxclick` counts as a
  * user activation in every evergreen browser, so no popup blocker trip.
  */
+
+/**
+ * Own-property card lookup: ids come from `?card=` in the URL, and a bare
+ * `cards[id]` / `id in cards` accepts `constructor` or `__proto__`, which are
+ * not cards. The deep link must be inert instead of mounting the dialog with
+ * a prototype member.
+ */
+export function hasCard(
+  board: Pick<Board, "cards">,
+  cardId: string | null,
+): boolean {
+  return (
+    cardId !== null && Object.prototype.hasOwnProperty.call(board.cards, cardId)
+  );
+}
 
 /** The router-relative deep link (for `navigate` and `appShareUrl`). */
 export function cardPath(boardId: string, cardId: string): string {
