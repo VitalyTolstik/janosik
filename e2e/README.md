@@ -132,6 +132,37 @@ screen. `LazyAnimatedIcon` now keeps its static fallback when a chunk cannot
 load, and a failed preload no longer announces a "new version" when no update
 is actually waiting.
 
+`tests/admin/` covers the master panel under `/app/admin`: signing in (a wrong
+password, a regular account, session restore after a reload and sign-out), the
+sidebar sections and direct URLs, the global omnibox and the return to the
+boards app. Owner-only rights are checked from both sides: an operator does not
+see the masters, email and OAuth entries, gets the 403 screen from the masters
+URL, sees the IP allowlist read-only and no owner-only user actions, while the
+operator can still block a user. Owners create a user, block and unblock one,
+delete with the typed confirmation, mint an operator master and open a support
+impersonation session in a new tab. Audit and Security are asserted with events
+the test itself creates: a successful master sign-in, a failed sign-in (matched
+by email and test IP) and user block/delete entries. Every test creates its own
+unique target users and masters (through the admin API or the panel itself),
+and assertions filter by a unique email or id; the shared owner session is used
+only for setup and reading. The suite never changes global email, OAuth,
+traffic or security settings.
+
+`tests/site/` covers the public marketing site. The landing checks the hero,
+every section heading, the feature rows and an expandable FAQ answer; pricing
+checks the plan cards with prices and limits, the comparison table, both plan
+CTAs and the closing CTA. Navigation covers the header and footer links to
+home, pricing and documentation (including the home features anchor, the
+self-hosting guide and browser Back), while the CTA suite clicks Sign in,
+Create account, hero and pricing links and verifies that the app really opens
+its login or registration screen under the `/app/` base, with the Russian
+`?lng=ru` handoff. Language tests switch home and pricing between English and
+Russian in place and check `<html lang>` and translated content. The theme test
+toggles light/dark, survives a reload and carries the shared `starlight-theme`
+choice into the documentation; the dual-language 404 page gets its own theme
+test. The 404 tests verify the status, English and Russian copy and the link
+home. The site is public, so these tests need no account, fixture or API setup.
+
 `tests/docs/` covers the Starlight documentation under `/docs/` and
 `/ru/docs/`: the landing and the five sidebar groups, a key page per group,
 Pagefind search (header button and Ctrl/Cmd+K, English and Russian indexes,
@@ -145,9 +176,13 @@ entry point signs in with its own isolated account. Run just this set with
 `npm run test:docker -w e2e -- tests/docs`.
 
 To use already-running development servers instead, provide the site and app
-URLs separately; point the app URL at the dev server root, not `/app/`:
+URLs separately; point the app URL at the dev server root, not `/app/`. The
+marketing CTAs must point at the same dev app, so start the site with
+`PUBLIC_APP_URL` as well — otherwise it builds `/app/` links for the self-host
+image and the CTA tests land on the site's 404:
 
 ```bash
+PUBLIC_APP_URL=http://localhost:5173 npm run dev:site
 E2E_SITE_URL=http://localhost:4321/ E2E_APP_URL=http://localhost:5173/ npm run test:e2e
 ```
 
