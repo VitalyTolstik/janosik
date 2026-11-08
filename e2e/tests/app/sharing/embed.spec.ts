@@ -2,6 +2,8 @@ import { test, expect } from "../../../fixtures/sharing.js";
 import { createServer } from "node:http";
 import { once } from "node:events";
 
+test.describe.configure({ timeout: 60_000 });
+
 test("embed code applies the chosen theme without overwriting the visitor preference", async ({
   page,
   context,

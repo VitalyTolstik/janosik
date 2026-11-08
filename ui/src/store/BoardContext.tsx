@@ -143,6 +143,16 @@ interface BoardHistoryValue {
 }
 
 /**
+ * The caller's role on the active board — its own narrow context so the
+ * header can hide mutating affordances for a VIEWER without subscribing to
+ * every board edit. `undefined` while the role is unknown or there is no
+ * active board.
+ */
+interface BoardAccessValue {
+  role: BoardRole | undefined;
+}
+
+/**
  * Every way to change the data. The object is built once and never
  * replaced, so `useBoardActions()` consumers never re-render because of it
  * and its members are safe `useCallback`/`useMemo` dependencies.
@@ -286,6 +296,7 @@ type BoardContextValue = BoardStateValue &
 const BoardStateContext = createContext<BoardStateValue | null>(null);
 const BoardIdentityContext = createContext<BoardIdentityValue | null>(null);
 const BoardHistoryContext = createContext<BoardHistoryValue | null>(null);
+const BoardAccessContext = createContext<BoardAccessValue | null>(null);
 const BoardActionsContext = createContext<BoardActionsValue | null>(null);
 
 export function BoardProvider({ children }: { children: ReactNode }) {
@@ -974,16 +985,21 @@ export function BoardProvider({ children }: { children: ReactNode }) {
    * the role map, never the board snapshots: an in-progress optimistic edit
    * must survive the event.
    */
-  const refreshRoles = useCallback(async (): Promise<void> => {
+  const refreshRoles = useCallback(async (): Promise<Record<
+    string,
+    BoardRole
+  > | null> => {
     try {
       const summaries = await api.listBoards();
-      if (!aliveRef.current) return;
+      if (!aliveRef.current) return null;
       const nextRoles: Record<string, BoardRole> = {};
       for (const summary of summaries) nextRoles[summary.id] = summary.role;
       setRoles(nextRoles);
+      return nextRoles;
     } catch {
       // Best-effort: a transient failure keeps the previous role and the
       // next focus/refetch cycle has another chance.
+      return null;
     }
   }, []);
 
@@ -1198,11 +1214,16 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
       // A role or expiry move of the caller changes what the UI may offer.
       if (change === "updated" && userId === userIdRef.current) {
-        void refreshRoles();
+        void refreshRoles().then((next) => {
+          // A demoted VIEWER must not keep a stale local undo stack: the
+          // mutating affordance would remain reachable through Ctrl+Z even
+          // though every command it sends is refused with 403.
+          if (next?.[boardId] === "VIEWER") dropHistory(boardId);
+        });
       }
       void loadMembers(boardId);
     },
-    [revokeBoard, loadMembers, refreshRoles],
+    [revokeBoard, loadMembers, refreshRoles, dropHistory],
   );
 
   const onAccessRevoked = useCallback(
@@ -1616,15 +1637,27 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     [board?.id, board?.title],
   );
 
+  // A narrow role slice: the header hides Undo/Redo for a VIEWER, and the
+  // role changes only on membership events — not on every card edit.
+  const activeBoardId = board?.id;
+  const access = useMemo<BoardAccessValue>(
+    () => ({
+      role: activeBoardId === undefined ? undefined : roles[activeBoardId],
+    }),
+    [activeBoardId, roles],
+  );
+
   return (
     <BoardLiveProvider live={live}>
       <BoardActionsContext.Provider value={actions}>
         <BoardHistoryContext.Provider value={history}>
-          <BoardIdentityContext.Provider value={identity}>
-            <BoardStateContext.Provider value={stateValue}>
-              {children}
-            </BoardStateContext.Provider>
-          </BoardIdentityContext.Provider>
+          <BoardAccessContext.Provider value={access}>
+            <BoardIdentityContext.Provider value={identity}>
+              <BoardStateContext.Provider value={stateValue}>
+                {children}
+              </BoardStateContext.Provider>
+            </BoardIdentityContext.Provider>
+          </BoardAccessContext.Provider>
         </BoardHistoryContext.Provider>
       </BoardActionsContext.Provider>
     </BoardLiveProvider>
@@ -2010,6 +2043,11 @@ export function useBoardIdentity(): BoardIdentityValue {
 /** Undo availability for the active board — changes only when it flips. */
 export function useBoardHistory(): BoardHistoryValue {
   return required(useContext(BoardHistoryContext), "useBoardHistory");
+}
+
+/** The caller's role on the active board — a narrow header-only slice. */
+export function useBoardAccess(): BoardAccessValue {
+  return required(useContext(BoardAccessContext), "useBoardAccess");
 }
 
 /**
