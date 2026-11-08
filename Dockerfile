@@ -102,7 +102,7 @@ ARG GIT_COMMIT=
 ENV GIT_COMMIT=${GIT_COMMIT}
 
 # Release version baked into the image metadata. CI passes the product
-# version (`0.2.0`); a local build without the argument stays `dev`.
+# version from package.json; a local build without the argument stays `dev`.
 ARG APP_VERSION=dev
 LABEL org.opencontainers.image.title="Janosik" \
       org.opencontainers.image.description="Self-hosted Kanban board with realtime collaboration, an agent API and MCP." \

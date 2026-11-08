@@ -604,6 +604,130 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   ADMIN, аудит `board.command`) — прямых записей в таблицы контента нет.
   Любая секретная строка (пароль, токен) в ответах и логах не появляется.
 
+### Релиз приложения (обязательное правило)
+
+**Версия в `package.json` — это ещё не релиз.** GitHub Release и Docker-образ
+не появляются от изменения версии в коде. GitHub Release создаётся только
+git-тегом и командой `gh release create`, а Docker публикуется только на тег
+`v*` (или проверяется на PR). Не отчитывайся «версия обновлена», пока не
+сделаны тег, Release и проверен tag-workflow.
+
+Порядок:
+
+1. **Убедись, что обычные PR уже смержены пользователем.** Мерж в `main` —
+   только по явной команде пользователя; агент не мержит релиз сам. Релизную
+   ветку режь от актуального `main` после этого.
+2. **Подними версию.** SemVer, для визуального редизайна и новых фич — minor:
+   ```bash
+   npm version X.Y.Z --no-git-tag-version
+   npm version X.Y.Z --no-git-tag-version \
+     -w ui -w backend -w shared -w site -w e2e -w brand -w video
+   npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+   ```
+   `mcp` версионируется отдельно (`mcp-v*`) и в общий релиз не входит.
+   Если какой-то workspace ссылается на другой через caret-диапазон (сейчас
+   все `@janosik/*` используют `*`), обнови диапазон до `npm install
+   --package-lock-only`, иначе npm полезет в registry за несуществующей
+   версией.
+   `scripts/check-release-version.mjs` проверяет только root и lockfile —
+   сверь workspace-версии глазами:
+   ```bash
+   grep -H -m1 '"version"' package.json ui/package.json backend/package.json \
+     shared/package.json site/package.json e2e/package.json \
+     brand/package.json video/package.json
+   ```
+3. **Обнови документацию версии:**
+   - `CHANGELOG.md`;
+   - `site/src/content/docs/docs/changelog.md` и
+     `site/src/content/docs/ru/docs/changelog.md`;
+   - текущие примеры версии в `README.md`, `docs/INSTALL-BY-OS.md`,
+     `docs/SELF-HOSTING.md`, `site/.../self-hosting.md` (EN/RU),
+     `site/.../runbooks.md` (EN/RU), `.env.example`,
+     `.github/ISSUE_TEMPLATE/bug_report.md`, `ROADMAP.md`.
+   - Исторические записи о прошлых релизах и `ROADMAP-DONE.md` не переписывай.
+   - Формулировку «Version vX.Y.Z was tested» меняй только после реального
+     прогона Docker/CI; иначе оставь последнюю фактически проверенную версию.
+   - Если версия зашита комментарием в `Dockerfile`/другом файле, обнови её
+     или убери хардкод.
+4. **Проверь версию и сборки:**
+   ```bash
+   node scripts/check-release-version.mjs
+   RELEASE_TAG=vX.Y.Z node scripts/check-release-version.mjs
+   npm run build -w site && node scripts/check-built-docs-version.mjs
+   UI_BASE=/app/ npm run build -w ui && cat ui/dist/version.json
+   npm run build -w backend
+   ```
+   Docs badge берёт версию из корневого `package.json`, `version.json` — из
+   `ui/package.json`, админ-панель — из `backend/package.json`.
+5. **Docker.** Версия попадает в OCI-label `org.opencontainers.image.version`
+   через `ARG APP_VERSION`; CI читает SemVer из `package.json` и передаёт его
+   в `publish-images`. Локальная проверка:
+   ```bash
+   docker build --build-arg APP_VERSION=X.Y.Z \
+     -t janosik-selfhost-local:X.Y.Z-check .
+   docker image inspect --format '{{json .Config.Labels}}' \
+     janosik-selfhost-local:X.Y.Z-check
+   ```
+   `docker`-job на обычный push в ветку/`main` **пропускается намеренно** —
+   это не ошибка. Он запускается на PR и на тег `v*`.
+6. **Пользователь мержит релизный PR в `main`** (мерж — только по явной
+   команде). После мержа создай тег на коммите, который реально находится в
+   `origin/main`:
+   ```bash
+   git fetch origin
+   RELEASE_SHA=$(git rev-parse origin/main)
+   git tag -a vX.Y.Z "$RELEASE_SHA" -m "Janosik vX.Y.Z"
+   git merge-base --is-ancestor vX.Y.Z origin/main
+   git push origin vX.Y.Z
+   ```
+   Если нужен именно merge-коммит релизного PR, возьми его из
+   `gh pr view <number> --json mergeCommit --jq .mergeCommit.oid` и проверь,
+   что он входит в `origin/main`. Не тегируй head релизной ветки «на глаз».
+
+   Затем собери заметки и создай GitHub Release:
+   ```bash
+   awk '/^## X\.Y\.Z /{flag=1;next}/^## /{flag=0}flag' \
+     site/src/content/docs/docs/changelog.md \
+     > /tmp/release-notes-X.Y.Z.md
+   test -s /tmp/release-notes-X.Y.Z.md || {
+     echo "Release notes are empty" >&2; exit 1;
+   }
+   gh release create vX.Y.Z \
+     --title "Janosik vX.Y.Z" \
+     --notes-file /tmp/release-notes-X.Y.Z.md \
+     --verify-tag
+   ```
+   Тег и Release — обязательны; без них в GitHub останется старый «Latest».
+   Для pre-release добавь `--prerelease --latest=false`.
+7. **Дождись tag-workflow и проверь публикацию:**
+   ```bash
+   gh run list --branch vX.Y.Z
+   gh run watch <run-id> --interval 30 --exit-status
+   ```
+   Должны пройти `verify`, `browser-e2e`, `docker` (amd64 + arm64),
+   `publish-images` и `publish`; `video` на теге тоже запускается, но не
+   входит в `needs` публикации — его падение не должно остаться незамеченным.
+   Затем проверь:
+   ```bash
+   gh release list --limit 3
+   gh release view vX.Y.Z --json isLatest --jq .isLatest
+   docker buildx imagetools inspect \
+     ghcr.io/vitalytolstik/janosik:vX.Y.Z
+   # only for a stable release (no -rc/-beta suffix):
+   docker buildx imagetools inspect \
+     ghcr.io/vitalytolstik/janosik:latest
+   ```
+   `latest` двигается только для стабильного тега; pre-release с `-`
+   публикует только свой тег, поэтому проверку `:latest` для него не выполняй.
+
+Если tag-workflow упал, **не двигай уже опубликованный тег**: исправь причину
+и выпусти patch-версию. Удаление тега/Release допустимо только если это
+разрешает политика репозитория (immutable releases могут запрещать).
+
+Частая ошибка: bump `package.json` + changelog, PR смержен, но тег и GitHub
+Release не созданы. В итоге в Releases висит прошлая версия, а `docker` на
+push стоит `Skipped` — это ожидаемое поведение, а не сломанный CI.
+
 ### Git-процесс (обязательное правило)
 
 - **Любая новая работа — в отдельной ветке от `main`** (`feat/…`, `fix/…`,
