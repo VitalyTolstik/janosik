@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { Card } from "@janosik/shared";
+import { priorityRank } from "@/utils/priority";
 
 /**
  * Table view helpers (TASK-14.1) — the pure column/sort math and the sort
@@ -19,6 +20,72 @@ export type SortKey =
 export interface SortState {
   key: SortKey;
   dir: 1 | -1;
+}
+
+/** One table row as the comparators see it: a card and its column. */
+export interface TableSortRow {
+  card: Card;
+  column: { id: string };
+}
+
+/**
+ * Order two table rows by `sort`. Pure and exported so every comparator —
+ * including column/priority/assignee, which previously had no unit coverage —
+ * can be tested without mounting the table (TASK-162 review, T-03).
+ *
+ * Invariants:
+ * - undated cards stay last in BOTH directions (same as the reducer);
+ * - unassigned rows stay last in BOTH directions (Jira convention);
+ * - the third click's board-order reset is handled by the caller.
+ */
+export function compareTableRows(
+  a: TableSortRow,
+  b: TableSortRow,
+  sort: SortState,
+  columnIndex: Map<string, number>,
+  assigneeName: (userId: string) => string,
+  lang: string,
+): number {
+  switch (sort.key) {
+    case "title":
+      return (
+        a.card.title.localeCompare(b.card.title, lang, {
+          sensitivity: "base",
+        }) * sort.dir
+      );
+    case "column":
+      return (
+        ((columnIndex.get(a.column.id) ?? 0) -
+          (columnIndex.get(b.column.id) ?? 0)) *
+        sort.dir
+      );
+    case "due": {
+      const aDue = typeof a.card.dueDate === "number" ? a.card.dueDate : null;
+      const bDue = typeof b.card.dueDate === "number" ? b.card.dueDate : null;
+      if (aDue === null && bDue === null) return 0;
+      if (aDue === null) return 1;
+      if (bDue === null) return -1;
+      return (aDue - bDue) * sort.dir;
+    }
+    case "priority":
+      return (
+        (priorityRank(a.card.priority) - priorityRank(b.card.priority)) *
+        sort.dir
+      );
+    case "assignee": {
+      // Unassigned rows sort last regardless of direction (Jira).
+      if (!a.card.assigneeId && !b.card.assigneeId) return 0;
+      if (!a.card.assigneeId) return 1;
+      if (!b.card.assigneeId) return -1;
+      return (
+        assigneeName(a.card.assigneeId).localeCompare(
+          assigneeName(b.card.assigneeId),
+        ) * sort.dir
+      );
+    }
+    case "createdAt":
+      return (a.card.createdAt - b.card.createdAt) * sort.dir;
+  }
 }
 
 /** Optional columns beyond the four base ones (TASK-14.1 item 11). */
@@ -78,13 +145,18 @@ export function SortHeader({
 }) {
   const isSorted = sort?.key === sortKey;
   return (
-    <th scope="col" className={cn("px-3 py-2 text-left", className)}>
+    <th
+      scope="col"
+      // ARIA requires `aria-sort` on the columnheader, not on the button
+      // nested inside it; screen readers announce the direction on the cell.
+      aria-sort={
+        isSorted ? (sort?.dir === 1 ? "ascending" : "descending") : "none"
+      }
+      className={cn("px-3 py-2 text-left", className)}
+    >
       <button
         type="button"
         data-testid={`table-sort-${sortKey}`}
-        aria-sort={
-          isSorted ? (sort?.dir === 1 ? "ascending" : "descending") : "none"
-        }
         title={label}
         onClick={() => onCycle(sortKey)}
         className={cn(

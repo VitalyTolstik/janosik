@@ -12,6 +12,33 @@ export function searchInput(page: Page): Locator {
   return filterBar(page).getByRole("textbox", { name: "Search cards" });
 }
 
+/** Result count span ("1 card found") — absent while no filter is active. */
+export function matchCount(page: Page): Locator {
+  return filterBar(page).getByTestId("filter-match-count");
+}
+
+/** Number badge on the Filters button, exactly the active-facet count. */
+export function facetCount(page: Page): Locator {
+  return filterBar(page).getByTestId("filter-facet-count");
+}
+
+/** Removable chip for one facet (priority/assignee may have several). */
+export function facetChip(page: Page, facet: string): Locator {
+  return filterBar(page).locator(
+    `[data-testid="filter-chip"][data-facet="${facet}"]`,
+  );
+}
+
+export async function removeChip(page: Page, facet: string): Promise<void> {
+  await facetChip(page, facet)
+    .getByRole("button", { name: "Remove label" })
+    .click();
+}
+
+export async function resetFilters(page: Page): Promise<void> {
+  await filterBar(page).getByTestId("filter-reset").click();
+}
+
 /** The card face (article) whose title is exactly `title`. */
 export function cardByTitle(page: Page, title: string): Locator {
   const exact = new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
