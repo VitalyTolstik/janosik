@@ -30,16 +30,12 @@ export async function openAccount(
   return dialog;
 }
 
-export async function showSection(
-  page: Page,
-  section: AccountSection,
-): Promise<Locator> {
+export async function showSection(page: Page, section: AccountSection) {
   await page.getByTestId(`account-nav-${section}`).click();
   const panel = page.getByTestId(`account-${section}`);
   await expect(panel).toBeVisible();
   return panel;
 }
-
 /** Create a token through the UI and return the one-time plaintext. */
 export async function createTokenThroughUi(
   page: Page,

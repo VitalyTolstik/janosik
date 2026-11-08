@@ -1,5 +1,10 @@
 import { test, expect } from "@/fixtures/account.js";
-import { openAccount, signOutThroughUi } from "@/helpers/account.js";
+import {
+  openAccount,
+  showSection,
+  signOutThroughUi,
+  type AccountSection,
+} from "@/helpers/account.js";
 
 test("the account panel opens on the profile and switches between sections", async ({
   page,
@@ -12,10 +17,16 @@ test("the account panel opens on the profile and switches between sections", asy
   await expect(
     page.getByText(/With Janosik since/, { exact: false }),
   ).toBeVisible();
+  await expect(dialog.getByTestId("account-profile")).toBeVisible();
 
-  for (const section of ["security", "tokens", "preferences", "profile"]) {
-    await dialog.getByTestId(`account-nav-${section}`).click();
-    await expect(page.getByTestId(`account-${section}`)).toBeVisible();
+  const sections: AccountSection[] = [
+    "security",
+    "tokens",
+    "preferences",
+    "profile",
+  ];
+  for (const section of sections) {
+    await showSection(page, section);
   }
 });
 

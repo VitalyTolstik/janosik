@@ -66,7 +66,7 @@ test("an incorrect current password is reported and keeps the old password", asy
   expect(check.ok()).toBeTruthy();
 });
 
-test("the new password must be long enough and match its confirmation", async ({
+test("a short new password is rejected before submit", async ({
   page,
   account,
 }) => {
@@ -80,7 +80,16 @@ test("the new password must be long enough and match its confirmation", async ({
     "The new password must be at least 8 characters",
   );
   await expect(page.getByTestId("security-submit")).toBeDisabled();
+});
 
+test("a mismatched confirmation is rejected before submit", async ({
+  page,
+  account,
+}) => {
+  await account.open(page);
+  await openAccount(page, "security");
+
+  await page.getByTestId("security-current").fill(account.user.password);
   await page.getByTestId("security-new").fill(NEW_PASSWORD);
   await page.getByTestId("security-confirm").fill("different-password");
   await expect(page.getByTestId("security-error")).toHaveText(

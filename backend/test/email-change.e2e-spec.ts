@@ -168,8 +168,9 @@ describe("Email change API (e2e)", () => {
     const res = await server()
       .post("/api/v1/auth/email/change/confirm")
       .set("Authorization", `Bearer ${accessToken}`)
-      // The route lives under /auth so the caller's cookie identifies its
-      // session; supertest does not persist cookies, so it is set by hand.
+      // The old caller cookie is sent to prove it is revoked along with the
+      // other session; supertest does not persist cookies, so it is set by
+      // hand.
       .set("Cookie", `refresh_token=${callerRefresh}`)
       .send({ code })
       .expect(200);

@@ -9,7 +9,6 @@ type CreatedToken = { id: string; token: string };
 
 type Account = {
   user: AccountUser;
-  userId: string;
   /** Session-authenticated API client for setup and assertions. */
   api: APIRequestContext;
   /** Sign in through the UI and wait for the account trigger. */
@@ -44,13 +43,8 @@ export const test = authTest.extend<{ account: Account }>({
       },
     });
     try {
-      const me = await api.get("/api/v1/auth/me");
-      expect(me.ok()).toBeTruthy();
-      const { id: userId } = (await me.json()) as { id: string };
-
       await use({
         user,
-        userId,
         api,
         open: async (page) => {
           await login(page, user);

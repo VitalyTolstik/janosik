@@ -81,7 +81,7 @@ test("revoking a key asks for confirmation and marks the row revoked", async ({
   page,
   account,
 }) => {
-  const created = await account.createToken("Laptop");
+  await account.createToken("Laptop");
   await account.open(page);
   await openAccount(page, "tokens");
 
@@ -100,7 +100,6 @@ test("revoking a key asks for confirmation and marks the row revoked", async ({
 
   await expect(row).toContainText("Revoked");
   await expect(row.getByTestId("token-revoke")).toHaveCount(0);
-  expect(created.id).toBeTruthy();
 });
 
 test("a revoked key can no longer call the API", async ({

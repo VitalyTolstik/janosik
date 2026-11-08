@@ -203,10 +203,10 @@ export class AuthController {
   }
 
   /**
-   * Email change (TASK-51), step 2 — code in, address swapped, every other
-   * session revoked, fresh token pair handed back (same contract as login).
-   * Lives under `/auth` so the refresh cookie identifies the caller's
-   * session — like `POST /password`.
+   * Email change (TASK-51), step 2 — code in, address swapped, every refresh
+   * session revoked and a fresh token pair handed back (same contract as
+   * login). The old caller cookie is revoked too; the route lives under
+   * `/auth` so the new cookie is scoped where refresh expects it.
    */
   @UseGuards(JwtAuthGuard, SessionOnlyGuard)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })

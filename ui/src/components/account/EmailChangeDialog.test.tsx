@@ -62,6 +62,7 @@ describe("EmailChangeDialog (TASK-51)", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("sends the code request with the password and moves to the code step", async () => {
@@ -159,6 +160,61 @@ describe("EmailChangeDialog (TASK-51)", () => {
 
     await userEvent.click(screen.getByTestId("reopen-email-change"));
     expect(await screen.findByTestId("email-change-new")).toHaveValue("");
+  });
+
+  it("ignores a code request that resolves after the dialog was closed", async () => {
+    const server = new FakeServer();
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button
+            type="button"
+            data-testid="reopen-email-change"
+            onClick={() => setOpen(true)}
+          >
+            reopen
+          </button>
+          <EmailChangeDialog open={open} onOpenChange={setOpen} />
+        </>
+      );
+    }
+    let finish!: (value: { expiresAt: number; queued: boolean }) => void;
+    vi.spyOn(api, "requestEmailChange").mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    vi.stubGlobal("fetch", server.handle);
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <Harness />
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    await userEvent.type(
+      screen.getByTestId("email-change-new"),
+      "new@example.com",
+    );
+    await userEvent.type(
+      screen.getByTestId("email-change-password"),
+      server.account.password,
+    );
+    await userEvent.click(screen.getByTestId("email-change-send"));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.queryByTestId("email-change-dialog")).toBeNull(),
+    );
+
+    finish({ expiresAt: Date.now() + 60_000, queued: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await userEvent.click(screen.getByTestId("reopen-email-change"));
+    expect(await screen.findByTestId("email-change-new")).toHaveValue("");
+    expect(screen.queryByTestId("email-change-code")).toBeNull();
   });
 
   it("shows an inline error for a wrong current password and stays open", async () => {
