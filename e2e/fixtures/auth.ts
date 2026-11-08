@@ -15,10 +15,15 @@ type Fixtures = {
   createUser: (verified?: boolean) => Promise<User>;
 };
 
+/** A random client address; each one gets its own auth rate-limit bucket. */
+export function randomIp(): string {
+  const bytes = randomBytes(3);
+  return `10.${bytes[0]}.${bytes[1]}.${bytes[2]}`;
+}
+
 export const test = base.extend<Fixtures>({
   testIp: async ({}, use) => {
-    const bytes = randomBytes(3);
-    await use(`10.${bytes[0]}.${bytes[1]}.${bytes[2]}`);
+    await use(randomIp());
   },
   extraHTTPHeaders: async ({ testIp }, use) => {
     await use({ "X-Forwarded-For": testIp });

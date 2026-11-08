@@ -23,10 +23,14 @@ export const test = authTest.extend<{ board: BoardFixture }>({
       baseURL: siteUrl,
       extraHTTPHeaders: { "X-Forwarded-For": testIp },
     });
-    const logged = await client.post("/api/v1/auth/login", { data: user });
-    expect(logged.ok()).toBeTruthy();
-    const { accessToken } = (await logged.json()) as { accessToken: string };
-    await client.dispose();
+    let accessToken: string;
+    try {
+      const logged = await client.post("/api/v1/auth/login", { data: user });
+      expect(logged.ok()).toBeTruthy();
+      ({ accessToken } = (await logged.json()) as { accessToken: string });
+    } finally {
+      await client.dispose();
+    }
     const api = await playwright.request.newContext({
       baseURL: siteUrl,
       extraHTTPHeaders: {

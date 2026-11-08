@@ -4,7 +4,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { test as boardTest, expect } from "./board.js";
-import { login } from "./auth.js";
+import { login, randomIp } from "./auth.js";
 import { appUrl, siteUrl } from "../helpers/urls.js";
 
 export type CollaborationRole = "ADMIN" | "MEMBER" | "VIEWER";
@@ -45,24 +45,34 @@ interface PartnerBrowser {
  * and two-writer conflicts exercise the production transport, not a mock.
  */
 export const test = boardTest.extend<{
+  /** The partner gets its own address: four logins on one IP would sit one
+   *  request away from the auth rate limit (5 per minute). */
+  partnerIp: string;
   partner: Partner;
   partnerBrowser: PartnerBrowser;
 }>({
-  partner: async ({ board, createUser, playwright, testIp }, use) => {
+  partnerIp: async ({}, use) => {
+    await use(randomIp());
+  },
+  partner: async ({ board, createUser, partnerIp, playwright }, use) => {
     const user = await createUser();
     const client = await playwright.request.newContext({
       baseURL: siteUrl,
-      extraHTTPHeaders: { "X-Forwarded-For": testIp },
+      extraHTTPHeaders: { "X-Forwarded-For": partnerIp },
     });
-    const logged = await client.post("/api/v1/auth/login", { data: user });
-    expect(logged.ok()).toBeTruthy();
-    const { accessToken } = (await logged.json()) as { accessToken: string };
-    await client.dispose();
+    let accessToken: string;
+    try {
+      const logged = await client.post("/api/v1/auth/login", { data: user });
+      expect(logged.ok()).toBeTruthy();
+      ({ accessToken } = (await logged.json()) as { accessToken: string });
+    } finally {
+      await client.dispose();
+    }
 
     const api = await playwright.request.newContext({
       baseURL: siteUrl,
       extraHTTPHeaders: {
-        "X-Forwarded-For": testIp,
+        "X-Forwarded-For": partnerIp,
         Authorization: `Bearer ${accessToken}`,
       },
     });
@@ -135,14 +145,14 @@ export const test = boardTest.extend<{
       await api.dispose();
     }
   },
-  partnerBrowser: async ({ browser, partner, testIp }, use) => {
+  partnerBrowser: async ({ browser, partner, partnerIp }, use) => {
     const context = await browser.newContext({
-      extraHTTPHeaders: { "X-Forwarded-For": testIp },
+      extraHTTPHeaders: { "X-Forwarded-For": partnerIp },
       locale: "en-US",
     });
-    const page = await context.newPage();
-    await partner.open(page);
     try {
+      const page = await context.newPage();
+      await partner.open(page);
       await use({ context, page });
     } finally {
       await context.close().catch(() => undefined);
