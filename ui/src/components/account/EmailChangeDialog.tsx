@@ -50,10 +50,17 @@ export function EmailChangeDialog({
   const [busy, setBusy] = useState(false);
   const [resendIn, setResendIn] = useState(0);
   const resendTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  /**
+   * Identifies the latest request/confirmation. Closing the dialog bumps it,
+   * so a response that lands after Cancel/reopen cannot move the fresh form
+   * back to the code step or write an error into it.
+   */
+  const requestEpoch = useRef(0);
 
   /** Closing always resets — re-entering the dialog starts from the form. */
   const handleChangeOpen = (next: boolean) => {
     if (!next) {
+      requestEpoch.current += 1;
       setStep("form");
       setNewEmail("");
       setPassword("");
@@ -100,19 +107,22 @@ export function EmailChangeDialog({
   };
 
   const requestCode = async (): Promise<boolean> => {
+    const epoch = ++requestEpoch.current;
     setBusy(true);
     setError(null);
     try {
       await api.requestEmailChange(newEmail.trim(), password);
+      if (epoch !== requestEpoch.current) return false;
       setStep("code");
       setCode("");
       setResendIn(RESEND_COOLDOWN_SECONDS);
       return true;
     } catch (cause) {
+      if (epoch !== requestEpoch.current) return false;
       setError(mapRequestError(cause));
       return false;
     } finally {
-      setBusy(false);
+      if (epoch === requestEpoch.current) setBusy(false);
     }
   };
 
@@ -129,14 +139,18 @@ export function EmailChangeDialog({
   const handleConfirm = async (event?: FormEvent) => {
     event?.preventDefault();
     if (busy || code.length !== CODE_LENGTH) return;
+    const epoch = ++requestEpoch.current;
     setBusy(true);
     setError(null);
     try {
       const response = await api.confirmEmailChange(code);
+      // The server has already changed the identity and rotated the session:
+      // adopt it even if the dialog was closed while the call was in flight.
       updateUser(response.user);
-      onOpenChange(false);
       toast.success(t("account.email.success"));
+      if (epoch === requestEpoch.current) handleChangeOpen(false);
     } catch (cause) {
+      if (epoch !== requestEpoch.current) return;
       if (cause instanceof ApiError && cause.status === 409) {
         setError(t("account.email.error.taken"));
       } else if (cause instanceof ApiError && cause.status === 429) {
@@ -145,7 +159,7 @@ export function EmailChangeDialog({
         setError(t("account.email.error.invalidCode"));
       }
     } finally {
-      setBusy(false);
+      if (epoch === requestEpoch.current) setBusy(false);
     }
   };
 
@@ -220,7 +234,7 @@ export function EmailChangeDialog({
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => onOpenChange(false)}
+                onClick={() => handleChangeOpen(false)}
               >
                 {t("common.cancel")}
               </Button>

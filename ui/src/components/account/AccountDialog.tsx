@@ -29,7 +29,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { formatDateOnly, useI18n } from "@/i18n";
 import type { MessageKey } from "@/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { userAvatarColor, userInitials, userLabel } from "@/utils/avatar";
+import { userLabel } from "@/utils/avatar";
 import { ApiTokensSection } from "./ApiTokensSection";
 import { PreferencesSection } from "./PreferencesSection";
 import { ProfileSection } from "./ProfileSection";
@@ -117,15 +117,15 @@ export function AccountDialog() {
       >
         {/* Identity band: who you are, at a glance. */}
         <div className="relative flex shrink-0 items-center gap-4 border-b bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-5 py-4 pr-12">
-          <span
-            aria-hidden
-            className={cn(
-              "flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white shadow-sm",
-              userAvatarColor(user.id, user.avatarColor),
-            )}
-          >
-            {userInitials(user.displayName, user.email)}
-          </span>
+          <UserAvatar
+            userId={user.id}
+            displayName={user.displayName}
+            email={user.email}
+            color={user.avatarColor}
+            avatarPath={user.avatarPath}
+            size="xl"
+            className="shadow-sm"
+          />
           <div className="min-w-0 space-y-0.5">
             <DialogTitle className="truncate text-base font-semibold">
               {name}

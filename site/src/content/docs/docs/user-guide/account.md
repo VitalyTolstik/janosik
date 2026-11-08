@@ -52,6 +52,8 @@ and a section list on the left: `Profile`, `Security`, `API keys` and
   replaces the initials.
 - `Avatar color` — pick a color for your initials, or leave it on automatic.
 - `Display name` — shows on cards, in the feed and in the list of online members.
+- `Scheduled digests and due reminders` — uncheck to stop summary e-mails;
+  board activity is unaffected.
 - `Email` — your sign-in address, shown read-only. Use `Change` to start the
   change flow.
 
