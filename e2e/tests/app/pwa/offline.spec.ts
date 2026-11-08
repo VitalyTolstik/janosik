@@ -1,4 +1,10 @@
 import { test, expect } from "@/fixtures/board.js";
+import {
+  breakStream,
+  installStreamBreak,
+  resumeStream,
+  streamAttempts,
+} from "@/helpers/collaboration.js";
 import { expectToast } from "@/helpers/data.js";
 import { cardTitle, columnSection } from "@/helpers/history.js";
 import {
@@ -59,8 +65,13 @@ test("catches up on changes made while the browser was offline", async ({
   board,
 }) => {
   const columnId = await board.column("Todo");
+  // Chromium keeps an already-open SSE socket alive under
+  // `context.setOffline`, so the outage must cut the stream explicitly.
+  // The hook then holds every retry until the network is back.
+  await installStreamBreak(page);
   await board.open(page);
   await waitForServiceWorker(page);
+  const attemptsBefore = await breakStream(page);
 
   await goOffline(context, page);
   try {
@@ -70,6 +81,7 @@ test("catches up on changes made while the browser was offline", async ({
   } finally {
     await goOnline(context, page);
   }
+  await resumeStream(page);
 
   // The reconnect resumes the SSE stream from its baseline seq, so the
   // missed command lands without a manual reload — and the API/stream are
@@ -77,6 +89,7 @@ test("catches up on changes made while the browser was offline", async ({
   await expect(cardTitle(page, "Added while offline")).toBeVisible({
     timeout: 15_000,
   });
+  expect(await streamAttempts(page)).toBeGreaterThan(attemptsBefore);
 });
 
 test("restores the session and board state after an offline reload", async ({
