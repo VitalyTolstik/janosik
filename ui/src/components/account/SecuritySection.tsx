@@ -55,9 +55,10 @@ function PasswordInput({
 
 /**
  * Security section (TASK-36.1): change the password after proving the
- * current one. The server revokes every other refresh session and keeps the
- * caller's — the copy says exactly that. API tokens survive on purpose, so
- * integrations do not break on a rotation.
+ * current one. The server revokes every other refresh session and every
+ * personal API token, keeping only the caller's session — the copy says
+ * exactly that. A rotation is the user's "something leaked" button, so a
+ * key minted with the old password must die with it.
  */
 export function SecuritySection() {
   const { t } = useI18n();

@@ -83,6 +83,16 @@ in the other context. Each test starts from its own owner and board; the
 two-account tests also get their own invited account and an independent browser
 context.
 
+`tests/app/account/` covers the personal account panel: profile name, avatar
+color, photo upload (including a rejected non-image), the digest opt-out and
+the persisted display preferences (theme, language, time format, board
+background). The security flows rotate the password (happy path, wrong current
+password, validation), verify that another browser session is signed out while
+the caller stays in, and exercise the email change double opt-in with a real
+code from Mailpit. API keys are created and copied through the UI, used for a
+real API request, revoked with confirmation, refused afterwards, and refused
+the right to mint more keys. Each test starts from its own verified account.
+
 To use already-running development servers instead, provide the site and app
 URLs separately; point the app URL at the dev server root, not `/app/`:
 

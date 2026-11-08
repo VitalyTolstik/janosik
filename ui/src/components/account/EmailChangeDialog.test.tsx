@@ -1,9 +1,10 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "@/api/client";
-import { AuthProvider } from "@/auth/AuthContext";
+import { AuthProvider, useAuth } from "@/auth/AuthContext";
 import { EmailChangeDialog } from "@/components/account/EmailChangeDialog";
 import { ToastProvider } from "@/components/Toast";
 import { I18nProvider } from "@/i18n";
@@ -61,6 +62,7 @@ describe("EmailChangeDialog (TASK-51)", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("sends the code request with the password and moves to the code step", async () => {
@@ -110,6 +112,195 @@ describe("EmailChangeDialog (TASK-51)", () => {
     });
     // The identity really moved: the account email changed server-side.
     expect(server.account.email).toBe("new@example.com");
+  });
+
+  it("starts from a clean form after a successful change", async () => {
+    const server = new FakeServer();
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button
+            type="button"
+            data-testid="reopen-email-change"
+            onClick={() => setOpen(true)}
+          >
+            reopen
+          </button>
+          <EmailChangeDialog open={open} onOpenChange={setOpen} />
+        </>
+      );
+    }
+    vi.stubGlobal("fetch", server.handle);
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <Harness />
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    await userEvent.type(
+      screen.getByTestId("email-change-new"),
+      "new@example.com",
+    );
+    await userEvent.type(
+      screen.getByTestId("email-change-password"),
+      server.account.password,
+    );
+    await userEvent.click(screen.getByTestId("email-change-send"));
+    await screen.findByTestId("email-change-code");
+    await typeCode(server.emailChangeCode);
+    await userEvent.click(screen.getByTestId("email-change-verify"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("email-change-code")).toBeNull(),
+    );
+
+    await userEvent.click(screen.getByTestId("reopen-email-change"));
+    expect(await screen.findByTestId("email-change-new")).toHaveValue("");
+  });
+
+  it("ignores a code request that resolves after the dialog was closed", async () => {
+    const server = new FakeServer();
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button
+            type="button"
+            data-testid="reopen-email-change"
+            onClick={() => setOpen(true)}
+          >
+            reopen
+          </button>
+          <EmailChangeDialog open={open} onOpenChange={setOpen} />
+        </>
+      );
+    }
+    let finish!: (value: { expiresAt: number; queued: boolean }) => void;
+    vi.spyOn(api, "requestEmailChange").mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    vi.stubGlobal("fetch", server.handle);
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <Harness />
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    await userEvent.type(
+      screen.getByTestId("email-change-new"),
+      "new@example.com",
+    );
+    await userEvent.type(
+      screen.getByTestId("email-change-password"),
+      server.account.password,
+    );
+    await userEvent.click(screen.getByTestId("email-change-send"));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.queryByTestId("email-change-dialog")).toBeNull(),
+    );
+
+    finish({ expiresAt: Date.now() + 60_000, queued: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await userEvent.click(screen.getByTestId("reopen-email-change"));
+    expect(await screen.findByTestId("email-change-new")).toHaveValue("");
+    expect(screen.queryByTestId("email-change-code")).toBeNull();
+  });
+
+  it("adopts a confirmed email that resolves after the dialog was closed", async () => {
+    const server = new FakeServer();
+    function CurrentEmail() {
+      const { user } = useAuth();
+      return <span data-testid="auth-email">{user?.email ?? ""}</span>;
+    }
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <CurrentEmail />
+          <button
+            type="button"
+            data-testid="reopen-email-change"
+            onClick={() => setOpen(true)}
+          >
+            reopen
+          </button>
+          <EmailChangeDialog open={open} onOpenChange={setOpen} />
+        </>
+      );
+    }
+    vi.stubGlobal("fetch", server.handle);
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <Harness />
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    await userEvent.type(
+      screen.getByTestId("email-change-new"),
+      "new@example.com",
+    );
+    await userEvent.type(
+      screen.getByTestId("email-change-password"),
+      server.account.password,
+    );
+    await userEvent.click(screen.getByTestId("email-change-send"));
+    await screen.findByTestId("email-change-code");
+    await typeCode(server.emailChangeCode);
+
+    let finish!: (value: {
+      accessToken: string;
+      user: {
+        id: string;
+        email: string;
+        displayName: string | null;
+        avatarColor: null;
+        avatarPath: null;
+        createdAt: number;
+      };
+    }) => void;
+    vi.spyOn(api, "confirmEmailChange").mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await userEvent.click(screen.getByTestId("email-change-verify"));
+    await userEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    finish({
+      accessToken: "fresh-access",
+      user: {
+        id: "user-1",
+        email: "new@example.com",
+        displayName: "Admin",
+        avatarColor: null,
+        avatarPath: null,
+        createdAt: Date.UTC(2026, 0, 15, 12, 0, 0),
+      },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("auth-email")).toHaveTextContent(
+        "new@example.com",
+      ),
+    );
+    expect(await screen.findByText("Email updated")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("reopen-email-change"));
+    expect(await screen.findByTestId("email-change-new")).toHaveValue("");
   });
 
   it("shows an inline error for a wrong current password and stays open", async () => {
