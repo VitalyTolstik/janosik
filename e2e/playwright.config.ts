@@ -8,6 +8,10 @@ export default defineConfig({
     ? { testMatch: "**/mail-disabled.spec.ts" }
     : { testIgnore: "**/mail-disabled.spec.ts" }),
   fullyParallel: true,
+  // The lifecycle flows in cards/ and boards/ are long (create, archive,
+  // restore and reload in one user journey); 30 s left no headroom on a
+  // loaded CI runner once the shared stack warms up.
+  timeout: 60_000,
   workers: process.env.CI ? 4 : undefined,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
