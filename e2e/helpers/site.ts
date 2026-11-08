@@ -22,9 +22,12 @@ export function langSwitch(page: Page): Locator {
   return page.locator("header a.lang-btn");
 }
 
-/** The theme toggle in the marketing-site header. */
+/**
+ * The visible theme toggle in the marketing-site header. The 404 renders both
+ * language headers, so one of the two toggles is hidden by CSS.
+ */
 export function themeToggle(page: Page): Locator {
-  return page.locator("header [data-theme-toggle]");
+  return page.locator("header [data-theme-toggle]:visible");
 }
 
 /** Click a CTA by its analytics hook (`data-cta`). */

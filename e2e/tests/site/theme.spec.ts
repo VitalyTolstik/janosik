@@ -48,3 +48,14 @@ test("carries the theme into the documentation", async ({ page }) => {
 
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
+
+test("toggles the theme on the dual-language 404 page", async ({ page }) => {
+  await page.goto(sitePage("/missing-page/"));
+
+  const html = page.locator("html");
+  await expect(html).toHaveAttribute("data-theme", "light");
+
+  await themeToggle(page).click();
+
+  await expect(html).toHaveAttribute("data-theme", "dark");
+});

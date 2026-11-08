@@ -124,9 +124,9 @@ its login or registration screen under the `/app/` base, with the Russian
 `?lng=ru` handoff. Language tests switch home and pricing between English and
 Russian in place and check `<html lang>` and translated content. The theme test
 toggles light/dark, survives a reload and carries the shared `starlight-theme`
-choice into the documentation. The 404 tests verify the status, English and
-Russian copy and the link home. The site is public, so these tests need no
-account, fixture or API setup.
+choice into the documentation; the dual-language 404 page gets its own theme
+test. The 404 tests verify the status, English and Russian copy and the link
+home. The site is public, so these tests need no account, fixture or API setup.
 
 To use already-running development servers instead, provide the site and app
 URLs separately; point the app URL at the dev server root, not `/app/`:
