@@ -6,6 +6,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [0.2.0] - 2026-11-08
+
+### Added
+
+- Secure password recovery through a single-use e-mail code; a reset revokes
+  other sessions and all API keys.
+- Public share links can expose comments and attachments, freeze them in a
+  snapshot, and embed the board with a system, light or dark theme. Revoked
+  links can be deleted while the audit trail is retained.
+- Admin security events and per-master IP allowlist management.
+
+### Changed
+
+- Redesigned the card details dialog: inline title and labels, an actions
+  menu, a two-column content/properties layout, a collapsed link editor,
+  wrapped long titles and more compact comments and checklists.
+- Expanded the Chrome end-to-end suite across authentication, boards, cards,
+  views, filters, search, history and two-account collaboration.
+
+### Fixed
+
+- Deleting the open card no longer shows a false `Card not found` toast or
+  leaves a stale `?card=` parameter.
+- The card link editor keeps focus and the first click, closes on Escape and
+  stays open while a relation type is chosen.
+- Undo no longer overwrites another member's board rename, and a live role
+  change refreshes the caller's permissions without a reload.
+- Description attachments are removed with the description text and remain
+  reversible through undo.
+
+## [0.1.1] - 2026-11-04
+
 ### Added
 
 - **Self-hosting deliverables (TASK-38a/38b).** A multi-stage `Dockerfile`
@@ -258,38 +292,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - CI publishes an image only after the tests pass, pins actions by commit,
     and runs CodeQL and Dependabot.
 
-## [0.2.0] - 2026-11-08
-
-### Added
-
-- Secure password recovery through a single-use e-mail code; a reset revokes
-  other sessions and all API keys.
-- Public share links can expose comments and attachments, freeze them in a
-  snapshot, and embed the board with a system, light or dark theme. Revoked
-  links can be deleted while the audit trail is retained.
-- Admin security events and a master IP allowlist.
-
-### Changed
-
-- Redesigned the card details dialog: inline title and labels, an actions
-  menu, a two-column content/properties layout, a collapsed link editor,
-  wrapped long titles and more compact comments and checklists.
-- Expanded the Chrome end-to-end suite across authentication, boards, cards,
-  views, filters, search, history and two-account collaboration.
-
-### Fixed
-
-- Deleting the open card no longer shows a false `Card not found` toast or
-  leaves a stale `?card=` parameter.
-- The card link editor keeps focus and the first click, closes on Escape and
-  stays open while a relation type is chosen.
-- A fast Escape after creating a card from the calendar no longer lands on the
-  board instead of the dialog.
-- Undo no longer overwrites another member's board rename, and a live role
-  change refreshes the caller's permissions without a reload.
-- Description attachments are removed with the description text and remain
-  reversible through undo.
-
 ## [0.1.0] - 2026-10-26
 
 Initial self-hosted release: offline-first PWA Kanban board with drag & drop,
@@ -299,4 +301,5 @@ backend.
 
 [Unreleased]: https://github.com/VitalyTolstik/janosik/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/VitalyTolstik/janosik/releases/tag/v0.2.0
+[0.1.1]: https://github.com/VitalyTolstik/janosik/releases/tag/v0.1.1
 [0.1.0]: https://github.com/VitalyTolstik/janosik/releases/tag/v0.1.0

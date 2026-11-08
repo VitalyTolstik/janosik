@@ -47,8 +47,6 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   leaves a stale `?card=` parameter behind.
 - The card link editor keeps its focus and first click, closes on Escape, and
   stays open while the relation type is chosen.
-- A fast Escape after creating a card from the calendar no longer lands on the
-  board instead of the dialog.
 - Undo after another member renamed the board marks the step dead instead of
   overwriting the newer name, and a live role change refreshes the caller's
   permissions without a reload.

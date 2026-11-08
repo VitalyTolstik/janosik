@@ -23,7 +23,7 @@ A clear description of the bug and what you expected instead.
 
 ## Environment
 
-- Janosik version / image tag (e.g. `v0.1.0`):
+- Janosik version / image tag (e.g. `v0.2.0`):
 - How you run it (Docker Compose / dev `npm run dev` / other):
 - Browser & OS (for UI issues):
 - Served over HTTPS or plain HTTP:

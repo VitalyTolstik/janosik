@@ -101,8 +101,8 @@ ENV UPLOAD_DIR=/data/uploads
 ARG GIT_COMMIT=
 ENV GIT_COMMIT=${GIT_COMMIT}
 
-# Release version baked into the image metadata. CI passes the release tag
-# (`v0.2.0`); a local build without the argument stays `dev`.
+# Release version baked into the image metadata. CI passes the product
+# version (`0.2.0`); a local build without the argument stays `dev`.
 ARG APP_VERSION=dev
 LABEL org.opencontainers.image.title="Janosik" \
       org.opencontainers.image.description="Self-hosted Kanban board with realtime collaboration, an agent API and MCP." \
