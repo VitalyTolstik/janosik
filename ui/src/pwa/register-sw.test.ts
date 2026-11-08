@@ -106,6 +106,63 @@ describe("update announcements (TASK-156 review)", () => {
       window.removeEventListener(UPDATE_EVENT, updates);
     }
   });
+
+  // A failed lazy import also happens offline (an idle prefetch), when there
+  // is no deploy to apply: the prompt would only promise a reload that does
+  // nothing.
+  it("does not announce a preload failure without a waiting update", async () => {
+    setEnv({ PROD: true, DEV: false });
+    const registration = fakeServiceWorkerContainer({
+      waiting: null,
+      installing: null,
+      update: vi.fn(() => Promise.resolve()),
+      addEventListener: vi.fn(),
+    });
+    const { registerServiceWorker, UPDATE_EVENT } = await freshModule();
+    const updates = vi.fn();
+    window.addEventListener(UPDATE_EVENT, updates);
+    try {
+      registerServiceWorker();
+      await vi.waitFor(() =>
+        expect(registration.addEventListener).toHaveBeenCalled(),
+      );
+
+      window.dispatchEvent(new Event("vite:preloadError"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(updates).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(UPDATE_EVENT, updates);
+    }
+  });
+
+  it("announces a preload failure while an update is waiting", async () => {
+    setEnv({ PROD: true, DEV: false });
+    const registration = fakeServiceWorkerContainer({
+      waiting: null,
+      installing: null,
+      update: vi.fn(() => Promise.resolve()),
+      addEventListener: vi.fn(),
+    });
+    const { registerServiceWorker, UPDATE_EVENT } = await freshModule();
+    const updates = vi.fn();
+    window.addEventListener(UPDATE_EVENT, updates);
+    try {
+      registerServiceWorker();
+      await vi.waitFor(() =>
+        expect(registration.addEventListener).toHaveBeenCalled(),
+      );
+
+      // A deploy installed while this page was open; the old bundle's lazy
+      // chunk is exactly what the preload error reports.
+      registration.waiting = { state: "installed", postMessage: vi.fn() };
+      window.dispatchEvent(new Event("vite:preloadError"));
+
+      await vi.waitFor(() => expect(updates).toHaveBeenCalled());
+    } finally {
+      window.removeEventListener(UPDATE_EVENT, updates);
+    }
+  });
 });
 
 describe("applyServiceWorkerUpdate (TASK-156 review)", () => {
