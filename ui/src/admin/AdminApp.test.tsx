@@ -896,7 +896,7 @@ describe("admin content and security pages", () => {
     expect(server.security.ipAllowlist).not.toBe("10.0.0.0/8");
   });
 
-  it("offers account deletion to owners only", async () => {
+  it("hides all owner-only account actions from an operator", async () => {
     const state = serverWith().state;
     state.users = [adminUser()];
     const server = new FakeAdminServer(state);
@@ -911,10 +911,20 @@ describe("admin content and security pages", () => {
     expect(
       await screen.findByTestId("admin-user-change-email"),
     ).toBeInTheDocument();
-    expect(screen.queryByTestId("admin-user-delete")).toBeNull();
+    // Every owner-only action is hidden from an operator, not just delete:
+    // the server answers 403 to all of them.
+    for (const testId of [
+      "admin-user-reset-password",
+      "admin-user-promote",
+      "admin-user-impersonate",
+      "admin-user-export",
+      "admin-user-delete",
+    ]) {
+      expect(screen.queryByTestId(testId)).toBeNull();
+    }
   });
 
-  it("leaves the delete action out of an operator's users row menu", async () => {
+  it("leaves owner-only actions out of an operator's users row menu", async () => {
     const state = serverWith().state;
     state.users = [adminUser()];
     const server = new FakeAdminServer(state);
@@ -928,8 +938,14 @@ describe("admin content and security pages", () => {
     expect(
       await screen.findByText(t("admin.users.action.changeEmail")),
     ).toBeTruthy();
-    expect(
-      screen.queryByText(t("admin.userDetail.action.deleteUser")),
-    ).toBeNull();
+    for (const key of [
+      "admin.userDetail.action.resetPassword",
+      "admin.userDetail.action.promote",
+      "admin.userDetail.action.impersonate",
+      "admin.userDetail.action.export",
+      "admin.userDetail.action.deleteUser",
+    ] as const) {
+      expect(screen.queryByText(t(key))).toBeNull();
+    }
   });
 });

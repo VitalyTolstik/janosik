@@ -227,41 +227,42 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             noToast: false,
             run: () => adminApi.resendUserVerification(user.id),
           },
-          {
-            label: t("admin.userDetail.action.resetPassword"),
-            run: async () => undefined,
-            renderDialog: ({ close }) => (
-              <ResetUserPasswordDialog
-                user={{ id: user.id, email: user.email }}
-                onClose={close}
-              />
-            ),
-          },
-          {
-            label: t("admin.userDetail.action.promote"),
-            warning: true,
-            run: async () => undefined,
-            renderDialog: ({ close, reload }) => (
-              <PromoteUserDialog
-                user={{ id: user.id, email: user.email }}
-                onClose={close}
-                onDone={reload}
-              />
-            ),
-          },
-          {
-            label: t("admin.userDetail.action.impersonate"),
-            noToast: true,
-            run: () => impersonateUser(user.id),
-          },
-          {
-            label: t("admin.userDetail.action.export"),
-            noToast: true,
-            run: () => exportUser(user.id),
-          },
-          // Owner-only on the server (403 for an OPERATOR).
+          // These five are owner-only on the server (403 for an OPERATOR), so
+          // the menu must not offer them to an operator at all.
           ...(isOwner
             ? [
+                {
+                  label: t("admin.userDetail.action.resetPassword"),
+                  run: async () => undefined,
+                  renderDialog: ({ close }) => (
+                    <ResetUserPasswordDialog
+                      user={{ id: user.id, email: user.email }}
+                      onClose={close}
+                    />
+                  ),
+                } satisfies EntityAction,
+                {
+                  label: t("admin.userDetail.action.promote"),
+                  warning: true,
+                  run: async () => undefined,
+                  renderDialog: ({ close, reload }) => (
+                    <PromoteUserDialog
+                      user={{ id: user.id, email: user.email }}
+                      onClose={close}
+                      onDone={reload}
+                    />
+                  ),
+                } satisfies EntityAction,
+                {
+                  label: t("admin.userDetail.action.impersonate"),
+                  noToast: true,
+                  run: () => impersonateUser(user.id),
+                } satisfies EntityAction,
+                {
+                  label: t("admin.userDetail.action.export"),
+                  noToast: true,
+                  run: () => exportUser(user.id),
+                } satisfies EntityAction,
                 {
                   label: t("admin.userDetail.action.deleteUser"),
                   run: async () => undefined,

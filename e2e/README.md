@@ -123,14 +123,30 @@ the saved board; API and event-stream responses never enter Cache Storage; and
 the manifest and its icons resolve under `/app/`. The suite needs the production
 self-host build (`E2E_APP_URL` ending in `/app/`) and skips itself when the app
 is not served from that layout (for example, a dev server at the root). Only the
-shell is cached: boards require a connection, so an
-offline reload lands on the sign-in screen, as documented in the user guide.
+shell is cached: boards require a connection, so an offline reload lands on the
+sign-in screen, as documented in the user guide.
 
 Offline testing found a real crash: animated header icon chunks are prefetched
 on idle, and a failed import took the whole board down with the global error
 screen. `LazyAnimatedIcon` now keeps its static fallback when a chunk cannot
 load, and a failed preload no longer announces a "new version" when no update
 is actually waiting.
+
+`tests/admin/` covers the master panel under `/app/admin`: signing in (a wrong
+password, a regular account, session restore after a reload and sign-out), the
+sidebar sections and direct URLs, the global omnibox and the return to the
+boards app. Owner-only rights are checked from both sides: an operator does not
+see the masters, email and OAuth entries, gets the 403 screen from the masters
+URL, sees the IP allowlist read-only and no owner-only user actions, while the
+operator can still block a user. Owners create a user, block and unblock one,
+delete with the typed confirmation, mint an operator master and open a support
+impersonation session in a new tab. Audit and Security are asserted with events
+the test itself creates: a successful master sign-in, a failed sign-in (matched
+by email and test IP) and user block/delete entries. Every test creates its own
+unique target users and masters (through the admin API or the panel itself),
+and assertions filter by a unique email or id; the shared owner session is used
+only for setup and reading. The suite never changes global email, OAuth,
+traffic or security settings.
 
 To use already-running development servers instead, provide the site and app
 URLs separately; point the app URL at the dev server root, not `/app/`:
