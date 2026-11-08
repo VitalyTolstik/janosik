@@ -68,7 +68,6 @@ test("follows the system theme in automatic mode across docs and site", async ({
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
   await page.emulateMedia({ colorScheme: "light" });
-  await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 
   await openDocs(page);

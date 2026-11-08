@@ -32,3 +32,19 @@ const appLabel = lang === "ru" ? "Открыть приложение" : "Open a
   <span class="sr-only">{appLabel}</span>
   <Icon name="external" />
 </a>
+
+<style>
+  @layer starlight.core {
+    /* The override replaces Starlight's SocialIcons component, including its
+       scoped styles. Keep the same accent colour, hit area and hover state
+       for the GitHub link and the app entry point. */
+    a {
+      color: var(--sl-color-text-accent);
+      padding: 0.5em;
+      margin: -0.5em;
+    }
+    a:hover {
+      color: var(--sl-color-white);
+    }
+  }
+</style>

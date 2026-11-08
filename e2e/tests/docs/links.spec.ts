@@ -23,6 +23,8 @@ test("every sampled inline docs link resolves to a real page", async ({
   request,
 }) => {
   const siteOrigin = new URL(siteUrl).origin;
+  const docsRoot = new URL(docsUrl()).pathname;
+  const ruDocsRoot = new URL(docsUrl("", "ru")).pathname;
   const targets = new Set<string>();
 
   for (const sample of samplePages) {
@@ -40,8 +42,8 @@ test("every sampled inline docs link resolves to a real page", async ({
       const target = new URL(href, pageUrl);
       if (target.origin !== siteOrigin) continue;
       if (
-        !target.pathname.startsWith("/docs/") &&
-        !target.pathname.startsWith("/ru/docs/")
+        !target.pathname.startsWith(docsRoot) &&
+        !target.pathname.startsWith(ruDocsRoot)
       ) {
         continue;
       }
@@ -74,11 +76,11 @@ test("moves through the user guide with previous and next links", async ({
   const pagination = page.locator(".pagination-links");
   await expect(pagination.locator('a[rel="prev"]')).toHaveAttribute(
     "href",
-    "/docs/user-guide/",
+    new URL(docsUrl("user-guide/")).pathname,
   );
   await expect(pagination.locator('a[rel="next"]')).toHaveAttribute(
     "href",
-    "/docs/user-guide/views/",
+    new URL(docsUrl("user-guide/views/")).pathname,
   );
 
   await pagination.locator('a[rel="next"]').click();

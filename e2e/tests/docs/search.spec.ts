@@ -25,7 +25,7 @@ test("opens and closes the search dialog with the keyboard", async ({
 }) => {
   await openDocs(page);
 
-  await page.keyboard.press("Control+k");
+  await page.keyboard.press("ControlOrMeta+k");
   await expect(searchDialog(page)).toBeVisible();
   await expect(searchInput(page)).toBeVisible();
 
@@ -57,7 +57,7 @@ test("finds a page in the English index and opens it", async ({ page }) => {
 
 test("searches the Russian index on a Russian page", async ({ page }) => {
   await openDocs(page, "", "ru");
-  await page.keyboard.press("Control+k");
+  await page.keyboard.press("ControlOrMeta+k");
   await expect(searchInput(page)).toBeVisible();
 
   await searchInput(page).fill("установка");
