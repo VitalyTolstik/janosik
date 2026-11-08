@@ -113,6 +113,25 @@ menu trigger), the `j`/`k` cursor, `e`/Enter, the `n` and `c` composers, Escape,
 and the guards that keep shortcuts out of text fields and open menus. Each test
 starts from its own account and board; extra boards are created through the API.
 
+`tests/app/pwa/` covers the production PWA surface: the service worker is
+registered under the app base and controls the page (also after a reload); the
+precached shell and entry assets boot the app with the network switched off;
+an offline card creation shows a clear "not saved" error and leaves no ghost
+card on the server; reconnecting applies a change made by another writer during
+the outage; an offline reload followed by a reconnect restores the session and
+the saved board; API and event-stream responses never enter Cache Storage; and
+the manifest and its icons resolve under `/app/`. The suite needs the production
+self-host build (`E2E_APP_URL` ending in `/app/`) and skips itself when the app
+is not served from that layout (for example, a dev server at the root). Only the
+shell is cached: boards require a connection, so an offline reload lands on the
+sign-in screen, as documented in the user guide.
+
+Offline testing found a real crash: animated header icon chunks are prefetched
+on idle, and a failed import took the whole board down with the global error
+screen. `LazyAnimatedIcon` now keeps its static fallback when a chunk cannot
+load, and a failed preload no longer announces a "new version" when no update
+is actually waiting.
+
 `tests/admin/` covers the master panel under `/app/admin`: signing in (a wrong
 password, a regular account, session restore after a reload and sign-out), the
 sidebar sections and direct URLs, the global omnibox and the return to the
