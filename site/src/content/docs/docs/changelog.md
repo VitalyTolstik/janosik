@@ -38,8 +38,8 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   without losing their actions. Mobile puts the properties first.
 - **Broader browser coverage.** The Chrome suite now covers authentication,
   boards, cards, calendar/table/watch views, filters, global and archive
-  search, undo/redo history and two-account collaboration, including realtime
-  updates, presence and conflicts.
+  search, undo/redo history, two-account collaboration, and the account and
+  API-key flows, including realtime updates, presence and conflicts.
 
 ### Fixed
 
@@ -52,6 +52,10 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   permissions without a reload.
 - Description attachments are removed together with the description text and
   remain reversible through undo.
+- The account panel now shows an uploaded avatar in its identity band, resets
+  the email-change dialog after closing, and describes a password change as
+  revoking API keys, which the server already did. Confirming an email change
+  also revokes the old caller refresh token.
 
 ## 0.1.1 - 2026-11-04
 

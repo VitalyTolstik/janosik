@@ -25,7 +25,8 @@ _No unreleased changes yet._
   menu, a two-column content/properties layout, a collapsed link editor,
   wrapped long titles and more compact comments and checklists.
 - Expanded the Chrome end-to-end suite across authentication, boards, cards,
-  views, filters, search, history and two-account collaboration.
+  views, filters, search, history, two-account collaboration and the account
+  and API-key flows.
 
 ### Fixed
 
@@ -37,6 +38,10 @@ _No unreleased changes yet._
   change refreshes the caller's permissions without a reload.
 - Description attachments are removed with the description text and remain
   reversible through undo.
+- The account panel now shows an uploaded avatar in its identity band, resets
+  the email-change dialog after closing, and describes a password change as
+  revoking API keys, which the server already did. Confirming an email change
+  also revokes the old caller refresh token.
 
 ## [0.1.1] - 2026-11-04
 
