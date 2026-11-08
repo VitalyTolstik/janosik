@@ -35,6 +35,7 @@ import { useToast } from "@/components/Toast";
 import { isColumnFull } from "@janosik/shared";
 import { applyCardOver } from "@/utils/dnd";
 import { cardLinkIndex, linkSignature } from "@/utils/links";
+import { isOverlayOpen } from "@/utils/overlay";
 import { LIMITS, type Card, type Column, type Label } from "@janosik/shared";
 
 /** Stable empties, so the resolvers survive a board-less render. */
@@ -544,11 +545,7 @@ export function DndBoard({
         ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
     )
       return true;
-    return (
-      document.querySelector(
-        '[role="dialog"], [data-radix-popper-content-wrapper]',
-      ) !== null
-    );
+    return isOverlayOpen();
   };
 
   // j/k navigate the visible cards, e/Enter open the cursor's dialog,
@@ -569,6 +566,7 @@ export function DndBoard({
     const focusedCardId = cursor !== null ? flatCardIds[cursor] : undefined;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.defaultPrevented) return;
       if (shortcutsBlocked(event)) return;
       const key = event.key;
       if (key === "j" || key === "k") {
@@ -583,6 +581,18 @@ export function DndBoard({
           );
         });
       } else if ((key === "e" || key === "Enter") && focusedCardId) {
+        // Enter belongs to the focused control (a card's own keyboard
+        // handler, a button, a menu item). Only an unhandled Enter falls
+        // through to the cursor card.
+        if (
+          key === "Enter" &&
+          event.target instanceof HTMLElement &&
+          event.target.closest(
+            'button, a, input, textarea, select, [role="button"], [role="menuitem"], [role="option"]',
+          )
+        ) {
+          return;
+        }
         event.preventDefault();
         onCardClick(focusedCardId);
       } else if (key === "n") {

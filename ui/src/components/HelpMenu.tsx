@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { docsUrl } from "@/utils/docs-url";
+import { isOverlayOpen } from "@/utils/overlay";
 
 /** Guard: "?" must not fire while the user is typing. */
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -41,6 +42,7 @@ export function HelpMenu() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return;
+      if (isOverlayOpen()) return;
       // "?" is Shift+/ on most layouts, but some layouts report the key
       // differently — accept both the character and Shift+Slash.
       const isQuestionMark =

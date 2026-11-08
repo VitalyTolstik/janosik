@@ -55,6 +55,7 @@ import type {
 } from "@janosik/shared";
 import { normalizeBoards } from "@janosik/shared";
 import { changedEntityIds } from "@/store/board-diff";
+import { hasCard } from "@/utils/card-nav";
 import {
   ServerSync,
   textEntityKey,
@@ -556,8 +557,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const board = routeBoardId
     ? state.find(
         (b) =>
-          b.id === routeBoardId &&
-          (!b.archivedAt || (cardParam !== null && cardParam in b.cards)),
+          b.id === routeBoardId && (!b.archivedAt || hasCard(b, cardParam)),
       )
     : undefined;
 
@@ -691,8 +691,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     if (routed && !routed.archivedAt) return;
     // Viewing an archived board is allowed only via an explicit ?card=
     // deep-link onto one of its cards (global search).
-    if (routed?.archivedAt && cardParam !== null && cardParam in routed.cards)
-      return;
+    if (routed?.archivedAt && hasCard(routed, cardParam)) return;
     // Only the home route and archived boards redirect; anything else — an
     // unknown path, or a board id that is not ours — is a 404.
     const isHome = location.pathname === routes.home;

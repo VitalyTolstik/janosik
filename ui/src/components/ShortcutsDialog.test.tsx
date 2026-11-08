@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -167,5 +167,80 @@ describe("keyboard shortcuts", () => {
     fireEvent.keyDown(input, { key: "j" });
     // No cursor appeared: the key was typed into the input.
     expect(document.querySelector('[data-card-cursor="true"]')).toBeNull();
+  });
+
+  it("Enter opens the focused card, not the cursor card", () => {
+    renderBoard();
+    pressKey("j");
+    expect(
+      document.querySelector('[data-card-cursor="true"]'),
+    ).toHaveTextContent("First card");
+
+    const second = screen.getByRole("group", { name: /^Second card$/ });
+    second.focus();
+    fireEvent.keyDown(second, { key: "Enter", code: "Enter" });
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("textbox", { name: "Title" })).toHaveValue(
+      "Second card",
+    );
+  });
+
+  it("ignores board shortcuts while the card context menu is open", async () => {
+    renderBoard();
+    fireEvent.contextMenu(screen.getByText("First card"), {
+      button: 2,
+      clientX: 16,
+      clientY: 16,
+    });
+    expect(await screen.findByTestId("card-context-menu")).toBeInTheDocument();
+
+    pressKey("j");
+
+    expect(document.querySelector('[data-card-cursor="true"]')).toBeNull();
+  });
+
+  it("ignores ? while a menu is open", async () => {
+    renderBoard();
+    fireEvent.contextMenu(screen.getByText("First card"), {
+      button: 2,
+      clientX: 16,
+      clientY: 16,
+    });
+    expect(await screen.findByTestId("card-context-menu")).toBeInTheDocument();
+
+    pressKey("?");
+
+    expect(screen.queryByTestId("shortcuts-table")).toBeNull();
+  });
+
+  it("leaves Enter to a focused control while the cursor is active", () => {
+    renderBoard();
+    pressKey("j");
+    const switcher = screen.getByRole("button", { name: "Switch board" });
+    switcher.focus();
+
+    const notPrevented = fireEvent.keyDown(switcher, {
+      key: "Enter",
+      code: "Enter",
+    });
+
+    expect(notPrevented).toBe(true);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("focuses the board search with slash unless an overlay is open", () => {
+    renderBoard();
+    const search = screen.getByRole("textbox", { name: "Search cards" });
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    document.body.append(dialog);
+
+    pressKey("/");
+    expect(search).not.toHaveFocus();
+
+    dialog.remove();
+    pressKey("/");
+    expect(search).toHaveFocus();
   });
 });

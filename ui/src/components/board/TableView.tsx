@@ -56,7 +56,11 @@ import {
 import { useToast } from "@/components/Toast";
 import { formatDateOnly, useI18n } from "@/i18n";
 import { useCardLabels } from "@/hooks/use-card-labels";
-import { cardHref, openCardInNewTab } from "@/utils/card-nav";
+import {
+  cardHref,
+  openCardInNewTab,
+  shouldLeaveToBrowser,
+} from "@/utils/card-nav";
 import {
   useBoardMember,
   useBoardMembersList,
@@ -672,12 +676,22 @@ function TableRowBody({
       <tr
         ref={measureRef}
         data-index={rowIndex}
-        onClick={() => onOpen(card.id)}
+        onClick={(event) => {
+          // Ctrl/Cmd/Shift/Alt and non-primary clicks are the browser's
+          // "open elsewhere" gestures; the row is a <tr>, so bridge the
+          // deep link ourselves instead of opening the dialog in place.
+          if (shouldLeaveToBrowser(event)) {
+            if (boardId) {
+              event.preventDefault();
+              openCardInNewTab(boardId, card.id);
+            }
+            return;
+          }
+          onOpen(card.id);
+        }}
         onAuxClick={(event) => {
           // Wheel-click (middle button) opens the card in a new tab — the
           // row is a <tr>, so the browser has no href to act on by itself.
-          // Ctrl/Cmd+click is already covered: on a plain <tr> the browser
-          // has no link semantics, so we route it through the deep link too.
           if (event.button === 1 && boardId) {
             event.preventDefault();
             openCardInNewTab(boardId, card.id);

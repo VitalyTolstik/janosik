@@ -21,6 +21,7 @@ import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useBoard } from "@/store/BoardContext";
 import { boardBackgroundById } from "@/types/board-background";
+import { hasCard } from "@/utils/card-nav";
 import {
   EMPTY_FILTER,
   filterCardIds,
@@ -113,11 +114,12 @@ export function BoardSection() {
   const missingCardRef = useRef<string | null>(null);
   useEffect(() => {
     const cardParam = searchParams.get("card");
+    const cardExists = board !== undefined && hasCard(board, cardParam);
     // A `?card=` that is not on this board (typo, deleted card, stale link):
     // drop the dead param so the address bar stops advertising a card that
     // cannot open, and say why nothing happened. The board must be loaded
     // first, or a cold boot would strip a valid deep link before it resolves.
-    if (cardParam && board && !board.cards[cardParam]) {
+    if (cardParam && board && !cardExists) {
       // The card the user just closed (or deleted) is not "missing": the
       // close handler clears the deep link, but the board update can land
       // one render before the param cleanup settles. Only a card that was
@@ -132,7 +134,7 @@ export function BoardSection() {
       setSearchParams(next, { replace: true });
       return;
     }
-    if (cardParam && board?.cards[cardParam]) {
+    if (cardParam && cardExists) {
       // A marker for a different card must not outlive the navigation: it
       // could otherwise suppress a later genuine "missing card" toast.
       if (

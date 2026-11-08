@@ -104,6 +104,15 @@ stays unavailable in server mode. Each test starts from its own account and
 board; fixtures build import envelopes through the API and delete their source
 boards.
 
+`tests/app/navigation/` covers direct board and card links (including signing in
+on the linked URL and the `/app/` deploy base), the home redirect, the board 404
+and its recovery, archived-board redirects, browser Back/Forward and the
+all-archived empty state. Ctrl+click opens a card in a new tab from the board,
+table and calendar. The keyboard layer covers the `?` cheat sheet (and the Help
+menu trigger), the `j`/`k` cursor, `e`/Enter, the `n` and `c` composers, Escape,
+and the guards that keep shortcuts out of text fields and open menus. Each test
+starts from its own account and board; extra boards are created through the API.
+
 To use already-running development servers instead, provide the site and app
 URLs separately; point the app URL at the dev server root, not `/app/`:
 

@@ -490,6 +490,20 @@ export function CalendarView({
     }
   };
 
+  /** Modifier-click on a chip/row: open the card in a new tab, not in place. */
+  const chipModifierOpen = (
+    event: React.MouseEvent,
+    cardId: string,
+  ): boolean => {
+    if (!shouldLeaveToBrowser(event)) return false;
+    event.stopPropagation();
+    if (boardId) {
+      event.preventDefault();
+      openCardInNewTab(boardId, cardId);
+    }
+    return true;
+  };
+
   /** One unscheduled-panel row, shared by the plain and windowed lists. */
   const renderUnscheduledCard = ({
     card,
@@ -514,7 +528,7 @@ export function CalendarView({
         title={`${columnTitle} · ${card.title}`}
         data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
         onClick={(event) => {
-          if (shouldLeaveToBrowser(event)) return;
+          if (chipModifierOpen(event, card.id)) return;
           onCardClick(card.id);
         }}
         className={cn(
@@ -543,7 +557,7 @@ export function CalendarView({
         }
         onAuxClick={(event) => chipAuxOpen(event, entry.card.id)}
         onClick={(event) => {
-          if (shouldLeaveToBrowser(event)) return;
+          if (chipModifierOpen(event, entry.card.id)) return;
           event.stopPropagation();
           onCardClick(entry.card.id);
         }}
@@ -604,10 +618,9 @@ export function CalendarView({
               : ""
           }${columnTitle} · ${card.title}${labels.length > 0 ? ` · ${labels.map((l) => l.name).join(", ")}` : ""}`}
           onClick={(event) => {
-            // Cmd/Ctrl+click keep the browser gesture (the aux handler and
-            // the modifier check cover new-tab); a plain click opens the
-            // dialog in place.
-            if (shouldLeaveToBrowser(event)) return;
+            // Cmd/Ctrl+click is the browser's new-tab gesture; a plain click
+            // opens the dialog in place.
+            if (chipModifierOpen(event, card.id)) return;
             event.stopPropagation();
             onCardClick(card.id);
           }}

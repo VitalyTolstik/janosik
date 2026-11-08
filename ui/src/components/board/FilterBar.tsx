@@ -39,6 +39,7 @@ import { LimitCounter } from "@/components/ui/limit-counter";
 import { showRemaining } from "@/utils/limit-format";
 import { PRIORITY_META, PRIORITY_ORDER } from "@/utils/priority";
 import { userLabel } from "@/utils/avatar";
+import { isOverlayOpen } from "@/utils/overlay";
 import { pad2 } from "@/utils/time";
 import {
   activeFacetCount,
@@ -267,7 +268,7 @@ export function FilterBar({
           target.isContentEditable);
       const slash = e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey;
 
-      if (slash && !typing) {
+      if (slash && !typing && !isOverlayOpen()) {
         e.preventDefault();
         inputRef.current?.focus();
         return;
