@@ -144,10 +144,11 @@ export function EmailChangeDialog({
     setError(null);
     try {
       const response = await api.confirmEmailChange(code);
-      if (epoch !== requestEpoch.current) return;
+      // The server has already changed the identity and rotated the session:
+      // adopt it even if the dialog was closed while the call was in flight.
       updateUser(response.user);
-      handleChangeOpen(false);
       toast.success(t("account.email.success"));
+      if (epoch === requestEpoch.current) handleChangeOpen(false);
     } catch (cause) {
       if (epoch !== requestEpoch.current) return;
       if (cause instanceof ApiError && cause.status === 409) {
