@@ -113,7 +113,8 @@ export function UserDetailPage() {
   const toast = useToast();
   const { lang } = useI18n();
   const hour12 = useHour12();
-  // Deleting an account is owner-only on the server (403 for an OPERATOR).
+  // Owner-only support actions: delete, password reset, promote, impersonate
+  // and export all answer 403 to an OPERATOR, so the menu hides them.
   const isOwner = useAdminAuth().admin?.role === "OWNER";
   const [detail, setDetail] = useState<AdminUserDetailDto | null>(null);
   const [error, setError] = useState(false);

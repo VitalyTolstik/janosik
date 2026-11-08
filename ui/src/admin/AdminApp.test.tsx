@@ -896,7 +896,7 @@ describe("admin content and security pages", () => {
     expect(server.security.ipAllowlist).not.toBe("10.0.0.0/8");
   });
 
-  it("offers account deletion to owners only", async () => {
+  it("hides all owner-only account actions from an operator", async () => {
     const state = serverWith().state;
     state.users = [adminUser()];
     const server = new FakeAdminServer(state);

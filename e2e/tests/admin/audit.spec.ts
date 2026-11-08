@@ -55,8 +55,11 @@ test("shows a failed master sign-in in suspicious activity", async ({
 
   const alerts = page.getByTestId("admin-security-alerts");
   await expect(alerts).toContainText(operator.email);
-  await expect(alerts).toContainText("Wrong password");
-  await expect(alerts).toContainText(testIp);
+  const alert = alerts
+    .getByText(operator.email, { exact: true })
+    .locator("xpath=..");
+  await expect(alert).toContainText("Wrong password");
+  await expect(alert).toContainText(testIp);
 });
 
 test("records blocking a user in the audit trail", async ({ page, admin }) => {
