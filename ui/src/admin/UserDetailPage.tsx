@@ -113,7 +113,8 @@ export function UserDetailPage() {
   const toast = useToast();
   const { lang } = useI18n();
   const hour12 = useHour12();
-  // Deleting an account is owner-only on the server (403 for an OPERATOR).
+  // Owner-only support actions: delete, password reset, promote, impersonate
+  // and export all answer 403 to an OPERATOR, so the menu hides them.
   const isOwner = useAdminAuth().admin?.role === "OWNER";
   const [detail, setDetail] = useState<AdminUserDetailDto | null>(null);
   const [error, setError] = useState(false);
@@ -335,44 +336,46 @@ export function UserDetailPage() {
                   <Send className="h-3.5 w-3.5" aria-hidden />
                   {t("admin.userDetail.action.resend")}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  data-testid="admin-user-reset-password"
-                  onSelect={() => setResetDialog(true)}
-                >
-                  <KeyRound className="h-3.5 w-3.5" aria-hidden />
-                  {t("admin.userDetail.action.resetPassword")}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-warning focus:text-warning"
-                  data-testid="admin-user-promote"
-                  onSelect={() => setPromoteDialog(true)}
-                >
-                  <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-                  {t("admin.userDetail.action.promote")}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  data-testid="admin-user-impersonate"
-                  onSelect={() => void impersonateUser(user.id)}
-                >
-                  <Eye className="h-3.5 w-3.5" aria-hidden />
-                  {t("admin.userDetail.action.impersonate")}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  data-testid="admin-user-export"
-                  onSelect={() => void exportUser(user.id)}
-                >
-                  <Download className="h-3.5 w-3.5" aria-hidden />
-                  {t("admin.userDetail.action.export")}
-                </DropdownMenuItem>
                 {isOwner ? (
-                  <DropdownMenuItem
-                    className="text-danger focus:text-danger"
-                    data-testid="admin-user-delete"
-                    onSelect={() => setDeleteDialog(true)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                    {t("admin.userDetail.action.deleteUser")}
-                  </DropdownMenuItem>
+                  <>
+                    <DropdownMenuItem
+                      data-testid="admin-user-reset-password"
+                      onSelect={() => setResetDialog(true)}
+                    >
+                      <KeyRound className="h-3.5 w-3.5" aria-hidden />
+                      {t("admin.userDetail.action.resetPassword")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-warning focus:text-warning"
+                      data-testid="admin-user-promote"
+                      onSelect={() => setPromoteDialog(true)}
+                    >
+                      <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+                      {t("admin.userDetail.action.promote")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      data-testid="admin-user-impersonate"
+                      onSelect={() => void impersonateUser(user.id)}
+                    >
+                      <Eye className="h-3.5 w-3.5" aria-hidden />
+                      {t("admin.userDetail.action.impersonate")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      data-testid="admin-user-export"
+                      onSelect={() => void exportUser(user.id)}
+                    >
+                      <Download className="h-3.5 w-3.5" aria-hidden />
+                      {t("admin.userDetail.action.export")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-danger focus:text-danger"
+                      data-testid="admin-user-delete"
+                      onSelect={() => setDeleteDialog(true)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                      {t("admin.userDetail.action.deleteUser")}
+                    </DropdownMenuItem>
+                  </>
                 ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
