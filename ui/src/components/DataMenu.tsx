@@ -92,8 +92,10 @@ export function DataMenu() {
       const text = await file.text();
       const boards = parseExport(text);
       // Server mode: the boards land in the database, then the list is
-      // re-hydrated; a refusal is caught here like a malformed file.
-      await importBoards(boards);
+      // re-hydrated; a refusal is reported by the provider and resolves
+      // `false`, so this handler does not add a success toast on top.
+      const imported = await importBoards(boards);
+      if (imported === false) return;
       toast.success(t("data.importSuccess"));
     } catch {
       toast.error(t("data.importError"));
