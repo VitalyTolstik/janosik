@@ -60,13 +60,26 @@ const t = useTranslations(lang);
     <link rel="icon" type="image/svg+xml" href={withBase("/favicon.svg")} />
     <script is:inline>
       // Apply a stored theme before first paint. The key and attribute are
-      // shared with Starlight, so the choice carries into the docs.
-      try {
-        var stored = localStorage.getItem("starlight-theme");
-        if (stored === "light" || stored === "dark") {
-          document.documentElement.dataset.theme = stored;
-        }
-      } catch (error) {}
+      // shared with Starlight, so the choice carries into the docs. Starlight
+      // stores an empty value for "Auto"; follow the system preference then
+      // instead of pinning the marketing shell to light. Keep following it
+      // live, like Starlight's own picker, while the stored value is empty.
+      var root = document.documentElement;
+      var darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      var applied = function () {
+        var stored = null;
+        try {
+          stored = localStorage.getItem("starlight-theme");
+        } catch (error) {}
+        root.dataset.theme =
+          stored === "light" || stored === "dark"
+            ? stored
+            : darkQuery.matches
+              ? "dark"
+              : "light";
+      };
+      applied();
+      darkQuery.addEventListener("change", applied);
     </script>
     {dualLang && <script is:inline>
       // Pick the 404's language before first paint from the URL, matching the

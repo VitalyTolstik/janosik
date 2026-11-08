@@ -163,6 +163,18 @@ choice into the documentation; the dual-language 404 page gets its own theme
 test. The 404 tests verify the status, English and Russian copy and the link
 home. The site is public, so these tests need no account, fixture or API setup.
 
+`tests/docs/` covers the Starlight documentation under `/docs/` and
+`/ru/docs/`: the landing and the five sidebar groups, a key page per group,
+Pagefind search (header button and Ctrl/Cmd+K, English and Russian indexes,
+opening a result, empty query and no matches), inline link integrity on sampled
+pages in both locales, previous/next pagination, language switching with
+translated content and `<html lang>`, explicit and automatic theme persistence
+between the docs and the marketing site (including after reload), and the
+site ↔ docs ↔ app links (header/footer «Docs», the docs brand, the docs app
+entry point and the app Help menu). Most tests need no account; the app Help
+entry point signs in with its own isolated account. Run just this set with
+`npm run test:docker -w e2e -- tests/docs`.
+
 To use already-running development servers instead, provide the site and app
 URLs separately; point the app URL at the dev server root, not `/app/`. The
 marketing CTAs must point at the same dev app, so start the site with
