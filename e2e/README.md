@@ -113,6 +113,21 @@ menu trigger), the `j`/`k` cursor, `e`/Enter, the `n` and `c` composers, Escape,
 and the guards that keep shortcuts out of text fields and open menus. Each test
 starts from its own account and board; extra boards are created through the API.
 
+`tests/site/` covers the public marketing site. The landing checks the hero,
+every section heading, the feature rows and an expandable FAQ answer; pricing
+checks the plan cards with prices and limits, the comparison table, both plan
+CTAs and the closing CTA. Navigation covers the header and footer links to
+home, pricing and documentation (including the home features anchor, the
+self-hosting guide and browser Back), while the CTA suite clicks Sign in,
+Create account, hero and pricing links and verifies that the app really opens
+its login or registration screen under the `/app/` base, with the Russian
+`?lng=ru` handoff. Language tests switch home and pricing between English and
+Russian in place and check `<html lang>` and translated content. The theme test
+toggles light/dark, survives a reload and carries the shared `starlight-theme`
+choice into the documentation. The 404 tests verify the status, English and
+Russian copy and the link home. The site is public, so these tests need no
+account, fixture or API setup.
+
 To use already-running development servers instead, provide the site and app
 URLs separately; point the app URL at the dev server root, not `/app/`:
 
