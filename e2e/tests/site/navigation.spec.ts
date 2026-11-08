@@ -12,7 +12,7 @@ test("header Pricing link opens the pricing page", async ({ page }) => {
   await page.goto(sitePage("/"));
 
   await page
-    .locator("header .site-nav")
+    .getByRole("navigation")
     .getByRole("link", { name: "Pricing" })
     .click();
 
@@ -26,7 +26,7 @@ test("header Docs link opens the documentation", async ({ page }) => {
   await page.goto(sitePage("/"));
 
   await page
-    .locator("header .site-nav")
+    .getByRole("navigation")
     .getByRole("link", { name: "Docs" })
     .click();
 
@@ -42,7 +42,7 @@ test("header Features link returns to the home features section", async ({
   await page.goto(sitePage("/pricing/"));
 
   await page
-    .locator("header .site-nav")
+    .getByRole("navigation")
     .getByRole("link", { name: "Features" })
     .click();
 
@@ -53,7 +53,10 @@ test("header Features link returns to the home features section", async ({
 test("header brand returns to the home page", async ({ page }) => {
   await page.goto(sitePage("/pricing/"));
 
-  await page.locator("header a.brand").click();
+  await page
+    .getByRole("banner")
+    .getByRole("link", { name: "Janosik", exact: true })
+    .click();
 
   await expect(page).toHaveURL(sitePage("/"));
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
@@ -65,7 +68,7 @@ test("footer Pricing link opens the pricing page", async ({ page }) => {
   await page.goto(sitePage("/"));
 
   await page
-    .locator("footer")
+    .getByRole("contentinfo")
     .getByRole("link", { name: "Pricing", exact: true })
     .click();
 
@@ -79,7 +82,7 @@ test("footer documentation link opens the documentation", async ({ page }) => {
   await page.goto(sitePage("/"));
 
   await page
-    .locator("footer")
+    .getByRole("contentinfo")
     .getByRole("link", { name: "Docs", exact: true })
     .click();
 
@@ -92,7 +95,10 @@ test("footer documentation link opens the documentation", async ({ page }) => {
 test("footer brand returns to the home page", async ({ page }) => {
   await page.goto(sitePage("/pricing/"));
 
-  await page.locator("footer a.brand").click();
+  await page
+    .getByRole("contentinfo")
+    .getByRole("link", { name: "Janosik", exact: true })
+    .click();
 
   await expect(page).toHaveURL(sitePage("/"));
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
@@ -104,7 +110,7 @@ test("footer self-hosting guide opens the documentation", async ({ page }) => {
   await page.goto(sitePage("/"));
 
   await page
-    .locator("footer")
+    .getByRole("contentinfo")
     .getByRole("link", { name: "Self-hosting guide" })
     .click();
 
@@ -120,7 +126,7 @@ test("browser Back returns to the page the visitor came from", async ({
   await page.goto(sitePage("/pricing/"));
 
   await page
-    .locator("header .site-nav")
+    .getByRole("navigation")
     .getByRole("link", { name: "Docs" })
     .click();
   await expect(page).toHaveURL(sitePage("/docs/"));

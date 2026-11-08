@@ -19,7 +19,9 @@ const AUTH_TITLE: Record<SiteLang, Record<AuthMode, string>> = {
 
 /** The language switcher in the marketing-site header. */
 export function langSwitch(page: Page): Locator {
-  return page.locator("header a.lang-btn");
+  return page
+    .getByRole("banner")
+    .getByRole("link", { name: /^(EN|RU) — (English|Русский)$/ });
 }
 
 /**

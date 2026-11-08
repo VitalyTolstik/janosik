@@ -35,6 +35,9 @@ test("shows the plan cards with prices and limits", async ({ page }) => {
   await expect(cloud).toBeVisible();
   await expect(cloud).toContainText("Managed hosting");
   await expect(cloud).toContainText("Not available yet");
+  await expect(cloud).toContainText(
+    "Boards: Unlimited · Members: Unlimited · Storage: Cloud storage",
+  );
 });
 
 test("shows the plan comparison table", async ({ page }) => {
@@ -53,12 +56,12 @@ test("shows the plan comparison table", async ({ page }) => {
   await expect(
     table.getByRole("rowheader", { name: "Board members" }),
   ).toBeVisible();
-  await expect(
-    table.getByRole("rowheader", { name: "Read-only share links" }),
-  ).toBeVisible();
-  await expect(
-    table.getByText("Included", { exact: true }).first(),
-  ).toBeVisible();
+  const shares = table.getByRole("row", { name: /Read-only share links/ });
+  await expect(shares.getByText("Included", { exact: true })).toHaveCount(2);
+
+  const storage = table.getByRole("row", { name: /Attachment storage/ });
+  await expect(storage).toContainText("Your disk");
+  await expect(storage).toContainText("Cloud storage");
 });
 
 test("expands a pricing FAQ answer", async ({ page }) => {

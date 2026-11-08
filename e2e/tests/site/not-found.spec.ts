@@ -30,8 +30,9 @@ test("404 page links back to the home page", async ({ page }) => {
 });
 
 test("Russian unknown path shows the Russian 404 page", async ({ page }) => {
-  await page.goto(sitePage("/ru/missing-page/"));
+  const response = await page.goto(sitePage("/ru/missing-page/"));
 
+  expect(response?.status()).toBe(404);
   await expect(page.locator("html")).toHaveAttribute("lang", "ru");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "Не удалось найти эту страницу.",

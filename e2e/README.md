@@ -129,9 +129,13 @@ test. The 404 tests verify the status, English and Russian copy and the link
 home. The site is public, so these tests need no account, fixture or API setup.
 
 To use already-running development servers instead, provide the site and app
-URLs separately; point the app URL at the dev server root, not `/app/`:
+URLs separately; point the app URL at the dev server root, not `/app/`. The
+marketing CTAs must point at the same dev app, so start the site with
+`PUBLIC_APP_URL` as well — otherwise it builds `/app/` links for the self-host
+image and the CTA tests land on the site's 404:
 
 ```bash
+PUBLIC_APP_URL=http://localhost:5173 npm run dev:site
 E2E_SITE_URL=http://localhost:4321/ E2E_APP_URL=http://localhost:5173/ npm run test:e2e
 ```
 
