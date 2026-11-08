@@ -30,7 +30,7 @@ The application runs in a browser and requires a running server. Docker is
 available on Linux, macOS (Intel and Apple Silicon), and Windows with Docker
 Desktop and WSL2. The registry provides Linux `amd64` and `arm64` images;
 GitHub release archives contain source code, not installers. There are no
-standalone `.exe` or `.dmg` installers. Version v0.1.1 was tested on WSL and
+standalone `.exe` or `.dmg` installers. Version v0.2.0 was tested on WSL and
 in Linux CI on both architectures; it has not been separately tested on a
 physical Mac.
 
@@ -253,7 +253,7 @@ that matter most:
 | `ALLOW_REGISTRATION` | `true` | Open sign-up. Turn off after creating your account. |
 | `TRUST_PROXY` | `0` | Number of trusted proxy hops. Set `1` behind one reverse proxy. |
 | `PORT` | `3000` | Host port to publish (container always listens on 3000). |
-| `JANOSIK_TAG` | `latest` | Image tag to run (e.g. `v0.1.1`). |
+| `JANOSIK_TAG` | `latest` | Image tag to run (e.g. `v0.2.0`). |
 | `SMTP_HOST` … `SMTP_PASS` | unset | Outgoing email. Unset = no delivery; registration auto-verifies and production logs omit message contents. |
 | `PURGE_AFTER_DAYS` | `30` | Retention for the hourly soft-delete sweep (fallback when the panel has no setting). |
 | `AUDIT_RETENTION_DAYS` | `365` | Retention for the master audit trail (separate, longer window). |
@@ -323,7 +323,7 @@ docker compose pull && docker compose up -d
 ```
 
 Migrations run automatically on container start, so no manual step is needed.
-To pin a version, set `JANOSIK_TAG=v0.1.1` in `.env`.
+To pin a version, set `JANOSIK_TAG=v0.2.0` in `.env`.
 
 The retention upgrade (TASK-148) adds indexes to large tables, so the first
 start after it builds them before the API is up. On an existing installation

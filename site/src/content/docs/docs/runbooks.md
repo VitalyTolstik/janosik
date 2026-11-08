@@ -87,13 +87,13 @@ Migrations run automatically when the app container starts, so an upgrade has
 no manual migration step.
 
 1. Read the release notes and back up the database, uploads and `.env`. Set
-   `JANOSIK_TAG` in `.env` to the desired release (for example `v0.1.1`).
+   `JANOSIK_TAG` in `.env` to the desired release (for example `v0.2.0`).
    The installer pins the initial version, so pulling alone will not upgrade
    it. Review and download the matching Compose file from that release; replace
-   `v0.1.1` in the URL with your chosen tag:
+   `v0.2.0` in the URL with your chosen tag:
 
    ```bash
-   curl -fsSL -o docker-compose.yml.new https://raw.githubusercontent.com/VitalyTolstik/janosik/v0.1.1/docker-compose.yml
+   curl -fsSL -o docker-compose.yml.new https://raw.githubusercontent.com/VitalyTolstik/janosik/v0.2.0/docker-compose.yml
    # Review docker-compose.yml.new, then replace docker-compose.yml with it.
    ```
 

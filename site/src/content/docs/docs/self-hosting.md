@@ -43,7 +43,7 @@ downloads the appropriate Linux `amd64` or `arm64` image automatically.
 GitHub release archives contain source code; there is no standalone Windows
 `.exe` or macOS `.dmg` installer.
 
-Version v0.1.1 was tested on WSL and in Linux CI on both architectures. It has
+Version v0.2.0 was tested on WSL and in Linux CI on both architectures. It has
 not been separately tested on a physical Mac. The installer starts a local-only
 trial; see the LAN and HTTPS instructions below to reach it from other devices.
 
@@ -319,7 +319,7 @@ The compose file also reads variables that the API does not validate:
 | `POSTGRES_USER` | `janosik` in `.env.example` | Database user, created on first `up`. |
 | `POSTGRES_PASSWORD` | `change-me` in `.env.example` (required) | Database password. Pick a strong one: the container refuses to start while it is `change-me`. |
 | `POSTGRES_DB` | `janosik` in `.env.example` | Database name. |
-| `JANOSIK_TAG` | `latest` | Image tag to run, for example `v0.1.1`. |
+| `JANOSIK_TAG` | `latest` | Image tag to run, for example `v0.2.0`. |
 
 OAuth login (Google and Yandex) is configured in the master panel, not in
 `.env`.

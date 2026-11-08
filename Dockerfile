@@ -101,6 +101,14 @@ ENV UPLOAD_DIR=/data/uploads
 ARG GIT_COMMIT=
 ENV GIT_COMMIT=${GIT_COMMIT}
 
+# Release version baked into the image metadata. CI passes the product
+# version (`0.2.0`); a local build without the argument stays `dev`.
+ARG APP_VERSION=dev
+LABEL org.opencontainers.image.title="Janosik" \
+      org.opencontainers.image.description="Self-hosted Kanban board with realtime collaboration, an agent API and MCP." \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later"
+
 # Readiness: the API readiness probe (DB + Redis, cached) plus the site root
 # (the baked marketing site), so a container that lost its dependencies or its
 # static assets is reported unhealthy.

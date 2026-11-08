@@ -1,6 +1,6 @@
 {
   "name": "@janosik/backend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Janosik API — NestJS + Prisma + PostgreSQL (see ROADMAP §7).",
   "license": "AGPL-3.0-or-later",
