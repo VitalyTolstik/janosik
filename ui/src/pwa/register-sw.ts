@@ -50,13 +50,22 @@ export function registerServiceWorker(): void {
 
   // A dynamic import that the new worker cannot answer (the chunk was never
   // cached and the server replied with `index.html`) is recoverable by
-  // applying the waiting update.
+  // applying the waiting update. Without a waiting worker there is nothing to
+  // apply — an offline idle prefetch, for example — and a "new version"
+  // banner would only be misleading.
   window.addEventListener("vite:preloadError", (event) => {
     event.preventDefault();
     // An emergency, not a routine announcement: the running bundle just
     // broke, so the prompt is raised even when this worker was announced
     // (and dismissed) before.
-    announce();
+    void navigator.serviceWorker
+      .getRegistration()
+      .then((registration) => {
+        if (registration?.waiting) announce();
+      })
+      .catch(() => {
+        /* the registration is unreachable — nothing to apply */
+      });
   });
 
   navigator.serviceWorker

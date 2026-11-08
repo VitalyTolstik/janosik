@@ -17,8 +17,8 @@ import {
   SunDim,
   UserPlus,
 } from "lucide-react";
-import type { ComponentType, LazyExoticComponent } from "react";
-import { Suspense, lazy, useEffect, useState } from "react";
+import type { ComponentType, LazyExoticComponent, ReactNode } from "react";
+import { Component, Suspense, lazy, useEffect, useState } from "react";
 
 // TASK-21.9 (motion-lazy): the lucide-animated icons pull the whole `motion`
 // runtime (~40 KB gzip) onto the critical path. They live behind this wrapper
@@ -220,10 +220,32 @@ interface LazyAnimatedIconProps extends AnimatedIconProps {
 }
 
 /**
+ * Keeps a decorative animated icon from taking the whole board down. The
+ * chunks are prefetched on idle, so a connection that drops in that window
+ * rejects the import; without a boundary the global error screen replaces
+ * the app even though the static twin is right there.
+ */
+class AnimatedIconBoundary extends Component<
+  { fallback: ReactNode; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  render(): ReactNode {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+/**
  * Drop-in lazy replacement for the `lucide-animated` header icons. Before the
  * first idle frame it renders the static lucide twin; afterwards it swaps in
  * the animated component (Suspense keeps the static twin while the chunk
- * loads, so the layout never collapses).
+ * loads, so the layout never collapses). A failed chunk load falls back to
+ * the same twin instead of crashing the app (offline, half-deployed server).
  */
 export function LazyAnimatedIcon({
   name,
@@ -247,12 +269,14 @@ export function LazyAnimatedIcon({
 
   return (
     <Suspense fallback={fallback}>
-      <Lazy
-        size={size}
-        className={className}
-        data-lazy-state="animated"
-        {...rest}
-      />
+      <AnimatedIconBoundary fallback={fallback}>
+        <Lazy
+          size={size}
+          className={className}
+          data-lazy-state="animated"
+          {...rest}
+        />
+      </AnimatedIconBoundary>
     </Suspense>
   );
 }
