@@ -1,8 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { test, expect } from "@/fixtures/collaboration.js";
-import { expectPresence, presenceStack } from "@/helpers/collaboration.js";
-import { createExtraBoard } from "@/helpers/boards.js";
-import { cardTitle, columnSection } from "@/helpers/history.js";
+import {
+  breakStream,
+  expectPresence,
+  installStreamBreak,
+  presenceStack,
+  resumeStream,
+  streamAttempts,
+} from "@/helpers/collaboration.js";
+import {
+  cardDialog,
+  cardTitle,
+  closeCardDialog,
+  columnSection,
+  openCard,
+} from "@/helpers/history.js";
+
+test.describe.configure({ timeout: 60_000 });
 
 async function acceptPartner(partner: {
   invite: (role?: "ADMIN" | "MEMBER" | "VIEWER") => Promise<void>;
@@ -12,42 +26,49 @@ async function acceptPartner(partner: {
   await partner.accept();
 }
 
-test("a card appears in the other Chrome context in under two seconds", async ({
+test("a card update appears in the other Chrome context in under two seconds", async ({
   page,
   board,
   partner,
   partnerBrowser,
 }) => {
-  await board.column("Todo");
+  const todo = await board.column("Todo");
+  await board.card(todo, "Live card");
   await acceptPartner(partner);
   await board.open(page);
-  const connected = partnerBrowser.page.waitForRequest((request) =>
-    request.url().includes("/events?"),
-  );
   await partner.openBoard(partnerBrowser.page);
-  await connected;
   await expectPresence(partnerBrowser.page, 2);
 
-  const todo = columnSection(page, "Todo");
-  await todo.locator("[data-composer-trigger]").click();
-  const composer = todo.locator('[name="card-composer"]');
-  await composer.fill("Live card");
+  await openCard(page, "Live card");
+  await cardDialog(page)
+    .getByRole("textbox", { name: "Title" })
+    .fill("Updated live");
   const saved = page.waitForResponse(
     (response) =>
       response.url().endsWith(`/boards/${board.id}/commands`) &&
       response.request().method() === "POST" &&
-      (response.request().postDataJSON() as { action?: { type?: string } })
-        .action?.type === "ADD_CARD",
+      (
+        response.request().postDataJSON() as {
+          action?: { type?: string; title?: string };
+        }
+      ).action?.type === "UPDATE_CARD" &&
+      (
+        response.request().postDataJSON() as {
+          action?: { title?: string };
+        }
+      ).action?.title === "Updated live",
   );
+  // One measurement only: from the user's save to the other context's
+  // render. The locator timeout is a diagnostic guard, not the SLA.
   const started = Date.now();
-  await composer.press("Enter");
+  await closeCardDialog(page);
   await saved;
 
-  await expect(cardTitle(partnerBrowser.page, "Live card")).toBeVisible({
-    timeout: 2000,
+  await expect(cardTitle(partnerBrowser.page, "Updated live")).toBeVisible({
+    timeout: 5000,
   });
   expect(Date.now() - started).toBeLessThan(2000);
-  await page.keyboard.press("Escape");
+  await expect(cardTitle(partnerBrowser.page, "Live card")).toHaveCount(0);
 });
 
 test("both collaborators appear in the presence stack", async ({
@@ -71,7 +92,7 @@ test("presence disappears within a minute after the other tab closes", async ({
   partner,
   partnerBrowser,
 }) => {
-  test.setTimeout(75_000);
+  test.setTimeout(90_000);
   await board.column("Todo");
   await acceptPartner(partner);
   await board.open(page);
@@ -86,82 +107,74 @@ test("presence disappears within a minute after the other tab closes", async ({
 });
 
 test("a missed update is caught up when the stream resumes with since", async ({
+  page,
   board,
   partner,
   partnerBrowser,
 }) => {
   const todo = await board.column("Todo");
   await acceptPartner(partner);
-  const extra = await createExtraBoard(
-    partner.api,
-    `Partner board ${randomUUID()}`,
-  );
-
-  // Reload after accepting so the partner's store knows both boards.
-  await partnerBrowser.page.reload();
-  await expect(
-    partnerBrowser.page.getByRole("button", { name: "Switch board" }),
-  ).toBeVisible();
-  await partnerBrowser.page
-    .getByRole("button", { name: "Switch board" })
-    .click();
-  await expect(
-    partnerBrowser.page.getByRole("option").filter({ hasText: extra.title }),
-  ).toBeVisible({ timeout: 15_000 });
-  await partnerBrowser.page.keyboard.press("Escape");
+  await board.open(page);
 
   const events: string[] = [];
+  const snapshots: string[] = [];
   partnerBrowser.page.on("request", (request) => {
-    if (request.url().includes(`/boards/${board.id}/events?`)) {
-      events.push(request.url());
+    const url = request.url();
+    if (url.includes(`/boards/${board.id}/events?`)) events.push(url);
+    if (request.method() === "GET" && url.endsWith(`/boards/${board.id}`)) {
+      snapshots.push(url);
     }
   });
+  await installStreamBreak(partnerBrowser.page);
+  const connected = partnerBrowser.page.waitForRequest((request) =>
+    request.url().includes(`/boards/${board.id}/events?`),
+  );
   await partner.openBoard(partnerBrowser.page);
+  await connected;
+  await expectPresence(partnerBrowser.page, 2);
   await expect.poll(() => events.length).toBeGreaterThan(0);
 
-  // Leaving the board closes the stream; the command lands while it is down.
-  await partnerBrowser.page
-    .getByRole("button", { name: "Switch board" })
-    .click();
-  await partnerBrowser.page
-    .getByRole("option")
-    .filter({ hasText: extra.title })
-    .click();
-  await expect(partnerBrowser.page.locator("header h2")).toHaveText(
-    extra.title,
+  const snapshot = await board.api.get(`/api/v1/boards/${board.id}`);
+  expect(snapshot.ok()).toBeTruthy();
+  const beforeSeq = Number(snapshot.headers()["x-board-seq"]);
+  const initialSince = Number(
+    new URL(events[events.length - 1]).searchParams.get("since"),
   );
+  expect(initialSince).toBe(beforeSeq);
+  const snapshotsBefore = snapshots.length;
 
-  const newCardId = randomUUID();
+  // A silent drop: the stream is cut and its retries fail, with no page
+  // navigation and no snapshot request in between.
+  const attemptsBefore = await breakStream(partnerBrowser.page);
+  await expect
+    .poll(() => streamAttempts(partnerBrowser.page), { timeout: 15_000 })
+    .toBeGreaterThan(attemptsBefore);
+
+  // The command lands while the partner is disconnected.
   await board.command({
     type: "ADD_CARD",
-    newCardId,
+    newCardId: randomUUID(),
     columnId: todo,
     title: "Missed card",
   });
   await expect(cardTitle(partnerBrowser.page, "Missed card")).toHaveCount(0);
 
-  // Back on the board the stream resumes from its last applied seq and the
-  // server replays the missed delta before going live again.
-  const before = events.length;
-  await partnerBrowser.page
-    .getByRole("button", { name: "Switch board" })
-    .click();
-  await partnerBrowser.page
-    .getByRole("option")
-    .filter({ hasText: board.title })
-    .click();
-  await expect(partnerBrowser.page.locator("header h2")).toHaveText(
-    board.title,
-  );
-
+  // Letting the retry through wakes the backoff at once; the server replays
+  // the missed delta from the baseline before going live again.
+  const resumedAt = events.length;
+  await resumeStream(partnerBrowser.page);
   await expect(cardTitle(partnerBrowser.page, "Missed card")).toBeVisible({
     timeout: 15_000,
   });
+
   const resumed = events
-    .slice(before)
+    .slice(resumedAt)
     .map((url) => Number(new URL(url).searchParams.get("since")))
     .filter((since) => Number.isFinite(since) && since > 0);
-  expect(resumed.length).toBeGreaterThan(0);
+  expect(resumed).toContain(beforeSeq);
+  // A snapshot would also produce the card; the delta must have been
+  // replayed over the stream, not re-read from the board endpoint.
+  expect(snapshots.length).toBe(snapshotsBefore);
 });
 
 test("a repeated commandId applies the command once", async ({ board }) => {

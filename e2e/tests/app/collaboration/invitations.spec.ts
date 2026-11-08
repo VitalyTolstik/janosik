@@ -2,12 +2,17 @@ import { test, expect } from "@/fixtures/collaboration.js";
 import {
   acceptInvitation,
   declineInvitation,
+  expectStillAlive,
   invitationRow,
   inviteMember,
+  markAlive,
   memberRow,
   openInvitations,
 } from "@/helpers/collaboration.js";
+import { columnSection } from "@/helpers/history.js";
 import { appUrl } from "@/helpers/urls.js";
+
+test.describe.configure({ timeout: 60_000 });
 
 test("an admin invites a new account by email", async ({
   page,
@@ -33,11 +38,15 @@ test("an admin invites a new account by email", async ({
 });
 
 test("the invitee sees the board, inviter and role in the bell", async ({
+  page,
   board,
   partner,
   partnerBrowser,
 }) => {
-  await partner.invite("VIEWER");
+  // Invite through the dialog role picker, not the API: the requested role
+  // must survive the UI path into the notification.
+  await board.open(page);
+  await inviteMember(page, partner.user.email, "Viewer");
   await partnerBrowser.page.reload();
   const panel = await openInvitations(partnerBrowser.page);
 
@@ -67,6 +76,8 @@ test("a pending invitation grants no board access", async ({
   await expect(
     partnerBrowser.page.getByRole("heading", { name: "Board not found" }),
   ).toBeVisible();
+  // The invitation itself is untouched: pending, not declined or accepted.
+  expect(await partner.invitations()).toHaveLength(1);
 });
 
 test("accepting an invitation opens the shared board", async ({
@@ -78,16 +89,27 @@ test("accepting an invitation opens the shared board", async ({
   await board.column("Todo");
   await partner.invite("MEMBER");
   await partnerBrowser.page.reload();
+  await markAlive(partnerBrowser.page);
 
   await acceptInvitation(partnerBrowser.page, board.title);
 
   await expect(partnerBrowser.page.locator("header h2")).toHaveText(
     board.title,
   );
+  await expect(columnSection(partnerBrowser.page, "Todo")).toBeVisible();
   await expect(
     partnerBrowser.page.getByRole("button", { name: "Switch board" }),
   ).toBeVisible();
+  await partnerBrowser.page
+    .getByRole("button", { name: "Switch board" })
+    .click();
+  await expect(
+    partnerBrowser.page.getByRole("option").filter({ hasText: board.title }),
+  ).toBeVisible();
+  await partnerBrowser.page.keyboard.press("Escape");
   await expect.poll(() => partner.role()).toBe("MEMBER");
+  await expectStillAlive(partnerBrowser.page);
+  expect(await partner.invitations()).toEqual([]);
 });
 
 test("declining an invitation leaves the board out of my boards", async ({
@@ -116,4 +138,5 @@ test("declining an invitation leaves the board out of my boards", async ({
     partnerBrowser.page.getByRole("heading", { name: "Board not found" }),
   ).toBeVisible();
   expect(await partner.role()).toBeUndefined();
+  expect(await partner.invitations()).toEqual([]);
 });

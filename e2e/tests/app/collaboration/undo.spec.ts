@@ -11,6 +11,8 @@ import {
   pressUndo,
 } from "@/helpers/history.js";
 
+test.describe.configure({ timeout: 60_000 });
+
 const FOREIGN_SKIP = "Another member changed this — undo was skipped";
 
 async function saveTitle(
@@ -40,7 +42,7 @@ test("undo does not overwrite an edit made in another Chrome context", async ({
   partnerBrowser,
 }) => {
   const todo = await board.column("Todo");
-  await board.card(todo, "Shared task");
+  const cardId = await board.card(todo, "Shared task");
   await partner.invite("MEMBER");
   await partner.accept();
   await board.open(page);
@@ -63,4 +65,12 @@ test("undo does not overwrite an edit made in another Chrome context", async ({
   await expect(notification(page, FOREIGN_SKIP)).toBeVisible();
   await expect(cardTitle(page, "Partner title")).toBeVisible();
   await expectHistory(page, { undo: false, redo: false });
+
+  // The server kept the other member's title: undo was skipped, not just
+  // hidden by the local UI.
+  const snapshot = await board.api.get(`/api/v1/boards/${board.id}`);
+  const aggregate = (await snapshot.json()) as {
+    cards: Record<string, { title?: string }>;
+  };
+  expect(aggregate.cards[cardId].title).toBe("Partner title");
 });

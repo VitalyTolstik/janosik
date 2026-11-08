@@ -2,6 +2,8 @@ import { test, expect } from "@/fixtures/collaboration.js";
 import {
   changeMemberRole,
   expectPresence,
+  expectStillAlive,
+  markAlive,
   memberRow,
   openMembers,
   removeMember,
@@ -13,6 +15,9 @@ import {
   notification,
   openCard,
 } from "@/helpers/history.js";
+import { appUrl } from "@/helpers/urls.js";
+
+test.describe.configure({ timeout: 60_000 });
 
 test("a demoted member's board becomes read-only live", async ({
   page,
@@ -27,6 +32,7 @@ test("a demoted member's board becomes read-only live", async ({
   await board.open(page);
   await partner.openBoard(partnerBrowser.page);
   await expectPresence(partnerBrowser.page, 2);
+  await markAlive(partnerBrowser.page);
 
   await changeMemberRole(page, partner.user.email, "Viewer");
   await page.keyboard.press("Escape");
@@ -48,7 +54,8 @@ test("a demoted member's board becomes read-only live", async ({
   });
   await expect(title).toHaveJSProperty("readOnly", true);
   await closeCardDialog(partnerBrowser.page);
-  expect(await partner.role()).toBe("VIEWER");
+  await expect.poll(() => partner.role()).toBe("VIEWER");
+  await expectStillAlive(partnerBrowser.page);
 });
 
 test("a promoted member can manage the member list live", async ({
@@ -62,6 +69,7 @@ test("a promoted member can manage the member list live", async ({
   await board.open(page);
   await partner.openBoard(partnerBrowser.page);
   await expectPresence(partnerBrowser.page, 2);
+  await markAlive(partnerBrowser.page);
 
   await changeMemberRole(page, partner.user.email, "Admin");
   await page.keyboard.press("Escape");
@@ -74,10 +82,15 @@ test("a promoted member can manage the member list live", async ({
   await expect(
     memberRow(partnerBrowser.page, partner.user.email),
   ).toBeVisible();
-  expect(await partner.role()).toBe("ADMIN");
+  await expect.poll(() => partner.role()).toBe("ADMIN");
+  await expectStillAlive(partnerBrowser.page);
 });
 
-test("the last admin cannot be demoted or removed", async ({ page, board }) => {
+test("the last admin cannot be demoted or removed", async ({
+  page,
+  board,
+  partner,
+}) => {
   await board.open(page);
   const dialog = await openMembers(page);
   const row = memberRow(page, board.email);
@@ -87,6 +100,33 @@ test("the last admin cannot be demoted or removed", async ({ page, board }) => {
     row.getByRole("button", { name: `Remove — ${board.email}` }),
   ).toBeDisabled();
   await expect(dialog).toBeVisible();
+
+  // Bypassing the disabled controls must not loosen the server guard.
+  const demote = await board.api.patch(
+    `/api/v1/boards/${board.id}/members/${board.userId}`,
+    { data: { role: "MEMBER" } },
+  );
+  expect(demote.status()).toBe(409);
+  const remove = await board.api.delete(
+    `/api/v1/boards/${board.id}/members/${board.userId}`,
+  );
+  expect(remove.status()).toBe(409);
+
+  // A second ADMIN makes the owner's row manageable again.
+  await partner.invite("ADMIN");
+  await partner.accept();
+  await page.keyboard.press("Escape");
+  const reopened = await openMembers(page);
+  await expect(reopened).toBeVisible();
+  await expect(
+    memberRow(page, board.email).getByTestId("role-trigger"),
+  ).toBeEnabled();
+  await expect(
+    memberRow(page, board.email).getByRole("button", {
+      name: `Remove — ${board.email}`,
+    }),
+  ).toBeEnabled();
+  await expect(memberRow(page, partner.user.email)).toBeVisible();
 });
 
 test("removing a member revokes access on the open board", async ({
@@ -116,4 +156,10 @@ test("removing a member revokes access on the open board", async ({
     new RegExp(`/board/${board.id}`),
   );
   expect(await partner.role()).toBeUndefined();
+
+  // A direct URL after the live removal must be refused too.
+  await partnerBrowser.page.goto(new URL(`board/${board.id}`, appUrl).href);
+  await expect(
+    partnerBrowser.page.getByRole("heading", { name: "Board not found" }),
+  ).toBeVisible();
 });
