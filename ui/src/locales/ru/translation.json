@@ -109,6 +109,8 @@
   "account.tokens.namePlaceholder": "Например, CI pipeline",
   "account.tokens.neverUsed": "никогда",
   "account.tokens.noExpiry": "Без срока",
+  "account.tokens.rateDecrease": "Уменьшить лимит запросов",
+  "account.tokens.rateIncrease": "Увеличить лимит запросов",
   "account.tokens.rateLabel": "Лимит (запросов / минуту)",
   "account.tokens.ratePlaceholder": "Без лимита",
   "account.tokens.readOnlyLabel": "Только чтение (запись запрещена)",
