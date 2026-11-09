@@ -235,7 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // once, which keeps existing users on the language they already had.
   const localeAdoptionRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!serverMode || status !== "authenticated" || user === null) return;
+    if (!serverMode || status !== "authenticated" || !user) return;
     if (impersonating) return;
     if (new URLSearchParams(window.location.search).has("lng")) return;
     const current: Lang = defaultI18n.language.startsWith("ru") ? "ru" : "en";
