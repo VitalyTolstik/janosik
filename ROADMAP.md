@@ -1673,7 +1673,7 @@ TASK-36 и TASK-37.)*
 | 94 | TASK-163 `watch-activity-audit` ✅ | `feature/TASK-162.5-views-e2e` | §7.21: полнота и точность ленты Watch, диффы, границы аудита и права; [issue #171](https://github.com/VitalyTolstik/janosik/issues/171) | матрица событий и доступа документирована; одновременная смена роли и срока не теряет значения; согласованные события и диффы проверены браузерными и серверными тестами |
 | 95 | TASK-164 `column-accent-styles` | `feat/column-accent-styles` | Стиль колонок: per-column accent из палитры card cover + board-wide форма (9 вариантов), палитра в шапке, команда, БД, realtime, импорт/экспорт и MCP-тул | 9 форм рендерятся в light/dark; цвет per-column переживает reload, undo/redo и realtime; VIEWER не управляет; shared/ui/backend/e2e зелёные |
 | 96 | TASK-165 `card-workflow` | `feat/card-workflow` | §7.22: настраиваемый workflow карточек над колонками (ADMIN, матрица переходов, роли, условия, глобальные переходы, initial/done), enforcement UI→reducer→server, `409 conflict:"workflow"`, мастер-панель, MCP, импорт/экспорт, E2E и docs | MVP реализован в ветке; исправления по ревью внесены, ожидает CI/merge; phase 2 (граф, post-functions, шаблоны платформы, bulk/force move, ifMatch) явно вынесен в §7.22 |
-| 97 | TASK-166 `launch-agent-control` | `docs/TASK-166-launch-agent-control` → отдельные `feat/TASK-166.x-*` | §7.23: launch-readiness «agent-first с контролем человека» — идентичность и сессии агентов, scopes, pause/kill, approvals/handoff, надёжный write-контракт, run-level rollback, plan/apply/bulk, attention-inbox, лимиты и data safety, observability, DX и UI-экраны после редизайна админки | **Запланировано:** 17 параллельных потоков в 5 волнах; backend/security-примитивы не зависят от редизайна, UI-волна стартует после `feat/admin-redesign`; у каждого потока отдельный worktree/PR и DoD; общий launch-blocker список закрыт, тесты и docs en/ru обновлены. См. §7.23 |
+| 97 | TASK-166 `launch-agent-control` | `docs/TASK-166-launch-agent-control` → отдельные `feat/TASK-166.x-*` | §7.23: launch-readiness «agent-first с контролем человека» — идентичность и сессии агентов, scopes, pause/kill, approvals/handoff, надёжный write-контракт, run-level rollback, plan/apply/bulk, attention-inbox, лимиты и data safety, observability, DX и UI-экраны после редизайна админки | **166.0 выполнена, W1 разблокирована:** политика, схема и матрица действий заморожены в [`docs/TASK-166-launch-agent-control.md`](docs/TASK-166-launch-agent-control.md). 17 параллельных потоков в 5 волнах; backend/security-примитивы не зависят от редизайна, UI-волна стартует после `feat/admin-redesign`; у каждого потока отдельный worktree/PR и DoD; общий launch-blocker список закрыт, тесты и docs en/ru обновлены. См. §7.23 |
 | 98 | TASK-167 `marketing-site-redesign` | `docs/TASK-167-site-redesign` → отдельные `feat/TASK-167.x-*` | §7.24: редизайн маркетингового сайта под новую реальность — agent-first с контролем человека, workflow, approvals/scopes/pause/audit, новая админка, self-host/AGPL; новая IA, копирайт EN/RU, реальные медиа, docs, SEO/AI-SEO, a11y/perf, E2E | **Запланировано:** 9 потоков в 4 волнах (W0–W3); копирайт/IA можно начинать после TASK-166.0, экраны и медиа — после `feat/admin-redesign` + TASK-166.13–15; каждый поток — отдельный worktree/PR; все утверждения на сайте соответствуют отгруженному продукту, EN/RU паритет. См. §7.24 |
 | 99 | TASK-168 `launch-tail` | отдельные `feat/TASK-168.x-*` | §7.25: закрыть хвосты вне TASK-166/167 — TASK-40 (Sentry + pino), TASK-31 (тач-слой и 390 px), TASK-161 (события безопасности), TASK-159/41 (тестовое покрытие и формальная ревизия) | **Запланировано:** 4 потока; 168.1/168.2 можно начинать сразу, 168.3/168.4 — после редизайна админки; каждый хвост получает финальный статус, тесты и docs, без «висящих открытыми» задач. См. §7.25 |
 | 100 | TASK-169 `docs-audit` | отдельные `feat/TASK-169.x-*` | §7.25: README и документация под 1.0 — инвентаризация кода против docs, поиск недобавленного/устаревшего, README, docs EN/RU, ссылки, версия, changelog | **Запланировано:** 4 потока; аудит можно начинать сразу, фиксы — после TASK-166.16 и TASK-167.5; gap-отчёт с «fixed/deferred/issue»; docs-сайт собирается, ссылки живые, EN/RU паритет. См. §7.25 |
@@ -4171,16 +4171,23 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 ### 7.23. Launch readiness: agent-first с контролем человека (TASK-166)
 
-> **Статус:** запланировано. Это не одна фича, а программа из параллельных
-> потоков: примитивы идентичности/прав/согласований можно делать до редизайна
-> админки, а новые экраны — только после `feat/admin-redesign`, чтобы не
-> строить их дважды в старой IA.
+> **Статус:** 166.0 выполнена — политика, схема данных, матрица действий и
+> коды ошибок заморожены в
+> [`docs/TASK-166-launch-agent-control.md`](docs/TASK-166-launch-agent-control.md);
+> W1 (166.1–166.6) разблокирована. 166.1–166.16 остаются запланированными.
+> Это не одна фича, а программа из параллельных потоков: примитивы
+> идентичности/прав/согласований можно делать до редизайна админки, а новые
+> экраны — только после `feat/admin-redesign`, чтобы не строить их дважды в
+> старой IA.
 >
-> **Источники:**
+> **Источники (локальные research-материалы, не входят в git):**
 > - `audits/launch-gaps-agent-experience.md` + `design/launch-gaps-agent-experience.html`
 > - `audits/launch-gaps-human-control.md` + `design/launch-gaps-human-control.html`
 > - `audits/admin-redesign-research.md` + `design/admin-redesign.html`
 > - `audits/card-workflow-research.md` (§workflow уже даёт state-boundary)
+>
+> **Нормативный контракт TASK-166:** этот раздел + ADR
+> [`docs/TASK-166-launch-agent-control.md`](docs/TASK-166-launch-agent-control.md).
 >
 > **Главный вывод аудитов:** Janosik технически зрелый (командный лог,
 > reducer, WIP, SSE, share, MCP), но контур «человек контролирует агентов»
@@ -4216,7 +4223,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 | --- | --- | --- |
 | Self-host или managed cloud в первую очередь? | Self-host OSS; cloud — отдельная программа | remote MCP/OAuth, billing, DPA, status page не блокируют этот релиз |
 | Агент = user+PAT или отдельная сущность? | Владелец — `User`, исполнитель — `AgentSession` + `apiTokenId`; отдельный `Agent` не вводим в MVP | `AgentSession`/токен в истории и правах, без второй системы аккаунтов |
-| Дефолт destructive-действий | `deny`; исключения — approval или `trusted_ci` scope | матрица действий и коды ошибок |
+| Дефолт destructive-действий | Прямое исполнение запрещено; штатный путь — approval; `trusted_ci` — явное исключение; hard deny (`destructive: "deny"`) — opt-in политики доски | матрица действий и коды ошибок |
 | Что такое run? | Один batch/plan + `agentSessionId`; cross-board run запрещён в MVP | `runId`, границы, retention |
 | Pause-семантика | новые записи получают 403, in-flight завершаются, SSE закрывается | поведение очередей и UI |
 | Retention | 30 дней по умолчанию, 90/365 — настройка | аудит/история/экспорт |
@@ -4225,6 +4232,10 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 **DoD 166.0:** решения записаны в ADR/документе, схема данных и матрица
 действий заморожены; остальные потоки могут стартовать без переделок.
+
+**Выполнено (2026-11-09):** ADR —
+[`docs/TASK-166-launch-agent-control.md`](docs/TASK-166-launch-agent-control.md);
+W1 разблокирована.
 
 #### 7.23.2. Волны и параллельность
 
@@ -4245,10 +4256,10 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 | ID | Поток | Зависит | Зона / ключевые файлы | DoD |
 | --- | --- | --- | --- | --- |
-| 166.0 | Policy & ADR | — | `docs/`, этот раздел | решения зафиксированы; схема и матрица действий согласованы |
+| 166.0 | Policy & ADR ✅ | — | `docs/`, этот раздел | **Выполнено:** решения, схема данных и матрица действий заморожены в [`docs/TASK-166-launch-agent-control.md`](docs/TASK-166-launch-agent-control.md); W1 разблокирована |
 | 166.1 | Agent identity & sessions | 166.0 | Prisma `Command`/`Activity`/`AgentSession`; `auth/api-token.service`; command writers; SSE; `shared/src/types`; `mcp/src` | два PAT одного аккаунта различимы по `apiTokenId`/`agentSessionId` в БД, API, SSE, Watch; start/heartbeat/end; тесты |
 | 166.2 | Scopes & destructive gate | 166.0 | `auth/jwt-auth.guard`, `common/membership.guard`, `api-token.service`, controllers, `shared/src/api`, MCP; минимальный UI токенов не в админке | пресеты Observer/Worker/Reviewer/Admin; board-scoped токен не читает чужие доски/не принимает инвайты/не меняет профиль; destructive denied/approval; матрица тестов |
-| 166.3 | Pause / kill switch | 166.0, 166.1 | `AgentSession.status`, board policy, `POST /agents/:id/pause|resume`, `POST /boards/:id/agents/pause`, guards, SSE | обратимая пауза; `403 agent_paused`; «stop all»; in-flight семантика; тесты |
+| 166.3 | Pause / kill switch | 166.0, 166.1 | `AgentSession.paused*`, `ApiToken.individualPaused*`/`stopAllPaused*`, `Board.agentsPaused*`, `POST /boards/:id/agent-sessions/:sessionId/pause` / `resume`, `POST /boards/:id/agents/pause`, guards, SSE | обратимая пауза; `403 agent_paused`; «stop all»; in-flight семантика; тесты |
 | 166.4 | Reliable write contract | 166.0 | backend exception filter, `shared` error types, `api` client, MCP `format/schemas`; все write endpoints/tools | `code`/`retryable`/`requestId`/`currentVersion`, `structuredContent` у мутаций, идемпотентность create_board/duplicate_card/add_comment/create_share/upload; контрактные тесты |
 | 166.5 | Approval & handoff API | 166.0, 166.1 | `ApprovalRequest` Prisma, endpoints, audit, notification hook; MCP tools | агент создаёт запрос с `planHash`/TTL; человек решает approve/reject; expiry и аудит; тесты |
 | 166.6 | Limits & data safety | 166.0 | UI-лимит 10 досок, board/token audit, import/export limits, backup/retention status, self-service export/delete | 10-board противоречие убрано/честно объяснено; удаление доски/токена в аудите; импорт ≥ экспорта; статус backup честный; тесты и docs |

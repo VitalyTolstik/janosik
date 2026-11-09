@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-166.0 launch policy/ADR: frozen agent identity and session
+  attribution, scope presets with explicit legacy-token grandfathering,
+  approval/plan-hash lifecycle, run boundaries and rollback, pause/kill
+  semantics, the REST/MCP action matrix, and the additive error envelope
+  (`docs/TASK-166-launch-agent-control.md`). Docs-only: no product behaviour
+  changes; W1 (166.1–166.6) is unblocked.
 - Admin console redesign: the 26 flat master-panel links are grouped into
   eight hubs (Overview, Users, Boards, Moderation, Audit & activity,
   Communications, Access & security, Settings). Every capability survives as a
