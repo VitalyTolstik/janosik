@@ -3,13 +3,29 @@ import { type APIRequestContext, type Page } from "@playwright/test";
 import { test as authTest, expect, login } from "./auth.js";
 import { appUrl, siteUrl } from "../helpers/urls.js";
 
-type Share = { id: string; token: string; mode: "live" | "snapshot" };
+type Share = {
+  id: string;
+  token: string;
+  mode: "live" | "snapshot";
+  title: string | null;
+  includeComments: boolean;
+  includeAttachments: boolean;
+  expiresAt: number | null;
+  views: number;
+};
+type ShareOptions = {
+  title?: string;
+  includeComments?: boolean;
+  includeAttachments?: boolean;
+  /** ISO-8601 deadline; omitted/`null` = never. */
+  expiresAt?: string | null;
+};
 type Sharing = {
   boardId: string;
   cardId: string;
   api: APIRequestContext;
   openOwner: (page: Page) => Promise<void>;
-  createShare: (mode: Share["mode"]) => Promise<Share>;
+  createShare: (mode: Share["mode"], options?: ShareOptions) => Promise<Share>;
   addCard: (title: string) => Promise<void>;
 };
 
@@ -78,9 +94,21 @@ export const test = authTest.extend<{ sharing: Sharing }>({
         await page.getByTestId("share-trigger").click();
         expect((await loaded).ok()).toBeTruthy();
       },
-      createShare: async (mode) => {
+      createShare: async (mode, options = {}) => {
         const response = await api.post(`/api/v1/boards/${boardId}/shares`, {
-          data: { mode },
+          data: {
+            mode,
+            ...(options.title !== undefined ? { title: options.title } : {}),
+            ...(options.includeComments !== undefined
+              ? { includeComments: options.includeComments }
+              : {}),
+            ...(options.includeAttachments !== undefined
+              ? { includeAttachments: options.includeAttachments }
+              : {}),
+            ...(options.expiresAt !== undefined
+              ? { expiresAt: options.expiresAt }
+              : {}),
+          },
         });
         expect(response.status()).toBe(201);
         return (await response.json()) as Share;

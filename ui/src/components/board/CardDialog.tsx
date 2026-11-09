@@ -556,6 +556,7 @@ export function CardDialog({
     if (!cardId) return;
     const stored = board?.cards[cardId]?.title ?? "";
     heldTitles.delete(conflictedKey(boardId, cardId));
+    titleTargetRef.current = null;
     titleSeenRef.current = stored;
     titleDraftRef.current = stored;
     titleDirtyRef.current = false;

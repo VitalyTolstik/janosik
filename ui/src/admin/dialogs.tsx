@@ -182,10 +182,12 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
                 </DialogTitle>
               </DialogHeader>
               <Field
+                htmlFor="admin-user-email"
                 label={t("admin.users.create.email")}
                 error={email.trim() === "" ? null : emailError}
               >
                 <Input
+                  id="admin-user-email"
                   type="email"
                   autoComplete="email"
                   value={email}
@@ -195,11 +197,13 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
                 />
               </Field>
               <Field
+                htmlFor="admin-user-display-name"
                 label={t("admin.users.create.name")}
                 error={displayName.trim() === "" ? null : nameError}
                 counter={<CharCount value={displayName} max={50} />}
               >
                 <Input
+                  id="admin-user-display-name"
                   value={displayName}
                   maxLength={50}
                   invalid={nameError !== null}
@@ -207,11 +211,13 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
                 />
               </Field>
               <Field
+                htmlFor="admin-user-password"
                 label={t("admin.users.create.password")}
                 error={password === "" ? null : passwordError}
                 hint={t("admin.users.create.passwordHint")}
               >
                 <Input
+                  id="admin-user-password"
                   type="password"
                   autoComplete="new-password"
                   value={password}
@@ -331,11 +337,13 @@ export function CreateBoardButton({ reload }: { reload: () => void }) {
               </DialogTitle>
             </DialogHeader>
             <Field
+              htmlFor="admin-board-title"
               label={t("admin.boards.create.titleField")}
               error={title.trim() === "" ? null : titleError}
               counter={<CharCount value={title} max={LIMITS.boardTitle} />}
             >
               <Input
+                id="admin-board-title"
                 value={title}
                 maxLength={LIMITS.boardTitle}
                 invalid={titleError !== null}
@@ -344,11 +352,13 @@ export function CreateBoardButton({ reload }: { reload: () => void }) {
               />
             </Field>
             <Field
+              htmlFor="admin-board-owner"
               label={t("admin.boards.create.owner")}
               error={ownerEmail.trim() === "" ? null : ownerError}
               hint={t("admin.boards.create.ownerHint")}
             >
               <Input
+                id="admin-board-owner"
                 type="email"
                 value={ownerEmail}
                 invalid={ownerEmail.trim() !== "" && ownerError !== null}
@@ -929,15 +939,25 @@ export function EditAnnouncementDialog({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
-          <Field label={t("admin.comms.field.title")}>
+          <Field
+            htmlFor="admin-announcement-edit-title"
+            label={t("admin.comms.field.title")}
+          >
             <Input
+              id="admin-announcement-edit-title"
+              data-testid="admin-announcement-edit-title"
               value={title}
               maxLength={200}
               onChange={(event) => setTitle(event.target.value)}
             />
           </Field>
-          <Field label={t("admin.comms.field.body")}>
+          <Field
+            htmlFor="admin-announcement-edit-body"
+            label={t("admin.comms.field.body")}
+          >
             <textarea
+              id="admin-announcement-edit-body"
+              data-testid="admin-announcement-edit-body"
               value={body}
               rows={4}
               className="w-full rounded-md border border-input bg-transparent p-2 text-sm"
@@ -976,8 +996,13 @@ export function EditAnnouncementDialog({
             </Field>
           </div>
           {audience === "segment" ? (
-            <Field label={t("admin.comms.field.emails")}>
+            <Field
+              htmlFor="admin-announcement-edit-segment"
+              label={t("admin.comms.field.emails")}
+            >
               <Input
+                id="admin-announcement-edit-segment"
+                data-testid="admin-announcement-edit-segment"
                 value={segment}
                 onChange={(event) => setSegment(event.target.value)}
               />
@@ -1003,6 +1028,7 @@ export function EditAnnouncementDialog({
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
+                data-testid="admin-announcement-edit-active"
                 checked={active}
                 onChange={(event) => setActive(event.target.checked)}
               />
@@ -1023,7 +1049,12 @@ export function EditAnnouncementDialog({
           <Button size="sm" variant="outline" onClick={onClose} disabled={busy}>
             {t("admin.common.cancel")}
           </Button>
-          <Button size="sm" onClick={() => void submit()} disabled={busy}>
+          <Button
+            size="sm"
+            onClick={() => void submit()}
+            disabled={busy}
+            data-testid="admin-announcement-edit-save"
+          >
             {t("admin.common.save")}
           </Button>
         </DialogFooter>

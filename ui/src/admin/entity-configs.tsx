@@ -1313,36 +1313,48 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             ),
           },
         ],
-        actions: (row) => [
-          {
-            label: t("admin.announcements.action.edit"),
-            run: async () => undefined,
-            renderDialog: ({ close, reload }) => (
-              <EditAnnouncementDialog
-                announcement={row}
-                onClose={close}
-                onDone={reload}
-              />
-            ),
-          },
-          row.active
-            ? {
-                label: t("admin.announcements.action.deactivate"),
-                run: () =>
-                  adminApi.updateAnnouncement(row.id, { active: false }),
-              }
-            : {
-                label: t("admin.announcements.action.activate"),
-                run: () =>
-                  adminApi.updateAnnouncement(row.id, { active: true }),
-              },
-          {
-            label: t("admin.common.delete"),
-            destructive: true,
-            confirmTitle: t("admin.common.delete"),
-            run: () => adminApi.deleteAnnouncement(row.id),
-          },
-        ],
+        // Editing/activating/deleting broadcasts is owner-only server-side
+        // (403 for an OPERATOR), so the row menu is not rendered for them.
+        ...(isOwner
+          ? {
+              actions: (row: AdminAnnouncementDto) => [
+                {
+                  label: t("admin.announcements.action.edit"),
+                  run: async () => undefined,
+                  renderDialog: ({
+                    close,
+                    reload,
+                  }: {
+                    close: () => void;
+                    reload: () => void;
+                  }) => (
+                    <EditAnnouncementDialog
+                      announcement={row}
+                      onClose={close}
+                      onDone={reload}
+                    />
+                  ),
+                },
+                row.active
+                  ? {
+                      label: t("admin.announcements.action.deactivate"),
+                      run: () =>
+                        adminApi.updateAnnouncement(row.id, { active: false }),
+                    }
+                  : {
+                      label: t("admin.announcements.action.activate"),
+                      run: () =>
+                        adminApi.updateAnnouncement(row.id, { active: true }),
+                    },
+                {
+                  label: t("admin.common.delete"),
+                  destructive: true,
+                  confirmTitle: t("admin.common.delete"),
+                  run: () => adminApi.deleteAnnouncement(row.id),
+                },
+              ],
+            }
+          : {}),
       };
       return config;
     }

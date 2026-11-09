@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -153,6 +159,47 @@ describe("FilterBar", () => {
     expect(onChange).toHaveBeenLastCalledWith({
       ...EMPTY_FILTER,
       created: "any",
+    });
+  });
+
+  it("renders removable chips for priority, assignee and link facets", () => {
+    const onChange = renderBar({
+      ...EMPTY_FILTER,
+      priorities: ["high"],
+      assignees: ["u-1"],
+      blocked: true,
+      hasLinks: true,
+    });
+
+    // Every active facet is visible, not just the due/label/created trio.
+    expect(screen.getAllByTestId("filter-chip")).toHaveLength(4);
+    expect(screen.getByText("High")).toBeInTheDocument();
+    expect(screen.getByText("u-1")).toBeInTheDocument();
+    expect(screen.getByText("Blocked")).toBeInTheDocument();
+    expect(screen.getByText("Has links")).toBeInTheDocument();
+
+    const chip = (facet: string) =>
+      document.querySelector(
+        `[data-testid="filter-chip"][data-facet="${facet}"]`,
+      ) as HTMLElement;
+    fireEvent.click(
+      within(chip("priority")).getByRole("button", { name: "Remove label" }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...EMPTY_FILTER,
+      assignees: ["u-1"],
+      blocked: true,
+      hasLinks: true,
+    });
+
+    fireEvent.click(
+      within(chip("links")).getByRole("button", { name: "Remove label" }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...EMPTY_FILTER,
+      priorities: ["high"],
+      assignees: ["u-1"],
+      blocked: true,
     });
   });
 

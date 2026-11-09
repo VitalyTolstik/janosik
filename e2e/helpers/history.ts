@@ -44,7 +44,10 @@ export function notifications(page: Page): Locator {
 }
 
 export function notification(page: Page, text: string): Locator {
-  return notifications(page).getByRole("status").filter({ hasText: text });
+  // Toasts live outside the dialog portal: while a modal is open Radix marks
+  // the app root aria-hidden, so a role-based locator would miss a toast that
+  // is visibly on screen. The class is the stable hook.
+  return page.locator(".janosik-toast").filter({ hasText: text });
 }
 
 /** Column section whose header group carries the column title. */
@@ -60,6 +63,34 @@ export function cardTitle(page: Page, title: string | RegExp): Locator {
 
 export function cardDialog(page: Page): Locator {
   return page.getByRole("dialog", { name: "Card details" });
+}
+
+export function cardTitleInput(page: Page): Locator {
+  return cardDialog(page).getByRole("textbox", { name: "Title" });
+}
+
+/** The MDX description surface (contenteditable, not a textbox). */
+export function descriptionEditor(page: Page): Locator {
+  return cardDialog(page).locator(".janosik-md-content").first();
+}
+
+export async function expectDescription(
+  page: Page,
+  text: string | RegExp,
+): Promise<void> {
+  await expect(descriptionEditor(page)).toBeVisible();
+  await expect(descriptionEditor(page)).toHaveText(text);
+}
+
+/** Right-click a card on the board and wait for its context menu. */
+export async function openCardContextMenu(
+  page: Page,
+  title: string,
+): Promise<Locator> {
+  await cardTitle(page, title).click({ button: "right" });
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  return menu;
 }
 
 export async function openCard(

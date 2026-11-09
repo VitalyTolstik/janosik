@@ -137,7 +137,10 @@ export function SecurityPage() {
       <Panel className="p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium">{t("admin.security.totp")}</h2>
-          <Badge variant={security.totpEnabled ? "success" : "neutral"}>
+          <Badge
+            variant={security.totpEnabled ? "success" : "neutral"}
+            data-testid="admin-totp-status"
+          >
             {security.totpEnabled
               ? t("admin.observability.on")
               : t("admin.observability.off")}

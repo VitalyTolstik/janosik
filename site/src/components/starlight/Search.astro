@@ -1,0 +1,98 @@
+---
+import DefaultSearch from "@astrojs/starlight/components/Search.astro";
+---
+
+<DefaultSearch {...Astro.props} />
+
+<script>
+  /**
+   * Pagefind UI has no error state: when its worker or index files cannot be
+   * fetched it keeps the "Searching..." message forever. Turn that dead end
+   * into a recoverable message with a Retry button, so a flaky connection (or
+   * a CSP/asset regression) is visible instead of looking like a hang.
+   */
+  (() => {
+    const ERROR_ID = "starlight-search-error";
+    const copy = () => {
+      const ru = document.documentElement.lang === "ru";
+      return {
+        text: ru
+          ? "Поиск сейчас недоступен. Проверьте соединение и попробуйте ещё раз."
+          : "Search is unavailable right now. Check your connection and try again.",
+        retry: ru ? "Повторить" : "Retry",
+      };
+    };
+
+    const showError = () => {
+      if (document.getElementById(ERROR_ID)) return true;
+      const message = document.querySelector(
+        "#starlight__search .pagefind-ui__message",
+      );
+      if (!message || !/searching|поиск/i.test(message.textContent ?? "")) {
+        return false;
+      }
+
+      const text = copy();
+      const box = document.createElement("div");
+      box.id = ERROR_ID;
+      box.setAttribute("role", "alert");
+      box.className = "search-error";
+      box.textContent = `${text.text} `;
+
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "search-error-retry";
+      retry.textContent = text.retry;
+      // Pagefind caches a failed module/worker for the lifetime of the page,
+      // so an in-place retry would stay broken. A reload is the only honest
+      // recovery and re-runs the whole search bootstrap.
+      retry.addEventListener("click", () => window.location.reload());
+
+      box.append(retry);
+      message.replaceWith(box);
+      return true;
+    };
+
+    // The rejection can land before Svelte has painted the "Searching..."
+    // message, so poll briefly for it instead of dropping the error.
+    let scheduled = false;
+    const notifyError = () => {
+      if (scheduled || document.getElementById(ERROR_ID)) return;
+      scheduled = true;
+      let tries = 0;
+      const check = () => {
+        scheduled = false;
+        if (showError() || ++tries >= 20) return;
+        scheduled = true;
+        window.setTimeout(check, 50);
+      };
+      window.setTimeout(check, 0);
+    };
+
+    // A failed dynamic import surfaces as an uncaught error in some browsers,
+    // a rejected promise in others; handle both.
+    window.addEventListener("unhandledrejection", notifyError);
+    window.addEventListener("error", notifyError, { capture: true });
+  })();
+</script>
+
+<style>
+  .search-error {
+    padding: 0.75rem 0;
+    color: var(--sl-color-gray-2);
+  }
+
+  .search-error-retry {
+    padding: 0.25rem 0.6rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.375rem;
+    background: var(--sl-color-black);
+    color: var(--sl-color-white);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .search-error-retry:hover {
+    border-color: var(--sl-color-gray-2);
+  }
+</style>

@@ -157,6 +157,51 @@ jobs:
             e2e/test-results/
           if-no-files-found: ignore
 
+  # The master panel has its own disposable stacks: global settings are
+  # destructive and must never touch the app/site/docs run above.
+  browser-e2e-admin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck -w e2e
+      - name: Install Chrome
+        run: npx playwright install --with-deps chrome
+      - name: Admin core (owner + operator paths)
+        env:
+          E2E_PORT: 4320
+          E2E_MAIL_PORT: 4820
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-admin-core
+        run: npm run test:admin -w e2e -- --output=test-results-admin-core --reporter=list
+      - name: Upload admin core report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-e2e-admin-core
+          path: |
+            e2e/playwright-report-admin-core/
+            e2e/test-results-admin-core/
+          if-no-files-found: ignore
+      - name: Admin global (own disposable stack, one worker)
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-admin-global
+        run: npm run test:admin:global -w e2e
+      - name: Upload admin global report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-e2e-admin-global
+          path: |
+            e2e/playwright-report-admin-global/
+            e2e/test-results-admin-global/
+            e2e/test-results-admin-global-email/
+          if-no-files-found: ignore
+
   # Render the marketing feature clips (TASK-128). Not on every PR — the clips
   # are committed, so this only re-renders on a version tag or a manual run, and
   # uploads them as an artifact to compare against what is committed.

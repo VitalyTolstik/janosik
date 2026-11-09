@@ -10,6 +10,7 @@ import type {
   BoardEnvelope,
   BoardInvitationDto,
   BoardMemberDto,
+  BoardPendingInvitationDto,
   BoardShareDto,
   BoardSummary,
   CommandRequest,
@@ -608,6 +609,14 @@ export class ApiClient {
 
   listMembers(boardId: string): Promise<BoardMemberDto[]> {
     return this.request<BoardMemberDto[]>(`/boards/${boardId}/members`);
+  }
+
+  listPendingInvitations(
+    boardId: string,
+  ): Promise<BoardPendingInvitationDto[]> {
+    return this.request<BoardPendingInvitationDto[]>(
+      `/boards/${boardId}/invitations`,
+    );
   }
 
   inviteMember(

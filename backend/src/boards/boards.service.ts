@@ -12,6 +12,7 @@ import type {
   BoardCardSearchResult,
   BoardEnvelope,
   BoardMemberDto,
+  BoardPendingInvitationDto,
   BoardState,
   BoardSummary,
 } from "@janosik/shared";
@@ -335,6 +336,30 @@ export class BoardsService {
       orderBy: { createdAt: "asc" },
     });
     return members.map(toMemberDto);
+  }
+
+  /**
+   * Pending invitations of a board (ADMIN only): the member list above shows
+   * accepted rows, so without this an inviter could neither see nor cancel a
+   * wrong address or role until the invitee answered.
+   */
+  async listPendingInvitations(
+    boardId: string,
+  ): Promise<BoardPendingInvitationDto[]> {
+    const rows = await this.prisma.boardMember.findMany({
+      where: { boardId, acceptedAt: null },
+      include: { user: true },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      displayName: row.user.displayName,
+      email: row.user.email,
+      role: row.role,
+      expiresAt: row.expiresAt?.getTime() ?? null,
+      createdAt: row.createdAt.getTime(),
+    }));
   }
 
   /**

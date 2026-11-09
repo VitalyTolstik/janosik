@@ -35,6 +35,7 @@ export default defineConfig({
       disable404Route: true,
       // Show the version the docs describe next to the title (TASK-132).
       components: {
+        Search: "./src/components/starlight/Search.astro",
         SiteTitle: "./src/components/starlight/SiteTitle.astro",
         SocialIcons: "./src/components/starlight/SocialIcons.astro",
       },

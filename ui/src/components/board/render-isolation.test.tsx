@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -188,6 +188,11 @@ describe("render isolation on a card edit (TASK-21.4.1)", () => {
     renderBoard("/board/b-1");
     const table = await screen.findByRole("table", {}, { timeout: 15_000 });
     fireEvent.click(within(table).getByText("Edited card"));
+    // A title click waits ~220 ms for the second click (inline rename); wait
+    // for the dialog and for the router's state update to settle before
+    // taking the render-count baseline.
+    await screen.findByRole("dialog");
+    await act(async () => {});
     const before = {
       neighbour: counter.fronts["Neighbour card"] ?? 0,
       otherColumnCard: counter.fronts["Other column card"] ?? 0,
