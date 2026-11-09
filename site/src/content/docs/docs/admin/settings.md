@@ -3,6 +3,13 @@ title: Email, security and operations
 description: The email service, OAuth login, security, traffic, the demo swarm, operations, communications, observability, and the user-facing announcements banner.
 ---
 
+:::note
+These pages are now tabs of the **Settings** hub (`/admin/settings?tab=…`).
+Communications and announcements moved to the **Communications** hub, and
+public shares are its third tab. Old URLs redirect. See
+[Admin redesign](../redesign/).
+:::
+
 The settings and operations pages configure the platform and run its
 maintenance. Writes on these pages are owner-only on the server; an operator
 sees the state read-only.

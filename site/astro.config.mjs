@@ -91,6 +91,7 @@ export default defineConfig({
           translations: { ru: "Админ-панель" },
           items: [
             { slug: "docs/admin" },
+            { slug: "docs/admin/redesign" },
             { slug: "docs/admin/monitoring" },
             { slug: "docs/admin/people" },
             { slug: "docs/admin/content" },

@@ -10,7 +10,14 @@ import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { EntityListSkeleton } from "./skeletons";
 import { useAdminList } from "./use-admin-list";
-import { Badge, ErrorState, PageHeader, Panel, SearchInput } from "./ui";
+import {
+  Badge,
+  ConfirmDialog,
+  ErrorState,
+  PageHeader,
+  Panel,
+  SearchInput,
+} from "./ui";
 
 /**
  * Public shares (TASK-58) — every read-only link minted against any board,
@@ -32,6 +39,9 @@ export function SharesPage() {
   );
   const { items: rows, reload } = list;
   const [busy, setBusy] = useState<string | null>(null);
+  const [pendingRevoke, setPendingRevoke] = useState<AdminShareRowDto | null>(
+    null,
+  );
   // Inline "copied" feedback (icon flips to a check), like the app's copy
   // chips — no toast for a copy.
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -213,7 +223,7 @@ export function SharesPage() {
                           title={t("admin.shares.revoke")}
                           disabled={busy === row.id}
                           data-testid={`admin-share-revoke-${row.id}`}
-                          onClick={() => void revoke(row.id)}
+                          onClick={() => setPendingRevoke(row)}
                         >
                           {busy === row.id ? (
                             <RefreshCw
@@ -233,6 +243,20 @@ export function SharesPage() {
           </table>
         )}
       </Panel>
+
+      <ConfirmDialog
+        open={pendingRevoke !== null}
+        title={t("admin.shares.confirm.title")}
+        body={t("admin.shares.confirm.body")}
+        confirmLabel={t("admin.shares.revoke")}
+        busy={pendingRevoke !== null && busy === pendingRevoke.id}
+        onConfirm={() => {
+          const id = pendingRevoke?.id;
+          setPendingRevoke(null);
+          if (id !== undefined) void revoke(id);
+        }}
+        onClose={() => setPendingRevoke(null)}
+      />
     </div>
   );
 }

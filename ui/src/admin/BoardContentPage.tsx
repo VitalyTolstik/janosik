@@ -169,10 +169,10 @@ export function BoardContentPage() {
   };
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
       <div className="flex items-center gap-2">
         <Link
-          to={routes.admin}
+          to={routes.adminBoardDetail(boardId)}
           className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
@@ -188,7 +188,7 @@ export function BoardContentPage() {
             <IdChip id={board.id} />
             <Button size="sm" variant="outline" onClick={load} disabled={busy}>
               <RotateCw className="h-3.5 w-3.5" aria-hidden />
-              {t("admin.common.retry")}
+              {t("admin.common.refresh")}
             </Button>
           </div>
         }
@@ -468,6 +468,6 @@ export function BoardContentPage() {
           }
         }}
       />
-    </>
+    </div>
   );
 }

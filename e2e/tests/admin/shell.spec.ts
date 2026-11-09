@@ -17,112 +17,114 @@ import { addAttachment, addComment } from "@/helpers/admin-content.js";
  * entity types, browser history, deep links and the unknown-route redirect.
  */
 
-const OWNER_NAV = [
-  { link: "Dashboard", path: "/admin", heading: "Master panel" },
-  { link: "Activity", path: "/admin/activity", heading: "Activity" },
-  { link: "Command log", path: "/admin/commands", heading: "Command log" },
-  { link: "Audit trail", path: "/admin/audit", heading: "Audit trail" },
+const OWNER_HUBS = [
+  { link: "Overview", path: "/admin", heading: "Master panel" },
   { link: "Users", path: "/admin/users", heading: "Users" },
-  { link: "Masters", path: "/admin/masters", heading: "Masters" },
   { link: "Boards", path: "/admin/boards", heading: "Boards" },
-  { link: "Cards", path: "/admin/cards", heading: "Cards" },
-  { link: "Columns", path: "/admin/columns", heading: "Columns" },
-  { link: "Labels", path: "/admin/labels", heading: "Labels" },
-  { link: "Checklists", path: "/admin/checklists", heading: "Checklists" },
-  { link: "Card links", path: "/admin/cardLinks", heading: "Card links" },
-  { link: "Comments", path: "/admin/comments", heading: "Comments" },
-  { link: "Attachments", path: "/admin/attachments", heading: "Attachments" },
-  { link: "Sessions", path: "/admin/sessions", heading: "Sessions" },
-  { link: "API tokens", path: "/admin/tokens", heading: "API tokens" },
-  { link: "Email service", path: "/admin/email", heading: "Email service" },
-  { link: "OAuth login", path: "/admin/oauth", heading: "OAuth login" },
-  { link: "Security", path: "/admin/security", heading: "Security" },
-  {
-    link: "Traffic & limits",
-    path: "/admin/traffic",
-    heading: "Traffic & limits",
-  },
-  { link: "Demo runner", path: "/admin/demo", heading: "Demo runner" },
-  { link: "Public shares", path: "/admin/shares", heading: "Public shares" },
-  { link: "Operations", path: "/admin/ops", heading: "Operations" },
+  { link: "Moderation", path: "/admin/moderation", heading: "Comments" },
+  { link: "Audit & activity", path: "/admin/audit", heading: "Audit trail" },
   {
     link: "Communications",
-    path: "/admin/comms",
+    path: "/admin/communications",
     heading: "Communications",
   },
-  {
-    link: "Announcements",
-    path: "/admin/announcements",
-    heading: "Announcements",
-  },
-  {
-    link: "Observability",
-    path: "/admin/observability",
-    heading: "Observability",
-  },
+  { link: "Access & security", path: "/admin/access", heading: "Sessions" },
+  { link: "Settings", path: "/admin/settings", heading: "Operations" },
 ];
 
-const OWNER_NAV_RU = [
-  { link: "Дашборд", path: "/admin", heading: "Мастер-панель" },
-  { link: "Активность", path: "/admin/activity", heading: "Активность" },
-  {
-    link: "Журнал команд",
-    path: "/admin/commands",
-    heading: "Журнал команд",
-  },
-  { link: "Аудит", path: "/admin/audit", heading: "Аудит" },
+/** Every legacy destination survives as a tab inside one of the eight hubs. */
+const OWNER_TABS = [
+  { hub: "Boards", tab: "Cards", heading: "Cards" },
+  { hub: "Boards", tab: "Columns", heading: "Columns" },
+  { hub: "Boards", tab: "Labels", heading: "Labels" },
+  { hub: "Boards", tab: "Checklists", heading: "Checklists" },
+  { hub: "Boards", tab: "Card links", heading: "Card links" },
+  { hub: "Moderation", tab: "Attachments", heading: "Attachments" },
+  { hub: "Audit & activity", tab: "Command log", heading: "Command log" },
+  { hub: "Audit & activity", tab: "Activity", heading: "Activity" },
+  { hub: "Communications", tab: "Announcements", heading: "Announcements" },
+  { hub: "Communications", tab: "Public shares", heading: "Public shares" },
+  { hub: "Access & security", tab: "API tokens", heading: "API tokens" },
+  { hub: "Access & security", tab: "Masters", heading: "Masters" },
+  { hub: "Settings", tab: "Email service", heading: "Email service" },
+  { hub: "Settings", tab: "OAuth login", heading: "OAuth login" },
+  { hub: "Settings", tab: "Security", heading: "Security" },
+  { hub: "Settings", tab: "Traffic & limits", heading: "Traffic & limits" },
+  { hub: "Settings", tab: "Observability", heading: "Observability" },
+  { hub: "Settings", tab: "Demo runner", heading: "Demo runner" },
+];
+
+const OWNER_HUBS_RU = [
+  { link: "Обзор", path: "/admin", heading: "Мастер-панель" },
   { link: "Пользователи", path: "/admin/users", heading: "Пользователи" },
-  { link: "Мастера", path: "/admin/masters", heading: "Мастера" },
   { link: "Доски", path: "/admin/boards", heading: "Доски" },
-  { link: "Карточки", path: "/admin/cards", heading: "Карточки" },
-  { link: "Колонки", path: "/admin/columns", heading: "Колонки" },
-  { link: "Метки", path: "/admin/labels", heading: "Метки" },
-  { link: "Чек-листы", path: "/admin/checklists", heading: "Чек-листы" },
+  { link: "Модерация", path: "/admin/moderation", heading: "Комментарии" },
+  { link: "Аудит и активность", path: "/admin/audit", heading: "Аудит" },
   {
-    link: "Связи карточек",
-    path: "/admin/cardLinks",
-    heading: "Связи карточек",
+    link: "Коммуникации",
+    path: "/admin/communications",
+    heading: "Коммуникации",
   },
-  { link: "Комментарии", path: "/admin/comments", heading: "Комментарии" },
-  { link: "Вложения", path: "/admin/attachments", heading: "Вложения" },
-  { link: "Сессии", path: "/admin/sessions", heading: "Сессии" },
-  { link: "API-токены", path: "/admin/tokens", heading: "API-токены" },
-  { link: "Email-рассылка", path: "/admin/email", heading: "Email-рассылка" },
-  { link: "OAuth-вход", path: "/admin/oauth", heading: "OAuth-вход" },
-  { link: "Безопасность", path: "/admin/security", heading: "Безопасность" },
   {
-    link: "Трафик и лимиты",
-    path: "/admin/traffic",
-    heading: "Трафик и лимиты",
+    link: "Доступ и безопасность",
+    path: "/admin/access",
+    heading: "Сессии",
   },
-  { link: "Демо-запуск", path: "/admin/demo", heading: "Демо-запуск" },
+  { link: "Настройки", path: "/admin/settings", heading: "Эксплуатация" },
+];
+
+const OWNER_TABS_RU = [
+  { hub: "Доски", tab: "Карточки", heading: "Карточки" },
+  { hub: "Доски", tab: "Колонки", heading: "Колонки" },
+  { hub: "Доски", tab: "Метки", heading: "Метки" },
+  { hub: "Доски", tab: "Чек-листы", heading: "Чек-листы" },
+  { hub: "Доски", tab: "Связи карточек", heading: "Связи карточек" },
+  { hub: "Модерация", tab: "Вложения", heading: "Вложения" },
+  { hub: "Аудит и активность", tab: "Журнал команд", heading: "Журнал команд" },
+  { hub: "Аудит и активность", tab: "Активность", heading: "Активность" },
+  { hub: "Коммуникации", tab: "Объявления", heading: "Объявления" },
   {
-    link: "Публичные ссылки",
-    path: "/admin/shares",
+    hub: "Коммуникации",
+    tab: "Публичные ссылки",
     heading: "Публичные ссылки",
   },
-  { link: "Эксплуатация", path: "/admin/ops", heading: "Эксплуатация" },
-  { link: "Коммуникации", path: "/admin/comms", heading: "Коммуникации" },
-  { link: "Объявления", path: "/admin/announcements", heading: "Объявления" },
+  { hub: "Доступ и безопасность", tab: "API-токены", heading: "API-токены" },
+  { hub: "Доступ и безопасность", tab: "Мастера", heading: "Мастера" },
+  { hub: "Настройки", tab: "Email-рассылка", heading: "Email-рассылка" },
+  { hub: "Настройки", tab: "OAuth-вход", heading: "OAuth-вход" },
+  { hub: "Настройки", tab: "Безопасность", heading: "Безопасность" },
   {
-    link: "Наблюдаемость",
-    path: "/admin/observability",
-    heading: "Наблюдаемость",
+    hub: "Настройки",
+    tab: "Трафик и лимиты",
+    heading: "Трафик и лимиты",
   },
+  { hub: "Настройки", tab: "Наблюдаемость", heading: "Наблюдаемость" },
+  { hub: "Настройки", tab: "Демо-запуск", heading: "Демо-запуск" },
 ];
 
-test("NAV-1: every owner sidebar entry opens its route and heading", async ({
+test("NAV-1: every owner hub and tab opens its route and heading", async ({
   page,
 }) => {
   test.slow();
   await loginAsMaster(page, ownerCredentials());
   const sidebar = page.getByTestId("admin-sidebar");
 
-  for (const item of OWNER_NAV) {
-    await sidebar.getByRole("link", { name: item.link, exact: true }).click();
+  for (const hub of OWNER_HUBS) {
+    await sidebar.getByRole("link", { name: hub.link, exact: true }).click();
     await expect(page).toHaveURL((url) =>
-      url.pathname.replace(/\/+$/, "").endsWith(item.path),
+      url.pathname.replace(/\/+$/, "").endsWith(hub.path),
     );
+    await expect(
+      page.getByRole("heading", { name: hub.heading, exact: true }),
+    ).toBeVisible();
+  }
+
+  for (const item of OWNER_TABS) {
+    await sidebar.getByRole("link", { name: item.hub, exact: true }).click();
+    await page
+      .getByTestId("admin-hub-tabs")
+      .getByRole("tab", { name: item.tab, exact: true })
+      .click();
     await expect(
       page.getByRole("heading", { name: item.heading, exact: true }),
     ).toBeVisible();
@@ -252,7 +254,7 @@ test("NAV-5: omnibox finds all six entity types and opens a card with the keyboa
   await expect(page).toHaveURL(new RegExp(`/admin/cards/${cardId}$`));
 });
 
-test("ADM-X2: all 26 entries work in Russian and the choice survives reload", async ({
+test("ADM-X2: all hubs and tabs work in Russian and the choice survives reload", async ({
   page,
 }) => {
   test.slow();
@@ -261,22 +263,34 @@ test("ADM-X2: all 26 entries work in Russian and the choice survives reload", as
   await page.getByRole("menuitem", { name: "Русский" }).click();
   const sidebar = page.getByTestId("admin-sidebar");
 
-  for (const item of OWNER_NAV_RU) {
-    await sidebar.getByRole("link", { name: item.link, exact: true }).click();
+  for (const hub of OWNER_HUBS_RU) {
+    await sidebar.getByRole("link", { name: hub.link, exact: true }).click();
     await expect(page).toHaveURL((url) =>
-      url.pathname.replace(/\/+$/, "").endsWith(item.path),
+      url.pathname.replace(/\/+$/, "").endsWith(hub.path),
     );
+    await expect(
+      page.getByRole("heading", { name: hub.heading, exact: true }),
+    ).toBeVisible();
+  }
+
+  for (const item of OWNER_TABS_RU) {
+    await sidebar.getByRole("link", { name: item.hub, exact: true }).click();
+    await page
+      .getByTestId("admin-hub-tabs")
+      .getByRole("tab", { name: item.tab, exact: true })
+      .click();
     await expect(
       page.getByRole("heading", { name: item.heading, exact: true }),
     ).toBeVisible();
   }
+
   await page.reload({ waitUntil: "domcontentloaded" });
   const sidebarAfterReload = page.getByTestId("admin-sidebar");
   await expect(
-    sidebarAfterReload.getByRole("link", { name: "Дашборд", exact: true }),
+    sidebarAfterReload.getByRole("link", { name: "Обзор", exact: true }),
   ).toBeVisible();
   await sidebarAfterReload
-    .getByRole("link", { name: "Дашборд", exact: true })
+    .getByRole("link", { name: "Обзор", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "Мастер-панель", exact: true }),

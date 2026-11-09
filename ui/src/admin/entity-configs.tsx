@@ -118,6 +118,23 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             ),
           },
           {
+            label: t("admin.common.id"),
+            render: (user) => <IdCell id={user.id} />,
+          },
+          {
+            label: t("admin.userDetail.verified"),
+            render: (user) =>
+              user.emailVerifiedAt === null ? (
+                <Badge variant="warning">
+                  {t("admin.userDetail.unverified")}
+                </Badge>
+              ) : (
+                <Badge variant="success">
+                  {t("admin.userDetail.verified")}
+                </Badge>
+              ),
+          },
+          {
             label: t("admin.users.column.created"),
             render: (user) => <DateCell value={user.createdAt} />,
           },
@@ -1455,7 +1472,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             render: (entry) =>
               entry.adminId ? (
                 <EntityLink
-                  to={`/admin/masters`}
+                  to="/admin/access?tab=masters"
                   className="font-normal"
                   copyValue={entry.adminEmail ?? undefined}
                 >

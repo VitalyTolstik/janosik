@@ -74,6 +74,7 @@ describe("SharesPage", () => {
     expect(table).toHaveTextContent("/s/abc123");
 
     fireEvent.click(screen.getByTestId("admin-share-revoke-sh1"));
+    fireEvent.click(screen.getByTestId("admin-confirm-accept"));
     await waitFor(() => expect(server.shares[0]?.revokedAt).not.toBeNull());
   });
 });

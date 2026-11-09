@@ -339,6 +339,7 @@ describe("Undo contract: command then inverse (e2e)", () => {
           `${type}: undo did not restore the aggregate\n${
             error instanceof Error ? error.message : String(error)
           }`,
+          { cause: error },
         );
       }
     }

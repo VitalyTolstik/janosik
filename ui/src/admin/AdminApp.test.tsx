@@ -492,7 +492,7 @@ describe("AdminApp", () => {
       screen.queryByRole("link", { name: t("admin.nav.masters") }),
     ).toBeNull();
     expect(
-      screen.queryByRole("link", { name: t("admin.nav.dashboard") }),
+      screen.queryByRole("link", { name: t("admin.hub.overview") }),
     ).not.toBeNull();
   });
 

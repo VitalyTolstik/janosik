@@ -670,7 +670,7 @@ export class CommsService {
       );
     }
 
-    let sourceLocale: AnnouncementLocale | null = null;
+    let sourceLocale: AnnouncementLocale | null;
     let fallbackPolicy: AnnouncementFallbackPolicy;
     let translations: TranslationInput[];
     let legacy: { title: string; body: string } | null = null;

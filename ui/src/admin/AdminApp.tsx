@@ -1,27 +1,29 @@
-import { Navigate, Route, Routes, useParams } from "react-router-dom";
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
 import { AdminAuthProvider, useAdminAuth } from "./AdminAuthContext";
 import { AdminLoginPage } from "./AdminLoginPage";
 import { AdminShell } from "./AdminShell";
 import { DashboardPage } from "./DashboardPage";
-import { EmailSettingsPage } from "./EmailSettingsPage";
-import { OAuthSettingsPage } from "./OAuthSettingsPage";
-import { TrafficSettingsPage } from "./TrafficSettingsPage";
-import { DemoPage } from "./DemoPage";
-import { SharesPage } from "./SharesPage";
-import { OpsPage } from "./OpsPage";
-import { CommsPage } from "./CommsPage";
-import { ObservabilityPage } from "./ObservabilityPage";
-import { SecurityPage } from "./SecurityPage";
 import { EntityPage } from "./EntityPage";
 import { useEntityConfig } from "./entity-configs";
 import { UserDetailPage } from "./UserDetailPage";
 import { CardDetailPage } from "./CardDetailPage";
 import { BoardDetailPage } from "./BoardDetailPage";
-import { MastersPage } from "./MastersPage";
 import { BoardContentPage } from "./BoardContentPage";
 import { BoardWorkflowPage } from "./BoardWorkflowPage";
+import { BoardsHubPage } from "./hubs/BoardsHubPage";
+import { ModerationHubPage } from "./hubs/ModerationHubPage";
+import { AuditHubPage } from "./hubs/AuditHubPage";
+import { AccessHubPage } from "./hubs/AccessHubPage";
+import { CommunicationsHubPage } from "./hubs/CommunicationsHubPage";
+import { SettingsHubPage } from "./hubs/SettingsHubPage";
 
 /**
  * Master panel entry (TASK-36), lazy-loaded from `/admin/*`.
@@ -30,9 +32,9 @@ import { BoardWorkflowPage } from "./BoardWorkflowPage";
  * `AuthProvider`/`BoardProvider`, and the panel talks through its own API
  * client with its own token. The two sessions cannot leak into each other.
  *
- * TASK-48: every entity list is the same generic `EntityPage` driven by a
- * per-entity config; users, boards and cards additionally expose detail
- * pages with the full relationship graph.
+ * The redesigned IA exposes eight hubs. Every legacy path below redirects to
+ * its hub tab and keeps the query string, so old deep links and bookmarks do
+ * not break. Detail routes remain their own pages.
  */
 
 function EntityRoute({
@@ -60,6 +62,18 @@ function BoardDetailRoute() {
   return <BoardDetailPage key={boardId} />;
 }
 
+/**
+ * Sends a legacy path to its hub tab while keeping every unrelated query
+ * parameter (`?search=…`, `?status=…`) intact.
+ */
+function LegacyRedirect({ to, tab }: { to: string; tab?: string }) {
+  const { search } = useLocation();
+  const params = new URLSearchParams(search);
+  if (tab !== undefined) params.set("tab", tab);
+  const query = params.toString();
+  return <Navigate to={query === "" ? to : `${to}?${query}`} replace />;
+}
+
 function AdminGate() {
   const { status } = useAdminAuth();
 
@@ -80,49 +94,131 @@ function AdminGate() {
     <Routes>
       <Route element={<AdminShell />}>
         <Route index element={<DashboardPage />} />
+
         <Route path="users" element={<EntityRoute entity="users" />} />
         <Route path="users/:userId" element={<UserDetailRoute />} />
-        <Route path="boards" element={<EntityRoute entity="boards" />} />
+
+        <Route path="boards" element={<BoardsHubPage />} />
         <Route path="boards/:boardId" element={<BoardDetailRoute />} />
         <Route path="boards/:boardId/content" element={<BoardContentPage />} />
         <Route
           path="boards/:boardId/workflow"
           element={<BoardWorkflowPage />}
         />
-        <Route path="cards" element={<EntityRoute entity="cards" />} />
         <Route path="cards/:cardId" element={<CardDetailRoute />} />
-        <Route path="columns" element={<EntityRoute entity="columns" />} />
-        <Route path="labels" element={<EntityRoute entity="labels" />} />
+
+        <Route path="moderation" element={<ModerationHubPage />} />
+        <Route path="audit" element={<AuditHubPage />} />
+        <Route path="communications" element={<CommunicationsHubPage />} />
+        <Route path="access" element={<AccessHubPage />} />
+        <Route path="settings" element={<SettingsHubPage />} />
+
+        {/* Legacy content browsers → Boards hub tabs. */}
+        <Route
+          path="cards"
+          element={<LegacyRedirect to="/admin/boards" tab="cards" />}
+        />
+        <Route
+          path="columns"
+          element={<LegacyRedirect to="/admin/boards" tab="columns" />}
+        />
+        <Route
+          path="labels"
+          element={<LegacyRedirect to="/admin/boards" tab="labels" />}
+        />
         <Route
           path="checklists"
-          element={<EntityRoute entity="checklists" />}
+          element={<LegacyRedirect to="/admin/boards" tab="checklists" />}
         />
-        <Route path="cardLinks" element={<EntityRoute entity="cardLinks" />} />
-        <Route path="comments" element={<EntityRoute entity="comments" />} />
+        <Route
+          path="cardLinks"
+          element={<LegacyRedirect to="/admin/boards" tab="links" />}
+        />
+
+        {/* Legacy moderation pages. */}
+        <Route
+          path="comments"
+          element={<LegacyRedirect to="/admin/moderation" tab="comments" />}
+        />
         <Route
           path="attachments"
-          element={<EntityRoute entity="attachments" />}
+          element={<LegacyRedirect to="/admin/moderation" tab="attachments" />}
         />
-        <Route path="activity" element={<EntityRoute entity="activity" />} />
-        <Route path="commands" element={<EntityRoute entity="commands" />} />
-        <Route path="log" element={<Navigate to="/admin/commands" replace />} />
-        <Route path="sessions" element={<EntityRoute entity="sessions" />} />
-        <Route path="tokens" element={<EntityRoute entity="tokens" />} />
-        <Route path="email" element={<EmailSettingsPage />} />
-        <Route path="oauth" element={<OAuthSettingsPage />} />
-        <Route path="traffic" element={<TrafficSettingsPage />} />
-        <Route path="demo" element={<DemoPage />} />
-        <Route path="shares" element={<SharesPage />} />
-        <Route path="ops" element={<OpsPage />} />
-        <Route path="comms" element={<CommsPage />} />
+
+        {/* Legacy audit pages. */}
+        <Route
+          path="activity"
+          element={<LegacyRedirect to="/admin/audit" tab="activity" />}
+        />
+        <Route
+          path="commands"
+          element={<LegacyRedirect to="/admin/audit" tab="commands" />}
+        />
+        <Route
+          path="log"
+          element={<LegacyRedirect to="/admin/audit" tab="commands" />}
+        />
+
+        {/* Legacy access pages. */}
+        <Route
+          path="sessions"
+          element={<LegacyRedirect to="/admin/access" tab="sessions" />}
+        />
+        <Route
+          path="tokens"
+          element={<LegacyRedirect to="/admin/access" tab="tokens" />}
+        />
+        <Route
+          path="masters"
+          element={<LegacyRedirect to="/admin/access" tab="masters" />}
+        />
+
+        {/* Legacy communications pages. */}
+        <Route
+          path="comms"
+          element={
+            <LegacyRedirect to="/admin/communications" tab="announcements" />
+          }
+        />
         <Route
           path="announcements"
-          element={<EntityRoute entity="announcements" />}
+          element={<LegacyRedirect to="/admin/communications" tab="history" />}
         />
-        <Route path="observability" element={<ObservabilityPage />} />
-        <Route path="security" element={<SecurityPage />} />
-        <Route path="audit" element={<EntityRoute entity="audit" />} />
-        <Route path="masters" element={<MastersPage />} />
+        <Route
+          path="shares"
+          element={<LegacyRedirect to="/admin/communications" tab="shares" />}
+        />
+
+        {/* Legacy settings pages. */}
+        <Route
+          path="ops"
+          element={<LegacyRedirect to="/admin/settings" tab="general" />}
+        />
+        <Route
+          path="email"
+          element={<LegacyRedirect to="/admin/settings" tab="email" />}
+        />
+        <Route
+          path="oauth"
+          element={<LegacyRedirect to="/admin/settings" tab="oauth" />}
+        />
+        <Route
+          path="security"
+          element={<LegacyRedirect to="/admin/settings" tab="security" />}
+        />
+        <Route
+          path="traffic"
+          element={<LegacyRedirect to="/admin/settings" tab="traffic" />}
+        />
+        <Route
+          path="observability"
+          element={<LegacyRedirect to="/admin/settings" tab="observability" />}
+        />
+        <Route
+          path="demo"
+          element={<LegacyRedirect to="/admin/settings" tab="demo" />}
+        />
+
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
     </Routes>

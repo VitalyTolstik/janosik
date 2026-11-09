@@ -14,6 +14,32 @@
 
 ---
 
+## Редизайн мастер-панели (ветка `feat/admin-redesign`, 2026-11)
+
+Направление — **«Dense data console» с брендовым исключением для входа**.
+Исследование и прототип: `audits/admin-redesign-research.md` (не входит в
+репозиторий) и `design/admin-redesign.html`. Пользовательская документация:
+`site/src/content/docs/docs/admin/redesign.md` и RU-версия.
+
+| Фаза | Содержание | Статус |
+| --- | --- | --- |
+| 0. Foundations | admin-токены, плотные примитивы, breadcrumbs, hub-модель | ✅ в этой ветке |
+| 1. Login + shell | split login, 8 хабов, rail/sheet, breadcrumbs, палитра, роли | ✅ в этой ветке |
+| 2. Overview + Users | attention-first статус-строка, 6+2 KPI, users list/detail, URL-табы, keyboard rows, page size, empty/error/403 | ✅ в этой ветке |
+| 3. Boards + Moderation | Boards hub с data-браузерами, Moderation hub, исправленный back-link редактора | ✅ в этой ветке (3-pane inspector отложен) |
+| 4. Audit + Comms + Access | аудит/команды/активность, communications с объявлениями и shares, sessions/tokens/masters | ✅ в этой ветке |
+| 5. Settings + Ops | Settings hub на 7 вкладок, единый read-only баннер, owner-only границы | ✅ в этой ветке |
+| 6. Polish + docs | E2E, docs EN/RU, CHANGELOG, ROADMAP, responsive 390/834/1280 | ✅ в этой ветке |
+| P1 | серверная сортировка, saved views, column chooser, inline edit, audit drawer, 3-pane inspector, bulk users | ⏳ отложено |
+| P2 | virtualization, recent pages server-side, role preview, OIDC для мастеров | ⏳ отложено |
+
+Инварианты, которые нельзя терять при следующих правках: 8 хабов и редиректы
+старых URL; `data-testid` из отчёта; OWNER/OPERATOR проверки на сервере;
+отдельная мастер-сессия; `janosik.admin.sidebar` и `janosik.admin.density`;
+все 26 возможностей доступны как табы.
+
+---
+
 ## 0. Как работать с этим файлом (для ИИ-агентов)
 
 1. **Одна задача = одна ветка = один пулл-реквест.** Перед началом итерации

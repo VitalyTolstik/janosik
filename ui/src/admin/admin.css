@@ -1,0 +1,348 @@
+/* ---------------------------------------------------------------------------
+ * Admin console design layer (TASK admin redesign).
+ *
+ * The master panel is a dense data console, not the consumer board UI. This
+ * file is the single place where its typography, row/control heights, sidebar
+ * widths and responsive behaviour live. Brand colour tokens still come from
+ * `brand/src/tokens.css`; only admin-specific measurements are added here.
+ *
+ * Density is a preference (`janosik.admin.density`) and never applies to the
+ * login screen or to touch targets on phones.
+ * ------------------------------------------------------------------------- */
+
+.admin-app {
+  --admin-sidebar-width: 232px;
+  --admin-sidebar-rail-width: 64px;
+  --admin-sidebar-sheet-width: 280px;
+  --admin-topbar-height: 44px;
+  --admin-page-pad: 20px;
+  --admin-row-height: 36px;
+  --admin-head-height: 30px;
+  --admin-control-height: 32px;
+  --admin-radius: 8px;
+  --admin-text-2xs: 10px;
+  --admin-text-xs: 11px;
+  --admin-text-sm: 12px;
+  --admin-text-md: 13px;
+  --admin-text-lg: 15px;
+  --admin-text-xl: 20px;
+  --admin-text-2xl: 26px;
+  color-scheme: light dark;
+}
+
+.admin-app[data-density="compact"] {
+  --admin-page-pad: 15px;
+  --admin-row-height: 30px;
+  --admin-head-height: 28px;
+  --admin-control-height: 28px;
+}
+
+/* --------------------------------------------------------------- shell ---- */
+
+.admin-shell {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--background);
+}
+
+.admin-sidebar {
+  width: var(--admin-sidebar-width);
+  transition: width 160ms ease;
+}
+
+.admin-app[data-collapsed="true"] .admin-sidebar {
+  width: var(--admin-sidebar-rail-width);
+}
+
+.admin-main {
+  min-width: 0;
+}
+
+.admin-topbar {
+  height: var(--admin-topbar-height);
+}
+
+.admin-content {
+  padding: var(--admin-page-pad);
+}
+
+.admin-content:has(> .admin-page--flush) {
+  padding: 0;
+}
+
+.admin-nav-item[aria-current="page"] {
+  background: color-mix(in oklab, var(--primary) 15%, transparent);
+  color: var(--foreground);
+}
+
+.admin-nav-item[aria-current="page"]::before {
+  position: absolute;
+  inset-block: 7px;
+  inset-inline-start: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--primary);
+  content: "";
+}
+
+.admin-scrim {
+  background: color-mix(in oklab, #02060c 72%, transparent);
+}
+
+/* Visually hidden until focused, but never a flex item in the shell row. */
+.admin-skip-link {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.admin-skip-link:focus {
+  position: fixed;
+  z-index: 100;
+  top: 8px;
+  left: 8px;
+  width: auto;
+  height: auto;
+  margin: 0;
+  clip: auto;
+  overflow: visible;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--admin-text-sm);
+  outline: 2px solid var(--ring);
+}
+
+/* --------------------------------------------------------------- tables --- */
+
+.admin-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.admin-table th {
+  height: var(--admin-head-height);
+  padding-block: 0;
+}
+
+.admin-table td {
+  height: var(--admin-row-height);
+  padding-block: 0;
+}
+
+.admin-table tbody tr {
+  outline: none;
+}
+
+.admin-table tbody tr:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.admin-table tbody tr[data-clickable="true"]:focus-visible {
+  background: color-mix(in oklab, var(--primary) 10%, transparent);
+}
+
+.admin-table tbody tr[data-selected="true"] {
+  background: color-mix(in oklab, var(--primary) 8%, transparent);
+}
+
+/* Keep the identity column anchored on tablets where the table scrolls. */
+@media (min-width: 640px) and (max-width: 959px) {
+  .admin-table th:first-child,
+  .admin-table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--card);
+  }
+  .admin-table th:first-child {
+    z-index: 12;
+  }
+}
+
+/* Phone: one row becomes a card with labelled fields. `data-label` is
+   rendered by the Td primitive, so no column loses its meaning. */
+@media (max-width: 639px) {
+  .admin-table-scroll {
+    max-height: none !important;
+    overflow-x: visible;
+  }
+  .admin-table,
+  .admin-table tbody {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+  .admin-table thead {
+    display: none;
+  }
+  .admin-table tbody tr {
+    display: block;
+    margin: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--admin-radius);
+    background: color-mix(in oklab, var(--card) 92%, transparent);
+  }
+  .admin-table tbody tr + tr {
+    margin-top: 8px;
+  }
+  .admin-table td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    width: auto !important;
+    height: auto;
+    padding: 3px 0;
+    border: 0;
+    white-space: normal;
+    text-align: right;
+  }
+  .admin-table td::before {
+    flex: 0 0 auto;
+    color: var(--muted-foreground);
+    content: attr(data-label);
+    font-size: var(--admin-text-xs);
+    text-align: left;
+  }
+  .admin-table td[data-label=""]::before {
+    display: none;
+  }
+  .admin-table td[data-label=""] {
+    justify-content: flex-end;
+    padding-top: 6px;
+  }
+}
+
+/* --------------------------------------------------------------- login ---- */
+
+.admin-login {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+  padding: 48px 20px;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.admin-login-tools {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-login-pane {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 24rem;
+  padding: 0;
+}
+
+.admin-login-form-wrap {
+  width: 100%;
+  max-width: none;
+}
+
+@media (max-width: 520px) {
+  .admin-login {
+    padding: 64px 16px 32px;
+  }
+  .admin-login-tools {
+    top: 12px;
+    right: 12px;
+  }
+  .admin-login-pane {
+    max-width: none;
+  }
+}
+
+/* --------------------------------------------------------------- misc ----- */
+
+.admin-tab-strip {
+  scrollbar-width: none;
+}
+
+.admin-tab-strip::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .admin-sidebar,
+  .admin-app[data-collapsed] .admin-sidebar {
+    position: fixed;
+    z-index: 60;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: var(--admin-sidebar-sheet-width);
+    transform: translateX(-102%);
+    transition: transform 180ms ease;
+    box-shadow: 24px 0 60px rgb(0 0 0 / 0.35);
+  }
+  .admin-app[data-mobile-open="true"] .admin-sidebar {
+    transform: translateX(0);
+  }
+  .admin-main {
+    width: 100%;
+  }
+  .admin-topbar {
+    padding-inline: 12px;
+  }
+}
+
+@media (min-width: 761px) {
+  .admin-sidebar .admin-mobile-only {
+    display: none;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 959px) {
+  .admin-sidebar {
+    width: var(--admin-sidebar-rail-width);
+  }
+  .admin-sidebar .admin-hide-rail {
+    display: none;
+  }
+  .admin-sidebar .admin-nav-item {
+    justify-content: center;
+    padding-inline: 0;
+  }
+  .admin-sidebar > a:first-child {
+    justify-content: center;
+    padding-inline: 8px;
+  }
+  .admin-sidebar-toggle {
+    display: none;
+  }
+}
+
+@media (min-width: 960px) {
+  .admin-mobile-menu {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-sidebar {
+    transition: none;
+  }
+}

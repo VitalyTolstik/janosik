@@ -33,6 +33,14 @@ test("hides owner-only navigation entries from an operator", async ({
       0,
     );
   }
+
+  // Masters is not even a tab in the operator's Access hub; the limit is
+  // enforced by the server anyway, but the UI should not advertise it.
+  await sidebar
+    .getByRole("link", { name: "Access & security", exact: true })
+    .click();
+  await expect(page.getByTestId("admin-hub-tab-sessions")).toBeVisible();
+  await expect(page.getByTestId("admin-hub-tab-masters")).toHaveCount(0);
 });
 
 test("refuses the masters area to an operator on a direct URL", async ({
@@ -50,7 +58,10 @@ test("refuses the masters area to an operator on a direct URL", async ({
   await page.goto(adminPath("masters"), { waitUntil: "domcontentloaded" });
   await forbidden;
 
-  await expect(page.getByText("Could not load the data")).toBeVisible();
+  await expect(page.getByTestId("admin-forbidden-state")).toBeVisible();
+  await expect(
+    page.getByText("Owner rights required", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByTestId("admin-master-password")).toHaveCount(0);
 });
 

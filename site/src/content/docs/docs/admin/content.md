@@ -3,6 +3,14 @@ title: Boards, cards and content
 description: Boards and the board content editor, cards and card detail, and the columns, labels, checklists, links, comments, attachments, sessions, tokens and shares browsers.
 ---
 
+:::note
+Boards, cards, columns, labels, checklists and card links are tabs of the
+**Boards** hub (`/admin/boards?tab=…`). Comments and attachments live in
+**Moderation**, and sessions, tokens and public shares live in **Access &
+security** and **Communications**. Every old URL redirects. See
+[Admin redesign](../redesign/).
+:::
+
 The content section provides tools for daily moderation. It exposes boards,
 cards and every board-scoped model the panel can list, plus the session, token
 and public share browsers that sit under security.

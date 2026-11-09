@@ -39,6 +39,9 @@ export interface AdminListState<T> {
   offset: number;
   setOffset: (value: number) => void;
   limit: number;
+  setLimit: (value: number) => void;
+  /** HTTP status of the failed request (`null` when the last answer was ok). */
+  errorStatus: number | null;
   reload: () => void;
 }
 
@@ -47,13 +50,14 @@ interface ListResult<T> {
   items: T[];
   total: number;
   error: boolean;
+  errorStatus?: number | null;
 }
 
 export function useAdminList<T>(
   fetcher: (params: AdminListParams) => Promise<AdminPage<T>>,
   options: { limit?: number } = {},
 ): AdminListState<T> {
-  const limit = options.limit ?? 50;
+  const [limit, setLimitState] = useState(options.limit ?? 50);
   const fetcherRef = useRef(fetcher);
   useEffect(() => {
     fetcherRef.current = fetcher;
@@ -90,11 +94,25 @@ export function useAdminList<T>(
           items: page.items,
           total: page.total,
           error: false,
+          errorStatus: null,
         });
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (cancelled) return;
-        setResult({ key: requestKey, items: [], total: 0, error: true });
+        const status =
+          typeof error === "object" &&
+          error !== null &&
+          "status" in error &&
+          typeof (error as { status?: unknown }).status === "number"
+            ? (error as { status: number }).status
+            : null;
+        setResult({
+          key: requestKey,
+          items: [],
+          total: 0,
+          error: true,
+          errorStatus: status,
+        });
       });
     return () => {
       cancelled = true;
@@ -121,6 +139,11 @@ export function useAdminList<T>(
     setOffset(0);
   }, []);
 
+  const setLimit = useCallback((value: number) => {
+    setLimitState(value);
+    setOffset(0);
+  }, []);
+
   const reload = useCallback(() => {
     setReloadKey((key) => key + 1);
   }, []);
@@ -142,6 +165,8 @@ export function useAdminList<T>(
     offset,
     setOffset,
     limit,
+    setLimit,
+    errorStatus: result?.errorStatus ?? null,
     reload,
   };
 }

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Activity,
+  AlertTriangle,
+  ArrowRight,
   BarChart3,
   CreditCard,
   Database,
@@ -12,6 +14,7 @@ import {
   KanbanSquare,
 } from "lucide-react";
 import type { AdminAuditRowDto, AdminMetricsDto } from "@janosik/shared";
+import { Button } from "@/components/ui/button";
 import { useHour12, useI18n, formatDate } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { adminApi } from "./admin-client";
@@ -69,11 +72,54 @@ function StatCard({
 function RuntimeItem({ label, value }: { label: string; value: string }) {
   return (
     <span className="flex items-baseline gap-1.5">
-      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+      <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
         {label}
       </span>
-      <span className="font-mono text-xs text-foreground">{value}</span>
+      <span className="font-mono text-[11px] text-foreground">{value}</span>
     </span>
+  );
+}
+
+function AttentionItem({
+  icon: Icon,
+  label,
+  value,
+  hint,
+  to,
+}: {
+  icon: typeof Users;
+  label: string;
+  value: number;
+  hint: string;
+  to: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="group flex items-start gap-2.5 rounded-lg border border-border bg-card/60 px-3 py-2.5 transition-colors hover:border-primary/30 hover:bg-card"
+      title={hint}
+    >
+      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-warning/25 bg-warning/10 text-warning">
+        <Icon className="h-3.5 w-3.5" aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-baseline justify-between gap-2">
+          <span className="truncate text-[11px] font-medium text-foreground">
+            {label}
+          </span>
+          <span className="tabular-nums text-sm font-semibold text-foreground">
+            {value}
+          </span>
+        </span>
+        <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+          <span className="line-clamp-1">{hint}</span>
+          <ArrowRight
+            className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+            aria-hidden
+          />
+        </span>
+      </span>
+    </Link>
   );
 }
 
@@ -113,22 +159,51 @@ export function DashboardPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-4">
-      <PageHeader title={t("admin.title")} subtitle={t("admin.subtitle")} />
+      <PageHeader
+        eyebrow={t("admin.dashboard.eyebrow")}
+        title={t("admin.title")}
+        subtitle={t("admin.subtitle")}
+        actions={
+          <Button size="sm" variant="outline" onClick={load}>
+            {t("admin.common.refresh")}
+          </Button>
+        }
+      />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <Panel
+        className="flex flex-wrap items-center gap-x-6 gap-y-1.5 px-3 py-2 text-[11px] text-muted-foreground"
+        role="status"
+      >
+        <span className="inline-flex items-center gap-1.5 text-foreground">
+          <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden />
+          {t("admin.dashboard.status.ok")}
+        </span>
+        <span className="hidden h-3 w-px bg-border sm:block" aria-hidden />
+        <RuntimeItem
+          label={t("admin.dashboard.version")}
+          value={metrics.runtime.version}
+        />
+        <RuntimeItem
+          label={t("admin.dashboard.uptime")}
+          value={formatUptime(metrics.runtime.uptimeSec)}
+        />
+        <RuntimeItem
+          label={t("admin.dashboard.database")}
+          value={`${metrics.runtime.databaseLatencyMs} ms`}
+        />
+        <RuntimeItem
+          label={t("admin.dashboard.environment")}
+          value={metrics.runtime.nodeEnv}
+        />
+      </Panel>
+
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
         <StatCard
           icon={Users}
           label={t("admin.dashboard.users")}
           value={metrics.users.total}
           hint={t("admin.dashboard.usersHint", { count: metrics.users.last7d })}
           testId="admin-stat-users"
-        />
-        <StatCard
-          icon={UserX}
-          label={t("admin.dashboard.disabled")}
-          value={metrics.users.disabled}
-          accent="text-danger"
-          testId="admin-stat-disabled"
         />
         <StatCard
           icon={KanbanSquare}
@@ -168,12 +243,6 @@ export function DashboardPage() {
           testId="admin-stat-sessions"
         />
         <StatCard
-          icon={MessageSquare}
-          label={t("admin.dashboard.comments")}
-          value={metrics.comments.total}
-          testId="admin-stat-comments"
-        />
-        <StatCard
           icon={ShieldCheck}
           label={t("admin.dashboard.admins")}
           value={metrics.admins.total}
@@ -182,27 +251,35 @@ export function DashboardPage() {
         />
       </div>
 
-      <Panel className="flex flex-wrap items-center gap-x-8 gap-y-2 px-4 py-3">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          {t("admin.dashboard.runtime")}
-        </h2>
-        <RuntimeItem
-          label={t("admin.dashboard.version")}
-          value={metrics.runtime.version}
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          icon={UserX}
+          label={t("admin.dashboard.disabled")}
+          value={metrics.users.disabled}
+          accent="text-danger"
+          testId="admin-stat-disabled"
         />
-        <RuntimeItem
-          label={t("admin.dashboard.uptime")}
-          value={formatUptime(metrics.runtime.uptimeSec)}
+        <StatCard
+          icon={MessageSquare}
+          label={t("admin.dashboard.comments")}
+          value={metrics.comments.total}
+          testId="admin-stat-comments"
         />
-        <RuntimeItem
-          label={t("admin.dashboard.database")}
-          value={`${metrics.runtime.databaseLatencyMs} ms`}
+        <AttentionItem
+          icon={AlertTriangle}
+          label={t("admin.dashboard.attention.blocked")}
+          value={metrics.users.disabled}
+          hint={t("admin.dashboard.attention.blockedHint")}
+          to="/admin/users?status=disabled"
         />
-        <RuntimeItem
-          label={t("admin.dashboard.environment")}
-          value={metrics.runtime.nodeEnv}
+        <AttentionItem
+          icon={KanbanSquare}
+          label={t("admin.dashboard.attention.archived")}
+          value={metrics.boards.archived}
+          hint={t("admin.dashboard.attention.archivedHint")}
+          to="/admin/boards?status=archived"
         />
-      </Panel>
+      </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
         <Panel className="space-y-3 p-4">

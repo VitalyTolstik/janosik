@@ -7,44 +7,50 @@ import {
 } from "@/helpers/admin.js";
 
 /**
- * Panel navigation smoke (TASK-162.15): sidebar sections, direct URLs, the
- * global omnibox and the way back to the boards app.
+ * Panel navigation smoke (TASK-162.15, redesigned): the eight hubs, their
+ * tabs, direct URLs and the way back to the boards app.
  */
 
-test("walks the main sections from the sidebar", async ({ page }) => {
+const HUBS = [
+  { link: "Overview", path: "/admin", heading: "Master panel" },
+  { link: "Users", path: "/admin/users", heading: "Users" },
+  { link: "Boards", path: "/admin/boards", heading: "Boards" },
+  { link: "Moderation", path: "/admin/moderation", heading: "Comments" },
+  { link: "Audit & activity", path: "/admin/audit", heading: "Audit trail" },
+  {
+    link: "Communications",
+    path: "/admin/communications",
+    heading: "Communications",
+  },
+  { link: "Access & security", path: "/admin/access", heading: "Sessions" },
+  { link: "Settings", path: "/admin/settings", heading: "Operations" },
+];
+
+test("walks the eight hubs from the sidebar", async ({ page }) => {
   await loginAsMaster(page, ownerCredentials());
   const sidebar = page.getByTestId("admin-sidebar");
 
-  const sections = [
-    { link: "Dashboard", path: "/admin", heading: "Master panel" },
-    { link: "Users", path: "/admin/users", heading: "Users" },
-    { link: "Boards", path: "/admin/boards", heading: "Boards" },
-    { link: "Command log", path: "/admin/commands", heading: "Command log" },
-    { link: "Audit trail", path: "/admin/audit", heading: "Audit trail" },
-    { link: "Security", path: "/admin/security", heading: "Security" },
-    { link: "Masters", path: "/admin/masters", heading: "Masters" },
-  ];
-
-  for (const section of sections) {
-    await sidebar
-      .getByRole("link", { name: section.link, exact: true })
-      .click();
+  for (const hub of HUBS) {
+    await sidebar.getByRole("link", { name: hub.link, exact: true }).click();
     await expect(page).toHaveURL((url) =>
-      url.pathname.replace(/\/+$/, "").endsWith(section.path),
+      url.pathname.replace(/\/+$/, "").endsWith(hub.path),
     );
     await expect(
-      page.getByRole("heading", { name: section.heading, exact: true }),
+      page.getByRole("heading", { name: hub.heading, exact: true }),
     ).toBeVisible();
   }
 });
 
-test("opens panel sections by direct URL", async ({ page }) => {
+test("opens panel sections by direct URL and legacy redirect", async ({
+  page,
+}) => {
   await loginAsMaster(page, ownerCredentials());
 
   await page.goto(adminPath("security"), { waitUntil: "domcontentloaded" });
   await expect(
     page.getByRole("heading", { name: "Security", exact: true }),
   ).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/settings\?tab=security$/);
 
   await page.goto(adminPath("audit"), { waitUntil: "domcontentloaded" });
   await expect(
@@ -52,7 +58,7 @@ test("opens panel sections by direct URL", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("finds a user through the omnibox and opens the detail page", async ({
+test("finds a user through the command palette and opens the detail page", async ({
   page,
   admin,
 }) => {

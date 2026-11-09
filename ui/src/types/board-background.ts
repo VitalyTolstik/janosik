@@ -7,7 +7,8 @@ import type { MessageKey } from "@/i18n";
  * with the column strip. The choice is persisted under `janosik-board-bg`.
  */
 
-export type BoardBackgroundId = "flat" | "paper" | "dots" | "grid";
+export type BoardBackgroundId =
+  "flat" | "paper" | "dots" | "grid" | "concentric";
 
 export interface BoardBackground {
   id: BoardBackgroundId;
@@ -43,6 +44,12 @@ export const BOARD_BACKGROUNDS: readonly BoardBackground[] = [
     labelKey: "bg.grid",
     className: "janosik-bg-grid",
     previewClassName: "janosik-bg-grid janosik-bg-grid-sm",
+  },
+  {
+    id: "concentric",
+    labelKey: "bg.concentric",
+    className: "janosik-bg-concentric",
+    previewClassName: "janosik-bg-concentric janosik-bg-concentric-sm",
   },
 ];
 

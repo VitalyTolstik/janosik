@@ -3,6 +3,13 @@ title: Monitoring and logs
 description: The dashboard, the activity feed, the command log and the audit trail, with every column and action.
 ---
 
+:::note
+The dashboard is the **Overview** hub (`/admin`). The activity feed, command
+log and audit trail are tabs of **Audit & activity** (`/admin/audit?tab=…`).
+The old `/admin/activity` and `/admin/commands` URLs redirect. See
+[Admin redesign](../redesign/) for the full map.
+:::
+
 The monitoring section answers two questions: what is happening on the
 platform right now, and what have masters and users done. Four pages cover it:
 the dashboard, the activity feed, the command log and the audit trail.
