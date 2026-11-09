@@ -53,6 +53,8 @@ interface CardCommentsProps {
   readOnly?: boolean;
   /** Loaded comment count for the section badge (newest page + older pages). */
   onCountChange?: (count: number) => void;
+  /** Lets the Activity tab distinguish "0 comments" from "not loaded yet". */
+  onLoadedChange?: (loaded: boolean) => void;
 }
 
 /**
@@ -69,6 +71,7 @@ export function CardComments({
   boardId,
   readOnly = false,
   onCountChange,
+  onLoadedChange,
 }: CardCommentsProps) {
   const { t } = useI18n();
   const toast = useToast();
@@ -124,6 +127,10 @@ export function CardComments({
   useEffect(() => {
     onCountChange?.(items.length);
   }, [items.length, onCountChange]);
+
+  useEffect(() => {
+    onLoadedChange?.(loaded);
+  }, [loaded, onLoadedChange]);
 
   // Live arrival: a foreign comment is not in the frame body (the frame
   // carries its id), so the newest page is re-read and merged — paginated

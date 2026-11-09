@@ -36,6 +36,8 @@ interface CardHistoryProps {
   localActivity?: CardActivityEvent[];
   /** Rendered (folded) entry count for the section badge. */
   onCountChange?: (count: number) => void;
+  /** Lets the Activity tab distinguish "0 entries" from "not loaded yet". */
+  onLoadedChange?: (loaded: boolean) => void;
 }
 
 /**
@@ -53,6 +55,7 @@ export function CardHistory({
   updatedAt,
   localActivity,
   onCountChange,
+  onLoadedChange,
 }: CardHistoryProps) {
   const { t } = useI18n();
   const toast = useToast();
@@ -158,6 +161,10 @@ export function CardHistory({
   useEffect(() => {
     onCountChange?.(visible.length);
   }, [visible.length, onCountChange]);
+
+  useEffect(() => {
+    onLoadedChange?.(loaded);
+  }, [loaded, onLoadedChange]);
 
   return (
     <div className="space-y-2" aria-busy={!loaded}>
