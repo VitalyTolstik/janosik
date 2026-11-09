@@ -4,7 +4,7 @@ import { DOCS_PAGES, docsUrl } from "@/helpers/docs.js";
 import { siteUrl } from "@/helpers/urls.js";
 
 /**
- * Full docs link graph: parse every anchor on all 44 pages, then fetch every
+ * Full docs link graph: parse every anchor on all 46 pages, then fetch every
  * internal target (status 200) and verify that each `#fragment` exists as an
  * `id` on the target page. External hosts are checked as URLs only.
  */
@@ -50,7 +50,7 @@ test("every internal docs link and fragment resolves", async ({ request }) => {
     }
   }
 
-  // Sidebar + top nav + footer + inline links across 44 pages; guards against
+  // Sidebar + top nav + footer + inline links across 46 pages; guards against
   // the parser silently matching nothing after a markup change.
   expect(targets.size).toBeGreaterThan(100);
 

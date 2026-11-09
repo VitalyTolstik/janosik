@@ -3,12 +3,12 @@ import { expect, test } from "@playwright/test";
 import { DOCS_PAGES, docsPath, docsUrl } from "@/helpers/docs.js";
 
 /**
- * Every documentation route exists in both locales: 22 English + 22 Russian
+ * Every documentation route exists in both locales: 23 English + 23 Russian
  * pages with a 200 status, the right `<html lang>`, one H1, a title and a
  * self-referencing canonical. The docs are public.
  */
 
-test("serves all 22 English and 22 Russian documentation pages", async ({
+test("serves all 23 English and 23 Russian documentation pages", async ({
   page,
 }) => {
   test.slow();

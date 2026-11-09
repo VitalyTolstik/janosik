@@ -80,16 +80,16 @@ test("moves through the user guide with previous and next links", async ({
   );
   await expect(pagination.locator('a[rel="next"]')).toHaveAttribute(
     "href",
-    new URL(docsUrl("user-guide/views/")).pathname,
+    new URL(docsUrl("user-guide/workflow/")).pathname,
   );
 
   await pagination.locator('a[rel="next"]').click();
 
-  await expect(page).toHaveURL(docsUrl("user-guide/views/"));
+  await expect(page).toHaveURL(docsUrl("user-guide/workflow/"));
   await expect(
     page.getByRole("heading", {
       level: 1,
-      name: "Calendar, table and watch views",
+      name: "Board workflow",
     }),
   ).toBeVisible();
 
