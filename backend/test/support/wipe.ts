@@ -38,6 +38,7 @@ const TABLES = [
   "FeatureFlag",
   "OpsSettings",
   "ReminderSent",
+  "AnnouncementTranslation",
   "Announcement",
   "EmailTemplate",
   "User",

@@ -303,8 +303,9 @@ export class ApiClient {
   }
 
   /** `GET /announcements/active` — banners the signed-in user should see. */
-  activeAnnouncements(): Promise<AnnouncementDto[]> {
-    return this.request<AnnouncementDto[]>("/announcements/active");
+  activeAnnouncements(locale?: "en" | "ru"): Promise<AnnouncementDto[]> {
+    const query = locale ? `?locale=${encodeURIComponent(locale)}` : "";
+    return this.request<AnnouncementDto[]>(`/announcements/active${query}`);
   }
 
   /**

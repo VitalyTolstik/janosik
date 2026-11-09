@@ -19,6 +19,7 @@ import type {
   AdminUserRowDto,
   AdminAuditRowDto,
 } from "@janosik/shared";
+import { ANNOUNCEMENT_LOCALES } from "@janosik/shared";
 import { adminApi } from "./admin-client";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
@@ -46,10 +47,10 @@ import {
   CreateBoardButton,
   CreateUserButton,
   DeleteUserDialog,
-  EditAnnouncementDialog,
   PromoteUserDialog,
   ResetUserPasswordDialog,
 } from "./dialogs";
+import { AnnouncementEditorDialog } from "./announcements/AnnouncementEditorDialog";
 import { exportUser, impersonateUser } from "./user-actions";
 
 /**
@@ -1263,6 +1264,43 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             ),
           },
           {
+            label: t("admin.comms.col.languages"),
+            render: (row) => {
+              if (row.sourceLocale === null && row.translations.length === 0) {
+                return (
+                  <Badge variant="neutral">{t("admin.comms.legacy")}</Badge>
+                );
+              }
+              return (
+                <span className="inline-flex gap-1">
+                  {ANNOUNCEMENT_LOCALES.map((locale) => (
+                    <Badge
+                      key={locale}
+                      variant={
+                        row.completeness?.[locale] ? "success" : "neutral"
+                      }
+                    >
+                      {t(`admin.comms.lang.${locale}.short` as AdminMessageKey)}
+                    </Badge>
+                  ))}
+                </span>
+              );
+            },
+          },
+          {
+            label: t("admin.comms.col.policy"),
+            render: (row) =>
+              row.fallbackPolicy === "require_all" ? (
+                <Badge variant="success">
+                  {t("admin.comms.policy.require_all.short")}
+                </Badge>
+              ) : (
+                <Badge variant="warning">
+                  {t("admin.comms.policy.allow_fallback.short")}
+                </Badge>
+              ),
+          },
+          {
             label: t("admin.comms.col.level"),
             render: (row) => (
               <Badge
@@ -1291,7 +1329,22 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.comms.col.email"),
             render: (row) =>
-              row.sendEmail ? <Badge variant="primary">email</Badge> : "—",
+              row.sendEmail || row.emailSentAt !== null ? (
+                <span className="inline-flex gap-1">
+                  {row.sendEmail ? (
+                    <Badge variant="primary">email</Badge>
+                  ) : null}
+                  <Badge
+                    variant={row.emailSentAt === null ? "warning" : "success"}
+                  >
+                    {row.emailSentAt === null
+                      ? t("admin.comms.email.pendingBadge")
+                      : t("admin.comms.email.sentBadge")}
+                  </Badge>
+                </span>
+              ) : (
+                "—"
+              ),
           },
           {
             label: t("admin.comms.active"),
@@ -1313,11 +1366,11 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             ),
           },
         ],
-        // Editing/activating/deleting broadcasts is owner-only server-side
-        // (403 for an OPERATOR), so the row menu is not rendered for them.
-        ...(isOwner
-          ? {
-              actions: (row: AdminAnnouncementDto) => [
+        // Writes are owner-only server-side (403 for an OPERATOR); they still
+        // get a read-only view so support can inspect both translations.
+        actions: (row: AdminAnnouncementDto) =>
+          isOwner
+            ? [
                 {
                   label: t("admin.announcements.action.edit"),
                   run: async () => undefined,
@@ -1328,7 +1381,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                     close: () => void;
                     reload: () => void;
                   }) => (
-                    <EditAnnouncementDialog
+                    <AnnouncementEditorDialog
                       announcement={row}
                       onClose={close}
                       onDone={reload}
@@ -1339,12 +1392,18 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                   ? {
                       label: t("admin.announcements.action.deactivate"),
                       run: () =>
-                        adminApi.updateAnnouncement(row.id, { active: false }),
+                        adminApi.updateAnnouncement(row.id, {
+                          active: false,
+                          version: row.version,
+                        }),
                     }
                   : {
                       label: t("admin.announcements.action.activate"),
                       run: () =>
-                        adminApi.updateAnnouncement(row.id, { active: true }),
+                        adminApi.updateAnnouncement(row.id, {
+                          active: true,
+                          version: row.version,
+                        }),
                     },
                 {
                   label: t("admin.common.delete"),
@@ -1352,9 +1411,26 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                   confirmTitle: t("admin.common.delete"),
                   run: () => adminApi.deleteAnnouncement(row.id),
                 },
+              ]
+            : [
+                {
+                  label: t("admin.announcements.action.view"),
+                  run: async () => undefined,
+                  renderDialog: ({
+                    close,
+                  }: {
+                    close: () => void;
+                    reload: () => void;
+                  }) => (
+                    <AnnouncementEditorDialog
+                      announcement={row}
+                      readOnly
+                      onClose={close}
+                      onDone={() => undefined}
+                    />
+                  ),
+                },
               ],
-            }
-          : {}),
       };
       return config;
     }

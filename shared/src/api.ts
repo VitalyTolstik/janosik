@@ -12,6 +12,7 @@ import type { Board, CommentKind } from "./types/kanban";
 import type { WorkflowCondition, WorkflowRole } from "./workflow";
 import type { UserAvatarColor } from "./types/account";
 import type { BoardExportFile } from "./utils/board-serialization";
+import type { AnnouncementLocale } from "./announcements";
 
 /** Body of `POST /boards/:id/commands` (§7.0). */
 export interface CommandRequest {
@@ -482,6 +483,13 @@ export interface AuthUserDto {
    * account setting is now reachable through `PATCH /users/me`.
    */
   notifyDigest?: boolean;
+  /**
+   * Canonical language of the interface, announcement banner and email.
+   * Omitted for accounts created before localization; the client adopts its
+   * current language once, and the server treats "not chosen" as English for
+   * email while the banner uses the requested/Accept-Language locale.
+   */
+  locale?: AnnouncementLocale;
   /** Unix ms of account creation — "member since" in the account panel. */
   createdAt: number;
   /**
@@ -549,6 +557,8 @@ export interface UpdateProfileRequest {
   avatarColor?: UserAvatarColor | null;
   /** Opt out of scheduled digests/reminders (TASK-153). */
   notifyDigest?: boolean;
+  /** Canonical language for the UI, announcements and email. */
+  locale?: AnnouncementLocale | null;
 }
 
 /** Body of `POST /users/me/password` (TASK-36.1). */

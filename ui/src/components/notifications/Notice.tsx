@@ -25,6 +25,10 @@ export interface NoticeProps {
   eyebrow?: ReactNode;
   title?: ReactNode;
   body?: ReactNode;
+  /** Language of `title`/`body` when it differs from the UI language. */
+  contentLang?: string | null;
+  /** Extra callout above the title (e.g. the announcement fallback notice). */
+  notice?: ReactNode;
   actions?: ReactNode;
   close?: NoticeClose;
   /** Status messages are polite; warnings and errors interrupt (assertive). */
@@ -81,6 +85,8 @@ export function Notice({
   eyebrow,
   title,
   body,
+  contentLang,
+  notice,
   actions,
   close,
   role,
@@ -142,13 +148,18 @@ export function Notice({
             {eyebrow}
           </p>
         ) : null}
+        {notice ? <div className="mb-1.5">{notice}</div> : null}
         {title ? (
-          <h3 className="text-[13.5px] font-semibold leading-snug tracking-tight text-foreground">
+          <h3
+            lang={contentLang ?? undefined}
+            className="text-[13.5px] font-semibold leading-snug tracking-tight text-foreground"
+          >
             {title}
           </h3>
         ) : null}
         {body ? (
           <p
+            lang={contentLang ?? undefined}
             className={cn(
               "break-words text-[12.5px] leading-relaxed text-muted-foreground",
               title && "mt-0.5",

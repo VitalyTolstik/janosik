@@ -30,4 +30,9 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsBoolean()
   notifyDigest?: boolean;
+
+  /** Canonical language for the UI, announcements and email. */
+  @IsOptional()
+  @IsIn(["en", "ru"])
+  locale?: "en" | "ru" | null;
 }
