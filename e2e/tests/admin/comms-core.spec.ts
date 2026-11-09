@@ -24,6 +24,9 @@ test("S14: creating an announcement for a segment from the panel", async ({
   const dialog = page.getByRole("dialog");
   await page.getByTestId("admin-announcement-title").fill(title);
   await page.getByTestId("admin-announcement-body").fill(`Body ${title}`);
+  await page.getByTestId("announcement-tab-ru").click();
+  await page.getByTestId("admin-announcement-title-ru").fill(`RU ${title}`);
+  await page.getByTestId("admin-announcement-body-ru").fill(`Тело ${title}`);
   await page.getByTestId("admin-announcement-level").selectOption("warning");
   await page.getByTestId("admin-announcement-audience").selectOption("segment");
   await page
@@ -32,7 +35,7 @@ test("S14: creating an announcement for a segment from the panel", async ({
   await dialog
     .getByRole("button", { name: new RegExp(targetUser.email) })
     .click();
-  await page.getByTestId("admin-announcement-submit").click();
+  await page.getByTestId("admin-announcement-publish").click();
 
   await page.goto(adminPath("announcements"), {
     waitUntil: "domcontentloaded",
@@ -127,9 +130,8 @@ test("S16: announcement history edits, toggles and deletes", async ({
   await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
 
   const dialog = page.getByRole("dialog");
-  await dialog.getByTestId("admin-announcement-edit-title").fill(nextTitle);
-  await dialog.locator("select").nth(0).selectOption("warning");
-  await dialog.getByTestId("admin-announcement-edit-active").check();
+  await dialog.getByTestId("admin-announcement-title").fill(nextTitle);
+  await dialog.getByTestId("admin-announcement-level").selectOption("warning");
   await dialog.getByTestId("admin-announcement-edit-save").click();
   await expectToastText(page, "Saved");
 
