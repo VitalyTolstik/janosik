@@ -1,5 +1,9 @@
 import type { Board, Card, CardPriority, Label } from "@janosik/shared";
-import { DEFAULT_CARD_PRIORITY } from "@janosik/shared";
+import {
+  CARD_PRIORITIES,
+  DEFAULT_CARD_PRIORITY,
+  LIMITS,
+} from "@janosik/shared";
 import { dueStatus } from "@/utils/due-date";
 import { DAY_MS } from "@/utils/duration";
 import { cardLinkIndex } from "@/utils/links";
@@ -87,6 +91,110 @@ export const EMPTY_FILTER: CardFilter = {
   blocked: false,
   hasLinks: false,
 };
+
+/**
+ * URL parameter namespace for the board filter. The filter is shareable:
+ * `?f.q=release&f.due=overdue` restores the same view after a reload, so a
+ * link to "overdue bugs assigned to me" is possible (TASK-162 review, F-02).
+ * The prefix keeps the filter from colliding with the card deep link
+ * (`?card=`) or future view parameters.
+ */
+export const FILTER_PARAM_KEYS = [
+  "q",
+  "due",
+  "labels",
+  "labelMatch",
+  "noLabel",
+  "created",
+  "createdOn",
+  "priority",
+  "assignee",
+  "unassigned",
+  "blocked",
+  "links",
+] as const;
+
+const FILTER_PARAM_PREFIX = "f.";
+const DUE_VALUES: readonly DueFilter[] = ["overdue", "soon", "none"];
+const CREATED_VALUES: readonly CreatedWindow[] = ["today", "7d", "30d"];
+
+function paramKey(key: (typeof FILTER_PARAM_KEYS)[number]): string {
+  return `${FILTER_PARAM_PREFIX}${key}`;
+}
+
+function csv(value: string | null): string[] {
+  if (value === null) return [];
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+}
+
+/**
+ * Read a filter from URL parameters. Invalid or unknown values are ignored
+ * (the URL is user-editable), so a hand-typed link can never break the board.
+ */
+export function readFilterParams(params: URLSearchParams): CardFilter {
+  const due = params.get(paramKey("due"));
+  const created = params.get(paramKey("created"));
+  const createdOn = params.get(paramKey("createdOn"));
+  const labelMatch = params.get(paramKey("labelMatch"));
+  const priority = csv(params.get(paramKey("priority"))).filter(
+    (value): value is CardPriority =>
+      CARD_PRIORITIES.includes(value as CardPriority),
+  );
+  return {
+    ...EMPTY_FILTER,
+    query: (params.get(paramKey("q")) ?? "").slice(0, LIMITS.query),
+    due: DUE_VALUES.includes(due as DueFilter) ? (due as DueFilter) : "any",
+    labelIds: csv(params.get(paramKey("labels"))),
+    labelMatch: labelMatch === "all" ? "all" : "any",
+    noLabel: params.get(paramKey("noLabel")) === "1",
+    created: CREATED_VALUES.includes(created as CreatedWindow)
+      ? (created as CreatedWindow)
+      : "any",
+    createdOn:
+      createdOn !== null && createdDayRange(createdOn) !== null
+        ? createdOn
+        : null,
+    priorities: [...new Set(priority)],
+    assignees: csv(params.get(paramKey("assignee"))),
+    unassigned: params.get(paramKey("unassigned")) === "1",
+    blocked: params.get(paramKey("blocked")) === "1",
+    hasLinks: params.get(paramKey("links")) === "1",
+  };
+}
+
+/**
+ * Write a filter into URL parameters, preserving unrelated params (`card`,
+ * future view state). Inactive facets are removed rather than serialized as
+ * defaults, so the URL stays short and readable.
+ */
+export function writeFilterParams(
+  filter: CardFilter,
+  base: URLSearchParams = new URLSearchParams(),
+): URLSearchParams {
+  const params = new URLSearchParams(base);
+  for (const key of FILTER_PARAM_KEYS) params.delete(paramKey(key));
+  const query = filter.query.trim() === "" ? "" : filter.query;
+  if (query !== "") params.set(paramKey("q"), query);
+  if (filter.due !== "any") params.set(paramKey("due"), filter.due);
+  if (filter.labelIds.length > 0)
+    params.set(paramKey("labels"), filter.labelIds.join(","));
+  if (filter.labelMatch === "all") params.set(paramKey("labelMatch"), "all");
+  if (filter.noLabel) params.set(paramKey("noLabel"), "1");
+  if (filter.created !== "any") params.set(paramKey("created"), filter.created);
+  if (filter.createdOn !== null)
+    params.set(paramKey("createdOn"), filter.createdOn);
+  if (filter.priorities.length > 0)
+    params.set(paramKey("priority"), filter.priorities.join(","));
+  if (filter.assignees.length > 0)
+    params.set(paramKey("assignee"), filter.assignees.join(","));
+  if (filter.unassigned) params.set(paramKey("unassigned"), "1");
+  if (filter.blocked) params.set(paramKey("blocked"), "1");
+  if (filter.hasLinks) params.set(paramKey("links"), "1");
+  return params;
+}
 
 /** True when at least one facet restricts the board. */
 export function isFilterActive(filter: CardFilter): boolean {

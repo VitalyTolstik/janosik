@@ -32,6 +32,16 @@ const hoisted = vi.hoisted(() => {
       createdAt: 1,
       updatedAt: 1,
     },
+    // Archived cards live in `board.cards` but not in any column: the status
+    // must count only what is on the board right now.
+    "card-archived": {
+      id: "card-archived",
+      title: "Old work",
+      labelIds: [],
+      createdAt: 1,
+      updatedAt: 1,
+      archivedAt: 1,
+    },
   };
   const board: Board = {
     id: "b-watch",
@@ -117,6 +127,8 @@ describe("WatchView (TASK-142)", () => {
     const view = screen.getByTestId("watch-view");
     // The CSS kill-switch for animations/transitions keys off this attribute.
     expect(view).toHaveAttribute("data-watch");
+    // `card-archived` is not in any column: the status counts active cards
+    // only (the old Math.max with board.cards showed 3).
     expect(screen.getByTestId("watch-cards")).toHaveTextContent("2");
     expect(screen.getByTestId("watch-columns")).toHaveTextContent("2");
     expect(screen.getByTestId("watch-online")).toHaveTextContent("1");
@@ -140,6 +152,17 @@ describe("WatchView (TASK-142)", () => {
     renderWatch();
     expect(screen.getByText(/server mode/i)).toBeInTheDocument();
     expect(screen.queryByTestId("watch-feed")).toBeNull();
+  });
+
+  it("shows an explicit retry when the feed request fails", async () => {
+    hoisted.enabled.value = true;
+    hoisted.boardActivity.mockRejectedValue(new Error("offline"));
+    renderWatch();
+
+    expect(await screen.findByTestId("watch-error")).toHaveTextContent(
+      "Could not load the activity feed.",
+    );
+    expect(screen.getByTestId("watch-retry")).toBeInTheDocument();
   });
 
   it("renders the live feed with actor, card title and inline diff", async () => {

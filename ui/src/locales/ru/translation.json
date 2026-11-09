@@ -931,6 +931,7 @@
   "watch.columns": "колонок",
   "watch.feed": "Живая активность",
   "watch.feedEmpty": "Пока нет активности",
+  "watch.feedError": "Не удалось загрузить ленту активности.",
   "watch.feedLocal": "Живая лента доступна в серверном режиме.",
   "watch.live": "живой поток",
   "watch.loading": "Загрузка…",

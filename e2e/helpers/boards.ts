@@ -44,3 +44,31 @@ export async function createExtraBoard(
   };
   return { id, title, command, column, card, label };
 }
+
+/** The subset of the board aggregate the view tests assert against. */
+export interface BoardSnapshot {
+  id: string;
+  columns: { id: string; title: string; cardIds: string[] }[];
+  cards: Record<
+    string,
+    {
+      id: string;
+      title: string;
+      dueDate?: number;
+      labelIds: string[];
+      assigneeId?: string;
+      priority?: string;
+      archivedAt?: number;
+    }
+  >;
+}
+
+/** Read the current board aggregate through the API (setup/assertion only). */
+export async function getBoard(
+  api: APIRequestContext,
+  boardId: string,
+): Promise<BoardSnapshot> {
+  const response = await api.get(`/api/v1/boards/${boardId}`);
+  expect(response.ok(), await response.text()).toBeTruthy();
+  return (await response.json()) as BoardSnapshot;
+}
