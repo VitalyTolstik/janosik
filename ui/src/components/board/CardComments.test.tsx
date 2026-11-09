@@ -216,14 +216,29 @@ describe("CardComments", () => {
     );
   });
 
+  it("offers the comment kinds in a themed radio picker", async () => {
+    const server = new FakeServer([seedBoard()]);
+    renderComments(server);
+
+    fireEvent.click(await screen.findByTestId("comment-kind"));
+    const group = screen.getByRole("radiogroup", { name: "Comment kind" });
+    expect(within(group).getAllByRole("radio")).toHaveLength(6);
+    expect(screen.getByTestId("comment-kind-option-note")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+
+    fireEvent.click(screen.getByTestId("comment-kind-option-question"));
+    expect(screen.getByTestId("comment-kind")).toHaveTextContent("Question");
+  });
+
   it("sends the chosen comment kind", async () => {
     const server = new FakeServer([seedBoard()]);
     renderComments(server);
     const input = await screen.findByTestId("comment-input");
     fireEvent.change(input, { target: { value: "Blocked" } });
-    fireEvent.change(await screen.findByTestId("comment-kind"), {
-      target: { value: "blocker" },
-    });
+    fireEvent.click(await screen.findByTestId("comment-kind"));
+    fireEvent.click(await screen.findByTestId("comment-kind-option-blocker"));
     fireEvent.click(screen.getByTestId("comment-send"));
     await waitFor(() =>
       expect(
