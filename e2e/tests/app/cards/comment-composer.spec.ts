@@ -1,5 +1,6 @@
 import { test, expect } from "@/fixtures/board.js";
 import { cardDialog, openCard } from "@/helpers/history.js";
+import { siteUrl } from "@/helpers/urls.js";
 
 test("submits with Ctrl+Enter and clears the draft with Cancel", async ({
   page,
@@ -73,4 +74,43 @@ test("labels a comment with the chosen kind", async ({ page, board }) => {
     text: "Stuck on the schema",
     kind: "blocker",
   });
+});
+
+test("shows the kind badge on a comment posted with an API key", async ({
+  page,
+  board,
+  playwright,
+}) => {
+  const column = await board.column("Comments");
+  const cardId = await board.card(column, "Agent comment");
+
+  const issued = await board.api.post("/api/v1/users/me/tokens", {
+    data: { name: "agent", expiresAt: null },
+  });
+  expect(issued.status()).toBe(201);
+  const { token } = (await issued.json()) as { token: string };
+
+  // The AI-agent path: a personal API key, not the browser session.
+  const agent = await playwright.request.newContext({
+    baseURL: siteUrl,
+    extraHTTPHeaders: { Authorization: `Bearer ${token}` },
+  });
+  try {
+    const created = await agent.post(`/api/v1/cards/${cardId}/comments`, {
+      data: { text: "Blocked on the schema", kind: "blocker" },
+    });
+    expect(created.status()).toBe(201);
+  } finally {
+    await agent.dispose();
+  }
+
+  await board.open(page);
+  await openCard(page, "Agent comment");
+  const dialog = cardDialog(page);
+  await expect(dialog.getByTestId("comment-list")).toContainText(
+    "Blocked on the schema",
+  );
+  await expect(dialog.getByTestId("comment-kind-badge")).toContainText(
+    /blocker/i,
+  );
 });
