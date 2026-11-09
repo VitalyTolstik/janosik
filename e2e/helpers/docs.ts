@@ -4,6 +4,41 @@ import { appUrl, siteUrl } from "./urls.js";
 
 export type DocsLang = "en" | "ru";
 
+/**
+ * Every documentation page below the locale root. The 22 slugs are the same
+ * in English and Russian (Starlight falls back to the translated file when it
+ * exists), so one list drives the full 44-page crawl.
+ */
+export const DOCS_PAGES = [
+  "",
+  "getting-started/",
+  "self-hosting/",
+  "runbooks/",
+  "user-guide/",
+  "user-guide/boards/",
+  "user-guide/views/",
+  "user-guide/cards/",
+  "user-guide/collaboration/",
+  "user-guide/account/",
+  "admin/",
+  "admin/monitoring/",
+  "admin/people/",
+  "admin/content/",
+  "admin/settings/",
+  "api/",
+  "api/commands/",
+  "api/rest/",
+  "mcp/",
+  "faq/",
+  "security/",
+  "changelog/",
+] as const;
+
+/** Deploy-base-aware path of one docs page, for canonical/URL assertions. */
+export function docsPath(path = "", lang: DocsLang = "en"): string {
+  return new URL(docsUrl(path, lang)).pathname;
+}
+
 /** The site origin with a trailing slash, so relative URLs keep the base. */
 function siteBase(): string {
   return siteUrl.endsWith("/") ? siteUrl : `${siteUrl}/`;
