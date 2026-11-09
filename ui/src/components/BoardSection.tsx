@@ -23,9 +23,10 @@ import { useBoard } from "@/store/BoardContext";
 import { boardBackgroundById } from "@/types/board-background";
 import { hasCard } from "@/utils/card-nav";
 import {
-  EMPTY_FILTER,
   filterCardIds,
   isFilterActive,
+  readFilterParams,
+  writeFilterParams,
   type CardFilter,
 } from "@/utils/filter";
 
@@ -61,7 +62,20 @@ export function BoardSection() {
   const { board, roleOf } = useBoard();
   const { t } = useI18n();
   const { background } = useBoardBackground();
-  const [filter, setFilter] = useState<CardFilter>(EMPTY_FILTER);
+  // The filter lives in the URL (TASK-162 review, F-02): a reload, a shared
+  // link and browser Back/Forward all carry the same filtered view. Writes
+  // use `replace` so typing a query does not fill the history with a step per
+  // keystroke; the open-card param (`?card=`) is preserved by the serializer.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filter = useMemo(() => readFilterParams(searchParams), [searchParams]);
+  const setFilter = useCallback(
+    (next: CardFilter) => {
+      setSearchParams((current) => writeFilterParams(next, current), {
+        replace: true,
+      });
+    },
+    [setSearchParams],
+  );
   const [view, setView] = useState<BoardView>(readStoredView);
   // Card density (TASK-142): a per-browser display preference, persisted next
   // to the chosen view; it only affects the kanban card face.
@@ -100,7 +114,6 @@ export function BoardSection() {
   // is always a copy-pasteable link to the open card.
   const toast = useToast();
   const [openCardId, setOpenCardId] = useState<string | null>(null);
-  const [searchParams, setSearchParams] = useSearchParams();
   // The card deliberately closed a moment ago. The close handler clears the
   // `?card=` param asynchronously; a board update landing in that window
   // (e.g. the server commit of a "Duplicate card" click) would otherwise
@@ -160,12 +173,16 @@ export function BoardSection() {
   const handleCardClick = useCallback(
     (cardId: string) => {
       setOpenCardId(cardId);
-      // A history push, not a replace: Back then closes the dialog.
-      const next = new URLSearchParams(searchParams);
-      next.set("card", cardId);
-      setSearchParams(next);
+      // A history push, not a replace: Back then closes the dialog. The
+      // functional update keeps this callback stable across URL changes, so
+      // opening a card does not hand every table row a fresh `onOpen` prop.
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current);
+        next.set("card", cardId);
+        return next;
+      });
     },
-    [searchParams, setSearchParams],
+    [setSearchParams],
   );
 
   if (!board) {
@@ -226,6 +243,7 @@ export function BoardSection() {
           {view === "calendar" ? (
             <CalendarView
               filteredCardIds={filteredIds ?? undefined}
+              isFiltering={active}
               onCardClick={handleCardClick}
               readOnly={readOnly}
             />

@@ -27,6 +27,55 @@ test("switches an English docs page to Russian without losing the page", async (
   );
 });
 
+test("switches admin, API and user-guide pages between both locales", async ({
+  page,
+}) => {
+  const sections = [
+    {
+      path: "user-guide/boards/",
+      en: "Boards, columns and cards",
+      ru: "Доски, колонки и карточки",
+    },
+    {
+      path: "admin/",
+      en: "Admin panel",
+      ru: "Панель администратора",
+    },
+    {
+      path: "api/",
+      en: "API reference",
+      ru: "Справочник по API",
+    },
+  ] as const;
+
+  for (const section of sections) {
+    const english = new URL(docsUrl(section.path)).pathname;
+    const russian = new URL(docsUrl(section.path, "ru")).pathname;
+
+    await openDocs(page, section.path);
+    await expect(languageSelect(page)).toHaveValue(english);
+    await expect(
+      page.getByRole("heading", { level: 1, name: section.en }),
+    ).toBeVisible();
+
+    await languageSelect(page).selectOption(russian);
+    await expect(page).toHaveURL(docsUrl(section.path, "ru"));
+    await expect(page.locator("html")).toHaveAttribute("lang", "ru");
+    await expect(languageSelect(page)).toHaveValue(russian);
+    await expect(
+      page.getByRole("heading", { level: 1, name: section.ru }),
+    ).toBeVisible();
+
+    await languageSelect(page).selectOption(english);
+    await expect(page).toHaveURL(docsUrl(section.path));
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(languageSelect(page)).toHaveValue(english);
+    await expect(
+      page.getByRole("heading", { level: 1, name: section.en }),
+    ).toBeVisible();
+  }
+});
+
 test("switches a Russian docs page back to English without losing the page", async ({
   page,
 }) => {

@@ -65,6 +65,24 @@ export async function ageFeedEntries(
   );
 }
 
+/**
+ * Move one command's timestamp back by an explicit number of days. The
+ * retention boundary test needs 25/35 days, not the fixed 40 of
+ * `ageFeedEntries`.
+ */
+export async function ageCommand(
+  boardId: string,
+  commandId: string,
+  days: number,
+) {
+  validateIds(boardId, commandId);
+  if (!Number.isInteger(days) || days < 1 || days > 3650)
+    throw new Error("Invalid age in days");
+  await runSql(
+    `UPDATE "Command" SET "createdAt" = NOW() - INTERVAL '${days} days' WHERE id = '${commandId}' AND "boardId" = '${boardId}';`,
+  );
+}
+
 export async function clearCommandSnapshot(boardId: string, commandId: string) {
   validateIds(boardId, commandId);
   await runSql(

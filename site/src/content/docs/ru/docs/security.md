@@ -142,14 +142,18 @@ JSON-тело ограничено 256 КБ, поэтому неаутентиф
 ### Заголовки безопасности и CSP
 
 Каждый ответ проходит через helmet. Политика безопасности содержимого
-настроена под оболочку приложения: `script-src` — это `'self'` плюс хеш
-`'sha256-…'` для каждого встроенного скрипта отдаваемых фронтендов,
-`style-src` — это `'self' 'unsafe-inline'`, `img-src` — это `'self' data: blob:`,
-`media-src` — это `'self' blob:`, `connect-src` — это `'self'`, `worker-src` — это
-`'self' blob:`, а `font-src` — это `'self' data:`. `upgrade-insecure-requests`
-убран, чтобы работал self-host по обычному HTTP. Публичные общие доски
-ослабляют `frame-ancestors`, чтобы `?embed=1` можно было встраивать, и
-остаются `noindex`.
+настроена под оболочку приложения: `script-src` — это
+`'self' 'wasm-unsafe-eval' https://plausible.io` плюс хеш `'sha256-…'` для
+каждого встроенного скрипта отдаваемых фронтендов, `style-src` — это
+`'self' 'unsafe-inline'`, `img-src` — это `'self' data: blob:`, `media-src` —
+это `'self' blob:`, `connect-src` — это `'self' https://plausible.io`,
+`worker-src` — это `'self' blob:`, а `font-src` — это `'self' data:`.
+`upgrade-insecure-requests` убран, чтобы работал self-host по обычному HTTP.
+Публичные общие доски ослабляют `frame-ancestors`, чтобы `?embed=1` можно
+было встраивать, и остаются `noindex`. `wasm-unsafe-eval` позволяет поиску
+документации скомпилировать WASM-индекс Pagefind, а `https://plausible.io` —
+это необязательный скрипт аналитики без cookie (`PUBLIC_ANALYTICS_DOMAIN`).
+Без них поиск зависает на «Поиск…», а событие аналитики молча блокируется.
 
 В `script-src` нет `'unsafe-inline'`. При запуске сервер читает HTML-файлы в
 `STATIC_DIR` и `SITE_DIR`, хеширует каждый найденный встроенный скрипт и

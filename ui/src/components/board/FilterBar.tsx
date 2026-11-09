@@ -299,6 +299,11 @@ export function FilterBar({
     .map((id) => labels.find((label) => label.id === id))
     .filter((label): label is Label => label !== undefined);
 
+  const selectedAssignees = filter.assignees.map((userId) => ({
+    userId,
+    member: members.find((member) => member.userId === userId),
+  }));
+
   const dotClass = (color: LabelColor) => LABEL_COLOR_DOT[color];
 
   return (
@@ -358,7 +363,10 @@ export function FilterBar({
             <SlidersHorizontal className="h-3.5 w-3.5" />
             {t("filter.filters")}
             {facetCount > 0 && (
-              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-semibold text-primary">
+              <span
+                data-testid="filter-facet-count"
+                className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-semibold text-primary"
+              >
                 {facetCount}
               </span>
             )}
@@ -608,12 +616,16 @@ export function FilterBar({
       {/* Result count + reset */}
       {active && (
         <div className="ml-auto flex items-center gap-2">
-          <span className="whitespace-nowrap text-xs text-muted-foreground">
+          <span
+            data-testid="filter-match-count"
+            className="whitespace-nowrap text-xs text-muted-foreground"
+          >
             {tp("filter.found", matchCount)}
           </span>
           <Button
             variant="ghost"
             size="sm"
+            data-testid="filter-reset"
             onClick={() => {
               onChange(EMPTY_FILTER);
               setDayCalendarOpen(false);
@@ -625,18 +637,29 @@ export function FilterBar({
         </div>
       )}
 
-      {/* Selected labels, due status, and creation date as removable chips.
-          The relative window (`today`/`7d`/`30d`) gets its own chip — it is
-          as much of a live filter as the exact day, hiding it made the only
-          way to switch it off the filters popover. */}
+      {/* Selected facets as removable chips. Every active facet is visible
+          here — due, labels, creation date, priority, assignee and links —
+          so the user can see and remove what is narrowing the board without
+          reopening the popover (collaboration.md: "Active filters appear as
+          removable chips"). The relative window (`today`/`7d`/`30d`) gets
+          its own chip — it is as much of a live filter as the exact day. */}
       {(selectedLabels.length > 0 ||
         filter.noLabel ||
         filter.created !== "any" ||
         filter.createdOn ||
-        filter.due !== "any") && (
+        filter.due !== "any" ||
+        filter.priorities.length > 0 ||
+        filter.assignees.length > 0 ||
+        filter.unassigned ||
+        filter.blocked ||
+        filter.hasLinks) && (
         <div className="flex w-full flex-wrap items-center gap-1.5">
           {filter.due !== "any" && (
-            <span className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground">
+            <span
+              data-testid="filter-chip"
+              data-facet="due"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+            >
               <CalendarClock className="h-3 w-3 text-muted-foreground" />
               {t(DUE_LABEL_KEY[filter.due])}
               <button
@@ -652,6 +675,8 @@ export function FilterBar({
           {selectedLabels.map((label) => (
             <span
               key={label.id}
+              data-testid="filter-chip"
+              data-facet="label"
               className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
             >
               <span
@@ -669,7 +694,11 @@ export function FilterBar({
             </span>
           ))}
           {filter.noLabel && (
-            <span className="flex items-center gap-1.5 rounded-full border border-dashed border-border py-1 pl-2 pr-1 text-xs text-muted-foreground">
+            <span
+              data-testid="filter-chip"
+              data-facet="no-label"
+              className="flex items-center gap-1.5 rounded-full border border-dashed border-border py-1 pl-2 pr-1 text-xs text-muted-foreground"
+            >
               {t("filter.noLabel")}
               <button
                 type="button"
@@ -683,7 +712,11 @@ export function FilterBar({
           )}
           {filter.created !== "any" && filter.createdOn === null && (
             // An exact day overrides the window — only one chip at a time.
-            <span className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground">
+            <span
+              data-testid="filter-chip"
+              data-facet="created"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+            >
               <CalendarDays className="h-3 w-3 text-muted-foreground" />
               {t(CREATED_LABEL_KEY[filter.created])}
               <button
@@ -697,13 +730,151 @@ export function FilterBar({
             </span>
           )}
           {filter.createdOn && (
-            <span className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground">
+            <span
+              data-testid="filter-chip"
+              data-facet="created-on"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+            >
               <CalendarDays className="h-3 w-3 text-muted-foreground" />
               {formatDay(filter.createdOn, lang)}
               <button
                 type="button"
                 aria-label={t("label.pickerRemove")}
                 onClick={() => onChange({ ...filter, createdOn: null })}
+                className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+          {filter.priorities.map((priority) => {
+            const meta = PRIORITY_META[priority];
+            const Icon = meta.icon;
+            return (
+              <span
+                key={priority}
+                data-testid="filter-chip"
+                data-facet="priority"
+                className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+              >
+                <Icon
+                  className={`h-3 w-3 shrink-0 ${meta.iconClass}`}
+                  aria-hidden
+                />
+                {t(`priority.${priority}`)}
+                <button
+                  type="button"
+                  aria-label={t("label.pickerRemove")}
+                  onClick={() =>
+                    onChange({
+                      ...filter,
+                      priorities: filter.priorities.filter(
+                        (value) => value !== priority,
+                      ),
+                    })
+                  }
+                  className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            );
+          })}
+          {selectedAssignees.map(({ userId, member }) => (
+            <span
+              key={userId}
+              data-testid="filter-chip"
+              data-facet="assignee"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+            >
+              {member ? (
+                <UserAvatar
+                  userId={member.userId}
+                  displayName={member.displayName}
+                  email={member.email}
+                  color={member.avatarColor}
+                  avatarPath={member.avatarPath}
+                  size="xs"
+                  className="shrink-0"
+                />
+              ) : (
+                <CircleUserRound
+                  className="h-3 w-3 shrink-0 text-muted-foreground"
+                  aria-hidden
+                />
+              )}
+              {member ? userLabel(member.displayName, member.email) : userId}
+              <button
+                type="button"
+                aria-label={t("label.pickerRemove")}
+                onClick={() =>
+                  onChange({
+                    ...filter,
+                    assignees: filter.assignees.filter(
+                      (value) => value !== userId,
+                    ),
+                  })
+                }
+                className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          {filter.unassigned && (
+            <span
+              data-testid="filter-chip"
+              data-facet="unassigned"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+            >
+              <CircleUserRound
+                className="h-3 w-3 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              {t("filter.assignee.unassigned")}
+              <button
+                type="button"
+                aria-label={t("label.pickerRemove")}
+                onClick={() => onChange({ ...filter, unassigned: false })}
+                className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+          {filter.blocked && (
+            <span
+              data-testid="filter-chip"
+              data-facet="blocked"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+            >
+              <Ban className="h-3 w-3 shrink-0 text-danger" aria-hidden />
+              {t("filter.blocked")}
+              <button
+                type="button"
+                aria-label={t("label.pickerRemove")}
+                onClick={() => onChange({ ...filter, blocked: false })}
+                className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+          {filter.hasLinks && (
+            <span
+              data-testid="filter-chip"
+              data-facet="links"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+            >
+              <Link2
+                className="h-3 w-3 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              {t("filter.hasLinks")}
+              <button
+                type="button"
+                aria-label={t("label.pickerRemove")}
+                onClick={() => onChange({ ...filter, hasLinks: false })}
                 className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
               >
                 <X className="h-3 w-3" />

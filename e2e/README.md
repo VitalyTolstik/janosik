@@ -40,14 +40,24 @@ Concurrent Playwright runs also need separate output directories: set
 Each run creates an isolated master account (`master@e2e.example`, password
 `e2e-master-password`), intended solely for the disposable test stack.
 
-`tests/app/views/` covers calendar and table card actions, watch column counts,
-view switching and persistence after reload. The watch scenarios cover board,
-column and card activity, diffs, comments, attachments, membership and paging.
-They also check the Undo/Redo controls, administrator attribution, viewer
-access and public-link secrecy. Each test has its own user and board.
-The retention and legacy-record scenarios additionally adjust their own feed
-rows in the disposable Docker database; they are skipped when using external
-development servers. E2E imports use `@/` for paths relative to `e2e/`.
+`tests/app/views/` covers the calendar, table and watch projections. Calendar:
+month/week scale, Prev/Next/Today and scale persistence, rescheduling a chip
+between days while keeping its time, dragging an unscheduled card onto a day,
+the three-chip day cap with `+N more` and the full day panel, the day composer
+with a chosen column and labels (including Cancel), read-only VIEWER controls,
+and the 12/24-hour preference. Table: inline due date (set and remove), title,
+labels and column edits, sorting every header asc → desc → board order with
+`aria-sort` on the column header, optional columns persisted across reloads,
+and the filtered empty state. Watch: status counts (archived cards excluded),
+WIP limits, online roster, agent attribution, empty feed, board deletion
+(visible feed error + retry), paging with page sizes 20/50/100 and retention
+boundaries. The watch scenarios cover board, column and card activity, diffs,
+comments, attachments, membership and paging. They also check the Undo/Redo
+controls, administrator attribution, viewer access and public-link secrecy.
+Each test has its own user and board. The retention and legacy-record scenarios
+additionally adjust their own feed rows in the disposable Docker database; they
+are skipped when using external development servers. E2E imports use `@/` for
+paths relative to `e2e/`.
 
 `tests/app/sharing/` covers public live and snapshot boards, read-only content,
 link limits and revocation, and iframe themes on a separate local origin. Its
@@ -55,19 +65,25 @@ fixtures create a fresh user and board per test.
 
 `tests/app/filters/` covers the board filter toolbar: title, description, label
 and checklist search; the due, created, label, priority, assignee and link
-facets; removable chips; reset; the active-facet count; per-column empty states;
-disabled drag & drop; and the same filter in the table and calendar views (the
-watch view hides the toolbar). Tests are independent and cover one behaviour
-each. Creation-date cases age cards in the disposable Docker database, so they
-are skipped when running against external development servers.
+facets; removable chips for every facet (including priority, assignee and
+links); reset of the query and all facets; the active-facet and result counts;
+per-column empty states; disabled drag & drop; a faceted filter in the table and
+calendar views; and the filter living in the URL so a reload or shared link
+restores it. Tests are independent and cover one behaviour each. They prove
+the facets combine with AND by using a card that breaks exactly one facet, and
+that switching boards does not leak the filter. Creation-date cases age cards
+in the disposable Docker database, so they are skipped when running against
+external development servers.
 
 `tests/app/search/` covers the header global search (button and Ctrl/Cmd+K,
 cross-board card and board hits, title/description/label/checklist matches,
 highlights, archived badges and ranking, keyboard navigation and the 20-result
-cap, opening the card dialog or the board), whitespace trimming in the board
-query and the card archive search (filtering, no matches, empty archive, reset
-and opening an archived card). Each test starts from its own user and board;
-extra boards are created through the API.
+cap, opening the card dialog or the board), active-board cards ranking before
+archived-board cards, whitespace-only/max-length queries and ArrowUp at the
+first result, whitespace trimming in the board query and the card archive search
+(filtering, no matches, empty archive, reset and opening an archived card). Each
+test starts from its own user and board; extra boards are created through the
+API.
 
 `tests/app/history/` covers undo and redo through the header buttons and the
 Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl+Y shortcuts: button availability, clearing
@@ -118,12 +134,15 @@ boards.
 
 `tests/app/navigation/` covers direct board and card links (including signing in
 on the linked URL and the `/app/` deploy base), the home redirect, the board 404
-and its recovery, archived-board redirects, browser Back/Forward and the
-all-archived empty state. Ctrl+click opens a card in a new tab from the board,
-table and calendar. The keyboard layer covers the `?` cheat sheet (and the Help
-menu trigger), the `j`/`k` cursor, `e`/Enter, the `n` and `c` composers, Escape,
-and the guards that keep shortcuts out of text fields and open menus. Each test
-starts from its own account and board; extra boards are created through the API.
+and its recovery, archived-board redirects (a dead archived-card link explains
+the redirect), browser Back/Forward, the all-archived empty state and its deep
+link, and the board switcher's no-match, Escape focus return and ArrowUp
+selection. Ctrl+click opens a card in a new tab from the board, table and
+calendar. The keyboard layer covers the `?` cheat sheet (and the Help menu
+trigger), the `j`/`k` cursor, `e`/Enter, the `n` and `c` composers, Escape, and
+the guards that keep shortcuts out of text fields and open menus. Each test
+starts from its own account and board; extra boards are created through the
+API.
 
 `tests/app/pwa/` covers the production PWA surface: the service worker is
 registered under the app base and controls the page (also after a reload); the
@@ -182,26 +201,41 @@ every section heading, the feature rows and an expandable FAQ answer; pricing
 checks the plan cards with prices and limits, the comparison table, both plan
 CTAs and the closing CTA. Navigation covers the header and footer links to
 home, pricing and documentation (including the home features anchor, the
-self-hosting guide and browser Back), while the CTA suite clicks Sign in,
-Create account, hero and pricing links and verifies that the app really opens
-its login or registration screen under the `/app/` base, with the Russian
-`?lng=ru` handoff. Language tests switch home and pricing between English and
-Russian in place and check `<html lang>` and translated content. The theme test
-toggles light/dark, survives a reload and carries the shared `starlight-theme`
-choice into the documentation; the dual-language 404 page gets its own theme
-test. The 404 tests verify the status, English and Russian copy and the link
-home. The site is public, so these tests need no account, fixture or API setup.
+self-hosting guide, external project URLs and browser Back), while the CTA
+suite clicks Sign in, Create account, hero and pricing links and verifies that
+the app really opens its login or registration screen under the `/app/` base,
+with the Russian `?lng=ru` handoff. Language tests switch home and pricing
+between English and Russian in place and check `<html lang>`, translated
+content and hreflang alternates. The theme tests toggle light/dark, survive a
+reload, follow the system colour scheme until the visitor chooses, and carry
+the shared `starlight-theme` choice into the documentation; the dual-language
+404 page gets its own theme test. SEO tests assert title, description,
+canonical, hreflang, Open Graph, Twitter and JSON-LD on the home, pricing, RU
+and 404 pages, plus sitemap.xml, robots.txt, llms.txt, pricing.md and the
+social cards. A mobile test checks 375px and the 720–879px tablet range (no
+horizontal overflow, both auth CTAs reachable), analytics tests check the
+delegated `dataLayer` event, Do Not Track and the CSP allow-list for the
+optional Plausible script, and reduced-motion/accessibility tests cover paused
+clips, the skip link, landmarks and visible focus. The 404 tests verify the
+status, English and Russian copy, the docs link, language switch and noindex.
+The site is public, so these tests need no account, fixture or API setup.
 
 `tests/docs/` covers the Starlight documentation under `/docs/` and
-`/ru/docs/`: the landing and the five sidebar groups, a key page per group,
+`/ru/docs/`: all 22 English and 22 Russian pages (status, `<html lang>`, one
+H1, title, description and canonical), a full crawl of every internal link and
+`#fragment` across those 44 pages, the landing and the five sidebar groups,
 Pagefind search (header button and Ctrl/Cmd+K, English and Russian indexes,
-opening a result, empty query and no matches), inline link integrity on sampled
-pages in both locales, previous/next pagination, language switching with
-translated content and `<html lang>`, explicit and automatic theme persistence
-between the docs and the marketing site (including after reload), and the
-site ↔ docs ↔ app links (header/footer «Docs», the docs brand, the docs app
-entry point and the app Help menu). Most tests need no account; the app Help
-entry point signs in with its own isolated account. Run just this set with
+opening a result, keyboard navigation and focus return, empty query, no matches
+and a recoverable bundle failure), code-block copy, tables, heading anchors,
+the table of contents and the version badge, previous/next pagination,
+language switching across user-guide, admin and API sections, docs SEO
+(canonical, hreflang, docs social card), the localized 404 for unknown docs
+paths, mobile search/sidebar and skip-link/landmark/keyboard basics. Explicit
+and automatic theme persistence between the docs and the marketing site
+(including after reload) and the site ↔ docs ↔ app links (header/footer
+«Docs», the docs brand, the docs app entry point and the app Help menu) are
+covered too. Most tests need no account; the app Help entry point signs in
+with its own isolated account. Run just this set with
 `npm run test:docker -w e2e -- tests/docs`.
 
 To use already-running development servers instead, provide the site and app
