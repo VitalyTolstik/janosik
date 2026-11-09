@@ -8,6 +8,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Admin console redesign: the 26 flat master-panel links are grouped into
+  eight hubs (Overview, Users, Boards, Moderation, Audit & activity,
+  Communications, Access & security, Settings). Every capability survives as a
+  tab, old URLs redirect with their query string, and the sidebar becomes a
+  232 px console / 64 px tablet rail / 280 px phone sheet. The panel adds
+  breadcrumbs, a persisted Comfortable/Compact density toggle, a command
+  palette with navigation/actions/recent pages, keyboard-reachable table rows,
+  25/50/100 page sizes, labelled mobile table cards and explicit empty, error
+  and 403 states. Owner/OPERATOR visibility and every existing `data-testid`
+  contract are preserved; the server remains the authorization source.
+- Branded split-screen master sign-in: a dark brand rail with build version and
+  the restricted-operations context, a 372 px form with show/hide password,
+  Caps Lock warning, progressive TOTP with a 30-second indicator, explicit
+  invalid/locked/disabled/IP/offline errors, `aria-invalid`/`aria-describedby`
+  and an honest "SSO is not configured" note instead of a fake provider button.
+- Admin design-token layer (`ui/src/admin/admin.css`): dense row/control
+  heights, sidebar widths, mobile table cards, reduced-motion support and the
+  login split layout.
+- Admin documentation EN/RU for the new IA, redirects, responsive behaviour,
+  density, command palette, shortcuts and the compatibility contract
+  (`site/src/content/docs/*/docs/admin/redesign.md`).
 - Admin-configurable card workflow: a board ADMIN can allow only specific
   column transitions (a matrix), restrict them to ADMIN/MEMBER, require an
   assignee, a due date, a description or completed checklists, add global
@@ -45,6 +66,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The admin omnibox is now a command palette: `Ctrl/Cmd+K` still opens it and
+  entity result test ids are unchanged, but it also offers the eight hubs,
+  theme/density actions, recent pages and shortcut help. `?` opens a shortcut
+  sheet; `g` followed by `d/u/b/m/a/c/s/,` jumps to a hub.
+- Admin table selection now announces "Select all rows on this page" instead
+  of a delete label, and a failed owner-only request renders a dedicated
+  "Owner rights required" state rather than a generic list error.
+- The board content editor's back link returns to the board detail instead of
+  the dashboard, the page has normal padding, and its refresh control is
+  labelled Refresh rather than Retry.
 - Top-of-page notifications now share one frosted "quiet glass" stack under
   the header: announcements, impersonation, data-safety and update prompts no
   longer cover the board or each other, and toasts follow the same visual

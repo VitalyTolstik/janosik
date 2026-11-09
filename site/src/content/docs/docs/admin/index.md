@@ -80,9 +80,11 @@ exists with that email, the request answers `409`.
 
 ## How to sign in
 
-Open `/admin`. An unauthenticated visit shows the master sign-in screen, which
-is deliberately different from the user login: no registration link, no
-password recovery, no external sign-in buttons.
+Open `/admin`. An unauthenticated visit shows the branded split-screen master
+sign-in, deliberately different from the user login: a brand rail with the
+build version, a 372 px form, progressive two-factor, show/hide password and
+no registration, password recovery or social sign-in. There is no SSO button
+because the backend has no master OIDC provider; the screen says so instead.
 
 - The form posts to `POST /admin/auth/login` with email and password, plus an
   optional six-digit two-factor code.
@@ -112,43 +114,56 @@ hint `Master accounts are created on the server via the admin CLI.`
 
 ## The shell
 
-The shell is a fixed sidebar plus a dense content area with a compact type
-scale.
+The shell is a 232 px sidebar with eight hubs, a 44 px top bar with
+breadcrumbs, and a dense content area. Every capability that used to be a
+top-level link is a tab inside a hub; old URLs redirect there. The full map is
+in [Admin redesign](./redesign/).
 
-### Sidebar sections
+### Sidebar hubs
 
-| Section | Entries |
+| Group | Hubs |
 | --- | --- |
-| Monitoring | Dashboard, Activity, Command log, Audit trail |
-| People | Users, Masters (owner only) |
-| Content | Boards, Cards, Columns, Labels, Checklists, Card links |
-| Collaboration | Comments, Attachments |
-| Security | Sessions, API tokens, Email service (owner only), OAuth login (owner only), Security |
-| Operations | Traffic and limits, Demo runner, Public shares, Operations, Communications, Announcements, Observability |
+| Operate | Overview, Users, Boards, Moderation |
+| Govern | Audit & activity, Communications |
+| Configure | Access & security, Settings |
 
-The top bar shows the signed-in identity and a `Master` badge for owners. It
-also holds the sidebar toggle, the search button, the theme toggle, the
-language switcher, the `Back to boards` link and `Sign out`.
+The top bar shows breadcrumbs, the signed-in identity (with a `Master` badge
+for owners), the command-palette trigger, the density and theme toggles, the
+shortcut sheet and `Sign out`. The sidebar footer holds the language switcher
+and `Back to boards`.
+
+### Responsive layout
+
+The sidebar is 232 px on desktop, a 64 px icon rail between 761 and 959 px, and
+a 280 px sheet behind a scrim at 760 px and below. At 639 px and below tables
+become labelled cards, so the content keeps the full phone width.
 
 ### Keyboard and preferences
 
-- `Ctrl` or `Cmd` + `K` opens the omnibox from anywhere in the panel.
+- `Ctrl` or `Cmd` + `K` opens the command palette from anywhere in the panel.
 - `Ctrl` or `Cmd` + `B` toggles the sidebar. The collapsed state is a narrow
   icon rail, and the choice is remembered in `localStorage` under
   `janosik.admin.sidebar`.
+- `g` followed by `d/u/b/m/a/c/s/,` jumps to a hub; `?` opens the shortcut
+  sheet.
+- The density toggle switches 36 px and 30 px table rows and is remembered
+  under `janosik.admin.density`.
 - The theme toggle switches between light and dark.
 - The language switcher switches the panel between English and Russian.
 
-### The omnibox
+### The command palette
 
-The omnibox searches users, boards, cards, comments, attachments and labels in
-one query. Results are grouped and keyboard-navigable: the arrow keys move the
-selection and Enter opens the highlighted row. Opening a result navigates to
-the related detail page. The search is debounced and runs against
-`GET /admin/search?q=`.
+The palette combines navigation, actions, recent pages and cross-entity
+search. It searches users, boards, cards, comments, attachments and labels
+against `GET /admin/search?q=`; results are grouped and keyboard-navigable
+with `↑`/`↓` and Enter. If the request fails it offers a retry instead of an
+empty result.
 
 ## Pages in this section
 
+- [Admin redesign](./redesign/) maps the eight hubs, legacy redirects,
+  responsive behaviour, density, the command palette and the compatibility
+  contract.
 - [Monitoring and logs](./monitoring/) covers the dashboard, the activity feed,
   the command log and the audit trail, with every column and action.
 - [Users and masters](./people/) covers the user list and its actions, the user
