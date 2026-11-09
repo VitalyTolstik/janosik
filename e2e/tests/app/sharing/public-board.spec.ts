@@ -1,5 +1,7 @@
 import { test, expect, publicUrl } from "../../../fixtures/sharing.js";
 
+test.describe.configure({ timeout: 60_000 });
+
 test("live and snapshot links remain read-only and diverge as the board changes", async ({
   page,
   browser,

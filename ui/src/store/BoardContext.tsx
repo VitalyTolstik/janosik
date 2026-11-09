@@ -143,6 +143,16 @@ interface BoardHistoryValue {
 }
 
 /**
+ * The caller's role on the active board — its own narrow context so the
+ * header can hide mutating affordances for a VIEWER without subscribing to
+ * every board edit. `undefined` while the role is unknown or there is no
+ * active board.
+ */
+interface BoardAccessValue {
+  role: BoardRole | undefined;
+}
+
+/**
  * Every way to change the data. The object is built once and never
  * replaced, so `useBoardActions()` consumers never re-render because of it
  * and its members are safe `useCallback`/`useMemo` dependencies.
@@ -286,6 +296,7 @@ type BoardContextValue = BoardStateValue &
 const BoardStateContext = createContext<BoardStateValue | null>(null);
 const BoardIdentityContext = createContext<BoardIdentityValue | null>(null);
 const BoardHistoryContext = createContext<BoardHistoryValue | null>(null);
+const BoardAccessContext = createContext<BoardAccessValue | null>(null);
 const BoardActionsContext = createContext<BoardActionsValue | null>(null);
 
 export function BoardProvider({ children }: { children: ReactNode }) {
@@ -666,6 +677,16 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     () => ({ canUndo, canRedo }),
     [canUndo, canRedo],
   );
+
+  // Any path that leaves the caller as a VIEWER — a live membership event, a
+  // focus refetch, a fresh load — drops the local undo stack. Hiding the
+  // buttons alone would still leave Ctrl+Z able to send refused commands.
+  useEffect(() => {
+    const activeId = board?.id;
+    if (activeId !== undefined && roles[activeId] === "VIEWER") {
+      dropHistory(activeId);
+    }
+  }, [board?.id, roles, dropHistory]);
 
   // Switching boards swaps in that board's stack — and its own undo state.
   useEffect(() => {
@@ -1630,15 +1651,27 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     [board?.id, board?.title],
   );
 
+  // A narrow role slice: the header hides Undo/Redo for a VIEWER, and the
+  // role changes only on membership events — not on every card edit.
+  const activeBoardId = board?.id;
+  const access = useMemo<BoardAccessValue>(
+    () => ({
+      role: activeBoardId === undefined ? undefined : roles[activeBoardId],
+    }),
+    [activeBoardId, roles],
+  );
+
   return (
     <BoardLiveProvider live={live}>
       <BoardActionsContext.Provider value={actions}>
         <BoardHistoryContext.Provider value={history}>
-          <BoardIdentityContext.Provider value={identity}>
-            <BoardStateContext.Provider value={stateValue}>
-              {children}
-            </BoardStateContext.Provider>
-          </BoardIdentityContext.Provider>
+          <BoardAccessContext.Provider value={access}>
+            <BoardIdentityContext.Provider value={identity}>
+              <BoardStateContext.Provider value={stateValue}>
+                {children}
+              </BoardStateContext.Provider>
+            </BoardIdentityContext.Provider>
+          </BoardAccessContext.Provider>
         </BoardHistoryContext.Provider>
       </BoardActionsContext.Provider>
     </BoardLiveProvider>
@@ -2024,6 +2057,11 @@ export function useBoardIdentity(): BoardIdentityValue {
 /** Undo availability for the active board — changes only when it flips. */
 export function useBoardHistory(): BoardHistoryValue {
   return required(useContext(BoardHistoryContext), "useBoardHistory");
+}
+
+/** The caller's role on the active board — a narrow header-only slice. */
+export function useBoardAccess(): BoardAccessValue {
+  return required(useContext(BoardAccessContext), "useBoardAccess");
 }
 
 /**

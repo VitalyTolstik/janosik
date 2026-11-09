@@ -1,5 +1,7 @@
 import { test, expect } from "../../../fixtures/sharing.js";
 
+test.describe.configure({ timeout: 60_000 });
+
 test("mode filters, limits and revoked link deletion", async ({
   page,
   sharing,

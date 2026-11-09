@@ -8,6 +8,7 @@ import {
   markAlive,
   memberRow,
   openInvitations,
+  openMembers,
 } from "@/helpers/collaboration.js";
 import { columnSection } from "@/helpers/history.js";
 import { appUrl } from "@/helpers/urls.js";
@@ -139,4 +140,53 @@ test("declining an invitation leaves the board out of my boards", async ({
   ).toBeVisible();
   expect(await partner.role()).toBeUndefined();
   expect(await partner.invitations()).toEqual([]);
+});
+
+test("inviting an accepted member again shows the already-member toast", async ({
+  page,
+  board,
+  partner,
+}) => {
+  await board.open(page);
+  await inviteMember(page, partner.user.email);
+  await partner.accept();
+  await page.keyboard.press("Escape");
+
+  const dialog = await openMembers(page);
+  await dialog.getByRole("textbox", { name: "Email" }).fill(partner.user.email);
+  const refused = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/members") &&
+      response.request().method() === "POST",
+  );
+  await dialog.getByRole("button", { name: "Invite", exact: true }).click();
+  expect((await refused).status()).toBe(409);
+  await expect(
+    page
+      .locator(".janosik-toast")
+      .filter({ hasText: "already a member of the board" }),
+  ).toBeVisible();
+  await expect(memberRow(page, partner.user.email)).toHaveCount(1);
+  expect(await partner.invitations()).toEqual([]);
+});
+
+test("an invitation appears in the bell on focus without a reload", async ({
+  board,
+  partner,
+  partnerBrowser,
+}) => {
+  await markAlive(partnerBrowser.page);
+  await partner.invite("MEMBER");
+
+  // The same event a tab switch fires; the bell reloads its feed on focus.
+  await partnerBrowser.page.evaluate(() =>
+    window.dispatchEvent(new Event("focus")),
+  );
+  await expect(
+    partnerBrowser.page.getByTestId("notifications-badge"),
+  ).toHaveText("1", { timeout: 10_000 });
+  await expectStillAlive(partnerBrowser.page);
+
+  await openInvitations(partnerBrowser.page);
+  await expect(invitationRow(partnerBrowser.page, board.title)).toBeVisible();
 });
