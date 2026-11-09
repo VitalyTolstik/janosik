@@ -568,6 +568,20 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       return [boardTouch];
     }
 
+    case "SET_BOARD_WORKFLOW": {
+      // The reducer keeps the config optional; SQL NULL is "no workflow",
+      // `Prisma.DbNull` writes a real NULL instead of JSON `null`.
+      await tx.board.update({
+        where: { id: boardId },
+        data: {
+          workflow: after.workflow
+            ? (after.workflow as unknown as Prisma.InputJsonValue)
+            : Prisma.DbNull,
+        },
+      });
+      return [boardTouch];
+    }
+
     case "ARCHIVE_BOARD": {
       // The reducer keeps every byte and only sets `archivedAt` = `at`.
       await tx.board.update({

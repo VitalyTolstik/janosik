@@ -27,6 +27,7 @@ import {
   COVER_GRADIENTS,
   isCardLinkType,
   isColumnAccentStyle,
+  readBoardWorkflow,
 } from "@janosik/shared";
 
 /** A card row with the relations the aggregate needs (labels + checklists). */
@@ -137,6 +138,7 @@ export function toBoardAggregate(
   for (const card of cards) {
     cardsMap[card.id] = toCard(card, boardLabelIds, linksBySource.get(card.id));
   }
+  const workflow = readBoardWorkflow(board.workflow);
 
   return {
     id: board.id,
@@ -174,6 +176,8 @@ export function toBoardAggregate(
     ...(isColumnAccentStyle(board.columnStyle)
       ? { columnStyle: board.columnStyle }
       : {}),
+    // Absent in the aggregate = no workflow (old boards stay byte-identical).
+    ...(workflow ? { workflow } : {}),
     ...(board.archivedAt ? { archivedAt: board.archivedAt.getTime() } : {}),
   };
 }

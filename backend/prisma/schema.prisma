@@ -178,6 +178,9 @@ model Board {
   id         String        @id @default(cuid())
   title      String        @db.VarChar(100) // LIMITS.boardTitle
   columnStyle String? // TASK-164: column accent shape; null = signature
+  // Admin-configured card workflow (BoardWorkflow in @janosik/shared).
+  // NULL = no process, every move allowed — the legacy behaviour.
+  workflow   Json?
   archivedAt DateTime?
   deletedAt  DateTime? // soft-delete (§7.0)
   version    Int           @default(0) // ifMatch → 409 (title editable)

@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
-import { Role } from "@prisma/client";
+import { type BoardMember, Role } from "@prisma/client";
 import type {
   CommandBatchResponse,
   CommandDeltaEntry,
@@ -22,6 +22,7 @@ import type { AuthPrincipal } from "@/auth/auth-principal";
 import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { BoardRoles } from "@/common/board-roles.decorator";
+import { CurrentMembership } from "@/common/current-membership.decorator";
 import { MembershipGuard } from "@/common/membership.guard";
 import { CommandsService } from "./commands.service";
 import { CreateCommandBatchDto } from "./dto/create-command-batch.dto";
@@ -51,10 +52,12 @@ export class CommandsController {
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentMembership() membership: BoardMember,
     @Body() dto: CreateCommandDto,
   ): Promise<CommandResponse> {
     return this.commands.apply(id, user.id, dto, {
       actorType: actorTypeOf(principal),
+      actorRole: membership.role,
     });
   }
 
@@ -72,10 +75,12 @@ export class CommandsController {
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentMembership() membership: BoardMember,
     @Body() dto: CreateCommandBatchDto,
   ): Promise<CommandBatchResponse> {
     const results = await this.commands.applyBatch(id, user.id, dto.commands, {
       actorType: actorTypeOf(principal),
+      actorRole: membership.role,
     });
     return { results };
   }

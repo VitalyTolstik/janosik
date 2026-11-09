@@ -21,12 +21,15 @@ import {
   atWipLimit,
   boardReducer,
   cardOf,
+  evaluateTransition,
   hasLinkedPair,
   LIMITS,
   MAX_COMMAND_BYTES,
   validateBoardAction,
+  workflowReferenceError,
   wouldCloseBlocksCycle,
 } from "@janosik/shared";
+import type { BoardRole, WorkflowConflictDetails } from "@janosik/shared";
 import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
@@ -79,6 +82,7 @@ type CommandActionType = Exclude<
 const SUPPORTED_ACTION_REGISTRY: Record<CommandActionType, true> = {
   RENAME_BOARD: true,
   SET_BOARD_COLUMN_STYLE: true,
+  SET_BOARD_WORKFLOW: true,
   ARCHIVE_BOARD: true,
   UNARCHIVE_BOARD: true,
   ADD_COLUMN: true,
@@ -217,7 +221,11 @@ export class CommandsService {
     boardId: string,
     actorId: string,
     dto: CreateCommandDto,
-    options: { allowOversize?: boolean; actorType?: ActorType } = {},
+    options: {
+      allowOversize?: boolean;
+      actorType?: ActorType;
+      actorRole?: Role;
+    } = {},
   ): Promise<CommandResponse> {
     const [response] = await this.applyBatch(boardId, actorId, [dto], options);
     return response;
@@ -240,12 +248,20 @@ export class CommandsService {
     boardId: string,
     actorId: string,
     dtos: CreateCommandDto[],
-    options: { allowOversize?: boolean; actorType?: ActorType } = {},
+    options: {
+      allowOversize?: boolean;
+      actorType?: ActorType;
+      actorRole?: Role;
+    } = {},
   ): Promise<CommandResponse[]> {
     // TASK-157: who issued the commands — a person or an agent (a PAT). The
     // transport resolves it from the request principal; internal callers
     // (admin restores, the demo seeder) default to "human".
     const actorType: ActorType = options.actorType ?? "human";
+    // The caller's board role drives workflow transitions. A normal command
+    // passes the membership role resolved by `MembershipGuard`; internal
+    // callers (the master panel, demo seeding) act as an ADMIN.
+    const actorRole: Role = options.actorRole ?? Role.ADMIN;
     // Validate every command *before* the board lock (TASK-147 follow-up): an
     // oversized or malformed command is a cheap 400/413, not megabytes
     // serialized through the board writer.
@@ -332,6 +348,7 @@ export class CommandsService {
             boardId,
             actorId,
             actorType,
+            actorRole,
             entry,
             board: running,
           });
@@ -444,6 +461,7 @@ export class CommandsService {
       boardId: string;
       actorId: string;
       actorType: ActorType;
+      actorRole: Role;
       entry: PreparedCommand;
       board: Board;
     },
@@ -453,7 +471,7 @@ export class CommandsService {
     prevSeq: number;
     board: Board;
   }> {
-    const { boardId, actorId, actorType, entry, board } = params;
+    const { boardId, actorId, actorType, actorRole, entry, board } = params;
     const { dto, action } = entry;
 
     await this.assertAssigneeIsBoardMember(tx, boardId, action);
@@ -474,6 +492,10 @@ export class CommandsService {
         currentVersion,
       } satisfies ConflictError);
     }
+    // Workflow first: a forbidden transition must report its own reason, not
+    // hide behind a WIP refusal in the same destination.
+    this.assertWorkflowTransition(board, action, actorRole, currentVersion);
+    this.assertWorkflowReferences(board, action);
     this.assertNoWipConflict(board, action, currentVersion);
 
     const at = (action as BoardScopedAction).at;
@@ -821,7 +843,11 @@ export class CommandsService {
     actorId: string,
     actionType: string,
   ): Promise<void> {
-    if (actionType !== "ARCHIVE_BOARD" && actionType !== "UNARCHIVE_BOARD") {
+    if (
+      actionType !== "ARCHIVE_BOARD" &&
+      actionType !== "UNARCHIVE_BOARD" &&
+      actionType !== "SET_BOARD_WORKFLOW"
+    ) {
       return;
     }
     const membership = await tx.boardMember.findUnique({
@@ -830,8 +856,80 @@ export class CommandsService {
     });
     if (membership?.role !== Role.ADMIN) {
       throw new ForbiddenException(
-        "Only an ADMIN can archive or unarchive the board",
+        actionType === "SET_BOARD_WORKFLOW"
+          ? "Only an ADMIN can change the board workflow"
+          : "Only an ADMIN can archive or unarchive the board",
       );
+    }
+  }
+
+  /**
+   * Enforce the board's workflow for a move (TASK-165). Runs inside the
+   * board-write transaction, after the board lock, so the config, the card's
+   * actual column, the caller's role and WIP all describe the same instant.
+   *
+   * `action.fromColumnId` is never trusted: the aggregate says where the card
+   * actually is. A missing card/column or a stale source is left to the
+   * reducer's own no-op, exactly like every other command.
+   */
+  private assertWorkflowTransition(
+    board: Board,
+    action: BoardAction,
+    actorRole: Role,
+    currentVersion: number,
+  ): void {
+    if (action.type !== "MOVE_CARD") return;
+    const card = cardOf(board, action.cardId);
+    if (!card || card.archivedAt !== undefined) return;
+    const from = board.columns.find((column) =>
+      column.cardIds.includes(action.cardId),
+    );
+    const to = board.columns.find((column) => column.id === action.toColumnId);
+    if (!from || !to || from.id === to.id) return;
+    if (from.id !== action.fromColumnId) return;
+    const decision = evaluateTransition(
+      board,
+      action.cardId,
+      action.toColumnId,
+      actorRole as BoardRole,
+    );
+    if (decision.allowed) return;
+    if (decision.code === "card_not_found") return;
+    const workflow: WorkflowConflictDetails = {
+      code: decision.code,
+      fromColumnId: decision.fromColumnId,
+      toColumnId: decision.toColumnId,
+      allowedToColumnIds: decision.allowedToColumnIds,
+      ...(decision.code === "role_not_allowed" && decision.requiredRoles
+        ? { requiredRoles: decision.requiredRoles }
+        : {}),
+      ...(decision.code === "condition_failed"
+        ? { failedConditions: decision.failedConditions }
+        : {}),
+    };
+    throw new ConflictException({
+      conflict: "workflow",
+      currentVersion,
+      workflow,
+    } satisfies ConflictError);
+  }
+
+  /**
+   * A workflow command may only name columns the board actually has. Shape is
+   * validated on the wire; this is the reference check that needs the board,
+   * so it runs under the lock. An enabled workflow also needs two columns —
+   * there is nothing to restrict on a one-column board.
+   */
+  private assertWorkflowReferences(board: Board, action: BoardAction): void {
+    if (action.type !== "SET_BOARD_WORKFLOW" || action.workflow === undefined) {
+      return;
+    }
+    const problem = workflowReferenceError(action.workflow, board.columns);
+    if (problem) {
+      throw new BadRequestException({
+        message: `Invalid workflow (${problem.field}): ${problem.message}`,
+        field: `action.${problem.field}`,
+      });
     }
   }
 

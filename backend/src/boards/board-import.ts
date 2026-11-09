@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import type { Board } from "@janosik/shared";
+import { remapBoardWorkflow } from "@janosik/shared";
 
 /** Rows per `createMany` (TASK-156). */
 const IMPORT_CHUNK = 1_000;
@@ -79,6 +80,22 @@ export async function persistBoard(
         position: index,
         createdAt,
         updatedAt: createdAt,
+      },
+    });
+  }
+
+  // The workflow references board-local column ids, so it is remapped after
+  // the fresh column ids exist. A dangling reference (a hand-edited file) is
+  // dropped rather than failing the import; an enabled config that loses all
+  // edges is stored disabled. Restoring `updatedAt` keeps the envelope's
+  // timestamp instead of the moment of the import.
+  if (board.workflow !== undefined) {
+    const workflow = remapBoardWorkflow(board.workflow, columnIdMap);
+    await tx.board.update({
+      where: { id: created.id },
+      data: {
+        workflow: workflow as unknown as Prisma.InputJsonValue,
+        updatedAt: new Date(board.updatedAt),
       },
     });
   }

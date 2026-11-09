@@ -180,6 +180,24 @@ export function commandDetails(
         ],
       };
 
+    case "SET_BOARD_WORKFLOW": {
+      const summary = (workflow: typeof before.workflow): string =>
+        workflow === undefined
+          ? "off"
+          : workflow.enabled
+            ? `on (${workflow.transitions.length})`
+            : `off (${workflow.transitions.length})`;
+      return {
+        changes: [
+          {
+            field: "workflow",
+            from: summary(before.workflow),
+            to: summary(after.workflow),
+          },
+        ],
+      };
+    }
+
     // Column commands that are not a value diff still name the column.
     case "MOVE_COLUMN":
     case "ARCHIVE_COLUMN_CARDS": {
