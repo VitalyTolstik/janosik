@@ -41,13 +41,18 @@ board in the envelope with the importer as `ADMIN`. An empty or invalid
 envelope answers `400`. The envelope is:
 
 ```json
-{ "app": "janosik", "schemaVersion": 1, "exportedAt": 0, "boards": [] }
+{ "app": "janosik", "schemaVersion": 2, "exportedAt": 0, "boards": [] }
 ```
+
+Version 2 added the optional per-board `workflow`; version 1 files still
+import (and simply have no workflow). The importer mints fresh column and card
+ids and rewrites the workflow references; a transition whose column is missing
+is dropped rather than failing the import.
 
 `GET /boards/:id` returns the board aggregate and sets an `X-Board-Seq`
 response header carrying the command `seq` the aggregate reflects. A client
 resumes the SSE stream from that value. An unknown or soft-deleted board
-answers `404`.
+answers `404`. The aggregate carries `workflow` when the board has one.
 
 `GET /boards/:id/search?q=` returns `{ cardIds }` — the cards whose title,
 description, a checklist item or a comment contains `q` (case-insensitive

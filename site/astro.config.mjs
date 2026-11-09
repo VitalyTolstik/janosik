@@ -79,6 +79,7 @@ export default defineConfig({
           items: [
             { slug: "docs/user-guide" },
             { slug: "docs/user-guide/boards" },
+            { slug: "docs/user-guide/workflow" },
             { slug: "docs/user-guide/views" },
             { slug: "docs/user-guide/cards" },
             { slug: "docs/user-guide/collaboration" },

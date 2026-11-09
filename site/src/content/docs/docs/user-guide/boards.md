@@ -96,6 +96,15 @@ The shape applies to every accent on the board and is stored on the board, so
 all participants see the same style. The accent is decoration only — WIP
 colors, drag state, focus rings and text keep their own meaning.
 
+### Board workflow
+
+A board admin can restrict moves between columns. Open the gear in the header
+(`Board settings`) → `Workflow`, enable control and pick transitions in the
+matrix. Each transition has roles and optional card-field conditions. A
+forbidden target is shown disabled with the reason in the drag overlay, card
+menu, card dialog and table; a rejected drop leaves the card in place. See
+[Board workflow](/docs/user-guide/workflow/).
+
 ## Cards on the board
 
 ### Add a card

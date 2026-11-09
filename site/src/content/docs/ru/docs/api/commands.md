@@ -123,6 +123,70 @@ SSE. Id не длиннее 128 символов, а `__proto__` как id от�
 | `version`  | предусловие `ifMatch` или `ifMatchVersions` устарело         |
 | `wip`      | команда нарушила бы предел коллекции или WIP                 |
 | `id`       | команда называет id сущности, уже принадлежащий другой доске |
+| `workflow` | `MOVE_CARD` запрещён настроенным процессом доски             |
+
+### Рабочий процесс доски
+
+`SET_BOARD_WORKFLOW` заменяет (или очищает) весь необязательный процесс одной
+командой. Доступна только `ADMIN` (участник `MEMBER` получает `403`). Без поля
+`workflow` конфигурация удаляется; `enabled: false` сохраняет её, но выключает
+проверку.
+
+```json
+{
+  "commandId": "cmd-…",
+  "action": {
+    "type": "SET_BOARD_WORKFLOW",
+    "boardId": "board-…",
+    "at": 1730000000000,
+    "workflow": {
+      "schemaVersion": 1,
+      "enabled": true,
+      "initialColumnId": "col-backlog",
+      "doneColumnIds": ["col-done"],
+      "transitions": [
+        {
+          "id": "backlog-doing",
+          "fromColumnId": "col-backlog",
+          "toColumnId": "col-doing",
+          "allowedRoles": ["ADMIN", "MEMBER"],
+          "conditions": ["requireAssignee"]
+        }
+      ]
+    }
+  }
+}
+```
+
+Общий валидатор проверяет форму (версия схемы 1, уникальные пары `from → to`,
+без ребра в себя, роли ⊆ `{ADMIN, MEMBER}`, известные условия, не более 200
+переходов). Сервер дополнительно внутри блокировки доски проверяет, что все
+упомянутые колонки существуют, что у включённого процесса минимум две колонки
+и хотя бы один переход. Битая ссылка — `400 { "field":
+"action.workflow.transitions[0].toColumnId" }`.
+
+Запрещённое перемещение отвечает:
+
+```json
+{
+  "conflict": "workflow",
+  "currentVersion": 42,
+  "workflow": {
+    "code": "transition_not_allowed",
+    "fromColumnId": "col-backlog",
+    "toColumnId": "col-done",
+    "allowedToColumnIds": ["col-doing"]
+  }
+}
+```
+
+`code` — `transition_not_allowed`, `role_not_allowed` или `condition_failed`;
+для `condition_failed` есть ещё `failedConditions`. Проверка идёт до WIP, и
+`inverse: true` не даёт исключения: отмена перемещения подчиняется текущему
+процессу. `GET /boards/:id` возвращает `workflow`, если он сохранён; файлы
+экспорта используют `schemaVersion: 2` (файлы версии 1 по-прежнему
+импортируются). Клиентам следует читать процесс из агрегата, а не предполагать
+первую/последнюю колонку.
 
 Проверка `wip` повторяет ограничения коллекций редьюсера: `LIMITS` на
 колонки, карточки в колонке, метки на доске, метки на карточке, связи на
@@ -142,7 +206,7 @@ SSE. Id не длиннее 128 символов, а `__proto__` как id от�
 | `400`  | неподдерживаемый тип действия; тело содержит `field: "action.type"`                     |
 | `400`  | временная метка вне диапазона Date; `field` называет путь к ней                      |
 | `400`  | ключ или значение `ifMatchVersions` неверны                                          |
-| `403`  | роль вызывающего — `VIEWER`; либо пользователь без роли `ADMIN` отправляет `ARCHIVE_BOARD`/`UNARCHIVE_BOARD`       |
+| `403`  | роль вызывающего — `VIEWER`; либо пользователь без роли `ADMIN` отправляет `ARCHIVE_BOARD`/`UNARCHIVE_BOARD`/`SET_BOARD_WORKFLOW` |
 | `404`  | доска не найдена                                                                     |
 | `409`  | конфликт (см. выше), или `commandId` использован на другой доске                     |
 | `409`  | `commandId` повторён с другим действием; `field: "commandId"`                        |
@@ -383,6 +447,7 @@ GET /api/v1/boards/:id/commands?since=<seq>
 | Действие          | Поля            | Значение                                                                                                    |
 | ----------------- | --------------- | ----------------------------------------------------------------------------------------------------------- |
 | `RENAME_BOARD`    | `title`         | Переименовывает доску. Заголовок обрезается до `LIMITS.boardTitle` (100). Разрешено для `ADMIN` и `MEMBER`. |
+| `SET_BOARD_WORKFLOW` | `workflow` объект необязательно | Заменяет или (без поля) очищает процесс доски. Только `ADMIN`; см. раздел «Рабочий процесс доски». |
 | `SET_BOARD_COLUMN_STYLE` | `columnStyle` `"rail" \| "left" \| "wash" \| "title" \| "glow" \| "glass" \| "band" \| "dot" \| "signature"` необязательно | Задаёт общую форму акцента колонок доски; пропуск возвращает `signature`. |
 | `ARCHIVE_BOARD`   | `boardId`, `at` | Архивирует доску. Только `ADMIN`; не-`ADMIN` отвечает `403`.                                                |
 | `UNARCHIVE_BOARD` | `boardId`, `at` | Возвращает архивную доску. Только `ADMIN`; не-`ADMIN` отвечает `403`.                                       |

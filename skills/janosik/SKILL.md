@@ -65,10 +65,11 @@ silence is not approval. Reuse the user's answer for subsequent cards in scope.
 ## Find and claim work
 
 `janosik_list_ready_cards` finds unassigned, unblocked cards with no live claim
-in each active board's **first column**, ordered by priority. This is a queue
-convention, regardless of column name. `janosik_wait_for_work` polls until a
-candidate appears or its timeout expires. Neither tool reserves work. Assigned
-cards stay outside this queue even after their lease expires.
+in each active board's **initial column** (the first column when no workflow is
+configured), ordered by priority. This is a queue convention, regardless of
+column name. `janosik_wait_for_work` polls until a candidate appears or its
+timeout expires. Neither tool reserves work. Assigned cards stay outside this
+queue even after their lease expires.
 
 Before executing a card's task:
 
@@ -131,8 +132,15 @@ tool call. Set the structured `kind` on `janosik_add_comment`:
 
 Omit `kind` for a plain note. Writing `[evidence]` in text does not set the kind.
 
-The workflow is an agent operating convention, not a built-in state machine or
-permission boundary. Follow the user's explicit review policy. At handoff,
+The workflow is both an agent operating convention and, on a board where an
+admin enabled it, a built-in state machine and permission boundary. Read
+`janosik_get_workflow` before planning a move: it shows the allowed transitions,
+roles, conditions, and the initial and done columns. A `409` with
+`conflict: "workflow"` is a rule, not a transient error: choose an allowed
+column, satisfy the named condition, or leave the card in place and report the
+blocker. Never try to bypass it by clearing a task contract, changing the
+workflow, importing a board or restoring/duplicating a card. Follow the user's
+explicit review policy. At handoff,
 post evidence and a note naming the reviewer and checks, move to Review, request
 review through available agent coordination or the agreed human channel, and
 release the lease. Do not claim a person was notified when only a card comment
@@ -149,17 +157,20 @@ owned by the reviewer. Do not tick unverified items.
 
 ### What the MCP Done check actually guarantees
 
-When `janosik_move_card` enters the **last column from another column**, it checks
+When `janosik_move_card` enters a **done column from another column**, it checks
 cards with a nonempty `definitionOfDone` list or a checklist titled
 `Definition of Done` (case-insensitive, surrounding whitespace ignored). It
 refuses the move if that checklist has unticked items or no comment with
 `kind: "evidence"` exists. `acceptanceCriteria` alone does not activate it.
+The done columns come from the board's workflow (`doneColumnIds`), falling back
+to the last column when no workflow exists.
 
 The tool does not prove the criteria hold, require a checklist matching every
 contract entry, or judge evidence quality/freshness. Column order determines the
-check, not the name Done. It repeats after board-version conflicts, but the
-comment read and move are separate requests. Other app clients do not enforce
-this MCP check. Verify the result yourself; never clear the contract or reorder
+fallback check, not the name Done. It repeats after board-version conflicts, but
+the comment read and move are separate requests. Other app clients do not enforce
+this MCP check, and the board workflow may enforce additional role/field
+conditions. Verify the result yourself; never clear the contract or reorder
 columns to bypass it.
 
 ## Defects and blockers

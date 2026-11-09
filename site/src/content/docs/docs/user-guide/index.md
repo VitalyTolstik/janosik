@@ -58,6 +58,7 @@ The right side holds the tools:
 ## Where to go next
 
 - [Boards, columns and cards](boards/) — creating and managing boards and columns, adding and moving cards.
+- [Board workflow](workflow/) — admins can allow only specific column transitions, with roles and card conditions.
 - [Calendar, table and watch views](views/) — other ways to view the same cards,
   including the simplified watch view and compact card layout.
 - [Card details and the quick menu](cards/) — everything inside a card and

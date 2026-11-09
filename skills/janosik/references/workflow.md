@@ -4,6 +4,13 @@ Use this for executing tasks, managing an agent queue or setting up a board.
 Status reports, searches and focused edits do not need column creation, claims
 or a new review process. An explicit user workflow overrides these defaults.
 
+When a board has an **enabled** workflow (`janosik_get_workflow`), its
+transitions are authoritative: do not add columns, move cards or restore cards
+to recreate a preferred chain. Use an allowed target, satisfy the named
+condition, or leave the card where it is and report the blocker. An admin can
+change the rules; an agent cannot. The initial/done columns in the workflow also
+replace the "first column" queue and "last column Done" conventions used below.
+
 ## Find or create the board and task
 
 Use `janosik_list_boards` and the user's project context to find the intended
