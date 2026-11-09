@@ -19,6 +19,7 @@ import type {
   AdminUserRowDto,
   AdminAuditRowDto,
 } from "@janosik/shared";
+import { ANNOUNCEMENT_LOCALES } from "@janosik/shared";
 import { adminApi } from "./admin-client";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
@@ -46,10 +47,10 @@ import {
   CreateBoardButton,
   CreateUserButton,
   DeleteUserDialog,
-  EditAnnouncementDialog,
   PromoteUserDialog,
   ResetUserPasswordDialog,
 } from "./dialogs";
+import { AnnouncementEditorDialog } from "./announcements/AnnouncementEditorDialog";
 import { exportUser, impersonateUser } from "./user-actions";
 
 /**
@@ -1263,6 +1264,41 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             ),
           },
           {
+            label: t("admin.comms.col.languages"),
+            render: (row) => {
+              if (row.sourceLocale === null && row.translations.length === 0) {
+                return (
+                  <Badge variant="neutral">{t("admin.comms.legacy")}</Badge>
+                );
+              }
+              return (
+                <span className="inline-flex gap-1">
+                  {ANNOUNCEMENT_LOCALES.map((locale) => (
+                    <Badge
+                      key={locale}
+                      variant={row.completeness[locale] ? "success" : "neutral"}
+                    >
+                      {t(`admin.comms.lang.${locale}.short` as AdminMessageKey)}
+                    </Badge>
+                  ))}
+                </span>
+              );
+            },
+          },
+          {
+            label: t("admin.comms.col.policy"),
+            render: (row) =>
+              row.fallbackPolicy === "require_all" ? (
+                <Badge variant="success">
+                  {t("admin.comms.policy.require_all.short")}
+                </Badge>
+              ) : (
+                <Badge variant="warning">
+                  {t("admin.comms.policy.allow_fallback.short")}
+                </Badge>
+              ),
+          },
+          {
             label: t("admin.comms.col.level"),
             render: (row) => (
               <Badge
@@ -1291,7 +1327,20 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.comms.col.email"),
             render: (row) =>
-              row.sendEmail ? <Badge variant="primary">email</Badge> : "—",
+              row.sendEmail ? (
+                <span className="inline-flex gap-1">
+                  <Badge variant="primary">email</Badge>
+                  <Badge
+                    variant={row.emailSentAt === null ? "warning" : "success"}
+                  >
+                    {row.emailSentAt === null
+                      ? t("admin.comms.email.pendingBadge")
+                      : t("admin.comms.email.sentBadge")}
+                  </Badge>
+                </span>
+              ) : (
+                "—"
+              ),
           },
           {
             label: t("admin.comms.active"),
@@ -1328,7 +1377,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                     close: () => void;
                     reload: () => void;
                   }) => (
-                    <EditAnnouncementDialog
+                    <AnnouncementEditorDialog
                       announcement={row}
                       onClose={close}
                       onDone={reload}

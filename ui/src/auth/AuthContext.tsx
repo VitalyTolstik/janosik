@@ -12,6 +12,7 @@ import {
 import type { AuthResponseDto, AuthUserDto } from "@janosik/shared";
 import { api, isApiEnabled } from "@/api/client";
 import { clearAvatarCache } from "@/hooks/use-avatar-object-url";
+import { ensureLocale, defaultI18n, type Lang } from "@/i18n/i18n";
 import {
   clearImpersonation,
   consumeImpersonationHash,
@@ -227,6 +228,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateUser = useCallback((next: AuthUserDto) => {
     setUser(next);
   }, []);
+
+  // Announcement localization: the server profile is the source of truth for
+  // the interface language. `?lng=` (a documentation/marketing handoff) still
+  // wins. An account without a stored locale adopts the current UI language
+  // once, which keeps existing users on the language they already had.
+  const localeAdoptionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!serverMode || status !== "authenticated" || user === null) return;
+    if (impersonating) return;
+    if (new URLSearchParams(window.location.search).has("lng")) return;
+    const current: Lang = defaultI18n.language.startsWith("ru") ? "ru" : "en";
+    if (user.locale !== undefined) {
+      if (user.locale === current) return;
+      const wanted = user.locale;
+      void ensureLocale(wanted).then((ok) => {
+        if (ok && defaultI18n.language !== wanted) {
+          void defaultI18n.changeLanguage(wanted);
+        }
+      });
+      return;
+    }
+    const adoptionKey = `${user.id}:${current}`;
+    if (localeAdoptionRef.current === adoptionKey) return;
+    localeAdoptionRef.current = adoptionKey;
+    void api
+      .updateProfile({ locale: current })
+      .then(updateUser)
+      .catch(() => undefined);
+  }, [serverMode, status, user, impersonating, updateUser]);
 
   const exitImpersonation = useCallback(() => {
     clearImpersonation();

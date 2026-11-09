@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Eye } from "lucide-react";
-import type { AdminEmailTemplateDto, AdminUserRowDto } from "@janosik/shared";
+import type { AdminEmailTemplateDto } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -17,13 +16,12 @@ import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
 import { useAdminAuth } from "./AdminAuthContext";
 import { useAdminT } from "./admin-i18n";
+import { AnnouncementEditorDialog } from "./announcements/AnnouncementEditorDialog";
 import { SettingsSkeleton } from "./skeletons";
 import { Badge, CharCount, ErrorState, Field, PageHeader, Panel } from "./ui";
 import { fieldError } from "./validation";
 
-/** Length caps mirroring the backend DTOs (AdminCreateAnnouncementDto / email). */
-const TITLE_MAX = 200;
-const BODY_MAX = 2000;
+/** Length caps mirroring the backend DTOs (AdminSendEmailDto / templates). */
 const SUBJECT_MAX = 200;
 const BODY_HTML_MAX = 20000;
 
@@ -69,13 +67,6 @@ export function CommsPage() {
   const [templates, setTemplates] = useState<AdminEmailTemplateDto[]>([]);
 
   const [creating, setCreating] = useState(false);
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [level, setLevel] = useState<"info" | "warning" | "danger">("info");
-  const [audience, setAudience] = useState<"all" | "segment">("all");
-  const [recipients, setRecipients] = useState<string[]>([]);
-  const [sendEmail, setSendEmail] = useState(false);
-  const [busy, setBusy] = useState(false);
 
   const [mailTo, setMailTo] = useState("");
   const [mailSubject, setMailSubject] = useState("");
@@ -113,37 +104,6 @@ export function CommsPage() {
   useEffect(() => {
     load();
   }, [load]);
-
-  const resetForm = () => {
-    setTitle("");
-    setBody("");
-    setLevel("info");
-    setAudience("all");
-    setRecipients([]);
-    setSendEmail(false);
-  };
-
-  const create = useCallback(async () => {
-    setBusy(true);
-    try {
-      await adminApi.createAnnouncement({
-        title,
-        body,
-        level,
-        audience,
-        segment: audience === "segment" ? recipients.join(",") : null,
-        sendEmail,
-      });
-      toast.success(t("admin.comms.created"));
-      setCreating(false);
-      resetForm();
-      load();
-    } catch {
-      toast.error(t("admin.common.actionFailed"));
-    } finally {
-      setBusy(false);
-    }
-  }, [title, body, level, audience, recipients, sendEmail, load, t, toast]);
 
   const send = useCallback(async () => {
     setSending(true);
@@ -478,212 +438,11 @@ export function CommsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={creating}
-        onOpenChange={(next) => {
-          if (!next) {
-            setCreating(false);
-            resetForm();
-          }
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t("admin.comms.new")}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">
-                {t("admin.comms.field.title")}
-              </span>
-              <Input
-                value={title}
-                maxLength={TITLE_MAX}
-                data-testid="admin-announcement-title"
-                onChange={(event) => setTitle(event.target.value)}
-              />
-              <CharCount value={title} max={TITLE_MAX} />
-            </label>
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">
-                {t("admin.comms.field.body")}
-              </span>
-              <Textarea
-                value={body}
-                maxLength={BODY_MAX}
-                data-testid="admin-announcement-body"
-                onChange={(event) => setBody(event.target.value)}
-              />
-              <CharCount value={body} max={BODY_MAX} />
-            </label>
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">
-                {t("admin.comms.field.level")}
-              </span>
-              <select
-                value={level}
-                data-testid="admin-announcement-level"
-                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-                onChange={(event) =>
-                  setLevel(event.target.value as typeof level)
-                }
-              >
-                <option value="info">{t("admin.comms.level.info")}</option>
-                <option value="warning">
-                  {t("admin.comms.level.warning")}
-                </option>
-                <option value="danger">{t("admin.comms.level.danger")}</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">
-                {t("admin.comms.field.audience")}
-              </span>
-              <select
-                value={audience}
-                data-testid="admin-announcement-audience"
-                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-                onChange={(event) =>
-                  setAudience(event.target.value as "all" | "segment")
-                }
-              >
-                <option value="all">{t("admin.comms.audience.all")}</option>
-                <option value="segment">
-                  {t("admin.comms.audience.segment")}
-                </option>
-              </select>
-            </label>
-            {audience === "segment" ? (
-              <RecipientPicker
-                recipients={recipients}
-                onChange={setRecipients}
-              />
-            ) : null}
-            <label className="flex items-center gap-2 text-xs">
-              <Checkbox
-                checked={sendEmail}
-                onCheckedChange={setSendEmail}
-                aria-label={t("admin.comms.field.sendEmail")}
-                data-testid="admin-announcement-sendemail"
-              />
-              <span className="text-muted-foreground">
-                {t("admin.comms.field.sendEmail")}
-              </span>
-            </label>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setCreating(false);
-                resetForm();
-              }}
-            >
-              {t("admin.common.cancel")}
-            </Button>
-            <Button
-              size="sm"
-              disabled={
-                !isOwner || busy || title.trim() === "" || body.trim() === ""
-              }
-              data-testid="admin-announcement-submit"
-              onClick={() => void create()}
-            >
-              {t("admin.announcements.send")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-/**
- * Recipient picker: an autocomplete over the user directory (TASK-62). The
- * operator types a name/email, picks a match and it becomes a removable chip,
- * so nobody has to remember an address.
- */
-function RecipientPicker({
-  recipients,
-  onChange,
-}: {
-  recipients: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const t = useAdminT();
-  const [query, setQuery] = useState("");
-  const [matches, setMatches] = useState<AdminUserRowDto[]>([]);
-
-  useEffect(() => {
-    const value = query.trim();
-    if (value.length < 2) {
-      setMatches([]);
-      return;
-    }
-    let active = true;
-    const timer = setTimeout(() => {
-      adminApi
-        .listUsers({ search: value, limit: 6 })
-        .then((page) => {
-          if (active) setMatches(page.items);
-        })
-        .catch(() => undefined);
-    }, 200);
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [query]);
-
-  const add = (email: string) => {
-    if (!recipients.includes(email)) onChange([...recipients, email]);
-    setQuery("");
-    setMatches([]);
-  };
-
-  return (
-    <div className="flex flex-col gap-1 text-xs">
-      <span className="text-muted-foreground">
-        {t("admin.comms.field.recipients")}
-      </span>
-      {recipients.length > 0 ? (
-        <div className="flex flex-wrap gap-1">
-          {recipients.map((email) => (
-            <button
-              key={email}
-              type="button"
-              className="inline-flex items-center gap-1 rounded-full bg-hover px-2 py-0.5 text-[11px]"
-              onClick={() =>
-                onChange(recipients.filter((entry) => entry !== email))
-              }
-            >
-              {email} ✕
-            </button>
-          ))}
-        </div>
-      ) : null}
-      <Input
-        value={query}
-        maxLength={200}
-        placeholder={t("admin.comms.recipients.placeholder")}
-        data-testid="admin-announcement-recipients"
-        onChange={(event) => setQuery(event.target.value)}
-      />
-      {matches.length > 0 ? (
-        <div className="rounded-md border border-border bg-card">
-          {matches.map((user) => (
-            <button
-              key={user.id}
-              type="button"
-              className="block w-full px-2 py-1 text-left text-xs hover:bg-hover"
-              onClick={() => add(user.email)}
-            >
-              {user.displayName ? `${user.displayName} · ` : ""}
-              {user.email}
-            </button>
-          ))}
-        </div>
+      {creating ? (
+        <AnnouncementEditorDialog
+          onClose={() => setCreating(false)}
+          onDone={load}
+        />
       ) : null}
     </div>
   );
