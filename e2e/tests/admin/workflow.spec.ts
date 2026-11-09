@@ -56,3 +56,19 @@ test("a master edits the workflow on behalf of the owner and the change is audit
     detailsText: "SET_BOARD_WORKFLOW",
   });
 });
+
+test("an OPERATOR can open the same workflow editor", async ({
+  page,
+  board,
+  operator,
+}) => {
+  await board.column("Backlog");
+  await board.column("Doing");
+  await loginAsMaster(page, operator);
+
+  await page.goto(adminPath(`boards/${board.id}/workflow`), {
+    waitUntil: "domcontentloaded",
+  });
+  await expect(page.getByTestId("admin-workflow-editor")).toBeVisible();
+  await expect(page.getByTestId("admin-workflow-enabled")).toBeVisible();
+});
