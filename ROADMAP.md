@@ -7,7 +7,7 @@
 >
 > **Текущее состояние:** серверный режим, совместная работа, MCP и первый
 > self-hosted релиз реализованы. Открытые задачи и их зависимости перечислены
-> в §7.7; Sentry и полный браузерный E2E-набор остаются в TASK-40/41.
+> в §7.7; Sentry и полный браузерный E2E-набор закрываются в TASK-168 (§7.25).
 > Отдельный публичный демо-инстанс TASK-39 отменён: демо запускается из
 > админки. **Форма поставки — самохостимый опенсорс** (AGPL-3.0,
 > Docker Compose). Аудит статусов: 2026-11-04.
@@ -257,7 +257,8 @@
 | Self-hosting | Docker Compose, установщик и публичный образ GHCR `v0.2.0` для amd64/arm64; документация и MCP | 38a, 38b, 136 |
 
 > **Из открытого:** тач-слой календаря/таблицы (TASK-31), Sentry и полный
-> E2E-набор (§7.8).
+> E2E-набор теперь закрываются в TASK-168 (§7.25); TASK-166–172 —
+> release-программа, TASK-173–175 — post-launch backlog.
 > Полный перечень открытых задач — в §7.7.
 
 ### 1.2. Архитектура (кратко)
@@ -421,7 +422,7 @@
 | 34 | TASK-43 `master-admin-panel` | ✅ реализовано вне очереди по запросу — мастер-контур (§7.0/§7.4): `AdminUser` (OWNER/OPERATOR, отдельные cookie/JWT-аудиенция/refresh-таблица), `/admin/auth/*` + `/admin/*` (метрики с runtime, юзеры, доски, **карточки, комментарии, сессии, API-токены**, журнал команд, аудит), **редактор контента доски через командный лог от имени владельца**, модерация (блок юзера + ревок сессий/токенов по одной, архив/soft-delete доски и карточки, удаление комментария), управление мастерами только у OWNER, CLI `admin:create/passwd/list`, аудит каждого действия, lockout и anti-timing логина, ID всех сущностей с копированием, поиск по ID, удаление `User.isSuperAdmin`; **таблицы schema-first** (`Board.id`/`BoardMember.userId`/`Card.columnId`/`Comment.authorId`/…, FK-айди как значения, поиск по айди, без счётчиков, скролл-вьюпорт со sticky-шапкой) | гейты: ui 483, shared 325, backend 22 unit + 100 e2e, build/lint/format, size 204.66/210 KB + ленивый admin-чанк 20.7/30 KB; live-смоук: CLI → браузер (вход мастера, создание мастера из панели, блок юзера, Playwright-смоук) |
 | 35 | TASK-35 `board-members-ui` | ✅ реализовано, PR #74 — участники доски из UI (§7.6.1): модалка «Участники (N)» из шапки (`BoardMembersDialog` + `UserAvatar`), инвайт по email, смена роли, `expiresAt` для VIEWER с бейджем «доступ истёк», исключение с инлайн-подтверждением, последний ADMIN защищён (disabled + тултип-причина), ошибки API → тосты; **VIEWER получает read-only UI** (нет drag/композеров/меню/инлайн-редакторов, диалог карточки только для чтения, `roleOf` → `readOnly` через BoardSection); `GET /boards/:id/members` уже отдавал `userId`/`displayName`/`email` — бэкенд не менялся | гейты: ui 512 (485+27, покрытие выше порогов), shared 325, backend 22 unit + 100 e2e не тронуты, build/lint/format; live-смоук |
 | 30 | TASK-30 `realtime-sse` | ✅ реализовано, ветка `feature/TASK-30-realtime-sse`; доборы — TASK-30.1 ✅ (`touches` в событии + бюджет ленивого чанка) и TASK-30.2 ✅ (audit hardening) — §7.5 — SSE `GET /boards/:id/events` (`{type:"command", seq, action, actorId}`) + догон `?since=`; `X-Board-Seq` на агрегате; UI-мост в ленивом чанке (`fetch`-ридер с Authorization вместо EventSource+ticket), чужие экшены через тот же `boardReducer`, дедуп по seq, defer при in-flight командах, focus refetch остался fallback | два браузера видят правки без перезагрузки; обрыв догоняется дельтой (live-смоук 8/8, включая `setOffline`) |
-| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-40/41 (§7.8), TASK-31, TASK-159 (§7.18), TASK-161 (§7.20), TASK-131 (отложено). TASK-32 и TASK-39 отменены; TASK-140/141 и TASK-158 завершены |
+| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-40/41, TASK-31, TASK-159, TASK-161 — сведены в TASK-168 (§7.25); TASK-131 (отложено). TASK-166–172 запланированы, TASK-173–175 отложены (§7.23–§7.25). TASK-32 и TASK-39 отменены; TASK-140/141 и TASK-158 завершены |
 
 ### 6.0.1. Укрепление фундамента перед бэкендом (TASK-21.1…21.11)
 
@@ -1647,6 +1648,15 @@ TASK-36 и TASK-37.)*
 | 95 | TASK-164 `column-accent-styles` | `feat/column-accent-styles` | Стиль колонок: per-column accent из палитры card cover + board-wide форма (9 вариантов), палитра в шапке, команда, БД, realtime, импорт/экспорт и MCP-тул | 9 форм рендерятся в light/dark; цвет per-column переживает reload, undo/redo и realtime; VIEWER не управляет; shared/ui/backend/e2e зелёные |
 | 96 | TASK-165 `card-workflow` | `feat/card-workflow` | §7.22: настраиваемый workflow карточек над колонками (ADMIN, матрица переходов, роли, условия, глобальные переходы, initial/done), enforcement UI→reducer→server, `409 conflict:"workflow"`, мастер-панель, MCP, импорт/экспорт, E2E и docs | MVP реализован в ветке; исправления по ревью внесены, ожидает CI/merge; phase 2 (граф, post-functions, шаблоны платформы, bulk/force move, ifMatch) явно вынесен в §7.22 |
 | 97 | TASK-166 `launch-agent-control` | `docs/TASK-166-launch-agent-control` → отдельные `feat/TASK-166.x-*` | §7.23: launch-readiness «agent-first с контролем человека» — идентичность и сессии агентов, scopes, pause/kill, approvals/handoff, надёжный write-контракт, run-level rollback, plan/apply/bulk, attention-inbox, лимиты и data safety, observability, DX и UI-экраны после редизайна админки | **Запланировано:** 17 параллельных потоков в 5 волнах; backend/security-примитивы не зависят от редизайна, UI-волна стартует после `feat/admin-redesign`; у каждого потока отдельный worktree/PR и DoD; общий launch-blocker список закрыт, тесты и docs en/ru обновлены. См. §7.23 |
+| 98 | TASK-167 `marketing-site-redesign` | `docs/TASK-167-site-redesign` → отдельные `feat/TASK-167.x-*` | §7.24: редизайн маркетингового сайта под новую реальность — agent-first с контролем человека, workflow, approvals/scopes/pause/audit, новая админка, self-host/AGPL; новая IA, копирайт EN/RU, реальные медиа, docs, SEO/AI-SEO, a11y/perf, E2E | **Запланировано:** 9 потоков в 4 волнах (W0–W3); копирайт/IA можно начинать после TASK-166.0, экраны и медиа — после `feat/admin-redesign` + TASK-166.13–15; каждый поток — отдельный worktree/PR; все утверждения на сайте соответствуют отгруженному продукту, EN/RU паритет. См. §7.24 |
+| 99 | TASK-168 `launch-tail` | отдельные `feat/TASK-168.x-*` | §7.25: закрыть хвосты вне TASK-166/167 — TASK-40 (Sentry + pino), TASK-31 (тач-слой и 390 px), TASK-161 (события безопасности), TASK-159/41 (тестовое покрытие и формальная ревизия) | **Запланировано:** 4 потока; 168.1/168.2 можно начинать сразу, 168.3/168.4 — после редизайна админки; каждый хвост получает финальный статус, тесты и docs, без «висящих открытыми» задач. См. §7.25 |
+| 100 | TASK-169 `docs-audit` | отдельные `feat/TASK-169.x-*` | §7.25: README и документация под 1.0 — инвентаризация кода против docs, поиск недобавленного/устаревшего, README, docs EN/RU, ссылки, версия, changelog | **Запланировано:** 4 потока; аудит можно начинать сразу, фиксы — после TASK-166.16 и TASK-167.5; gap-отчёт с «fixed/deferred/issue»; docs-сайт собирается, ссылки живые, EN/RU паритет. См. §7.25 |
+| 101 | TASK-170 `docker-release` | отдельные `feat/TASK-170.x-*` | §7.25: обновление Docker-образа — базовые образы, multi-arch, SBOM/provenance, CVE, размер, compose/.env, upgrade/rollback, публикация RC в GHCR | **Запланировано:** 4 потока; после 168, 169 и 172, до 171; clean install amd64/arm64, миграции, health, upgrade с 0.2.x, rollback; без critical/high CVE; образ — кандидат для 1.0.0. См. §7.25 |
+| 102 | TASK-171 `pre-cloud-1.0` | отдельные `feat/TASK-171.x-*` | §7.25: полное ревью перед облаком и релиз 1.0.0 — security, data/backup/DR, perf/scale, cloud readiness, release engineering, независимый review board | **Запланировано:** 6 потоков; зависит от 166–170 и 172; 0 P0/P1, P2 закрыты или приняты с owner/date; 1.0.0 во всех пакетах/образе/доках; clean install + upgrade + rollback + staging dry-run; launch checklist подписан. См. §7.25 |
+| 103 | TASK-172 `mcp-skill-review` | отдельные `feat/TASK-172.x-*` | §7.25: отдельный сквозной ревью MCP и скила после всей новой функциональности — tools/schemas/errors/scopes, live-сценарии approval/pause/rollback/plan, skill и references, README/docs EN/RU, tool count | **Запланировано:** 4 потока; после TASK-166, 167.5 и 169; до Docker RC и 1.0.0; найденные пробелы исправляются в MCP/skill/docs, контракт продукта не меняется. См. §7.25 |
+| 104 | TASK-173 `agent-experience-phase2` | `feat/TASK-173.x-*` | §7.25: post-1.0 P1/P2 из agent-experience — subscriptions/webhooks, read model, claim/my work, remote attachments, entity versions, remote MCP/OAuth, limits/quotas, UX/analytics | **Отложено:** после 1.0.0; 9 потоков; каждый P1/P2 имеет дом; запуск не блокирует. См. §7.25 |
+| 105 | TASK-174 `human-control-phase2` | `feat/TASK-174.x-*` | §7.25: post-1.0 P1/P2 из human-control — comment moderation, share privacy, 2FA/sessions, token rotation, invite email, limits/a11y, service accounts, legal/SIEM/messaging/templates | **Отложено:** после 1.0.0; 5 потоков; каждый P1/P2 имеет дом; запуск не блокирует. См. §7.25 |
+| 106 | TASK-175 `scale-phase2` | `feat/TASK-175.x-*` | §7.25: post-1.0 масштабирование — глобальный потолок команд и шардинг, multi-node/Redis fan-out, presence после TASK-145 | **Отложено:** после 1.0.0; 3 потока; не блокирует self-host-запуск. См. §7.25 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -4250,6 +4260,474 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 - Remote MCP/OAuth как обязательный канал; webhooks — после решения W0.
 - Автоматический machine translation анонсов/комментариев.
 - Полный SIEM/external log export; object storage для вложений — phase 2.
+
+---
+
+### 7.24. Редизайн маркетингового сайта под новые реалии (TASK-167)
+
+> **Статус:** запланировано. Копирайт, IA и структуру страниц можно начинать
+> после TASK-166.0 (зафиксированные решения и матрица фич). Экраны админки,
+> approvals/scopes/audit и новые медиа — только после `feat/admin-redesign` и
+> TASK-166.13–15. Публиковать утверждения о фичах — только после их мержа в
+> `main`; иначе сайт снова начнёт продавать несуществующий продукт.
+>
+> **Источники:**
+> - `audits/launch-gaps-agent-experience.md` + HTML
+> - `audits/launch-gaps-human-control.md` + HTML
+> - `audits/admin-redesign-research.md` + HTML
+> - текущий `site/` (TASK-122…135), `site/src/content/docs/**`
+> - `ROADMAP.md` §7.22 (workflow) и §7.23 (agent control)
+
+**Зачем.** Сайт описывает продукт до workflow, agent-control и редизайна
+админки: герой — «Kanban for your agent swarm», фича-ряды — доска, realtime,
+карточки и шаринг, медиа записаны на старом UI, а документация уже знает про
+workflow, которого нет на лендинге. После TASK-166 обещание меняется: не «рой
+без контроля», а **«агенты работают — человек контролирует»**. Если не
+переупаковать сайт, он будет продавать старую версию, завышать ожидания и
+прятать главное отличие Janosik от обычного канбана с API.
+
+**Позиционирование (ядро).**
+
+- EN: **“Kanban for AI agents. Control stays with you.”**
+- RU: **«Канбан для ИИ-агентов. Контроль остаётся у вас.»**
+- Три уровня истории:
+  1. **Agents do the work** — ключи, сессии, захват карточек, batch/plan;
+  2. **Workflow keeps them honest** — переходы, роли, условия, WIP, DoD;
+  3. **You stay in control** — scopes, approvals, pause/kill, audit, rollback.
+- Честность превыше маркетинга: self-hosted AGPL — основной продукт; cloud —
+  «later» без дат; никаких фейковых логотипов, SSO, SLA, «enterprise» и
+  отзывов до реальной реализации. Каждое утверждение на сайте должно иметь
+  ссылку на docs/changelog и соответствовать отгруженной версии.
+
+**Новая IA маркетинга.**
+
+1. Hero: агент двигает карточку, человек подтверждает действие; CTA в app.
+2. **Control loop** — 3–4 шага: scoped key → agent claims card → workflow
+   проверяет переход → approval/pause/audit при риске.
+3. **Workflow** — матрица переходов, роли, условия, initial/done.
+4. **Admin console** — 8 хабов, Agents, Approvals, Audit & activity,
+   Rollback, Scopes, limits; реальный скрин новой админки.
+5. **Swarm in motion** — существующий watch/realtime-сюжет, но с атрибуцией
+   агентов и «человек рядом».
+6. **Board for humans** — доска, карточки, виды, комментарии, шаринг.
+7. **Self-host & trust** — AGPL, данные на своём сервере, бэкапы, scopes.
+8. **Pricing teaser** — self-hosted free, cloud later.
+9. FAQ, финальный CTA, футер с docs/security/changelog.
+
+Плюс отдельные SEO-страницы (EN/RU), если поток 167.3 успевает без потери
+качества: `/agent-control`, `/workflow`, `/security`. Если нет — те же секции
+живут на лендинге, а страницы выносятся в §7.24.4.
+
+#### 7.24.1. Волны и потоки
+
+| Волна | Потоки | Можно запускать | Условие |
+| --- | --- | --- | --- |
+| W0 | 167.0 | после TASK-166.0 | зафиксированы решения и статус фич |
+| W1 | 167.1, 167.5, 167.6 | параллельно редизайну админки | только shipped-фичи; новые экраны — заглушки/пометка «planned» |
+| W2 | 167.2, 167.3, 167.4 | после `feat/admin-redesign` + TASK-166.13–15 | UI-фичи смержены, экраны и медиа финальны |
+| W3 | 167.7, 167.8 | после W1–W2 | все страницы и медиа заморожены |
+
+Каждый поток — отдельная ветка `feat/TASK-167.x-<slug>` и отдельный PR.
+Если два потока трогают один файл, они разводятся по времени или получают
+явного владельца файла. Финальную интеграцию, навигацию, SEO-паритет и
+launch-гейт держит головной поток.
+
+#### 7.24.2. Потоки
+
+| ID | Поток | Зависит | Зона / ключевые файлы | DoD |
+| --- | --- | --- | --- | --- |
+| 167.0 | Narrative, IA & claims matrix | TASK-166.0 | `site/src/i18n/ui.ts`, `site/src/components/pages/HomePage.astro`, `audits/`, `ROADMAP.md` | таблица «фича → статус (shipped/planned) → где на сайте → docs-ссылка»; ни одного утверждения без подтверждения; EN/RU тексты-основы готовы |
+| 167.1 | Marketing design system refresh | 167.0 | `brand/`, `site/src/styles/global.css`, `site/src/layouts/BaseLayout.astro`, `site/src/components/*` | типографика/сетка/отступы/motion/тёмная тема обновлены на токенах бренда; нет хардкода цветов; reduced-motion; визуальный язык сочетается с новым app, но не копирует плотную админку |
+| 167.2 | Landing rebuild | 167.1, 167.4 | `site/src/components/pages/HomePage.astro`, `site/src/i18n/ui.ts`, `site/src/components/MediaSlot.astro` | новая IA из §7.24; hero/control loop/workflow/admin/swarm/self-host/pricing/FAQ/CTA; EN/RU; 390/768/1280 без гор. скролла; CTA ведут в app с `?lng=` |
+| 167.3 | New marketing pages | 167.1, 167.2 | `site/src/pages/agent-control.astro`, `workflow.astro`, `security.astro`, `site/src/pages/ru/*`, `site/astro.config.mjs` | `/agent-control`, `/workflow`, `/security` + RU-версии; уникальные title/description/canonical/hreflang/OG/JSON-LD; навигация и футер; без дублей контента |
+| 167.4 | Media v2: real UI recordings | 167.2, admin redesign + 166.13–15 | `video/record/seed.mjs`, `record.mjs`, `screenshots.mjs`, `encode.mjs`, `site/public/media`, `site/public/screens` | новые клипы: control loop, workflow, approvals, audit/rollback, admin console; старые клипы перезаписаны на текущем UI; только демо-данные; постеры, reduced-motion, no-CLS, вес в бюджете |
+| 167.5 | Docs & changelog sync | 167.0 | `site/src/content/docs/**` + `ru/**`, `site/astro.config.mjs`, `CHANGELOG.md` | новые страницы Agent control / Approvals / Scopes / Pause / Rollback / Admin redesign map; обновлены workflow, MCP, API, self-hosting; EN/RU паритет; ссылки из маркетинга живые |
+| 167.6 | SEO, AI-SEO & CRO | 167.2, 167.3 | `site/src/i18n/ui.ts`, `site/src/components/SEO.astro`, `site/src/pages/llms.txt.ts`, `site/src/pages/*.md.ts`, `site/src/lib/analytics.ts` | новые ключевые запросы (agent control, AI workflow, approvals, self-hosted agent kanban); JSON-LD/FAQ/SoftwareApplication валидны; `llms.txt` и pricing.md синхронны; события CTA; Lighthouse SEO 100 |
+| 167.7 | A11y, perf & responsive | 167.2–167.4 | `site/src/styles/*`, `site/src/components/*`, `site/src/layouts/BaseLayout.astro` | Lighthouse a11y/perf ≥95 на home/pricing/new pages; контраст, фокус, клавиатура, 390 px; LCP/CLS в бюджете; видео не грузятся до вьюпорта; reduced-motion → постеры |
+| 167.8 | E2E & launch gate | 167.2–167.7 | `e2e/tests/site/**`, `e2e/tests/docs/**` | обновлены 45 site- и 36 docs-тестов; новые секции/страницы/языки/темы/мобилка/SEO/ссылки; полный Chrome-набор зелёный; crawl без 404; claims-audit подписан; CHANGELOG/ROADMAP обновлены |
+
+#### 7.24.3. Общий Definition of Done
+
+- **Честность:** каждое обещание на сайте либо уже в `main`, либо явно
+  помечено «planned/roadmap»; никаких фейковых логотипов, отзывов, SSO, SLA,
+  cloud-доступности и цифр без источника.
+- **Полнота:** новая реальность закрыта — workflow, agent identity/scopes,
+  approvals, pause, audit/rollback, admin console, self-host/AGPL.
+- **Языки:** EN/RU паритет, без непереведённых строк и «русского в английском».
+- **Медиа:** все клипы и скриншоты сняты с текущего UI после UI-freeze; старый
+  UI и старые названия не встречаются; только демо-данные.
+- **Документация:** у каждой новой фичи есть docs-страница EN/RU и ссылка с
+  сайта; API/MCP-примеры рабочие.
+- **Качество:** `npm run build -w site`, `astro check`, lint/format; Lighthouse
+  a11y/perf/SEO/best-practices ≥95; нет CLS и горизонтального скролла на 390 px;
+  reduced-motion учтён.
+- **Тесты:** site/docs Chrome E2E обновлены и зелёные; crawl ссылок без 404;
+  новые страницы покрыты независимыми пользовательскими сценариями.
+- **Релиз:** `CHANGELOG.md`, `ROADMAP.md`, OG/sitemap/robots/llms.txt
+  синхронизированы; launch checklist и rollback сайта (предыдущий образ) готовы.
+
+#### 7.24.4. Осознанно не входит в TASK-167
+
+- Billing, cloud-тарифы и checkout (TASK-131) — только честная заглушка
+  «cloud later».
+- Новая бренд-идентичность, логотип и палитра — это TASK-122, здесь только
+  развитие системы.
+- CMS, блог-движок, редакционный workflow, маркетинговая автоматизация/CRM.
+- Языки сверх EN/RU.
+- Полная переделка docs-IA и всех старых страниц; трогаем только то, что
+  связано с новой реальностью.
+- Сравнительные страницы «Janosik vs …» и programmatic SEO — после запуска,
+  если появится спрос.
+- Фейковые social proof, enterprise-блоки и «как у конкурентов» без реального
+  содержания.
+
+---
+
+### 7.25. Релиз 1.0.0 и подготовка к облаку (TASK-168…172)
+
+> **Статус:** запланировано. Это release-программа после TASK-166/167:
+> сначала закрываются старые хвосты, затем README/docs приводятся в
+> соответствие с продуктом, отдельно проверяются MCP и скил, потом
+> обновляется Docker-образ, и только после этого — независимое ревью и тег
+> `1.0.0`.
+>
+> **Логика порядка:** 168 → 169 → 172 → 170 → 171. Внутри каждой задачи есть
+> параллельные потоки, но финальный тег ставится только после того, как
+> предыдущая задача закрыта и её результат попал в `main`.
+>
+> **Что значит «облако» здесь:** hosted/staging-развёртывание того же образа
+> (TLS, reverse proxy, managed PostgreSQL/Redis, решение по object storage,
+> бэкапы, наблюдаемость), а не billing и не multi-tenant SaaS. Billing и
+> планы остаются в TASK-131; 1.0.0 сначала выходит как self-hosted релиз.
+
+**Принципы релизной программы.**
+
+1. **Никаких «открыто, но сделано».** Каждый старый open-task получает
+   финальный статус с PR/тестом/причиной, а не остаётся висеть в таблице.
+2. **Docs — часть продукта.** README и docs обновляются после фич; отдельный
+   аудит ищет не только устаревшее, но и то, что вообще не добавили.
+3. **Один артефакт.** Релиз — это Docker-образ и тег, а не набор локальных
+   сборок. `1.0.0` ставится только после clean install, upgrade и rollback.
+4. **Self-host first.** Облако не оправдывает пропуск self-host-сценариев;
+   hosted-развёртывание использует тот же образ и те же миграции.
+5. **Независимое ревью.** В 171 проверяют не авторы потоков; замечания
+   классифицируются, P0/P1 блокируют тег.
+
+| Шаг | Задача | Что закрывает | Выход |
+| --- | --- | --- | --- |
+| 1 | TASK-168 `launch-tail` | TASK-40, TASK-31, TASK-161, TASK-159/41 | все старые хвосты закрыты или явно перенесены с причиной |
+| 2 | TASK-169 `docs-audit` | README, docs EN/RU, «что не добавили» | документация соответствует 1.0.0, gap-отчёт закрыт |
+| 3 | TASK-172 `mcp-skill-review` | MCP tools/schemas, skill, references, MCP docs | MCP и скил проверены на живых сценариях, пробелы исправлены |
+| 4 | TASK-170 `docker-release` | Dockerfile, compose, CI, GHCR | обновлённый multi-arch RC-образ, проверенный на чистой машине |
+| 5 | TASK-171 `pre-cloud-1.0` | security/data/perf/cloud/release | тег `1.0.0`, образы, отчёт ревью, launch checklist |
+
+#### TASK-168 — `launch-tail` · Закрыть хвосты прошлых задач
+
+- **Зачем:** после TASK-166/167 в роадмапе остаются задачи, которые либо
+  фактически сделаны, либо маленькие, либо ждут новую IA админки. Если их не
+  закрыть сейчас, они растворятся в релизной суете и всплывут после 1.0.0.
+- **Потоки:**
+
+| ID | Поток | Что делаем | DoD |
+| --- | --- | --- | --- |
+| 168.1 | TASK-40 `observability` | Sentry на фронт (`ErrorBoundary` + global handler) и бэк (exception filter) с версией сборки; `pino` + `requestId` → `commandId`; пустой `SENTRY_DSN` полностью выключает отправку. `/health` и `requestId` уже сделаны — не переделывать | ошибка долетает до Sentry; без DSN — ноль сетевых вызовов; по `commandId` виден путь команды; тесты/доки |
+| 168.2 | TASK-31 `mobile-ux` | тач-слой календаря/таблицы (перенос строк/дат), адаптив шапки, фильтров и диалогов доски на 390 px | drag/перенос работают на тач-эмуляторе; нет горизонтального скролла; существующие жесты не сломаны |
+| 168.3 | TASK-161 `admin-security-events` | аудит отказов по IP на login/refresh/request, причина/этап/IP, агрегация повторов; лента Security в новой IA админки | e2e на неверный пароль, блокировку, запрещённый IP; UI en/ru; поток не переполняет БД |
+| 168.4 | TASK-41/159 closure | сверить фактическое покрытие TASK-162 с DoD TASK-41; добить UI-тесты Ops/Comms/Observability/Security или закрыть как поглощённые редизайном; обновить статусы | TASK-41/159 закрыты с evidence или имеют остаток с owner/date; нет «зелёных» тестов, которые ничего не проверяют |
+
+- **Порядок:** 168.1 и 168.2 можно начинать сразу; 168.3 — после
+  `feat/admin-redesign`; 168.4 — после 166.13–15 и 168.3.
+- **DoD:** все пять старых пунктов (40/31/161/159/41) переведены в
+  `ROADMAP-DONE.md` или явно перенесены; тесты, docs EN/RU и CHANGELOG
+  обновлены; ни один пункт не остаётся «открытым, но фактически сделанным».
+- **Не входит:** новые продуктовые фичи; TASK-131 (billing/cloud).
+
+#### TASK-169 — `docs-audit` · README, документация и «что не добавили»
+
+- **Зачем:** README всё ещё описывает продукт версии 0.2.0 и 71 MCP-tool,
+  часть новых фич есть только в коде, часть docs ссылается на старый UI, а
+  `ROADMAP`/`CHANGELOG`/сайт могут расходиться. Нужен не косметический
+  проход, а инвентаризация «код ↔ документация» с явным списком пробелов.
+- **«Инвестигейт чего не добавили»:** отдельный отчёт
+  `docs/DOCS-COVERAGE.md`:
+  - все публичные фичи, роуты, env-переменные, команды, лимиты, MCP-tools,
+    skill-файлы и админ-экраны против README/docs;
+  - фичи, реализованные, но не задокументированные;
+  - docs, обещающие то, чего нет в коде;
+  - устаревшие скриншоты/клипы/названия/версии;
+  - отсутствующие EN/RU-пары, битые ссылки и якоря;
+  - TODO/FIXME и «НЕ ЗАБЫТЬ» в коде/ROADMAP, которые не заведены задачей.
+  Каждый пункт — `fixed`, `deferred` с причиной или `issue` со ссылкой.
+- **Потоки:**
+
+| ID | Поток | Что делаем | DoD |
+| --- | --- | --- | --- |
+| 169.1 | Inventory & gap report | инвентаризация кода/контрактов/доков, отчёт `docs/DOCS-COVERAGE.md` | таблица покрытия; ни одного «неизвестного» пункта; приоритеты |
+| 169.2 | README 1.0 | переписать верх, quick start, возможности, архитектурное дерево, MCP/skill, workflow, админка, self-host, версия, актуальные скриншоты | README соответствует 1.0.0; все ссылки живые; нет устаревших чисел/названий |
+| 169.3 | Docs site EN/RU | Agent control / approvals / scopes / pause / rollback / admin redesign map; обновить workflow, MCP, API, self-hosting, runbooks, FAQ | каждая новая фича имеет страницу EN+RU; навигация и поиск работают |
+| 169.4 | Consistency & links | версия в docs/сайте, changelog, `llms.txt`, `pricing.md`, sitemap, canonical/hreflang, перекрёстные ссылки | `astro check`/build; crawl без 404; docs E2E; changelog полный |
+
+- **Зависимости:** 166.16 (docs/runbook) и 167.5 (docs redesign); аудит 169.1
+  можно начинать раньше, фиксы — после мержа этих потоков.
+- **DoD:** README и docs описывают ровно то, что есть в 1.0.0; gap-отчёт
+  закрыт или заведены issues; EN/RU паритет; docs-сайт собирается; ссылки
+  живые; `CHANGELOG.md` и `ROADMAP.md` синхронны.
+- **Не входит:** полная переделка несвязанных docs-страниц, блог/CMS,
+  маркетинговый копирайт (это TASK-167).
+
+#### TASK-172 — `mcp-skill-review` · Сквозной ревью MCP и скила
+
+- **Зачем:** TASK-166 меняет identity, scopes, approvals, pause, rollback,
+  plan/apply и контракт ошибок; TASK-167/169 меняют docs и skill. Если не
+  пройти MCP и `skills/janosik` целиком после этого, агент продолжит работать
+  по старым инструкциям, часть tools останется без новых полей, а
+  README/docs/skill разъедутся. Это отдельная задача, а не хвост 166: она
+  проверяет весь продукт на живых сценариях, а не только backend-потоки.
+- **Потоки:**
+
+| ID | Поток | Что делаем | DoD |
+| --- | --- | --- | --- |
+| 172.1 | Tool & schema audit | все tools/schemas/descriptions/errors/`structuredContent`, новые поля, scope/destructive-аннотации, идемпотентность, `retryable`/`requestId` | матрица tools × scopes × destructive; ни один tool не обходит gate; схемы и описания актуальны |
+| 172.2 | Live scenario matrix | claim → workflow block → approval → move → pause → resume → rollback; scoped/read-only/batch/plan; негативные сценарии | сценарии проходят через реальный MCP-клиент; ошибки понятны; нет обхода прав |
+| 172.3 | Skill & references | `skills/janosik/SKILL.md`, `references/*`: новые lifecycle-сценарии, approval/pause/rollback/plan, scopes, reviewer flow; убрать устаревшее | skill не обещает несуществующего; агент проходит сценарии без подсказок из кода |
+| 172.4 | MCP docs & release | `mcp/README.md`, `site/.../docs/mcp.md` EN/RU, tool count/pinned-тест, examples, `@janosik/mcp` version bump, CHANGELOG | README/docs/skill/tool count синхронны; version bump; examples рабочие |
+
+- **Зависимости:** TASK-166 (166.1–166.16), TASK-167.5, TASK-169.3;
+  запускать после TASK-169 и до TASK-170.
+- **DoD:** полный матричный прогон; живой сценарий; tool count; README/docs/
+  skill; version bump; найденные баги исправлены; новых фич нет.
+- **Не входит:** новые backend-фичи; изменение контракта продукта; повторный
+  ревью TASK-166 (это TASK-171).
+
+#### TASK-170 — `docker-release` · Обновление Docker-образа
+
+- **Зачем:** образ — то, что получает самохосетер. Сейчас база — Node 24,
+  Postgres 16 и Redis 7, сборка multi-arch идёт через отдельные arch-образы,
+  а для 1.0.0 нужны обновлённые базовые образы, supply-chain-артефакты и
+  проверенный upgrade/rollback. Нельзя ставить `latest` на 1.0.0, не проверив
+  чистой машиной и предыдущей версией.
+- **Потоки:**
+
+| ID | Поток | Что делаем | DoD |
+| --- | --- | --- | --- |
+| 170.1 | Base images & Dockerfile | оценить и обновить Node/Postgres/Redis на актуальные стабильные версии; Prisma engines/openssl; non-root, read-only где возможно; healthcheck; OCI labels; размер | сборка чистая; runtime не требует лишних пакетов; размер в бюджете; нет regression по upload/ffmpeg/Prisma |
+| 170.2 | Supply chain & CI | multi-arch manifest, SBOM, provenance/attestations, CVE-скан (Trivy/Grype), digest pinning, cache; теги `1.0.0`, `1.0`, `1`, `latest` | RC-образы amd64/arm64; SBOM/attestation; 0 critical/high без accepted-риска; теги и digest задокументированы |
+| 170.3 | Install / upgrade / rollback | clean install на amd64 и arm64; `docker compose up`; миграции на старте; upgrade с 0.2.x после бэкапа; rollback на предыдущий digest; volume-совместимость | три сценария пройдены на чистой машине; данные/вложения целы; rollback возвращает рабочий инстанс |
+| 170.4 | Compose / env / docs | обновить `docker-compose.yml`, `.env.example`, `docs/SELF-HOSTING.md`, `README`, CHANGELOG; не ломать env-имена без миграции | compose/env валидны; документация по установке/обновлению/откату; upgrade-notes для 0.x → 1.0 |
+
+- **Зависимости:** TASK-168, TASK-169 и TASK-172; запускать до TASK-171.
+  Финальный `1.0.0`-тег ставит 171, 170 готовит RC и проверяет артефакт.
+- **DoD:** RC-образ опубликован в GHCR; clean install/upgrade/rollback
+  зелёные; SBOM/provenance/CVE-отчёт приложены; compose/.env/docs обновлены;
+  образ — единственный кандидат для 1.0.0.
+- **Не входит:** Kubernetes/Helm, managed-cloud-инфраструктура, object
+  storage (решение — в 171, реализация — отдельно).
+
+#### TASK-171 — `pre-cloud-1.0` · Полное ревью и версия 1.0.0
+
+- **Зачем:** 1.0.0 — обещание стабильности и совместимости, а деплой в облако
+  впервые выносит продукт за пределы «своего сервера». Нужно независимо
+  проверить безопасность, данные, масштаб, эксплуатацию и релизную инженерию,
+  а не только «собирается и тесты зелёные».
+- **Ревью-потоки:**
+
+| ID | Поток | Что проверяем | DoD |
+| --- | --- | --- | --- |
+| 171.1 | Security & access | auth/session/token/scopes, destructive gate, approvals, pause, CSRF/CORS/CSP, rate limits, upload/SSRF, prompt injection, secrets, зависимости, CodeQL | 0 P0/P1; negative-тесты; отчёт с классификацией P2 |
+| 171.2 | Data & continuity | миграции 0.x → 1.0, backup/restore/PITR, retention/purge, вложения, export/import, DR, data residency | восстановление из бэкапа; миграция без потерь; rollback; runbook |
+| 171.3 | Performance & scale | рой 100 агентов на доске, SSE 5k, профиль запросов/индексов, память, очереди, Redis, многодосковность; capacity plan | нагрузочный отчёт; известные пределы задокументированы; нет регрессий против baseline |
+| 171.4 | Cloud readiness & ops | staging/prod topology, TLS/reverse proxy, secrets manager, managed DB/Redis, object storage решение, наблюдаемость/алерты, incident response, status page, support/SLA, privacy/DPA, AGPL/trademark | staging dry-run; алерты/runbooks; честный SLA/support; cloud checklist |
+| 171.5 | Release engineering 1.0.0 | версии root/backend/ui/shared/site (и `@janosik/mcp` — синхронно или явное исключение), CHANGELOG, tag, GHCR, docs version, site, skill, release notes, migration guide | `1.0.0` во всех артефактах; тег и образы; release notes; migration/rollback guide |
+| 171.6 | Independent review board | отдельные ревьюеры по security/data/perf/UX/docs/release; классификация замечаний; launch checklist | 0 P0/P1; P2 с owner/date; подписанный launch checklist |
+
+- **Release gates (все обязательны):**
+  - 0 P0/P1; P2 либо исправлены, либо приняты с owner/date и риском;
+  - полный CI + Chrome E2E + contract/security suite зелёные;
+  - clean install amd64/arm64, upgrade с последней 0.x, rollback;
+  - backup/restore и staging dry-run в cloud-like окружении;
+  - 1.0.0 в пакетах/образе/доках/сайте; `CHANGELOG` и release notes;
+  - никаких заявлений на сайте, которых нет в 1.0.0 (см. TASK-167).
+- **DoD:** тег `1.0.0` (подписанный) и опубликованные образы; отчёт ревью с
+  классификацией; все гейты пройдены; launch checklist и rollback runbook
+  подписаны; после тега — мониторинг первых 72 часов и горячая линия
+  исправлений.
+- **Зависимости:** TASK-166, 167, 168, 169, 170, 172.
+- **Не входит:** billing/планы (TASK-131), полный multi-tenant SaaS,
+  SOC2/ISO-сертификация, 24/7-поддержка, Kubernetes/Helm, переписывание
+  продукта «к 1.0».
+
+#### Отложено, но не забыто
+
+> Всё ниже не входит в 1.0.0, но имеет явную задачу или раздел и не теряется.
+> Порядок выполнения — после TASK-171, если не указано иное.
+
+**TASK-131 `billing-subscription` — платное облако** (детали — §7.12)
+
+- Выбор провайдера: Prodamus / ЮKassa / bePaid (Stripe/Paddle/Lemon Squeezy
+  не подходят для РФ/РБ).
+- Планы и лимиты per-plan в backend.
+- Checkout, идемпотентные вебхуки.
+- Статус подписки в UI/админке, аудит.
+- Лицензионная инфраструктура: подписанные офлайн-ключи + back-office.
+- Выдача managed-инстансов.
+- DoD: оформление/отмена, лимиты, вебхуки, статус, e2e.
+
+**TASK-165 workflow — phase 2 (после MVP)** (детали — §7.22)
+
+- Jira-подобный граф-редактор и визуальная карта процесса.
+- Post-functions: авто-поля, уведомления, approvals, evidence/blocking-links
+  conditions, `UNDO_MOVE` с проверяемым `originalCommandId`.
+- Платформенные шаблоны workflow (`WorkflowTemplate`, мастер-панель,
+  «применить к доске»).
+- Полноценный `ifMatch`/version-conflict для `SET_BOARD_WORKFLOW` вместо LWW
+  + MCP write-tool `janosik_set_workflow`.
+- Bulk move с атомарным preflight и force move для ADMIN с подтверждением и
+  аудитом.
+- Ограничение создания карточек только initial-колонкой.
+- Аналитика отказов, счётчик заблокированных переходов в Watch, кэш/ETag.
+- Durable offline-очередь: `409 workflow` как non-retryable, replay по текущим
+  правилам.
+
+**TASK-173 `agent-experience-phase2` — P1/P2 из agent-experience**
+
+- **173.1 Subscriptions & webhooks** — `wait_for_event`, `wait_for_decision`,
+  SSE `Last-Event-ID`/filters, webhooks с HMAC и retries.
+- **173.2 Read model & pagination** — пагинация карточек, `GET /cards/:id`,
+  глобальный поиск с cursor/snippet, board-wide comments by `kind`, `my_work`.
+- **173.3 Claim visibility & my work** — claim/lease в UI, фильтр
+  `claimedBy=me`, восстановление контекста после перезапуска.
+- **173.4 Remote attachments** — base64/URL/presigned upload, MCP image
+  content, 50–100 вложений на карточку.
+- **173.5 Entity versions & create-card contract** — версии в read DTO,
+  `expectedCardVersion`/`ifMatchVersions`, `create_card` с task spec/checklist,
+  URL карточки в ответах.
+- **173.6 Notifications & mentions** — in-app/email, `@mention`, настройки
+  уведомлений (attention-события уже в 166.9).
+- **173.7 Remote MCP/OAuth/OpenAPI** — streamable HTTP/SSE MCP, OAuth,
+  `GET /capabilities`, OpenAPI, compatibility matrix.
+- **173.8 Limits, quotas & retention** — поднять/сделать конфигурируемыми
+  лимиты, серверный board cap/tenant quotas, retention/audit export.
+- **173.9 UX, analytics & token lifecycle** — edit комментариев и board-wide
+  фильтр, короткие ключи/шаблоны, MCP undo/history filters, `X-RateLimit-*`/
+  usage/cost, token rotation/multi-board, agent analytics/budgets,
+  presence/heartbeat.
+- **DoD:** каждый P1/P2 из agent-experience закрыт или явно отклонён с
+  причиной; тесты, docs EN/RU, CHANGELOG.
+
+**TASK-174 `human-control-phase2` — P1/P2 из human-control**
+
+- **174.1 Comment moderation & share privacy** — модерация комментариев
+  агенту board ADMIN, snapshot-share без комментариев по умолчанию + warning.
+- **174.2 Account security & token lifecycle** — user 2FA и список сессий,
+  token default 90 дней + rotation, invite email и notification prefs.
+- **174.3 Limits, a11y & traffic/quota** — limits page и server-driven limits,
+  axe в CI + a11y-фиксы, per-agent traffic/quota dashboard.
+- **174.4 Service accounts & onboarding** — агент без email, провижининг из UI,
+  «подключите первого агента», шаблон доски/демо.
+- **174.5 Legal, SIEM, locales & marketplace** — legal/DPA/status page для
+  cloud, SIEM/webhook export и audit retention, дополнительные локали,
+  agent-to-agent messaging/mentions, board templates marketplace, SSO/SCIM и
+  hosted control plane после облака.
+- **DoD:** каждый P1/P2 из human-control закрыт или явно отклонён с причиной;
+  тесты, docs EN/RU, CHANGELOG.
+
+**TASK-175 `scale-phase2` — масштабирование**
+
+- **175.1 Global command ceiling & sharding** — глобальный потолок команд
+  (~290/с, CPU) и шардинг.
+- **175.2 Multi-node & Redis fan-out** — многонодность, Redis pub/sub fan-out,
+  Redis-backed token rate; presence при нескольких нодах — только после
+  TASK-145.
+- **175.3 Capacity & load** — capacity plan, многодоковый/многонодовый
+  нагрузочный отчёт, лимиты и алерты.
+- **Не трогаем:** лимит `/auth/login` 5/мин — это защита by design.
+- **DoD:** нагрузочный отчёт, multi-node проверен, регрессий против baseline
+  нет.
+
+**Осознанно не входит в TASK-166** (с домами, чтобы не потерялось)
+
+- Managed cloud, billing, DPA, status page, multi-tenant org layer —
+  **TASK-131** и **TASK-171.4**.
+- Полный Jira-граф и post-functions — **TASK-165 phase 2**.
+- Remote MCP/OAuth как обязательный канал; webhooks — после решения W0 —
+  **TASK-173.1/173.7**.
+- Автоматический machine translation анонсов/комментариев — **не планируется**
+  (осознанный non-goal, не задача).
+- Полный SIEM/external log export; object storage для вложений — **TASK-174.5**
+  и **TASK-173.4**.
+
+#### Трассировка P0/P1/P2 из launch-gaps аудитов
+
+> Ниже — каждый пункт из `audits/launch-gaps-agent-experience.md` и
+> `audits/launch-gaps-human-control.md`. P0 закрываются в TASK-166/168,
+> P1/P2 — либо в TASK-166/168, либо в TASK-173/174/175 после 1.0.0.
+
+**Agent experience**
+
+| Аудит | Пункт | Где в роадмапе |
+| --- | --- | --- |
+| P0-1 | Agent identity & session | 166.1, 166.13; service account без email — 174.4 |
+| P0-2 | Approval & handoff | 166.5, 166.14 |
+| P0-3 | Reliable write contract | 166.4 |
+| P0-4 | Plan / apply / bulk | 166.8 |
+| P0-5 | Capability scopes + destructive gate | 166.2, 166.15 |
+| P1-6 | Subscriptions / webhooks | 173.1 |
+| P1-7 | Read model / pagination / search | 173.2 |
+| P1-8 | Claim visibility / my work | 166.13, 173.3 |
+| P1-9 | Remote attachments | 173.4 |
+| P1-10 | Workflow / DoD server-side | 165 MVP + 165 phase 2 |
+| P1-11 | Notifications / mentions | 166.9, 173.6 |
+| P1-12 | Entity versions | 173.5 |
+| P1-13 | Create card contract / URLs | 173.5 |
+| P1-14 | Remote MCP / OAuth / OpenAPI | 166.11, 173.7 |
+| P1-15 | Docs / tests drift / MCP e2e | 172 |
+| P2-16 | Limits raise | 173.8 |
+| P2-17 | Board cap / tenant quotas | 166.6, 173.8 |
+| P2-18 | Comment edit / board-wide filter | 173.9 |
+| P2-19 | Short keys / templates | 173.9 |
+| P2-20 | Retention / audit export | 173.8 |
+| P2-21 | Rate headers / usage / cost | 166.10, 173.9 |
+| P2-22 | MCP undo / history filters | 173.9 |
+| P2-23 | SSE Last-Event-ID / filtering / image content | 173.1 |
+| P2-24 | Token rotation / multi-board | 173.9 |
+| P2-25 | Presence / heartbeat | 166.1, 166.13, 173.9 |
+| P2-26 | Agent analytics / budgets | 173.9 |
+
+**Human control**
+
+| Аудит | Пункт | Где в роадмапе |
+| --- | --- | --- |
+| P0-1 | Agent identity & service accounts | 166.1, 166.13; `actorType`/имя токена в комментариях; service account без email — 174.4 |
+| P0-2 | Approval policy + queue | 166.5, 166.14 |
+| P0-3 | Pause / kill switch | 166.3, 166.14 |
+| P0-4 | Run grouping + rollback | 166.7, 166.15 |
+| P0-5 | Attention inbox | 166.9, 166.13, 166.14 |
+| P0-6 | Launch consistency & data safety | 166.6; backup automation/restore drill — 171.2 |
+| P1-1 | Per-action token scopes v2 | 166.2 |
+| P1-2 | Comment moderation for board ADMIN | 174.1 |
+| P1-3 | Share privacy defaults | 174.1 |
+| P1-4 | User 2FA + sessions | 174.2 |
+| P1-5 | Token default 90d + rotation | 174.2 |
+| P1-6 | Invite email + notification prefs | 174.2 |
+| P1-7 | Limits page + server-driven limits | 166.6, 166.15, 174.3 |
+| P1-8 | Mobile header + E2E 390px | 168.2 |
+| P1-9 | axe в CI + a11y fixes | 174.3 |
+| P1-10 | Per-agent traffic/quota dashboard | 166.10, 166.15, 174.3 |
+| P1-11 | Digest v2 (agents/attention) | 166.9 |
+| P1-12 | Backup automation + restore drill | 166.6, 171.2 |
+| P2 | Legal pages / DPA / status page | 131, 171.4 |
+| P2 | Billing / plans | 131 |
+| P2 | SIEM / webhook export / audit retention | 174.5 |
+| P2 | Multi-node presence / Redis-backed token rate | 175.2 |
+| P2 | More locales / announcement localization | announcement localization сделана; дополнительные локали — 174.5 |
+| P2 | Admin redesign | в работе (`feat/admin-redesign`) |
+| P2 | Advanced run analytics | 173.9 |
+| P2 | Agent-to-agent messaging / mentions | 174.5 |
+| P2 | Board templates marketplace | 174.5 |
+
+Дополнительно из Phase 3 agent-experience: SSO/SCIM, hosted control plane и
+marketplace-шаблоны — **TASK-174.5** (SSO/SCIM, marketplace) и **TASK-131**
+(hosted control plane). Это не P2-блокеры запуска, но заведены явно.
 
 ---
 
