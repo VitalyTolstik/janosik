@@ -18,14 +18,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   25/50/100 page sizes, labelled mobile table cards and explicit empty, error
   and 403 states. Owner/OPERATOR visibility and every existing `data-testid`
   contract are preserved; the server remains the authorization source.
-- Branded split-screen master sign-in: a dark brand rail with build version and
-  the restricted-operations context, a 372 px form with show/hide password,
-  Caps Lock warning, progressive TOTP with a 30-second indicator, explicit
-  invalid/locked/disabled/IP/offline errors, `aria-invalid`/`aria-describedby`
-  and an honest "SSO is not configured" note instead of a fake provider button.
+- Centered master sign-in, aligned with the regular user sign-in screen: the
+  same brand mark, typography, card and “Back to site” position, with
+  show/hide password, Caps Lock warning, progressive TOTP with a 30-second
+  indicator, and explicit invalid/locked/disabled/IP/offline errors. The old
+  brand rail, SSO note, rate-limit note and admin-CLI hint are gone.
 - Admin design-token layer (`ui/src/admin/admin.css`): dense row/control
   heights, sidebar widths, mobile table cards, reduced-motion support and the
-  login split layout.
+  centered login layout.
+- Concentric-square auth background (pure SVG/CSS, no raster assets): the
+  sign-in, registration, password-recovery and master-login screens share the
+  same slowly breathing pattern, with a reduced-motion fallback.
+- “Concentric” board background: a new option in Account → Preferences and the
+  board-background picker, using the same nested-square SVG pattern and a slow
+  breathing animation.
 - Admin documentation EN/RU for the new IA, redirects, responsive behaviour,
   density, command palette, shortcuts and the compatibility contract
   (`site/src/content/docs/*/docs/admin/redesign.md`).

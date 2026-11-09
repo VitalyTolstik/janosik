@@ -81,4 +81,15 @@ describe("PreferencesSection (TASK-36.1)", () => {
     expect(row).toHaveTextContent("Dots");
     expect(localStorage.getItem("janosik-board-bg")).toBe("dots");
   });
+
+  it("offers the concentric board background and persists it", async () => {
+    renderPreferences();
+    const row = screen.getByTestId("pref-background");
+
+    await userEvent.click(row);
+    await userEvent.click(await screen.findByText("Concentric"));
+
+    expect(row).toHaveTextContent("Concentric");
+    expect(localStorage.getItem("janosik-board-bg")).toBe("concentric");
+  });
 });

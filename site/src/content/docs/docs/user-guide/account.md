@@ -101,7 +101,7 @@ you across devices; the remaining display options apply to this browser:
 - `Time format` — `Auto` (follows the language), `12-hour (AM/PM)` or
   `24-hour`.
 - `Theme` — `Light` or `Dark`.
-- `Board background` — `Solid`, `Paper`, `Dots` or `Grid`.
+- `Board background` — `Solid`, `Paper`, `Dots`, `Grid` or `Concentric`.
 
 Changing the language is saved to your account best-effort while online; a
 `?lng=` handoff from the documentation or marketing site applies for that visit.
