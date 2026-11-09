@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   ArrowLeft,
   CircleAlert,
@@ -10,11 +9,14 @@ import {
   Sun,
 } from "lucide-react";
 
+import { BrandMark } from "@/components/BrandMark";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useTheme } from "@/hooks/use-theme";
+import { useI18n } from "@/i18n";
 import { ApiError } from "@/api/client";
-import { routes } from "@/routes";
+import { siteHomeUrl } from "@/utils/docs-url";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
 import { fieldError } from "./validation";
@@ -34,6 +36,8 @@ interface LoginError {
  */
 export function AdminLoginPage() {
   const t = useAdminT();
+  const { lang } = useI18n();
+  const siteUrl = siteHomeUrl(lang);
   const { login } = useAdminAuth();
   const { theme, setTheme } = useTheme();
   const [email, setEmail] = useState("");
@@ -181,19 +185,33 @@ export function AdminLoginPage() {
         </button>
       </div>
 
+      {siteUrl ? (
+        <a
+          href={siteUrl}
+          data-testid="admin-login-back-to-site"
+          className="absolute top-6 left-6 inline-flex items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          {t("admin.login.backToSite")}
+        </a>
+      ) : null}
+
       <section className="admin-login-pane" aria-label="Janosik master console">
         <div className="admin-login-form-wrap">
-          <div className="mb-6">
-            <h1 className="text-[24px] font-semibold leading-tight tracking-[-0.025em] text-foreground">
+          <div className="mb-6 flex flex-col items-center gap-2 text-center">
+            <span aria-hidden className="group">
+              <BrandMark size="large" />
+            </span>
+            <h1 className="text-lg font-semibold text-foreground">
               {totpRequired
                 ? t("admin.login.totpTitle")
                 : t("admin.login.title")}
             </h1>
-            {totpRequired ? (
-              <p className="mt-1.5 text-[12px] leading-5 text-muted-foreground">
-                {t("admin.login.totpSubtitle")}
-              </p>
-            ) : null}
+            <p className="text-sm text-muted-foreground">
+              {totpRequired
+                ? t("admin.login.totpSubtitle")
+                : t("admin.login.subtitle")}
+            </p>
           </div>
 
           <form
@@ -201,13 +219,13 @@ export function AdminLoginPage() {
             onSubmit={(event) => void submit(event)}
             data-testid="admin-login-form"
             aria-busy={busy}
-            className="space-y-3"
+            className="flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-sm"
           >
             {error ? (
               <div
                 role="alert"
                 aria-labelledby={errorTitleId}
-                className="flex gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 text-xs text-danger"
+                className="flex gap-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger"
               >
                 <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                 <div>
@@ -225,124 +243,129 @@ export function AdminLoginPage() {
 
             {!totpRequired ? (
               <>
-                <label className="block space-y-1">
-                  <span className="text-[11px] font-medium text-foreground">
-                    {t("admin.login.email")}
-                  </span>
-                  <input
-                    ref={emailRef}
-                    type="email"
-                    name="email"
-                    required
-                    autoComplete="username"
-                    spellCheck={false}
-                    placeholder={t("admin.login.emailPlaceholder")}
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    onBlur={() => setEmailTouched(true)}
-                    aria-invalid={localEmailError !== null}
-                    aria-describedby={
-                      localEmailError !== null ? emailErrorId : undefined
-                    }
-                    data-testid="admin-login-email"
-                    className="h-10 w-full rounded-lg border border-input bg-card/60 px-3 text-[13px] text-foreground outline-none transition placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-danger max-sm:h-11"
-                  />
-                  {localEmailError !== null ? (
-                    <span
-                      id={emailErrorId}
-                      role="alert"
-                      className="block text-[11px] text-danger"
-                    >
-                      {localEmailError}
-                    </span>
-                  ) : null}
+                <label
+                  className="text-sm font-medium text-foreground"
+                  htmlFor="admin-login-email"
+                >
+                  {t("admin.login.email")}
                 </label>
+                <Input
+                  id="admin-login-email"
+                  ref={emailRef}
+                  type="email"
+                  name="email"
+                  required
+                  autoComplete="username"
+                  spellCheck={false}
+                  placeholder={t("admin.login.emailPlaceholder")}
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  onBlur={() => setEmailTouched(true)}
+                  invalid={localEmailError !== null}
+                  aria-describedby={
+                    localEmailError !== null ? emailErrorId : undefined
+                  }
+                  data-testid="admin-login-email"
+                />
+                {localEmailError !== null ? (
+                  <span
+                    id={emailErrorId}
+                    role="alert"
+                    className="text-sm text-danger"
+                  >
+                    {localEmailError}
+                  </span>
+                ) : null}
 
-                <label className="block space-y-1">
-                  <span className="flex items-center justify-between gap-2 text-[11px] font-medium text-foreground">
-                    <span>{t("admin.login.password")}</span>
-                    <button
-                      type="button"
-                      data-testid="admin-login-show-password"
-                      aria-label={
-                        showPassword
-                          ? t("admin.login.hidePassword")
-                          : t("admin.login.showPassword")
-                      }
-                      aria-pressed={showPassword}
-                      onClick={() => setShowPassword((visible) => !visible)}
-                      className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-normal text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      {showPassword ? (
-                        <EyeOff className="h-3 w-3" aria-hidden />
-                      ) : (
-                        <Eye className="h-3 w-3" aria-hidden />
-                      )}
-                      {showPassword
-                        ? t("admin.login.hide")
-                        : t("admin.login.show")}
-                    </button>
+                <div className="flex items-center justify-between gap-2">
+                  <label
+                    className="text-sm font-medium text-foreground"
+                    htmlFor="admin-login-password"
+                  >
+                    {t("admin.login.password")}
+                  </label>
+                  <button
+                    type="button"
+                    data-testid="admin-login-show-password"
+                    aria-label={
+                      showPassword
+                        ? t("admin.login.hidePassword")
+                        : t("admin.login.showPassword")
+                    }
+                    aria-pressed={showPassword}
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-3 w-3" aria-hidden />
+                    ) : (
+                      <Eye className="h-3 w-3" aria-hidden />
+                    )}
+                    {showPassword
+                      ? t("admin.login.hide")
+                      : t("admin.login.show")}
+                  </button>
+                </div>
+                <Input
+                  id="admin-login-password"
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  required
+                  autoComplete="current-password"
+                  placeholder={t("admin.login.passwordPlaceholder")}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  onKeyDown={capsLockFrom}
+                  onKeyUp={capsLockFrom}
+                  data-testid="admin-login-password"
+                />
+                {capsLock ? (
+                  <span
+                    data-testid="admin-login-capslock"
+                    className="text-xs text-warning"
+                  >
+                    ⇪ {t("admin.login.capsLock")}
                   </span>
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    name="password"
-                    required
-                    autoComplete="current-password"
-                    placeholder={t("admin.login.passwordPlaceholder")}
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    onKeyDown={capsLockFrom}
-                    onKeyUp={capsLockFrom}
-                    data-testid="admin-login-password"
-                    className="h-10 w-full rounded-lg border border-input bg-card/60 px-3 text-[13px] text-foreground outline-none transition placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring max-sm:h-11"
-                  />
-                  {capsLock ? (
-                    <span
-                      data-testid="admin-login-capslock"
-                      className="block text-[11px] text-warning"
-                    >
-                      ⇪ {t("admin.login.capsLock")}
-                    </span>
-                  ) : null}
-                </label>
+                ) : null}
               </>
             ) : (
-              <div className="space-y-2">
-                <label className="block space-y-1">
-                  <span className="flex items-center justify-between text-[11px] font-medium text-foreground">
-                    <span>{t("admin.login.totpCode")}</span>
-                    <span className="font-mono text-[10px] font-normal text-muted-foreground">
-                      {String(totpRemaining).padStart(2, "0")}s
-                    </span>
+              <>
+                <div className="flex items-center justify-between text-sm font-medium text-foreground">
+                  <label htmlFor="admin-login-totp">
+                    {t("admin.login.totpCode")}
+                  </label>
+                  <span className="font-mono text-xs font-normal text-muted-foreground">
+                    {String(totpRemaining).padStart(2, "0")}s
                   </span>
-                  <input
-                    ref={totpRef}
-                    type="text"
-                    name="totpCode"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    maxLength={6}
-                    value={code}
-                    onChange={(event) =>
-                      setCode(event.target.value.replace(/\D/g, ""))
-                    }
-                    data-testid="admin-login-totp"
-                    className="h-11 w-full rounded-lg border border-input bg-card/60 px-3 text-center font-mono text-xl tracking-[0.42em] text-foreground outline-none transition focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring"
-                  />
+                </div>
+                <Input
+                  id="admin-login-totp"
+                  ref={totpRef}
+                  type="text"
+                  name="totpCode"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={code}
+                  onChange={(event) =>
+                    setCode(event.target.value.replace(/\D/g, ""))
+                  }
+                  data-testid="admin-login-totp"
+                  className="h-10 text-center font-mono text-lg tracking-[0.35em]"
+                />
+                <span
+                  className="block h-0.5 overflow-hidden rounded-full bg-border"
+                  aria-hidden
+                >
                   <span
-                    className="block h-0.5 overflow-hidden rounded-full bg-border"
-                    aria-hidden
-                  >
-                    <span
-                      className="block h-full rounded-full bg-primary transition-[width] duration-1000 ease-linear"
-                      style={{ width: `${(totpRemaining / 30) * 100}%` }}
-                    />
-                  </span>
-                  <span className="block text-[11px] leading-5 text-muted-foreground">
-                    {t("admin.login.totpHint")}
-                  </span>
-                </label>
-                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    className="block h-full rounded-full bg-primary transition-[width] duration-1000 ease-linear"
+                    style={{ width: `${(totpRemaining / 30) * 100}%` }}
+                  />
+                </span>
+                <span className="text-xs leading-5 text-muted-foreground">
+                  {t("admin.login.totpHint")}
+                </span>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                   <button
                     type="button"
                     data-testid="admin-login-back"
@@ -351,22 +374,20 @@ export function AdminLoginPage() {
                       setCode("");
                       setError(null);
                     }}
-                    className="text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+                    className="underline-offset-2 transition-colors hover:text-foreground hover:underline"
                   >
                     {t("admin.login.backToPassword")}
                   </button>
-                  <span className="text-muted-foreground">
-                    {t("admin.login.lostDevice")}
-                  </span>
+                  <span>{t("admin.login.lostDevice")}</span>
                 </div>
-              </div>
+              </>
             )}
 
             <Button
               type="submit"
               disabled={busy}
               data-testid="admin-login-submit"
-              className="mt-1 h-10 w-full text-[13px] max-sm:h-11"
+              className="w-full"
             >
               {busy ? (
                 <>
@@ -382,16 +403,6 @@ export function AdminLoginPage() {
               )}
             </Button>
           </form>
-
-          <div className="mt-6 flex items-center justify-center gap-3 text-[11px] text-muted-foreground">
-            <Link
-              to={routes.home}
-              className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-              {t("admin.login.back")}
-            </Link>
-          </div>
         </div>
       </section>
     </div>

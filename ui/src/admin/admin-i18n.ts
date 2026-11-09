@@ -539,6 +539,8 @@ const en = {
     "Stop the demo and delete its board, cards and demo users?",
 
   "admin.login.title": "Sign in to Janosik",
+  "admin.login.subtitle": "Master console",
+  "admin.login.backToSite": "Back to site",
   "admin.login.email": "Work email",
   "admin.login.password": "Password",
   "admin.login.totpCode": "Two-factor code",
@@ -1721,6 +1723,8 @@ const ru: Record<AdminMessageKey, string> = {
     "Остановить демо и удалить его доску, карточки и демо-аккаунты?",
 
   "admin.login.title": "Вход в Janosik",
+  "admin.login.subtitle": "Мастер-консоль",
+  "admin.login.backToSite": "На сайт",
   "admin.login.email": "Рабочий email",
   "admin.login.password": "Пароль",
   "admin.login.totpCode": "Код двухфакторной аутентификации",
