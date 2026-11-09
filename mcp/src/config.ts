@@ -29,6 +29,7 @@ export const TOOLSETS = [
   "comments",
   "activity",
   "attachments",
+  "sessions",
   "members",
   "invitations",
   "shares",
@@ -47,6 +48,7 @@ export const DEFAULT_TOOLSETS: readonly Toolset[] = [
   "comments",
   "activity",
   "attachments",
+  "sessions",
 ];
 
 export interface Config {

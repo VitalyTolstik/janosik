@@ -191,6 +191,10 @@ export function CardComments({
       authorId: user.id,
       text,
       kind: sentKind,
+      actorType: "human",
+      apiTokenId: null,
+      agentSessionId: null,
+      agentName: null,
       createdAt: Date.now(),
     };
     setItems((prev) => [optimistic, ...prev]);

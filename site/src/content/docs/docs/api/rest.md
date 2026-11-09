@@ -119,6 +119,54 @@ another author answers `403`.
 
 Each write records an `Activity` row and publishes an `activity` SSE frame.
 
+## Agent sessions and attribution
+
+A personal API token may open a board-scoped agent session. The session is an
+attribution context, not a second account: it grants no rights beyond the token
+that owns it.
+
+| Method | Path                                                    | Auth / role              | Request                    | Response            |
+| ------ | ------------------------------------------------------- | ------------------------ | -------------------------- | ------------------- |
+| `POST` | `/boards/:id/agent-sessions`                            | PAT, board member        | `CreateAgentSessionDto`    | `AgentSessionDto`   |
+| `POST` | `/boards/:id/agent-sessions/:sessionId/heartbeat`       | the same PAT             | `AgentSessionHeartbeatDto` | `AgentSessionDto`   |
+| `POST` | `/boards/:id/agent-sessions/:sessionId/end`             | the same PAT or `ADMIN`  | `EndAgentSessionDto`       | `AgentSessionDto`   |
+| `GET`  | `/boards/:id/agent-sessions?active=1`                   | any member               | none                       | `AgentSessionDto[]` |
+| `GET`  | `/boards/:id/agent-sessions/:sessionId`                 | any member               | none                       | `AgentSessionDto`   |
+
+Start accepts optional `name`, `clientName` and `model` (100 characters each).
+Heartbeat accepts `status` (`active`, `idle`, `waiting_approval`),
+`currentCardId` and `summary`; end accepts `status` (`completed`, `failed`,
+`cancelled`) and `summary`. Repeating `end` returns the stored terminal state.
+A session whose last heartbeat is older than five minutes is reported as
+`stale` (computed, not stored). Ending a session releases the claims it owns.
+
+A PAT write may send `X-Agent-Session: <sessionId>`. The server verifies that
+the session belongs to the same user, token and board and is not closed; a
+mismatch answers `403 agent_session_invalid`, a closed session
+`403 agent_session_closed`. Start and heartbeat are PAT-only: a browser JWT
+gets `403 pat_required` (the `endpoint` detail names `start` or `heartbeat`).
+`end` accepts the same PAT or a board ADMIN browser session. Clients that send
+no header keep working: commands still carry `apiTokenId`, but
+`agentSessionId` stays `null`. The server fills all attribution from the
+authenticated principal; a request body cannot forge `apiTokenId`,
+`agentSessionId`, `runId`, `agentName`, `claimedByTokenId` or
+`claimedBySessionId`.
+
+Command entries and command SSE frames expose the optional `apiTokenId`,
+`agentSessionId`, `runId` and `agentName` fields. Activity entries expose the
+same fields plus `actorType`; `CommentDto` carries `actorType`, `apiTokenId`,
+`agentSessionId` and `agentName`, while `AttachmentDto` uses
+`uploadedByTokenId`/`uploadedBySessionId`. `GET /boards/:id/activity` and
+`GET /cards/:id/activity` accept `actorType`, `apiTokenId`, `agentSessionId`,
+`runId`, `type`, `from` and `to`; the filters apply to both merged sources
+(commands and activity rows). `GET /boards/:id/commands` accepts `since`,
+`runId`, `apiTokenId` and `agentSessionId` only. Public share responses and
+streams strip token/session ids and the token name. `GET /auth/me` for a PAT
+adds a non-secret `token` identity object (`scopePreset`, `trustedCi`, pause
+stamps, `effectiveTokenScope`) and a `server` block; a browser session gets
+`token: null`. `scopePreset`/`trustedCi` are persisted here but their
+destructive-action enforcement lands in 166.2, not 166.1.
+
 ## Attachments
 
 Files are uploaded over REST as `multipart/form-data` with a single `file`
@@ -273,14 +321,15 @@ with a personal API token that has since been revoked or has expired.
 `?client=` is an optional tab-scoped id matching `^[A-Za-z0-9_-]{8,64}$`.
 When omitted or malformed, the server generates one.
 
-The stream carries five event types:
+The stream carries six event types:
 
 | `type`       | Payload                                                        | Notes                                          |
 | ------------ | -------------------------------------------------------------- | ---------------------------------------------- |
-| `command`    | `seq`, `action`, `actorId`, `actorType?`, `commandId`, `touches` | a committed command                            |
+| `command`    | `seq`, `action`, `actorId`, `actorType?`, `commandId`, `touches`, `apiTokenId?`, `agentSessionId?`, `runId?`, `agentName?` | a committed command                            |
 | `presence`   | `users[]`                                                      | who is connected; no `seq`                     |
 | `membership` | `boardId`, `userId`, `change`                                  | `change` is `accepted`, `updated` or `removed` |
-| `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `actorType?`, `at`, `kind`, `detail?` | non-reducer activity, e.g. a new comment |
+| `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `actorType?`, `at`, `kind`, `detail?`, `apiTokenId?`, `agentSessionId?`, `runId?`, `agentName?` | non-reducer activity, e.g. a new comment |
+| `agent`      | `op` (`started`, `paused`, `resumed`, `ended`), `sessionId?`, `scope?`, `at` | agent-session control-plane transition |
 | `resync`     | none                                                           | the gap cannot be replayed; refetch the board  |
 
 `commandId` is the idempotency key sent with the command. A client uses it to

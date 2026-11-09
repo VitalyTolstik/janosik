@@ -40,6 +40,12 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { activeMembershipWhere } from "@/common/membership";
 import {
+  type RequestAttribution,
+  attributionFields,
+  HUMAN_ATTRIBUTION,
+} from "@/auth/request-attribution";
+import { touchAgentSessionAfterWrite } from "@/agent-sessions/agent-session-context";
+import {
   type InternalCommandEvent,
   RealtimeService,
 } from "@/realtime/realtime.service";
@@ -230,6 +236,8 @@ export class CommandsService {
       allowOversize?: boolean;
       actorType?: ActorType;
       actorRole?: Role;
+      /** TASK-166 attribution; the server fills it from the principal. */
+      attribution?: RequestAttribution;
     } = {},
   ): Promise<CommandResponse> {
     const [response] = await this.applyBatch(boardId, actorId, [dto], options);
@@ -257,12 +265,17 @@ export class CommandsService {
       allowOversize?: boolean;
       actorType?: ActorType;
       actorRole?: Role;
+      /** TASK-166 attribution; the server fills it from the principal. */
+      attribution?: RequestAttribution;
     } = {},
   ): Promise<CommandResponse[]> {
     // TASK-157: who issued the commands — a person or an agent (a PAT). The
     // transport resolves it from the request principal; internal callers
     // (admin restores, the demo seeder) default to "human".
     const actorType: ActorType = options.actorType ?? "human";
+    // TASK-166: token/session/run attribution. A request can never carry
+    // these fields itself — they are resolved from the auth principal.
+    const attribution = options.attribution ?? HUMAN_ATTRIBUTION;
     // The caller's board role drives workflow transitions. A normal command
     // passes the membership role resolved by `MembershipGuard`; internal
     // callers (the master panel, demo seeding) act as an ADMIN.
@@ -270,7 +283,23 @@ export class CommandsService {
     // Validate every command *before* the board lock (TASK-147 follow-up): an
     // oversized or malformed command is a cheap 400/413, not megabytes
     // serialized through the board writer.
-    const prepared = dtos.map((dto) => this.prepareCommand(dto, options));
+    const prepared = dtos.map((dto) => {
+      const entry = this.prepareCommand(dto, options);
+      // TASK-166 (D23): the claim holder is the authenticated actor. A
+      // client cannot claim on behalf of another user; token/session fields
+      // are written by `command-writers` from the attribution, never from
+      // the action payload.
+      if (
+        entry.action.type === "CLAIM_CARD" &&
+        entry.action.claimedBy !== null
+      ) {
+        entry.action = { ...entry.action, claimedBy: actorId };
+        // The stored payload carries the server-normalized holder, so the
+        // retry fingerprint must be taken from that same canonical action.
+        entry.fingerprint = actionFingerprint(entry.action);
+      }
+      return entry;
+    });
 
     const applied = await this.boardWrite.run(
       boardId,
@@ -354,6 +383,7 @@ export class CommandsService {
             actorId,
             actorType,
             actorRole,
+            attribution,
             entry,
             board: running,
           });
@@ -374,6 +404,7 @@ export class CommandsService {
             commandId: entry.dto.commandId,
             touches: outcome.touches,
             prevSeq: outcome.prevSeq,
+            ...attributionFields(attribution),
           });
         }
         return { responses, events };
@@ -398,6 +429,9 @@ export class CommandsService {
         });
       }
     }
+    // A successful PAT write refreshes the session heartbeat at most once a
+    // minute (ADR §6.5), but only after the transaction committed.
+    await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
     return applied.responses;
   }
 
@@ -467,6 +501,7 @@ export class CommandsService {
       actorId: string;
       actorType: ActorType;
       actorRole: Role;
+      attribution: RequestAttribution;
       entry: PreparedCommand;
       board: Board;
     },
@@ -476,11 +511,19 @@ export class CommandsService {
     prevSeq: number;
     board: Board;
   }> {
-    const { boardId, actorId, actorType, actorRole, entry, board } = params;
+    const {
+      boardId,
+      actorId,
+      actorType,
+      actorRole,
+      attribution,
+      entry,
+      board,
+    } = params;
     const { dto, action } = entry;
 
     await this.assertAssigneeIsBoardMember(tx, boardId, action);
-    await this.assertClaimIsFree(tx, boardId, action);
+    await this.assertClaimIsFree(tx, boardId, action, attribution);
 
     await this.assertBoardManagement(tx, boardId, actorId, action.type);
 
@@ -540,6 +583,10 @@ export class CommandsService {
         boardId,
         actorId,
         actorType,
+        apiTokenId: attribution.apiTokenId,
+        agentSessionId: attribution.agentSessionId,
+        runId: attribution.runId,
+        agentName: attribution.agentName,
         type: action.type,
         payload: jsonSafe(action),
         result: {},
@@ -560,6 +607,8 @@ export class CommandsService {
         after,
         at,
         actorId,
+        apiTokenId: attribution.apiTokenId,
+        agentSessionId: attribution.agentSessionId,
       });
     }
     const versions = changed ? await collectVersions(tx, boardId, touches) : {};
@@ -607,6 +656,11 @@ export class CommandsService {
     boardId: string,
     since: number,
     max: number = COMMAND_DELTA_MAX,
+    filters: {
+      runId?: string;
+      apiTokenId?: string;
+      agentSessionId?: string;
+    } = {},
   ): Promise<CommandDelta> {
     if (since > 0) {
       const baseline = await this.prisma.command.findFirst({
@@ -621,6 +675,13 @@ export class CommandsService {
       where: {
         boardId,
         ...(since > 0 ? { seq: { gt: BigInt(since) } } : {}),
+        ...(filters.runId !== undefined ? { runId: filters.runId } : {}),
+        ...(filters.apiTokenId !== undefined
+          ? { apiTokenId: filters.apiTokenId }
+          : {}),
+        ...(filters.agentSessionId !== undefined
+          ? { agentSessionId: filters.agentSessionId }
+          : {}),
       },
       orderBy: { seq: "asc" },
       // One extra row tells "exactly max" apart from "more than max".
@@ -630,6 +691,10 @@ export class CommandsService {
         seq: true,
         actorId: true,
         actorType: true,
+        apiTokenId: true,
+        agentSessionId: true,
+        runId: true,
+        agentName: true,
         payload: true,
         touches: true,
       },
@@ -643,6 +708,12 @@ export class CommandsService {
         actorType: row.actorType as ActorType,
         commandId: row.id,
         touches: row.touches,
+        ...attributionFields({
+          apiTokenId: row.apiTokenId,
+          agentSessionId: row.agentSessionId,
+          runId: row.runId,
+          agentName: row.agentName,
+        }),
       })),
       resync: truncated,
     };
@@ -824,20 +895,36 @@ export class CommandsService {
     tx: Prisma.TransactionClient,
     boardId: string,
     action: BoardAction,
+    attribution: RequestAttribution,
   ): Promise<void> {
     if (action.type !== "CLAIM_CARD") return;
     if (action.claimedBy === null || action.leaseUntil === null) return;
     const card = await tx.card.findFirst({
       where: { id: action.cardId, column: { boardId } },
-      select: { claimedBy: true, leaseUntil: true },
+      select: {
+        claimedBy: true,
+        claimedByTokenId: true,
+        claimedBySessionId: true,
+        leaseUntil: true,
+      },
     });
     if (
-      card &&
-      card.claimedBy !== null &&
-      card.claimedBy !== action.claimedBy &&
-      card.leaseUntil !== null &&
-      card.leaseUntil.getTime() > Date.now()
+      !card ||
+      card.claimedBy === null ||
+      card.leaseUntil === null ||
+      card.leaseUntil.getTime() <= Date.now()
     ) {
+      return;
+    }
+    // TASK-166 (D23): compare the session first, then the token, then the
+    // legacy user id. Two PATs of one owner are different claim holders.
+    const sameHolder =
+      card.claimedBySessionId !== null
+        ? card.claimedBySessionId === attribution.agentSessionId
+        : card.claimedByTokenId !== null
+          ? card.claimedByTokenId === attribution.apiTokenId
+          : card.claimedBy === action.claimedBy;
+    if (!sameHolder) {
       throw new BadRequestException({
         message: `Card is claimed by another member until ${card.leaseUntil.toISOString()}`,
         field: "action.claimedBy",

@@ -18,8 +18,13 @@ import type {
   CommandResponse,
 } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
-import type { AuthPrincipal } from "@/auth/auth-principal";
-import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
+import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
+import {
+  actorTypeOf,
+  CurrentAgentSession,
+  CurrentPrincipal,
+} from "@/auth/auth-principal";
+import { requestAttribution } from "@/auth/request-attribution";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { BoardRoles } from "@/common/board-roles.decorator";
 import { CurrentMembership } from "@/common/current-membership.decorator";
@@ -52,12 +57,14 @@ export class CommandsController {
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
     @CurrentMembership() membership: BoardMember,
     @Body() dto: CreateCommandDto,
   ): Promise<CommandResponse> {
     return this.commands.apply(id, user.id, dto, {
       actorType: actorTypeOf(principal),
       actorRole: membership.role,
+      attribution: requestAttribution(principal, session?.id),
     });
   }
 
@@ -75,12 +82,14 @@ export class CommandsController {
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
     @CurrentMembership() membership: BoardMember,
     @Body() dto: CreateCommandBatchDto,
   ): Promise<CommandBatchResponse> {
     const results = await this.commands.applyBatch(id, user.id, dto.commands, {
       actorType: actorTypeOf(principal),
       actorRole: membership.role,
+      attribution: requestAttribution(principal, session?.id),
     });
     return { results };
   }
@@ -98,8 +107,24 @@ export class CommandsController {
     @Param("id") id: string,
     @Res({ passthrough: true }) res: Response,
     @Query("since") since?: string,
+    @Query("runId") runId?: string,
+    @Query("apiTokenId") apiTokenId?: string,
+    @Query("agentSessionId") agentSessionId?: string,
   ): Promise<CommandDeltaEntry[]> {
-    const delta = await this.commands.deltaSince(id, parseSince(since));
+    const delta = await this.commands.deltaSince(
+      id,
+      parseSince(since),
+      undefined,
+      {
+        ...(runId !== undefined && runId !== "" ? { runId } : {}),
+        ...(apiTokenId !== undefined && apiTokenId !== ""
+          ? { apiTokenId }
+          : {}),
+        ...(agentSessionId !== undefined && agentSessionId !== ""
+          ? { agentSessionId }
+          : {}),
+      },
+    );
     if (delta.resync) {
       res.setHeader(DELTA_RESYNC_HEADER, "1");
       return [];

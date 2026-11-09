@@ -23,8 +23,9 @@ import type {
   BoardSummary,
 } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
-import type { AuthPrincipal } from "@/auth/auth-principal";
-import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
+import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
+import { CurrentAgentSession, CurrentPrincipal } from "@/auth/auth-principal";
+import { requestAttribution } from "@/auth/request-attribution";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
 import { BoardRoles } from "@/common/board-roles.decorator";
@@ -136,9 +137,15 @@ export class BoardsController {
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
     @Body() dto: InviteMemberDto,
   ): Promise<BoardMemberDto> {
-    return this.boards.inviteMember(id, user.id, dto, actorTypeOf(principal));
+    return this.boards.inviteMember(
+      id,
+      user.id,
+      dto,
+      requestAttribution(principal, session?.id),
+    );
   }
 
   @UseGuards(MembershipGuard)
@@ -149,6 +156,7 @@ export class BoardsController {
     @Param("userId") userId: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
     @Body() dto: UpdateMemberDto,
   ): Promise<BoardMemberDto> {
     return this.boards.updateMember(
@@ -156,7 +164,7 @@ export class BoardsController {
       user.id,
       userId,
       dto,
-      actorTypeOf(principal),
+      requestAttribution(principal, session?.id),
     );
   }
 
@@ -169,8 +177,14 @@ export class BoardsController {
     @Param("userId") userId: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
   ): Promise<{ status: "ok" }> {
-    await this.boards.removeMember(id, user.id, userId, actorTypeOf(principal));
+    await this.boards.removeMember(
+      id,
+      user.id,
+      userId,
+      requestAttribution(principal, session?.id),
+    );
     return { status: "ok" };
   }
 

@@ -6,6 +6,7 @@ import type {
   ActivityFeedPage,
   ActorType,
 } from "@janosik/shared";
+import { attributionFields } from "@/auth/request-attribution";
 import { PrismaService } from "@/common/prisma/prisma.service";
 
 /** A stored actor type, defaulting to "human" for legacy/garbage rows. */
@@ -33,6 +34,17 @@ const MAX_SEQ = "9223372036854775807";
  * command before an activity at the same millisecond and then by `seq` /
  * `id` descending, so pagination never repeats or skips an entry.
  */
+/** Optional TASK-166 audit filters shared by both feeds. */
+export interface ActivityFilters {
+  actorType?: string;
+  apiTokenId?: string;
+  agentSessionId?: string;
+  runId?: string;
+  type?: string;
+  from?: Date;
+  to?: Date;
+}
+
 @Injectable()
 export class ActivityService {
   constructor(private readonly prisma: PrismaService) {}
@@ -42,8 +54,9 @@ export class ActivityService {
     boardId: string,
     cursor?: string,
     limit?: string,
+    filters: ActivityFilters = {},
   ): Promise<ActivityFeedPage> {
-    return this.feed(boardId, cursor, limit);
+    return this.feed(boardId, cursor, limit, undefined, filters);
   }
 
   /** `GET /cards/:id/activity` — the card feed (full history, no 50 cap). */
@@ -51,6 +64,7 @@ export class ActivityService {
     cardId: string,
     cursor?: string,
     limit?: string,
+    filters: ActivityFilters = {},
   ): Promise<ActivityFeedPage> {
     const card = await this.prisma.card.findUnique({
       where: { id: cardId },
@@ -59,7 +73,7 @@ export class ActivityService {
     if (!card) {
       return { items: [], nextCursor: null };
     }
-    return this.feed(card.column.boardId, cursor, limit, cardId);
+    return this.feed(card.column.boardId, cursor, limit, cardId, filters);
   }
 
   private async feed(
@@ -67,10 +81,18 @@ export class ActivityService {
     cursorRaw: string | undefined,
     limitRaw: string | undefined,
     cardId?: string,
+    filters: ActivityFilters = {},
   ): Promise<ActivityFeedPage> {
     const limit = parseLimit(limitRaw);
     const cursor = cursorRaw ? parseCursor(cursorRaw) : null;
     const cardTouch = cardId ? `card:${cardId}` : undefined;
+    const createdAt =
+      filters.from !== undefined || filters.to !== undefined
+        ? {
+            ...(filters.from !== undefined ? { gte: filters.from } : {}),
+            ...(filters.to !== undefined ? { lte: filters.to } : {}),
+          }
+        : undefined;
 
     const commandWhere: Prisma.CommandWhereInput = {
       boardId,
@@ -81,11 +103,35 @@ export class ActivityService {
       ...(cardTouch
         ? { touches: { has: cardTouch } }
         : { touches: { isEmpty: false } }),
+      ...(createdAt ? { createdAt } : {}),
+      ...(filters.actorType !== undefined
+        ? { actorType: filters.actorType }
+        : {}),
+      ...(filters.apiTokenId !== undefined
+        ? { apiTokenId: filters.apiTokenId }
+        : {}),
+      ...(filters.agentSessionId !== undefined
+        ? { agentSessionId: filters.agentSessionId }
+        : {}),
+      ...(filters.runId !== undefined ? { runId: filters.runId } : {}),
+      ...(filters.type !== undefined ? { type: filters.type } : {}),
       ...commandOlderThan(cursor),
     };
     const activityWhere: Prisma.ActivityWhereInput = {
       boardId,
       ...(cardId ? { cardId } : {}),
+      ...(createdAt ? { createdAt } : {}),
+      ...(filters.actorType !== undefined
+        ? { actorType: filters.actorType }
+        : {}),
+      ...(filters.apiTokenId !== undefined
+        ? { apiTokenId: filters.apiTokenId }
+        : {}),
+      ...(filters.agentSessionId !== undefined
+        ? { agentSessionId: filters.agentSessionId }
+        : {}),
+      ...(filters.runId !== undefined ? { runId: filters.runId } : {}),
+      ...(filters.type !== undefined ? { type: filters.type } : {}),
       ...activityOlderThan(cursor),
     };
 
@@ -102,6 +148,10 @@ export class ActivityService {
           createdAt: true,
           actorId: true,
           actorType: true,
+          apiTokenId: true,
+          agentSessionId: true,
+          runId: true,
+          agentName: true,
           details: true,
         },
       }),
@@ -143,6 +193,10 @@ function toCommandEntry(row: {
   createdAt: Date;
   actorId: string;
   actorType: string;
+  apiTokenId: string | null;
+  agentSessionId: string | null;
+  runId: string | null;
+  agentName: string | null;
   details: Prisma.JsonValue | null;
 }): RankedEntry {
   const cardTouches = row.touches.filter((label) => label.startsWith("card:"));
@@ -155,6 +209,7 @@ function toCommandEntry(row: {
     type: row.type,
     actorId: row.actorId,
     actorType: toActorType(row.actorType),
+    ...attributionFields(row),
     // Only a command that touched a single card is card-attributed: a
     // DELETE_COLUMN touches many cards and belongs to the board.
     ...(cardTouches.length === 1 ? { cardId: cardTouches[0].slice(5) } : {}),
@@ -208,6 +263,10 @@ function toActivityEntry(row: {
   cardId: string | null;
   actorId: string;
   actorType: string;
+  apiTokenId: string | null;
+  agentSessionId: string | null;
+  runId: string | null;
+  agentName: string | null;
   details: Prisma.JsonValue | null;
   createdAt: Date;
 }): RankedEntry {
@@ -219,6 +278,7 @@ function toActivityEntry(row: {
     type: row.type,
     actorId: row.actorId,
     actorType: toActorType(row.actorType),
+    ...attributionFields(row),
     ...(row.cardId ? { cardId: row.cardId } : {}),
     details: (row.details as Record<string, unknown> | null) ?? null,
     ...(snapshot.detail !== undefined ? { detail: snapshot.detail } : {}),

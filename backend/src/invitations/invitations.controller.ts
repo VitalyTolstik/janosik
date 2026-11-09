@@ -9,7 +9,8 @@ import {
 import type { BoardInvitationDto } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AuthPrincipal } from "@/auth/auth-principal";
-import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
+import { CurrentPrincipal } from "@/auth/auth-principal";
+import { requestAttribution } from "@/auth/request-attribution";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
 import { InvitationsService } from "./invitations.service";
@@ -36,7 +37,7 @@ export class InvitationsController {
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Param("id") id: string,
   ): Promise<void> {
-    return this.invitations.accept(user.id, id, actorTypeOf(principal));
+    return this.invitations.accept(user.id, id, requestAttribution(principal));
   }
 
   @Post(":id/decline")
@@ -46,6 +47,6 @@ export class InvitationsController {
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Param("id") id: string,
   ): Promise<void> {
-    return this.invitations.decline(user.id, id, actorTypeOf(principal));
+    return this.invitations.decline(user.id, id, requestAttribution(principal));
   }
 }

@@ -15,6 +15,7 @@ interface Call {
   path: string;
   method: string;
   body: unknown;
+  headers?: Record<string, string>;
 }
 
 let calls: Call[];
@@ -192,7 +193,52 @@ function fakeApi(
     return respond([{ userId: "u1", role: "ADMIN" }]);
   }
   if (path === "/auth/me" && method === "GET") {
-    return respond({ id: "u1", displayName: "Test user" });
+    return respond({
+      id: "u1",
+      email: "user@example.com",
+      displayName: "Test user",
+      avatarColor: "teal",
+      avatarPath: null,
+      emailVerifiedAt: 123,
+      impersonatedBy: null,
+      createdAt: 1,
+      token: { id: "tok1", name: "CI", scopePreset: "worker" },
+      session: null,
+      server: { version: "0.2.0", apiVersion: "1" },
+    });
+  }
+  const agentSession =
+    /^\/boards\/([^/]+)\/agent-sessions(?:\/([^/]+)\/(heartbeat|end))?$/.exec(
+      path,
+    );
+  if (agentSession && method === "POST") {
+    const [, boardId, sessionId, action] = agentSession;
+    return respond(
+      {
+        id: sessionId ?? `sess-${boardId}`,
+        userId: "u1",
+        apiTokenId: "tok1",
+        boardId,
+        name: (body as { name?: string } | undefined)?.name ?? null,
+        clientName: null,
+        model: null,
+        status: action === "end" ? "completed" : "active",
+        currentCardId: null,
+        currentRunId: null,
+        startedAt: 1,
+        lastHeartbeatAt: 2,
+        stale: false,
+        paused: false,
+        pausedAt: null,
+        pausedBy: null,
+        pausedReason: null,
+        pauseScope: null,
+        endedAt: action === "end" ? 3 : null,
+        endReason: action === "end" ? "completed" : null,
+        summary: null,
+      },
+      action === undefined && sessionId === undefined ? 201 : 200,
+    );
   }
   if (path === "/invitations/inv1/accept" && method === "POST") {
     // The real endpoint answers 200 with an empty body.
@@ -226,9 +272,11 @@ function fakeApi(
         return respond({ seq: ++boardSeq, versions: { "board:b1": 2 } });
     }
   }
-  if (path === "/boards/b1/commands/batch" && method === "POST") {
+  const batchMatch = /^\/boards\/([^/]+)\/commands\/batch$/.exec(path);
+  if (batchMatch && method === "POST") {
     // TASK-160: apply every command in order, one result each. A failing
     // member fails the whole batch (the real server rolls it back).
+    const boardId = batchMatch[1];
     const request = body as {
       commands: Array<{
         ifMatch?: number;
@@ -264,7 +312,10 @@ function fakeApi(
         case "SET_CARD_DUE_DATE":
           return respond({ message: "boom" }, 500);
         default:
-          results.push({ seq: ++boardSeq, versions: { "board:b1": 2 } });
+          results.push({
+            seq: ++boardSeq,
+            versions: { [`board:${boardId}`]: 2 },
+          });
       }
     }
     return respond({ results });
@@ -340,7 +391,12 @@ beforeEach(() => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
-    calls.push({ path: url.pathname.replace("/api/v1", ""), method, body });
+    calls.push({
+      path: url.pathname.replace("/api/v1", ""),
+      method,
+      body,
+      headers: (init?.headers ?? {}) as Record<string, string>,
+    });
     return Promise.resolve(
       fakeApi(
         url.pathname.replace("/api/v1", ""),
@@ -360,7 +416,7 @@ describe("janosik MCP server", () => {
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
     // Pinned exactly so a dropped or renamed tool fails loudly.
-    expect(names.length).toBe(75);
+    expect(names.length).toBe(78);
     expect(names).toContain("janosik_list_boards");
     expect(names).toContain("janosik_create_card");
     expect(names).toContain("janosik_set_column_accent");
@@ -492,6 +548,116 @@ describe("janosik MCP server", () => {
     });
     expect(result.isError).toBe(true);
     expect(firstText(result)).toMatch(/JANOSIK_MCP_ALLOW_FS/);
+    await client.close();
+  });
+
+  it("returns whoami as { user, token, session, server }", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_whoami",
+      arguments: { response_format: "json" },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      user: {
+        id: "u1",
+        email: "user@example.com",
+        displayName: "Test user",
+        avatarColor: "teal",
+        emailVerifiedAt: 123,
+        createdAt: 1,
+      },
+      token: { id: "tok1", name: "CI" },
+      session: null,
+      server: { version: "0.2.0", apiVersion: "1" },
+    });
+    expect(
+      (result.structuredContent as { user: Record<string, unknown> }).user,
+    ).not.toHaveProperty("token");
+    await client.close();
+  });
+
+  it("starts a session and attaches X-Agent-Session to later writes", async () => {
+    const client = await connect();
+    const started = await client.callTool({
+      name: "janosik_start_session",
+      arguments: { boardId: "b1", name: "run-1", response_format: "json" },
+    });
+    expect(started.isError).toBeFalsy();
+    expect(started.structuredContent).toMatchObject({
+      session: { id: "sess-b1", boardId: "b1", status: "active" },
+    });
+
+    await client.callTool({
+      name: "janosik_create_card",
+      arguments: { boardId: "b1", columnId: "col1", title: "Attributed" },
+    });
+    const write = calls.find(
+      (call) => call.path === "/boards/b1/commands/batch",
+    );
+    expect(write?.headers?.["X-Agent-Session"]).toBe("sess-b1");
+
+    const heartbeat = await client.callTool({
+      name: "janosik_heartbeat",
+      arguments: { boardId: "b1", sessionId: "sess-b1", status: "idle" },
+    });
+    expect(heartbeat.isError).toBeFalsy();
+
+    const ended = await client.callTool({
+      name: "janosik_end_session",
+      arguments: { boardId: "b1", sessionId: "sess-b1" },
+    });
+    expect(ended.isError).toBeFalsy();
+
+    calls.length = 0;
+    await client.callTool({
+      name: "janosik_create_card",
+      arguments: { boardId: "b1", columnId: "col1", title: "Unattributed" },
+    });
+    const after = calls.find(
+      (call) => call.path === "/boards/b1/commands/batch",
+    );
+    expect(after?.headers?.["X-Agent-Session"]).toBeUndefined();
+    await client.close();
+  });
+
+  it("scopes X-Agent-Session to the board that owns it", async () => {
+    const client = await connect();
+    const a = await client.callTool({
+      name: "janosik_start_session",
+      arguments: { boardId: "b1", response_format: "json" },
+    });
+    expect(a.structuredContent).toMatchObject({
+      session: { id: "sess-b1" },
+    });
+
+    calls.length = 0;
+    await client.callTool({
+      name: "janosik_create_card",
+      arguments: { boardId: "b2", columnId: "col1", title: "Elsewhere" },
+    });
+    const writeB = calls.find(
+      (call) => call.path === "/boards/b2/commands/batch",
+    );
+    expect(writeB?.headers?.["X-Agent-Session"]).toBeUndefined();
+
+    const b = await client.callTool({
+      name: "janosik_start_session",
+      arguments: { boardId: "b2", response_format: "json" },
+    });
+    expect(b.structuredContent).toMatchObject({
+      session: { id: "sess-b2" },
+    });
+
+    calls.length = 0;
+    await client.callTool({
+      name: "janosik_create_card",
+      arguments: { boardId: "b1", columnId: "col1", title: "Back on A" },
+    });
+    const writeA = calls.find(
+      (call) => call.path === "/boards/b1/commands/batch",
+    );
+    expect(writeA?.headers?.["X-Agent-Session"]).toBe("sess-b1");
     await client.close();
   });
 

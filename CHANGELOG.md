@@ -14,6 +14,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   semantics, the REST/MCP action matrix, and the additive error envelope
   (`docs/TASK-166-launch-agent-control.md`). Docs-only: no product behaviour
   changes; W1 (166.1–166.6) is unblocked.
+- TASK-166.1 agent identity and sessions: every command, activity row,
+  comment, attachment and claim written through a personal API token now
+  carries `apiTokenId`, the optional `agentSessionId`, `runId` and the token
+  name snapshot, so two PATs of one account are distinguishable in the
+  database, history API, Watch/activity feed and SSE. Adds board-scoped agent
+  sessions (`POST /boards/:id/agent-sessions`, heartbeat, end, list/detail)
+  with the optional `X-Agent-Session` header, `GET /auth/me` token identity,
+  TASK-166 token DTO fields (`scopePreset`, `trustedCi`, pause stamps,
+  `effectiveTokenScope`), MCP `start_session`/`heartbeat`/`end_session`
+  tools, and the complete TASK-166 Prisma schema/migration (sessions, runs,
+  approvals, pre-images, security audit and idempotency tables; board/token
+  pause fields) as the single schema owner for streams 166.1–166.16. Legacy
+  tokens are grandfathered to `scopePreset = "admin"` + `trustedCi = true`
+  (read-only tokens keep effective observer), and clients without the header
+  keep working.
 - Admin console redesign: the 26 flat master-panel links are grouped into
   eight hubs (Overview, Users, Boards, Moderation, Audit & activity,
   Communications, Access & security, Settings). Every capability survives as a

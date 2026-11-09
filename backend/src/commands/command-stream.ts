@@ -167,7 +167,14 @@ function toWire(event: InternalCommandEvent): CommandSseEvent {
     seq: event.seq,
     action: event.action,
     actorId: event.actorId,
+    ...(event.actorType !== undefined ? { actorType: event.actorType } : {}),
     ...(event.commandId !== undefined ? { commandId: event.commandId } : {}),
     touches: event.touches,
+    ...(event.apiTokenId !== undefined ? { apiTokenId: event.apiTokenId } : {}),
+    ...(event.agentSessionId !== undefined
+      ? { agentSessionId: event.agentSessionId }
+      : {}),
+    ...(event.runId !== undefined ? { runId: event.runId } : {}),
+    ...(event.agentName !== undefined ? { agentName: event.agentName } : {}),
   };
 }

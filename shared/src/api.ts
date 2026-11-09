@@ -144,6 +144,15 @@ export interface CommandDeltaEntry {
    * a client can mark its undo history foreign without diffing the board.
    */
   touches: string[];
+  /**
+   * TASK-166 attribution: the PAT and agent session that issued the command.
+   * Omitted for browser sessions and rows written before the fields existed.
+   */
+  apiTokenId?: string;
+  agentSessionId?: string;
+  runId?: string | null;
+  /** Token-name snapshot at write time (`ApiToken.name`). */
+  agentName?: string;
 }
 
 /** Server-sent event describing a committed command (TASK-30). */
@@ -158,6 +167,11 @@ export interface CommandSseEvent {
   commandId?: string;
   /** Touched entity labels — same contract as `CommandDeltaEntry.touches`. */
   touches: string[];
+  /** TASK-166 attribution — same contract as `CommandDeltaEntry`. */
+  apiTokenId?: string;
+  agentSessionId?: string;
+  runId?: string | null;
+  agentName?: string;
 }
 
 /** A user currently connected to the board (`presence`, TASK-36). */
@@ -217,9 +231,25 @@ export interface ActivitySseEvent {
   boardId: string;
   cardId?: string;
   actorId: string;
+  /** TASK-166: keep `actorType` on activity frames too. */
+  actorType?: ActorType;
   at: number;
   kind: string;
   detail?: string;
+  /** TASK-166 attribution — same contract as `CommandDeltaEntry`. */
+  apiTokenId?: string;
+  agentSessionId?: string;
+  runId?: string | null;
+  agentName?: string;
+}
+
+/** TASK-166: an agent-session control-plane transition. */
+export interface AgentSseEvent {
+  type: "agent";
+  op: "started" | "paused" | "resumed" | "ended";
+  sessionId?: string;
+  scope?: "board" | "token" | "session";
+  at: number;
 }
 
 /** Discriminated union of every `GET /boards/:id/events` event (§7.4). */
@@ -238,7 +268,8 @@ export type BoardSseEvent =
   | ActivitySseEvent
   | MembershipSseEvent
   | KeepAliveSseEvent
-  | ResyncSseEvent;
+  | ResyncSseEvent
+  | AgentSseEvent;
 
 /**
  * Board membership roles (§7.0) — mirrors the backend Prisma `Role` enum.
@@ -347,6 +378,21 @@ export const ACTIVITY_EVENT_TYPES = [
   "member_removed",
   "comment_added",
   "comment_deleted",
+  // TASK-166 agent control / approvals / pause.
+  "approval_requested",
+  "approval_approved",
+  "approval_rejected",
+  "approval_cancelled",
+  "approval_expired",
+  "approval_consumed",
+  "agent_session_started",
+  "agent_session_ended",
+  "agent_session_paused",
+  "agent_session_resumed",
+  "agents_paused",
+  "agents_resumed",
+  "agent_policy_changed",
+  "run_reverted",
 ] as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[number];
@@ -388,6 +434,12 @@ export interface ActivityFeedEntry {
    * legacy rows — treat as `"human"`.
    */
   actorType?: ActorType;
+  /** TASK-166 attribution: the PAT, session and run behind the entry. */
+  apiTokenId?: string;
+  agentSessionId?: string;
+  runId?: string | null;
+  /** Token-name snapshot at write time. */
+  agentName?: string;
   /** Command entries: the single card the command touched, when unambiguous. */
   cardId?: string;
   /** `Activity.details` snapshot (member email/role, comment text, …). */
@@ -403,6 +455,71 @@ export interface ActivityFeedEntry {
 export interface ActivityFeedPage {
   items: ActivityFeedEntry[];
   nextCursor: string | null;
+}
+
+/**
+ * TASK-166 agent sessions: the board-scoped work context of one PAT
+ * (`start`/`heartbeat`/`end`). A session is not an account and grants no
+ * rights beyond the token that owns it.
+ */
+export const AGENT_SESSION_STATUSES = [
+  "active",
+  "idle",
+  "waiting_approval",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+
+export type AgentSessionStatus = (typeof AGENT_SESSION_STATUSES)[number];
+
+/** A session whose heartbeat is older than this is reported as `stale`. */
+export const AGENT_SESSION_STALE_MS = 5 * 60 * 1000;
+
+/** Body of `POST /boards/:id/agent-sessions`. */
+export interface CreateAgentSessionRequest {
+  name?: string;
+  clientName?: string;
+  model?: string;
+}
+
+/** Body of `POST /boards/:id/agent-sessions/:sessionId/heartbeat`. */
+export interface AgentSessionHeartbeatRequest {
+  status?: Exclude<AgentSessionStatus, "completed" | "failed" | "cancelled">;
+  currentCardId?: string | null;
+  summary?: string;
+}
+
+/** Body of `POST /boards/:id/agent-sessions/:sessionId/end`. */
+export interface EndAgentSessionRequest {
+  status?: "completed" | "failed" | "cancelled";
+  summary?: string;
+}
+
+/** One agent session (`GET` list/detail and the start/heartbeat/end replies). */
+export interface AgentSessionDto {
+  id: string;
+  userId: string;
+  apiTokenId: string;
+  boardId: string;
+  name: string | null;
+  clientName: string | null;
+  model: string | null;
+  status: AgentSessionStatus;
+  currentCardId: string | null;
+  currentRunId: string | null;
+  startedAt: number;
+  lastHeartbeatAt: number;
+  /** Computed: no heartbeat for `AGENT_SESSION_STALE_MS` and not terminal. */
+  stale: boolean;
+  paused: boolean;
+  pausedAt: number | null;
+  pausedBy: string | null;
+  pausedReason: string | null;
+  pauseScope: "board" | "token" | "session" | null;
+  endedAt: number | null;
+  endReason: string | null;
+  summary: string | null;
 }
 
 /**
@@ -427,6 +544,12 @@ export interface CommentDto {
    * `handoff`). Lets a reader filter ("only blockers") without parsing text.
    */
   kind: CommentKind;
+  /** TASK-166: `agent` when a PAT wrote the comment, otherwise `human`. */
+  actorType: ActorType;
+  /** TASK-166 attribution; absent on public shares and legacy rows. */
+  apiTokenId?: string | null;
+  agentSessionId?: string | null;
+  agentName?: string | null;
   /** Unix ms. */
   createdAt: number;
 }
@@ -453,6 +576,9 @@ export interface AttachmentDto {
   mimeType: string;
   sizeBytes: number;
   uploadedById: string;
+  /** TASK-166 attribution for the "own upload" rule; null on legacy rows. */
+  uploadedByTokenId?: string | null;
+  uploadedBySessionId?: string | null;
   /** Unix ms. */
   createdAt: number;
   /** TASK-50 video transcode state; `none` for non-video files. */
@@ -517,6 +643,22 @@ export interface AuthResponseDto {
 }
 
 /**
+ * `GET /auth/me`: the user projection plus the optional token identity
+ * (TASK-166) and impersonation marker. A browser session gets `token: null`.
+ */
+export interface ServerInfoDto {
+  version: string;
+  apiVersion: string;
+}
+
+export interface AuthMeResponseDto extends AuthUserDto {
+  impersonatedBy: string | null;
+  token: ApiTokenIdentityDto | null;
+  session: AgentSessionDto | null;
+  server?: ServerInfoDto;
+}
+
+/**
  * OAuth login (TASK-54). The backend speaks the authorization-code flow of
  * each provider; the ids are stable wire values shared by the admin
  * settings API, so the provider list lives here next to the auth DTOs.
@@ -568,6 +710,19 @@ export interface ChangePasswordRequest {
 }
 
 /**
+ * TASK-166 capability preset. A preset never raises the board role; `readOnly`
+ * still yields an effective `observer`.
+ */
+export const SCOPE_PRESETS = [
+  "observer",
+  "worker",
+  "reviewer",
+  "admin",
+] as const;
+
+export type ScopePreset = (typeof SCOPE_PRESETS)[number];
+
+/**
  * A personal API token as listed by `GET /users/me/tokens` (TASK-36.1).
  * The plaintext is never returned again after creation.
  */
@@ -591,6 +746,39 @@ export interface UserTokenDto {
   readOnly: boolean;
   /** Requests per minute this token may make; `null` = no per-token limit. */
   rateLimitPerMinute: number | null;
+  /** TASK-166 capability preset; `readOnly` still wins when true. */
+  scopePreset: ScopePreset;
+  /** TASK-166 trusted-CI escape hatch (explicit, never a preset). */
+  trustedCi: boolean;
+  /** Unix ms of an individual pause; `null` when not individually paused. */
+  individualPausedAt: number | null;
+  individualPausedBy: string | null;
+  individualPausedReason: string | null;
+  /** Unix ms of the bulk "stop all" pause; `null` when not paused that way. */
+  stopAllPausedAt: number | null;
+  stopAllPausedBy: string | null;
+  /** True while either pause source is active. */
+  paused: boolean;
+  /** `observer` when `readOnly`, otherwise `scopePreset` (not authorization). */
+  effectiveTokenScope: ScopePreset;
+}
+
+/**
+ * The token half of the identity surface (`GET /auth/me` for a PAT and
+ * `janosik_whoami`). It exposes no secret and no token hash.
+ */
+export interface ApiTokenIdentityDto {
+  id: string;
+  name: string;
+  scopePreset: ScopePreset;
+  trustedCi: boolean;
+  effectiveTokenScope: ScopePreset;
+  boardId: string | null;
+  readOnly: boolean;
+  rateLimitPerMinute: number | null;
+  individualPausedAt: number | null;
+  stopAllPausedAt: number | null;
+  paused: boolean;
 }
 
 /** Body of `POST /users/me/tokens` (TASK-36.1). */
@@ -604,6 +792,10 @@ export interface CreateUserTokenRequest {
   readOnly?: boolean;
   /** Per-token request limit per minute (TASK-157); omitted/`null` = none. */
   rateLimitPerMinute?: number | null;
+  /** TASK-166 preset; defaults to `worker`. */
+  scopePreset?: ScopePreset;
+  /** TASK-166 trusted CI; defaults to `false`, session JWT only. */
+  trustedCi?: boolean;
 }
 
 /** Response of `POST /users/me/tokens`: the plaintext appears exactly once. */

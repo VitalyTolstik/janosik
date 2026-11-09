@@ -243,6 +243,12 @@ function toCard(
     // Claim (TASK-157): raw claimant id + lease expiry, both omitted when
     // unclaimed. Display data resolves client-side like the assignee.
     ...(card.claimedBy ? { claimedBy: card.claimedBy } : {}),
+    ...(card.claimedByTokenId
+      ? { claimedByTokenId: card.claimedByTokenId }
+      : {}),
+    ...(card.claimedBySessionId
+      ? { claimedBySessionId: card.claimedBySessionId }
+      : {}),
     ...(card.leaseUntil ? { leaseUntil: card.leaseUntil.getTime() } : {}),
     // Task contract (TASK-157): omitted when empty (optional-field rule).
     ...(card.acceptanceCriteria && card.acceptanceCriteria.length > 0

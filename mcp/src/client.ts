@@ -14,7 +14,10 @@
 
 import type {
   ActivityFeedPage,
+  AgentSessionDto,
+  AgentSessionHeartbeatRequest,
   AttachmentDto,
+  AuthMeResponseDto,
   AuthUserDto,
   BoardAction,
   BoardAggregate,
@@ -32,7 +35,9 @@ import type {
   CommandBatchResponse,
   CommandRequest,
   CommandResponse,
+  CreateAgentSessionRequest,
   CreateShareRequest,
+  EndAgentSessionRequest,
   InviteMemberRequest,
   UpdateMemberRequest,
   UpdateProfileRequest,
@@ -146,10 +151,22 @@ function buildQuery(query?: Record<string, string | number | undefined>) {
 }
 
 export class JanosikClient {
+  /**
+   * TASK-166: active agent sessions, keyed by board. A session belongs to one
+   * board, so the header is only attached to that board's requests; starting
+   * a session on board B must not invalidate the run already open on board A.
+   */
+  private readonly agentSessions = new Map<string, string>();
+
   constructor(
     private readonly baseUrl: string,
     private readonly token: string,
   ) {}
+
+  /** The session attached to requests for `boardId`, if any. */
+  agentSessionFor(boardId: string): string | null {
+    return this.agentSessions.get(boardId) ?? null;
+  }
 
   /**
    * Low-level request; throws {@link ApiError} on any non-2xx response. A
@@ -174,6 +191,12 @@ export class JanosikClient {
       Authorization: `Bearer ${this.token}`,
       Accept: "application/json",
     };
+    const boardId = boardIdOfPath(path);
+    const agentSessionId =
+      boardId === null ? undefined : this.agentSessions.get(boardId);
+    if (agentSessionId !== undefined) {
+      headers["X-Agent-Session"] = agentSessionId;
+    }
     let payload: string | FormData | undefined;
     if (form) {
       payload = form;
@@ -594,14 +617,73 @@ export class JanosikClient {
     });
   }
 
+  // --- Agent sessions (TASK-166.1) --------------------------------------
+
+  /** Start a session and attach it to later requests for this board only. */
+  async startSession(
+    boardId: string,
+    body: CreateAgentSessionRequest = {},
+  ): Promise<AgentSessionDto> {
+    // Keep the previous board session if this request fails; replace it only
+    // after the server accepted the start.
+    const session = await this.request<AgentSessionDto>(
+      apiPath`/boards/${boardId}/agent-sessions`,
+      { method: "POST", body },
+    );
+    this.agentSessions.set(boardId, session.id);
+    return session;
+  }
+
+  heartbeat(
+    boardId: string,
+    sessionId: string,
+    body: AgentSessionHeartbeatRequest = {},
+  ): Promise<AgentSessionDto> {
+    return this.request(
+      apiPath`/boards/${boardId}/agent-sessions/${sessionId}/heartbeat`,
+      { method: "POST", body },
+    );
+  }
+
+  /** End a session; a successful end detaches it from that board. */
+  async endSession(
+    boardId: string,
+    sessionId: string,
+    body: EndAgentSessionRequest = {},
+  ): Promise<AgentSessionDto> {
+    const session = await this.request<AgentSessionDto>(
+      apiPath`/boards/${boardId}/agent-sessions/${sessionId}/end`,
+      { method: "POST", body },
+    );
+    if (this.agentSessions.get(boardId) === session.id) {
+      this.agentSessions.delete(boardId);
+    }
+    return session;
+  }
+
   // --- Account -----------------------------------------------------------
 
-  whoami(): Promise<AuthUserDto> {
+  whoami(): Promise<AuthMeResponseDto> {
     return this.request("/auth/me");
   }
 
   updateProfile(dto: UpdateProfileRequest): Promise<AuthUserDto> {
     return this.request("/users/me", { method: "PATCH", body: dto });
+  }
+}
+
+/**
+ * Extract the board id from an API path (`/boards/:id/...`) so an agent
+ * session is attached only to the board it belongs to. Returns null for
+ * non-board routes (`/auth/me`, `/users/...`).
+ */
+function boardIdOfPath(path: string): string | null {
+  const match = /^\/boards\/([^/]+)(?:\/|$)/.exec(path);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
   }
 }
 

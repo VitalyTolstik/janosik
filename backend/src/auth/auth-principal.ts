@@ -5,7 +5,24 @@ import {
   ForbiddenException,
   Injectable,
 } from "@nestjs/common";
+import type { ApiTokenIdentityDto } from "@janosik/shared";
 import type { TokenScope } from "./api-token.service";
+
+/**
+ * The board-scoped agent session a PAT named in `X-Agent-Session` (TASK-166).
+ * Only the fields later writers need ride along; the full row lives in
+ * `AgentSession`.
+ */
+export interface AgentSessionContext {
+  id: string;
+  userId: string;
+  apiTokenId: string;
+  boardId: string;
+  status: string;
+  endedAt: Date | null;
+  pausedAt: Date | null;
+  lastHeartbeatAt: Date;
+}
 
 /**
  * How the caller of a user-contour route authenticated (B-2). Kept on the
@@ -19,6 +36,12 @@ export interface AuthPrincipal {
   via: "jwt" | "pat";
   /** `ApiToken.id` of the presenting token — set only when `via === "pat"`. */
   apiTokenId?: string;
+  /** `ApiToken.name` snapshot for attribution (TASK-166). */
+  apiTokenName?: string;
+  /** Non-secret identity of the presenting PAT (TASK-166). */
+  tokenIdentity?: ApiTokenIdentityDto;
+  /** Resolved `X-Agent-Session` id, when the request named one. */
+  agentSessionId?: string;
   /** Scope of the presenting PAT (TASK-157) — set only when `via === "pat"`. */
   tokenScope?: TokenScope;
   /**
@@ -31,6 +54,7 @@ export interface AuthPrincipal {
 /** The request bits the auth layer reads/writes. */
 export interface PrincipalRequest {
   auth?: AuthPrincipal;
+  agentSession?: AgentSessionContext;
 }
 
 /** The principal `JwtAuthGuard` resolved, or `undefined` on public routes. */
@@ -53,6 +77,18 @@ export function actorTypeOf(
 export const CurrentPrincipal = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): AuthPrincipal | undefined =>
     principalOf(ctx.switchToHttp().getRequest()),
+);
+
+/**
+ * Injects the board-scoped `AgentSessionContext` resolved by
+ * `MembershipGuard` (TASK-166), or `undefined` when the request carried no
+ * `X-Agent-Session` header.
+ */
+export const CurrentAgentSession = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): AgentSessionContext | undefined => {
+    const request = ctx.switchToHttp().getRequest<PrincipalRequest>();
+    return request.agentSession;
+  },
 );
 
 /**

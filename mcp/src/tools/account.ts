@@ -27,11 +27,32 @@ export function registerAccountTools(server: McpServer, client: JanosikClient) {
       annotations: READ,
     },
     async ({ response_format }) => {
-      const user = await client.whoami();
+      const me = await client.whoami();
+      const { token, session, server: serverInfo, ...user } = me;
+      const server = serverInfo ?? { version: "0.0.0", apiVersion: "1" };
+      const lines = [
+        `# ${user.displayName ?? user.email}`,
+        "",
+        `- email: ${user.email}`,
+        `- id: \`${user.id}\``,
+        `- member since: ${formatTimestamp(user.createdAt)}`,
+      ];
+      if (token) {
+        lines.push(
+          "",
+          "## API token",
+          `- id: \`${token.id}\``,
+          `- name: ${token.name}`,
+          `- scope: ${token.effectiveTokenScope} (preset ${token.scopePreset})`,
+          `- trusted CI: ${token.trustedCi ? "yes" : "no"}`,
+          `- paused: ${token.paused ? "yes" : "no"}`,
+        );
+      }
+      lines.push("", `Server ${server.version} (API ${server.apiVersion})`);
       return respond(
         response_format,
-        { user },
-        `# ${user.displayName ?? user.email}\n\n- email: ${user.email}\n- id: \`${user.id}\`\n- member since: ${formatTimestamp(user.createdAt)}`,
+        { user, token, session, server },
+        lines.join("\n"),
       );
     },
   );

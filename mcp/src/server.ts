@@ -21,6 +21,7 @@ import { registerInvitationTools } from "./tools/invitations.js";
 import { registerLabelTools } from "./tools/labels.js";
 import { registerLinkTools } from "./tools/links.js";
 import { registerMemberTools } from "./tools/members.js";
+import { registerSessionTools } from "./tools/sessions.js";
 import { restrictToReadOnly } from "./tools/helpers.js";
 import { registerShareTools } from "./tools/shares.js";
 import { registerWorkflowTools } from "./tools/workflow.js";
@@ -67,6 +68,7 @@ const GROUPS: Record<
   activity: (server, client) => registerActivityTools(server, client),
   attachments: (server, client, config) =>
     registerAttachmentTools(server, client, fsOptions(config)),
+  sessions: (server, client) => registerSessionTools(server, client),
   members: (server, client) => registerMemberTools(server, client),
   invitations: (server, client) => registerInvitationTools(server, client),
   shares: (server, client, config) =>

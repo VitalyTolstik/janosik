@@ -263,7 +263,10 @@ refresh-cookie и возвращают `{ accessToken, user }`. `register` та�
 
 `GET /auth/me` возвращает `AuthUserDto` аутентифицированного пользователя и
 поле `impersonatedBy`: id мастера, когда access-токен — это сессия поддержки
-(имперсонация), иначе `null`, в том числе для API-токенов.
+(имперсонация), иначе `null`, в том числе для API-токенов. С персональным
+API-токеном ответ также содержит `token` (`ApiTokenIdentityDto`, без секрета
+и хеша); у сессии браузера `token: null`. TASK-166 резервирует поле `session`
+для активной сессии агента (сейчас `null`).
 
 ### Смена пароля
 
@@ -398,12 +401,18 @@ API-ключ не может ни перечислить, ни создать, �
 | `boardId`            | string или null | нет         | привязать к одной доске, где владелец участник; `null`/пропуск означает все доски            |
 | `readOnly`           | boolean         | нет         | при `true` любая запись отвечает `403 pat_read_only`; пропуск означает чтение и запись      |
 | `rateLimitPerMinute` | integer или null | нет        | от 1 до 100000; `null`/пропуск означает отсутствие лимита на токен                          |
+| `scopePreset`        | string          | нет         | `observer`, `worker`, `reviewer` или `admin`; пропуск означает `worker` (enforcement — в 166.2) |
+| `trustedCi`          | boolean         | нет         | сохраняется для destructive-gate 166.2; пропуск означает `false` (в 166.1 не применяется)     |
 
 Возвращает `{ token, apiToken }`. Полное значение `token` показывается один раз;
 далее возвращаются только метаданные `apiToken`.
 `GET /users/me/tokens` перечисляет метаданные (без полного значения токена).
 `DELETE /users/me/tokens/:id` отзывает один токен и возвращает
-`{ status: "ok" }`. Смена пароля отзывает все токены аккаунта.
+`{ status: "ok" }`. Смена пароля отзывает все токены аккаунта. DTO токена
+также содержит `scopePreset`, `trustedCi`, `individualPausedAt`/
+`stopAllPausedAt` (и их `*By`), вычисляемый `paused` и
+`effectiveTokenScope` (`observer` при `readOnly: true`). `GET /auth/me` с PAT
+добавляет ту же несекретную идентичность в поле `token`.
 
 ## Приглашения
 
