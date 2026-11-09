@@ -83,6 +83,7 @@ const COMMAND_KEYS: Record<string, MessageKey> = {
   SET_COLUMN_WIP_LIMIT: "activity.column-updated",
   SET_COLUMN_ACCENT: "activity.column-style",
   SET_BOARD_COLUMN_STYLE: "activity.board-style",
+  SET_BOARD_WORKFLOW: "activity.workflow-changed",
   ARCHIVE_COLUMN_CARDS: "activity.column-archived",
   RENAME_BOARD: "activity.board-renamed",
   ARCHIVE_BOARD: "activity.board-archived",
@@ -133,6 +134,7 @@ export const FIELD_KEYS: Record<string, MessageKey> = {
   wipLimit: "history.field.wipLimit",
   accent: "history.field.accent",
   columnStyle: "history.field.columnStyle",
+  workflow: "history.field.workflow",
   position: "history.field.position",
   cardOrder: "history.field.cardOrder",
 };
