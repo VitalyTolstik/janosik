@@ -4626,7 +4626,8 @@ launch-гейт держит головной поток.
   «подключите первого агента», шаблон доски/демо.
 - **174.5 Legal, SIEM, locales & marketplace** — legal/DPA/status page для
   cloud, SIEM/webhook export и audit retention, дополнительные локали,
-  agent-to-agent messaging/mentions, board templates marketplace.
+  agent-to-agent messaging/mentions, board templates marketplace, SSO/SCIM и
+  hosted control plane после облака.
 - **DoD:** каждый P1/P2 из human-control закрыт или явно отклонён с причиной;
   тесты, docs EN/RU, CHANGELOG.
 
@@ -4696,7 +4697,7 @@ launch-гейт держит головной поток.
 
 | Аудит | Пункт | Где в роадмапе |
 | --- | --- | --- |
-| P0-1 | Agent identity & service accounts | 166.1, 166.13; service account без email — 174.4 |
+| P0-1 | Agent identity & service accounts | 166.1, 166.13; `actorType`/имя токена в комментариях; service account без email — 174.4 |
 | P0-2 | Approval policy + queue | 166.5, 166.14 |
 | P0-3 | Pause / kill switch | 166.3, 166.14 |
 | P0-4 | Run grouping + rollback | 166.7, 166.15 |
@@ -4723,6 +4724,10 @@ launch-гейт держит головной поток.
 | P2 | Advanced run analytics | 173.9 |
 | P2 | Agent-to-agent messaging / mentions | 174.5 |
 | P2 | Board templates marketplace | 174.5 |
+
+Дополнительно из Phase 3 agent-experience: SSO/SCIM, hosted control plane и
+marketplace-шаблоны — **TASK-174.5** (SSO/SCIM, marketplace) и **TASK-131**
+(hosted control plane). Это не P2-блокеры запуска, но заведены явно.
 
 ---
 
