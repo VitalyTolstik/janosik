@@ -126,6 +126,10 @@ export interface WriteContext {
    * so the client can attribute the last change without a join per card.
    */
   actorId: string;
+  /** TASK-166 PAT attribution of the command, when it was an agent. */
+  apiTokenId?: string | null;
+  /** TASK-166 agent session that holds a claim written by this command. */
+  agentSessionId?: string | null;
 }
 
 /**
@@ -1349,6 +1353,18 @@ async function writeCardAction(
           priority: card.priority ?? null,
           assigneeId: card.assigneeId ?? null,
           claimedBy: card.claimedBy ?? null,
+          ...(action.type === "CLAIM_CARD"
+            ? {
+                claimedByTokenId:
+                  card.claimedBy !== undefined
+                    ? (ctx.apiTokenId ?? null)
+                    : null,
+                claimedBySessionId:
+                  card.claimedBy !== undefined
+                    ? (ctx.agentSessionId ?? null)
+                    : null,
+              }
+            : {}),
           leaseUntil:
             card.leaseUntil !== undefined ? new Date(card.leaseUntil) : null,
           acceptanceCriteria: card.acceptanceCriteria ?? [],

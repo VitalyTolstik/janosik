@@ -8,18 +8,27 @@ import {
 import { Reflector } from "@nestjs/core";
 import { Role } from "@prisma/client";
 import { ApiTokenService } from "@/auth/api-token.service";
-import type { AuthPrincipal } from "@/auth/auth-principal";
+import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
 import type { AuthUser } from "@/auth/auth.types";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
+import { resolveAgentSessionHeader } from "@/agent-sessions/agent-session-context";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BOARD_ROLES_KEY } from "./board-roles.decorator";
+
+/** HTTP methods that mutate state and therefore validate `X-Agent-Session`. */
+const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /** Shape of the express request bits the guards read (params only). */
 export interface GuardedRequest {
   params?: Record<string, string | undefined>;
+  method?: string;
+  url?: string;
+  originalUrl?: string;
+  headers?: Record<string, string | string[] | undefined>;
   user?: AuthUser;
   boardMembership?: unknown;
   auth?: AuthPrincipal;
+  agentSession?: AgentSessionContext;
 }
 
 /**
@@ -128,6 +137,38 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
     }
 
     request.boardMembership = membership;
+    // TASK-166: a PAT write may name an optional board-scoped session. The
+    // check is skipped for reads and for the session control routes, whose
+    // controller owns the path-session check: start must accept a stale/old
+    // header so a new run can begin, and heartbeat/end must stay idempotent
+    // on an already closed session. Query strings are stripped first — a
+    // cache-buster must not change route matching.
+    const method = (request.method ?? "GET").toUpperCase();
+    const path = (request.originalUrl ?? request.url ?? "").split("?")[0];
+    if (WRITE_METHODS.has(method) && !SESSION_HEADER_EXEMPT.test(path)) {
+      const header = headerValue(request.headers?.["x-agent-session"]);
+      const session = await resolveAgentSessionHeader(
+        this.prisma,
+        header,
+        request.auth,
+        user.id,
+        boardId,
+      );
+      if (session !== null) {
+        request.agentSession = session;
+      }
+    }
     return true;
   }
+}
+
+/**
+ * `/boards/:id/agent-sessions` (start) and
+ * `/boards/:id/agent-sessions/:sessionId/heartbeat|end`.
+ */
+const SESSION_HEADER_EXEMPT =
+  /\/agent-sessions(?:\/[^/]+\/(?:heartbeat|end))?\/?$/;
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }

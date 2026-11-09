@@ -23,8 +23,9 @@ import { BoardRoles } from "@/common/board-roles.decorator";
 import { CardAccessGuard } from "@/common/card-access.guard";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import type { AuthUser } from "@/auth/auth.types";
-import type { AuthPrincipal } from "@/auth/auth-principal";
-import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
+import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
+import { CurrentAgentSession, CurrentPrincipal } from "@/auth/auth-principal";
+import { requestAttribution } from "@/auth/request-attribution";
 import { AttachmentsService } from "./attachments.service";
 import type { UploadedBlob } from "./attachments.service";
 import { MediaService } from "./media.service";
@@ -64,6 +65,7 @@ export class AttachmentsController {
     @Param("cardId") cardId: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
     @UploadedFile() file: UploadedBlob,
     @Query("inline") inline?: string,
     @Query("description") description?: string,
@@ -73,7 +75,7 @@ export class AttachmentsController {
       user,
       file,
       inline === "1" || inline === "true",
-      actorTypeOf(principal),
+      requestAttribution(principal, session?.id),
       description === "1",
     );
   }
@@ -162,8 +164,13 @@ export class AttachmentsController {
     @Param("attachmentId") attachmentId: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
   ): Promise<{ status: "ok" }> {
-    await this.attachments.remove(attachmentId, user, actorTypeOf(principal));
+    await this.attachments.remove(
+      attachmentId,
+      user,
+      requestAttribution(principal, session?.id),
+    );
     return { status: "ok" };
   }
 }

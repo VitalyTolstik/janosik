@@ -531,6 +531,7 @@ export class FakeServer {
     }
     if (path === "/api/v1/users/me/tokens" && method === "POST") {
       const request = (body ?? {}) as CreateUserTokenRequest;
+      const scopePreset = request.scopePreset ?? "worker";
       const apiToken: UserTokenDto = {
         id: `token-${this.apiTokens.length + 1}`,
         name: request.name,
@@ -544,6 +545,16 @@ export class FakeServer {
         boardId: request.boardId ?? null,
         readOnly: request.readOnly === true,
         rateLimitPerMinute: request.rateLimitPerMinute ?? null,
+        scopePreset,
+        trustedCi: request.trustedCi === true,
+        individualPausedAt: null,
+        individualPausedBy: null,
+        individualPausedReason: null,
+        stopAllPausedAt: null,
+        stopAllPausedBy: null,
+        paused: false,
+        effectiveTokenScope:
+          request.readOnly === true ? "observer" : scopePreset,
       };
       this.apiTokens.unshift(apiToken);
       const response: CreateUserTokenResponse = {
@@ -682,6 +693,10 @@ export class FakeServer {
           authorId: this.account.id,
           text: text ?? "",
           kind: kind ?? "note",
+          actorType: "human",
+          apiTokenId: null,
+          agentSessionId: null,
+          agentName: null,
           createdAt: Date.now(),
         };
         const list = this.commentsByCard.get(cardId) ?? [];

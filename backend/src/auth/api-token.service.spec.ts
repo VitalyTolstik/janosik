@@ -63,6 +63,13 @@ const makeToken = (overrides: Partial<ApiToken> = {}): ApiToken => ({
   boardId: null,
   readOnly: false,
   rateLimitPerMinute: null,
+  scopePreset: "worker",
+  trustedCi: false,
+  individualPausedAt: null,
+  individualPausedBy: null,
+  individualPausedReason: null,
+  stopAllPausedAt: null,
+  stopAllPausedBy: null,
   lastUsedAt: null,
   expiresAt: null,
   revokedAt: null,
@@ -208,8 +215,49 @@ describe("ApiTokenService", () => {
           boardId: null,
           readOnly: false,
           rateLimitPerMinute: null,
+          scopePreset: "worker",
+          trustedCi: false,
+          individualPausedAt: null,
+          individualPausedBy: null,
+          individualPausedReason: null,
+          stopAllPausedAt: null,
+          stopAllPausedBy: null,
+          paused: false,
+          effectiveTokenScope: "worker",
         },
       ]);
+    });
+
+    it("exposes TASK-166 scope, trust and pause state", async () => {
+      prismaMock.apiToken.findMany.mockResolvedValue([
+        makeToken({
+          scopePreset: "reviewer",
+          trustedCi: true,
+          individualPausedAt: new Date("2026-09-04T00:00:00Z"),
+          individualPausedBy: "admin-1",
+          individualPausedReason: "maintenance",
+          stopAllPausedAt: new Date("2026-09-05T00:00:00Z"),
+          stopAllPausedBy: "owner-1",
+          readOnly: false,
+        }),
+        makeToken({ id: "token-2", scopePreset: "admin", readOnly: true }),
+      ]);
+
+      const [paused, readOnly] = await service.list("user-1");
+
+      expect(paused).toMatchObject({
+        scopePreset: "reviewer",
+        trustedCi: true,
+        paused: true,
+        effectiveTokenScope: "reviewer",
+        individualPausedAt: new Date("2026-09-04T00:00:00Z").getTime(),
+        stopAllPausedAt: new Date("2026-09-05T00:00:00Z").getTime(),
+      });
+      expect(readOnly).toMatchObject({
+        scopePreset: "admin",
+        paused: false,
+        effectiveTokenScope: "observer",
+      });
     });
   });
 
@@ -298,6 +346,30 @@ describe("ApiTokenService", () => {
         readOnly: true,
         rateLimitPerMinute: 120,
         boardId: null,
+      });
+    });
+
+    it("stores TASK-166 scopePreset and trustedCi", async () => {
+      prismaMock.apiToken.create.mockImplementation(
+        async ({ data }: { data: Partial<ApiToken> }) => makeToken(data),
+      );
+
+      const result = await service.create("user-1", {
+        name: "Reviewer",
+        expiresAt: null,
+        scopePreset: "reviewer",
+        trustedCi: true,
+      });
+
+      expect(prismaMock.apiToken.create.mock.calls[0][0].data).toMatchObject({
+        scopePreset: "reviewer",
+        trustedCi: true,
+      });
+      expect(result.apiToken).toMatchObject({
+        scopePreset: "reviewer",
+        trustedCi: true,
+        effectiveTokenScope: "reviewer",
+        paused: false,
       });
     });
 

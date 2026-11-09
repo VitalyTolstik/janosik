@@ -122,6 +122,53 @@ access-токеном. Только для сессии работают лиш�
 
 Каждая запись создаёт строку `Activity` и публикует кадр SSE `activity`.
 
+## Сессии агентов и атрибуция
+
+Персональный API-токен может открыть сессию агента на доске. Сессия — это
+контекст атрибуции, а не второй аккаунт: она не даёт прав сверх токена.
+
+| Метод  | Путь                                                  | Аутентификация / роль      | Запрос                     | Ответ               |
+| ------ | ----------------------------------------------------- | -------------------------- | -------------------------- | ------------------- |
+| `POST` | `/boards/:id/agent-sessions`                          | PAT, участник доски        | `CreateAgentSessionDto`    | `AgentSessionDto`   |
+| `POST` | `/boards/:id/agent-sessions/:sessionId/heartbeat`     | тот же PAT                 | `AgentSessionHeartbeatDto` | `AgentSessionDto`   |
+| `POST` | `/boards/:id/agent-sessions/:sessionId/end`           | тот же PAT или `ADMIN`     | `EndAgentSessionDto`       | `AgentSessionDto`   |
+| `GET`  | `/boards/:id/agent-sessions?active=1`                 | любой участник             | нет                        | `AgentSessionDto[]` |
+| `GET`  | `/boards/:id/agent-sessions/:sessionId`               | любой участник             | нет                        | `AgentSessionDto`   |
+
+При старте можно передать `name`, `clientName`, `model` (до 100 символов).
+Heartbeat принимает `status` (`active`, `idle`, `waiting_approval`),
+`currentCardId`, `summary`; end — `status` (`completed`, `failed`,
+`cancelled`) и `summary`. Повторный `end` возвращает сохранённое терминальное
+состояние. Сессия без heartbeat дольше пяти минут получает вычисляемый
+`stale: true` (в БД это не пишется). Завершение сессии освобождает её claim'ы.
+
+PAT-запись может передать `X-Agent-Session: <sessionId>`. Сервер проверяет,
+что сессия принадлежит тем же пользователю, токену и доске и не закрыта:
+несовпадение — `403 agent_session_invalid`, закрытая сессия —
+`403 agent_session_closed`. Start и heartbeat доступны только PAT: браузерная
+сессия получает `403 pat_required` (в `endpoint` указано `start` или
+`heartbeat`). `end` принимает тот же PAT или браузерную сессию board ADMIN.
+Клиенты без заголовка продолжают работать: команды всё равно получают
+`apiTokenId`, а `agentSessionId` остаётся `null`. Всю атрибуцию заполняет
+сервер из principal; тело запроса не может подделать `apiTokenId`,
+`agentSessionId`, `runId`, `agentName`, `claimedByTokenId` или
+`claimedBySessionId`.
+
+Записи и SSE-кадры команд содержат необязательные `apiTokenId`,
+`agentSessionId`, `runId`, `agentName`. Записи активности содержат те же поля
+плюс `actorType`; `CommentDto` отдаёт `actorType`, `apiTokenId`,
+`agentSessionId`, `agentName`, а `AttachmentDto` —
+`uploadedByTokenId`/`uploadedBySessionId`. `GET /boards/:id/activity` и
+`GET /cards/:id/activity` принимают `actorType`, `apiTokenId`,
+`agentSessionId`, `runId`, `type`, `from`, `to`; фильтры применяются к обоим
+источникам (команды и строки активности). `GET /boards/:id/commands`
+принимает только `since`, `runId`, `apiTokenId`, `agentSessionId`. Публичные
+share-ответы и потоки удаляют id токена/сессии и имя токена. `GET /auth/me`
+для PAT добавляет несекретный объект `token` (`scopePreset`, `trustedCi`,
+метки паузы, `effectiveTokenScope`) и блок `server`; у сессии браузера
+`token: null`. `scopePreset`/`trustedCi` здесь только сохраняются; enforcement
+destructive-действий появится в 166.2, не в 166.1.
+
 ## Вложения
 
 Файлы загружаются через REST как `multipart/form-data` с единственной частью
@@ -277,14 +324,15 @@ Snapshot замораживает и обсуждение: его коммент
 `^[A-Za-z0-9_-]{8,64}$`. Когда он пропущен или неверен, сервер генерирует
 свой.
 
-Поток передаёт пять типов событий:
+Поток передаёт шесть типов событий:
 
 | `type`       | Нагрузка                                                       | Примечания                                           |
 | ------------ | -------------------------------------------------------------- | ---------------------------------------------------- |
-| `command`    | `seq`, `action`, `actorId`, `actorType?`, `commandId`, `touches` | зафиксированная команда                              |
+| `command`    | `seq`, `action`, `actorId`, `actorType?`, `commandId`, `touches`, `apiTokenId?`, `agentSessionId?`, `runId?`, `agentName?` | зафиксированная команда                              |
 | `presence`   | `users[]`                                                      | кто подключён; без `seq`                             |
 | `membership` | `boardId`, `userId`, `change`                                  | `change` — это `accepted`, `updated` или `removed`     |
-| `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `actorType?`, `at`, `kind`, `detail?` | активность вне редьюсера, например новый комментарий |
+| `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `actorType?`, `at`, `kind`, `detail?`, `apiTokenId?`, `agentSessionId?`, `runId?`, `agentName?` | активность вне редьюсера, например новый комментарий |
+| `agent`      | `op` (`started`, `paused`, `resumed`, `ended`), `sessionId?`, `scope?`, `at` | переход управления сессией агента |
 | `resync`     | нет                                                            | разрыв не воспроизвести; перечитайте доску           |
 
 `commandId` — это ключ идемпотентности, с которым команда была отправлена,

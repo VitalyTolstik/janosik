@@ -39,6 +39,30 @@ import { ShareThrottlerGuard } from "./share-throttler.guard";
 import { ShareService } from "./share.service";
 
 /**
+ * Anonymous share streams must not leak TASK-166 token attribution: the
+ * internal command/activity frames carry `apiTokenId`, `agentSessionId`,
+ * `runId` and the token-name snapshot (`agentName`). Strip those before the
+ * frame crosses the public boundary; everything else stays wire-compatible.
+ */
+function sanitizePublicFrame(data: object | string): object | string {
+  if (typeof data === "string") return data;
+  const event = data as {
+    type?: string;
+    apiTokenId?: unknown;
+    agentSessionId?: unknown;
+    runId?: unknown;
+    agentName?: unknown;
+  };
+  if (event.type !== "command" && event.type !== "activity") return data;
+  const copy = { ...event };
+  delete copy.apiTokenId;
+  delete copy.agentSessionId;
+  delete copy.runId;
+  delete copy.agentName;
+  return copy;
+}
+
+/**
  * The public read-only contour `/api/v1/share/:token` (TASK-58, §7.9.4).
  *
  * Every route is GET (plus the explicit 405 write guards below) and behind
@@ -112,7 +136,7 @@ export class ShareController {
     return new Observable<MessageEvent>((subscriber) => {
       const send = (data: object | string): void => {
         if (!subscriber.closed) {
-          subscriber.next({ data } as MessageEvent);
+          subscriber.next({ data: sanitizePublicFrame(data) } as MessageEvent);
         }
       };
       const sequencer = new CommandStreamSequencer(

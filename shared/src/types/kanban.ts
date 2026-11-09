@@ -163,6 +163,13 @@ export interface Card {
    * when the claim is released.
    */
   claimedBy?: string;
+  /**
+   * TASK-166 claim attribution: the PAT and agent session actually holding
+   * the lease. Filled by the server from the principal, never by the client.
+   * Omitted for browser claims and legacy rows.
+   */
+  claimedByTokenId?: string;
+  claimedBySessionId?: string;
   /** Unix timestamp (ms) at which the claim above expires. Omitted when unclaimed. */
   leaseUntil?: number;
   /**

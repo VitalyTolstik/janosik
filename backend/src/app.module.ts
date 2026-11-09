@@ -18,6 +18,7 @@ import { AuthModule } from "@/auth/auth.module";
 import { UsersModule } from "@/users/users.module";
 import { BoardsModule } from "@/boards/boards.module";
 import { CommandsModule } from "@/commands/commands.module";
+import { AgentSessionsModule } from "@/agent-sessions/agent-sessions.module";
 import { ActivityModule } from "@/activity/activity.module";
 import { CommentsModule } from "@/comments/comments.module";
 import { AttachmentsModule } from "@/attachments/attachments.module";
@@ -67,6 +68,7 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
     UsersModule,
     BoardsModule,
     CommandsModule,
+    AgentSessionsModule,
     ActivityModule,
     CommentsModule,
     AttachmentsModule,

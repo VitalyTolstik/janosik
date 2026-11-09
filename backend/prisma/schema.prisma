@@ -179,24 +179,32 @@ model DemoRun {
 }
 
 model Board {
-  id          String        @id @default(cuid())
-  title       String        @db.VarChar(100) // LIMITS.boardTitle
-  columnStyle String? // TASK-164: column accent shape; null = signature
+  id                 String        @id @default(cuid())
+  title              String        @db.VarChar(100) // LIMITS.boardTitle
+  columnStyle        String? // TASK-164: column accent shape; null = signature
   // Admin-configured card workflow (BoardWorkflow in @janosik/shared).
   // NULL = no process, every move allowed — the legacy behaviour.
-  workflow    Json?
-  archivedAt  DateTime?
-  deletedAt   DateTime? // soft-delete (§7.0)
-  version     Int           @default(0) // ifMatch → 409 (title editable)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  members     BoardMember[]
-  columns     Column[]
-  labels      Label[]
-  cardLinks   CardLink[]
-  activity    Activity[]
-  commands    Command[]
-  shares      BoardShare[]
+  workflow           Json?
+  // TASK-166: board-level agent policy and pause state. `agentPolicy = NULL`
+  // means the safe defaults from the ADR (§6.3); the version is a separate
+  // CAS token and never mixes with `Board.version`.
+  agentPolicy        Json?
+  agentPolicyVersion Int           @default(1)
+  agentsPausedAt     DateTime?
+  agentsPausedBy     String?
+  agentsPauseReason  String?
+  archivedAt         DateTime?
+  deletedAt          DateTime? // soft-delete (§7.0)
+  version            Int           @default(0) // ifMatch → 409 (title editable)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  members            BoardMember[]
+  columns            Column[]
+  labels             Label[]
+  cardLinks          CardLink[]
+  activity           Activity[]
+  commands           Command[]
+  shares             BoardShare[]
 
   @@index([deletedAt]) // board purge sweep (TASK-148)
 }
@@ -237,14 +245,19 @@ model BoardShare {
 
 // Independent of the share and board rows so history survives their removal.
 model BoardShareAuditLog {
-  id        String   @id @default(cuid())
-  shareId   String
-  boardId   String
-  actorId   String
-  actorType String
-  action    String
-  details   Json
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  shareId        String
+  boardId        String
+  actorId        String
+  actorType      String
+  // TASK-166: token/session attribution so two PATs of one account are
+  // distinguishable. Nullable — every row written before the migration.
+  apiTokenId     String?
+  agentSessionId String?
+  agentName      String?
+  action         String
+  details        Json
+  createdAt      DateTime @default(now())
 
   @@index([boardId, createdAt])
   @@index([shareId, createdAt])
@@ -287,41 +300,61 @@ enum AdminRole {
 }
 
 model ApiToken {
-  id                 String    @id @default(cuid())
-  user               User      @relation(fields: [userId], references: [id])
-  userId             String
-  name               String // "CI", "integration …"
-  tokenHash          String    @unique // shown once, only the hash is stored
+  id                     String    @id @default(cuid())
+  user                   User      @relation(fields: [userId], references: [id])
+  userId                 String
+  name                   String // "CI", "integration …"
+  tokenHash              String    @unique // shown once, only the hash is stored
   // TASK-157 scopes: a token may be limited to one board and/or to reads,
   // and carry its own request-per-minute budget. Null = no restriction.
-  boardId            String? // board this token is scoped to; null = all
-  readOnly           Boolean   @default(false) // true = reads only
-  rateLimitPerMinute Int? // per-token rate limit; null = global only
-  lastUsedAt         DateTime?
-  expiresAt          DateTime?
-  revokedAt          DateTime?
-  createdAt          DateTime  @default(now())
+  boardId                String? // board this token is scoped to; null = all
+  readOnly               Boolean   @default(false) // true = reads only
+  rateLimitPerMinute     Int? // per-token rate limit; null = global only
+  // TASK-166 identity: preset (observer|worker|reviewer|admin) plus the
+  // explicit trusted-CI escape hatch. `readOnly` still wins and yields an
+  // effective observer. Legacy rows are backfilled by the 166.1 migration.
+  scopePreset            String    @default("worker")
+  trustedCi              Boolean   @default(false)
+  // Two independent pause sources (TASK-166): resume-all clears only the
+  // stop-all stamp; an individual pause survives it.
+  individualPausedAt     DateTime?
+  individualPausedBy     String?
+  individualPausedReason String?
+  stopAllPausedAt        DateTime?
+  stopAllPausedBy        String?
+  lastUsedAt             DateTime?
+  expiresAt              DateTime?
+  revokedAt              DateTime?
+  createdAt              DateTime  @default(now())
 
   @@index([userId])
+  @@index([userId, individualPausedAt])
+  @@index([userId, stopAllPausedAt])
 }
 
 model Command {
-  id        String   @id // = client commandId → idempotent retries
-  board     Board    @relation(fields: [boardId], references: [id])
-  boardId   String
-  actor     User     @relation(fields: [actorId], references: [id])
-  actorId   String
-  actorType String   @default("human") // TASK-157: human | agent
-  seq       BigInt   @default(autoincrement()) // monotonic board version; ?since=
-  type      String // BoardAction type
-  payload   Json // whole action (deterministic — TASK-21.7a)
-  result    Json // first apply result {seq, versions}
+  id             String   @id // = client commandId → idempotent retries
+  board          Board    @relation(fields: [boardId], references: [id])
+  boardId        String
+  actor          User     @relation(fields: [actorId], references: [id])
+  actorId        String
+  actorType      String   @default("human") // TASK-157: human | agent
+  // TASK-166 attribution: the API token/session/run that issued the command,
+  // plus the token-name snapshot. Null for browser sessions and legacy rows.
+  apiTokenId     String?
+  agentSessionId String?
+  runId          String?
+  agentName      String?
+  seq            BigInt   @default(autoincrement()) // monotonic board version; ?since=
+  type           String // BoardAction type
+  payload        Json // whole action (deterministic — TASK-21.7a)
+  result         Json // first apply result {seq, versions}
   // Display snapshot captured when the command applied (TASK-37): the
   // history feed renders "from → to" diffs from here — the action alone
   // carries only the new values. Null for rows written before the column.
-  details   Json?
-  touches   String[] // ["card:c1","column:col-2"] — touched entities
-  createdAt DateTime @default(now())
+  details        Json?
+  touches        String[] // ["card:c1","column:col-2"] — touched entities
+  createdAt      DateTime @default(now())
 
   @@index([boardId, seq])
   // GIN (not B-tree) so the per-entity feed's `touches: { has: … }` lookup is
@@ -332,6 +365,144 @@ model Command {
   // history/time-window reads use the composite.
   @@index([createdAt])
   @@index([boardId, createdAt, seq])
+  @@index([apiTokenId, createdAt])
+  @@index([agentSessionId, createdAt])
+  @@index([runId])
+}
+
+model CommandPreimage {
+  commandId String   @id
+  boardId   String
+  runId     String?
+  data      Json
+  createdAt DateTime @default(now())
+
+  @@index([boardId, runId])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// TASK-166 agent control. These tables store ids as scalars without FKs
+// (ADR §6.1): a record must survive soft-delete and purge, and a cascade must
+// never erase audit before retention.
+// ---------------------------------------------------------------------------
+
+model AgentSession {
+  id              String    @id @default(cuid())
+  userId          String
+  apiTokenId      String
+  boardId         String
+  name            String?   @db.VarChar(100)
+  clientName      String?   @db.VarChar(100)
+  model           String?   @db.VarChar(100)
+  status          String    @default("active")
+  // active|idle|waiting_approval|completed|failed|cancelled
+  currentCardId   String?
+  currentRunId    String?
+  startedAt       DateTime  @default(now())
+  lastHeartbeatAt DateTime  @default(now())
+  endedAt         DateTime?
+  endReason       String?
+  pausedAt        DateTime?
+  pausedBy        String?
+  pausedReason    String?
+  summary         String?   @db.Text
+
+  @@index([apiTokenId, status])
+  @@index([boardId, status, lastHeartbeatAt])
+  @@index([boardId, startedAt])
+  @@index([userId, startedAt])
+  @@index([lastHeartbeatAt])
+}
+
+model AgentRun {
+  id             String    @id @default(cuid())
+  boardId        String
+  apiTokenId     String?
+  agentSessionId String?
+  actorId        String
+  kind           String // batch|plan|single|revert
+  status         String    @default("applied") // applied|reverted|failed
+  clientRunId    String?
+  planHash       String?
+  approvalId     String?   @unique
+  commandCount   Int       @default(0)
+  firstSeq       BigInt?
+  lastSeq        BigInt?
+  revertsRunId   String?
+  createdAt      DateTime  @default(now())
+  appliedAt      DateTime  @default(now())
+  revertedAt     DateTime?
+
+  @@unique([boardId, clientRunId])
+  @@index([boardId, createdAt])
+  @@index([agentSessionId, createdAt])
+  @@index([apiTokenId, createdAt])
+}
+
+model ApprovalRequest {
+  id                 String    @id @default(cuid())
+  boardId            String
+  cardId             String?
+  requestedBy        String // PAT owner userId
+  requestedByTokenId String
+  agentSessionId     String?
+  kind               String // destructive|done|custom
+  actionType         String // BoardAction.type | "batch" | operation
+  summary            String    @db.VarChar(500)
+  risk               String    @default("medium") // low|medium|high
+  plan               Json
+  planHash           String
+  status             String    @default("pending")
+  // pending|approved|rejected|expired|cancelled|consumed
+  expiresAt          DateTime
+  decidedBy          String?
+  decidedAt          DateTime?
+  decisionComment    String?   @db.Text
+  runId              String?
+  consumedAt         DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@index([boardId, status, createdAt])
+  @@index([requestedByTokenId, status])
+  @@index([expiresAt, status])
+  @@index([planHash])
+}
+
+model SecurityAuditLog {
+  id             String   @id @default(cuid())
+  userId         String
+  actorId        String
+  actorType      String   @default("human") // human|agent|admin
+  apiTokenId     String?
+  agentSessionId String?
+  action         String
+  targetType     String?
+  targetId       String?
+  details        Json?
+  createdAt      DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
+model IdempotencyRecord {
+  id             String   @id @default(cuid())
+  scope          String // create_board|import_boards|create_share|upload_attachment|<operation>
+  actorKey       String // "user:<id>" or "token:<id>"
+  key            String
+  requestHash    String
+  status         String   @default("in_progress") // in_progress|completed
+  responseStatus Int?
+  responseBody   Json?
+  resourceId     String?
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+
+  @@unique([scope, actorKey, key])
+  @@index([expiresAt])
 }
 
 model Column {
@@ -366,6 +537,10 @@ model Card {
   assigneeId           String? // TASK-49 Jira-style assignee; null = unassigned
   assignee             User?        @relation("CardAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   claimedBy            String? // TASK-157 agent claim holder (user id); null = unclaimed
+  // TASK-166: the token/session that actually holds the claim. Filled by the
+  // server from the principal; the CLAIM_CARD payload cannot set them.
+  claimedByTokenId     String?
+  claimedBySessionId   String?
   leaseUntil           DateTime? // TASK-157 claim lease expiry; null = unclaimed
   acceptanceCriteria   String[] // TASK-157 machine-readable task contract (empty = unset)
   definitionOfDone     String[] // TASK-157 machine-readable task contract (empty = unset)
@@ -393,6 +568,8 @@ model Card {
 
   @@index([columnId, position])
   @@index([assigneeId]) // admin user-detail "assigned cards" (TASK-49)
+  @@index([claimedByTokenId])
+  @@index([claimedBySessionId])
   @@index([leaseUntil]) // lapsed-claim sweep (TASK-157)
   @@index([dueDate]) // scheduled due reminders (TASK-72, TASK-92)
   @@index([deletedAt]) // purge sweep (TASK-148)
@@ -492,37 +669,53 @@ model ChecklistItem {
 //              (invite / role change / removal) and comments.
 // Feed = merge of both sources by `createdAt` (composite cursor).
 model Activity {
-  id        String   @id @default(cuid())
-  board     Board    @relation(fields: [boardId], references: [id])
-  boardId   String
-  card      Card?    @relation(fields: [cardId], references: [id])
-  cardId    String?
-  type      String // member_invited | member_role_changed | member_removed | comment_added
-  actor     User     @relation(fields: [actorId], references: [id])
-  actorId   String // now a real user
-  actorType String   @default("human") // TASK-157: human | agent
-  details   Json? // snapshot details (email, role, …)
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  board          Board    @relation(fields: [boardId], references: [id])
+  boardId        String
+  card           Card?    @relation(fields: [cardId], references: [id])
+  cardId         String?
+  type           String // member_invited | member_role_changed | member_removed | comment_added
+  actor          User     @relation(fields: [actorId], references: [id])
+  actorId        String // now a real user
+  actorType      String   @default("human") // TASK-157: human | agent
+  // TASK-166 attribution, same shape as Command.
+  apiTokenId     String?
+  agentSessionId String?
+  runId          String?
+  agentName      String?
+  details        Json? // snapshot details (email, role, …)
+  createdAt      DateTime @default(now())
 
   @@index([boardId, createdAt])
   @@index([cardId, createdAt])
   @@index([createdAt]) // activity retention sweep (TASK-148)
+  @@index([apiTokenId, createdAt])
+  @@index([agentSessionId, createdAt])
+  @@index([runId])
 }
 
 model Comment {
-  id        String    @id @default(cuid())
-  card      Card      @relation(fields: [cardId], references: [id])
-  cardId    String
-  author    User      @relation(fields: [authorId], references: [id])
-  authorId  String
-  text      String    @db.Text // LIMITS.comment (10000) — plain text
-  kind      String    @default("note") // TASK-157 (D10): note|status|question|blocker|evidence|handoff
-  deletedAt DateTime? // soft-delete (§7.0)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  card           Card      @relation(fields: [cardId], references: [id])
+  cardId         String
+  author         User      @relation(fields: [authorId], references: [id])
+  authorId       String
+  text           String    @db.Text // LIMITS.comment (10000) — plain text
+  kind           String    @default("note") // TASK-157 (D10): note|status|question|blocker|evidence|handoff
+  // TASK-166 attribution: comments live outside the command log, so the
+  // actor identity is stored on the row itself.
+  actorType      String    @default("human") // human|agent
+  apiTokenId     String?
+  agentSessionId String?
+  agentName      String?
+  deletedAt      DateTime? // soft-delete (§7.0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([cardId, createdAt])
   @@index([deletedAt]) // purge sweep (TASK-148)
+  @@index([apiTokenId, createdAt])
+  @@index([agentSessionId, createdAt])
 }
 
 // File attachments (TASK-47) — self-hosted blobs on the local disk under
@@ -541,6 +734,10 @@ model Attachment {
   sizeBytes           Int // ≤ LIMITS.attachmentSize (25 MB)
   uploadedBy          User      @relation(fields: [uploadedById], references: [id])
   uploadedById        String
+  // TASK-166 attribution for the "own upload" rule: two PATs of one owner
+  // are distinguishable. Legacy rows stay NULL and fall back to userId.
+  uploadedByTokenId   String?
+  uploadedBySessionId String?
   // Inline media (TASK-48 paste): embedded into a description/comment body
   // via its `content` URL instead of the attachment list — hidden from
   // `list()` and excluded from the card-face `attachmentCount`.
@@ -568,6 +765,8 @@ model Attachment {
   @@index([deletedAt]) // purge sweep (TASK-92)
   @@index([deletedAt, transcodeStatus]) // boot recovery (TASK-92)
   @@index([deletedAt, derivativeStatus]) // media boot recovery (TASK-92)
+  @@index([uploadedByTokenId])
+  @@index([uploadedBySessionId])
 }
 
 // ---------------------------------------------------------------------------

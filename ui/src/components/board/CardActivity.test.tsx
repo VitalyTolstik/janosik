@@ -54,6 +54,10 @@ function comment(id: string): CommentDto {
     authorId: "user-1",
     text: `Note ${id}`,
     kind: "note",
+    actorType: "human",
+    apiTokenId: null,
+    agentSessionId: null,
+    agentName: null,
     createdAt: AT,
   };
 }

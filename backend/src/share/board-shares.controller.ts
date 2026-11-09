@@ -12,6 +12,9 @@ import {
 import { Role } from "@prisma/client";
 import type { BoardShareDto } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
+import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
+import { CurrentAgentSession, CurrentPrincipal } from "@/auth/auth-principal";
+import { requestAttribution } from "@/auth/request-attribution";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { BoardRoles } from "@/common/board-roles.decorator";
 import { MembershipGuard } from "@/common/membership.guard";
@@ -39,9 +42,17 @@ export class BoardSharesController {
   create(
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
     @Body() dto: CreateShareDto,
   ): Promise<BoardShareDto> {
-    return this.shares.create(id, user.id, dto);
+    return this.shares.create(
+      id,
+      user.id,
+      dto,
+      "user",
+      requestAttribution(principal, session?.id),
+    );
   }
 
   @Post(":shareId/refresh")
@@ -70,10 +81,18 @@ export class BoardSharesController {
     @Param("id") id: string,
     @Param("shareId") shareId: string,
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
   ): Promise<BoardShareDto> {
     return this.shares
       .requireShareOnBoard(shareId, id)
-      .then(() => this.shares.revoke(shareId, user.id));
+      .then(() =>
+        this.shares.revoke(
+          shareId,
+          user.id,
+          requestAttribution(principal, session?.id),
+        ),
+      );
   }
 
   @Delete(":shareId/permanent")
@@ -82,7 +101,14 @@ export class BoardSharesController {
     @Param("id") id: string,
     @Param("shareId") shareId: string,
     @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
   ): Promise<void> {
-    await this.shares.deleteRevoked(id, shareId, user.id);
+    await this.shares.deleteRevoked(
+      id,
+      shareId,
+      user.id,
+      requestAttribution(principal, session?.id),
+    );
   }
 }

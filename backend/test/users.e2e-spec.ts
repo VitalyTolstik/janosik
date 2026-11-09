@@ -110,7 +110,13 @@ describe("Users API (e2e)", () => {
         .get("/api/v1/auth/me")
         .set(auth(profileToken))
         .expect(200);
-      expect(me.body).toEqual({ ...user, impersonatedBy: null });
+      expect(me.body).toEqual({
+        ...user,
+        impersonatedBy: null,
+        token: null,
+        session: null,
+        server: { version: expect.any(String), apiVersion: "1" },
+      });
     });
 
     it("clears a field with null", async () => {
@@ -272,6 +278,16 @@ describe("Users API (e2e)", () => {
         boardId: null,
         readOnly: false,
         rateLimitPerMinute: null,
+        // TASK-166 identity surface.
+        scopePreset: "worker",
+        trustedCi: false,
+        individualPausedAt: null,
+        individualPausedBy: null,
+        individualPausedReason: null,
+        stopAllPausedAt: null,
+        stopAllPausedBy: null,
+        paused: false,
+        effectiveTokenScope: "worker",
       });
       pat = body.token;
       tokenId = body.apiToken.id;

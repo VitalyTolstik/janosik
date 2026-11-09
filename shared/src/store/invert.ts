@@ -369,6 +369,10 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     case "CLAIM_CARD": {
       const card = cardOf(before, action.cardId);
       if (!card) return null;
+      // TASK-166: token/session ids deliberately do not travel back in the
+      // inverse. The server must never trust attribution supplied by a client
+      // (D23), so a human undo restores a legacy user-id claim; token/session
+      // stay NULL until an agent claims again with its own principal.
       return {
         ...head,
         type: "CLAIM_CARD",

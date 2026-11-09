@@ -7,7 +7,6 @@ import {
 } from "@nestjs/common";
 import { Role, Prisma } from "@prisma/client";
 import type {
-  ActorType,
   BoardAggregate,
   BoardCardSearchResult,
   BoardEnvelope,
@@ -17,6 +16,10 @@ import type {
   BoardSummary,
 } from "@janosik/shared";
 import { LIMITS, parseExport, serializeExport } from "@janosik/shared";
+import {
+  type RequestAttribution,
+  HUMAN_ATTRIBUTION,
+} from "@/auth/request-attribution";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import {
   BoardWriteService,
@@ -384,7 +387,7 @@ export class BoardsService {
     boardId: string,
     actorId: string,
     dto: InviteMemberDto,
-    actorType: ActorType = "human",
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
   ): Promise<BoardMemberDto> {
     const email = dto.email.trim().toLowerCase();
     const expiresAt = this.resolveExpiresAt(dto.role, dto.expiresAt, null);
@@ -456,7 +459,10 @@ export class BoardsService {
             boardId,
             type: "member_invited",
             actorId,
-            actorType,
+            actorType: attribution.actorType,
+            apiTokenId: attribution.apiTokenId,
+            agentSessionId: attribution.agentSessionId,
+            agentName: attribution.agentName,
             details: {
               userId: user.id,
               email: user.email,
@@ -492,7 +498,7 @@ export class BoardsService {
     actorId: string,
     targetUserId: string,
     dto: UpdateMemberDto,
-    actorType: ActorType = "human",
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
   ): Promise<BoardMemberDto> {
     const member = await this.prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId, userId: targetUserId } },
@@ -535,7 +541,10 @@ export class BoardsService {
             boardId,
             type: "member_role_changed",
             actorId,
-            actorType,
+            actorType: attribution.actorType,
+            apiTokenId: attribution.apiTokenId,
+            agentSessionId: attribution.agentSessionId,
+            agentName: attribution.agentName,
             details: {
               userId: member.userId,
               email: member.user.email,
@@ -551,7 +560,10 @@ export class BoardsService {
             boardId,
             type: "member_expiry_changed",
             actorId,
-            actorType,
+            actorType: attribution.actorType,
+            apiTokenId: attribution.apiTokenId,
+            agentSessionId: attribution.agentSessionId,
+            agentName: attribution.agentName,
             details: {
               userId: member.userId,
               email: member.user.email,
@@ -581,7 +593,7 @@ export class BoardsService {
     boardId: string,
     actorId: string,
     targetUserId: string,
-    actorType: ActorType = "human",
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
   ): Promise<void> {
     const member = await this.prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId, userId: targetUserId } },
@@ -606,7 +618,10 @@ export class BoardsService {
           boardId,
           type: "member_removed",
           actorId,
-          actorType,
+          actorType: attribution.actorType,
+          apiTokenId: attribution.apiTokenId,
+          agentSessionId: attribution.agentSessionId,
+          agentName: attribution.agentName,
           details: {
             userId: member.userId,
             email: member.user.email,

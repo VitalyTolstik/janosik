@@ -257,7 +257,10 @@ sign-in screen reads before a session exists:
 
 `GET /auth/me` returns the authenticated user's `AuthUserDto` plus
 `impersonatedBy`: the master's id when the access token is a support
-(impersonation) session, otherwise `null`, including for API tokens.
+(impersonation) session, otherwise `null`, including for API tokens. With a
+personal API token the response also carries `token` (`ApiTokenIdentityDto`,
+never a secret or hash); a browser session gets `token: null`. TASK-166 also
+reserves `session` for the active agent session (currently `null`).
 
 ### Password change
 
@@ -388,12 +391,17 @@ aggressively. If the user has no avatar, the server returns `404`.
 | `boardId`            | string or null | optional | scope to one board the owner is a member of; `null`/omitted means every board  |
 | `readOnly`           | boolean        | optional | when true every write answers `403 pat_read_only`; omitted means read/write    |
 | `rateLimitPerMinute` | integer or null | optional | 1 to 100000; `null`/omitted means no per-token limit                          |
+| `scopePreset`        | string         | optional | `observer`, `worker`, `reviewer` or `admin`; omitted means `worker` (enforcement arrives in 166.2) |
+| `trustedCi`          | boolean        | optional | stored for the 166.2 destructive gate; omitted means `false` (not enforced in 166.1) |
 
 Returns `{ token, apiToken }`. The plaintext `token` appears exactly once;
 only `apiToken` metadata is returned afterwards. `GET /users/me/tokens` lists
 metadata (never the plaintext). `DELETE /users/me/tokens/:id` revokes one and
 returns `{ status: "ok" }`. Changing the password revokes every token of the
-account.
+account. The token DTO also carries `scopePreset`, `trustedCi`,
+`individualPausedAt`/`stopAllPausedAt` (and their `*By` fields), computed
+`paused`, and `effectiveTokenScope` (`observer` when `readOnly` is true).
+`GET /auth/me` with a PAT adds the same non-secret identity as `token`.
 
 ## Invitations
 

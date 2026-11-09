@@ -181,6 +181,11 @@ export class EventsController {
           send(event as unknown as object);
           return;
         }
+        // TASK-166: agent-session lifecycle frames are control-plane only.
+        if (event.type === "agent") {
+          send(event as unknown as object);
+          return;
+        }
         if (event.type !== "command") return;
         sequencer.offer(event as InternalCommandEvent);
       });

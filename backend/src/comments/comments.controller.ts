@@ -13,8 +13,9 @@ import {
 import { Role } from "@prisma/client";
 import type { CommentDto, CommentPage } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
-import type { AuthPrincipal } from "@/auth/auth-principal";
-import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
+import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
+import { CurrentAgentSession, CurrentPrincipal } from "@/auth/auth-principal";
+import { requestAttribution } from "@/auth/request-attribution";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { BoardRoles } from "@/common/board-roles.decorator";
 import { CardAccessGuard } from "@/common/card-access.guard";
@@ -37,9 +38,15 @@ export class CommentsController {
     @Param("cardId") cardId: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
     @Body() dto: CreateCommentDto,
   ): Promise<CommentDto> {
-    return this.comments.create(cardId, user.id, dto, actorTypeOf(principal));
+    return this.comments.create(
+      cardId,
+      user.id,
+      dto,
+      requestAttribution(principal, session?.id),
+    );
   }
 
   @UseGuards(CardAccessGuard)
@@ -61,8 +68,13 @@ export class CommentsController {
     @Param("commentId") commentId: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
   ): Promise<{ status: "ok" }> {
-    await this.comments.remove(commentId, user.id, actorTypeOf(principal));
+    await this.comments.remove(
+      commentId,
+      user.id,
+      requestAttribution(principal, session?.id),
+    );
     return { status: "ok" };
   }
 }

@@ -73,6 +73,10 @@ function comment(overrides: Partial<CommentDto> = {}): CommentDto {
     authorId: "user-1",
     text: "First!",
     kind: "note",
+    actorType: "human",
+    apiTokenId: null,
+    agentSessionId: null,
+    agentName: null,
     createdAt: 1_700_000_000_000,
     ...overrides,
   };

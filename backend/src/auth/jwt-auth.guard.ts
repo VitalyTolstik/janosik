@@ -73,7 +73,8 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
     if (!isPat || raw === undefined) {
       throw new UnauthorizedException();
     }
-    const { user, tokenId, scope } = await this.apiTokens.authenticate(raw);
+    const { user, tokenId, tokenName, identity, scope } =
+      await this.apiTokens.authenticate(raw);
     // Per-token budget first, so an abusive token is counted even when the
     // request is then refused on scope grounds (TASK-157).
     if (
@@ -84,7 +85,13 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
     }
     assertPatScopeAllows(request.method, scope);
     request.user = user;
-    request.auth = { via: "pat", apiTokenId: tokenId, tokenScope: scope };
+    request.auth = {
+      via: "pat",
+      apiTokenId: tokenId,
+      apiTokenName: tokenName,
+      tokenIdentity: identity,
+      tokenScope: scope,
+    };
     return true;
   }
 }

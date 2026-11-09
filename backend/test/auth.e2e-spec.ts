@@ -89,6 +89,10 @@ describe("Auth API (e2e)", () => {
       emailVerifiedAt: expect.any(Number),
       // U-8: an ordinary session is not an impersonation.
       impersonatedBy: null,
+      // TASK-166 identity surface: a browser session has no PAT.
+      token: null,
+      session: null,
+      server: { version: expect.any(String), apiVersion: "1" },
     });
   });
 

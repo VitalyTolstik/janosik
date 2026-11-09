@@ -1285,6 +1285,7 @@ Every API error (new and changed in 166.4) returns:
 | `agent_paused` | 403 | false | session/token/board pause | `pauseScope`, `pausedAt` |
 | `agent_session_closed` | 403 | false | session completed/cancelled | `sessionId` |
 | `agent_session_invalid` | 403 | false | session does not belong to the token/board | `sessionId` |
+| `pat_required` | 403 | false | agent-session `start`/`heartbeat` called with a browser session instead of a PAT (end also accepts a board ADMIN JWT) | `endpoint` |
 | `approval_required` | 409 | false | destructive action without approval | `approvalId`, `planHash`, `expiresAt` |
 | `approval_expired` | 409 | false | approval expired before decision/apply | `approvalId`, `expiresAt` |
 | `approval_mismatch` | 409 | false | planHash/plan mismatch | `approvalId`, expected/actual hash prefix |

@@ -10,13 +10,17 @@ import type { Comment } from "@prisma/client";
 import {
   COMMENT_KINDS,
   DEFAULT_COMMENT_KIND,
-  type ActorType,
   type CommentDto,
   type CommentKind,
   type CommentPage,
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
+import {
+  type RequestAttribution,
+  HUMAN_ATTRIBUTION,
+} from "@/auth/request-attribution";
+import { touchAgentSessionAfterWrite } from "@/agent-sessions/agent-session-context";
 import { RealtimeService } from "@/realtime/realtime.service";
 import type { CreateCommentDto } from "./dto/create-comment.dto";
 import { reconcileDescriptionAttachments } from "@/commands/command-writers";
@@ -55,7 +59,7 @@ export class CommentsService {
     cardId: string,
     authorId: string,
     dto: CreateCommentDto,
-    actorType: ActorType = "human",
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
   ): Promise<CommentDto> {
     const text = dto.text.trim();
     if (text.length === 0) {
@@ -81,8 +85,14 @@ export class CommentsService {
       if (existing) {
         // TASK-153: the replay must belong to the caller. Without the author
         // check any member could probe another author's key and be handed
-        // that comment back.
-        if (existing.cardId !== cardId || existing.authorId !== authorId) {
+        // that comment back. TASK-166: two PATs of one account are distinct
+        // writers, so a token-attributed row is bound to its apiTokenId.
+        if (
+          existing.cardId !== cardId ||
+          existing.authorId !== authorId ||
+          (existing.apiTokenId !== null &&
+            existing.apiTokenId !== attribution.apiTokenId)
+        ) {
           throw new ConflictException("commandId already used");
         }
         return toCommentDto(existing);
@@ -99,6 +109,10 @@ export class CommentsService {
             authorId,
             text,
             kind: dto.kind ?? DEFAULT_COMMENT_KIND,
+            actorType: attribution.actorType,
+            apiTokenId: attribution.apiTokenId,
+            agentSessionId: attribution.agentSessionId,
+            agentName: attribution.agentName,
           },
         });
         await reconcileDescriptionAttachments(tx, boardId, undefined, text);
@@ -116,7 +130,10 @@ export class CommentsService {
             cardId,
             type: "comment_added",
             actorId: authorId,
-            actorType,
+            actorType: attribution.actorType,
+            apiTokenId: attribution.apiTokenId,
+            agentSessionId: attribution.agentSessionId,
+            agentName: attribution.agentName,
             details: { commentId: comment.id, text },
           },
         });
@@ -138,8 +155,13 @@ export class CommentsService {
         });
         if (existing && existing.cardId === cardId) {
           // Same idempotency key from a different author is a collision, not
-          // a replay (TASK-156).
-          if (existing.authorId !== authorId) {
+          // a replay (TASK-156). TASK-166: a token-attributed comment is also
+          // bound to its token.
+          if (
+            existing.authorId !== authorId ||
+            (existing.apiTokenId !== null &&
+              existing.apiTokenId !== attribution.apiTokenId)
+          ) {
             throw new ConflictException("Comment idempotency key is in use");
           }
           return toCommentDto(existing);
@@ -160,7 +182,9 @@ export class CommentsService {
       created.comment.createdAt.getTime(),
       "comment_added",
       created.comment.id,
+      attribution,
     );
+    await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
     return toCommentDto(created.comment);
   }
 
@@ -208,7 +232,7 @@ export class CommentsService {
   async remove(
     commentId: string,
     userId: string,
-    actorType: ActorType = "human",
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
   ): Promise<void> {
     const comment = await this.prisma.comment.findFirst({
       where: { id: commentId, deletedAt: null },
@@ -216,6 +240,7 @@ export class CommentsService {
         id: true,
         authorId: true,
         cardId: true,
+        apiTokenId: true,
         // The text rides into the Activity snapshot, so the history feed
         // can render the deletion as a `text → null` diff (TASK-37).
         text: true,
@@ -225,8 +250,20 @@ export class CommentsService {
     if (!comment) {
       throw new NotFoundException("Comment not found");
     }
+    // TASK-166 own-rule: for a PAT the row is owned by the same apiTokenId;
+    // a legacy row without one falls back to the author. A browser session
+    // keeps the historical author-only rule.
     if (comment.authorId !== userId) {
       throw new ForbiddenException("Only the author can delete a comment");
+    }
+    if (
+      attribution.actorType === "agent" &&
+      comment.apiTokenId !== null &&
+      comment.apiTokenId !== attribution.apiTokenId
+    ) {
+      throw new ForbiddenException(
+        "Only the author token can delete a comment",
+      );
     }
     const removed = await this.boardWrite.run(
       comment.card.column.boardId,
@@ -247,7 +284,10 @@ export class CommentsService {
             cardId: comment.cardId,
             type: "comment_deleted",
             actorId: userId,
-            actorType,
+            actorType: attribution.actorType,
+            apiTokenId: attribution.apiTokenId,
+            agentSessionId: attribution.agentSessionId,
+            agentName: attribution.agentName,
             details: { commentId: comment.id, text: comment.text },
           },
         });
@@ -266,6 +306,7 @@ export class CommentsService {
       removed.at,
       "comment_deleted",
       comment.id,
+      attribution,
     );
     // Inline media pasted into the comment die with it — soft-deleted like
     // every attachment (the physical blob stays, matching the soft-delete
@@ -278,6 +319,7 @@ export class CommentsService {
         comment.text,
       ),
     );
+    await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
   }
 
   /**
@@ -309,6 +351,7 @@ export class CommentsService {
     at: number,
     kind: "comment_added" | "comment_deleted",
     commentId: string,
+    attribution: RequestAttribution,
   ): void {
     this.realtime.publish(boardId, {
       type: "activity",
@@ -316,9 +359,15 @@ export class CommentsService {
       boardId,
       cardId,
       actorId,
+      actorType: attribution.actorType,
       at,
       kind,
       detail: commentId,
+      ...(attribution.apiTokenId ? { apiTokenId: attribution.apiTokenId } : {}),
+      ...(attribution.agentSessionId
+        ? { agentSessionId: attribution.agentSessionId }
+        : {}),
+      ...(attribution.agentName ? { agentName: attribution.agentName } : {}),
     });
   }
 }
@@ -330,6 +379,10 @@ function toCommentDto(comment: Comment): CommentDto {
     authorId: comment.authorId,
     text: comment.text,
     kind: comment.kind as CommentKind,
+    actorType: comment.actorType === "agent" ? "agent" : "human",
+    apiTokenId: comment.apiTokenId,
+    agentSessionId: comment.agentSessionId,
+    agentName: comment.agentName,
     createdAt: comment.createdAt.getTime(),
   };
 }

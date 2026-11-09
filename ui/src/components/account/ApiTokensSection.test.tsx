@@ -252,6 +252,15 @@ describe("ApiTokensSection (TASK-36.1)", () => {
       boardId: null,
       readOnly: false,
       rateLimitPerMinute: null,
+      scopePreset: "worker",
+      trustedCi: false,
+      individualPausedAt: null,
+      individualPausedBy: null,
+      individualPausedReason: null,
+      stopAllPausedAt: null,
+      stopAllPausedBy: null,
+      paused: false,
+      effectiveTokenScope: "worker",
     });
     renderTokens(server);
 

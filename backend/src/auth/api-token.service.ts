@@ -10,8 +10,11 @@ import {
   API_TOKEN_PREFIX,
   API_TOKEN_RATE_MAX,
   API_TOKEN_RATE_MIN,
+  SCOPE_PRESETS,
+  type ApiTokenIdentityDto,
   type CreateUserTokenRequest,
   type CreateUserTokenResponse,
+  type ScopePreset,
   type UserTokenDto,
 } from "@janosik/shared";
 import { createHash, randomBytes } from "node:crypto";
@@ -52,6 +55,10 @@ export interface TokenScope {
 export interface AuthenticatedToken {
   user: AuthUser;
   tokenId: string;
+  /** `ApiToken.name` snapshot for attribution (TASK-166). */
+  tokenName: string;
+  /** Non-secret identity of this token (`scopePreset`, pause stamps, …). */
+  identity: ApiTokenIdentityDto;
   scope: TokenScope;
 }
 
@@ -109,6 +116,8 @@ export class ApiTokenService {
     return {
       user: toAuthUser(stored.user),
       tokenId: stored.id,
+      tokenName: stored.name,
+      identity: toTokenIdentity(stored),
       scope: {
         boardId: stored.boardId,
         readOnly: stored.readOnly,
@@ -173,6 +182,8 @@ export class ApiTokenService {
         name: dto.name,
         tokenHash: this.hashToken(token),
         expiresAt: this.resolveExpiresAt(dto.expiresAt),
+        scopePreset: dto.scopePreset ?? "worker",
+        trustedCi: dto.trustedCi === true,
         ...scope,
       },
     });
@@ -277,6 +288,9 @@ export class ApiTokenService {
 }
 
 function toUserTokenDto(token: ApiToken): UserTokenDto {
+  const scopePreset = readScopePreset(token.scopePreset);
+  const individualPausedAt = token.individualPausedAt?.getTime() ?? null;
+  const stopAllPausedAt = token.stopAllPausedAt?.getTime() ?? null;
   return {
     id: token.id,
     name: token.name,
@@ -287,5 +301,41 @@ function toUserTokenDto(token: ApiToken): UserTokenDto {
     boardId: token.boardId,
     readOnly: token.readOnly,
     rateLimitPerMinute: token.rateLimitPerMinute,
+    scopePreset,
+    trustedCi: token.trustedCi,
+    individualPausedAt,
+    individualPausedBy: token.individualPausedBy,
+    individualPausedReason: token.individualPausedReason,
+    stopAllPausedAt,
+    stopAllPausedBy: token.stopAllPausedBy,
+    paused: individualPausedAt !== null || stopAllPausedAt !== null,
+    effectiveTokenScope: token.readOnly ? "observer" : scopePreset,
   };
+}
+
+/** The non-secret token projection used by `/auth/me` (TASK-166). */
+export function toTokenIdentity(token: ApiToken): ApiTokenIdentityDto {
+  const scopePreset = readScopePreset(token.scopePreset);
+  const individualPausedAt = token.individualPausedAt?.getTime() ?? null;
+  const stopAllPausedAt = token.stopAllPausedAt?.getTime() ?? null;
+  return {
+    id: token.id,
+    name: token.name,
+    scopePreset,
+    trustedCi: token.trustedCi,
+    effectiveTokenScope: token.readOnly ? "observer" : scopePreset,
+    boardId: token.boardId,
+    readOnly: token.readOnly,
+    rateLimitPerMinute: token.rateLimitPerMinute,
+    individualPausedAt,
+    stopAllPausedAt,
+    paused: individualPausedAt !== null || stopAllPausedAt !== null,
+  };
+}
+
+/** Unknown stored values (a future preset) degrade to the safe `worker`. */
+function readScopePreset(value: string): ScopePreset {
+  return (SCOPE_PRESETS as readonly string[]).includes(value)
+    ? (value as ScopePreset)
+    : "worker";
 }
