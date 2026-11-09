@@ -27,8 +27,10 @@ test("S14: creating an announcement for a segment from the panel", async ({
   await page.getByTestId("announcement-tab-ru").click();
   await page.getByTestId("admin-announcement-title-ru").fill(`RU ${title}`);
   await page.getByTestId("admin-announcement-body-ru").fill(`Тело ${title}`);
-  await page.getByTestId("admin-announcement-level").selectOption("warning");
-  await page.getByTestId("admin-announcement-audience").selectOption("segment");
+  await page.getByTestId("admin-announcement-level").click();
+  await page.getByTestId("admin-announcement-level-option-warning").click();
+  await page.getByTestId("admin-announcement-audience").click();
+  await page.getByTestId("admin-announcement-audience-option-segment").click();
   await page
     .getByTestId("admin-announcement-recipients")
     .fill(targetUser.email);
@@ -131,7 +133,8 @@ test("S16: announcement history edits, toggles and deletes", async ({
 
   const dialog = page.getByRole("dialog");
   await dialog.getByTestId("admin-announcement-legacy-title").fill(nextTitle);
-  await dialog.getByTestId("admin-announcement-level").selectOption("warning");
+  await dialog.getByTestId("admin-announcement-level").click();
+  await page.getByTestId("admin-announcement-level-option-warning").click();
   await dialog.getByTestId("admin-announcement-edit-save").click();
   await expectToastText(page, "Saved");
 

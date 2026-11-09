@@ -259,10 +259,13 @@ describe("AnnouncementEditorDialog", () => {
 
   it("warns that a future schedule still sends the letter immediately", () => {
     vi.stubGlobal("fetch", new FakeAdminServer().fetchImpl);
-    renderEditor({});
-    fireEvent.click(screen.getByTestId("admin-announcement-sendemail"));
-    fireEvent.change(screen.getByTestId("admin-announcement-starts"), {
-      target: { value: "2030-01-01T10:00" },
+    renderEditor({
+      announcement: announcement({
+        active: false,
+        sendEmail: true,
+        emailSentAt: null,
+        startsAt: Date.now() + 86_400_000,
+      }),
     });
     expect(
       screen.getByTestId("announcement-email-future-warning"),
@@ -281,6 +284,57 @@ describe("AnnouncementEditorDialog", () => {
     expect(
       screen.getByTestId("announcement-preview-blocked"),
     ).toHaveTextContent("Russian");
+  });
+
+  it("shows the fallback notice in the preview when the policy allows it", () => {
+    vi.stubGlobal("fetch", new FakeAdminServer().fetchImpl);
+    renderEditor({});
+    fireEvent.change(screen.getByTestId("admin-announcement-title"), {
+      target: { value: "Only English" },
+    });
+    fireEvent.change(screen.getByTestId("admin-announcement-body"), {
+      target: { value: "Body" },
+    });
+    fireEvent.click(screen.getByTestId("announcement-policy-allow_fallback"));
+    fireEvent.click(screen.getByTestId("announcement-preview-ru"));
+    // The notice is written in the previewed viewer's language (RU here).
+    expect(screen.getByTestId("announcement-preview-banner")).toHaveTextContent(
+      "Это объявление доступно только на английском.",
+    );
+    expect(screen.getByTestId("announcement-preview-policy")).toHaveTextContent(
+      "Fallback",
+    );
+  });
+
+  it("uses the themed calendar instead of a native datetime input", async () => {
+    vi.stubGlobal("fetch", new FakeAdminServer().fetchImpl);
+    renderEditor({});
+    expect(
+      document.querySelector('input[type="datetime-local"]'),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("admin-announcement-starts"));
+    expect(await screen.findByRole("grid")).toBeInTheDocument();
+    expect(screen.getByText("Time")).toBeInTheDocument();
+    expect(screen.getByTestId("admin-announcement-starts")).toHaveTextContent(
+      "Set date and time",
+    );
+  });
+
+  it("previews the banner in the selected level tone", () => {
+    vi.stubGlobal("fetch", new FakeAdminServer().fetchImpl);
+    renderEditor({ announcement: announcement() });
+    fireEvent.click(screen.getByTestId("admin-announcement-level"));
+    fireEvent.click(
+      screen.getByTestId("admin-announcement-level-option-warning"),
+    );
+    expect(screen.getByTestId("announcement-preview-banner")).toHaveAttribute(
+      "data-tone",
+      "warning",
+    );
+    expect(screen.getByTestId("admin-announcement-level")).toHaveTextContent(
+      "Warning",
+    );
   });
 
   it("renders a read-only operator view without save actions", () => {

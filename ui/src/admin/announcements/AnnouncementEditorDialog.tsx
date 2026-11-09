@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Eye, Globe2, Languages } from "lucide-react";
+import { Eye, Globe2, Languages, Megaphone } from "lucide-react";
 import {
   ANNOUNCEMENT_LOCALES,
   announcementFallbackNotice,
@@ -23,13 +23,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Notice } from "@/components/notifications/Notice";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDate, useI18n } from "@/i18n";
 import { useToast } from "@/components/Toast";
 import { adminApi } from "../admin-client";
 import { useAdminT, type AdminMessageKey } from "../admin-i18n";
 import { Badge, CharCount, Field } from "../ui";
+import { DateTimeField } from "./DateTimeField";
 import { RecipientPicker } from "./RecipientPicker";
+import { SelectField } from "./SelectField";
 
 const TITLE_MAX = 200;
 const BODY_MAX = 2000;
@@ -594,20 +597,26 @@ export function AnnouncementEditorDialog({
               htmlFor="admin-announcement-source"
               label={t("admin.comms.field.sourceLocale")}
             >
-              <select
+              <SelectField<string>
                 id="admin-announcement-source"
                 value={sourceLocale}
                 disabled={readOnly}
-                data-testid="admin-announcement-source"
-                className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-                onChange={(event) => chooseSource(event.target.value)}
-              >
-                {legacy ? (
-                  <option value="">{t("admin.comms.legacy.choose")}</option>
-                ) : null}
-                <option value="en">{t("admin.comms.lang.en")}</option>
-                <option value="ru">{t("admin.comms.lang.ru")}</option>
-              </select>
+                ariaLabel={t("admin.comms.field.sourceLocale")}
+                testId="admin-announcement-source"
+                onChange={chooseSource}
+                options={[
+                  ...(legacy
+                    ? [
+                        {
+                          value: "",
+                          label: t("admin.comms.legacy.choose"),
+                        },
+                      ]
+                    : []),
+                  { value: "en", label: t("admin.comms.lang.en") },
+                  { value: "ru", label: t("admin.comms.lang.ru") },
+                ]}
+              />
             </Field>
 
             <div
@@ -760,39 +769,37 @@ export function AnnouncementEditorDialog({
 
             <div className="grid grid-cols-2 gap-3">
               <Field label={t("admin.comms.field.level")}>
-                <select
+                <SelectField
                   value={level}
                   disabled={readOnly}
-                  data-testid="admin-announcement-level"
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-                  onChange={(event) =>
-                    setLevel(event.target.value as typeof level)
-                  }
-                >
-                  <option value="info">{t("admin.comms.level.info")}</option>
-                  <option value="warning">
-                    {t("admin.comms.level.warning")}
-                  </option>
-                  <option value="danger">
-                    {t("admin.comms.level.danger")}
-                  </option>
-                </select>
+                  ariaLabel={t("admin.comms.field.level")}
+                  testId="admin-announcement-level"
+                  onChange={(next) => setLevel(next)}
+                  options={[
+                    { value: "info", label: t("admin.comms.level.info") },
+                    {
+                      value: "warning",
+                      label: t("admin.comms.level.warning"),
+                    },
+                    { value: "danger", label: t("admin.comms.level.danger") },
+                  ]}
+                />
               </Field>
               <Field label={t("admin.comms.field.audience")}>
-                <select
+                <SelectField
                   value={audience}
                   disabled={readOnly}
-                  data-testid="admin-announcement-audience"
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-                  onChange={(event) =>
-                    setAudience(event.target.value as typeof audience)
-                  }
-                >
-                  <option value="all">{t("admin.comms.audience.all")}</option>
-                  <option value="segment">
-                    {t("admin.comms.audience.segment")}
-                  </option>
-                </select>
+                  ariaLabel={t("admin.comms.field.audience")}
+                  testId="admin-announcement-audience"
+                  onChange={(next) => setAudience(next)}
+                  options={[
+                    { value: "all", label: t("admin.comms.audience.all") },
+                    {
+                      value: "segment",
+                      label: t("admin.comms.audience.segment"),
+                    },
+                  ]}
+                />
               </Field>
             </div>
             {audience === "segment" ? (
@@ -846,21 +853,25 @@ export function AnnouncementEditorDialog({
               </summary>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <Field label={t("admin.comms.field.startsAt")}>
-                  <Input
-                    type="datetime-local"
+                  <DateTimeField
                     value={startsAt}
                     disabled={readOnly}
-                    data-testid="admin-announcement-starts"
-                    onChange={(event) => setStartsAt(event.target.value)}
+                    testId="admin-announcement-starts"
+                    placeholder={t("admin.comms.schedule.set")}
+                    clearLabel={t("admin.comms.schedule.clear")}
+                    timeLabel={t("admin.comms.schedule.time")}
+                    onChange={setStartsAt}
                   />
                 </Field>
                 <Field label={t("admin.comms.field.endsAt")}>
-                  <Input
-                    type="datetime-local"
+                  <DateTimeField
                     value={endsAt}
                     disabled={readOnly}
-                    data-testid="admin-announcement-ends"
-                    onChange={(event) => setEndsAt(event.target.value)}
+                    testId="admin-announcement-ends"
+                    placeholder={t("admin.comms.schedule.set")}
+                    clearLabel={t("admin.comms.schedule.clear")}
+                    timeLabel={t("admin.comms.schedule.time")}
+                    onChange={setEndsAt}
                   />
                 </Field>
               </div>
@@ -898,6 +909,15 @@ export function AnnouncementEditorDialog({
               </div>
             </div>
 
+            <p
+              data-testid="announcement-preview-policy"
+              className="rounded-md border border-border/70 bg-background/50 px-2 py-1 text-[10px] leading-snug text-muted-foreground"
+            >
+              {fallbackPolicy === "require_all"
+                ? t("admin.comms.preview.policyStrict")
+                : t("admin.comms.preview.policyFallback")}
+            </p>
+
             {previewBlocked ? (
               <p
                 data-testid="announcement-preview-blocked"
@@ -909,30 +929,31 @@ export function AnnouncementEditorDialog({
                 })}
               </p>
             ) : previewContent ? (
-              <div
-                data-testid="announcement-preview-banner"
-                lang={previewContent.contentLocale ?? undefined}
-                className="rounded-lg border border-border bg-card p-2.5 shadow-sm"
-              >
-                {previewFallback ? (
-                  <p
-                    lang={previewLocale}
-                    className="mb-2 flex items-start gap-1.5 rounded border border-primary/25 bg-primary/10 px-1.5 py-1 text-[9px] leading-snug text-primary"
-                  >
-                    <Globe2
-                      className="mt-px h-2.5 w-2.5 shrink-0"
-                      aria-hidden
-                    />
-                    {previewFallbackText}
-                  </p>
-                ) : null}
-                <p className="text-[11px] font-semibold">
-                  {previewContent.title}
-                </p>
-                <p className="mt-1 whitespace-pre-line text-[10px] leading-relaxed text-muted-foreground">
-                  {previewContent.body}
-                </p>
-              </div>
+              <Notice
+                tone={level}
+                icon={Megaphone}
+                eyebrow={t("admin.comms.preview.banner")}
+                title={previewContent.title}
+                body={previewContent.body}
+                contentLang={previewContent.contentLocale}
+                bodyClassName="whitespace-pre-line"
+                animate={false}
+                testId="announcement-preview-banner"
+                notice={
+                  previewFallback ? (
+                    <p
+                      lang={previewLocale}
+                      className="flex items-start gap-1.5 rounded border border-primary/25 bg-primary/10 px-1.5 py-1 text-[9px] leading-snug text-primary"
+                    >
+                      <Globe2
+                        className="mt-px h-2.5 w-2.5 shrink-0"
+                        aria-hidden
+                      />
+                      {previewFallbackText}
+                    </p>
+                  ) : null
+                }
+              />
             ) : null}
 
             {sendEmail ? (

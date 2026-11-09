@@ -309,6 +309,12 @@ const en = {
   "admin.comms.staleAnnouncement":
     "Someone else changed this announcement while you were editing. Close and reopen it to continue.",
   "admin.comms.schedule": "Schedule (optional)",
+  "admin.comms.schedule.set": "Set date and time",
+  "admin.comms.schedule.clear": "Clear",
+  "admin.comms.schedule.time": "Time",
+  "admin.comms.preview.policyStrict": "Strict: EN and RU required",
+  "admin.comms.preview.policyFallback":
+    "Fallback: a missing language shows a notice",
   "admin.comms.validation.missing": "Fill the missing languages: {locales}",
   "admin.comms.validation.source":
     "Fill the source language or choose another one.",
@@ -1338,6 +1344,12 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.comms.staleAnnouncement":
     "Кто-то изменил объявление, пока вы редактировали. Закройте и откройте его снова, чтобы продолжить.",
   "admin.comms.schedule": "Расписание (необязательно)",
+  "admin.comms.schedule.set": "Выбрать дату и время",
+  "admin.comms.schedule.clear": "Очистить",
+  "admin.comms.schedule.time": "Время",
+  "admin.comms.preview.policyStrict": "Строго: нужны EN и RU",
+  "admin.comms.preview.policyFallback":
+    "Fallback: при отсутствии языка показывается плашка",
   "admin.comms.validation.missing": "Заполните недостающие языки: {locales}",
   "admin.comms.validation.source":
     "Заполните язык оригинала или выберите другой.",
