@@ -29,6 +29,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Card comments/history/attachments and the watch feed no longer show a false
   empty state before the first page arrives; the board switcher shows pending
   rows during background hydration.
+- Saving an announcement now closes the editor before the list refresh, so the
+  confirmation toast is not hidden behind the modal's `aria-hidden` subtree.
 
 ## [0.2.0] - 2026-11-08
 

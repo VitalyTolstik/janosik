@@ -918,6 +918,9 @@ export function EditAnnouncementDialog({
         endsAt: fromLocalInput(endsAt),
       });
       toast.success(t("admin.comms.saved"));
+      // Close before the list refresh: the modal marks the rest of the page
+      // aria-hidden, which would also hide the confirmation toast from AT.
+      onClose();
       onDone();
     } catch (cause) {
       setError(
