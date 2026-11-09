@@ -63,7 +63,7 @@ export function setupApp(app: INestApplication): void {
             ...scriptHashes,
           ],
           "style-src": ["'self'", "'unsafe-inline'"],
-          "img-src": ["'self'", "data:", "blob:", analyticsOrigin],
+          "img-src": ["'self'", "data:", "blob:"],
           "media-src": ["'self'", "blob:"],
           "connect-src": ["'self'", analyticsOrigin],
           "worker-src": ["'self'", "blob:"],

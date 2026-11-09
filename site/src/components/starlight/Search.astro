@@ -72,7 +72,7 @@ import DefaultSearch from "@astrojs/starlight/components/Search.astro";
     // A failed dynamic import surfaces as an uncaught error in some browsers,
     // a rejected promise in others; handle both.
     window.addEventListener("unhandledrejection", notifyError);
-    window.addEventListener("error", notifyError);
+    window.addEventListener("error", notifyError, { capture: true });
   })();
 </script>
 

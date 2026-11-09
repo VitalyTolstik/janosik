@@ -124,11 +124,15 @@ test("navigates results with the keyboard and restores focus on Escape", async (
   expect(focused.className).toContain("pagefind-ui__result-link");
   expect(focused.focusVisible).toBe(true);
 
+  // Open whichever result the keyboard focused instead of assuming Pagefind's
+  // ranking; the point is that Enter follows the focused link.
+  const focusedHref = await page.evaluate(
+    () => document.activeElement?.getAttribute("href") ?? "",
+  );
+  expect(focusedHref).not.toBe("");
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(docsUrl("self-hosting/"));
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Self-hosting" }),
-  ).toBeVisible();
+  await expect(page).toHaveURL(new URL(focusedHref, docsUrl()).href);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
   await openSearch(page);
   await searchInput(page).fill("boards");
