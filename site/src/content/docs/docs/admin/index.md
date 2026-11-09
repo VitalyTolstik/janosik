@@ -134,8 +134,8 @@ and `Back to boards`.
 
 ### Responsive layout
 
-The sidebar is 232 px on desktop, a 64 px icon rail between 761 and 959 px, and
-a 280 px sheet behind a scrim at 760 px and below. At 639 px and below tables
+The sidebar is 232 px on desktop, a 64 px icon rail between 640 and 959 px, and
+a 280 px sheet behind a scrim at 639 px and below. At 639 px and below tables
 become labelled cards, so the content keeps the full phone width.
 
 ### Keyboard and preferences

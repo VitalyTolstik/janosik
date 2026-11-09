@@ -92,9 +92,8 @@ never reveals whether an email exists.
 | Width | Sidebar | Behaviour |
 | --- | --- | --- |
 | 960 px and wider | 232 px with labels | Full navigation; the stored `Ctrl/Cmd+B` preference applies |
-| 761–959 px | 64 px icon rail | Labels are hidden; the rail keeps every hub reachable |
-| 760 px and narrower | 280 px sheet behind a scrim | The top-bar menu opens the sheet; choosing a destination closes it |
-| 639 px and narrower | Same sheet | Tables become labelled cards; the content area uses the full width |
+| 640–959 px | 64 px icon rail | Labels are hidden; every hub stays reachable by its icon and tooltip |
+| 639 px and narrower | 280 px sheet behind a scrim | The top-bar menu opens the sheet; choosing a destination closes it. Tables become labelled cards and the content uses the full width |
 
 At 390 px the sidebar no longer steals 208 px from the content. Each table row
 becomes a card and every cell keeps its column name via `data-label`.

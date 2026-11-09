@@ -36,8 +36,9 @@ import {
 /**
  * Master console sidebar: eight hubs in three task groups (Operate / Govern /
  * Configure), a 232 px expanded rail, a 64 px icon rail on tablets and a
- * 280 px sheet behind a scrim on phones. `data-collapsed` remains the stored
- * preference; `data-mobile-open` is transient.
+ * 280 px sheet behind a scrim on phones. `data-collapsed` is the effective
+ * rail state (stored preference or tablet layout); `data-mobile-open` is
+ * transient.
  */
 export function AdminSidebar({
   collapsed,
@@ -278,6 +279,7 @@ function SidebarLink({
       end={to === "/admin"}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
+      aria-label={collapsed ? label : undefined}
       className={cn(
         "admin-nav-item relative flex h-7 items-center rounded-md text-xs font-medium transition-colors",
         collapsed ? "justify-center px-0" : "gap-2.5 px-2.5 admin-hide-rail",
