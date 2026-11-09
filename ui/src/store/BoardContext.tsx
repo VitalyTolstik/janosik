@@ -717,12 +717,26 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     // unknown path, or a board id that is not ours — is a 404.
     const isHome = location.pathname === routes.home;
     if (!isHome && !routed?.archivedAt) return;
+    // A dead `?card=` on an archived board is not a silent redirect: explain
+    // that the card could not be opened before replacing the dead URL.
+    if (routed?.archivedAt && cardParam && !hasCard(routed, cardParam)) {
+      toast.error(t("card.notFound"));
+    }
     const firstActive = state.find((b) => !b.archivedAt);
     const target = firstActive ? routes.board(firstActive.id) : routes.home;
     if (location.pathname !== target) {
       navigate(target, { replace: true });
     }
-  }, [routeBoardId, state, location.pathname, navigate, cardParam, syncStatus]);
+  }, [
+    routeBoardId,
+    state,
+    location.pathname,
+    navigate,
+    cardParam,
+    syncStatus,
+    toast,
+    t,
+  ]);
 
   // Debounced persistence + throttled auto-backup after every change. Both
   // are local-mode only: with a server the boards live in the database, and

@@ -405,6 +405,7 @@ const en = {
   "admin.login.ipDenied": "Sign-in from this IP address is not allowed",
   "admin.login.ipDeniedHint":
     "Contact the application owner to add your address to the allowed list.",
+  "admin.login.disabled": "This master account is disabled — contact an owner.",
   "admin.login.locked": "Account is temporarily locked",
   "admin.login.hint":
     "Master accounts are created on the server via the admin CLI.",
@@ -1373,6 +1374,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.login.ipDenied": "Вход с этого IP-адреса запрещён",
   "admin.login.ipDeniedHint":
     "Обратитесь к владельцу приложения, чтобы он добавил ваш адрес в список разрешённых.",
+  "admin.login.disabled": "Мастер-аккаунт отключён — обратитесь к владельцу.",
   "admin.login.locked": "Аккаунт временно заблокирован",
   "admin.login.hint": "Мастер-аккаунт создаётся на сервере через admin CLI.",
   "admin.login.back": "Вернуться в приложение",

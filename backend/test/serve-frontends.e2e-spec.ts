@@ -116,6 +116,13 @@ describe("Static frontends serving (e2e)", () => {
     expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval'");
   });
 
+  it("allows the optional Plausible analytics script under the CSP", async () => {
+    const res = await server().get("/").expect(200);
+    const csp = res.headers["content-security-policy"];
+    expect(csp).toContain("https://plausible.io");
+    expect(csp).toMatch(/connect-src 'self' https:\/\/plausible\.io/);
+  });
+
   it("keeps public share pages framable and unindexed", async () => {
     const res = await server().get("/app/s/token123").expect(200);
     expect(res.text).toContain("Janosik app");

@@ -353,9 +353,11 @@ describe("BoardSection", () => {
     await openTableView();
     fireEvent.click(within(screen.getByRole("table")).getByText("Plain card"));
 
-    // The row click opens the same dialog from the table projection.
+    // The row click opens the same dialog from the table projection. A title
+    // click waits ~220 ms so the second click can start inline editing.
+    const rowDialog = await screen.findByRole("dialog");
     expect(
-      within(screen.getByRole("dialog")).getByDisplayValue("Plain card"),
+      within(rowDialog).getByDisplayValue("Plain card"),
     ).toBeInTheDocument();
   });
 

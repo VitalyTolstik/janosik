@@ -305,6 +305,7 @@ function ColumnViewBody({
           </h3>
           <span className="flex shrink-0 items-center gap-1">
             <span
+              data-testid="column-wip"
               title={
                 atWipLimit
                   ? t("column.wipLimitReached", { limit: wipLimit })

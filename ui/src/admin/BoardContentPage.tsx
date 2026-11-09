@@ -225,6 +225,7 @@ export function BoardContentPage() {
                         autoFocus
                         value={renaming.value}
                         maxLength={LIMITS.columnTitle}
+                        data-testid={`admin-column-rename-input-${column.id}`}
                         onChange={(event) =>
                           setRenaming({
                             id: column.id,
@@ -357,6 +358,7 @@ export function BoardContentPage() {
                           autoFocus
                           value={renaming.value}
                           maxLength={LIMITS.cardTitle}
+                          data-testid={`admin-card-rename-input-${card.id}`}
                           onChange={(event) =>
                             setRenaming({
                               id: card.id,
