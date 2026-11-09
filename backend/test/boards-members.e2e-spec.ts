@@ -409,7 +409,7 @@ describe("Boards API (e2e)", () => {
         .expect(200);
       const envelope = exported.body as BoardEnvelope;
       expect(envelope.app).toBe("janosik");
-      expect(envelope.schemaVersion).toBe(1);
+      expect(envelope.schemaVersion).toBe(2);
       expect(envelope.boards).toHaveLength(1);
 
       const second = await server()
