@@ -298,7 +298,7 @@ test("E10: command payload expands and /admin/log redirects", async ({
   await expect(row.locator("pre")).toContainText(cardTitle);
 
   await page.goto(adminPath("log"), { waitUntil: "domcontentloaded" });
-  await expect(page).toHaveURL(/\/admin\/commands$/);
+  await expect(page).toHaveURL(/\/admin\/audit\?tab=commands$/);
   await expect(
     page.getByRole("heading", { name: "Command log", exact: true }),
   ).toBeVisible();

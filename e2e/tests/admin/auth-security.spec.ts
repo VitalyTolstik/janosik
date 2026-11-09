@@ -293,7 +293,7 @@ test("A12: the IP allowlist is enforced on every request, not just login", async
       .getByRole("link", { name: "Users", exact: true })
       .click();
     await forbidden;
-    await expect(page.getByText("Could not load the data")).toBeVisible();
+    await expect(page.getByTestId("admin-forbidden-state")).toBeVisible();
   } finally {
     await setMasterAllowlist(admin, operator.id, null);
   }
