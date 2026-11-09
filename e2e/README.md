@@ -28,14 +28,24 @@ Concurrent Playwright runs also need separate output directories: set
 Each run creates an isolated master account (`master@e2e.example`, password
 `e2e-master-password`), intended solely for the disposable test stack.
 
-`tests/app/views/` covers calendar and table card actions, watch column counts,
-view switching and persistence after reload. The watch scenarios cover board,
-column and card activity, diffs, comments, attachments, membership and paging.
-They also check the Undo/Redo controls, administrator attribution, viewer
-access and public-link secrecy. Each test has its own user and board.
-The retention and legacy-record scenarios additionally adjust their own feed
-rows in the disposable Docker database; they are skipped when using external
-development servers. E2E imports use `@/` for paths relative to `e2e/`.
+`tests/app/views/` covers the calendar, table and watch projections. Calendar:
+month/week scale, Prev/Next/Today and scale persistence, rescheduling a chip
+between days while keeping its time, dragging an unscheduled card onto a day,
+the three-chip day cap with `+N more` and the full day panel, the day composer
+with a chosen column and labels (including Cancel), read-only VIEWER controls,
+and the 12/24-hour preference. Table: inline due date (set and remove), title,
+labels and column edits, sorting every header asc → desc → board order with
+`aria-sort` on the column header, optional columns persisted across reloads,
+and the filtered empty state. Watch: status counts (archived cards excluded),
+WIP limits, online roster, agent attribution, empty feed, board deletion
+(visible feed error + retry), paging with page sizes 20/50/100 and retention
+boundaries. The watch scenarios cover board, column and card activity, diffs,
+comments, attachments, membership and paging. They also check the Undo/Redo
+controls, administrator attribution, viewer access and public-link secrecy.
+Each test has its own user and board. The retention and legacy-record scenarios
+additionally adjust their own feed rows in the disposable Docker database; they
+are skipped when using external development servers. E2E imports use `@/` for
+paths relative to `e2e/`.
 
 `tests/app/sharing/` covers public live and snapshot boards, read-only content,
 link limits and revocation, and iframe themes on a separate local origin. Its
@@ -43,19 +53,25 @@ fixtures create a fresh user and board per test.
 
 `tests/app/filters/` covers the board filter toolbar: title, description, label
 and checklist search; the due, created, label, priority, assignee and link
-facets; removable chips; reset; the active-facet count; per-column empty states;
-disabled drag & drop; and the same filter in the table and calendar views (the
-watch view hides the toolbar). Tests are independent and cover one behaviour
-each. Creation-date cases age cards in the disposable Docker database, so they
-are skipped when running against external development servers.
+facets; removable chips for every facet (including priority, assignee and
+links); reset of the query and all facets; the active-facet and result counts;
+per-column empty states; disabled drag & drop; a faceted filter in the table and
+calendar views; and the filter living in the URL so a reload or shared link
+restores it. Tests are independent and cover one behaviour each. They prove
+the facets combine with AND by using a card that breaks exactly one facet, and
+that switching boards does not leak the filter. Creation-date cases age cards
+in the disposable Docker database, so they are skipped when running against
+external development servers.
 
 `tests/app/search/` covers the header global search (button and Ctrl/Cmd+K,
 cross-board card and board hits, title/description/label/checklist matches,
 highlights, archived badges and ranking, keyboard navigation and the 20-result
-cap, opening the card dialog or the board), whitespace trimming in the board
-query and the card archive search (filtering, no matches, empty archive, reset
-and opening an archived card). Each test starts from its own user and board;
-extra boards are created through the API.
+cap, opening the card dialog or the board), active-board cards ranking before
+archived-board cards, whitespace-only/max-length queries and ArrowUp at the
+first result, whitespace trimming in the board query and the card archive search
+(filtering, no matches, empty archive, reset and opening an archived card). Each
+test starts from its own user and board; extra boards are created through the
+API.
 
 `tests/app/history/` covers undo and redo through the header buttons and the
 Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl+Y shortcuts: button availability, clearing
@@ -127,12 +143,15 @@ email and registration settings per test.
 
 `tests/app/navigation/` covers direct board and card links (including signing in
 on the linked URL and the `/app/` deploy base), the home redirect, the board 404
-and its recovery, archived-board redirects, browser Back/Forward and the
-all-archived empty state. Ctrl+click opens a card in a new tab from the board,
-table and calendar. The keyboard layer covers the `?` cheat sheet (and the Help
-menu trigger), the `j`/`k` cursor, `e`/Enter, the `n` and `c` composers, Escape,
-and the guards that keep shortcuts out of text fields and open menus. Each test
-starts from its own account and board; extra boards are created through the API.
+and its recovery, archived-board redirects (a dead archived-card link explains
+the redirect), browser Back/Forward, the all-archived empty state and its deep
+link, and the board switcher's no-match, Escape focus return and ArrowUp
+selection. Ctrl+click opens a card in a new tab from the board, table and
+calendar. The keyboard layer covers the `?` cheat sheet (and the Help menu
+trigger), the `j`/`k` cursor, `e`/Enter, the `n` and `c` composers, Escape, and
+the guards that keep shortcuts out of text fields and open menus. Each test
+starts from its own account and board; extra boards are created through the
+API.
 
 `tests/app/pwa/` covers the production PWA surface: the service worker is
 registered under the app base and controls the page (also after a reload); the

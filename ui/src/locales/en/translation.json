@@ -908,6 +908,7 @@
   "watch.columns": "columns",
   "watch.feed": "Live activity",
   "watch.feedEmpty": "No activity yet",
+  "watch.feedError": "Could not load the activity feed.",
   "watch.feedLocal": "The live activity feed is available in server mode.",
   "watch.live": "live",
   "watch.loading": "Loading…",
