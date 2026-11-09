@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from "@nestjs/common";
+import { Controller, Get, Headers, Query, UseGuards } from "@nestjs/common";
 import type { AnnouncementDto } from "@janosik/shared";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
@@ -10,6 +10,11 @@ import { CommsService } from "./comms.service";
  * in the admin module next to `CommsService` (its only source) but is reached
  * through the ordinary user auth contour — so a signed-out visitor gets
  * nothing, and a user only sees announcements addressed to them.
+ *
+ * Locale priority: explicit `?locale=` (the UI's current language) → the
+ * account's canonical `User.locale` → `Accept-Language` → English. The query
+ * parameter wins because the banner re-fetches when the interface language
+ * changes, even before the profile PATCH has landed.
  */
 @Controller("announcements")
 export class AnnouncementsController {
@@ -17,7 +22,15 @@ export class AnnouncementsController {
 
   @UseGuards(JwtAuthGuard)
   @Get("active")
-  active(@CurrentUser() user: AuthUser): Promise<AnnouncementDto[]> {
-    return this.comms.activeFor(user.email);
+  active(
+    @CurrentUser() user: AuthUser,
+    @Query("locale") locale?: string,
+    @Headers("accept-language") acceptLanguage?: string,
+  ): Promise<AnnouncementDto[]> {
+    return this.comms.activeFor(user.email, {
+      locale,
+      userLocale: user.locale ?? null,
+      acceptLanguage,
+    });
   }
 }

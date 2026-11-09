@@ -7,6 +7,7 @@ import {
   IsEmail,
   IsIn,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   Max,
@@ -17,6 +18,10 @@ import {
   registerDecorator,
   type ValidationOptions,
 } from "class-validator";
+import {
+  ANNOUNCEMENT_FALLBACK_POLICIES,
+  ANNOUNCEMENT_LOCALES,
+} from "@janosik/shared";
 import { MAINTENANCE_JOBS } from "@/ops/maintenance.service";
 
 /**
@@ -157,15 +162,36 @@ export class AdminMaintenanceRunDto {
 }
 
 export class AdminCreateAnnouncementDto {
+  /** @deprecated Pre-localization payload; maps to the source translation. */
+  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(200)
-  title!: string;
+  title?: string;
 
+  /** @deprecated Pre-localization payload; maps to the source translation. */
+  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(2000)
-  body!: string;
+  body?: string;
+
+  @IsOptional()
+  @IsIn(ANNOUNCEMENT_LOCALES)
+  sourceLocale?: (typeof ANNOUNCEMENT_LOCALES)[number];
+
+  @IsOptional()
+  @IsIn(ANNOUNCEMENT_FALLBACK_POLICIES)
+  fallbackPolicy?: (typeof ANNOUNCEMENT_FALLBACK_POLICIES)[number];
+
+  /**
+   * Locale → `{ title, body }`. Shape and per-locale limits are checked in
+   * `CommsService` because the map is dynamic; the object check keeps arrays
+   * and scalars out of the service.
+   */
+  @IsOptional()
+  @IsObject()
+  translations?: Record<string, { title: string; body: string } | null>;
 
   @IsOptional()
   @IsIn(["info", "warning", "danger"])
@@ -200,17 +226,31 @@ export class AdminCreateAnnouncementDto {
 }
 
 export class AdminUpdateAnnouncementDto {
+  /** @deprecated Pre-localization payload; updates the source translation. */
   @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(200)
   title?: string;
 
+  /** @deprecated Pre-localization payload; updates the source translation. */
   @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(2000)
   body?: string;
+
+  @IsOptional()
+  @IsIn(ANNOUNCEMENT_LOCALES)
+  sourceLocale?: (typeof ANNOUNCEMENT_LOCALES)[number] | null;
+
+  @IsOptional()
+  @IsIn(ANNOUNCEMENT_FALLBACK_POLICIES)
+  fallbackPolicy?: (typeof ANNOUNCEMENT_FALLBACK_POLICIES)[number];
+
+  @IsOptional()
+  @IsObject()
+  translations?: Record<string, { title: string; body: string } | null>;
 
   @IsOptional()
   @IsIn(["info", "warning", "danger"])
@@ -242,6 +282,13 @@ export class AdminUpdateAnnouncementDto {
   @Type(() => Number)
   @IsInt()
   endsAt?: number | null;
+
+  /** Optimistic concurrency: version loaded with the announcement. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  version?: number;
 }
 
 export class AdminSendEmailDto {

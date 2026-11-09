@@ -1,5 +1,7 @@
 import { Check, ChevronDown } from "lucide-react";
 
+import { api } from "@/api/client";
+import { useAuth } from "@/auth/AuthContext";
 import { Button } from "@/components/ui/button";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import {
@@ -13,7 +15,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useI18n } from "@/i18n";
+import { ensureLocale, useI18n, type Lang } from "@/i18n";
 
 interface LanguageSwitcherProps {
   /** `icon` (header trigger) or `row` (account preferences). */
@@ -23,6 +25,21 @@ interface LanguageSwitcherProps {
 /** Language picker (English / Russian) — a globe icon with a dropdown. */
 export function LanguageSwitcher({ variant = "icon" }: LanguageSwitcherProps) {
   const { lang, setLang, t } = useI18n();
+  const { status, user, updateUser, impersonating } = useAuth();
+
+  // Load the lazy catalog before switching; a failed load (offline, not yet
+  // cached) leaves both the UI and the server profile on the current language.
+  const choose = (next: Lang) => {
+    void ensureLocale(next).then((ready) => {
+      if (!ready) return;
+      setLang(next);
+      if (status !== "authenticated" || user === null || impersonating) return;
+      void api
+        .updateProfile({ locale: next })
+        .then(updateUser)
+        .catch(() => undefined);
+    });
+  };
 
   const trigger =
     variant === "row" ? (
@@ -54,14 +71,14 @@ export function LanguageSwitcher({ variant = "icon" }: LanguageSwitcherProps) {
       )}
       <DropdownMenuContent align="end" className="w-36">
         <DropdownMenuItem
-          onClick={() => setLang("en")}
+          onClick={() => choose("en")}
           className={lang === "en" ? "font-medium text-foreground" : ""}
         >
           {lang === "en" && <Check className="h-4 w-4" />}
           <span className={lang === "en" ? "" : "pl-6"}>English</span>
         </DropdownMenuItem>
         <DropdownMenuItem
-          onClick={() => setLang("ru")}
+          onClick={() => choose("ru")}
           className={lang === "ru" ? "font-medium text-foreground" : ""}
         >
           {lang === "ru" && <Check className="h-4 w-4" />}
