@@ -55,6 +55,7 @@ import {
 } from "./cells";
 import {
   Badge,
+  ConfirmDialog,
   EmptyState,
   ErrorState,
   LoadingState,
@@ -89,13 +90,18 @@ function StatCard({
   icon: Icon,
   label,
   value,
+  testId,
 }: {
   icon: typeof Users;
   label: string;
   value: number;
+  testId: string;
 }) {
   return (
-    <Panel className="flex items-center gap-2.5 px-3 py-2.5">
+    <Panel
+      className="flex items-center gap-2.5 px-3 py-2.5"
+      data-testid={testId}
+    >
       <Icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
       <div className="min-w-0">
         <p className="truncate text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -123,6 +129,9 @@ export function UserDetailPage() {
   const [resetDialog, setResetDialog] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [promoteDialog, setPromoteDialog] = useState(false);
+  const [pending, setPending] = useState<
+    "disable" | "enable" | "revokeSessions" | "revokeTokens" | null
+  >(null);
 
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -171,6 +180,58 @@ export function UserDetailPage() {
       } else {
         toast.error(t("admin.common.actionFailed"));
       }
+    }
+  };
+
+  const pendingConfirm = () => {
+    if (pending === null) return { title: "", body: "", label: "" };
+    if (pending === "disable") {
+      return {
+        title: t("admin.users.confirm.disable.title", { email: user.email }),
+        body: t("admin.users.confirm.disable.body"),
+        label: t("admin.users.action.disable"),
+      };
+    }
+    if (pending === "enable") {
+      return {
+        title: t("admin.users.confirm.enable.title", { email: user.email }),
+        body: t("admin.users.confirm.enable.body"),
+        label: t("admin.users.action.enable"),
+      };
+    }
+    if (pending === "revokeSessions") {
+      return {
+        title: t("admin.users.confirm.sessions.title", { email: user.email }),
+        body: t("admin.users.confirm.sessions.body"),
+        label: t("admin.users.action.revokeSessions"),
+      };
+    }
+    return {
+      title: t("admin.users.confirm.tokens.title", { email: user.email }),
+      body: t("admin.users.confirm.tokens.body"),
+      label: t("admin.users.action.revokeTokens"),
+    };
+  };
+
+  const confirmPending = () => {
+    const action = pending;
+    setPending(null);
+    if (action === "disable" || action === "enable") {
+      const disabled = action === "disable";
+      void run(
+        disabled
+          ? t("admin.users.action.disable")
+          : t("admin.users.action.enable"),
+        () => adminApi.updateUser(user.id, { disabled }),
+      );
+    } else if (action === "revokeSessions") {
+      void run(t("admin.users.action.revokeSessions"), () =>
+        adminApi.revokeUserSessions(user.id),
+      );
+    } else if (action === "revokeTokens") {
+      void run(t("admin.users.action.revokeTokens"), () =>
+        adminApi.revokeUserTokens(user.id),
+      );
     }
   };
 
@@ -248,23 +309,13 @@ export function UserDetailPage() {
                 {user.disabledAt === null ? (
                   <DropdownMenuItem
                     className="text-danger focus:text-danger"
-                    onSelect={() =>
-                      void run(t("admin.users.action.disable"), () =>
-                        adminApi.updateUser(user.id, { disabled: true }),
-                      )
-                    }
+                    onSelect={() => setPending("disable")}
                   >
                     <ShieldOff className="h-3.5 w-3.5" aria-hidden />
                     {t("admin.users.action.disable")}
                   </DropdownMenuItem>
                 ) : (
-                  <DropdownMenuItem
-                    onSelect={() =>
-                      void run(t("admin.users.action.enable"), () =>
-                        adminApi.updateUser(user.id, { disabled: false }),
-                      )
-                    }
-                  >
+                  <DropdownMenuItem onSelect={() => setPending("enable")}>
                     <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
                     {t("admin.users.action.enable")}
                   </DropdownMenuItem>
@@ -278,21 +329,13 @@ export function UserDetailPage() {
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-danger focus:text-danger"
-                  onSelect={() =>
-                    void run(t("admin.users.action.revokeSessions"), () =>
-                      adminApi.revokeUserSessions(user.id),
-                    )
-                  }
+                  onSelect={() => setPending("revokeSessions")}
                 >
                   {t("admin.users.action.revokeSessions")}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-danger focus:text-danger"
-                  onSelect={() =>
-                    void run(t("admin.users.action.revokeTokens"), () =>
-                      adminApi.revokeUserTokens(user.id),
-                    )
-                  }
+                  onSelect={() => setPending("revokeTokens")}
                 >
                   {t("admin.users.action.revokeTokens")}
                 </DropdownMenuItem>
@@ -355,14 +398,22 @@ export function UserDetailPage() {
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       data-testid="admin-user-impersonate"
-                      onSelect={() => void impersonateUser(user.id)}
+                      onSelect={() =>
+                        void run(t("admin.userDetail.action.impersonate"), () =>
+                          impersonateUser(user.id),
+                        )
+                      }
                     >
                       <Eye className="h-3.5 w-3.5" aria-hidden />
                       {t("admin.userDetail.action.impersonate")}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       data-testid="admin-user-export"
-                      onSelect={() => void exportUser(user.id)}
+                      onSelect={() =>
+                        void run(t("admin.userDetail.action.export"), () =>
+                          exportUser(user.id),
+                        )
+                      }
                     >
                       <Download className="h-3.5 w-3.5" aria-hidden />
                       {t("admin.userDetail.action.export")}
@@ -408,6 +459,15 @@ export function UserDetailPage() {
         onDone={reload}
       />
 
+      <ConfirmDialog
+        open={pending !== null}
+        title={pendingConfirm().title}
+        body={pendingConfirm().body}
+        confirmLabel={pendingConfirm().label}
+        onConfirm={confirmPending}
+        onClose={() => setPending(null)}
+      />
+
       <div className="flex flex-wrap items-center gap-2">
         <IdCell id={user.id} />
         {user.disabledAt === null ? (
@@ -443,41 +503,49 @@ export function UserDetailPage() {
           icon={KanbanSquare}
           label={t("admin.userDetail.stat.boards")}
           value={counters.boards}
+          testId="admin-user-counter-boards"
         />
         <StatCard
           icon={KanbanSquare}
           label={t("admin.userDetail.stat.cardsCreated")}
           value={counters.cardsCreated}
+          testId="admin-user-counter-cardsCreated"
         />
         <StatCard
           icon={Users}
           label={t("admin.userDetail.stat.cardsAssigned")}
           value={counters.cardsAssigned}
+          testId="admin-user-counter-cardsAssigned"
         />
         <StatCard
           icon={MessageSquare}
           label={t("admin.userDetail.stat.comments")}
           value={counters.comments}
+          testId="admin-user-counter-comments"
         />
         <StatCard
           icon={Paperclip}
           label={t("admin.userDetail.stat.attachments")}
           value={counters.attachments}
+          testId="admin-user-counter-attachments"
         />
         <StatCard
           icon={Users}
           label={t("admin.userDetail.stat.sessions")}
           value={counters.sessions}
+          testId="admin-user-counter-sessions"
         />
         <StatCard
           icon={KeyRound}
           label={t("admin.userDetail.stat.tokens")}
           value={counters.tokens}
+          testId="admin-user-counter-tokens"
         />
         <StatCard
           icon={Terminal}
           label={t("admin.userDetail.stat.commands")}
           value={counters.commands}
+          testId="admin-user-counter-commands"
         />
       </div>
 

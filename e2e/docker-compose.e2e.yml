@@ -12,6 +12,8 @@ services:
       SMTP_PASS: ""
       # Each browser test supplies its own forwarded IP for rate-limit isolation.
       TRUST_PROXY: "1"
+      # The queue dashboard is owner-only and exercised by the admin E2E suite.
+      QUEUES_DASHBOARD: "true"
     depends_on:
       mailpit:
         condition: service_started

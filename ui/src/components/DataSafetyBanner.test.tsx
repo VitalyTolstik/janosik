@@ -102,6 +102,7 @@ describe("DataSafetyBanner", () => {
       timeout: 3000,
     });
     expect(banner).toHaveTextContent("Data is not being saved");
+    expect(banner).toHaveAttribute("data-tone", "danger");
     expect(banner).toHaveTextContent("Download a backup");
     // Not dismissible — it must survive until a write actually succeeds.
     expect(
@@ -274,6 +275,7 @@ describe("DataSafetyBanner quota warning", () => {
       timeout: 3000,
     });
     expect(banner).toHaveTextContent("Storage is almost full");
+    expect(banner).toHaveAttribute("data-tone", "warning");
     expect(banner).toHaveTextContent("Download a backup");
     // It is a heads-up, not an emergency — the user may close it.
     expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();

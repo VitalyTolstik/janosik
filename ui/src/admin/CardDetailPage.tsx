@@ -28,6 +28,7 @@ import {
 const userHref = (id: string) => `/admin/users/${id}`;
 import {
   Badge,
+  ConfirmDialog,
   EmptyState,
   ErrorState,
   LoadingState,
@@ -72,6 +73,7 @@ export function CardDetailPage() {
   const hour12 = useHour12();
   const [detail, setDetail] = useState<AdminCardDetailDto | null>(null);
   const [error, setError] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -140,7 +142,11 @@ export function CardDetailPage() {
           actions={
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="outline">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="admin-card-detail-actions"
+                >
                   {t("admin.common.actions")}
                 </Button>
               </DropdownMenuTrigger>
@@ -168,11 +174,7 @@ export function CardDetailPage() {
                 )}
                 <DropdownMenuItem
                   className="text-danger focus:text-danger"
-                  onSelect={() =>
-                    void run(t("admin.cards.action.delete"), () =>
-                      adminApi.deleteCard(card.id),
-                    )
-                  }
+                  onSelect={() => setConfirmDelete(true)}
                 >
                   {t("admin.cards.action.delete")}
                 </DropdownMenuItem>
@@ -185,11 +187,17 @@ export function CardDetailPage() {
       <div className="flex flex-wrap items-center gap-2">
         <IdCell id={card.id} />
         {card.deletedAt !== null ? (
-          <Badge variant="danger">{t("admin.status.deleted")}</Badge>
+          <Badge variant="danger" data-testid="admin-card-status">
+            {t("admin.status.deleted")}
+          </Badge>
         ) : card.archivedAt !== null ? (
-          <Badge variant="warning">{t("admin.status.archived")}</Badge>
+          <Badge variant="warning" data-testid="admin-card-status">
+            {t("admin.status.archived")}
+          </Badge>
         ) : (
-          <Badge variant="success">{t("admin.status.active")}</Badge>
+          <Badge variant="success" data-testid="admin-card-status">
+            {t("admin.status.active")}
+          </Badge>
         )}
         {card.priority !== null ? (
           <Badge variant="primary">{card.priority}</Badge>
@@ -202,7 +210,10 @@ export function CardDetailPage() {
         ) : null}
       </div>
 
-      <Panel className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-4 lg:grid-cols-6">
+      <Panel
+        className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-4 lg:grid-cols-6"
+        data-testid="admin-card-detail-meta"
+      >
         <MetaItem label={t("admin.cardDetail.board")}>
           <EntityLink to={boardHref(card.boardId)}>
             {card.boardTitle}
@@ -247,7 +258,7 @@ export function CardDetailPage() {
       </Panel>
 
       {card.description ? (
-        <Panel className="p-3">
+        <Panel className="p-3" data-testid="admin-card-detail-description">
           <p className="pb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
             {t("admin.cardDetail.description")}
           </p>
@@ -258,7 +269,10 @@ export function CardDetailPage() {
       ) : null}
 
       {detail.labels.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div
+          className="flex flex-wrap items-center gap-1.5"
+          data-testid="admin-card-detail-labels"
+        >
           {detail.labels.map((label) => (
             <LabelChip key={label.id} name={label.name} color={label.color} />
           ))}
@@ -266,7 +280,10 @@ export function CardDetailPage() {
       ) : null}
 
       {detail.checklists.length > 0 ? (
-        <Panel className="space-y-2.5 p-3">
+        <Panel
+          className="space-y-2.5 p-3"
+          data-testid="admin-card-detail-checklists"
+        >
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
             {t("admin.cardDetail.checklists")}
           </p>
@@ -314,7 +331,7 @@ export function CardDetailPage() {
       ) : null}
 
       {detail.linksOut.length + detail.linksIn.length > 0 ? (
-        <Panel className="p-3">
+        <Panel className="p-3" data-testid="admin-card-detail-links">
           <p className="pb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
             {t("admin.cardDetail.links")}
           </p>
@@ -358,86 +375,94 @@ export function CardDetailPage() {
       ) : null}
 
       {detail.attachments.length > 0 ? (
-        <Table maxHeight="20rem">
-          <thead>
-            <tr>
-              <Th>{t("admin.attachments.column.file")}</Th>
-              <Th>{t("admin.attachments.column.size")}</Th>
-              <Th>{t("admin.attachments.column.uploader")}</Th>
-              <Th>{t("admin.attachments.column.created")}</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {detail.attachments.map((file) => (
-              <tr key={file.id}>
-                <Td>
-                  <span className="inline-flex items-center gap-2">
-                    <AttachmentThumb
-                      attachmentId={file.id}
-                      mimeType={file.mimeType}
-                      fileName={file.fileName}
-                    />
-                    {file.fileName}
-                    <AttachmentDownloadButton
-                      attachmentId={file.id}
-                      fileName={file.fileName}
-                    />
-                  </span>
-                </Td>
-                <Td>
-                  <SizeCell bytes={file.sizeBytes} />
-                </Td>
-                <Td>
-                  <EntityLink
-                    to={userHref(file.uploadedById)}
-                    copyValue={file.uploadedByEmail}
-                  >
-                    {file.uploadedByEmail}
-                  </EntityLink>
-                </Td>
-                <Td>
-                  <DateCell value={file.createdAt} />
-                </Td>
+        <div data-testid="admin-card-detail-attachments">
+          <Table maxHeight="20rem">
+            <thead>
+              <tr>
+                <Th>{t("admin.attachments.column.file")}</Th>
+                <Th>{t("admin.attachments.column.size")}</Th>
+                <Th>{t("admin.attachments.column.uploader")}</Th>
+                <Th>{t("admin.attachments.column.created")}</Th>
               </tr>
-            ))}
-          </tbody>
-        </Table>
+            </thead>
+            <tbody>
+              {detail.attachments.map((file) => (
+                <tr key={file.id}>
+                  <Td>
+                    <span className="inline-flex items-center gap-2">
+                      <AttachmentThumb
+                        attachmentId={file.id}
+                        mimeType={file.mimeType}
+                        fileName={file.fileName}
+                      />
+                      {file.fileName}
+                      <AttachmentDownloadButton
+                        attachmentId={file.id}
+                        fileName={file.fileName}
+                      />
+                    </span>
+                  </Td>
+                  <Td>
+                    <SizeCell bytes={file.sizeBytes} />
+                  </Td>
+                  <Td>
+                    <EntityLink
+                      to={userHref(file.uploadedById)}
+                      copyValue={file.uploadedByEmail}
+                    >
+                      {file.uploadedByEmail}
+                    </EntityLink>
+                  </Td>
+                  <Td>
+                    <DateCell value={file.createdAt} />
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
       ) : null}
 
       {detail.comments.length > 0 ? (
-        <Table maxHeight="24rem">
-          <thead>
-            <tr>
-              <Th>{t("admin.comments.column.text")}</Th>
-              <Th>{t("admin.comments.column.author")}</Th>
-              <Th>{t("admin.comments.column.created")}</Th>
-              <Th>{t("admin.comments.column.status")}</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {detail.comments.map((comment) => (
-              <tr key={comment.id}>
-                <Td className="max-w-[30rem] whitespace-normal">
-                  {comment.text}
-                </Td>
-                <Td>{comment.authorEmail}</Td>
-                <Td>
-                  <DateCell value={comment.createdAt} />
-                </Td>
-                <Td>
-                  {comment.deletedAt !== null ? (
-                    <Badge variant="danger">{t("admin.status.deleted")}</Badge>
-                  ) : (
-                    <Badge variant="success">{t("admin.status.active")}</Badge>
-                  )}
-                </Td>
+        <div data-testid="admin-card-detail-comments">
+          <Table maxHeight="24rem">
+            <thead>
+              <tr>
+                <Th>{t("admin.comments.column.text")}</Th>
+                <Th>{t("admin.comments.column.author")}</Th>
+                <Th>{t("admin.comments.column.created")}</Th>
+                <Th>{t("admin.comments.column.status")}</Th>
               </tr>
-            ))}
-          </tbody>
-        </Table>
+            </thead>
+            <tbody>
+              {detail.comments.map((comment) => (
+                <tr key={comment.id}>
+                  <Td className="max-w-[30rem] whitespace-normal">
+                    {comment.text}
+                  </Td>
+                  <Td>{comment.authorEmail}</Td>
+                  <Td>
+                    <DateCell value={comment.createdAt} />
+                  </Td>
+                  <Td>
+                    {comment.deletedAt !== null ? (
+                      <Badge variant="danger">
+                        {t("admin.status.deleted")}
+                      </Badge>
+                    ) : (
+                      <Badge variant="success">
+                        {t("admin.status.active")}
+                      </Badge>
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
       ) : null}
 
-      <Panel className="p-3">
+      <Panel className="p-3" data-testid="admin-card-detail-timeline">
         <p className="pb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
           {t("admin.cardDetail.timeline")}
         </p>
@@ -471,6 +496,20 @@ export function CardDetailPage() {
           </ul>
         )}
       </Panel>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title={t("admin.cards.confirm.delete.title", { title: card.title })}
+        body={t("admin.cards.confirm.delete.body")}
+        confirmLabel={t("admin.cards.action.delete")}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          void run(t("admin.cards.action.delete"), () =>
+            adminApi.deleteCard(card.id),
+          );
+        }}
+        onClose={() => setConfirmDelete(false)}
+      />
     </div>
   );
 }

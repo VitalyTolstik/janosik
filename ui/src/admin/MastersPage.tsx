@@ -225,10 +225,12 @@ function CreateMasterDialog({
               </DialogTitle>
             </DialogHeader>
             <Field
+              htmlFor="admin-master-email"
               label={t("admin.masters.create.email")}
               error={email.trim() === "" ? null : emailError}
             >
               <Input
+                id="admin-master-email"
                 type="email"
                 autoComplete="email"
                 value={email}
@@ -238,11 +240,14 @@ function CreateMasterDialog({
               />
             </Field>
             <Field
+              htmlFor="admin-master-name"
               label={t("admin.masters.create.name")}
               error={displayName.trim() === "" ? null : nameError}
               counter={<CharCount value={displayName} max={50} />}
             >
               <Input
+                id="admin-master-name"
+                data-testid="admin-master-name"
                 value={displayName}
                 maxLength={50}
                 invalid={nameError !== null}

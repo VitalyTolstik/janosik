@@ -6,7 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Changed
+
+- Top-of-page notifications now share one frosted "quiet glass" stack under
+  the header: announcements, impersonation, data-safety and update prompts no
+  longer cover the board or each other, and toasts follow the same visual
+  language in their bottom-right corner.
 
 ## [0.2.0] - 2026-11-08
 
