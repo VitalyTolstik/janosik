@@ -31,6 +31,15 @@ export function WorkflowRulesDialog({
   const { t } = useI18n();
   const { board } = useBoardState();
   const workflow = board?.workflow;
+  const columnIds = new Set((board?.columns ?? []).map((column) => column.id));
+  // A stored config may still name a column deleted elsewhere; don't render
+  // a raw id to a reader. The editor/importer cleans these on the next save.
+  const transitions = (workflow?.transitions ?? []).filter(
+    (transition) =>
+      (transition.fromColumnId === null ||
+        columnIds.has(transition.fromColumnId)) &&
+      columnIds.has(transition.toColumnId),
+  );
 
   const titleOf = (id: string | null): string =>
     id === null
@@ -56,6 +65,11 @@ export function WorkflowRulesDialog({
           </p>
         ) : (
           <div className="space-y-4 text-sm">
+            {board?.workflowInvalid ? (
+              <p className="rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-danger">
+                {t("workflow.error.invalidStored")}
+              </p>
+            ) : null}
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span
                 className={
@@ -70,7 +84,7 @@ export function WorkflowRulesDialog({
               </span>
               <span className="text-muted-foreground">
                 {t("workflow.transitionCount", {
-                  count: workflow.transitions.length,
+                  count: transitions.length,
                 })}
               </span>
             </div>
@@ -102,13 +116,13 @@ export function WorkflowRulesDialog({
               <p className="mb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
                 {t("workflow.transitions")}
               </p>
-              {workflow.transitions.length === 0 ? (
+              {transitions.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
                   {t("workflow.noTransitions")}
                 </p>
               ) : (
                 <ul className="space-y-1.5">
-                  {workflow.transitions.map((transition) => (
+                  {transitions.map((transition) => (
                     <TransitionRow
                       key={transition.id}
                       transition={transition}

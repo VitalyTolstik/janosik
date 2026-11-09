@@ -325,6 +325,7 @@ export function BoardDetailPage() {
                   state: detail.workflowSummary.enabled
                     ? t("admin.workflow.on")
                     : t("admin.workflow.off"),
+                  active: detail.workflowSummary.activeTransitions,
                   count: detail.workflowSummary.transitions,
                 })
               : t("admin.workflow.notConfigured")}

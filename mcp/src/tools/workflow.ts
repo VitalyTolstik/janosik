@@ -64,9 +64,18 @@ export function registerWorkflowTools(
       let role: BoardRole | undefined;
       if (cardId !== undefined) {
         // The aggregate does not carry the caller's role; the board summary
-        // does. Only fetched when a per-card check was requested.
+        // does. Only fetched when a per-card check was requested. If the
+        // summary cannot name the role, refusing is safer than evaluating
+        // without the role check and advertising an ADMIN-only edge.
         const summaries = await client.listBoards();
         role = summaries.find((summary) => summary.id === boardId)?.role;
+        if (role === undefined) {
+          return errorResult(
+            `Error: could not determine your role on board ${boardId}, so ` +
+              "per-card transitions cannot be evaluated safely. Re-read the " +
+              "board with janosik_get_board and retry.",
+          );
+        }
       }
       const payload = workflowPayload(board, cardId, role);
       return respond(

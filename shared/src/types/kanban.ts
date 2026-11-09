@@ -214,6 +214,14 @@ export interface Card {
    * them; restore (and delete-forever) live in the DataMenu archive.
    */
   archivedAt?: number;
+  /**
+   * The column the card was archived from (TASK-165 review). The reducer
+   * records it on archive, the server derives it from `Card.columnId`, and
+   * unarchive clears it. It is what lets the UI pre-check a restore target
+   * against the workflow: an archived card may only come back to its old
+   * column unless the workflow allows the transition.
+   */
+  archivedFromColumnId?: string;
 }
 
 /** Every kind of card change the activity feed records. */
@@ -559,6 +567,14 @@ export interface Board {
    * shape is `BoardWorkflow` from `shared/src/workflow.ts`.
    */
   workflow?: import("../workflow").BoardWorkflow;
+  /**
+   * The stored workflow exists but failed validation (corrupt JSONB, a
+   * future `schemaVersion`, …). The server then exposes an enabled workflow
+   * with no transitions — every cross-column move is refused until an ADMIN
+   * repairs the config — instead of silently falling back to the legacy
+   * unrestricted mode. Absent on healthy boards.
+   */
+  workflowInvalid?: true;
   /** Set when the board is archived (not deleted) — timestamp in ms. */
   archivedAt?: number;
 }

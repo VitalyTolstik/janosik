@@ -23,20 +23,28 @@ const workflow: BoardWorkflow = {
   transitions: [{ id: "tr-1", fromColumnId: "backlog", toColumnId: "doing" }],
 };
 
-function setup(value: BoardWorkflow | undefined = workflow) {
+function setup(
+  value: BoardWorkflow | undefined = workflow,
+  options: { canEdit?: boolean; workflowInvalid?: boolean } = {},
+) {
   const onSave = vi.fn();
-  render(
+  const view = (next: BoardWorkflow | undefined) => (
     <I18nProvider>
       <WorkflowEditor
         columns={columns}
         cards={cards}
-        workflow={value}
-        canEdit
+        workflow={next}
+        workflowInvalid={options.workflowInvalid}
+        canEdit={options.canEdit ?? true}
         onSave={onSave}
       />
-    </I18nProvider>,
+    </I18nProvider>
   );
-  return { onSave };
+  const { rerender } = render(view(value));
+  return {
+    onSave,
+    rerender: (next: BoardWorkflow | undefined) => rerender(view(next)),
+  };
 }
 
 describe("WorkflowEditor", () => {
@@ -73,6 +81,68 @@ describe("WorkflowEditor", () => {
     expect(screen.getByTestId("workflow-save")).toBeDisabled();
     expect(screen.getByTestId("workflow-error")).toHaveTextContent(
       "at least one active transition",
+    );
+  });
+
+  it("blocks saving an enabled workflow whose only edges are disabled", () => {
+    setup({
+      ...workflow,
+      transitions: workflow.transitions.map((transition) => ({
+        ...transition,
+        enabled: false,
+      })),
+    });
+    expect(screen.getByTestId("workflow-save")).toBeDisabled();
+    expect(screen.getByTestId("workflow-error")).toHaveTextContent(
+      "at least one active transition",
+    );
+  });
+
+  it("blocks a duplicate global target before the server sees it", () => {
+    setup({
+      ...workflow,
+      transitions: [
+        ...workflow.transitions,
+        { id: "g1", fromColumnId: null, toColumnId: "done" },
+        { id: "g2", fromColumnId: null, toColumnId: "done" },
+      ],
+    });
+    expect(screen.getByTestId("workflow-save")).toBeDisabled();
+    expect(screen.getByTestId("workflow-error")).toHaveTextContent(
+      "global transitions",
+    );
+  });
+
+  it("re-enables a disabled edge on one click, as the cell hint promises", () => {
+    setup({
+      ...workflow,
+      transitions: [{ ...workflow.transitions[0], enabled: false }],
+    });
+    const cell = screen.getByTestId("workflow-cell-backlog-doing");
+    expect(cell).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(cell);
+    expect(cell).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("warns and offers a reload when the workflow changes elsewhere", () => {
+    const { rerender } = setup();
+    rerender({
+      ...workflow,
+      transitions: [
+        { id: "tr-2", fromColumnId: "backlog", toColumnId: "done" },
+      ],
+    });
+    expect(screen.getByTestId("workflow-foreign-change")).toBeVisible();
+    fireEvent.click(screen.getByTestId("workflow-reload"));
+    expect(
+      screen.queryByTestId("workflow-foreign-change"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("marks a stored config that failed validation", () => {
+    setup({ ...workflow, transitions: [] }, { workflowInvalid: true });
+    expect(screen.getByTestId("workflow-invalid")).toHaveTextContent(
+      "stored workflow is invalid",
     );
   });
 

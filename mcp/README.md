@@ -163,8 +163,8 @@ an API key, so an agent can never mint itself a new one.
   requested interval until one appears or the timeout expires; it does not
   reserve or claim the card.
 - **A Definition-of-Done check in MCP.** When `janosik_move_card` enters a done
-  column (`workflow.doneColumnIds`, or the board's last column when no workflow
-  exists), it checks cards with a task contract for unticked
+  column (`workflow.doneColumnIds`, falling back to the board's last column when
+  the list is empty or no workflow exists), it checks cards with a task contract for unticked
   `Definition of Done` checklist items and an `evidence` comment. This is a
   convention of this MCP tool; the app's command API does not enforce it for
   other clients. After a version conflict the tool re-reads the board and
@@ -174,8 +174,10 @@ an API key, so an agent can never mint itself a new one.
   transitions, roles, conditions and initial/done columns; pass `cardId` for a
   per-card allowed/blocked check. A server-side `409` with
   `conflict: "workflow"` means the move is forbidden: the error names the
-  allowed destinations and never suggests retrying the same one. Do not bypass
-  it by clearing a contract, changing rules, importing or restoring.
+  allowed destinations and never suggests retrying the same one. Unarchive and
+  restore follow the same rule: a card may return to its original column, while
+  another target needs an allowed transition. Do not bypass the workflow by
+  clearing a contract, changing rules or importing a board.
 - **Typed comments.** `janosik_add_comment` takes a `kind` (`status`,
   `question`, `blocker`, `evidence`, `handoff`; omit for a plain note) and
   `janosik_list_comments` filters by it.

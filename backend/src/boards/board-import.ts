@@ -174,6 +174,13 @@ export async function persistBoard(
       acceptanceCriteria: card.acceptanceCriteria ?? [],
       definitionOfDone: card.definitionOfDone ?? [],
       archivedAt: card.archivedAt ? new Date(card.archivedAt) : null,
+      // Keep the workflow source through a remap. A v2 export carries it; a
+      // v1/legacy archive falls back to the card's own (remapped) column.
+      archivedFromColumnId: card.archivedAt
+        ? card.archivedFromColumnId !== undefined
+          ? (columnIdMap.get(card.archivedFromColumnId) ?? columnId)
+          : columnId
+        : null,
       position: positionForCard.get(oldId) ?? 0,
       createdAt,
       updatedAt,

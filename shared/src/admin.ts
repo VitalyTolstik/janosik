@@ -963,6 +963,8 @@ export interface AdminBoardWorkflowSummaryDto {
   present: boolean;
   enabled: boolean;
   transitions: number;
+  /** Transitions whose `enabled` flag is not `false`. */
+  activeTransitions: number;
   initialColumnId: string | null;
   doneColumnIds: string[];
 }

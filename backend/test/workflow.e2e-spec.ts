@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { invert } from "@janosik/shared";
 import type {
   Board,
   BoardAction,
@@ -320,6 +321,135 @@ describe("Board workflow (e2e)", () => {
     ).toEqual([ids.cardId]);
   });
 
+  it("checks all four card conditions and clears them one field at a time", async () => {
+    const ids = await fixture("Workflow all conditions");
+    const checklistId = randomUUID();
+    const itemId = randomUUID();
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "SET_BOARD_WORKFLOW",
+        workflow: workflow(ids, [
+          {
+            id: "backlog-doing",
+            fromColumnId: ids.backlog,
+            toColumnId: ids.doing,
+            conditions: [
+              "requireAssignee",
+              "requireDueDate",
+              "requireDescription",
+              "requireChecklistsDone",
+            ],
+          },
+        ]),
+      }),
+    );
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "ADD_CHECKLIST",
+        cardId: ids.cardId,
+        newChecklistId: checklistId,
+        title: "DoD",
+      }),
+    );
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "ADD_CHECKLIST_ITEM",
+        cardId: ids.cardId,
+        checklistId,
+        newItemId: itemId,
+        text: "Ship it",
+      }),
+    );
+
+    const first = await post(ids.boardId, move(ids, ids.doing)).expect(409);
+    expect(first.body.workflow.failedConditions).toEqual([
+      "requireAssignee",
+      "requireDueDate",
+      "requireDescription",
+      "requireChecklistsDone",
+    ]);
+
+    const me = (await server().get("/api/v1/auth/me").set(auth(adminToken)))
+      .body.id as string;
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "SET_CARD_ASSIGN",
+        cardId: ids.cardId,
+        assigneeId: me,
+      }),
+    );
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "UPDATE_CARD",
+        cardId: ids.cardId,
+        description: "Ready",
+      }),
+    );
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "SET_CARD_DUE_DATE",
+        cardId: ids.cardId,
+        dueDate: Date.now() + 86_400_000,
+      }),
+    );
+    const onlyChecklist = await post(ids.boardId, move(ids, ids.doing)).expect(
+      409,
+    );
+    expect(onlyChecklist.body.workflow.failedConditions).toEqual([
+      "requireChecklistsDone",
+    ]);
+
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "SET_CHECKLIST_ITEM_DONE",
+        cardId: ids.cardId,
+        checklistId,
+        itemId,
+        done: true,
+      }),
+    );
+    await apply(ids.boardId, move(ids, ids.doing));
+    expect(
+      (await aggregate(ids.boardId)).columns.find(
+        (column) => column.id === ids.doing,
+      )?.cardIds,
+    ).toEqual([ids.cardId]);
+  });
+
+  it("undoes a workflow save through the same command path", async () => {
+    const ids = await fixture("Workflow undo");
+    const first = workflow(ids);
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "SET_BOARD_WORKFLOW",
+        workflow: first,
+      }),
+    );
+    const before = await aggregate(ids.boardId);
+    const second = workflow(ids, [
+      { id: "backlog-done", fromColumnId: ids.backlog, toColumnId: ids.done },
+    ]);
+    const action = scoped(ids.boardId, {
+      type: "SET_BOARD_WORKFLOW",
+      workflow: second,
+    });
+    await apply(ids.boardId, action);
+    expect((await aggregate(ids.boardId)).workflow).toEqual(second);
+
+    const inverse = invert(before, action);
+    expect(inverse?.type).toBe("SET_BOARD_WORKFLOW");
+    await apply(ids.boardId, inverse!);
+    expect((await aggregate(ids.boardId)).workflow).toEqual(first);
+  });
+
   it("enforces role-restricted global transitions", async () => {
     const ids = await fixture("Workflow roles");
     await invite(ids.boardId, MEMBER_EMAIL, "MEMBER", memberToken);
@@ -348,6 +478,247 @@ describe("Board workflow (e2e)", () => {
       allowedToColumnIds: [],
     });
     await apply(ids.boardId, move(ids, ids.done));
+  });
+
+  it("rejects an enabled workflow whose transitions are all disabled", async () => {
+    const ids = await fixture("Workflow no active edge");
+    const res = await post(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "SET_BOARD_WORKFLOW",
+        workflow: workflow(ids, [
+          {
+            id: "backlog-doing",
+            fromColumnId: ids.backlog,
+            toColumnId: ids.doing,
+            enabled: false,
+          },
+        ]),
+      }),
+    ).expect(400);
+    expect(res.body.field).toBe("action.workflow.transitions");
+    expect(String(res.body.message)).toContain("active transition");
+    expect((await aggregate(ids.boardId)).workflow).toBeUndefined();
+  });
+
+  it("enforces the workflow when a MEMBER unarchives a card", async () => {
+    const ids = await fixture("Workflow unarchive bypass");
+    await invite(ids.boardId, MEMBER_EMAIL, "MEMBER", memberToken);
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "SET_BOARD_WORKFLOW",
+        workflow: workflow(ids),
+      }),
+    );
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, { type: "ARCHIVE_CARD", cardId: ids.cardId }),
+      memberToken,
+    );
+    expect((await aggregate(ids.boardId)).cards[ids.cardId].archivedAt).toEqual(
+      expect.any(Number),
+    );
+
+    const denied = await post(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "UNARCHIVE_CARD",
+        cardId: ids.cardId,
+        columnId: ids.done,
+      }),
+      memberToken,
+    ).expect(409);
+    expect(denied.body.workflow).toMatchObject({
+      code: "transition_not_allowed",
+      fromColumnId: ids.backlog,
+      toColumnId: ids.done,
+      allowedToColumnIds: [ids.doing],
+    });
+    // Still archived: the refused command changed nothing.
+    expect((await aggregate(ids.boardId)).cards[ids.cardId].archivedAt).toEqual(
+      expect.any(Number),
+    );
+
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "UNARCHIVE_CARD",
+        cardId: ids.cardId,
+        columnId: ids.backlog,
+      }),
+      memberToken,
+    );
+    const after = await aggregate(ids.boardId);
+    expect(after.cards[ids.cardId].archivedAt).toBeUndefined();
+    expect(
+      after.columns.find((column) => column.id === ids.backlog)?.cardIds,
+    ).toContain(ids.cardId);
+  });
+
+  it("enforces the workflow when RESTORE_CARD recreates a deleted card", async () => {
+    const ids = await fixture("Workflow restore bypass");
+    await invite(ids.boardId, MEMBER_EMAIL, "MEMBER", memberToken);
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "SET_BOARD_WORKFLOW",
+        workflow: workflow(ids),
+      }),
+    );
+    const beforeDelete = await aggregate(ids.boardId);
+    const snapshot = beforeDelete.cards[ids.cardId];
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, { type: "DELETE_CARD", cardId: ids.cardId }),
+      memberToken,
+    );
+
+    const denied = await post(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "RESTORE_CARD",
+        card: snapshot,
+        columnId: ids.done,
+        index: 0,
+      }),
+      memberToken,
+    ).expect(409);
+    expect(denied.body.workflow).toMatchObject({
+      code: "transition_not_allowed",
+      fromColumnId: ids.backlog,
+      toColumnId: ids.done,
+    });
+
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "RESTORE_CARD",
+        card: snapshot,
+        columnId: ids.backlog,
+        index: 0,
+      }),
+      memberToken,
+    );
+    expect(
+      (await aggregate(ids.boardId)).columns.find(
+        (column) => column.id === ids.backlog,
+      )?.cardIds,
+    ).toContain(ids.cardId);
+  });
+
+  it("reports workflow before WIP when both would refuse a move", async () => {
+    const ids = await fixture("Workflow wip order");
+    const blocker = randomUUID();
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "ADD_CARD",
+        newCardId: blocker,
+        columnId: ids.done,
+        title: "Already done",
+      }),
+    );
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "SET_COLUMN_WIP_LIMIT",
+        columnId: ids.done,
+        wipLimit: 1,
+      }),
+    );
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "SET_BOARD_WORKFLOW",
+        workflow: workflow(ids, [
+          {
+            id: "backlog-done",
+            fromColumnId: ids.backlog,
+            toColumnId: ids.done,
+          },
+        ]),
+      }),
+    );
+
+    const allowedByWorkflow = await post(
+      ids.boardId,
+      move(ids, ids.done),
+    ).expect(409);
+    expect(allowedByWorkflow.body.conflict).toBe("wip");
+
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "SET_BOARD_WORKFLOW",
+        workflow: workflow(ids, [
+          {
+            id: "backlog-doing",
+            fromColumnId: ids.backlog,
+            toColumnId: ids.doing,
+          },
+        ]),
+      }),
+    );
+    const deniedByWorkflow = await post(
+      ids.boardId,
+      move(ids, ids.done),
+    ).expect(409);
+    expect(deniedByWorkflow.body.conflict).toBe("workflow");
+    expect(deniedByWorkflow.body.workflow.code).toBe("transition_not_allowed");
+  });
+
+  it("answers a stale source with a version conflict on a workflow board", async () => {
+    const ids = await fixture("Workflow stale source");
+    await apply(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "SET_BOARD_WORKFLOW",
+        workflow: workflow(ids),
+      }),
+    );
+    const res = await post(
+      ids.boardId,
+      scoped(ids.boardId, {
+        type: "MOVE_CARD",
+        cardId: ids.cardId,
+        fromColumnId: ids.doing,
+        fromIndex: 0,
+        toColumnId: ids.done,
+        toIndex: 0,
+      }),
+    ).expect(409);
+    expect(res.body).toMatchObject({
+      conflict: "version",
+      currentVersion: expect.any(Number),
+    });
+    expect(
+      (await aggregate(ids.boardId)).columns.find(
+        (column) => column.id === ids.backlog,
+      )?.cardIds,
+    ).toEqual([ids.cardId]);
+  });
+
+  it("fails closed when the stored workflow is invalid or from the future", async () => {
+    const ids = await fixture("Workflow invalid stored");
+    await prisma.board.update({
+      where: { id: ids.boardId },
+      data: {
+        workflow: {
+          schemaVersion: 2,
+          enabled: true,
+          doneColumnIds: [],
+          transitions: [],
+        },
+      },
+    });
+    const board = await aggregate(ids.boardId);
+    expect(board.workflowInvalid).toBe(true);
+    expect(board.workflow).toMatchObject({ enabled: true, transitions: [] });
+
+    const res = await post(ids.boardId, move(ids, ids.done)).expect(409);
+    expect(res.body.workflow.code).toBe("transition_not_allowed");
+    expect(res.body.workflow.allowedToColumnIds).toEqual([]);
   });
 
   it("rejects a workflow that references a missing column", async () => {

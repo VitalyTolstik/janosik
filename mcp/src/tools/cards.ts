@@ -395,9 +395,10 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, cardId, toColumnId, position, expectedVersion }) => {
-      // Definition-of-Done gate (TASK-157, D12). This MCP tool treats the
-      // board's last column as Done; a card that
-      // carries a task contract may only enter it once its `Definition of
+      // Definition-of-Done gate (TASK-157, D12). This MCP tool uses the
+      // board's configured done columns (`workflowDoneColumnIds`, which
+      // falls back to the last column); a card that
+      // carries a task contract may only enter one once its `Definition of
       // Done` checklist is fully ticked and it has an evidence comment. This
       // is checked here before this tool moves it. Other clients can still
       // move it because the command API does not enforce this convention.

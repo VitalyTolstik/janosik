@@ -157,8 +157,13 @@ The shared validator checks the shape (schema version 1, unique `from → to`
 pairs, no self-edge, roles ⊆ `{ADMIN, MEMBER}`, known conditions, at most 200
 transitions). The server additionally checks inside the board lock that every
 referenced column exists, that an enabled workflow has at least two columns,
-and that an enabled workflow has at least one transition. A bad reference is
-`400 { "field": "action.workflow.transitions[0].toColumnId" }`.
+and that an enabled workflow has at least one **active** transition. A bad
+reference is `400 { "field": "action.workflow.transitions[0].toColumnId" }`.
+
+`UNARCHIVE_CARD` and `RESTORE_CARD` are column changes too: the server checks
+the transition from the card's original column to the requested target with the
+same role and condition rules, and answers the same `409 workflow` when the
+target is forbidden. Restoring to the original column is always allowed.
 
 A blocked move answers:
 

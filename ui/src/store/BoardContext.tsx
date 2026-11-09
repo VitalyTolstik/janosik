@@ -257,8 +257,12 @@ interface BoardActionsValue {
   setColumnAccent: (columnId: string, accent?: CardCover) => void;
   /** Sets the board-wide column accent shape (`undefined` = signature). */
   setBoardColumnStyle: (columnStyle?: ColumnAccentStyle) => void;
-  /** Replaces (or clears, `undefined`) the board's card workflow. */
-  setBoardWorkflow: (workflow?: BoardWorkflow) => void;
+  /**
+   * Replaces (or clears, `undefined`) the board's card workflow. In server
+   * mode resolves `false` when the server refused the command (the failure
+   * toast is already shown), so the settings dialog can stay open.
+   */
+  setBoardWorkflow: (workflow?: BoardWorkflow) => void | Promise<boolean>;
   /** Sorts a column's cards (createdAt / dueDate / title). */
   sortColumn: (columnId: string, sortBy: ColumnSortBy) => void;
   /* Board management (multi-board) */
@@ -1469,7 +1473,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // the API afterwards; a refusal rolls the optimistic state back and shows
   // a toast (TASK-29).
   const dispatch = useCallback(
-    (action: BoardAction) => {
+    (action: BoardAction): void | Promise<boolean> => {
       const boardId =
         (action as { boardId?: string }).boardId ?? activeIdRef.current;
       if (!boardId) return;
@@ -1496,11 +1500,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
       if (!serverMode) return;
       bumpEpoch(boardId);
-      void sync.enqueue(boardId, scoped).then((outcome) => {
+      return sync.enqueue(boardId, scoped).then((outcome) => {
         // One coalesced send → one set of side effects (see the ref's note).
         if (handledOutcomesRef.current.has(outcome)) {
           drainRefetch(boardId);
-          return;
+          return outcome.ok;
         }
         handledOutcomesRef.current.add(outcome);
         if (outcome.ok) {
@@ -1510,7 +1514,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           live.commits.publish(boardId, touchedIds);
           realtimeRef.current?.settled(boardId, outcome.seq);
           drainRefetch(boardId);
-          return;
+          return true;
         }
         realtimeRef.current?.settled(boardId);
         showFailure(outcome.failure);
@@ -1534,6 +1538,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           }
         }
         drainRefetch(boardId);
+        return false;
       });
     },
     [
@@ -2152,7 +2157,7 @@ function createBoardActions(
       ) {
         return;
       }
-      dispatch({
+      return dispatch({
         type: "SET_BOARD_WORKFLOW",
         workflow,
         at: Date.now(),

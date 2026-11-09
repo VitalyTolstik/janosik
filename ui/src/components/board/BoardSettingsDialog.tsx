@@ -1,5 +1,7 @@
+import { useState } from "react";
 import type { BoardWorkflow } from "@janosik/shared";
 
+import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { WorkflowEditor } from "@/components/board/WorkflowEditor";
 import { useToast } from "@/components/Toast";
 import {
@@ -40,16 +42,39 @@ export function BoardSettingsDialog({
   const { board } = useBoardState();
   const { setBoardWorkflow } = useBoardActions();
   const { role } = useBoardAccess();
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
   if (!board) return null;
 
-  const save = (workflow: BoardWorkflow | undefined) => {
-    setBoardWorkflow(workflow);
-    toast.success(t("workflow.savedToast"));
-    onOpenChange(false);
+  const requestOpenChange = (next: boolean) => {
+    if (!next && dirty) {
+      setConfirmClose(true);
+      return;
+    }
+    onOpenChange(next);
+  };
+
+  const save = async (workflow: BoardWorkflow | undefined) => {
+    setSaving(true);
+    try {
+      const outcome = await setBoardWorkflow(workflow);
+      // The server refused: the command layer already rolled the optimistic
+      // change back and showed the reason. Keep the dialog and its draft open
+      // so the admin can fix the config instead of losing it. A transport
+      // rejection means the same: no success until the server acknowledged.
+      if (outcome === false) return;
+      toast.success(t("workflow.savedToast"));
+      onOpenChange(false);
+    } catch {
+      return;
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={requestOpenChange}>
       <DialogContent
         className="max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-5xl overflow-y-auto"
         data-testid="board-settings-dialog"
@@ -62,12 +87,28 @@ export function BoardSettingsDialog({
           columns={board.columns}
           cards={board.cards}
           workflow={board.workflow}
+          workflowInvalid={board.workflowInvalid}
           canEdit={role === "ADMIN"}
           role={role}
+          saving={saving}
           onSave={save}
           onCancel={() => onOpenChange(false)}
+          onDirtyChange={setDirty}
         />
       </DialogContent>
+
+      <ConfirmDialog
+        open={confirmClose}
+        onOpenChange={setConfirmClose}
+        title={t("workflow.discardTitle")}
+        description={t("workflow.discardDescription")}
+        confirmLabel={t("workflow.discard")}
+        destructive
+        onConfirm={() => {
+          setConfirmClose(false);
+          onOpenChange(false);
+        }}
+      />
     </Dialog>
   );
 }

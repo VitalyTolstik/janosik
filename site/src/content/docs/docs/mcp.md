@@ -160,8 +160,8 @@ Three tools let a swarm share one board without stepping on itself:
   urgent first. `janosik_wait_for_work` blocks until one appears (or a timeout
   passes), so idle agents make one call instead of polling.
 - `janosik_move_card` checks completion requirements when moving a card into a
-  **done column** (the configured `doneColumnIds`, or the last column on a board
-  without a workflow). The check applies if the card has a non-empty
+  **done column** (the configured `doneColumnIds`, falling back to the last
+  column when the list is empty or the board has no workflow). The check applies if the card has a non-empty
   `definitionOfDone` field or a checklist named `Definition of Done`. Every item
   in that checklist must be checked, and the card must have at least one
   `evidence` comment. Cards without such a contract are not subject to this
@@ -181,9 +181,14 @@ The server enforces the same rules on every move. A refused `janosik_move_card`
 returns `409` with a `workflow` conflict; the tool message names the allowed
 columns and explicitly says not to retry the same destination. Choose an allowed
 column, satisfy the conditions (assignee, due date, description, checklists) or
-leave the card in place and report the blocker. Do not clear a task contract,
-change the workflow or use an import/restore to bypass a rule — that is an
-admin decision, and the change would be audited.
+leave the card in place and report the blocker.
+
+Recovery follows the same boundary: `janosik_unarchive_card` and restoring a
+deleted card may return it to its original column, but another target must be an
+allowed transition and passes the same role and condition checks (a refused
+call returns `409 workflow`). Do not clear a task contract or change the
+workflow to bypass a rule — that is an admin decision, and the change would be
+audited. Importing whole boards is likewise an admin operation.
 
 ## Permissions
 

@@ -139,6 +139,22 @@ export function toBoardAggregate(
     cardsMap[card.id] = toCard(card, boardLabelIds, linksBySource.get(card.id));
   }
   const workflow = readBoardWorkflow(board.workflow);
+  // A stored workflow that cannot be read (corrupt JSONB, a future schema
+  // version, a value from a newer client) must not silently unlock the
+  // board. Expose an enabled, edge-less config: every cross-column move is
+  // refused until an ADMIN repairs it, and the editor can see the problem.
+  const workflowInvalid =
+    board.workflow !== null &&
+    board.workflow !== undefined &&
+    workflow === undefined;
+  const effectiveWorkflow = workflowInvalid
+    ? {
+        schemaVersion: 1 as const,
+        enabled: true,
+        doneColumnIds: [],
+        transitions: [],
+      }
+    : workflow;
 
   return {
     id: board.id,
@@ -177,7 +193,8 @@ export function toBoardAggregate(
       ? { columnStyle: board.columnStyle }
       : {}),
     // Absent in the aggregate = no workflow (old boards stay byte-identical).
-    ...(workflow ? { workflow } : {}),
+    ...(effectiveWorkflow ? { workflow: effectiveWorkflow } : {}),
+    ...(workflowInvalid ? { workflowInvalid: true as const } : {}),
     ...(board.archivedAt ? { archivedAt: board.archivedAt.getTime() } : {}),
   };
 }
@@ -252,7 +269,16 @@ function toCard(
     ...(card.attachmentCount > 0
       ? { attachmentCount: card.attachmentCount }
       : {}),
-    ...(card.archivedAt ? { archivedAt: card.archivedAt.getTime() } : {}),
+    ...(card.archivedAt
+      ? {
+          archivedAt: card.archivedAt.getTime(),
+          // Persisted on archive; the migration backfilled pre-feature rows.
+          // A synthetic restore without the field stays field-less.
+          ...(card.archivedFromColumnId
+            ? { archivedFromColumnId: card.archivedFromColumnId }
+            : {}),
+        }
+      : {}),
   };
 }
 

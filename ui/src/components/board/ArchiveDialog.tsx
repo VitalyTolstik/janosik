@@ -21,9 +21,9 @@ import { Input } from "@/components/ui/input";
 import { Check, X } from "lucide-react";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { routes } from "@/routes";
-import { useBoard } from "@/store/BoardContext";
+import { useBoard, useBoardAccess } from "@/store/BoardContext";
 import { type Card } from "@janosik/shared";
-import { isColumnFull } from "@janosik/shared";
+import { restoreTargetBlockReason } from "@/utils/workflow";
 
 interface ArchiveDialogProps {
   open: boolean;
@@ -55,6 +55,7 @@ interface ArchiveContentProps {
 
 function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
   const { board, unarchiveCard, deleteCard } = useBoard();
+  const { role } = useBoardAccess();
   const { t, lang } = useI18n();
   const hour12 = useHour12();
   const navigate = useNavigate();
@@ -190,11 +191,18 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                             {t("card.restoreTo")}
                           </DropdownMenuLabel>
                           {board.columns.map((column) => {
-                            const full = isColumnFull(column);
+                            const reason = restoreTargetBlockReason(
+                              board,
+                              card,
+                              column,
+                              role,
+                              t,
+                            );
                             return (
                               <DropdownMenuItem
                                 key={column.id}
-                                disabled={full}
+                                disabled={reason !== null}
+                                title={reason ?? undefined}
                                 onSelect={() =>
                                   unarchiveCard(card.id, column.id)
                                 }

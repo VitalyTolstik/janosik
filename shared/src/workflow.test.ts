@@ -383,10 +383,33 @@ describe("workflow shape validation", () => {
       { ...valid, transitions: [] },
       "transitions",
     ],
+    [
+      "enabled with only disabled transitions",
+      {
+        ...valid,
+        transitions: valid.transitions.map((transition) => ({
+          ...transition,
+          enabled: false,
+        })),
+      },
+      "transitions",
+    ],
   ])("rejects %s", (_name, input, field) => {
     const result = validateWorkflowShape(input);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.field).toContain(field);
+  });
+
+  it("allows a disabled workflow to keep disabled transitions", () => {
+    const disabled = {
+      ...valid,
+      enabled: false,
+      transitions: valid.transitions.map((transition) => ({
+        ...transition,
+        enabled: false,
+      })),
+    };
+    expect(validateWorkflowShape(disabled).ok).toBe(true);
   });
 
   it("reads malformed stored JSON as absent", () => {

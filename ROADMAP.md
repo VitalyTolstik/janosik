@@ -1645,7 +1645,7 @@ TASK-36 и TASK-37.)*
 | 93 | TASK-162 `browser-e2e` | `feature/TASK-41-e2e-chrome` | Декомпозиция TASK-41 по частям продукта и инфраструктуре, §7.8 | TASK-162.0–162.17 выполнены; общий DoD TASK-41 соблюдён |
 | 94 | TASK-163 `watch-activity-audit` ✅ | `feature/TASK-162.5-views-e2e` | §7.21: полнота и точность ленты Watch, диффы, границы аудита и права; [issue #171](https://github.com/VitalyTolstik/janosik/issues/171) | матрица событий и доступа документирована; одновременная смена роли и срока не теряет значения; согласованные события и диффы проверены браузерными и серверными тестами |
 | 95 | TASK-164 `column-accent-styles` | `feat/column-accent-styles` | Стиль колонок: per-column accent из палитры card cover + board-wide форма (9 вариантов), палитра в шапке, команда, БД, realtime, импорт/экспорт и MCP-тул | 9 форм рендерятся в light/dark; цвет per-column переживает reload, undo/redo и realtime; VIEWER не управляет; shared/ui/backend/e2e зелёные |
-| 96 | TASK-165 `card-workflow` | `feat/card-workflow` | §7.22: настраиваемый workflow карточек над колонками (ADMIN, матрица переходов, роли, условия, глобальные переходы, initial/done), enforcement UI→reducer→server, `409 conflict:"workflow"`, мастер-панель, MCP, импорт/экспорт, E2E и docs | MVP выполнен; phase 2 (граф, post-functions, шаблоны платформы, bulk/force move) явно вынесен в §7.22 |
+| 96 | TASK-165 `card-workflow` | `feat/card-workflow` | §7.22: настраиваемый workflow карточек над колонками (ADMIN, матрица переходов, роли, условия, глобальные переходы, initial/done), enforcement UI→reducer→server, `409 conflict:"workflow"`, мастер-панель, MCP, импорт/экспорт, E2E и docs | MVP реализован в ветке; исправления по ревью внесены, ожидает CI/merge; phase 2 (граф, post-functions, шаблоны платформы, bulk/force move, ifMatch) явно вынесен в §7.22 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -4066,10 +4066,11 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 
 ### 7.22. Настраиваемый workflow карточек (TASK-165)
 
-> **Статус:** MVP реализован в ветке `feat/card-workflow`. Колонки остаются
-> единственным статусом карточки (`columnId`); `Board.workflow` — необязательный
-> JSONB-слой правил над ними. Без поля или при `enabled: false` доска ведёт себя
-> как раньше.
+> **Статус:** MVP реализован в ветке `feat/card-workflow`, исправления по
+> независимому ревью внесены; ожидает зелёного CI на финальном head и merge.
+> Колонки остаются единственным статусом карточки (`columnId`); `Board.workflow`
+> — необязательный JSONB-слой правил над ними. Без поля или при `enabled: false`
+> доска ведёт себя как раньше.
 
 **MVP — сделано:**
 
@@ -4085,6 +4086,14 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 - Трёхслойная проверка: UI pre-check → shared reducer (структура/условия без
   роли) → сервер (роль + условия + WIP) с `409 { conflict: "workflow",
   workflow: { code, allowedToColumnIds, failedConditions } }`.
+- Recovery не обходит границу: `UNARCHIVE_CARD` и `RESTORE_CARD` проверяют
+  переход из исходной колонки (роль, условия, доступные цели); UI архива
+  показывает запрещённые цели с причиной.
+- Включённый процесс без активного перехода отклоняется API и редактором;
+  невалидный/будущий сохранённый JSONB работает fail-closed; сохранение из
+  настроек ждёт ack сервера, а открытый редактор предупреждает о чужом
+  изменении. LWW при одновременном сохранении двух ADMIN остаётся известным
+  ограничением MVP (полноценный ifMatch — phase 2).
 - UX «Настройки доски → Рабочий процесс»: матрица, инспектор, глобальные
   переходы, initial/done, предпросмотр, шаблон, сброс и выключение контроля;
   read-only «Правила процесса» для участников. DnD, меню карточки, диалог
@@ -4111,6 +4120,9 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   conditions, `UNDO_MOVE` с проверяемым `originalCommandId`.
 - Платформенные шаблоны workflow (`WorkflowTemplate`, мастер-панель,
   «применить к доске»).
+- Полноценный `ifMatch`/version-conflict для `SET_BOARD_WORKFLOW` вместо LWW
+  при одновременном сохранении двух ADMIN и MCP write-tool
+  `janosik_set_workflow`.
 - Bulk move с атомарным preflight и force move для ADMIN с подтверждением и
   аудитом; ограничение создания карточек только initial-колонкой.
 - Аналитика отказов, счётчик заблокированных переходов в Watch, кэш/ETag

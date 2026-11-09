@@ -14,9 +14,10 @@ that change goes through the command log and `AdminAuditLog`.
 
 ## Open the editor
 
-As a board admin, click the gear in the header (`Board settings`) and use the
-`Workflow` section. Members and viewers do not see the gear; everyone can read
-the rules from a card's right-click menu under `Workflow rules`.
+A board admin clicks the gear in the header (`Board settings`) and opens the
+`Workflow` section. Everyone can read the rules read-only from a card's
+right-click menu under `Workflow rules`, or from the header's `Data & backups`
+menu — the latter works on a board with no cards too.
 
 ## Turn control on
 
@@ -24,7 +25,8 @@ The `Control transitions between columns` switch enables enforcement. While
 it is off the matrix is kept for later but every move is allowed.
 
 An enabled workflow needs at least two columns and at least one active
-transition. The editor refuses to save otherwise.
+transition. The editor refuses to save otherwise, and the API rejects the same
+shape, so an enabled board can never be frozen by an all-disabled matrix.
 
 ## The transition matrix
 
@@ -80,14 +82,24 @@ The shared reducer and the API enforce the same rule. The API answers
 targets; an optimistic card is rolled back. `WIP` limits are checked after the
 workflow, so a forbidden transition is never reported as "column full".
 
+Archiving and deleting are not an escape hatch: restoring an archived card or
+undoing a delete is a column change too. The card may return to the column it
+came from; any other target must be an allowed transition, with the same role
+and condition checks. The archive dialog disables forbidden targets with the
+reason, and a direct API call gets the same `409 workflow` answer.
+
 ## Undo, columns and legacy boards
 
 - Saving the workflow is one undoable command; Ctrl/Cmd+Z restores the
-  previous rules.
+  previous rules. If another admin changes the rules while your editor is
+  open, the editor warns you; reload the current rules before saving.
+- A stored config that cannot be read (corrupt data or a newer schema) fails
+  closed: every cross-column move is refused until an admin repairs it.
 - Deleting a column does not rewrite the workflow: its rules become dormant
   and wake up if undo restores the column with the same id.
 - A new column is not connected automatically; add its edges in the editor.
 - Board export/import carries the workflow and remaps column ids; a transition
-  whose column disappeared is dropped. The export remains readable by older
-  clients as version 1 (without a workflow).
+  whose column disappeared is dropped. Version 1 files (without a workflow)
+  still import; a new export is version 2 and needs a client that understands
+  it.
 - Public share links show the rules read-only and never accept a move.

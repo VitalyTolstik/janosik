@@ -108,6 +108,7 @@ export function BoardWorkflowPage() {
           columns={board.columns}
           cards={board.cards}
           workflow={board.workflow}
+          workflowInvalid={board.workflowInvalid}
           canEdit
           masterMode
           role="ADMIN"

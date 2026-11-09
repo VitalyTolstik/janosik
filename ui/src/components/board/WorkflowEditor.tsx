@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import {
   suggestWorkflowTemplate,
+  validateWorkflowShape,
   WORKFLOW_CONDITIONS,
   WORKFLOW_SCHEMA_VERSION,
   type BoardRole,
@@ -35,6 +36,8 @@ interface WorkflowEditorProps {
   columns: Column[];
   cards: Record<string, Card>;
   workflow?: BoardWorkflow;
+  /** The stored config exists but failed validation and is fail-closed. */
+  workflowInvalid?: boolean;
   /** ADMIN on the board, or a platform master acting for the owner. */
   canEdit: boolean;
   /** Master-panel mode: show the "acting for the owner" banner. */
@@ -43,6 +46,8 @@ interface WorkflowEditorProps {
   saving?: boolean;
   onSave: (workflow: BoardWorkflow | undefined) => void | Promise<void>;
   onCancel?: () => void;
+  /** Lets a dialog guard outside-click/Escape while the draft is dirty. */
+  onDirtyChange?: (dirty: boolean) => void;
   /** Prefix for DOM test ids, so board and admin editors never collide. */
   testIdPrefix?: string;
 }
@@ -84,12 +89,14 @@ export function WorkflowEditor({
   columns,
   cards,
   workflow,
+  workflowInvalid = false,
   canEdit,
   masterMode = false,
   role = "ADMIN",
   saving = false,
   onSave,
   onCancel,
+  onDirtyChange,
   testIdPrefix = "workflow",
 }: WorkflowEditorProps) {
   const { t } = useI18n();
@@ -99,9 +106,23 @@ export function WorkflowEditor({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [previewCardId, setPreviewCardId] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [globalTarget, setGlobalTarget] = useState<string>("");
+  const [foreignChange, setForeignChange] = useState(false);
+  const baseSignature = useRef(canonical(workflow));
+
+  // Another ADMIN (or the master panel) may save while this editor is open.
+  // Realtime updates the board prop; never silently replace a dirty draft.
+  // Instead warn and let the admin reload the current rules explicitly.
+  useEffect(() => {
+    if (saving) return;
+    setForeignChange(canonical(workflow) !== baseSignature.current);
+  }, [workflow, saving]);
 
   const dirty = canonical(draft) !== canonical(workflow);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
   const selected = draft.transitions.find(
     (transition) => transition.id === selectedId,
   );
@@ -112,16 +133,57 @@ export function WorkflowEditor({
     () => new Map(columns.map((column) => [column.id, column])),
     [columns],
   );
-  const columnIds = new Set(columns.map((column) => column.id));
-  const enabledCount = draft.transitions.filter(
+  const columnIds = useMemo(
+    () => new Set(columns.map((column) => column.id)),
+    [columns],
+  );
+  // The saved draft drops transitions/done ids that reference a column
+  // deleted while the editor was open. Validation must run on the cleaned
+  // shape, not the raw draft — otherwise a dangling edge can mask "enabled
+  // with no active transition" and the server rejects a save the editor
+  // claimed was valid.
+  const cleanDraft: BoardWorkflow = {
+    ...draft,
+    ...(draft.initialColumnId !== undefined &&
+    !columnIds.has(draft.initialColumnId)
+      ? { initialColumnId: undefined }
+      : {}),
+    doneColumnIds: draft.doneColumnIds.filter((id) => columnIds.has(id)),
+    transitions: draft.transitions.filter(
+      (transition) =>
+        (transition.fromColumnId === null ||
+          columnIds.has(transition.fromColumnId)) &&
+        columnIds.has(transition.toColumnId),
+    ),
+  };
+  const enabledCount = cleanDraft.transitions.filter(
     (transition) => transition.enabled !== false,
   ).length;
+  const duplicateGlobal =
+    cleanDraft.transitions.filter(
+      (transition) => transition.fromColumnId === null,
+    ).length !==
+    new Set(
+      cleanDraft.transitions
+        .filter((transition) => transition.fromColumnId === null)
+        .map((transition) => transition.toColumnId),
+    ).size;
+  const shapeError = validateWorkflowShape(cleanDraft);
   const validationError =
-    draft.enabled && columns.length < 2
-      ? t("workflow.error.oneColumn")
-      : draft.enabled && enabledCount === 0
-        ? t("workflow.error.noTransitions")
-        : null;
+    workflowInvalid && !dirty
+      ? t("workflow.error.invalidStored")
+      : cleanDraft.enabled && columns.length < 2
+        ? t("workflow.error.oneColumn")
+        : cleanDraft.enabled && enabledCount === 0
+          ? t("workflow.error.noTransitions")
+          : duplicateGlobal
+            ? t("workflow.error.duplicateGlobal")
+            : !shapeError.ok
+              ? t("workflow.error.invalidShape", {
+                  field: shapeError.field,
+                  message: shapeError.message,
+                })
+              : null;
   const cardList = useMemo(
     () => Object.values(cards).filter((card) => card.archivedAt === undefined),
     [cards],
@@ -159,6 +221,11 @@ export function WorkflowEditor({
     if (!canEdit) return;
     const existing = transitionFor(from, to);
     if (existing) {
+      // The cell hint says "Click to allow it": a disabled edge comes back
+      // on one click instead of forcing a trip through the inspector.
+      if (existing.enabled === false) {
+        updateTransition(existing.id, { enabled: true });
+      }
       setSelectedId(existing.id);
       return;
     }
@@ -254,7 +321,7 @@ export function WorkflowEditor({
       id: createId(),
       fromColumnId: null,
       toColumnId,
-      allowedRoles: ["ADMIN"],
+      allowedRoles: [...ROLES],
     };
     setDraft((current) => ({
       ...current,
@@ -267,27 +334,14 @@ export function WorkflowEditor({
   const save = () => {
     if (!canEdit || validationError !== null) return;
     // A column deleted while the editor was open leaves a dangling rule. It
-    // is dropped on save; the same tolerant rule the importer uses.
-    const clean: BoardWorkflow = {
-      ...draft,
-      ...(draft.initialColumnId !== undefined &&
-      !columnIds.has(draft.initialColumnId)
-        ? { initialColumnId: undefined }
-        : {}),
-      doneColumnIds: draft.doneColumnIds.filter((id) => columnIds.has(id)),
-      transitions: draft.transitions.filter(
-        (transition) =>
-          (transition.fromColumnId === null ||
-            columnIds.has(transition.fromColumnId)) &&
-          columnIds.has(transition.toColumnId),
-      ),
-    };
-    if (clean.initialColumnId === undefined) {
-      const { initialColumnId: _drop, ...rest } = clean;
+    // is dropped on save; the same tolerant rule the importer uses. The
+    // validation above already ran on this cleaned shape.
+    if (cleanDraft.initialColumnId === undefined) {
+      const { initialColumnId: _drop, ...rest } = cleanDraft;
       void onSave(rest);
       return;
     }
-    void onSave(clean);
+    void onSave(cleanDraft);
   };
 
   const titleOf = (id: string | null): string =>
@@ -306,6 +360,37 @@ export function WorkflowEditor({
       {!canEdit ? (
         <div className="rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-xs">
           {t("workflow.adminOnly")}
+        </div>
+      ) : null}
+      {workflowInvalid ? (
+        <div
+          className="rounded-lg border border-danger/40 bg-danger/10 p-2.5 text-xs text-danger"
+          data-testid={`${testIdPrefix}-invalid`}
+        >
+          {t("workflow.error.invalidStored")}
+        </div>
+      ) : null}
+      {foreignChange ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-xs"
+          data-testid={`${testIdPrefix}-foreign-change`}
+        >
+          <span>{t("workflow.foreignChange")}</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 px-2 text-[11px]"
+            onClick={() => {
+              setDraft(workflow ?? EMPTY_WORKFLOW());
+              baseSignature.current = canonical(workflow);
+              setSelectedId(null);
+              setForeignChange(false);
+            }}
+            data-testid={`${testIdPrefix}-reload`}
+          >
+            {t("workflow.reload")}
+          </Button>
         </div>
       ) : null}
 
@@ -513,6 +598,7 @@ export function WorkflowEditor({
                   <button
                     key={transition.id}
                     type="button"
+                    disabled={!canEdit}
                     onClick={() => setSelectedId(transition.id)}
                     data-testid={`${testIdPrefix}-global-${transition.id}`}
                     className={cn(
@@ -646,6 +732,7 @@ export function WorkflowEditor({
                       className="h-6 w-6 shrink-0 text-danger"
                       aria-label={t("workflow.deleteTransition")}
                       data-testid={`${testIdPrefix}-delete`}
+                      disabled={!canEdit}
                       onClick={() => deleteTransition(selected.id)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -856,7 +943,10 @@ export function WorkflowEditor({
               type="button"
               size="sm"
               variant="ghost"
-              onClick={onCancel}
+              onClick={() => {
+                if (dirty) setConfirmDiscard(true);
+                else onCancel();
+              }}
               disabled={saving}
             >
               {t("workflow.cancel")}
@@ -896,6 +986,19 @@ export function WorkflowEditor({
         onConfirm={() => {
           setConfirmReset(false);
           void onSave(undefined);
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+        title={t("workflow.discardTitle")}
+        description={t("workflow.discardDescription")}
+        confirmLabel={t("workflow.discard")}
+        destructive
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          onCancel?.();
         }}
       />
     </div>

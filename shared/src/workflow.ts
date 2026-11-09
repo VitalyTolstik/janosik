@@ -66,7 +66,10 @@ export interface BoardWorkflow {
   enabled: boolean;
   /** Start column; absent = the board's first column. */
   initialColumnId?: string;
-  /** Columns that count as done; empty = no done semantics. */
+  /**
+   * Columns that count as done. Empty = fall back to the board's last
+   * column, matching the pre-workflow MCP convention.
+   */
   doneColumnIds: string[];
   transitions: WorkflowTransition[];
 }
@@ -519,10 +522,13 @@ export function validateWorkflowShape(
     });
   }
 
-  if (input.enabled === true && transitions.length === 0) {
+  if (
+    input.enabled === true &&
+    !transitions.some((transition) => transition.enabled !== false)
+  ) {
     return fail(
       `${field}.transitions`,
-      "an enabled workflow needs at least one transition",
+      "an enabled workflow needs at least one active transition",
     );
   }
 
@@ -641,25 +647,4 @@ export function remapBoardWorkflow(
     doneColumnIds,
     transitions,
   };
-}
-
-/**
- * Which conditions is a transition missing for a card? Empty means the card
- * may take the edge. Shared by the editor preview and the move menus.
- */
-export function transitionBlockingConditions(
-  workflow: BoardWorkflow | undefined,
-  card: Card,
-  fromColumnId: string,
-  toColumnId: string,
-  role?: BoardRole,
-): WorkflowCondition[] {
-  const decision = evaluateCardTransition(
-    workflow,
-    card,
-    fromColumnId,
-    toColumnId,
-    role,
-  );
-  return decision.allowed ? [] : decision.failedConditions;
 }

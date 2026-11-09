@@ -6,11 +6,13 @@ import {
   HardDrive,
   HardDriveDownload,
   Upload,
+  Workflow,
 } from "lucide-react";
 
 import { useToast } from "@/components/Toast";
 import { ArchiveDialog } from "@/components/board/ArchiveDialog";
 import { BackupDialog } from "@/components/board/BackupDialog";
+import { WorkflowRulesDialog } from "@/components/board/WorkflowRulesDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,6 +53,7 @@ export function DataMenu() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [backupsOpen, setBackupsOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
 
   // Counted only while the menu is open (TASK-21.4.1): this component
   // re-renders on every keystroke anywhere on the board, and walking every
@@ -161,6 +164,13 @@ export function DataMenu() {
               : t("data.archiveTitle")}
           </DropdownMenuItem>
           <DropdownMenuItem
+            data-testid="data-workflow-rules"
+            onClick={() => setRulesOpen(true)}
+          >
+            <Workflow className="h-4 w-4" />
+            {t("workflow.rules")}
+          </DropdownMenuItem>
+          <DropdownMenuItem
             data-testid="data-backups"
             onClick={() => setBackupsOpen(true)}
           >
@@ -192,6 +202,7 @@ export function DataMenu() {
       />
       <ArchiveDialog open={archiveOpen} onOpenChange={setArchiveOpen} />
       <BackupDialog open={backupsOpen} onOpenChange={setBackupsOpen} />
+      <WorkflowRulesDialog open={rulesOpen} onOpenChange={setRulesOpen} />
     </>
   );
 }

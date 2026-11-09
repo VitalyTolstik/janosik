@@ -119,8 +119,53 @@ export function boardMoveBlockReason(
 }
 
 /**
+ * Why an archived card may not be restored into `target`. Restoring is a
+ * column change exactly like a move: the card may return to its original
+ * column, and any other target must be reachable under the workflow. A card
+ * archived before the field existed has no known source; the server still
+ * checks it (a 409 with the same machine details), so the menu stays usable.
+ */
+export function restoreTargetBlockReason(
+  board: Board,
+  card: Card,
+  target: Column,
+  role: BoardRole | undefined,
+  t: Translate,
+): string | null {
+  const sourceId = card.archivedFromColumnId;
+  const sourceTitle = sourceId
+    ? board.columns.find((column) => column.id === sourceId)?.title
+    : undefined;
+  if (sourceId !== undefined && sourceTitle !== undefined) {
+    const reason = moveTargetBlockReason(
+      {
+        workflow: board.workflow,
+        card,
+        fromColumnId: sourceId,
+        fromTitle: sourceTitle,
+        target,
+        role,
+      },
+      t,
+    );
+    if (reason !== null) return reason;
+  }
+  if (isColumnFull(target)) {
+    return target.wipLimit !== undefined
+      ? t("workflow.blocked.wip", {
+          title: target.title,
+          limit: target.wipLimit,
+        })
+      : t("limits.maxItems", { limit: LIMITS.cardsPerColumn });
+  }
+  return null;
+}
+
+/**
  * Toast copy for a blocked drag/menu move: the reason plus the destination
- * titles still available, so the user never has to guess.
+ * titles still available, so the user never has to guess. WIP-full targets
+ * are filtered out — the workflow may allow them, but the move would still
+ * be refused.
  */
 export function blockedMoveMessage(
   board: Board,
@@ -136,8 +181,12 @@ export function blockedMoveMessage(
     return reason;
   }
   const titles = decision.allowedToColumnIds
-    .map((id) => board.columns.find((column) => column.id === id)?.title)
-    .filter((title): title is string => title !== undefined);
+    .map((id) => board.columns.find((column) => column.id === id))
+    .filter(
+      (column): column is Column =>
+        column !== undefined && !isColumnFull(column),
+    )
+    .map((column) => column.title);
   if (titles.length === 0) return reason;
   return `${reason} ${t("workflow.blocked.available", {
     columns: titles.join(t("workflow.listSeparator")),

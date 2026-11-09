@@ -105,6 +105,7 @@ function fixture(): Board {
       "c-4": card("c-4", "In Beta"),
       "c-arch": card("c-arch", "Archived", {
         archivedAt: 400,
+        archivedFromColumnId: "col-a",
         updatedAt: 400,
       }),
     },

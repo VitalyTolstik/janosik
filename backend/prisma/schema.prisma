@@ -179,24 +179,24 @@ model DemoRun {
 }
 
 model Board {
-  id         String        @id @default(cuid())
-  title      String        @db.VarChar(100) // LIMITS.boardTitle
+  id          String        @id @default(cuid())
+  title       String        @db.VarChar(100) // LIMITS.boardTitle
   columnStyle String? // TASK-164: column accent shape; null = signature
   // Admin-configured card workflow (BoardWorkflow in @janosik/shared).
   // NULL = no process, every move allowed — the legacy behaviour.
-  workflow   Json?
-  archivedAt DateTime?
-  deletedAt  DateTime? // soft-delete (§7.0)
-  version    Int           @default(0) // ifMatch → 409 (title editable)
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
-  members    BoardMember[]
-  columns    Column[]
-  labels     Label[]
-  cardLinks  CardLink[]
-  activity   Activity[]
-  commands   Command[]
-  shares     BoardShare[]
+  workflow    Json?
+  archivedAt  DateTime?
+  deletedAt   DateTime? // soft-delete (§7.0)
+  version     Int           @default(0) // ifMatch → 409 (title editable)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  members     BoardMember[]
+  columns     Column[]
+  labels      Label[]
+  cardLinks   CardLink[]
+  activity    Activity[]
+  commands    Command[]
+  shares      BoardShare[]
 
   @@index([deletedAt]) // board purge sweep (TASK-148)
 }
@@ -335,57 +335,61 @@ model Command {
 }
 
 model Column {
-  id        String    @id // client-provided id
-  board     Board     @relation(fields: [boardId], references: [id])
-  boardId   String
-  title     String    @db.VarChar(100)
-  wipLimit  Int? // TASK-13
-  accentType String? // TASK-164: color | gradient
+  id          String    @id // client-provided id
+  board       Board     @relation(fields: [boardId], references: [id])
+  boardId     String
+  title       String    @db.VarChar(100)
+  wipLimit    Int? // TASK-13
+  accentType  String? // TASK-164: color | gradient
   accentValue String?
-  position  Int
-  deletedAt DateTime? // soft-delete (§7.0)
-  version   Int       @default(0) // ifMatch → 409 (§7.0)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  cards     Card[]
+  position    Int
+  deletedAt   DateTime? // soft-delete (§7.0)
+  version     Int       @default(0) // ifMatch → 409 (§7.0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  cards       Card[]
 
   @@index([boardId, position])
   @@index([deletedAt]) // purge sweep (TASK-148)
 }
 
 model Card {
-  id              String       @id
-  column          Column       @relation(fields: [columnId], references: [id])
-  columnId        String
-  title           String       @db.VarChar(300) // LIMITS.cardTitle
-  description     String?      @db.Text // markdown, LIMITS.description
-  coverType       String? // color | gradient
-  coverValue      String?
-  dueDate         DateTime?
-  priority        String? // TASK-45: blocker|highest|high|medium|low|lowest (null = medium)
-  assigneeId      String? // TASK-49 Jira-style assignee; null = unassigned
-  assignee        User?        @relation("CardAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  claimedBy       String? // TASK-157 agent claim holder (user id); null = unclaimed
-  leaseUntil      DateTime? // TASK-157 claim lease expiry; null = unclaimed
-  acceptanceCriteria String[] // TASK-157 machine-readable task contract (empty = unset)
-  definitionOfDone   String[] // TASK-157 machine-readable task contract (empty = unset)
-  archivedAt      DateTime? // TASK-18.1: card archive
-  deletedAt       DateTime? // soft-delete (§7.0)
-  version         Int          @default(0) // ifMatch → 409 (§7.0)
-  position        Int
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  lastActorId     String? // TASK-36 "who changed it" denormalization
+  id                   String       @id
+  column               Column       @relation(fields: [columnId], references: [id])
+  columnId             String
+  title                String       @db.VarChar(300) // LIMITS.cardTitle
+  description          String?      @db.Text // markdown, LIMITS.description
+  coverType            String? // color | gradient
+  coverValue           String?
+  dueDate              DateTime?
+  priority             String? // TASK-45: blocker|highest|high|medium|low|lowest (null = medium)
+  assigneeId           String? // TASK-49 Jira-style assignee; null = unassigned
+  assignee             User?        @relation("CardAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  claimedBy            String? // TASK-157 agent claim holder (user id); null = unclaimed
+  leaseUntil           DateTime? // TASK-157 claim lease expiry; null = unclaimed
+  acceptanceCriteria   String[] // TASK-157 machine-readable task contract (empty = unset)
+  definitionOfDone     String[] // TASK-157 machine-readable task contract (empty = unset)
+  archivedAt           DateTime? // TASK-18.1: card archive
+  // TASK-165 review: the column an archived card came from, so unarchive can
+  // enforce the workflow from that column. Kept after a column delete (the
+  // internal orphan repoint only changes `columnId`).
+  archivedFromColumnId String?
+  deletedAt            DateTime? // soft-delete (§7.0)
+  version              Int          @default(0) // ifMatch → 409 (§7.0)
+  position             Int
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  lastActorId          String? // TASK-36 "who changed it" denormalization
   // TASK-47 denormalized live-attachment count (card-face badge); kept in
   // step by the attachments service, outside the command loop.
-  attachmentCount Int          @default(0)
-  labels          CardLabel[]
-  checklists      Checklist[]
-  linksFrom       CardLink[]   @relation("CardLinkFrom")
-  linksTo         CardLink[]   @relation("CardLinkTo")
-  activity        Activity[]
-  comments        Comment[]
-  attachments     Attachment[]
+  attachmentCount      Int          @default(0)
+  labels               CardLabel[]
+  checklists           Checklist[]
+  linksFrom            CardLink[]   @relation("CardLinkFrom")
+  linksTo              CardLink[]   @relation("CardLinkTo")
+  activity             Activity[]
+  comments             Comment[]
+  attachments          Attachment[]
 
   @@index([columnId, position])
   @@index([assigneeId]) // admin user-detail "assigned cards" (TASK-49)
@@ -527,38 +531,38 @@ model Comment {
 // `storedName` is a server-generated name — the client's `fileName` is
 // metadata only and must never be used as a filesystem path.
 model Attachment {
-  id               String    @id @default(cuid())
-  card             Card      @relation(fields: [cardId], references: [id])
-  cardId           String
-  boardId          String
-  fileName         String
-  storedName       String    @unique
-  mimeType         String
-  sizeBytes        Int // ≤ LIMITS.attachmentSize (25 MB)
-  uploadedBy       User      @relation(fields: [uploadedById], references: [id])
-  uploadedById     String
+  id                  String    @id @default(cuid())
+  card                Card      @relation(fields: [cardId], references: [id])
+  cardId              String
+  boardId             String
+  fileName            String
+  storedName          String    @unique
+  mimeType            String
+  sizeBytes           Int // ≤ LIMITS.attachmentSize (25 MB)
+  uploadedBy          User      @relation(fields: [uploadedById], references: [id])
+  uploadedById        String
   // Inline media (TASK-48 paste): embedded into a description/comment body
   // via its `content` URL instead of the attachment list — hidden from
   // `list()` and excluded from the card-face `attachmentCount`.
-  isInline         Boolean   @default(false)
+  isInline            Boolean   @default(false)
   // Description uploads remain available for undo and snapshots when detached.
-  descriptionEmbed Boolean   @default(false)
-  descriptionDetached Boolean @default(false)
+  descriptionEmbed    Boolean   @default(false)
+  descriptionDetached Boolean   @default(false)
   // TASK-50 video "ужиматор": video uploads re-encode to a compact H.264
   // MP4 in a background job (original kept until the encode succeeds).
   // `none` — not a video (or transcode disabled), `pending` — queued/
   // running, `done` — `storedName` now points at the MP4, `failed` —
   // the original stays and plays as-is.
-  transcodeStatus  String    @default("none")
+  transcodeStatus     String    @default("none")
   // TASK-70 media derivatives: an ffmpeg thumbnail for images / poster frame
   // for videos, generated in the background (`media` queue) and served by
   // `/attachments/:id/thumbnail|poster`. `derivativeStatus` mirrors the
   // transcode states (none/pending/done/failed).
-  thumbnailName    String?
-  posterName       String?
-  derivativeStatus String    @default("none")
-  deletedAt        DateTime? // soft-delete (§7.0)
-  createdAt        DateTime  @default(now())
+  thumbnailName       String?
+  posterName          String?
+  derivativeStatus    String    @default("none")
+  deletedAt           DateTime? // soft-delete (§7.0)
+  createdAt           DateTime  @default(now())
 
   @@index([cardId, createdAt])
   @@index([deletedAt]) // purge sweep (TASK-92)
@@ -640,18 +644,18 @@ model AdminRefreshToken {
 // attempt and every mutation lands here. `adminEmail` is a snapshot so the
 // trail stays readable even for unknown-email login attempts.
 model AdminAuditLog {
-  id         String     @id @default(cuid())
-  admin      AdminUser? @relation(fields: [adminId], references: [id])
-  adminId    String?
-  adminEmail String
-  action     String // admin.login | admin.login_failed | user.create | …
-  targetType String? // user | board | session | token | admin
-  targetId   String?
-  details    Json?
-  createdAt  DateTime   @default(now())
-  aggregateKey String?  @unique
-  eventCount Int        @default(1)
-  lastOccurredAt DateTime @default(now())
+  id             String     @id @default(cuid())
+  admin          AdminUser? @relation(fields: [adminId], references: [id])
+  adminId        String?
+  adminEmail     String
+  action         String // admin.login | admin.login_failed | user.create | …
+  targetType     String? // user | board | session | token | admin
+  targetId       String?
+  details        Json?
+  createdAt      DateTime   @default(now())
+  aggregateKey   String?    @unique
+  eventCount     Int        @default(1)
+  lastOccurredAt DateTime   @default(now())
 
   @@index([createdAt])
   @@index([adminId, createdAt])
@@ -713,36 +717,36 @@ model ReminderSent {
 // In-app announcement / banner (TASK-62). `audience` "all" shows to every
 // signed-in user; "segment" restricts to a CSV of user emails in `segment`.
 model Announcement {
-  id        String    @id @default(cuid())
+  id             String                    @id @default(cuid())
   // Legacy content: only rows created before the translations model carry
   // this. New rows keep their content exclusively in `translations`.
-  title     String?
-  body      String?   @db.Text
+  title          String?
+  body           String?                   @db.Text
   // Language of the original text. Null marks a legacy row whose language is
   // unknown: it is served as-is, without a fallback notice.
   sourceLocale   String?
   // require_all | allow_fallback. New rows default to the strict policy;
   // legacy rows were backfilled to allow_fallback by the migration.
-  fallbackPolicy String  @default("require_all")
-  level     String    @default("info") // info | warning | danger
-  audience  String    @default("all") // all | segment
-  segment   String? // CSV of user emails when audience = segment
-  active    Boolean   @default(true)
+  fallbackPolicy String                    @default("require_all")
+  level          String                    @default("info") // info | warning | danger
+  audience       String                    @default("all") // all | segment
+  segment        String? // CSV of user emails when audience = segment
+  active         Boolean                   @default(true)
   // TASK-62 broadcast: when true the letter is also queued to every
   // recipient's inbox (behind the in-process broadcast queue).
-  sendEmail Boolean   @default(false)
+  sendEmail      Boolean                   @default(false)
   // When the localized letter was queued; null = never sent.
-  emailSentAt DateTime?
-  startsAt  DateTime?
-  endsAt    DateTime?
-  createdBy String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  emailSentAt    DateTime?
+  startsAt       DateTime?
+  endsAt         DateTime?
+  createdBy      String
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
   // Optimistic concurrency for the admin editor (convention §7.0): increments
   // on every PATCH; a stale version is answered with 409 instead of silently
   // overwriting another admin's translation.
-  version   Int       @default(1)
-  translations AnnouncementTranslation[]
+  version        Int                       @default(1)
+  translations   AnnouncementTranslation[]
 
   @@index([active, startsAt, endsAt])
 }
@@ -752,19 +756,19 @@ model Announcement {
 // translation. `origin`/`reviewedAt`/`sourceUpdatedAt` leave room for the
 // phase-2 AI draft workflow without another migration.
 model AnnouncementTranslation {
-  id             String       @id @default(cuid())
-  announcementId String
-  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
-  locale         String // en | ru (string — headroom for a third language)
-  title          String
-  body           String       @db.Text
-  origin         String       @default("human") // human | ai_draft | legacy
-  translatedFrom String?
+  id              String       @id @default(cuid())
+  announcementId  String
+  announcement    Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  locale          String // en | ru (string — headroom for a third language)
+  title           String
+  body            String       @db.Text
+  origin          String       @default("human") // human | ai_draft | legacy
+  translatedFrom  String?
   sourceUpdatedAt DateTime?
-  reviewedAt     DateTime?
-  updatedBy      String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  reviewedAt      DateTime?
+  updatedBy       String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   @@unique([announcementId, locale])
   @@index([locale])

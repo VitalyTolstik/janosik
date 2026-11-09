@@ -436,6 +436,15 @@ function validateCard(value: unknown, field: string): Json {
     "archivedAt",
     readOptionalTimestamp(card, "archivedAt", `${field}.archivedAt`),
   );
+  put(
+    out,
+    "archivedFromColumnId",
+    readOptionalId(
+      card,
+      "archivedFromColumnId",
+      `${field}.archivedFromColumnId`,
+    ),
+  );
   // TASK-97: a RESTORE_* snapshot must validate the fields the create/edit
   // commands constrain — priority, assignee and the activity feed.
   if (!absent(card.priority)) {
@@ -1266,5 +1275,6 @@ function checkImportedCard(key: string, value: unknown, field: string): void {
   readTimestamp(card, "createdAt", `${field}.createdAt`);
   readTimestamp(card, "updatedAt", `${field}.updatedAt`);
   readOptionalTimestamp(card, "archivedAt", `${field}.archivedAt`);
+  readOptionalId(card, "archivedFromColumnId", `${field}.archivedFromColumnId`);
   readOptionalTimestamp(card, "dueDate", `${field}.dueDate`);
 }

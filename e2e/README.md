@@ -84,18 +84,20 @@ proves a second Chrome context sees the color and shape live, and
 `tests/app/data/` round-trips both through export/import.
 
 `tests/app/workflow/` covers the admin-configurable card workflow: board ADMIN
-creates and edits the transition matrix (roles, reverse edges, conditions,
-initial/done semantics, preview), saves it, and sees it after a reload; allowed
-and blocked drags (the forbidden column stays visible with a lock and reason and
-the card snaps back); the card context menu, card dialog, table column picker and
-read-only rules panel; all four MVP conditions (assignee, due date, description,
-checklists); MEMBER and VIEWER restrictions; a second Chrome context receiving a
-workflow change live and then the reverse; export/import with remapped column
-ids; board archive/restore; legacy boards without a workflow; and a one-column
-board refusing to enable control. The master-panel editor is covered under
-`tests/admin/workflow.spec.ts`: an OWNER edits on behalf of the board owner, the
-board receives the command, and `AdminAuditLog` records it. Each test creates its
-own user, board, columns and cards.
+creates and edits the transition matrix (roles, reverse edges, conditions),
+saves it, and sees it after a reload; allowed and blocked drags (the forbidden
+column stays visible with a lock and reason and the card snaps back); the card
+context menu, card dialog, table column picker and read-only rules panel; all
+four MVP conditions (assignee, due date, description, checklists); MEMBER and
+VIEWER restrictions; a second Chrome context receiving a workflow change live
+and then the reverse; export/import with remapped column ids; board
+archive/restore; card archive/restore refusing a forbidden target with the
+workflow reason; legacy boards without a workflow; and a one-column board
+refusing to enable control. The editor's initial/done controls and card preview
+are covered by unit tests. The master-panel editor is covered under
+`tests/admin/workflow.spec.ts`: an OWNER and an OPERATOR edit on behalf of the
+board owner, the board receives the command, and `AdminAuditLog` records it.
+Each test creates its own user, board, columns and cards.
 
 `tests/app/filters/` covers the board filter toolbar: title, description, label
 and checklist search; the due, created, label, priority, assignee and link

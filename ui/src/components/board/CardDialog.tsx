@@ -75,7 +75,11 @@ import { api, ApiError } from "@/api/client";
 import { embedMarkdown } from "@/utils/embedAttachments";
 import type { DescriptionEditorHandle } from "@/components/editor/DescriptionEditor";
 import { useBoard, useBoardAccess } from "@/store/BoardContext";
-import { boardMoveBlockReason, moveTargetBlockReason } from "@/utils/workflow";
+import {
+  boardMoveBlockReason,
+  moveTargetBlockReason,
+  restoreTargetBlockReason,
+} from "@/utils/workflow";
 import { createId } from "@/utils/id";
 import { appShareUrl } from "@/utils/app-path";
 import { cardPath } from "@/utils/card-nav";
@@ -1005,20 +1009,30 @@ export function CardDialog({
                       <DropdownMenuLabel>
                         {t("card.restoreTo")}
                       </DropdownMenuLabel>
-                      {board.columns.map((column) => (
-                        <DropdownMenuItem
-                          key={column.id}
-                          disabled={isColumnFull(column)}
-                          onSelect={() => handleRestore(column.id)}
-                        >
-                          <span className="truncate">{column.title}</span>
-                          {column.wipLimit !== undefined && (
-                            <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
-                              {column.cardIds.length}/{column.wipLimit}
-                            </span>
-                          )}
-                        </DropdownMenuItem>
-                      ))}
+                      {board.columns.map((column) => {
+                        const reason = restoreTargetBlockReason(
+                          board,
+                          card,
+                          column,
+                          role,
+                          t,
+                        );
+                        return (
+                          <DropdownMenuItem
+                            key={column.id}
+                            disabled={reason !== null}
+                            title={reason ?? undefined}
+                            onSelect={() => handleRestore(column.id)}
+                          >
+                            <span className="truncate">{column.title}</span>
+                            {column.wipLimit !== undefined && (
+                              <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                                {column.cardIds.length}/{column.wipLimit}
+                              </span>
+                            )}
+                          </DropdownMenuItem>
+                        );
+                      })}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 ) : null}

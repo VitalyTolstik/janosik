@@ -873,7 +873,8 @@ const en = {
   "admin.boardDetail.updated": "Updated",
   "admin.workflow.title": "Workflow",
   "admin.workflow.subtitle": "Card workflow of this board",
-  "admin.workflow.summary": "Control {{state}} · {{count}} transition(s)",
+  "admin.workflow.summary":
+    "Control {{state}} · {{active}}/{{count}} active transition(s)",
   "admin.workflow.on": "enabled",
   "admin.workflow.off": "disabled",
   "admin.workflow.notConfigured": "Not configured — every move is allowed.",
@@ -1918,7 +1919,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.boardDetail.updated": "Обновлена",
   "admin.workflow.title": "Рабочий процесс",
   "admin.workflow.subtitle": "Процесс карточек этой доски",
-  "admin.workflow.summary": "Контроль {{state}} · переходов: {{count}}",
+  "admin.workflow.summary":
+    "Контроль {{state}} · активных переходов: {{active}} из {{count}}",
   "admin.workflow.on": "включён",
   "admin.workflow.off": "выключен",
   "admin.workflow.notConfigured": "Не настроен — разрешены любые перемещения.",

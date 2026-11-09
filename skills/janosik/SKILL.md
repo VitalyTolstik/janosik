@@ -138,8 +138,10 @@ admin enabled it, a built-in state machine and permission boundary. Read
 roles, conditions, and the initial and done columns. A `409` with
 `conflict: "workflow"` is a rule, not a transient error: choose an allowed
 column, satisfy the named condition, or leave the card in place and report the
-blocker. Never try to bypass it by clearing a task contract, changing the
-workflow, importing a board or restoring/duplicating a card. Follow the user's
+blocker. Unarchive and restore are column changes too: they may return the card
+to its original column, and any other target needs an allowed transition. Never
+try to bypass the workflow by clearing a task contract, changing the workflow
+or importing a board. Follow the user's
 explicit review policy. At handoff,
 post evidence and a note naming the reviewer and checks, move to Review, request
 review through available agent coordination or the agreed human channel, and

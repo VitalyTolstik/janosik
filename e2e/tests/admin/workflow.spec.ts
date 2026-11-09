@@ -57,18 +57,37 @@ test("a master edits the workflow on behalf of the owner and the change is audit
   });
 });
 
-test("an OPERATOR can open the same workflow editor", async ({
+test("an OPERATOR saves the workflow through the same audited path", async ({
   page,
   board,
+  admin,
   operator,
 }) => {
-  await board.column("Backlog");
-  await board.column("Doing");
+  const backlog = await board.column("Backlog");
+  const doing = await board.column("Doing");
   await loginAsMaster(page, operator);
 
   await page.goto(adminPath(`boards/${board.id}/workflow`), {
     waitUntil: "domcontentloaded",
   });
-  await expect(page.getByTestId("admin-workflow-editor")).toBeVisible();
-  await expect(page.getByTestId("admin-workflow-enabled")).toBeVisible();
+  const editor = page.getByTestId("admin-workflow-editor");
+  await expect(editor).toBeVisible();
+  await page.getByTestId("admin-workflow-enabled").click();
+  await page.getByTestId(`admin-workflow-cell-${backlog}-${doing}`).click();
+  await page.getByTestId("admin-workflow-save").click();
+  await expectToast(page, "Workflow saved");
+
+  const aggregateResponse = await board.api.get(`/api/v1/boards/${board.id}`);
+  expect(aggregateResponse.ok()).toBeTruthy();
+  const aggregate = (await aggregateResponse.json()) as {
+    workflow?: { enabled: boolean; transitions: unknown[] };
+  };
+  expect(aggregate.workflow?.enabled).toBe(true);
+  expect(aggregate.workflow?.transitions).toHaveLength(1);
+
+  await expectAudit(admin, {
+    action: "board.command",
+    targetId: board.id,
+    detailsText: "SET_BOARD_WORKFLOW",
+  });
 });

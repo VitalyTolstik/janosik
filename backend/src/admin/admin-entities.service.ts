@@ -1653,6 +1653,10 @@ export class AdminEntitiesService {
         present: workflow !== undefined,
         enabled: workflow?.enabled ?? false,
         transitions: workflow?.transitions.length ?? 0,
+        activeTransitions:
+          workflow?.transitions.filter(
+            (transition) => transition.enabled !== false,
+          ).length ?? 0,
         initialColumnId: workflow?.initialColumnId ?? null,
         doneColumnIds: workflow?.doneColumnIds ?? [],
       },

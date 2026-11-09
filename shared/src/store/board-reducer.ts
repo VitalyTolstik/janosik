@@ -1005,9 +1005,15 @@ function archiveCard(
 ): Board {
   const target = cardOf(board, action.cardId);
   if (!target || target.archivedAt !== undefined) return board;
+  const source = board.columns.find((column) =>
+    column.cardIds.includes(action.cardId),
+  );
   let nextCard: Card = {
     ...target,
     archivedAt: action.archivedAt ?? action.at,
+    // Remember where it came from: unarchive may only return it there
+    // unless the workflow explicitly allows another target (TASK-165 review).
+    ...(source ? { archivedFromColumnId: source.id } : {}),
     updatedAt: cardStamp(action),
   };
   nextCard = appendActivity(nextCard, "archived", action, 0, options);
@@ -1042,10 +1048,12 @@ function unarchiveCard(
   const restoredCard: Card = {
     ...target,
     archivedAt: undefined,
+    archivedFromColumnId: undefined,
     updatedAt: cardStamp(action),
   };
-  // Exact-optional cleanup: `archivedAt: undefined` must not survive.
+  // Exact-optional cleanup: cleared optional fields must not survive.
   delete restoredCard.archivedAt;
+  delete restoredCard.archivedFromColumnId;
   const nextCard = appendActivity(
     restoredCard,
     "unarchived",
@@ -1084,7 +1092,12 @@ function archiveColumnCards(
   column.cardIds.forEach((cardId, index) => {
     const target = Object.hasOwn(cards, cardId) ? cards[cardId] : undefined;
     if (!target || target.archivedAt !== undefined) return;
-    let nextCard: Card = { ...target, archivedAt: at, updatedAt: at };
+    let nextCard: Card = {
+      ...target,
+      archivedAt: at,
+      archivedFromColumnId: column.id,
+      updatedAt: at,
+    };
     nextCard = appendActivity(nextCard, "archived", action, index, options);
     cards[cardId] = nextCard;
   });

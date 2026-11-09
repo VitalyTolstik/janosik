@@ -15,7 +15,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disabled in drag & drop, the card menu, the card dialog and the table; a
   blocked move answers `409 conflict: "workflow"` with a machine code and the
   allowed targets, and the optimistic card rolls back. The master panel can edit
-  the same workflow on behalf of the owner with an audit entry. Export/import
+  the same workflow on behalf of the owner with an audit entry. Unarchive and
+  delete-undo enforce the same transition from the card's original column, an
+  enabled config without an active transition is rejected, and an unreadable
+  stored config fails closed. Saving from board settings waits for the server
+  acknowledgement and an open editor warns about a foreign change. Export/import
   remaps the rules, MCP gets `janosik_get_workflow`, and boards without a
   workflow keep the old unrestricted behaviour.
 - Bilingual announcements: one logical announcement with EN/RU translations,
