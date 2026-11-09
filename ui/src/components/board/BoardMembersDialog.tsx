@@ -240,8 +240,8 @@ function ExpiryCalendarBody({
   );
   const due = value === null ? undefined : new Date(value);
   // A deadline in the past can never be met: offering yesterday only ends in
-  // a successful invite the bell hides again. The server also refuses an
-  // already-lapsed deadline on a fresh invite.
+  // a successful invite the bell hides again. The invite form refuses an
+  // already-lapsed deadline before it reaches the API.
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 

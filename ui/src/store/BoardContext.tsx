@@ -678,6 +678,16 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     [canUndo, canRedo],
   );
 
+  // Any path that leaves the caller as a VIEWER — a live membership event, a
+  // focus refetch, a fresh load — drops the local undo stack. Hiding the
+  // buttons alone would still leave Ctrl+Z able to send refused commands.
+  useEffect(() => {
+    const activeId = board?.id;
+    if (activeId !== undefined && roles[activeId] === "VIEWER") {
+      dropHistory(activeId);
+    }
+  }, [board?.id, roles, dropHistory]);
+
   // Switching boards swaps in that board's stack — and its own undo state.
   useEffect(() => {
     activeIdRef.current = board?.id;
@@ -985,21 +995,16 @@ export function BoardProvider({ children }: { children: ReactNode }) {
    * the role map, never the board snapshots: an in-progress optimistic edit
    * must survive the event.
    */
-  const refreshRoles = useCallback(async (): Promise<Record<
-    string,
-    BoardRole
-  > | null> => {
+  const refreshRoles = useCallback(async (): Promise<void> => {
     try {
       const summaries = await api.listBoards();
-      if (!aliveRef.current) return null;
+      if (!aliveRef.current) return;
       const nextRoles: Record<string, BoardRole> = {};
       for (const summary of summaries) nextRoles[summary.id] = summary.role;
       setRoles(nextRoles);
-      return nextRoles;
     } catch {
       // Best-effort: a transient failure keeps the previous role and the
       // next focus/refetch cycle has another chance.
-      return null;
     }
   }, []);
 
@@ -1214,16 +1219,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
       // A role or expiry move of the caller changes what the UI may offer.
       if (change === "updated" && userId === userIdRef.current) {
-        void refreshRoles().then((next) => {
-          // A demoted VIEWER must not keep a stale local undo stack: the
-          // mutating affordance would remain reachable through Ctrl+Z even
-          // though every command it sends is refused with 403.
-          if (next?.[boardId] === "VIEWER") dropHistory(boardId);
-        });
+        void refreshRoles();
       }
       void loadMembers(boardId);
     },
-    [revokeBoard, loadMembers, refreshRoles, dropHistory],
+    [revokeBoard, loadMembers, refreshRoles],
   );
 
   const onAccessRevoked = useCallback(

@@ -772,7 +772,7 @@
   "share.active": "Active links",
   "share.button": "Share",
   "share.copy": "Copy link",
-  "share.copyError": "The link was created, but the clipboard is blocked — copy it from the list below",
+  "share.copyError": "The link is ready, but the clipboard is blocked — copy it from the list below",
   "share.copied": "Link copied",
   "share.create": "Create link",
   "share.created": "Link created and copied",
