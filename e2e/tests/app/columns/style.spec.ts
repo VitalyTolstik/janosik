@@ -93,6 +93,236 @@ test("closes the palette on the first outside click after picking a color", asyn
   await expect(page.getByTestId("column-style-palette")).toBeHidden();
 });
 
+test("previews the pick against the current board shape", async ({
+  page,
+  board,
+}) => {
+  await board.column("Todo");
+  await board.command({ type: "SET_BOARD_COLUMN_STYLE", columnStyle: "band" });
+  await board.open(page);
+
+  await openPalette(page, "Todo");
+  const palette = page.getByTestId("column-style-palette");
+  // 12 colors + 6 gradients.
+  await expect(palette.getByRole("radio")).toHaveCount(18);
+
+  const preview = page.getByTestId("column-style-preview");
+  await expect(preview).toHaveAttribute("data-column-accent", "none");
+  await expect(preview).toHaveAttribute("data-column-accent-style", "none");
+
+  await chooseColor(page, "teal");
+  await expect(preview).toHaveAttribute("data-column-accent", "teal");
+  await expect(preview).toHaveAttribute("data-column-accent-type", "color");
+  // The preview follows the board-wide shape, not a hardcoded default.
+  await expect(preview).toHaveAttribute("data-column-accent-style", "band");
+  await expect(palette).toBeVisible();
+
+  await page.getByTestId("column-style-option-ocean").click();
+  await expect(preview).toHaveAttribute("data-column-accent", "ocean");
+  await expect(preview).toHaveAttribute("data-column-accent-type", "gradient");
+  await expect(preview).toHaveAttribute("data-column-accent-style", "band");
+  await expect(palette).toBeVisible();
+  await expect(columnSection(page, "Todo")).toHaveAttribute(
+    "data-column-accent",
+    "ocean",
+  );
+
+  await page.getByTestId("column-style-reset").click();
+  await expect(preview).toHaveAttribute("data-column-accent", "none");
+  await expect(preview).toHaveAttribute("data-column-accent-style", "none");
+});
+
+test("applies the board shape only to accented columns", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  await board.column("Done");
+  await board.command({
+    type: "SET_COLUMN_ACCENT",
+    columnId: todo,
+    accent: { type: "color", value: "brand" },
+  });
+  await board.open(page);
+
+  const accented = columnSection(page, "Todo");
+  const plain = columnSection(page, "Done");
+  await expect(accented).toHaveAttribute(
+    "data-column-accent-style",
+    "signature",
+  );
+  await expect(plain).toHaveAttribute("data-column-accent", "none");
+  await expect(plain).toHaveAttribute("data-column-accent-style", "none");
+
+  await page.getByTestId("column-style-menu").click();
+  await page.getByTestId("column-style-menu-band").click();
+  await expect(accented).toHaveAttribute("data-column-accent-style", "band");
+  await expect(plain).toHaveAttribute("data-column-accent-style", "none");
+  await expect(plain).not.toHaveClass(/janosik-column-accent/);
+  await page.keyboard.press("Escape");
+});
+
+test("renders all nine accent shapes in light and dark", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  await board.column("Done");
+  await board.command({
+    type: "SET_COLUMN_ACCENT",
+    columnId: todo,
+    accent: { type: "color", value: "brand" },
+  });
+  await board.open(page);
+
+  const styles = [
+    "rail",
+    "left",
+    "wash",
+    "title",
+    "glow",
+    "glass",
+    "band",
+    "dot",
+    "signature",
+  ] as const;
+
+  const metrics = () =>
+    columnSection(page, "Todo").evaluate((element) => {
+      const section = getComputedStyle(element);
+      const before = getComputedStyle(element, "::before");
+      const head = element.querySelector<HTMLElement>(
+        ".janosik-column-accent-head",
+      );
+      const heading = element.querySelector<HTMLElement>(
+        ".janosik-column-accent-heading",
+      );
+      const dotmark = element.querySelector<HTMLElement>(
+        ".janosik-column-accent-dotmark",
+      );
+      if (!head || !heading || !dotmark) {
+        throw new Error("Accent head, heading or dotmark is missing");
+      }
+      const after = getComputedStyle(heading, "::after");
+      return {
+        backgroundImage: section.backgroundImage,
+        boxShadow: section.boxShadow,
+        beforeContent: before.content,
+        beforeHeight: before.height,
+        beforeWidth: before.width,
+        headBackground: getComputedStyle(head).backgroundColor,
+        headingColor: getComputedStyle(heading).color,
+        afterContent: after.content,
+        afterWidth: after.width,
+        dotDisplay: getComputedStyle(dotmark).display,
+      };
+    });
+
+  const seen: Record<string, Awaited<ReturnType<typeof metrics>>> = {};
+
+  for (const theme of ["dark", "light"] as const) {
+    await page.evaluate(
+      (value) => localStorage.setItem("janosik-theme", value),
+      theme,
+    );
+    await page.reload();
+    await expect(columnSection(page, "Todo")).toHaveAttribute(
+      "data-column-accent",
+      "brand",
+    );
+
+    await page.getByTestId("column-style-menu").click();
+    for (const style of styles) {
+      await page.getByTestId(`column-style-menu-${style}`).click();
+      await expect(columnSection(page, "Todo")).toHaveAttribute(
+        "data-column-accent-style",
+        style,
+      );
+      // Colour/box-shadow transitions are 150 ms (brand tokens); read the
+      // computed values after they settle so the assertions see the shape,
+      // not an intermediate frame.
+      await page.waitForTimeout(200);
+      seen[`${theme}:${style}`] = await metrics();
+    }
+    await page.keyboard.press("Escape");
+  }
+
+  for (const theme of ["dark", "light"] as const) {
+    const rail = seen[`${theme}:rail`];
+    expect(rail.beforeContent).not.toBe("none");
+    expect(rail.beforeHeight).toBe("3px");
+
+    expect(seen[`${theme}:left`].beforeWidth).toBe("4px");
+
+    const wash = seen[`${theme}:wash`];
+    expect(wash.backgroundImage).toContain("linear-gradient");
+    expect(wash.headBackground).not.toBe("rgba(0, 0, 0, 0)");
+
+    const title = seen[`${theme}:title`];
+    expect(title.afterContent).not.toBe("none");
+    expect(title.afterWidth).toBe("18px");
+
+    expect(seen[`${theme}:glow`].boxShadow).toContain("inset");
+
+    const glass = seen[`${theme}:glass`];
+    expect(glass.boxShadow).toContain("inset");
+    expect(glass.beforeHeight).toBe("3px");
+
+    const band = seen[`${theme}:band`];
+    expect(band.headingColor).toBe("rgb(255, 255, 255)");
+    expect(band.headBackground).not.toBe("rgba(0, 0, 0, 0)");
+
+    // The dot mark is a flex item, so its computed display is blockified.
+    expect(seen[`${theme}:rail`].dotDisplay).toBe("none");
+    expect(seen[`${theme}:dot`].dotDisplay).not.toBe("none");
+
+    const signature = seen[`${theme}:signature`];
+    expect(signature.beforeHeight).toBe("2px");
+    expect(signature.dotDisplay).not.toBe("none");
+  }
+
+  // The title style mixes toward the foreground in light mode, so the two
+  // themes must produce different computed heading colors.
+  expect(seen["light:title"].headingColor).not.toBe(
+    seen["dark:title"].headingColor,
+  );
+});
+
+test("keeps the accent on the column drag preview", async ({ page, board }) => {
+  const todo = await board.column("Todo");
+  await board.column("Done");
+  await board.command({
+    type: "SET_COLUMN_ACCENT",
+    columnId: todo,
+    accent: { type: "color", value: "brand" },
+  });
+  await board.command({ type: "SET_BOARD_COLUMN_STYLE", columnStyle: "band" });
+  await board.open(page);
+
+  const header = columnSection(page, "Todo").getByRole("group", {
+    name: "Todo",
+    exact: true,
+  });
+  const box = await header.boundingBox();
+  if (!box) throw new Error("Column header is not visible");
+
+  await page.mouse.move(box.x + 40, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 80, box.y + box.height / 2 + 24, {
+    steps: 10,
+  });
+
+  // DragOverlay clones the column; the accent shape has to survive the drag.
+  const overlay = page.locator(
+    'div[data-column-accent="brand"][data-column-accent-style="band"]',
+  );
+  await expect(overlay).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(overlay).toHaveCount(0);
+});
+
 test("applies all nine board-wide shapes and persists the choice", async ({
   page,
   board,
