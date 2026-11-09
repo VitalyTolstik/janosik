@@ -90,7 +90,7 @@ truncated into JSON that does not parse.
 **Boards** — `janosik_list_boards`, `janosik_get_board`,
 `janosik_create_board`, `janosik_rename_board`, `janosik_archive_board`,
 `janosik_unarchive_board`, `janosik_delete_board`, `janosik_export_board`,
-`janosik_import_board`
+`janosik_import_board`, `janosik_get_workflow`
 
 **Columns** — `janosik_create_column`, `janosik_rename_column`,
 `janosik_move_column`, `janosik_duplicate_column`, `janosik_sort_column`,
@@ -156,18 +156,28 @@ an API key, so an agent can never mint itself a new one.
   determines the key, so an identical retried create returns the first entity,
   not a duplicate. Every request has a timeout.
 - **Work discovery.** `janosik_list_ready_cards` lists candidates in each
-  active board's first column that are unassigned, free of a live claim and not
-  blocked, ordered by priority. The first column is a convention, not a
+  active board's initial column (`workflow.initialColumnId`, or the first column
+  when no workflow exists) that are unassigned, free of a live claim and not
+  blocked, ordered by priority. The initial column is a convention, not a
   column named Backlog. `janosik_wait_for_work` checks the board at the
   requested interval until one appears or the timeout expires; it does not
   reserve or claim the card.
-- **A Definition-of-Done check in MCP.** When `janosik_move_card` enters the
-  board's last column, it checks cards with a task contract for unticked
+- **A Definition-of-Done check in MCP.** When `janosik_move_card` enters a done
+  column (`workflow.doneColumnIds`, falling back to the board's last column when
+  the list is empty or no workflow exists), it checks cards with a task contract for unticked
   `Definition of Done` checklist items and an `evidence` comment. This is a
   convention of this MCP tool; the app's command API does not enforce it for
   other clients. After a version conflict the tool re-reads the board and
   repeats the check before retrying the move. The evidence-comment read is
   separate from the move; this is not an atomic backend completion rule.
+- **Workflow rules are enforced.** `janosik_get_workflow` reads the board's
+  transitions, roles, conditions and initial/done columns; pass `cardId` for a
+  per-card allowed/blocked check. A server-side `409` with
+  `conflict: "workflow"` means the move is forbidden: the error names the
+  allowed destinations and never suggests retrying the same one. Unarchive and
+  restore follow the same rule: a card may return to its original column, while
+  another target needs an allowed transition. Do not bypass the workflow by
+  clearing a contract, changing rules or importing a board.
 - **Typed comments.** `janosik_add_comment` takes a `kind` (`status`,
   `question`, `blocker`, `evidence`, `handoff`; omit for a plain note) and
   `janosik_list_comments` filters by it.

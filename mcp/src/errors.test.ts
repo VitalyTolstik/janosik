@@ -35,6 +35,40 @@ describe("describeError", () => {
     expect(message).toContain("42");
   });
 
+  it("explains a workflow conflict without inviting a blind retry", () => {
+    const message = describeError(
+      new ApiError(409, {
+        conflict: "workflow",
+        currentVersion: 5,
+        workflow: {
+          code: "transition_not_allowed",
+          fromColumnId: "backlog",
+          toColumnId: "done",
+          allowedToColumnIds: ["doing"],
+        },
+      }),
+    );
+    expect(message).toContain("doing");
+    expect(message).toContain("Do not retry");
+  });
+
+  it("names the failed workflow conditions on a condition conflict", () => {
+    const message = describeError(
+      new ApiError(409, {
+        conflict: "workflow",
+        workflow: {
+          code: "condition_failed",
+          fromColumnId: "review",
+          toColumnId: "done",
+          allowedToColumnIds: [],
+          failedConditions: ["requireChecklistsDone"],
+        },
+      }),
+    );
+    expect(message).toContain("requireChecklistsDone");
+    expect(message).toContain("not a bug");
+  });
+
   it("turns a fetch failure into a reachability hint", () => {
     expect(describeError(new TypeError("fetch failed"))).toMatch(
       /could not reach/i,

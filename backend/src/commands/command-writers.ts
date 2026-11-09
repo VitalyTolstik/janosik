@@ -271,6 +271,7 @@ function cardCreateData(
     definitionOfDone: card.definitionOfDone ?? [],
     archivedAt:
       card.archivedAt !== undefined ? new Date(card.archivedAt) : null,
+    archivedFromColumnId: card.archivedFromColumnId ?? null,
     createdAt: new Date(card.createdAt),
     updatedAt: new Date(card.updatedAt),
   };
@@ -296,6 +297,7 @@ function cardUpdateData(
     definitionOfDone: card.definitionOfDone ?? [],
     archivedAt:
       card.archivedAt !== undefined ? new Date(card.archivedAt) : null,
+    archivedFromColumnId: card.archivedFromColumnId ?? null,
     updatedAt: new Date(card.updatedAt),
   };
 }
@@ -564,6 +566,20 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       await tx.board.update({
         where: { id: boardId },
         data: { columnStyle: after.columnStyle ?? null },
+      });
+      return [boardTouch];
+    }
+
+    case "SET_BOARD_WORKFLOW": {
+      // The reducer keeps the config optional; SQL NULL is "no workflow",
+      // `Prisma.DbNull` writes a real NULL instead of JSON `null`.
+      await tx.board.update({
+        where: { id: boardId },
+        data: {
+          workflow: after.workflow
+            ? (after.workflow as unknown as Prisma.InputJsonValue)
+            : Prisma.DbNull,
+        },
       });
       return [boardTouch];
     }
@@ -842,6 +858,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           where: { id },
           data: {
             archivedAt: new Date(card.archivedAt),
+            archivedFromColumnId: card.archivedFromColumnId ?? action.columnId,
             lastActorId: ctx.actorId,
             updatedAt: new Date(card.updatedAt),
             version: { increment: 1 },
@@ -1361,6 +1378,7 @@ async function writeCardAction(
           archivedAt: card.archivedAt
             ? new Date(card.archivedAt)
             : new Date(ctx.at),
+          archivedFromColumnId: sourceColumn?.id ?? null,
           lastActorId: actorId,
           updatedAt: new Date(card.updatedAt),
           version: { increment: 1 },
@@ -1383,6 +1401,7 @@ async function writeCardAction(
         where: { id: card.id },
         data: {
           archivedAt: null,
+          archivedFromColumnId: null,
           columnId: column.id,
           lastActorId: actorId,
           updatedAt: new Date(card.updatedAt),

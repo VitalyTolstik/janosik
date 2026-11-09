@@ -7,6 +7,7 @@
 
 export * from "./types/kanban";
 export * from "./types/account";
+export * from "./workflow";
 export * from "./store/board-reducer";
 export * from "./store/card-links";
 export * from "./store/invert";

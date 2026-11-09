@@ -83,6 +83,22 @@ palette reset and duplication. `tests/app/collaboration/realtime/accent.spec.ts`
 proves a second Chrome context sees the color and shape live, and
 `tests/app/data/` round-trips both through export/import.
 
+`tests/app/workflow/` covers the admin-configurable card workflow: board ADMIN
+creates and edits the transition matrix (roles, reverse edges, conditions),
+saves it, and sees it after a reload; allowed and blocked drags (the forbidden
+column stays visible with a lock and reason and the card snaps back); the card
+context menu, card dialog, table column picker and read-only rules panel; all
+four MVP conditions (assignee, due date, description, checklists); MEMBER and
+VIEWER restrictions; a second Chrome context receiving a workflow change live
+and then the reverse; export/import with remapped column ids; board
+archive/restore; card archive/restore refusing a forbidden target with the
+workflow reason; legacy boards without a workflow; and a one-column board
+refusing to enable control. The editor's initial/done controls and card preview
+are covered by unit tests. The master-panel editor is covered under
+`tests/admin/workflow.spec.ts`: an OWNER and an OPERATOR edit on behalf of the
+board owner, the board receives the command, and `AdminAuditLog` records it.
+Each test creates its own user, board, columns and cards.
+
 `tests/app/filters/` covers the board filter toolbar: title, description, label
 and checklist search; the due, created, label, priority, assignee and link
 facets; removable chips for every facet (including priority, assignee and
@@ -276,9 +292,9 @@ status, English and Russian copy, the docs link, language switch and noindex.
 The site is public, so these tests need no account, fixture or API setup.
 
 `tests/docs/` covers the Starlight documentation under `/docs/` and
-`/ru/docs/`: all 22 English and 22 Russian pages (status, `<html lang>`, one
+`/ru/docs/`: all 23 English and 23 Russian pages (status, `<html lang>`, one
 H1, title, description and canonical), a full crawl of every internal link and
-`#fragment` across those 44 pages, the landing and the five sidebar groups,
+`#fragment` across those 46 pages, the landing and the five sidebar groups,
 Pagefind search (header button and Ctrl/Cmd+K, English and Russian indexes,
 opening a result, keyboard navigation and focus return, empty query, no matches
 and a recoverable bundle failure), code-block copy, tables, heading anchors,

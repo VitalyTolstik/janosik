@@ -18,6 +18,7 @@ import {
 } from "../types/kanban";
 import type { BoardState } from "./board-reducer";
 import { isCardLinkType, linkPairKey } from "./card-links";
+import { readBoardWorkflow } from "../workflow";
 import { clamp, clampText } from "../utils/text";
 
 /**
@@ -304,6 +305,18 @@ function isColumnStyleCurrent(value: unknown): boolean {
   return value === undefined || isColumnAccentStyle(value);
 }
 
+/**
+ * True when the stored workflow is absent or already canonical. Comparing the
+ * rebuilt object catches malformed and partially-canonical configs in one
+ * place, so `normalizeBoards` only remaps a board when something is wrong.
+ */
+function isWorkflowCurrent(value: unknown): boolean {
+  if (value === undefined) return true;
+  const parsed = readBoardWorkflow(value);
+  if (parsed === undefined) return false;
+  return JSON.stringify(parsed) === JSON.stringify(value);
+}
+
 function normalizeCard(card: LegacyCard): Card {
   const {
     labelId,
@@ -414,8 +427,9 @@ function isLabelRecord(value: unknown): value is Label {
 
 function normalizeBoard(board: Board): Board {
   // Destructure so a stored garbage value never survives `...board`.
-  const { columnStyle, ...rest } = board;
+  const { columnStyle, workflow, ...rest } = board;
   const cleanStyle = isColumnAccentStyle(columnStyle) ? columnStyle : undefined;
+  const cleanWorkflow = readBoardWorkflow(workflow);
   return {
     ...rest,
     title: toText(board.title, LIMITS.boardTitle),
@@ -452,6 +466,7 @@ function normalizeBoard(board: Board): Board {
     // Preserve any known style (an explicit `signature` included); drop
     // garbage so old boards keep their stored shape.
     ...(cleanStyle !== undefined ? { columnStyle: cleanStyle } : {}),
+    ...(cleanWorkflow !== undefined ? { workflow: cleanWorkflow } : {}),
   };
 }
 
@@ -463,6 +478,7 @@ export function normalizeBoards(state: BoardState): BoardState {
     const needsFix =
       !isTextCurrent(board.title, LIMITS.boardTitle) ||
       !isColumnStyleCurrent(board.columnStyle) ||
+      !isWorkflowCurrent(board.workflow) ||
       board.columns.some(
         (column) =>
           !isTextCurrent(column.title, LIMITS.columnTitle) ||

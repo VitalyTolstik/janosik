@@ -16,6 +16,8 @@ import {
   LIMITS,
   type Board,
   type Card,
+  workflowDoneColumnIds,
+  workflowInitialColumnId,
 } from "@janosik/shared";
 import type { BatchCommandItem, JanosikClient } from "../client.js";
 import { ApiError, describeError } from "../errors.js";
@@ -393,9 +395,10 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, cardId, toColumnId, position, expectedVersion }) => {
-      // Definition-of-Done gate (TASK-157, D12). This MCP tool treats the
-      // board's last column as Done; a card that
-      // carries a task contract may only enter it once its `Definition of
+      // Definition-of-Done gate (TASK-157, D12). This MCP tool uses the
+      // board's configured done columns (`workflowDoneColumnIds`, which
+      // falls back to the last column); a card that
+      // carries a task contract may only enter one once its `Definition of
       // Done` checklist is fully ticked and it has an evidence comment. This
       // is checked here before this tool moves it. Other clients can still
       // move it because the command API does not enforce this convention.
@@ -423,7 +426,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
             return null;
           }
           if (
-            destination.id === board.columns.at(-1)?.id &&
+            workflowDoneColumnIds(board).includes(destination.id) &&
             destination.id !== location.column.id
           ) {
             const block = await dodBlock(client, board.cards[cardId]!);
@@ -830,7 +833,8 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
     {
       title: "Unarchive a card",
       description:
-        "Restore an archived card into a column (defaults to the first column).",
+        "Restore an archived card into a column (defaults to the workflow's " +
+        "initial column, or the first column).",
       inputSchema: {
         boardId: boardIdSchema,
         cardId: cardIdSchema,
@@ -846,12 +850,17 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, cardId, columnId, position, expectedVersion }) => {
+      let destination = columnId;
+      if (destination === undefined) {
+        const board = await client.getBoard(boardId);
+        destination = workflowInitialColumnId(board);
+      }
       await client.command(
         boardId,
         {
           type: "UNARCHIVE_CARD",
           cardId,
-          ...(columnId !== undefined ? { columnId } : {}),
+          ...(destination !== undefined ? { columnId: destination } : {}),
           ...(position !== undefined ? { index: position } : {}),
         },
         { ifMatch: expectedVersion },
@@ -1131,7 +1140,8 @@ function readyCards(
   const out: Array<{ board: Board; card: Card; column: string }> = [];
   for (const board of boards) {
     if (board.archivedAt !== undefined) continue;
-    const backlog = board.columns[0];
+    const initialId = workflowInitialColumnId(board);
+    const backlog = board.columns.find((column) => column.id === initialId);
     if (!backlog) continue;
     const blocked = blockedIds(board);
     for (const cardId of backlog.cardIds) {

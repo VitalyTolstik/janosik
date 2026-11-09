@@ -21,6 +21,7 @@ import { CardDetailPage } from "./CardDetailPage";
 import { BoardDetailPage } from "./BoardDetailPage";
 import { MastersPage } from "./MastersPage";
 import { BoardContentPage } from "./BoardContentPage";
+import { BoardWorkflowPage } from "./BoardWorkflowPage";
 
 /**
  * Master panel entry (TASK-36), lazy-loaded from `/admin/*`.
@@ -84,6 +85,10 @@ function AdminGate() {
         <Route path="boards" element={<EntityRoute entity="boards" />} />
         <Route path="boards/:boardId" element={<BoardDetailRoute />} />
         <Route path="boards/:boardId/content" element={<BoardContentPage />} />
+        <Route
+          path="boards/:boardId/workflow"
+          element={<BoardWorkflowPage />}
+        />
         <Route path="cards" element={<EntityRoute entity="cards" />} />
         <Route path="cards/:cardId" element={<CardDetailRoute />} />
         <Route path="columns" element={<EntityRoute entity="columns" />} />

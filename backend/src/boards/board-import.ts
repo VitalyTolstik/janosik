@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import type { Board } from "@janosik/shared";
+import { remapBoardWorkflow } from "@janosik/shared";
 
 /** Rows per `createMany` (TASK-156). */
 const IMPORT_CHUNK = 1_000;
@@ -83,6 +84,22 @@ export async function persistBoard(
     });
   }
 
+  // The workflow references board-local column ids, so it is remapped after
+  // the fresh column ids exist. A dangling reference (a hand-edited file) is
+  // dropped rather than failing the import; an enabled config that loses all
+  // edges is stored disabled. Restoring `updatedAt` keeps the envelope's
+  // timestamp instead of the moment of the import.
+  if (board.workflow !== undefined) {
+    const workflow = remapBoardWorkflow(board.workflow, columnIdMap);
+    await tx.board.update({
+      where: { id: created.id },
+      data: {
+        workflow: workflow as unknown as Prisma.InputJsonValue,
+        updatedAt: new Date(board.updatedAt),
+      },
+    });
+  }
+
   // Active cards resolved from the ordered column arrays; archived cards fall
   // back to the first column (see the JSDoc above).
   const columnForCard = new Map<string, string>();
@@ -157,6 +174,13 @@ export async function persistBoard(
       acceptanceCriteria: card.acceptanceCriteria ?? [],
       definitionOfDone: card.definitionOfDone ?? [],
       archivedAt: card.archivedAt ? new Date(card.archivedAt) : null,
+      // Keep the workflow source through a remap. A v2 export carries it; a
+      // v1/legacy archive falls back to the card's own (remapped) column.
+      archivedFromColumnId: card.archivedAt
+        ? card.archivedFromColumnId !== undefined
+          ? (columnIdMap.get(card.archivedFromColumnId) ?? columnId)
+          : columnId
+        : null,
       position: positionForCard.get(oldId) ?? 0,
       createdAt,
       updatedAt,

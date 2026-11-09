@@ -105,6 +105,7 @@ function fixture(): Board {
       "c-4": card("c-4", "In Beta"),
       "c-arch": card("c-arch", "Archived", {
         archivedAt: 400,
+        archivedFromColumnId: "col-a",
         updatedAt: 400,
       }),
     },
@@ -206,6 +207,26 @@ const PLANS: Record<BoardAction["type"], Plan> = {
     // Restoring the default drops the field again.
     { type: "SET_BOARD_COLUMN_STYLE", columnStyle: "signature", at: AT },
     { type: "SET_BOARD_COLUMN_STYLE", at: AT },
+  ],
+  SET_BOARD_WORKFLOW: [
+    {
+      type: "SET_BOARD_WORKFLOW",
+      workflow: {
+        schemaVersion: 1,
+        enabled: true,
+        initialColumnId: "col-a",
+        doneColumnIds: ["col-c"],
+        transitions: [
+          {
+            id: "tr-1",
+            fromColumnId: "col-a",
+            toColumnId: "col-b",
+            allowedRoles: ["ADMIN", "MEMBER"],
+          },
+        ],
+      },
+      at: AT,
+    },
   ],
   DUPLICATE_COLUMN: [
     {

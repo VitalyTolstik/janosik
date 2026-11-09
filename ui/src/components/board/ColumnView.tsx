@@ -5,7 +5,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
+import { GripVertical, Lock } from "lucide-react";
 import {
   Fragment,
   memo,
@@ -90,6 +90,12 @@ interface ColumnViewProps {
   columnStyle?: ColumnAccentStyle;
   /** VIEWER mode (TASK-35): static header, no menu, no composers, no drag. */
   readOnly?: boolean;
+  /**
+   * While a card is dragged, the reason this column cannot accept it (a
+   * workflow transition, role or condition). Rendered as a dimmed target with
+   * a lock and the reason, so a forbidden drop is never a silent no-op.
+   */
+  workflowBlockedReason?: string;
 }
 
 /**
@@ -119,6 +125,7 @@ function ColumnViewBody({
   density = "full",
   columnStyle = DEFAULT_COLUMN_ACCENT_STYLE,
   readOnly = false,
+  workflowBlockedReason,
 }: ColumnViewProps) {
   const {
     addCard,
@@ -280,6 +287,12 @@ function ColumnViewBody({
         data-column-accent={accent?.value ?? "none"}
         data-column-accent-type={accent?.type ?? "none"}
         data-column-accent-style={accentActive ? columnStyle : "none"}
+        data-workflow-blocked={workflowBlockedReason !== undefined || undefined}
+        aria-label={
+          workflowBlockedReason
+            ? `${column.title}: ${workflowBlockedReason}`
+            : undefined
+        }
         style={{
           transform: CSS.Transform.toString(transform),
           transition,
@@ -300,7 +313,9 @@ function ColumnViewBody({
             ? "border-primary/60 opacity-50"
             : isOver
               ? "border-primary/60"
-              : "border-border",
+              : workflowBlockedReason
+                ? "border-danger/40 opacity-60"
+                : "border-border",
           className,
         )}
       >
@@ -385,6 +400,16 @@ function ColumnViewBody({
             )}
           </span>
         </header>
+
+        {workflowBlockedReason ? (
+          <p
+            data-testid={`column-workflow-blocked-${column.id}`}
+            className="mx-2 mb-1 flex items-start gap-1 rounded-md border border-danger/30 bg-danger/10 px-2 py-1 text-[10px] leading-snug text-danger"
+          >
+            <Lock className="mt-px h-3 w-3 shrink-0" aria-hidden />
+            <span className="min-w-0">{workflowBlockedReason}</span>
+          </p>
+        ) : null}
 
         <div
           ref={scrollRef}

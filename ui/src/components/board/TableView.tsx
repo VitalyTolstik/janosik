@@ -71,15 +71,18 @@ import { userAvatarVar, userLabel } from "@/utils/avatar";
 import { isColumnFull } from "@janosik/shared";
 import { cn } from "@/lib/utils";
 import { createId } from "@/utils/id";
-import { useBoard } from "@/store/BoardContext";
+import { useBoard, useBoardAccess } from "@/store/BoardContext";
 import {
   LABEL_COLOR_CHIP,
+  type BoardRole,
+  type BoardWorkflow,
   type Card,
   type Column,
   type Label,
   type LabelColor,
   LIMITS,
 } from "@janosik/shared";
+import { boardMoveBlockReason, moveTargetBlockReason } from "@/utils/workflow";
 
 /** Stable empty list, so the label resolver survives a board-less render. */
 const NO_LABELS: Label[] = [];
@@ -137,6 +140,7 @@ export function TableView({
     setLabelColor,
     deleteLabel,
   } = useBoard();
+  const { role } = useBoardAccess();
   const { t, lang } = useI18n();
   const toast = useToast();
   const labelsOf = useCardLabels(board?.labels ?? NO_LABELS);
@@ -196,26 +200,20 @@ export function TableView({
   const moveToColumn = useCallback(
     (cardId: string, fromColumnId: string, toColumnId: string) => {
       if (toColumnId === fromColumnId) return;
-      const target = boardRef.current?.columns.find(
-        (col) => col.id === toColumnId,
-      );
-      if (!target) return;
-      // Both limits respected on inline moves — same toasts as board drag.
-      if (isColumnFull(target)) {
-        toast.error(
-          target.wipLimit !== undefined &&
-            target.cardIds.length >= target.wipLimit
-            ? t("toast.wipLimitBlocked", {
-                title: target.title,
-                limit: target.wipLimit,
-              })
-            : t("limits.maxItems", { limit: LIMITS.cardsPerColumn }),
-        );
+      const board = boardRef.current;
+      const target = board?.columns.find((col) => col.id === toColumnId);
+      if (!board || !target) return;
+      // Workflow and WIP are the same pre-check the board drag uses; the
+      // reducer would silently no-op a forbidden move, so the table must
+      // explain the refusal itself.
+      const reason = boardMoveBlockReason(board, cardId, target, role, t);
+      if (reason !== null) {
+        toast.error(reason);
         return;
       }
       moveCard(cardId, fromColumnId, toColumnId, target.cardIds.length);
     },
-    [moveCard, t, toast],
+    [moveCard, t, toast, role],
   );
 
   // Persist the column choice next to the view/scale choices.
@@ -293,6 +291,8 @@ export function TableView({
       columnTitle={column.title}
       columns={board?.columns ?? []}
       labels={board?.labels ?? NO_LABELS}
+      workflow={board?.workflow}
+      role={role}
       visibleColumns={visibleColumns}
       highlight={highlight}
       readOnly={readOnly}
@@ -561,6 +561,10 @@ interface TableRowProps {
   columns: Column[];
   /** Every board label, for the picker. */
   labels: Label[];
+  /** Optional workflow config — drives the column move menu. */
+  workflow?: BoardWorkflow;
+  /** Caller role — role-restricted transitions are disabled with a reason. */
+  role?: BoardRole;
   visibleColumns: OptionalColumn[];
   highlight?: string;
   /** VIEWER mode (TASK-35): no inline editors, no archive, no move menu. */
@@ -598,6 +602,8 @@ function TableRowBody({
   columnTitle,
   columns,
   labels,
+  workflow,
+  role,
   visibleColumns,
   highlight,
   readOnly = false,
@@ -808,14 +814,40 @@ function TableRowBody({
               <DropdownMenuContent align="start">
                 <DropdownMenuLabel>{t("view.table.column")}</DropdownMenuLabel>
                 {columns.map((col) => {
-                  const full = col.id !== columnId && isColumnFull(col);
+                  const current = col.id === columnId;
+                  const reason = current
+                    ? null
+                    : moveTargetBlockReason(
+                        {
+                          workflow,
+                          card,
+                          fromColumnId: columnId,
+                          fromTitle: columnTitle,
+                          target: col,
+                          role,
+                        },
+                        t,
+                      );
                   return (
                     <DropdownMenuItem
                       key={col.id}
-                      disabled={col.id === columnId || full}
+                      disabled={current || reason !== null}
+                      title={reason ?? undefined}
                       onSelect={() => onMoveToColumn(card.id, columnId, col.id)}
+                      data-testid={`table-move-${col.id}`}
+                      className="items-start"
                     >
-                      <span className="truncate">{col.title}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{col.title}</span>
+                        {reason ? (
+                          <span
+                            className="block whitespace-normal text-[10px] leading-snug text-muted-foreground"
+                            data-testid={`table-move-reason-${col.id}`}
+                          >
+                            {reason}
+                          </span>
+                        ) : null}
+                      </span>
                       {col.wipLimit !== undefined && (
                         <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
                           {col.cardIds.length}/{col.wipLimit}

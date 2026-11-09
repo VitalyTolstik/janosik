@@ -47,6 +47,7 @@ import type {
   Board,
   BoardMemberDto,
   BoardRole,
+  BoardWorkflow,
   CardCover,
   CardLinkType,
   CardPriority,
@@ -72,6 +73,7 @@ import {
   type DebouncedPersistence,
 } from "@/utils/persistence";
 import { routes } from "@/routes";
+import { conditionLabel } from "@/utils/workflow";
 import { useToast } from "@/components/Toast";
 import { useI18n } from "@/i18n";
 
@@ -255,6 +257,12 @@ interface BoardActionsValue {
   setColumnAccent: (columnId: string, accent?: CardCover) => void;
   /** Sets the board-wide column accent shape (`undefined` = signature). */
   setBoardColumnStyle: (columnStyle?: ColumnAccentStyle) => void;
+  /**
+   * Replaces (or clears, `undefined`) the board's card workflow. In server
+   * mode resolves `false` when the server refused the command (the failure
+   * toast is already shown), so the settings dialog can stay open.
+   */
+  setBoardWorkflow: (workflow?: BoardWorkflow) => void | Promise<boolean>;
   /** Sorts a column's cards (createdAt / dueDate / title). */
   sortColumn: (columnId: string, sortBy: ColumnSortBy) => void;
   /* Board management (multi-board) */
@@ -450,29 +458,6 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  /** Toast for a command the server refused or the network dropped. */
-  const showFailure = useCallback(
-    (failure: SendFailure) => {
-      switch (failure.kind) {
-        case "offline":
-          toast.error(t("sync.offline"));
-          break;
-        case "wip":
-          toast.error(t("toast.wipLimitBlocked"));
-          break;
-        case "version":
-          toast.error(t("sync.foreignEdit"));
-          break;
-        case "busy":
-          toast.error(t("sync.busy"));
-          break;
-        default:
-          toast.error(t("sync.rejected"));
-      }
-    },
-    [toast, t],
-  );
-
   const onForeignSkipped = useCallback(
     () => toast.info(t("sync.foreignEdit")),
     [toast, t],
@@ -626,6 +611,73 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     const boardId = activeIdRef.current;
     return boardId ? getBoardById(boardId) : undefined;
   }, [getBoardById]);
+
+  /** Toast for a command the server refused or the network dropped. */
+  const showFailure = useCallback(
+    (failure: SendFailure) => {
+      switch (failure.kind) {
+        case "offline":
+          toast.error(t("sync.offline"));
+          break;
+        case "wip":
+          toast.error(t("toast.wipLimitBlocked"));
+          break;
+        case "version":
+          toast.error(t("sync.foreignEdit"));
+          break;
+        case "workflow": {
+          const board = getActiveBoard();
+          const details = failure.details;
+          const titleOf = (id: string | null) =>
+            board?.columns.find((column) => column.id === id)?.title ??
+            id ??
+            "—";
+          if (details.code === "condition_failed") {
+            toast.error(
+              t("workflow.blocked.conditionToast", {
+                conditions: (details.failedConditions ?? [])
+                  .map((condition) => conditionLabel(condition, t))
+                  .join(t("workflow.conditionSeparator")),
+              }),
+            );
+          } else if (details.code === "role_not_allowed") {
+            toast.error(
+              t("workflow.blocked.role", {
+                from: titleOf(details.fromColumnId),
+                to: titleOf(details.toColumnId),
+                roles:
+                  details.requiredRoles?.join(" / ") ??
+                  t("workflow.roleFallback"),
+              }),
+            );
+          } else {
+            const allowed = details.allowedToColumnIds
+              .map((id) => titleOf(id))
+              .join(t("workflow.listSeparator"));
+            toast.error(
+              t(
+                allowed === ""
+                  ? "workflow.blocked.transition"
+                  : "workflow.blocked.transitionAllowed",
+                {
+                  from: titleOf(details.fromColumnId),
+                  to: titleOf(details.toColumnId),
+                  columns: allowed,
+                },
+              ),
+            );
+          }
+          break;
+        }
+        case "busy":
+          toast.error(t("sync.busy"));
+          break;
+        default:
+          toast.error(t("sync.rejected"));
+      }
+    },
+    [toast, t, getActiveBoard],
+  );
 
   /**
    * Undo/redo transport (TASK-29): the inverse command rides the same queue
@@ -1421,7 +1473,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // the API afterwards; a refusal rolls the optimistic state back and shows
   // a toast (TASK-29).
   const dispatch = useCallback(
-    (action: BoardAction) => {
+    (action: BoardAction): void | Promise<boolean> => {
       const boardId =
         (action as { boardId?: string }).boardId ?? activeIdRef.current;
       if (!boardId) return;
@@ -1448,11 +1500,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
       if (!serverMode) return;
       bumpEpoch(boardId);
-      void sync.enqueue(boardId, scoped).then((outcome) => {
+      return sync.enqueue(boardId, scoped).then((outcome) => {
         // One coalesced send → one set of side effects (see the ref's note).
         if (handledOutcomesRef.current.has(outcome)) {
           drainRefetch(boardId);
-          return;
+          return outcome.ok;
         }
         handledOutcomesRef.current.add(outcome);
         if (outcome.ok) {
@@ -1462,7 +1514,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           live.commits.publish(boardId, touchedIds);
           realtimeRef.current?.settled(boardId, outcome.seq);
           drainRefetch(boardId);
-          return;
+          return true;
         }
         realtimeRef.current?.settled(boardId);
         showFailure(outcome.failure);
@@ -1486,6 +1538,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           }
         }
         drainRefetch(boardId);
+        return false;
       });
     },
     [
@@ -1688,9 +1741,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const activeBoardId = board?.id;
   const access = useMemo<BoardAccessValue>(
     () => ({
-      role: activeBoardId === undefined ? undefined : roles[activeBoardId],
+      role:
+        activeBoardId === undefined
+          ? undefined
+          : (roles[activeBoardId] ?? (serverMode ? undefined : "ADMIN")),
     }),
-    [activeBoardId, roles],
+    [activeBoardId, roles, serverMode],
   );
 
   return (
@@ -1761,6 +1817,7 @@ function createBoardActions(
   | "setColumnWipLimit"
   | "setColumnAccent"
   | "setBoardColumnStyle"
+  | "setBoardWorkflow"
   | "sortColumn"
 > {
   /** `n` fresh ids, for the activity events (or copies) a command produces. */
@@ -2092,6 +2149,20 @@ function createBoardActions(
         at: Date.now(),
       });
     },
+    setBoardWorkflow: (workflow?: BoardWorkflow) => {
+      // Saving an unchanged config is not a step (and must not cost undo).
+      if (
+        JSON.stringify(workflow ?? null) ===
+        JSON.stringify(getBoard()?.workflow ?? null)
+      ) {
+        return;
+      }
+      return dispatch({
+        type: "SET_BOARD_WORKFLOW",
+        workflow,
+        at: Date.now(),
+      });
+    },
     sortColumn: (columnId: string, sortBy: ColumnSortBy) =>
       dispatch({ type: "SORT_COLUMN", columnId, sortBy, at: Date.now() }),
   };
@@ -2200,6 +2271,7 @@ function createReadOnlyBoardActions(): BoardActionsValue {
     setColumnWipLimit: noop,
     setColumnAccent: noop,
     setBoardColumnStyle: noop,
+    setBoardWorkflow: noop,
     sortColumn: noop,
     addBoard: () => "",
     removeBoard: noop,
@@ -2251,6 +2323,7 @@ export function ShareBoardProvider({
     () => ({ canUndo: false, canRedo: false }),
     [],
   );
+  const access = useMemo<BoardAccessValue>(() => ({ role: "VIEWER" }), []);
   const identity = useMemo<BoardIdentityValue>(
     () => ({ id: board.id, title: board.title }),
     [board.id, board.title],
@@ -2270,11 +2343,13 @@ export function ShareBoardProvider({
     <BoardLiveProvider live={live}>
       <BoardActionsContext.Provider value={actions}>
         <BoardHistoryContext.Provider value={history}>
-          <BoardIdentityContext.Provider value={identity}>
-            <BoardStateContext.Provider value={stateValue}>
-              {children}
-            </BoardStateContext.Provider>
-          </BoardIdentityContext.Provider>
+          <BoardAccessContext.Provider value={access}>
+            <BoardIdentityContext.Provider value={identity}>
+              <BoardStateContext.Provider value={stateValue}>
+                {children}
+              </BoardStateContext.Provider>
+            </BoardIdentityContext.Provider>
+          </BoardAccessContext.Provider>
         </BoardHistoryContext.Provider>
       </BoardActionsContext.Provider>
     </BoardLiveProvider>

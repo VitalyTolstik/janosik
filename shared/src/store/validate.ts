@@ -1,5 +1,6 @@
 import type { BoardAction, BoardState } from "./board-reducer";
 import { isCardLinkType } from "./card-links";
+import { validateWorkflowShape } from "../workflow";
 import {
   CARD_ACTIVITY_TYPES,
   CARD_PRIORITIES,
@@ -435,6 +436,15 @@ function validateCard(value: unknown, field: string): Json {
     "archivedAt",
     readOptionalTimestamp(card, "archivedAt", `${field}.archivedAt`),
   );
+  put(
+    out,
+    "archivedFromColumnId",
+    readOptionalId(
+      card,
+      "archivedFromColumnId",
+      `${field}.archivedFromColumnId`,
+    ),
+  );
   // TASK-97: a RESTORE_* snapshot must validate the fields the create/edit
   // commands constrain — priority, assignee and the activity feed.
   if (!absent(card.priority)) {
@@ -760,6 +770,21 @@ function parseAction(action: Json): BoardAction {
           fail("action.columnStyle", "must be a known column style");
         }
         result.columnStyle = action.columnStyle;
+      }
+      break;
+    }
+    case "SET_BOARD_WORKFLOW": {
+      result = out();
+      // Absent (or null) clears the config; a present config is rebuilt
+      // through the shared shape validator so unknown keys never land in the
+      // board JSON or the command log.
+      if (!absent(action.workflow)) {
+        const checked = validateWorkflowShape(
+          action.workflow,
+          "action.workflow",
+        );
+        if (!checked.ok) fail(checked.field, checked.message);
+        result.workflow = checked.workflow;
       }
       break;
     }
@@ -1221,6 +1246,14 @@ function checkImportedBoard(value: unknown, field: string): string {
       placed.set(cardId, idField);
     });
   });
+  // The workflow is optional; a board without it keeps the legacy "all moves
+  // allowed" behaviour. Structural errors fail the import with a field path;
+  // dangling column references are tolerated (the editor shows them and the
+  // backend import remapper drops them) so a hand-edited file still loads.
+  if (board.workflow !== undefined && board.workflow !== null) {
+    const checked = validateWorkflowShape(board.workflow, `${field}.workflow`);
+    if (!checked.ok) fail(checked.field, checked.message);
+  }
   return id;
 }
 
@@ -1242,5 +1275,6 @@ function checkImportedCard(key: string, value: unknown, field: string): void {
   readTimestamp(card, "createdAt", `${field}.createdAt`);
   readTimestamp(card, "updatedAt", `${field}.updatedAt`);
   readOptionalTimestamp(card, "archivedAt", `${field}.archivedAt`);
+  readOptionalId(card, "archivedFromColumnId", `${field}.archivedFromColumnId`);
   readOptionalTimestamp(card, "dueDate", `${field}.dueDate`);
 }

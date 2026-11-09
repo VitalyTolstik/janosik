@@ -45,6 +45,21 @@ Deleting a column takes its cards down with it (they are soft-deleted,
 never left pointing at a deleted column), and restoring the column brings them
 back.
 
+### Workflow
+
+The board detail page has a `Workflow` panel with the current state (enabled or
+disabled, number of transitions) and an `Open workflow editor` button. The
+editor is the same one board admins use; here it runs at
+`/admin/boards/:id/workflow` and saves through `POST
+/admin/boards/:id/commands` as the board owner. The command log, versions and
+live board updates stay intact, and the master's action appears in
+`AdminAuditLog` as a `board.command` entry.
+
+Changes made here are subject to the same validation as the board editor:
+shape, existing column references, at least two columns and at least one
+active transition when control is enabled. The page shows the
+“acting for the owner” banner and does not bypass workflow rules itself.
+
 ## Board detail
 
 `/admin/boards/:id` shows the board meta, live counters, members, columns and

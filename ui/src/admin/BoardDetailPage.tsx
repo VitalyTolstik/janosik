@@ -311,6 +311,33 @@ export function BoardDetailPage() {
         />
       </Panel>
 
+      <Panel
+        className="flex flex-wrap items-center gap-3 p-3"
+        data-testid="admin-board-detail-workflow"
+      >
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            {t("admin.workflow.title")}
+          </p>
+          <p className="mt-0.5 text-xs">
+            {detail.workflowSummary.present
+              ? t("admin.workflow.summary", {
+                  state: detail.workflowSummary.enabled
+                    ? t("admin.workflow.on")
+                    : t("admin.workflow.off"),
+                  active: detail.workflowSummary.activeTransitions,
+                  count: detail.workflowSummary.transitions,
+                })
+              : t("admin.workflow.notConfigured")}
+          </p>
+        </div>
+        <Button size="sm" variant="outline" asChild>
+          <Link to={routes.adminBoardWorkflow(board.id)}>
+            {t("admin.workflow.open")}
+          </Link>
+        </Button>
+      </Panel>
+
       <Panel data-testid="admin-board-detail-members">
         <div className="flex items-center justify-between px-3 pt-2.5">
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground">

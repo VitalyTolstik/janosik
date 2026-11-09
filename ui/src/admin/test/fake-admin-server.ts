@@ -1615,6 +1615,14 @@ export class FakeAdminServer {
         members: [],
         columns: [],
         labels: [],
+        workflowSummary: {
+          present: false,
+          enabled: false,
+          transitions: 0,
+          activeTransitions: 0,
+          initialColumnId: null,
+          doneColumnIds: [],
+        },
       });
     }
 

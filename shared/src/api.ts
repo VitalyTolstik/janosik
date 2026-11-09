@@ -9,6 +9,7 @@
 
 import type { BoardAction } from "./store/board-reducer";
 import type { Board, CommentKind } from "./types/kanban";
+import type { WorkflowCondition, WorkflowRole } from "./workflow";
 import type { UserAvatarColor } from "./types/account";
 import type { BoardExportFile } from "./utils/board-serialization";
 import type { AnnouncementLocale } from "./announcements";
@@ -77,14 +78,30 @@ export interface CommandBatchResponse {
  * - `wip` — the command would break a collection/WIP limit;
  * - `id` — the command names an entity id that already belongs to another
  *   board (the writers upsert by global id, so applying it would rewrite
- *   that board's row).
+ *   that board's row);
+ * - `workflow` — the move is forbidden by the board's configured workflow.
  */
-export type CommandConflict = "version" | "wip" | "id";
+export type CommandConflict = "version" | "wip" | "id" | "workflow";
+
+/** Machine-readable details of a `409 { conflict: "workflow" }` refusal. */
+export interface WorkflowConflictDetails {
+  code: "transition_not_allowed" | "role_not_allowed" | "condition_failed";
+  fromColumnId: string | null;
+  toColumnId: string;
+  /** Other columns the card may move to for this role and card state. */
+  allowedToColumnIds: string[];
+  /** Roles that would have allowed the edge (`role_not_allowed` only). */
+  requiredRoles?: WorkflowRole[];
+  /** Conditions that failed (`condition_failed` only). */
+  failedConditions?: WorkflowCondition[];
+}
 
 /** `409` body of `POST /boards/:id/commands`. */
 export interface ConflictError {
   conflict: CommandConflict;
   currentVersion: number;
+  /** Only for `conflict: "workflow"`. */
+  workflow?: WorkflowConflictDetails;
 }
 
 /**

@@ -53,8 +53,15 @@ function isBoardBusy(error: ApiError): boolean {
 
 /** The shape of a `409` conflict body (`ConflictError` in `@janosik/shared`). */
 interface ConflictBody {
-  conflict?: "version" | "wip" | "id";
+  conflict?: "version" | "wip" | "id" | "workflow";
   currentVersion?: number;
+  workflow?: {
+    code?: string;
+    fromColumnId?: string | null;
+    toColumnId?: string;
+    allowedToColumnIds?: string[];
+    failedConditions?: string[];
+  };
 }
 
 /** The shape of a `400` validation body. */
@@ -115,6 +122,37 @@ export function describeError(error: unknown): string {
   return `Error: ${String(error)}`;
 }
 
+function describeWorkflowConflict(details: ConflictBody["workflow"]): string {
+  const code = details?.code ?? "transition_not_allowed";
+  const allowed = details?.allowedToColumnIds ?? [];
+  const allowedText =
+    allowed.length > 0
+      ? ` Allowed destinations from here: ${allowed.join(", ")}.`
+      : " No other destination is allowed from this card's current column.";
+  const target = details?.toColumnId ? ` to column ${details.toColumnId}` : "";
+  if (code === "role_not_allowed") {
+    return (
+      `Error: the board's workflow does not allow your role to move this card` +
+      `${target}.${allowedText} Do not retry the same destination; ask a board ` +
+      "ADMIN to make the transition, or choose an allowed column."
+    );
+  }
+  if (code === "condition_failed") {
+    const failed = details?.failedConditions?.join(", ") ?? "unknown";
+    return (
+      `Error: the board's workflow blocked this move${target} because card ` +
+      `conditions are not met: ${failed}. This is a rule, not a bug — satisfy ` +
+      "the conditions (assignee, due date, description or checklists), then " +
+      `retry.${allowedText} Do not clear the contract to bypass it.`
+    );
+  }
+  return (
+    `Error: the board's workflow does not allow this move${target}.` +
+    `${allowedText} Do not retry the same toColumnId; choose an allowed ` +
+    "column or leave the card in place and report the blocker."
+  );
+}
+
 function describeApiError(error: ApiError): string {
   const body = asRecord(error.body);
   switch (error.status) {
@@ -149,7 +187,10 @@ function describeApiError(error: ApiError): string {
             "another account or have been deleted.";
     }
     case 409: {
-      const { conflict, currentVersion } = body as ConflictBody;
+      const { conflict, currentVersion, workflow } = body as ConflictBody;
+      if (conflict === "workflow") {
+        return describeWorkflowConflict(workflow);
+      }
       if (conflict === "wip") {
         return (
           "Error: the change would break a limit (WIP or a collection cap). " +

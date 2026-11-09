@@ -21,11 +21,19 @@ import {
   atWipLimit,
   boardReducer,
   cardOf,
+  evaluateCardTransition,
+  evaluateTransition,
   hasLinkedPair,
   LIMITS,
   MAX_COMMAND_BYTES,
   validateBoardAction,
+  workflowReferenceError,
   wouldCloseBlocksCycle,
+} from "@janosik/shared";
+import type {
+  BoardRole,
+  WorkflowConflictDetails,
+  WorkflowDecision,
 } from "@janosik/shared";
 import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -79,6 +87,7 @@ type CommandActionType = Exclude<
 const SUPPORTED_ACTION_REGISTRY: Record<CommandActionType, true> = {
   RENAME_BOARD: true,
   SET_BOARD_COLUMN_STYLE: true,
+  SET_BOARD_WORKFLOW: true,
   ARCHIVE_BOARD: true,
   UNARCHIVE_BOARD: true,
   ADD_COLUMN: true,
@@ -217,7 +226,11 @@ export class CommandsService {
     boardId: string,
     actorId: string,
     dto: CreateCommandDto,
-    options: { allowOversize?: boolean; actorType?: ActorType } = {},
+    options: {
+      allowOversize?: boolean;
+      actorType?: ActorType;
+      actorRole?: Role;
+    } = {},
   ): Promise<CommandResponse> {
     const [response] = await this.applyBatch(boardId, actorId, [dto], options);
     return response;
@@ -240,12 +253,20 @@ export class CommandsService {
     boardId: string,
     actorId: string,
     dtos: CreateCommandDto[],
-    options: { allowOversize?: boolean; actorType?: ActorType } = {},
+    options: {
+      allowOversize?: boolean;
+      actorType?: ActorType;
+      actorRole?: Role;
+    } = {},
   ): Promise<CommandResponse[]> {
     // TASK-157: who issued the commands — a person or an agent (a PAT). The
     // transport resolves it from the request principal; internal callers
     // (admin restores, the demo seeder) default to "human".
     const actorType: ActorType = options.actorType ?? "human";
+    // The caller's board role drives workflow transitions. A normal command
+    // passes the membership role resolved by `MembershipGuard`; internal
+    // callers (the master panel, demo seeding) act as an ADMIN.
+    const actorRole: Role = options.actorRole ?? Role.ADMIN;
     // Validate every command *before* the board lock (TASK-147 follow-up): an
     // oversized or malformed command is a cheap 400/413, not megabytes
     // serialized through the board writer.
@@ -332,6 +353,7 @@ export class CommandsService {
             boardId,
             actorId,
             actorType,
+            actorRole,
             entry,
             board: running,
           });
@@ -444,6 +466,7 @@ export class CommandsService {
       boardId: string;
       actorId: string;
       actorType: ActorType;
+      actorRole: Role;
       entry: PreparedCommand;
       board: Board;
     },
@@ -453,7 +476,7 @@ export class CommandsService {
     prevSeq: number;
     board: Board;
   }> {
-    const { boardId, actorId, actorType, entry, board } = params;
+    const { boardId, actorId, actorType, actorRole, entry, board } = params;
     const { dto, action } = entry;
 
     await this.assertAssigneeIsBoardMember(tx, boardId, action);
@@ -474,6 +497,19 @@ export class CommandsService {
         currentVersion,
       } satisfies ConflictError);
     }
+    // Workflow first: a forbidden transition must report its own reason, not
+    // hide behind a WIP refusal in the same destination. Recovery commands
+    // (unarchive / restore) change a card's column too, so they run the same
+    // role and condition checks against the column the card came from.
+    await this.assertWorkflowTransition(
+      tx,
+      boardId,
+      board,
+      action,
+      actorRole,
+      currentVersion,
+    );
+    this.assertWorkflowReferences(board, action);
     this.assertNoWipConflict(board, action, currentVersion);
 
     const at = (action as BoardScopedAction).at;
@@ -821,7 +857,11 @@ export class CommandsService {
     actorId: string,
     actionType: string,
   ): Promise<void> {
-    if (actionType !== "ARCHIVE_BOARD" && actionType !== "UNARCHIVE_BOARD") {
+    if (
+      actionType !== "ARCHIVE_BOARD" &&
+      actionType !== "UNARCHIVE_BOARD" &&
+      actionType !== "SET_BOARD_WORKFLOW"
+    ) {
       return;
     }
     const membership = await tx.boardMember.findUnique({
@@ -830,8 +870,179 @@ export class CommandsService {
     });
     if (membership?.role !== Role.ADMIN) {
       throw new ForbiddenException(
-        "Only an ADMIN can archive or unarchive the board",
+        actionType === "SET_BOARD_WORKFLOW"
+          ? "Only an ADMIN can change the board workflow"
+          : "Only an ADMIN can archive or unarchive the board",
       );
+    }
+  }
+
+  /**
+   * Enforce the board's workflow for every command that changes a card's
+   * column (TASK-165 review). Runs inside the board-write transaction, after
+   * the board lock, so the config, the card's actual column, the caller's
+   * role and WIP all describe the same instant.
+   *
+   * `MOVE_CARD` uses the aggregate as the source and does not trust
+   * `action.fromColumnId`; on a workflow board a stale source is a version
+   * conflict (legacy boards keep the reducer's historical no-op).
+   * `UNARCHIVE_CARD` and `RESTORE_CARD` recover a card whose DB row still
+   * points at its original column, so they are checked from that column —
+   * a MEMBER cannot use recovery to skip a missing edge, a role rule or a
+   * card-field condition. A card with no pre-existing row is a create, and
+   * creation in any column is deliberately unrestricted.
+   */
+  private async assertWorkflowTransition(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    board: Board,
+    action: BoardAction,
+    actorRole: Role,
+    currentVersion: number,
+  ): Promise<void> {
+    let fromColumnId: string | undefined;
+    let toColumnId: string | undefined;
+    let card = "cardId" in action ? cardOf(board, action.cardId) : undefined;
+
+    if (action.type === "MOVE_CARD") {
+      if (!card || card.archivedAt !== undefined) return;
+      const from = board.columns.find((column) =>
+        column.cardIds.includes(action.cardId),
+      );
+      if (!from) return;
+      if (from.id !== action.fromColumnId) {
+        // A workflow move built on a stale source would otherwise be a 200
+        // no-op while the client keeps its optimistic position. Refuse it as
+        // a version conflict so the client rolls back and re-reads; legacy
+        // boards keep the reducer's historical no-op.
+        if (board.workflow?.enabled) {
+          throw new ConflictException({
+            conflict: "version",
+            currentVersion,
+          } satisfies ConflictError);
+        }
+        return;
+      }
+      fromColumnId = from.id;
+      toColumnId = action.toColumnId;
+    } else if (action.type === "UNARCHIVE_CARD") {
+      if (!card || card.archivedAt === undefined) return;
+      fromColumnId = await this.recoverySourceColumn(
+        tx,
+        boardId,
+        action.cardId,
+      );
+      toColumnId = action.columnId ?? board.columns[0]?.id;
+    } else if (action.type === "RESTORE_CARD") {
+      // A column-less restore recreates the archived state, and restoring an
+      // archived snapshot into a column is a reducer no-op.
+      if (action.columnId === undefined) return;
+      if (action.card.archivedAt !== undefined) return;
+      card = action.card;
+      fromColumnId = await this.recoverySourceColumn(
+        tx,
+        boardId,
+        action.card.id,
+      );
+      toColumnId = action.columnId;
+    } else {
+      return;
+    }
+
+    if (fromColumnId === undefined || toColumnId === undefined) return;
+    // The original column was deleted: there is no status to enforce, so a
+    // recovery into a live column is allowed (deleting a column is ADMIN-only).
+    if (!board.columns.some((column) => column.id === fromColumnId)) return;
+    const to = board.columns.find((column) => column.id === toColumnId);
+    if (!to || fromColumnId === to.id) return;
+    if (!card) return;
+
+    let decision: WorkflowDecision;
+    let allowedToColumnIds: string[];
+    if (action.type === "MOVE_CARD") {
+      const move = evaluateTransition(
+        board,
+        action.cardId,
+        action.toColumnId,
+        actorRole as BoardRole,
+      );
+      decision = move;
+      allowedToColumnIds = move.allowedToColumnIds;
+    } else {
+      decision = evaluateCardTransition(
+        board.workflow,
+        card,
+        fromColumnId,
+        to.id,
+        actorRole as BoardRole,
+      );
+      allowedToColumnIds = board.columns
+        .filter((column) => column.id !== fromColumnId)
+        .filter(
+          (column) =>
+            evaluateCardTransition(
+              board.workflow,
+              card,
+              fromColumnId,
+              column.id,
+              actorRole as BoardRole,
+            ).allowed,
+        )
+        .map((column) => column.id);
+    }
+    if (decision.allowed) return;
+    if (decision.code === "card_not_found") return;
+    const workflow: WorkflowConflictDetails = {
+      code: decision.code,
+      fromColumnId: decision.fromColumnId,
+      toColumnId: decision.toColumnId,
+      allowedToColumnIds,
+      ...(decision.code === "role_not_allowed" && decision.requiredRoles
+        ? { requiredRoles: decision.requiredRoles }
+        : {}),
+      ...(decision.code === "condition_failed"
+        ? { failedConditions: decision.failedConditions }
+        : {}),
+    };
+    throw new ConflictException({
+      conflict: "workflow",
+      currentVersion,
+      workflow,
+    } satisfies ConflictError);
+  }
+
+  /** The column a soft-deleted or archived card came from, if still known. */
+  private async recoverySourceColumn(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    cardId: string,
+  ): Promise<string | undefined> {
+    const row = await tx.card.findFirst({
+      where: { id: cardId, column: { boardId } },
+      select: { columnId: true, archivedFromColumnId: true },
+    });
+    // A deleted source column leaves the internal orphan in `columnId`; the
+    // persisted archive source stays valid (and is absent from the board, so
+    // the caller treats it as a deleted-column recovery).
+    return row?.archivedFromColumnId ?? row?.columnId;
+  }
+
+  /**
+   * A workflow command may only name columns the board actually has. Shape is
+   * validated on the wire; this is the reference check that needs the board,
+   * so it runs under the lock. An enabled workflow also needs two columns —
+   * there is nothing to restrict on a one-column board.
+   */
+  private assertWorkflowReferences(board: Board, action: BoardAction): void {
+    if (action.type !== "SET_BOARD_WORKFLOW" || action.workflow === undefined) {
+      return;
+    }
+    const problem = workflowReferenceError(action.workflow, board.columns);
+    if (problem) {
+      throw new BadRequestException({
+        message: `Invalid workflow (${problem.field}): ${problem.message}`,
+        field: `action.${problem.field}`,
+      });
     }
   }
 

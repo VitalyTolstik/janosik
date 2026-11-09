@@ -25,7 +25,7 @@ import type {
   AdminUserDetailDto,
   AdminUserRowDto,
 } from "@janosik/shared";
-import { ADMIN_PAGE_LIMITS } from "@janosik/shared";
+import { ADMIN_PAGE_LIMITS, readBoardWorkflow } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
 import { AdminService } from "./admin.service";
@@ -1493,6 +1493,7 @@ export class AdminEntitiesService {
         id: true,
         title: true,
         version: true,
+        workflow: true,
         createdAt: true,
         updatedAt: true,
         archivedAt: true,
@@ -1589,6 +1590,7 @@ export class AdminEntitiesService {
           where: { boardId, deletedAt: null },
         }),
       ]);
+    const workflow = readBoardWorkflow(board.workflow);
 
     return {
       board: {
@@ -1647,6 +1649,17 @@ export class AdminEntitiesService {
         deletedAt: MS(label.deletedAt),
         version: label.version,
       })),
+      workflowSummary: {
+        present: workflow !== undefined,
+        enabled: workflow?.enabled ?? false,
+        transitions: workflow?.transitions.length ?? 0,
+        activeTransitions:
+          workflow?.transitions.filter(
+            (transition) => transition.enabled !== false,
+          ).length ?? 0,
+        initialColumnId: workflow?.initialColumnId ?? null,
+        doneColumnIds: workflow?.doneColumnIds ?? [],
+      },
     };
   }
 

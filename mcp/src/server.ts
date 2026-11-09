@@ -23,6 +23,7 @@ import { registerLinkTools } from "./tools/links.js";
 import { registerMemberTools } from "./tools/members.js";
 import { restrictToReadOnly } from "./tools/helpers.js";
 import { registerShareTools } from "./tools/shares.js";
+import { registerWorkflowTools } from "./tools/workflow.js";
 import { readVersion } from "./version.js";
 
 const INSTRUCTIONS = `Janosik is a Kanban board. Drive it the way a person would:
@@ -53,8 +54,10 @@ const GROUPS: Record<
   Toolset,
   (server: McpServer, client: JanosikClient, config: Config) => void
 > = {
-  boards: (server, client, config) =>
-    registerBoardTools(server, client, fsOptions(config), config.readOnly),
+  boards: (server, client, config) => {
+    registerBoardTools(server, client, fsOptions(config), config.readOnly);
+    registerWorkflowTools(server, client);
+  },
   columns: (server, client) => registerColumnTools(server, client),
   cards: (server, client) => registerCardTools(server, client),
   labels: (server, client) => registerLabelTools(server, client),

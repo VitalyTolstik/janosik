@@ -38,6 +38,7 @@ let cardOverrides: Record<string, unknown>;
 let searchFailure: number | null;
 let archivedBoard: boolean;
 let reorderOnConflict: boolean;
+let boardWorkflow: unknown;
 
 function board(cards: Record<string, unknown> = {}) {
   return {
@@ -118,6 +119,7 @@ function board(cards: Record<string, unknown> = {}) {
     labels: [],
     createdAt: 1,
     updatedAt: 1,
+    ...(boardWorkflow ? { workflow: boardWorkflow } : {}),
   };
 }
 
@@ -333,6 +335,7 @@ beforeEach(() => {
   searchFailure = null;
   archivedBoard = false;
   reorderOnConflict = false;
+  boardWorkflow = null;
   vi.stubGlobal("fetch", (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
@@ -357,7 +360,7 @@ describe("janosik MCP server", () => {
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
     // Pinned exactly so a dropped or renamed tool fails loudly.
-    expect(names.length).toBe(74);
+    expect(names.length).toBe(75);
     expect(names).toContain("janosik_list_boards");
     expect(names).toContain("janosik_create_card");
     expect(names).toContain("janosik_set_column_accent");
@@ -381,6 +384,49 @@ describe("janosik MCP server", () => {
     expect(result.structuredContent).toMatchObject({
       boards: [{ id: "b1" }],
     });
+    await client.close();
+  });
+
+  it("reads the workflow and validates a card's moves", async () => {
+    boardWorkflow = {
+      schemaVersion: 1,
+      enabled: true,
+      initialColumnId: "col1",
+      doneColumnIds: ["col2"],
+      transitions: [
+        {
+          id: "todo-done",
+          fromColumnId: "col1",
+          toColumnId: "col2",
+          allowedRoles: ["ADMIN", "MEMBER"],
+        },
+      ],
+    };
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_get_workflow",
+      arguments: { boardId: "b1", cardId: "k1" },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      enabled: true,
+      initialColumnId: "col1",
+      doneColumnIds: ["col2"],
+      transitions: [
+        {
+          id: "todo-done",
+          fromTitle: "Todo",
+          toTitle: "Done",
+          roles: ["ADMIN", "MEMBER"],
+        },
+      ],
+      card: {
+        id: "k1",
+        columnId: "col1",
+        allowedToColumnIds: ["col2"],
+      },
+    });
+    expect(firstText(result)).toContain("Todo → Done");
     await client.close();
   });
 

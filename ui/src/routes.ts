@@ -21,6 +21,10 @@ export const routes = {
   adminPattern: "/admin/*",
   /** Content editor of one board inside the master panel (TASK-43). */
   adminBoardContent: (boardId: string) => `/admin/boards/${boardId}/content`,
+  /** Detail page of one board in the master panel. */
+  adminBoardDetail: (boardId: string) => `/admin/boards/${boardId}`,
+  /** Workflow editor of one board, acting for its owner. */
+  adminBoardWorkflow: (boardId: string) => `/admin/boards/${boardId}/workflow`,
   /**
    * Public read-only board share (TASK-58, §7.9) — outside the auth shell
    * entirely, opened by token without a login. `?embed=1` drops the chrome
