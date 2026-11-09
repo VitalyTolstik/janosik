@@ -55,7 +55,8 @@ function seedBoard(): Board {
 }
 
 function Probe() {
-  const { board, boards, syncStatus, canUndo, canRedo } = useBoard();
+  const { board, boards, pendingBoardCount, syncStatus, canUndo, canRedo } =
+    useBoard();
   const actions = useBoardActions();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -83,6 +84,7 @@ function Probe() {
         {board?.columns.map((column) => column.title).join(",") ?? ""}
       </div>
       <div data-testid="board-count">{String(boards.length)}</div>
+      <div data-testid="pending-board-count">{String(pendingBoardCount)}</div>
       <div data-testid="can-undo">{String(canUndo)}</div>
       <div data-testid="can-redo">{String(canRedo)}</div>
       <div data-testid="second-archived">
@@ -1487,10 +1489,14 @@ describe("BoardProvider realtime review fixes (U-1…U-9)", () => {
     await waitReady();
     expect(screen.getByTestId("title").textContent).toBe("Second");
     expect(screen.getByTestId("board-count").textContent).toBe("1");
+    expect(screen.getByTestId("pending-board-count").textContent).toBe("2");
 
     act(() => open());
     await waitFor(() =>
       expect(screen.getByTestId("board-count").textContent).toBe("3"),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("pending-board-count").textContent).toBe("0"),
     );
   });
 

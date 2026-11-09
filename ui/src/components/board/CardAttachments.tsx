@@ -138,6 +138,9 @@ export function CardAttachments({
   // The first response decides between an empty list and a loading list.
   const [loaded, setLoaded] = useState(!serverMode);
   const aliveRef = useRef(true);
+  // A newer card/fetch supersedes an older answer; the dialog also remounts
+  // this section with `key={card.id}`, so stale rows can never leak across.
+  const loadGenRef = useRef(0);
   const [uploading, setUploading] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<AttachmentDto | null>(
     null,
@@ -146,20 +149,26 @@ export function CardAttachments({
 
   const load = useCallback(async () => {
     if (!serverMode) return;
-    try {
-      const [nextItems, nextDetached] = await Promise.all([
-        api.listAttachments(cardId),
-        api.listDetachedAttachments(cardId),
-      ]);
-      if (!aliveRef.current) return;
-      setItems(nextItems);
-      setDetachedItems(nextDetached);
-    } catch {
-      if (!aliveRef.current) return;
+    const gen = ++loadGenRef.current;
+    const current = () => aliveRef.current && loadGenRef.current === gen;
+    const [nextItems, nextDetached] = await Promise.allSettled([
+      api.listAttachments(cardId),
+      api.listDetachedAttachments(cardId),
+    ]);
+    if (!current()) return;
+    // A partial failure must not throw away the half that did arrive.
+    if (nextItems.status === "fulfilled") setItems(nextItems.value);
+    if (nextDetached.status === "fulfilled") {
+      setDetachedItems(nextDetached.value);
+    } else if (nextItems.status === "fulfilled") {
+      // The detached bin is supplementary: keep the main list visible and
+      // report the failure without turning it into a false empty state.
       toast.error(t("card.attachments.loadError"));
-    } finally {
-      if (aliveRef.current) setLoaded(true);
     }
+    if (nextItems.status === "rejected") {
+      toast.error(t("card.attachments.loadError"));
+    }
+    setLoaded(true);
   }, [cardId, serverMode, t, toast]);
 
   useEffect(() => {

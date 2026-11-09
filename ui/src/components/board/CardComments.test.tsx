@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -154,7 +155,9 @@ describe("CardComments", () => {
 
     const skeleton = await screen.findByTestId("card-comments-skeleton");
     expect(skeleton).toHaveAttribute("aria-busy", "true");
-    expect(skeleton).toHaveAttribute("role", "status");
+    expect(within(skeleton).getByRole("status")).toHaveTextContent(
+      "Loading comments…",
+    );
     expect(screen.queryByText("No comments yet")).not.toBeInTheDocument();
 
     act(() => release());

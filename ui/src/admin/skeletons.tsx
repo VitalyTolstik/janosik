@@ -57,7 +57,7 @@ export function EntityListSkeleton({
                 <Td key={column}>
                   <Skeleton
                     width={widths[column % widths.length]}
-                    height={12}
+                    height={16}
                   />
                 </Td>
               ))}

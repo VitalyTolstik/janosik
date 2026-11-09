@@ -38,7 +38,10 @@ export function BoardShellSkeleton() {
       </header>
 
       <main className="flex min-h-0 w-full flex-1 flex-col px-4 pb-4 pt-4 sm:px-6">
-        <Skeleton className="mb-3 h-8 w-full max-w-3xl rounded-lg" />
+        {/* Match FilterBar: p-2 + h-9 input + border ≈ 54 px. */}
+        <div className="mb-3 w-full rounded-xl border border-border bg-card/60 p-2 backdrop-blur-sm">
+          <Skeleton className="h-9 w-full rounded-lg" />
+        </div>
         <div className="mb-3 flex items-center justify-between gap-3">
           <Skeleton width={180} height={32} className="rounded-lg" />
           <Skeleton width={96} height={32} className="rounded-lg" />
@@ -89,7 +92,9 @@ export function BoardListSkeleton({ pending }: { pending: number }) {
 
   return (
     <div
-      role="status"
+      role="option"
+      aria-disabled="true"
+      aria-selected={false}
       aria-busy="true"
       aria-label={t("board.switcher.loading")}
       data-testid="board-switcher-skeleton"

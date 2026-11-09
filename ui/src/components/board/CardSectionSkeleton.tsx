@@ -87,7 +87,8 @@ export function CardDescriptionSkeleton() {
   return (
     <div className="space-y-1.5" data-testid="card-description-skeleton-rows">
       <Skeleton className="h-9 w-full rounded-md" />
-      <div className="space-y-2 rounded-md border border-border/60 p-3">
+      {/* `.janosik-md-content` reserves min-height 128 px inside the dialog. */}
+      <div className="min-h-32 space-y-2 rounded-md border border-border/60 p-3">
         <Skeleton className="h-3 w-full" />
         <Skeleton className="h-3 w-11/12" />
         <Skeleton className="h-3 w-3/5" />

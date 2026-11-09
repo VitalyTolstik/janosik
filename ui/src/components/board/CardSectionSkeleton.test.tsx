@@ -40,6 +40,7 @@ describe("CardSectionSkeleton", () => {
     const rows = screen.getByTestId("card-description-skeleton-rows");
     expect(rows.children).toHaveLength(2);
     expect(rows.firstElementChild).toHaveClass("h-9");
+    expect(rows.children[1]).toHaveClass("min-h-32");
   });
 
   it("is hidden from assistive technology and lives in one region", () => {

@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WatchView } from "@/components/board/WatchView";
@@ -8,7 +14,7 @@ import {
   createBoardLive,
   type BoardLive,
 } from "@/store/board-live";
-import type { Board, Card } from "@janosik/shared";
+import type { ActivityFeedEntry, Board, Card } from "@janosik/shared";
 
 /**
  * TASK-142 Watch view: the bare swarm observer. It must render the board
@@ -163,6 +169,31 @@ describe("WatchView (TASK-142)", () => {
       "Could not load the activity feed.",
     );
     expect(screen.getByTestId("watch-retry")).toBeInTheDocument();
+  });
+
+  it("shows a busy feed skeleton until the first page arrives", async () => {
+    hoisted.enabled.value = true;
+    let release!: (page: {
+      items: ActivityFeedEntry[];
+      nextCursor: string | null;
+    }) => void;
+    hoisted.boardActivity.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    renderWatch();
+
+    const skeleton = await screen.findByTestId("watch-feed-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+    expect(screen.getAllByTestId("watch-skeleton-row")).toHaveLength(8);
+    expect(screen.queryByText("No activity yet")).toBeNull();
+
+    act(() => release({ items: [], nextCursor: null }));
+    await waitFor(() =>
+      expect(screen.queryByTestId("watch-feed-skeleton")).toBeNull(),
+    );
+    expect(await screen.findByText("No activity yet")).toBeInTheDocument();
   });
 
   it("renders the live feed with actor, card title and inline diff", async () => {

@@ -12,7 +12,7 @@ export function CalendarSkeleton() {
   const { t } = useI18n();
   return (
     <SkeletonRegion
-      label={t("view.calendar")}
+      label={t("common.loading")}
       testId="calendar-view-skeleton"
       className="flex min-h-0 flex-1 flex-col"
       contentClassName="flex min-h-0 flex-1 flex-col"
@@ -66,7 +66,7 @@ export function TableSkeleton() {
   const { t } = useI18n();
   return (
     <SkeletonRegion
-      label={t("view.table")}
+      label={t("common.loading")}
       testId="table-view-skeleton"
       className="flex min-h-0 flex-1 flex-col"
       contentClassName="flex min-h-0 flex-1 flex-col"

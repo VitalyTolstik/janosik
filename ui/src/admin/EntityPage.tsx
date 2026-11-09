@@ -315,7 +315,6 @@ export function EntityPage<E extends AdminEntity>({
           <EntityListSkeleton
             columns={
               config.columns.length +
-              (bulkEnabled ? 1 : 0) +
               (config.actions || !config.skipActions ? 1 : 0)
             }
             bulk={bulkEnabled}

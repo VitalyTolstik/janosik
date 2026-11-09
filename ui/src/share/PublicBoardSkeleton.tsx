@@ -17,7 +17,7 @@ export function PublicBoardSkeleton() {
       contentClassName="flex min-h-0 flex-1 flex-col"
       delayMs={200}
     >
-      <div className="flex min-h-0 flex-1 items-start gap-3 overflow-hidden pb-4">
+      <div className="flex min-h-0 flex-1 items-stretch gap-3 overflow-hidden pb-4">
         {Array.from({ length: 3 }, (_, index) => (
           <div
             key={index}

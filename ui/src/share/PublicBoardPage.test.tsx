@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import type { Board, PublicBoardDto } from "@janosik/shared";
@@ -112,8 +112,10 @@ describe("PublicBoardPage", () => {
     renderPage("snaptok");
 
     const skeleton = screen.getByTestId("public-board-skeleton");
-    expect(skeleton).toHaveAttribute("role", "status");
     expect(skeleton).toHaveAttribute("aria-busy", "true");
+    expect(within(skeleton).getByRole("status")).toHaveTextContent(
+      "Loading shared board…",
+    );
     expect(screen.getAllByTestId("public-board-skeleton-column")).toHaveLength(
       3,
     );

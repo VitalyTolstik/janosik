@@ -940,6 +940,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   const runHydration = useCallback(async (): Promise<void> => {
     const gen = ++hydrationGenRef.current;
+    // A failed re-hydration must not leave the previous generation's pending
+    // rows counting forever; this generation owns the counter from here.
+    setPendingBoardCount(0);
     const summaries = await api.listBoards();
     const nextRoles: Record<string, BoardRole> = {};
     for (const summary of summaries) nextRoles[summary.id] = summary.role;

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -25,9 +25,11 @@ describe("BoardShellSkeleton", () => {
   it("reserves the real board geometry under one busy region", () => {
     renderShell();
     const shell = screen.getByTestId("board-shell-skeleton");
-    expect(shell).toHaveAttribute("role", "status");
     expect(shell).toHaveAttribute("aria-busy", "true");
     expect(shell).toHaveClass("janosik-skeleton-region");
+    expect(within(shell).getByRole("status")).toHaveTextContent(
+      "Loading boards…",
+    );
     expect(screen.getAllByTestId("board-skeleton-column")).toHaveLength(4);
     expect(screen.getAllByTestId("board-skeleton-card")).toHaveLength(12);
     expect(screen.getByText("Loading boards…")).toHaveClass("sr-only");

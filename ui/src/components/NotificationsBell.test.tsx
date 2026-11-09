@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,8 +33,13 @@ const INVITATION = {
   invitedByEmail: "owner@example.com",
 };
 
-function renderBell(server: FakeServer) {
-  vi.stubGlobal("fetch", server.handle);
+type FetchHandler = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
+function renderBell(server: FakeServer, handler: FetchHandler = server.handle) {
+  vi.stubGlobal("fetch", handler);
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
@@ -87,6 +92,34 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
 
     await userEvent.click(bell);
     expect(await screen.findByText("No invitations")).toBeInTheDocument();
+  });
+
+  it("shows a busy skeleton until the invitation list arrives", async () => {
+    const server = new FakeServer();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler: FetchHandler = async (input, init) => {
+      const url = new URL(String(input), "http://api.test");
+      if (url.pathname === "/api/v1/invitations") await gate;
+      return server.handle(input, init);
+    };
+
+    renderBell(server, handler);
+    await userEvent.click(await screen.findByTestId("notifications-bell"));
+
+    const skeleton = await screen.findByTestId("notifications-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByTestId("invitations-panel")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+
+    act(() => release());
+
+    expect(await screen.findByText("No invitations")).toBeInTheDocument();
+    expect(screen.queryByTestId("notifications-skeleton")).toBeNull();
   });
 
   it("badges the bell and lists the invitation details", async () => {

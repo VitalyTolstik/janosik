@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -49,11 +49,11 @@ describe("Skeleton", () => {
       </SkeletonRegion>,
     );
     const region = screen.getByTestId("skeleton-test");
-    expect(region).toHaveAttribute("role", "status");
-    expect(region).toHaveAttribute("aria-live", "polite");
     expect(region).toHaveAttribute("aria-busy", "true");
-    expect(region).toHaveAttribute("aria-label", "Loading comments…");
-    expect(screen.getByText("Loading comments…")).toHaveClass("sr-only");
+    const status = within(region).getByRole("status");
+    expect(status).toHaveAttribute("aria-live", "polite");
+    expect(status).toHaveTextContent("Loading comments…");
+    expect(status).toHaveClass("sr-only");
   });
 
   it("unmounts the fallback once the boundary has data", () => {

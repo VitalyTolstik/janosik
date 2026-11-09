@@ -132,15 +132,16 @@ export function SkeletonRegion({
 }: SkeletonRegionProps) {
   return (
     <div
-      role="status"
-      aria-live="polite"
       aria-busy="true"
-      aria-label={label}
       data-testid={testId}
       className={cn("janosik-skeleton-region", className)}
       style={{ "--janosik-skeleton-delay": `${delayMs}ms` } as CSSProperties}
     >
-      <span className="sr-only">{label}</span>
+      {/* The busy flag lives on the outer layout box; the live region itself
+          stays un-busy so the "Loading…" text is announced. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {label}
+      </span>
       <div aria-hidden="true" className={contentClassName}>
         {children}
       </div>
