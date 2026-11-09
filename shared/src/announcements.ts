@@ -149,6 +149,40 @@ export function resolveAnnouncementContent(input: {
 }
 
 /**
+ * Full fallback phrase in the recipient's UI language. Kept as complete
+ * sentences rather than “only in” + a declined language name, so adding a
+ * third language never breaks grammar.
+ */
+export function announcementFallbackNotice(
+  recipientLocale: AnnouncementLocale,
+  contentLocale: AnnouncementLocale | null,
+): string {
+  if (recipientLocale === "ru") {
+    return contentLocale === "en"
+      ? "Это объявление доступно только на английском."
+      : "Это объявление доступно только на русском.";
+  }
+  return contentLocale === "ru"
+    ? "This announcement is available in Russian only."
+    : "This announcement is available in English only.";
+}
+
+/** Localized subject prefix used only when the content language differs. */
+export function announcementFallbackSubjectPrefix(
+  recipientLocale: AnnouncementLocale,
+  contentLocale: AnnouncementLocale,
+): string {
+  if (recipientLocale === "ru") {
+    return contentLocale === "en"
+      ? "Объявление (только на английском): "
+      : "Объявление (только на русском): ";
+  }
+  return contentLocale === "ru"
+    ? "Announcement (Russian only): "
+    : "Announcement (English only): ";
+}
+
+/**
  * The primary text an admin list shows: the original translation, then the
  * legacy columns, then any translation. Used for the compatibility
  * `title`/`body` fields on the admin DTO.

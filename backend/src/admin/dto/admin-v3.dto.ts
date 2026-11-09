@@ -282,6 +282,13 @@ export class AdminUpdateAnnouncementDto {
   @Type(() => Number)
   @IsInt()
   endsAt?: number | null;
+
+  /** Optimistic concurrency: version loaded with the announcement. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  version?: number;
 }
 
 export class AdminSendEmailDto {

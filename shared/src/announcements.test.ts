@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  announcementFallbackNotice,
+  announcementFallbackSubjectPrefix,
   announcementPrimaryContent,
   completeness,
   isAnnouncementFallbackPolicy,
@@ -185,5 +187,20 @@ describe("announcements", () => {
     expect(
       announcementPrimaryContent({ sourceLocale: null, translations: [] }),
     ).toEqual({ title: "", body: "" });
+  });
+
+  it("keeps the fallback phrases complete per language", () => {
+    expect(announcementFallbackNotice("en", "ru")).toBe(
+      "This announcement is available in Russian only.",
+    );
+    expect(announcementFallbackNotice("ru", "en")).toBe(
+      "Это объявление доступно только на английском.",
+    );
+    expect(announcementFallbackSubjectPrefix("en", "ru")).toBe(
+      "Announcement (Russian only): ",
+    );
+    expect(announcementFallbackSubjectPrefix("ru", "en")).toBe(
+      "Объявление (только на английском): ",
+    );
   });
 });

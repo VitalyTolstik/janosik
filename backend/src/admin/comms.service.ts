@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -21,6 +22,7 @@ import {
   type AnnouncementFallbackPolicy,
   type AnnouncementLocale,
   type AnnouncementTranslationLike,
+  type AnnouncementTranslationOrigin,
 } from "@janosik/shared";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -43,6 +45,8 @@ interface TranslationInput {
   locale: AnnouncementLocale;
   title: string;
   body: string;
+  origin?: AnnouncementTranslationOrigin;
+  reviewedAt?: Date | null;
 }
 
 interface RecipientProfile {
@@ -114,6 +118,7 @@ export class CommsService {
       emailSentAt: row.emailSentAt?.getTime() ?? null,
       startsAt: row.startsAt?.getTime() ?? null,
       endsAt: row.endsAt?.getTime() ?? null,
+      version: row.version,
       createdBy: row.createdBy,
       createdAt: row.createdAt.getTime(),
       updatedAt: row.updatedAt.getTime(),
@@ -177,13 +182,13 @@ export class CommsService {
       fallbackPolicy: parsed.fallbackPolicy,
       sourceLocale: parsed.sourceLocale,
       translations: parsed.translations,
-      legacy: null,
+      legacy: parsed.legacy,
     });
 
     let row = await this.prisma.announcement.create({
       data: {
-        title: null,
-        body: null,
+        title: parsed.legacy?.title ?? null,
+        body: parsed.legacy?.body ?? null,
         sourceLocale: parsed.sourceLocale,
         fallbackPolicy: parsed.fallbackPolicy,
         level: dto.level ?? "info",
@@ -194,14 +199,18 @@ export class CommsService {
         startsAt: parsed.startsAt,
         endsAt: parsed.endsAt,
         createdBy,
-        translations: {
-          create: parsed.translations.map((translation) => ({
-            ...translation,
-            origin: "human",
-            reviewedAt: new Date(),
-            updatedBy: createdBy,
-          })),
-        },
+        ...(parsed.translations.length > 0
+          ? {
+              translations: {
+                create: parsed.translations.map((translation) => ({
+                  ...translation,
+                  origin: "human",
+                  reviewedAt: new Date(),
+                  updatedBy: createdBy,
+                })),
+              },
+            }
+          : {}),
       },
       include: { translations: true },
     });
@@ -209,7 +218,7 @@ export class CommsService {
     // Publishing is the only moment a letter may leave. A draft stays silent;
     // activation through PATCH later reuses the same path.
     if (row.active && row.sendEmail) {
-      row = await this.sendLocalizedEmail(row);
+      row = await this.claimAndScheduleEmail(row);
     }
     return this.toAnnouncement(row);
   }
@@ -218,14 +227,41 @@ export class CommsService {
     id: string,
     dto: AdminUpdateAnnouncementRequest,
     updatedBy?: string,
-  ): Promise<AdminAnnouncementDto> {
+  ): Promise<{
+    announcement: AdminAnnouncementDto;
+    changedLocales: AnnouncementLocale[];
+    legacyChanged: boolean;
+  }> {
     const exists = await this.prisma.announcement.findUnique({
       where: { id },
       include: { translations: true },
     });
     if (!exists) throw new NotFoundException("Announcement not found");
+    if (dto.version !== undefined && dto.version !== exists.version) {
+      throw new ConflictException({
+        statusCode: 409,
+        conflict: "version",
+        currentVersion: exists.version,
+        message: "The announcement was changed by someone else",
+      });
+    }
 
     const active = dto.active ?? exists.active;
+    // Turning the checkbox on while the announcement is already live is a
+    // no-op in the publish pipeline (only draft → active may send). Reject it
+    // instead of leaving a silent `email pending` badge.
+    if (
+      active &&
+      exists.active &&
+      dto.sendEmail === true &&
+      !exists.sendEmail &&
+      exists.emailSentAt === null
+    ) {
+      throw this.badRequest(
+        "announcement_email_active_noop",
+        "An active announcement cannot send email on save; save it as a draft and publish again",
+      );
+    }
     const fallbackPolicy =
       dto.fallbackPolicy ??
       (isAnnouncementFallbackPolicy(exists.fallbackPolicy)
@@ -245,16 +281,24 @@ export class CommsService {
         locale: translation.locale,
         title: translation.title,
         body: translation.body,
+        origin:
+          translation.origin === "ai_draft" || translation.origin === "legacy"
+            ? translation.origin
+            : "human",
+        reviewedAt: translation.reviewedAt,
       });
     }
 
+    // `null` is accepted by the validation pipe as "optional" but must behave
+    // like an omitted field, not crash `Object.entries`.
+    const translationPatch = dto.translations ?? undefined;
     let legacyTitle = exists.title;
     let legacyBody = exists.body;
     const isLegacyRow =
       exists.sourceLocale === null && exists.translations.length === 0;
 
-    if (dto.translations !== undefined) {
-      for (const [rawLocale, value] of Object.entries(dto.translations)) {
+    if (translationPatch !== undefined) {
+      for (const [rawLocale, value] of Object.entries(translationPatch)) {
         if (!isAnnouncementLocale(rawLocale)) {
           throw this.badRequest(
             "announcement_locale_unsupported",
@@ -271,7 +315,7 @@ export class CommsService {
     }
 
     const legacyPayload =
-      dto.translations === undefined &&
+      translationPatch === undefined &&
       (dto.title !== undefined || dto.body !== undefined);
 
     if (legacyPayload) {
@@ -321,31 +365,30 @@ export class CommsService {
       dto.sourceLocale !== null &&
       isLegacyRow &&
       exists.title !== null &&
-      exists.body !== null &&
-      !translations.has(dto.sourceLocale)
+      exists.body !== null
     ) {
-      translations.set(dto.sourceLocale, {
-        locale: dto.sourceLocale,
-        title: exists.title,
-        body: exists.body,
-      });
+      if (!translations.has(dto.sourceLocale)) {
+        translations.set(dto.sourceLocale, {
+          locale: dto.sourceLocale,
+          title: exists.title,
+          body: exists.body,
+        });
+      }
       sourceLocale = dto.sourceLocale;
       legacyTitle = null;
       legacyBody = null;
     }
 
     if (sourceLocale !== null && !translations.has(sourceLocale)) {
-      if (!(sourceLocale === null && legacyTitle && legacyBody)) {
-        throw this.badRequest(
-          "announcement_source_translation_required",
-          "The source language must have a complete translation",
-          { missingLocales: [sourceLocale] },
-        );
-      }
+      throw this.badRequest(
+        "announcement_source_translation_required",
+        "The source language must have a complete translation",
+        { missingLocales: [sourceLocale] },
+      );
     }
 
     const finalTranslations = [...translations.values()];
-    if (dto.sourceLocale === null && finalTranslations.length > 0) {
+    if (sourceLocale === null && finalTranslations.length > 0) {
       throw this.badRequest(
         "announcement_source_locale_required",
         "Choose the source language of the announcement",
@@ -362,18 +405,18 @@ export class CommsService {
       );
     }
 
-    // A deleted source translation is a hard error unless another source was
-    // chosen in the same patch; otherwise the fallback would be undefined.
-    const removedSource =
-      dto.translations !== undefined &&
-      sourceLocale !== null &&
-      dto.translations[sourceLocale] === null &&
-      dto.sourceLocale === undefined;
-    if (removedSource) {
+    // `require_all` is a promise that both languages exist. A legacy row has
+    // no known source yet, so allowing strict mode on it would produce a
+    // misleading "EN+RU" badge while publishing source-less content.
+    if (
+      finalTranslations.length === 0 &&
+      legacyTitle?.trim() &&
+      legacyBody?.trim() &&
+      fallbackPolicy === "require_all"
+    ) {
       throw this.badRequest(
-        "announcement_source_translation_required",
-        "Choose another source language before deleting this translation",
-        { missingLocales: [sourceLocale] },
+        "announcement_source_locale_required",
+        "Choose the source language before enabling strict publishing",
       );
     }
 
@@ -424,6 +467,19 @@ export class CommsService {
       (translation) => translation.locale === sourceLocale,
     );
     const sourceUpdatedAt = new Date();
+    const finalSendEmail = dto.sendEmail ?? exists.sendEmail;
+    // Claim the letter atomically with the draft → active transition. The
+    // actual recipient fan-out happens after this request returns; a retry
+    // sees `emailSentAt` set and cannot duplicate the broadcast.
+    const sendNow =
+      !exists.active &&
+      active &&
+      finalSendEmail &&
+      exists.emailSentAt === null &&
+      this.mailer.enabled;
+    const legacyChanged =
+      (legacyTitle ?? null) !== (exists.title ?? null) ||
+      (legacyBody ?? null) !== (exists.body ?? null);
 
     const data: Prisma.AnnouncementUpdateInput = {
       sourceLocale,
@@ -432,7 +488,9 @@ export class CommsService {
       audience: dto.audience ?? exists.audience,
       segment: dto.segment !== undefined ? dto.segment : exists.segment,
       active,
-      sendEmail: dto.sendEmail ?? exists.sendEmail,
+      sendEmail: finalSendEmail,
+      ...(sendNow ? { emailSentAt: new Date() } : {}),
+      version: { increment: 1 },
       startsAt:
         dto.startsAt !== undefined
           ? dto.startsAt === null
@@ -449,7 +507,7 @@ export class CommsService {
       body: legacyBody,
     };
 
-    let row = await this.prisma.$transaction(async (tx) => {
+    const row = await this.prisma.$transaction(async (tx) => {
       if (removedLocales.length > 0) {
         await tx.announcementTranslation.deleteMany({
           where: { announcementId: id, locale: { in: removedLocales } },
@@ -475,7 +533,7 @@ export class CommsService {
               ? null
               : (sourceRow?.updatedAt ?? sourceUpdatedAt),
             reviewedAt: sourceUpdatedAt,
-            updatedBy: updatedBy ?? exists.createdBy,
+            updatedBy: updatedBy ?? null,
           },
           update: {
             title: translation.title,
@@ -486,28 +544,41 @@ export class CommsService {
               ? null
               : (sourceRow?.updatedAt ?? sourceUpdatedAt),
             reviewedAt: sourceUpdatedAt,
-            updatedBy: updatedBy ?? exists.createdBy,
+            updatedBy: updatedBy ?? null,
           },
         });
       }
-      return tx.announcement.update({
-        where: { id },
+      const updated = await tx.announcement.updateMany({
+        where: { id, version: exists.version },
         data,
+      });
+      if (updated.count === 0) {
+        throw new ConflictException({
+          statusCode: 409,
+          conflict: "version",
+          currentVersion: exists.version,
+          message: "The announcement was changed by someone else",
+        });
+      }
+      return tx.announcement.findUniqueOrThrow({
+        where: { id },
         include: { translations: true },
       });
     });
 
-    // Only a draft becoming active sends: editing an already-live banner must
-    // never mail the same audience twice.
-    if (
-      !exists.active &&
-      row.active &&
-      row.sendEmail &&
-      row.emailSentAt === null
-    ) {
-      row = await this.sendLocalizedEmail(row);
+    if (sendNow) {
+      // Fire-and-forget: the HTTP response must not wait for recipient lookup
+      // or SMTP/queue drains. `emailSentAt` above is the durable claim.
+      void this.dispatchLocalizedEmail(row);
     }
-    return this.toAnnouncement(row);
+    return {
+      announcement: this.toAnnouncement(row),
+      changedLocales: [
+        ...changedTranslations.map((translation) => translation.locale),
+        ...removedLocales,
+      ],
+      legacyChanged,
+    };
   }
 
   async deleteAnnouncement(id: string): Promise<void> {
@@ -583,9 +654,10 @@ export class CommsService {
   // ------------------------------------------------------- announcement io
 
   private parseCreate(dto: AdminCreateAnnouncementRequest): {
-    sourceLocale: AnnouncementLocale;
+    sourceLocale: AnnouncementLocale | null;
     fallbackPolicy: AnnouncementFallbackPolicy;
     translations: TranslationInput[];
+    legacy: { title: string; body: string } | null;
     startsAt: Date | null;
     endsAt: Date | null;
   } {
@@ -598,9 +670,10 @@ export class CommsService {
       );
     }
 
-    let sourceLocale: AnnouncementLocale;
+    let sourceLocale: AnnouncementLocale | null = null;
     let fallbackPolicy: AnnouncementFallbackPolicy;
     let translations: TranslationInput[];
+    let legacy: { title: string; body: string } | null = null;
 
     if (hasTranslations) {
       if (!isAnnouncementLocale(dto.sourceLocale)) {
@@ -644,21 +717,31 @@ export class CommsService {
           "Both title and body are required",
         );
       }
-      // The legacy client never knew about a policy; defaulting it to strict
-      // would break its create flow.
-      sourceLocale = isAnnouncementLocale(dto.sourceLocale)
-        ? dto.sourceLocale
-        : "en";
-      fallbackPolicy = dto.fallbackPolicy ?? "allow_fallback";
-      translations = [{ locale: sourceLocale, title, body }];
+      if (isAnnouncementLocale(dto.sourceLocale)) {
+        // A caller that names the source language gets the normal translation
+        // path. Old admin bundles never send this field.
+        sourceLocale = dto.sourceLocale;
+        fallbackPolicy = dto.fallbackPolicy ?? "allow_fallback";
+        translations = [{ locale: sourceLocale, title, body }];
+      } else {
+        // The pre-localization payload carries no language. Keeping it as a
+        // true legacy row is the only honest choice: inventing `en` would show
+        // Russian text to EN users without a notice (and the reverse notice in
+        // the RU banner/email). The admin migrates it explicitly in the editor.
+        sourceLocale = null;
+        fallbackPolicy = "allow_fallback";
+        translations = [];
+        legacy = { title, body };
+      }
     }
 
     return {
       sourceLocale,
       fallbackPolicy,
       translations,
-      startsAt: dto.startsAt ? new Date(dto.startsAt) : null,
-      endsAt: dto.endsAt ? new Date(dto.endsAt) : null,
+      legacy,
+      startsAt: dto.startsAt != null ? new Date(dto.startsAt) : null,
+      endsAt: dto.endsAt != null ? new Date(dto.endsAt) : null,
     };
   }
 
@@ -722,7 +805,12 @@ export class CommsService {
       return;
     }
 
-    const available = completeness(input.translations);
+    const available = completeness(
+      input.translations.map((translation) => ({
+        ...translation,
+        reviewedAt: translation.reviewedAt?.getTime() ?? null,
+      })),
+    );
     if (input.fallbackPolicy === "require_all") {
       const missingLocales = ANNOUNCEMENT_LOCALES.filter(
         (locale) => !available[locale],
@@ -819,10 +907,41 @@ export class CommsService {
     }));
   }
 
-  private async sendLocalizedEmail(
+  /**
+   * Atomically claim the letter for a freshly published announcement, then
+   * run the fan-out in the background. The claim is what makes a retried
+   * request harmless: the next one sees `emailSentAt` already set.
+   */
+  private async claimAndScheduleEmail(
     row: AnnouncementWithTranslations,
   ): Promise<AnnouncementWithTranslations> {
     if (!this.mailer.enabled) return row;
+    const claimed = await this.prisma.announcement.updateMany({
+      where: {
+        id: row.id,
+        active: true,
+        sendEmail: true,
+        emailSentAt: null,
+      },
+      data: { emailSentAt: new Date() },
+    });
+    if (claimed.count === 0) return row;
+    const current = await this.prisma.announcement.findUniqueOrThrow({
+      where: { id: row.id },
+      include: { translations: true },
+    });
+    void this.dispatchLocalizedEmail(current);
+    return current;
+  }
+
+  /**
+   * Background recipient fan-out. Never awaited by the admin request: SMTP
+   * and a large `audience=all` must not hold the HTTP response open.
+   */
+  private async dispatchLocalizedEmail(
+    row: AnnouncementWithTranslations,
+  ): Promise<void> {
+    if (!this.mailer.enabled) return;
     try {
       const recipients = await this.recipientProfiles(
         row.audience,
@@ -865,7 +984,6 @@ export class CommsService {
         groups.set(key, group);
       }
 
-      let queued = false;
       for (const [key, group] of groups) {
         if (group.emails.length === 0) continue;
         const content = resolveAnnouncementContent({
@@ -885,25 +1003,19 @@ export class CommsService {
           isFallback: content.isFallback,
         });
         await this.broadcasts.enqueue({
+          // `row.id:key` is stable: a retry or a second dispatch of the same
+          // group reuses the same deterministic job ids.
           id: `${row.id}:${key}`,
           emails: group.emails,
           ...mail,
         });
-        queued = true;
       }
-      if (!queued) return row;
-      return await this.prisma.announcement.update({
-        where: { id: row.id },
-        data: { emailSentAt: new Date() },
-        include: { translations: true },
-      });
     } catch (error) {
       this.logger.warn(
         `Announcement email ${row.id} failed: ${
           error instanceof Error ? error.message : "unknown"
         }`,
       );
-      return row;
     }
   }
 

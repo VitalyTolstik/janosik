@@ -67,6 +67,19 @@ describe("announcementEmail", () => {
     expect(mail.html).not.toContain("<script>alert(1)</script>");
   });
 
+  it("keeps legacy content language-neutral in the email shell", () => {
+    const mail = announcementEmail({
+      title: "Старое объявление",
+      body: "Без известного языка",
+      contentLocale: null,
+      recipientLocale: "en",
+      isFallback: false,
+    });
+    expect(mail.subject).toBe("Старое объявление");
+    expect(mail.html).not.toContain("<html lang=");
+    expect(mail.html).not.toContain('<div lang="en"');
+  });
+
   it("keeps complete fallback phrases per locale", () => {
     expect(announcementFallbackNotice("en", "ru")).toBe(
       "This announcement is available in Russian only.",

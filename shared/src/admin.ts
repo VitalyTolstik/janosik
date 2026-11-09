@@ -1311,6 +1311,8 @@ export interface AdminAnnouncementDto {
   emailSentAt: number | null;
   startsAt: number | null;
   endsAt: number | null;
+  /** Optimistic concurrency version; send it back on PATCH. */
+  version: number;
   createdBy: string;
   createdAt: number;
   updatedAt: number;
@@ -1368,6 +1370,8 @@ export interface AdminUpdateAnnouncementRequest {
   sendEmail?: boolean;
   startsAt?: number | null;
   endsAt?: number | null;
+  /** Version loaded by the editor; omitted by old clients. */
+  version?: number;
 
   /** @deprecated Compatibility with the pre-localization admin client. */
   title?: string;

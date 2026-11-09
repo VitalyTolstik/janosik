@@ -20,9 +20,10 @@ SET "fallbackPolicy" = 'allow_fallback'
 WHERE "sourceLocale" IS NULL;
 
 -- Backfill delivery state so a future resend cannot duplicate a legacy letter.
+-- Drafts never sent anything and stay eligible for their first publication.
 UPDATE "Announcement"
 SET "emailSentAt" = "updatedAt"
-WHERE "sendEmail" = true AND "emailSentAt" IS NULL;
+WHERE "sendEmail" = true AND "active" = true AND "emailSentAt" IS NULL;
 
 CREATE TABLE "AnnouncementTranslation" (
   "id"              TEXT NOT NULL,

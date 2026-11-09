@@ -7,6 +7,7 @@ import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { MailerService } from "@/mailer/mailer.service";
+import { BroadcastQueueService } from "@/ops/broadcast-queue.service";
 import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "ann-owner@example.com";
@@ -27,6 +28,7 @@ describe("Announcements (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let mailer: MailerService;
+  let broadcasts: BroadcastQueueService;
   let ownerToken: string;
   let operatorToken: string;
   let enToken: string;
@@ -51,6 +53,24 @@ describe("Announcements (e2e)", () => {
     return req;
   };
 
+  /** Background fan-out: poll the in-memory outbox instead of assuming sync. */
+  const waitForOutbox = async (
+    predicate: (mail: (typeof mailer.outbox)[number]) => boolean,
+    timeoutMs = 2_000,
+  ) => {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const mail = mailer.outbox.find(predicate);
+      if (mail) return mail;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    return undefined;
+  };
+  const waitForOutboxCount = (count: number, timeoutMs = 2_000) =>
+    waitForOutbox(() => mailer.outbox.length >= count, timeoutMs).then(
+      () => mailer.outbox.length,
+    );
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -60,6 +80,7 @@ describe("Announcements (e2e)", () => {
     await app.init();
     prisma = app.get(PrismaService);
     mailer = app.get(MailerService);
+    broadcasts = app.get(BroadcastQueueService);
     await wipeAll(prisma);
 
     const passwordHash = await argonHash(USER_PASSWORD, { type: argon2id });
@@ -236,6 +257,12 @@ describe("Announcements (e2e)", () => {
       contentLocale: "en",
       requestedLocale: "en",
     });
+    const invalidQuery = await active(ruToken, "?locale=fr").expect(200);
+    expect(invalidQuery.body[0]).toMatchObject({
+      id: created.body.id,
+      contentLocale: "ru",
+      requestedLocale: "ru",
+    });
     const byHeader = await active(nullToken, "", "ru-RU,ru;q=0.9").expect(200);
     expect(byHeader.body[0]).toMatchObject({
       id: created.body.id,
@@ -244,16 +271,47 @@ describe("Announcements (e2e)", () => {
     });
   });
 
-  it("keeps legacy payloads and legacy rows readable", async () => {
+  it("keeps the old payload as a true language-unknown legacy row", async () => {
+    const title = "Плановые работы";
+    const body = "Сервер будет недоступен сегодня вечером.";
     const created = await postAnnouncement({
-      title: "Legacy title",
-      body: "Legacy body",
+      title,
+      body,
+      sendEmail: true,
     }).expect(201);
-    expect(created.body.sourceLocale).toBe("en");
+    expect(created.body.sourceLocale).toBeNull();
     expect(created.body.fallbackPolicy).toBe("allow_fallback");
-    expect(created.body.translations).toEqual([
-      expect.objectContaining({ locale: "en", title: "Legacy title" }),
-    ]);
+    expect(created.body.translations).toEqual([]);
+    expect(created.body.title).toBe(title);
+    expect(created.body.emailSentAt).toEqual(expect.any(Number));
+
+    const en = await active(enToken, "?locale=en").expect(200);
+    expect(
+      en.body.find((item: { id: string }) => item.id === created.body.id),
+    ).toMatchObject({
+      title,
+      body,
+      contentLocale: null,
+      requestedLocale: "en",
+      isFallback: false,
+    });
+    const ru = await active(ruToken, "?locale=ru").expect(200);
+    expect(
+      ru.body.find((item: { id: string }) => item.id === created.body.id),
+    ).toMatchObject({
+      title,
+      contentLocale: null,
+      requestedLocale: "ru",
+      isFallback: false,
+    });
+
+    const toEn = await waitForOutbox((mail) => mail.to === EN_EMAIL);
+    expect(toEn?.subject).toBe(title);
+    expect(toEn?.text).toContain(body);
+    expect(toEn?.text).not.toContain("available in");
+    const toRu = await waitForOutbox((mail) => mail.to === RU_EMAIL);
+    expect(toRu?.subject).toBe(title);
+    expect(toRu?.text).not.toContain("доступно только");
 
     const legacy = await prisma.announcement.create({
       data: {
@@ -274,6 +332,181 @@ describe("Announcements (e2e)", () => {
       requestedLocale: "en",
       isFallback: false,
     });
+  });
+
+  it("rejects a stale edit and preserves the other admin's language", async () => {
+    const created = await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "require_all",
+      translations: both,
+      active: false,
+    }).expect(201);
+    const staleVersion = created.body.version as number;
+
+    const first = await patchAnnouncement(created.body.id as string, {
+      translations: {
+        ru: { title: "RU admin A", body: "Правка первого админа" },
+      },
+      version: staleVersion,
+    }).expect(200);
+    expect(first.body.version).toBe(staleVersion + 1);
+
+    const stale = await patchAnnouncement(created.body.id as string, {
+      translations: {
+        en: { title: "EN admin B", body: "Second admin edit" },
+      },
+      version: staleVersion,
+    }).expect(409);
+    expect(stale.body.conflict).toBe("version");
+    expect(stale.body.currentVersion).toBe(staleVersion + 1);
+
+    await patchAnnouncement(created.body.id as string, {
+      translations: {
+        en: { title: "EN admin B", body: "Second admin edit" },
+      },
+      version: first.body.version as number,
+    }).expect(200);
+
+    const list = await server()
+      .get("/api/v1/admin/announcements")
+      .set(admin())
+      .expect(200);
+    const row = list.body.find(
+      (item: { id: string }) => item.id === created.body.id,
+    );
+    expect(row.translations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ locale: "ru", title: "RU admin A" }),
+        expect.objectContaining({ locale: "en", title: "EN admin B" }),
+      ]),
+    );
+  });
+
+  it("treats null translations as an omitted patch and requires a source with translations", async () => {
+    const created = await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "require_all",
+      translations: both,
+      active: false,
+    }).expect(201);
+    await patchAnnouncement(created.body.id as string, {
+      translations: null,
+      version: created.body.version,
+    }).expect(200);
+
+    const legacy = await prisma.announcement.create({
+      data: {
+        title: "Legacy",
+        body: "Legacy body",
+        sourceLocale: null,
+        fallbackPolicy: "allow_fallback",
+        createdBy: OWNER_EMAIL,
+      },
+    });
+    const res = await patchAnnouncement(legacy.id, {
+      translations: both,
+    }).expect(400);
+    expect(res.body.code).toBe("announcement_source_locale_required");
+  });
+
+  it("migrates legacy text when the source language is chosen and clears old columns", async () => {
+    const created = await postAnnouncement({
+      title: "Старый текст",
+      body: "Старое тело",
+    }).expect(201);
+    expect(created.body.sourceLocale).toBeNull();
+    expect(created.body.translations).toEqual([]);
+
+    const migrated = await patchAnnouncement(created.body.id as string, {
+      sourceLocale: "ru",
+      fallbackPolicy: "require_all",
+      translations: { ru: both.ru, en: both.en },
+      version: created.body.version,
+    }).expect(200);
+    expect(migrated.body.sourceLocale).toBe("ru");
+    expect(migrated.body.title).toBe(both.ru.title);
+    const stored = await prisma.announcement.findUniqueOrThrow({
+      where: { id: created.body.id as string },
+    });
+    expect(stored.title).toBeNull();
+    expect(stored.body).toBeNull();
+  });
+
+  it("refuses strict policy on a language-unknown legacy row", async () => {
+    const created = await postAnnouncement({
+      title: "Legacy strict",
+      body: "Still legacy",
+      active: false,
+    }).expect(201);
+    const res = await patchAnnouncement(created.body.id as string, {
+      fallbackPolicy: "require_all",
+      version: created.body.version,
+    }).expect(400);
+    expect(res.body.code).toBe("announcement_source_locale_required");
+  });
+
+  it("rejects enabling email on an already-active announcement", async () => {
+    const created = await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "require_all",
+      translations: both,
+      active: true,
+      sendEmail: false,
+    }).expect(201);
+    const res = await patchAnnouncement(created.body.id as string, {
+      sendEmail: true,
+      version: created.body.version,
+    }).expect(400);
+    expect(res.body.code).toBe("announcement_email_active_noop");
+  });
+
+  it("returns before email fan-out and claims emailSentAt once", async () => {
+    const gate = new Promise<void>(() => undefined);
+    const enqueue = jest.spyOn(broadcasts, "enqueue").mockReturnValue(gate);
+    const started = Date.now();
+    const created = await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "require_all",
+      translations: both,
+      active: true,
+      sendEmail: true,
+    }).expect(201);
+    expect(Date.now() - started).toBeLessThan(1_500);
+    expect(created.body.emailSentAt).toEqual(expect.any(Number));
+    enqueue.mockRestore();
+
+    const again = jest.spyOn(broadcasts, "enqueue");
+    await patchAnnouncement(created.body.id as string, {
+      active: true,
+      version: created.body.version,
+    }).expect(200);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(again).not.toHaveBeenCalled();
+    again.mockRestore();
+  });
+
+  it("audits only the locales that actually changed", async () => {
+    const created = await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "require_all",
+      translations: both,
+      active: false,
+    }).expect(201);
+    await patchAnnouncement(created.body.id as string, {
+      translations: {
+        ru: { title: "Новая RU", body: "Новое тело" },
+      },
+      version: created.body.version,
+    }).expect(200);
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: {
+        action: "announcement.updated",
+        targetId: created.body.id as string,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(audit?.details).toMatchObject({ changedLocales: ["ru"] });
+    expect(JSON.stringify(audit?.details)).not.toContain("Новое тело");
   });
 
   it("rejects an invalid window, a source deletion and a strict downgrade", async () => {
@@ -316,12 +549,12 @@ describe("Announcements (e2e)", () => {
     }).expect(201);
     expect(created.body.emailSentAt).toEqual(expect.any(Number));
 
-    const toRu = mailer.outbox.find((mail) => mail.to === RU_EMAIL);
+    const toRu = await waitForOutbox((mail) => mail.to === RU_EMAIL);
     expect(toRu?.subject).toBe(both.ru.title);
     expect(toRu?.text).toContain(both.ru.body);
     expect(toRu?.text).not.toContain("доступно только");
 
-    const toEn = mailer.outbox.find((mail) => mail.to === EN_EMAIL);
+    const toEn = await waitForOutbox((mail) => mail.to === EN_EMAIL);
     expect(toEn?.subject).toBe(`Announcement (Russian only): ${both.ru.title}`);
     expect(toEn?.text).toContain(
       "This announcement is available in Russian only.",
@@ -332,7 +565,7 @@ describe("Announcements (e2e)", () => {
     );
 
     // Anonymous-to-localization recipients default to English.
-    const toNull = mailer.outbox.find((mail) => mail.to === NULL_EMAIL);
+    const toNull = await waitForOutbox((mail) => mail.to === NULL_EMAIL);
     expect(toNull?.subject).toBe(
       `Announcement (Russian only): ${both.ru.title}`,
     );
@@ -347,15 +580,49 @@ describe("Announcements (e2e)", () => {
       sendEmail: true,
     }).expect(201);
 
-    const toEn = mailer.outbox.find((mail) => mail.to === EN_EMAIL);
+    const toEn = await waitForOutbox((mail) => mail.to === EN_EMAIL);
     expect(toEn?.subject).toBe(both.en.title);
     expect(toEn?.text).toContain(both.en.body);
     expect(toEn?.text).not.toContain("Russian only");
+    expect(mailer.outbox.filter((mail) => mail.to === EN_EMAIL)).toHaveLength(
+      1,
+    );
 
-    const toRu = mailer.outbox.find((mail) => mail.to === RU_EMAIL);
+    const toRu = await waitForOutbox((mail) => mail.to === RU_EMAIL);
     expect(toRu?.subject).toBe(both.ru.title);
     expect(toRu?.text).toContain(both.ru.body);
     expect(toRu?.text).not.toContain("доступно только");
+    expect(mailer.outbox.filter((mail) => mail.to === RU_EMAIL)).toHaveLength(
+      1,
+    );
+  });
+
+  it("skips disabled recipients and keeps external segment addresses", async () => {
+    const disabledEmail = "ann-disabled@example.com";
+    const externalEmail = "outside@example.com";
+    await prisma.user.create({
+      data: {
+        email: disabledEmail,
+        passwordHash: "not-used",
+        disabledAt: new Date(),
+      },
+    });
+    await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "allow_fallback",
+      translations: { en: both.en },
+      audience: "segment",
+      segment: `${EN_EMAIL}, ${disabledEmail}, ${externalEmail}`,
+      active: true,
+      sendEmail: true,
+    }).expect(201);
+
+    expect(await waitForOutbox((mail) => mail.to === EN_EMAIL)).toBeDefined();
+    expect(
+      await waitForOutbox((mail) => mail.to === externalEmail),
+    ).toBeDefined();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(mailer.outbox.some((mail) => mail.to === disabledEmail)).toBe(false);
   });
 
   it("never mails a draft, mails once on activation and not again on edits", async () => {
@@ -371,6 +638,7 @@ describe("Announcements (e2e)", () => {
     const activated = await patchAnnouncement(created.body.id as string, {
       active: true,
     }).expect(200);
+    await waitForOutboxCount(1);
     expect(mailer.outbox.length).toBeGreaterThan(0);
     expect(activated.body.emailSentAt).toEqual(expect.any(Number));
 
@@ -378,6 +646,7 @@ describe("Announcements (e2e)", () => {
     await patchAnnouncement(created.body.id as string, {
       translations: { en: { title: "Updated", body: "Updated body" } },
     }).expect(200);
+    await new Promise((resolve) => setTimeout(resolve, 100));
     expect(mailer.outbox.length).toBe(before);
   });
 
@@ -417,6 +686,21 @@ describe("Announcements (e2e)", () => {
       .post("/api/v1/admin/announcements")
       .set(admin(operatorToken))
       .send({ title: "No", body: "No" })
+      .expect(403);
+
+    const created = await postAnnouncement({
+      title: "Owner only",
+      body: "Owner only body",
+      active: false,
+    }).expect(201);
+    await server()
+      .patch(`/api/v1/admin/announcements/${created.body.id}`)
+      .set(admin(operatorToken))
+      .send({ active: true })
+      .expect(403);
+    await server()
+      .delete(`/api/v1/admin/announcements/${created.body.id}`)
+      .set(admin(operatorToken))
       .expect(403);
   });
 });

@@ -1,4 +1,10 @@
+import {
+  announcementFallbackNotice,
+  announcementFallbackSubjectPrefix,
+} from "@janosik/shared";
 import type { MailLocale } from "./mail.types";
+
+export { announcementFallbackNotice, announcementFallbackSubjectPrefix };
 
 /**
  * Email templates (TASK-51). Table-based HTML — mail clients (Outlook,
@@ -312,40 +318,10 @@ export function announcementEmail(input: {
     text,
     html: shell(
       escapeHtml(title),
-      `<div lang="${contentLocale ?? recipientLocale}">${noticeHtml}${bodyHtml}</div>`,
-      contentLocale ?? recipientLocale,
+      `<div${contentLocale ? ` lang="${contentLocale}"` : ""}>${noticeHtml}${bodyHtml}</div>`,
+      contentLocale ?? undefined,
     ),
   };
-}
-
-/** Full phrase per recipient/content pair — never stitch grammar together. */
-export function announcementFallbackNotice(
-  recipientLocale: MailLocale,
-  contentLocale: MailLocale | null,
-): string {
-  if (recipientLocale === "ru") {
-    return contentLocale === "en"
-      ? "Это объявление доступно только на английском."
-      : "Это объявление доступно только на русском.";
-  }
-  return contentLocale === "ru"
-    ? "This announcement is available in Russian only."
-    : "This announcement is available in English only.";
-}
-
-/** Localized subject prefix used only when the content language differs. */
-export function announcementFallbackSubjectPrefix(
-  recipientLocale: MailLocale,
-  contentLocale: MailLocale,
-): string {
-  if (recipientLocale === "ru") {
-    return contentLocale === "en"
-      ? "Объявление (только на английском): "
-      : "Объявление (только на русском): ";
-  }
-  return contentLocale === "ru"
-    ? "Announcement (Russian only): "
-    : "Announcement (English only): ";
 }
 
 export function escapeHtml(value: string): string {

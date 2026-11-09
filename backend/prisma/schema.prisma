@@ -735,6 +735,10 @@ model Announcement {
   createdBy String
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+  // Optimistic concurrency for the admin editor (convention §7.0): increments
+  // on every PATCH; a stale version is answered with 409 instead of silently
+  // overwriting another admin's translation.
+  version   Int       @default(1)
   translations AnnouncementTranslation[]
 
   @@index([active, startsAt, endsAt])
