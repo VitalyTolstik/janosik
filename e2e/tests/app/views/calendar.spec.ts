@@ -3,12 +3,14 @@ import { getBoard } from "@/helpers/boards.js";
 import { search } from "@/helpers/filters.js";
 import {
   adjacentVisibleDay,
+  attemptDropOnDay,
   calendarChip,
   calendarDay,
   dayKey,
   openCalendar,
   openView,
   todayKey,
+  unscheduledCard,
 } from "@/helpers/views.js";
 
 test("create a scheduled card in the calendar and find it on the board", async ({
@@ -196,6 +198,10 @@ test("keeps drag and drop disabled while a filter is active", async ({
   await page.mouse.up();
   expect(await refused).toBeNull();
 
+  // Coordinate drag is best-effort; the forced native events prove the chip
+  // never fills the transfer while the filter is active.
+  expect(await attemptDropOnDay(page, "Keep first", target.key)).toBe(0);
+
   await expect(
     calendarDay(page, todayKey())
       .getByTestId("calendar-chip")
@@ -296,9 +302,7 @@ test("plans an unscheduled card by dragging it onto a day", async ({
   await board.open(page);
   await openCalendar(page);
   const target = await adjacentVisibleDay(page);
-  const item = page
-    .getByTestId("unscheduled-list")
-    .getByRole("button", { name: "Loose task", exact: true });
+  const item = unscheduledCard(page, "Loose task");
   await expect(item).toBeVisible();
 
   const saved = page.waitForResponse(

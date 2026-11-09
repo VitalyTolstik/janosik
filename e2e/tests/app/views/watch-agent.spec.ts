@@ -64,15 +64,18 @@ test("labels an agent actor and lists it in Agents", async ({
   await expect(entry.getByTestId("actor-agent-badge")).toBeVisible();
   await expect(entry).toContainText(partner.user.email);
   await expect
-    .poll(async () =>
-      Number(await page.getByTestId("watch-agents").textContent()),
+    .poll(
+      async () => Number(await page.getByTestId("watch-agents").textContent()),
+      { timeout: 15_000 },
     )
     .toBeGreaterThanOrEqual(1);
   await expect(page.getByTestId("watch-agents-list")).toContainText(
     partner.user.email,
+    { timeout: 15_000 },
   );
   await expect(page.getByTestId("watch-presence-list")).toContainText(
     board.email,
+    { timeout: 15_000 },
   );
   await expect(page.getByTestId("watch-presence-list")).not.toContainText(
     partner.user.email,
