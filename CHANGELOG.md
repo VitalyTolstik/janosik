@@ -66,6 +66,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   popup, so the option list follows the dialog in dark and light mode. The
   same `kind` field is already accepted by the REST API and MCP tools for
   API-key clients; a personal-token E2E test now locks that in.
+- The announcement editor uses themed select menus and the app calendar/time
+  picker for scheduling, so the option sheet and date popup follow the dark
+  theme and the UI language. The preview now mirrors the selected level tone
+  and the fallback policy.
 
 ## [0.2.0] - 2026-11-08
 
