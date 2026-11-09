@@ -804,7 +804,12 @@ export class AdminController {
       "announcement",
       created.id,
       {
-        title: dto.title,
+        // Never log bodies: announcements may carry incident/security text.
+        title: created.title,
+        sourceLocale: created.sourceLocale,
+        locales: created.translations.map((translation) => translation.locale),
+        fallbackPolicy: created.fallbackPolicy,
+        active: created.active,
       },
     );
     return created;
@@ -817,13 +822,21 @@ export class AdminController {
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminAnnouncementDto> {
     this.admin.assertOwner(admin);
-    const updated = await this.comms.updateAnnouncement(id, dto);
+    const updated = await this.comms.updateAnnouncement(id, dto, admin.email);
+    const details: Record<string, unknown> = {
+      sourceLocale: updated.sourceLocale,
+      fallbackPolicy: updated.fallbackPolicy,
+      active: updated.active,
+    };
+    if (dto.translations !== undefined) {
+      details.changedLocales = Object.keys(dto.translations);
+    }
     await this.admin.audit(
       admin,
       "announcement.updated",
       "announcement",
       id,
-      {},
+      details,
     );
     return updated;
   }

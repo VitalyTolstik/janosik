@@ -32,6 +32,10 @@ model User {
   emailVerifiedAt DateTime? // TASK-53; null → the address is not confirmed yet
   // TASK-72: opt-out for scheduled digests/reminders (default on).
   notifyDigest    Boolean                 @default(true)
+  // Announcement localization: the canonical language for the UI, banners and
+  // email. Nullable for accounts created before the feature — treated as "not
+  // chosen yet" and adopted from the current UI language on the next sign-in.
+  locale          String?
   createdAt       DateTime                @default(now())
   memberships     BoardMember[]
   invitedMembers  BoardMember[]           @relation("BoardMemberInviter")
@@ -707,8 +711,16 @@ model ReminderSent {
 // signed-in user; "segment" restricts to a CSV of user emails in `segment`.
 model Announcement {
   id        String    @id @default(cuid())
-  title     String
-  body      String    @db.Text
+  // Legacy content: only rows created before the translations model carry
+  // this. New rows keep their content exclusively in `translations`.
+  title     String?
+  body      String?   @db.Text
+  // Language of the original text. Null marks a legacy row whose language is
+  // unknown: it is served as-is, without a fallback notice.
+  sourceLocale   String?
+  // require_all | allow_fallback. New rows default to the strict policy;
+  // legacy rows were backfilled to allow_fallback by the migration.
+  fallbackPolicy String  @default("require_all")
   level     String    @default("info") // info | warning | danger
   audience  String    @default("all") // all | segment
   segment   String? // CSV of user emails when audience = segment
@@ -716,11 +728,39 @@ model Announcement {
   // TASK-62 broadcast: when true the letter is also queued to every
   // recipient's inbox (behind the in-process broadcast queue).
   sendEmail Boolean   @default(false)
+  // When the localized letter was queued; null = never sent.
+  emailSentAt DateTime?
   startsAt  DateTime?
   endsAt    DateTime?
   createdBy String
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+  translations AnnouncementTranslation[]
+
+  @@index([active, startsAt, endsAt])
+}
+
+// One language version of a logical announcement (announcement localization).
+// `sourceLocale` on the parent points at the original; every other row is a
+// translation. `origin`/`reviewedAt`/`sourceUpdatedAt` leave room for the
+// phase-2 AI draft workflow without another migration.
+model AnnouncementTranslation {
+  id             String       @id @default(cuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  locale         String // en | ru (string — headroom for a third language)
+  title          String
+  body           String       @db.Text
+  origin         String       @default("human") // human | ai_draft | legacy
+  translatedFrom String?
+  sourceUpdatedAt DateTime?
+  reviewedAt     DateTime?
+  updatedBy      String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([announcementId, locale])
+  @@index([locale])
 }
 
 // Editable mail template (TASK-62) — overrides the built-in template of the

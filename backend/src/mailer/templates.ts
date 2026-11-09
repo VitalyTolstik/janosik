@@ -14,9 +14,9 @@ import type { MailLocale } from "./mail.types";
 
 const BRAND = "Janosik";
 
-function shell(title: string, bodyHtml: string): string {
+function shell(title: string, bodyHtml: string, lang?: string): string {
   return `<!doctype html>
-<html><body style="margin:0;padding:0;background:#f4f5f7;">
+<html${lang ? ` lang="${lang}"` : ""}><body style="margin:0;padding:0;background:#f4f5f7;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;padding:32px 16px;">
     <tr><td align="center">
       <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:12px;border:1px solid #e4e4e7;">
@@ -260,6 +260,92 @@ export function dueReminderEmail(
       `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Tasks with an approaching due date:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
     ),
   };
+}
+
+/**
+ * Bilingual announcement letter: one language per recipient, chosen by
+ * `User.locale` and the announcement translations. When the recipient's
+ * language is missing, the original text is sent with a localized notice in
+ * both the subject and the body rather than silently switching languages.
+ *
+ * This is intentionally not an editable `EmailTemplate`: it carries dynamic
+ * per-recipient content and the fallback contract. Locale-aware custom
+ * templates are a phase-2 item.
+ */
+export function announcementEmail(input: {
+  title: string;
+  body: string;
+  contentLocale: MailLocale | null;
+  recipientLocale: MailLocale;
+  isFallback: boolean;
+}): { subject: string; text: string; html: string } {
+  const { recipientLocale, contentLocale, isFallback } = input;
+  // Header injection defence: a title is single-line by contract.
+  const title = input.title.replace(/[\r\n]+/g, " ").trim();
+  const notice = isFallback
+    ? announcementFallbackNotice(recipientLocale, contentLocale)
+    : null;
+  const subjectPrefix =
+    isFallback && contentLocale !== null
+      ? announcementFallbackSubjectPrefix(recipientLocale, contentLocale)
+      : "";
+  const text = [
+    title,
+    "",
+    input.body,
+    ...(notice === null ? [] : ["", notice]),
+  ].join("\n");
+  const bodyHtml = input.body
+    .split("\n")
+    .map((line) =>
+      line.length === 0
+        ? `<p style="margin:0 0 10px 0;">&nbsp;</p>`
+        : `<p style="margin:0 0 10px 0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${escapeHtml(line)}</p>`,
+    )
+    .join("");
+  const noticeHtml =
+    notice === null
+      ? ""
+      : `<div lang="${recipientLocale}" style="margin:0 0 14px 0;padding:10px 12px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;color:#1e40af;font-size:13px;line-height:1.5;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${escapeHtml(notice)}</div>`;
+  return {
+    subject: `${subjectPrefix}${title}`,
+    text,
+    html: shell(
+      escapeHtml(title),
+      `<div lang="${contentLocale ?? recipientLocale}">${noticeHtml}${bodyHtml}</div>`,
+      contentLocale ?? recipientLocale,
+    ),
+  };
+}
+
+/** Full phrase per recipient/content pair — never stitch grammar together. */
+export function announcementFallbackNotice(
+  recipientLocale: MailLocale,
+  contentLocale: MailLocale | null,
+): string {
+  if (recipientLocale === "ru") {
+    return contentLocale === "en"
+      ? "Это объявление доступно только на английском."
+      : "Это объявление доступно только на русском.";
+  }
+  return contentLocale === "ru"
+    ? "This announcement is available in Russian only."
+    : "This announcement is available in English only.";
+}
+
+/** Localized subject prefix used only when the content language differs. */
+export function announcementFallbackSubjectPrefix(
+  recipientLocale: MailLocale,
+  contentLocale: MailLocale,
+): string {
+  if (recipientLocale === "ru") {
+    return contentLocale === "en"
+      ? "Объявление (только на английском): "
+      : "Объявление (только на русском): ";
+  }
+  return contentLocale === "ru"
+    ? "Announcement (Russian only): "
+    : "Announcement (English only): ";
 }
 
 export function escapeHtml(value: string): string {
