@@ -81,6 +81,8 @@ const COMMAND_KEYS: Record<string, MessageKey> = {
   SORT_COLUMN: "activity.column-sorted",
   SET_COLUMN_CARD_ORDER: "activity.column-reordered",
   SET_COLUMN_WIP_LIMIT: "activity.column-updated",
+  SET_COLUMN_ACCENT: "activity.column-style",
+  SET_BOARD_COLUMN_STYLE: "activity.board-style",
   ARCHIVE_COLUMN_CARDS: "activity.column-archived",
   RENAME_BOARD: "activity.board-renamed",
   ARCHIVE_BOARD: "activity.board-archived",
@@ -129,6 +131,8 @@ export const FIELD_KEYS: Record<string, MessageKey> = {
   role: "history.field.role",
   expiresAt: "history.field.expiresAt",
   wipLimit: "history.field.wipLimit",
+  accent: "history.field.accent",
+  columnStyle: "history.field.columnStyle",
   position: "history.field.position",
   cardOrder: "history.field.cardOrder",
 };

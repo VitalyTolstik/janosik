@@ -62,6 +62,29 @@ test("exports every board of the workspace", async ({ page, board }) => {
   expect(ids).toEqual(expect.arrayContaining([board.id, extra.id]));
 });
 
+test("exports column accents and the board column style", async ({
+  page,
+  board,
+}) => {
+  const columnId = await board.column("Styled column");
+  await board.command({
+    type: "SET_COLUMN_ACCENT",
+    columnId,
+    accent: { type: "color", value: "pink" },
+  });
+  await board.command({ type: "SET_BOARD_COLUMN_STYLE", columnStyle: "band" });
+  await board.open(page);
+
+  const exported = await exportJsonFromMenu(page);
+  const exportedBoard = exported.envelope.boards.find(
+    (entry) => entry.id === board.id,
+  );
+  expect(exportedBoard?.columnStyle).toBe("band");
+  expect(
+    exportedBoard?.columns.find((column) => column.id === columnId)?.accent,
+  ).toEqual({ type: "color", value: "pink" });
+});
+
 test("reports a successful export", async ({ page, board }) => {
   await board.open(page);
 

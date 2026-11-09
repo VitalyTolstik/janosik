@@ -73,7 +73,13 @@ function fixture(): Board {
         wipLimit: 3,
         createdAt: 20,
       },
-      { id: "col-c", title: "Gamma", cardIds: [], createdAt: 30 },
+      {
+        id: "col-c",
+        title: "Gamma",
+        cardIds: [],
+        createdAt: 30,
+        accent: { type: "color", value: "brand" },
+      },
     ],
     cards: {
       "c-1": card("c-1", "Zebra", {
@@ -107,6 +113,7 @@ function fixture(): Board {
       { id: "l-2", name: "Dev", color: "blue" },
       { id: "l-3", name: "Spare", color: "pink" },
     ],
+    columnStyle: "wash",
     createdAt: 1,
     updatedAt: 500,
   };
@@ -177,6 +184,28 @@ const PLANS: Record<BoardAction["type"], Plan> = {
     { type: "SET_COLUMN_WIP_LIMIT", columnId: "col-a", wipLimit: 2, at: AT },
     // Clearing an existing limit must put it back.
     { type: "SET_COLUMN_WIP_LIMIT", columnId: "col-b", at: AT },
+  ],
+  SET_COLUMN_ACCENT: [
+    {
+      type: "SET_COLUMN_ACCENT",
+      columnId: "col-a",
+      accent: { type: "color", value: "brand" },
+      at: AT,
+    },
+    {
+      type: "SET_COLUMN_ACCENT",
+      columnId: "col-b",
+      accent: { type: "gradient", value: "ocean" },
+      at: AT,
+    },
+    // Clearing an existing accent must restore it.
+    { type: "SET_COLUMN_ACCENT", columnId: "col-c", at: AT },
+  ],
+  SET_BOARD_COLUMN_STYLE: [
+    { type: "SET_BOARD_COLUMN_STYLE", columnStyle: "rail", at: AT },
+    // Restoring the default drops the field again.
+    { type: "SET_BOARD_COLUMN_STYLE", columnStyle: "signature", at: AT },
+    { type: "SET_BOARD_COLUMN_STYLE", at: AT },
   ],
   DUPLICATE_COLUMN: [
     {

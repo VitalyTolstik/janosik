@@ -95,7 +95,11 @@ export function changedEntityIds(local: Board, server: Board): string[] {
     ...changedCards(local, server),
     ...changedLabels(local, server),
   ];
-  if (local.title !== server.title || local.archivedAt !== server.archivedAt) {
+  if (
+    local.title !== server.title ||
+    local.archivedAt !== server.archivedAt ||
+    local.columnStyle !== server.columnStyle
+  ) {
     ids.push(local.id);
   }
   return ids;

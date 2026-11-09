@@ -83,6 +83,19 @@ In the board view, open the column appearance menu next to the view switcher.
 `Transparency` makes columns translucent over the board background, and `Blur`
 frosts what shows through. Both apply live and are remembered.
 
+### Column accents
+
+Use the brush button in a column header to give that column a color or one of
+the six gradient presets from the card-cover palette, or choose `No accent`
+to clear it. The accent is board content: it survives reloads, is visible to
+every participant, and can be undone.
+
+The board-wide shape is chosen from the brush menu next to the view switcher:
+top rail, left rail, wash, title, glow, glass, header band, dot or signature.
+The shape applies to every accent on the board and is stored on the board, so
+all participants see the same style. The accent is decoration only — WIP
+colors, drag state, focus rings and text keep their own meaning.
+
 ## Cards on the board
 
 ### Add a card

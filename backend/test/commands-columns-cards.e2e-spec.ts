@@ -427,6 +427,41 @@ describe("Commands API (e2e)", () => {
       await applyAndAssert(
         boardId,
         scoped(boardId, {
+          type: "SET_COLUMN_ACCENT",
+          columnId: "col-doing",
+          accent: { type: "color", value: "brand" },
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "SET_COLUMN_ACCENT",
+          columnId: "col-doing",
+          accent: { type: "gradient", value: "ocean" },
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "SET_COLUMN_ACCENT",
+          columnId: "col-doing",
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "SET_BOARD_COLUMN_STYLE",
+          columnStyle: "band",
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, { type: "SET_BOARD_COLUMN_STYLE" }),
+      );
+
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
           type: "DUPLICATE_CARD",
           cardId: "card-1",
           newCardId: "card-copy",
@@ -1049,6 +1084,38 @@ describe("Commands API (e2e)", () => {
           newColumnId: "col-v",
           title: "Viewer column",
         }),
+        viewerToken,
+      ).expect(403);
+
+      await post(
+        boardId,
+        scoped(boardId, {
+          type: "SET_COLUMN_ACCENT",
+          columnId: "col-m",
+          accent: { type: "color", value: "brand" },
+        }),
+        memberToken,
+      ).expect(200);
+      await post(
+        boardId,
+        scoped(boardId, {
+          type: "SET_COLUMN_ACCENT",
+          columnId: "col-m",
+          accent: { type: "color", value: "red" },
+        }),
+        viewerToken,
+      ).expect(403);
+      await post(
+        boardId,
+        scoped(boardId, {
+          type: "SET_BOARD_COLUMN_STYLE",
+          columnStyle: "band",
+        }),
+        memberToken,
+      ).expect(200);
+      await post(
+        boardId,
+        scoped(boardId, { type: "SET_BOARD_COLUMN_STYLE" }),
         viewerToken,
       ).expect(403);
 

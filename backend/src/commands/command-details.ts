@@ -169,6 +169,17 @@ export function commandDetails(
         ],
       };
 
+    case "SET_BOARD_COLUMN_STYLE":
+      return {
+        changes: [
+          {
+            field: "columnStyle",
+            from: before.columnStyle ?? "signature",
+            to: after.columnStyle ?? "signature",
+          },
+        ],
+      };
+
     // Column commands that are not a value diff still name the column.
     case "MOVE_COLUMN":
     case "ARCHIVE_COLUMN_CARDS": {
@@ -217,6 +228,27 @@ export function commandDetails(
             field: "wipLimit",
             from: previous?.wipLimit == null ? null : String(previous.wipLimit),
             to: current?.wipLimit == null ? null : String(current.wipLimit),
+          },
+        ],
+      };
+    }
+
+    case "SET_COLUMN_ACCENT": {
+      const previous = before.columns.find(
+        (column) => column.id === action.columnId,
+      );
+      const current = after.columns.find(
+        (column) => column.id === action.columnId,
+      );
+      const value = (column: typeof previous): string | null =>
+        column?.accent ? `${column.accent.type}:${column.accent.value}` : null;
+      return {
+        detail: clip(current?.title ?? previous?.title ?? null) ?? undefined,
+        changes: [
+          {
+            field: "accent",
+            from: value(previous),
+            to: value(current),
           },
         ],
       };

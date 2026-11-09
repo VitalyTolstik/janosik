@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddColumnControl } from "@/components/board/AddColumnControl";
 import { CardItem } from "@/components/board/CardItem";
 import { ColumnView } from "@/components/board/ColumnView";
+import { columnAccentVars } from "@/utils/column-accent";
 import { useCardLabels } from "@/hooks/use-card-labels";
 import { useCardList } from "@/hooks/use-card-list";
 import type { BoardDensity } from "@/hooks/use-board-density";
@@ -34,9 +35,11 @@ import { useBoard } from "@/store/BoardContext";
 import { useToast } from "@/components/Toast";
 import { isColumnFull } from "@janosik/shared";
 import { applyCardOver } from "@/utils/dnd";
+import { cn } from "@/lib/utils";
 import { cardLinkIndex, linkSignature } from "@/utils/links";
 import { isOverlayOpen } from "@/utils/overlay";
 import { LIMITS, type Card, type Column, type Label } from "@janosik/shared";
+import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
 
 /** Stable empties, so the resolvers survive a board-less render. */
 const NO_LABELS: Label[] = [];
@@ -133,6 +136,7 @@ export function DndBoard({
   readOnly = false,
 }: DndBoardProps) {
   const { board, addColumn, moveCard, moveColumn } = useBoard();
+  const columnStyle = board?.columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE;
   const { tp, t } = useI18n();
   const toast = useToast();
   const resolveLabels = useCardLabels(board?.labels ?? NO_LABELS);
@@ -699,6 +703,7 @@ export function DndBoard({
                 onCardClick={handleCardClick}
                 density={density}
                 readOnly={readOnly}
+                columnStyle={columnStyle}
                 canDuplicateColumn={
                   board.columns.length < LIMITS.columnsPerBoard
                 }
@@ -727,10 +732,33 @@ export function DndBoard({
             />
           </div>
         ) : activeColumn ? (
-          <div className="w-72 rotate-2 cursor-grabbing rounded-xl border border-primary/60 bg-card/95 p-3 shadow-xl backdrop-blur-sm">
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-sm font-semibold text-foreground">
-                {activeColumn.title}
+          <div
+            data-column-accent={activeColumn.accent?.value ?? "none"}
+            data-column-accent-type={activeColumn.accent?.type ?? "none"}
+            data-column-accent-style={
+              activeColumn.accent ? columnStyle : "none"
+            }
+            style={columnAccentVars(activeColumn.accent)}
+            className={cn(
+              "w-72 rotate-2 cursor-grabbing rounded-xl border border-primary/60 bg-card/95 p-3 shadow-xl backdrop-blur-sm",
+              activeColumn.accent && "janosik-column-accent",
+              activeColumn.accent && `janosik-column-accent-${columnStyle}`,
+            )}
+          >
+            <div
+              className={cn(
+                "flex items-center justify-between gap-2",
+                activeColumn.accent && "janosik-column-accent-head",
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span
+                  aria-hidden
+                  className="janosik-column-accent-dotmark h-[7px] w-[7px] shrink-0 rounded-full"
+                />
+                <span className="janosik-column-accent-heading truncate text-sm font-semibold text-foreground">
+                  {activeColumn.title}
+                </span>
               </span>
               <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-hover px-1.5 text-[11px] font-medium text-muted-foreground">
                 {activeColumn.cardIds.length}

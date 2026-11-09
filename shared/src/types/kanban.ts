@@ -422,6 +422,38 @@ export type CardCover =
   | { type: "color"; value: CoverColor }
   | { type: "gradient"; value: CoverGradient };
 
+/**
+ * How a column's accent is painted on the board. The shape is a board-wide
+ * display choice (one per board, like density/glass), while the accent
+ * itself is per-column content. `signature` is the default.
+ */
+export const COLUMN_ACCENT_STYLES = [
+  "rail",
+  "left",
+  "wash",
+  "title",
+  "glow",
+  "glass",
+  "band",
+  "dot",
+  "signature",
+] as const;
+
+export type ColumnAccentStyle = (typeof COLUMN_ACCENT_STYLES)[number];
+
+/** The style a board uses when `Board.columnStyle` is unset. */
+export const DEFAULT_COLUMN_ACCENT_STYLE: ColumnAccentStyle = "signature";
+
+/** Narrow an untrusted value (import/localStorage) to a known style. */
+export function isColumnAccentStyle(
+  value: unknown,
+): value is ColumnAccentStyle {
+  return (
+    typeof value === "string" &&
+    (COLUMN_ACCENT_STYLES as readonly string[]).includes(value)
+  );
+}
+
 /** Solid token color behind a cover (the strip / gradient endpoint). */
 export const COVER_COLOR_CSS: Record<CoverColor, string> = {
   red: "var(--danger)",
@@ -463,6 +495,27 @@ export function coverBackground(cover: CardCover): string {
     : COVER_GRADIENT_CSS[cover.value];
 }
 
+/**
+ * A single token behind a gradient cover — used where a gradient cannot be
+ * mixed (`color-mix(in oklab, …)` with a gradient) and as the column accent's
+ * tint/dot/text color. Follows the gradient's dominant/leading hue.
+ */
+export const COVER_GRADIENT_SOLID_CSS: Record<CoverGradient, string> = {
+  sunset: "var(--orange)",
+  ocean: "var(--blue)",
+  forest: "var(--teal)",
+  candy: "var(--pink)",
+  grape: "var(--indigo)",
+  steel: "var(--slate)",
+};
+
+/** A solid token for any cover shape (the color itself or a gradient's lead). */
+export function coverSolid(cover: CardCover): string {
+  return cover.type === "color"
+    ? COVER_COLOR_CSS[cover.value]
+    : COVER_GRADIENT_SOLID_CSS[cover.value];
+}
+
 export interface Column {
   id: string;
   title: string;
@@ -475,6 +528,12 @@ export interface Column {
    * adds/moves in are blocked until the column is below the limit again.
    */
   wipLimit?: number;
+  /**
+   * Column accent (TASK-164) — a card-cover color/gradient painted on the
+   * column edge/header according to the board's `columnStyle`. Omitted when
+   * the column has no accent; the shape is not stored per column.
+   */
+  accent?: CardCover;
   createdAt: number;
 }
 
@@ -488,6 +547,12 @@ export interface Board {
   labels: Label[];
   createdAt: number;
   updatedAt: number;
+  /**
+   * Board-wide column accent shape (TASK-164) — rail / left / wash / title /
+   * glow / glass / band / dot / signature. Omitted = `signature`, so old
+   * boards and old exports keep working unchanged.
+   */
+  columnStyle?: ColumnAccentStyle;
   /** Set when the board is archived (not deleted) — timestamp in ms. */
   archivedAt?: number;
 }

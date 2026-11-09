@@ -3,7 +3,7 @@
  * (archive every card) and delete. Each maps to one command-log action.
  */
 
-import { LIMITS } from "@janosik/shared";
+import { COVER_COLORS, COVER_GRADIENTS, LIMITS } from "@janosik/shared";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -261,6 +261,53 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         wipLimit !== undefined
           ? `Set WIP limit ${wipLimit} on column ${columnId}.`
           : `Removed the WIP limit on column ${columnId}.`,
+      );
+    },
+  );
+
+  defineTool(
+    server,
+    "janosik_set_column_accent",
+    {
+      title: "Set a column accent",
+      description:
+        "Paint a column accent using the card-cover palette. The board's " +
+        "column style decides how the accent is rendered. Omit `accent` to " +
+        "clear it.",
+      inputSchema: {
+        boardId: boardIdSchema,
+        columnId: columnIdSchema,
+        accent: z
+          .discriminatedUnion("type", [
+            z.object({
+              type: z.literal("color"),
+              value: z.enum(COVER_COLORS),
+            }),
+            z.object({
+              type: z.literal("gradient"),
+              value: z.enum(COVER_GRADIENTS),
+            }),
+          ])
+          .optional()
+          .describe("Color/gradient pair, or omit to remove the accent."),
+        expectedVersion: expectedVersionSchema,
+      },
+      annotations: WRITE,
+    },
+    async ({ boardId, columnId, accent, expectedVersion }) => {
+      await client.command(
+        boardId,
+        {
+          type: "SET_COLUMN_ACCENT",
+          columnId,
+          ...(accent !== undefined ? { accent } : {}),
+        },
+        { ifMatch: expectedVersion },
+      );
+      return textOnly(
+        accent !== undefined
+          ? `Set ${accent.type} accent ${accent.value} on column ${columnId}.`
+          : `Removed the accent on column ${columnId}.`,
       );
     },
   );

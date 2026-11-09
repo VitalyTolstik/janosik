@@ -69,7 +69,16 @@ const DUE = addDays(new Date(), 1).getTime();
 const SAMPLE_BOARD: Board = {
   id: "b-1",
   title: "Read only",
-  columns: [{ id: "col-1", title: "To do", cardIds: ["card-1"], createdAt: 1 }],
+  columnStyle: "rail",
+  columns: [
+    {
+      id: "col-1",
+      title: "To do",
+      cardIds: ["card-1"],
+      accent: { type: "color", value: "brand" },
+      createdAt: 1,
+    },
+  ],
   cards: {
     "card-1": {
       id: "card-1",
@@ -121,6 +130,14 @@ describe("VIEWER read-only UI (TASK-35)", () => {
     expect(dnd.sensors).toEqual([]);
     expect(container.querySelector("[data-composer-trigger]")).toBeNull();
     expect(container.querySelector("[data-add-column-trigger]")).toBeNull();
+    // The accent itself is board decoration and stays visible; only its
+    // editing trigger disappears.
+    const section = container.querySelector(
+      'section[data-column-accent="brand"]',
+    );
+    expect(section).not.toBeNull();
+    expect(section).toHaveAttribute("data-column-accent-style", "rail");
+    expect(screen.queryByTestId("column-style-trigger")).toBeNull();
     // Content stays visible and clickable for reading.
     expect(screen.getByText("Careful card")).toBeInTheDocument();
     const card = screen.getByRole("button", { name: /Careful card/i });
@@ -133,6 +150,15 @@ describe("VIEWER read-only UI (TASK-35)", () => {
     render(tree(<DndBoard onCardClick={() => {}} />));
 
     expect(dnd.sensors).toHaveLength(3);
+  });
+
+  it("DndBoard: editor sees the brush and the board-wide accent shape", () => {
+    const { container } = render(tree(<DndBoard onCardClick={() => {}} />));
+
+    expect(screen.getByTestId("column-style-trigger")).toBeVisible();
+    expect(
+      container.querySelector('section[data-column-accent="brand"]'),
+    ).toHaveAttribute("data-column-accent-style", "rail");
   });
 
   it("CardDialog: static fields, no duplicate/archive/delete", async () => {

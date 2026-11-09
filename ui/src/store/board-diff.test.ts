@@ -93,6 +93,26 @@ describe("changedEntityIds", () => {
     expect(changedEntityIds(board(), server)).toEqual(["col-1"]);
   });
 
+  it("reports a column whose accent changed", () => {
+    const local = board();
+    const server = board();
+    server.columns = [
+      {
+        id: "col-1",
+        title: "Todo",
+        cardIds: ["c-1"],
+        accent: { type: "color", value: "brand" },
+        createdAt: 1,
+      },
+    ];
+    expect(changedEntityIds(local, server)).toEqual(["col-1"]);
+  });
+
+  it("reports the board when its column style changed", () => {
+    const server = board({ columnStyle: "band" });
+    expect(changedEntityIds(board(), server)).toEqual(["b-1"]);
+  });
+
   it("reports cards the server added", () => {
     const server = board({
       cards: { "c-1": card(), "c-2": card({ id: "c-2" }) },

@@ -384,6 +384,22 @@ describe("BoardHistory", () => {
     expect(history.undo()).toBeNull();
   });
 
+  it("marks a local column-style change dead when someone else changes it", () => {
+    const history = new BoardHistory();
+    const board = freshBoard();
+    history.push(board, {
+      type: "SET_BOARD_COLUMN_STYLE",
+      boardId: board.id,
+      columnStyle: "band",
+      at: AT,
+    } as BoardAction);
+
+    history.markForeign([board.id]);
+
+    expect(history.canUndo()).toBe(false);
+    expect(history.undo()).toBeNull();
+  });
+
   it("keeps commands, not boards — 50 steps stay in kilobytes", () => {
     const history = new BoardHistory();
     const board = freshBoard();
