@@ -55,6 +55,13 @@ export function AdminLoginPage() {
           setError(t("admin.login.ipDenied"));
           return;
         }
+        if (
+          cause.status === 403 &&
+          cause.messageText.toLowerCase().includes("disabled")
+        ) {
+          setError(t("admin.login.disabled"));
+          return;
+        }
         if (cause.status === 429) {
           setError(t("admin.login.locked"));
           return;
