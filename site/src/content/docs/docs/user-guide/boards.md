@@ -141,5 +141,6 @@ highlighted column and `C` to add a column. Escape clears the cursor.
 
 ## Next
 
+- [Board workflow](/docs/user-guide/workflow/)
 - [Calendar, table and watch views](/docs/user-guide/views/)
 - [Card details and the quick menu](/docs/user-guide/cards/)

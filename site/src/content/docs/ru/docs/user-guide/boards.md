@@ -152,5 +152,6 @@ Escape снимает выделение.
 
 ## Дальше
 
+- [Рабочий процесс доски](/ru/docs/user-guide/workflow/)
 - [Виды календаря, таблицы и наблюдения](/ru/docs/user-guide/views/)
 - [Детали карточки и быстрое меню](/ru/docs/user-guide/cards/)
