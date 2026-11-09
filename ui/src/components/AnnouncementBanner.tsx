@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
-import { Megaphone, X } from "lucide-react";
+import { Megaphone } from "lucide-react";
 import type { AnnouncementDto } from "@janosik/shared";
 import { api, isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
+import { Notice, type NoticeTone } from "@/components/notifications/Notice";
 import { useI18n } from "@/i18n";
 
 const DISMISS_KEY = "janosik.announcements.dismissed";
+
+const TONE_BY_LEVEL: Record<AnnouncementDto["level"], NoticeTone> = {
+  info: "info",
+  warning: "warning",
+  danger: "danger",
+};
 
 function dismissedIds(): string[] {
   try {
@@ -19,9 +26,9 @@ function dismissedIds(): string[] {
 
 /**
  * In-app announcements (TASK-62) — news/updates the master panel broadcasts
- * to everyone or a chosen segment. Shown as a slim banner under the header;
- * a dismissal is remembered per announcement in localStorage, so a user only
- * sees each one once.
+ * to everyone or a chosen segment. Shown as quiet glass cards under the
+ * header; a dismissal is remembered per announcement in localStorage, so a
+ * user only sees each one once.
  */
 export function AnnouncementBanner() {
   const { status } = useAuth();
@@ -57,34 +64,22 @@ export function AnnouncementBanner() {
   };
 
   return (
-    <div className="flex flex-col" data-testid="announcement-banner">
+    <div className="contents" data-testid="announcement-banner">
       {visible.map((item) => (
-        <div
+        <Notice
           key={item.id}
-          role="status"
-          className={
-            item.level === "danger"
-              ? "flex items-start gap-2 bg-destructive/10 px-4 py-2 text-sm text-destructive"
-              : item.level === "warning"
-                ? "flex items-start gap-2 bg-warning/10 px-4 py-2 text-sm"
-                : "flex items-start gap-2 bg-primary/10 px-4 py-2 text-sm"
-          }
-        >
-          <Megaphone className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">{item.title}</p>
-            <p className="whitespace-pre-line opacity-90">{item.body}</p>
-          </div>
-          <button
-            type="button"
-            aria-label={t("announcement.dismiss")}
-            data-testid={`announcement-dismiss-${item.id}`}
-            onClick={() => dismiss(item.id)}
-            className="rounded p-1 hover:bg-hover"
-          >
-            <X className="h-3.5 w-3.5" aria-hidden />
-          </button>
-        </div>
+          tone={TONE_BY_LEVEL[item.level]}
+          icon={Megaphone}
+          eyebrow={t("announcement.eyebrow")}
+          title={item.title}
+          body={item.body}
+          bodyClassName="whitespace-pre-line"
+          close={{
+            onClick: () => dismiss(item.id),
+            label: t("announcement.dismiss"),
+            testId: `announcement-dismiss-${item.id}`,
+          }}
+        />
       ))}
     </div>
   );
