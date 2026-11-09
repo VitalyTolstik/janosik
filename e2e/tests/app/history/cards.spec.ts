@@ -3,15 +3,19 @@ import { randomUUID } from "node:crypto";
 import { test, expect } from "@/fixtures/board.js";
 import {
   cardDialog,
+  cardOrder,
   cardTitle,
   closeCardDialog,
   columnSection,
+  descriptionEditor,
   expectHistory,
   openCard,
   redo,
   undo,
 } from "@/helpers/history.js";
 import { addChecklistItem, openArchive } from "@/helpers/search.js";
+
+test.describe.configure({ timeout: 60_000 });
 
 test("one undo restores a whole title editing session", async ({
   page,
@@ -86,6 +90,150 @@ test("undo and redo a card move between columns", async ({ page, board }) => {
   await expectHistory(page, { undo: true, redo: false });
 });
 
+test("undo and redo the card description", async ({ page, board }) => {
+  const column = await board.column("Work");
+  const cardId = await board.card(column, "Described task");
+  await board.open(page);
+
+  await openCard(page, "Described task");
+  const editor = descriptionEditor(page);
+  await expect(editor).toBeVisible({ timeout: 20_000 });
+  await editor.fill("My description");
+  const saved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/boards/${board.id}/commands`) &&
+      response.request().method() === "POST" &&
+      (
+        response.request().postDataJSON() as {
+          action?: { type?: string; description?: string };
+        }
+      ).action?.type === "UPDATE_CARD" &&
+      (
+        response.request().postDataJSON() as {
+          action?: { description?: string };
+        }
+      ).action?.description === "My description",
+  );
+  await closeCardDialog(page);
+  await saved;
+  await expectHistory(page, { undo: true, redo: false });
+
+  const description = async (): Promise<string> => {
+    const snapshot = await board.api.get(`/api/v1/boards/${board.id}`);
+    const aggregate = (await snapshot.json()) as {
+      cards: Record<string, { description?: string }>;
+    };
+    return aggregate.cards[cardId].description ?? "";
+  };
+
+  await undo(page);
+  await expectHistory(page, { undo: false, redo: true });
+  await expect.poll(description).toBe("");
+  await openCard(page, "Described task");
+  await expect(descriptionEditor(page)).toHaveText("");
+  await closeCardDialog(page);
+
+  await redo(page);
+  await expectHistory(page, { undo: true, redo: false });
+  await expect.poll(description).toBe("My description");
+  await openCard(page, "Described task");
+  await expect(descriptionEditor(page)).toHaveText("My description");
+  await closeCardDialog(page);
+
+  await page.reload();
+  await expect(columnSection(page, "Work")).toBeVisible();
+  await openCard(page, "Described task");
+  await expect(descriptionEditor(page)).toHaveText("My description");
+  await closeCardDialog(page);
+  await expectHistory(page, { undo: false, redo: false });
+});
+
+test("undo and redo a card reorder inside one column", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  await board.card(todo, "First task");
+  await board.card(todo, "Second task");
+  await board.open(page);
+  await expect
+    .poll(() => cardOrder(page, "Todo"))
+    .toEqual(["First task", "Second task"]);
+
+  const first = await columnSection(page, "Todo")
+    .getByTestId("card-title")
+    .filter({ hasText: "First task" })
+    .boundingBox();
+  const second = await columnSection(page, "Todo")
+    .getByTestId("card-title")
+    .filter({ hasText: "Second task" })
+    .boundingBox();
+  if (!first || !second)
+    throw new Error("Cards or the target column are not visible");
+  await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    first.x + first.width / 2,
+    first.y + first.height / 2 + 8,
+    { steps: 3 },
+  );
+  await page.mouse.move(second.x + second.width / 2, second.y + 60, {
+    steps: 20,
+  });
+  await page.mouse.up();
+  await expect
+    .poll(() => cardOrder(page, "Todo"))
+    .toEqual(["Second task", "First task"]);
+
+  await expectHistory(page, { undo: true, redo: false });
+  await undo(page);
+  await expect
+    .poll(() => cardOrder(page, "Todo"))
+    .toEqual(["First task", "Second task"]);
+  await expectHistory(page, { undo: false, redo: true });
+
+  await redo(page);
+  await expect
+    .poll(() => cardOrder(page, "Todo"))
+    .toEqual(["Second task", "First task"]);
+  await expectHistory(page, { undo: true, redo: false });
+});
+
+test("undo and redo a card moved from the dialog's column row", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  await board.column("Doing");
+  await board.card(todo, "Move task");
+  await board.open(page);
+
+  await openCard(page, "Move task");
+  const dialog = cardDialog(page);
+  await dialog.getByRole("button", { name: "Todo", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Doing", exact: true }).click();
+  await expect(
+    dialog.getByRole("button", { name: "Doing", exact: true }),
+  ).toBeVisible();
+  await closeCardDialog(page);
+  await expect(
+    columnSection(page, "Doing").getByTestId("card-title"),
+  ).toHaveText("Move task");
+
+  await expectHistory(page, { undo: true, redo: false });
+  await undo(page);
+  await expect(
+    columnSection(page, "Todo").getByTestId("card-title"),
+  ).toHaveText("Move task");
+  await expectHistory(page, { undo: false, redo: true });
+
+  await redo(page);
+  await expect(
+    columnSection(page, "Doing").getByTestId("card-title"),
+  ).toHaveText("Move task");
+  await expectHistory(page, { undo: true, redo: false });
+});
+
 test("undo and redo card duplication", async ({ page, board }) => {
   const column = await board.column("Work");
   await board.card(column, "Task");
@@ -105,6 +253,77 @@ test("undo and redo card duplication", async ({ page, board }) => {
   await redo(page);
   await expect(cardTitle(page, /^Copy of Task$/)).toBeVisible();
   await expectHistory(page, { undo: true, redo: false });
+});
+
+test("three undo steps replay add, rename and move in reverse order", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  await board.column("Doing");
+  await board.open(page);
+
+  const section = columnSection(page, "Todo");
+  await section.locator("[data-composer-trigger]").click();
+  const composer = section.locator('[name="card-composer"]');
+  await composer.fill("Step one");
+  await composer.press("Enter");
+  await expect(cardTitle(page, "Step one")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await openCard(page, "Step one");
+  const dialog = cardDialog(page);
+  await dialog.getByRole("textbox", { name: "Title" }).fill("Step two");
+  const titleSaved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/boards/${board.id}/commands`) &&
+      response.request().method() === "POST" &&
+      (response.request().postDataJSON() as { action?: { title?: string } })
+        .action?.title === "Step two",
+  );
+  await page.keyboard.press("Tab");
+  await titleSaved;
+  await dialog.getByRole("button", { name: "Todo", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Doing", exact: true }).click();
+  await expect(
+    dialog.getByRole("button", { name: "Doing", exact: true }),
+  ).toBeVisible();
+  await closeCardDialog(page);
+  await expect(
+    columnSection(page, "Doing").getByTestId("card-title"),
+  ).toHaveText("Step two");
+
+  await undo(page);
+  await expect(
+    columnSection(page, "Todo").getByTestId("card-title"),
+  ).toHaveText("Step two");
+  await undo(page);
+  await expect(
+    columnSection(page, "Todo").getByTestId("card-title"),
+  ).toHaveText("Step one");
+  await undo(page);
+  await expect(cardTitle(page, "Step one")).toHaveCount(0);
+  await expectHistory(page, { undo: false, redo: true });
+
+  await redo(page);
+  await redo(page);
+  await redo(page);
+  await expect(
+    columnSection(page, "Doing").getByTestId("card-title"),
+  ).toHaveText("Step two");
+  await expect(
+    columnSection(page, "Todo").getByTestId("card-title"),
+  ).toHaveCount(0);
+  await expectHistory(page, { undo: true, redo: false });
+
+  const snapshot = await board.api.get(`/api/v1/boards/${board.id}`);
+  const aggregate = (await snapshot.json()) as {
+    columns: { title: string; cardIds: string[] }[];
+    cards: Record<string, { title: string }>;
+  };
+  const doing = aggregate.columns.find((column) => column.title === "Doing");
+  expect(doing?.cardIds).toHaveLength(1);
+  expect(aggregate.cards[doing!.cardIds[0]].title).toBe("Step two");
 });
 
 test("undo and redo card archive", async ({ page, board }) => {

@@ -85,16 +85,18 @@ const BADGE_VARIANTS = {
 export function Badge({
   variant = "neutral",
   children,
+  ...rest
 }: {
   variant?: keyof typeof BADGE_VARIANTS;
   children: ReactNode;
-}) {
+} & Omit<React.HTMLAttributes<HTMLSpanElement>, "children">) {
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium leading-4",
         BADGE_VARIANTS[variant],
       )}
+      {...rest}
     >
       {children}
     </span>
@@ -149,6 +151,7 @@ export function FilterTabs<T extends string>({
         <button
           key={option.value}
           type="button"
+          aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
             "h-7 rounded-md px-2.5 text-xs font-medium transition-colors",
@@ -374,12 +377,17 @@ export function Pagination({
           variant="ghost"
           className="h-7 px-2 text-xs"
           disabled={page <= 1}
+          data-testid="admin-pagination-prev"
+          aria-label={t("admin.common.prev")}
           onClick={() => onChange(Math.max(0, offset - limit))}
         >
           <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
           {t("admin.common.prev")}
         </Button>
-        <span className="text-[11px] text-muted-foreground">
+        <span
+          className="text-[11px] text-muted-foreground"
+          data-testid="admin-pagination-status"
+        >
           {t("admin.common.page", { page, pages })}
         </span>
         <Button
@@ -387,6 +395,8 @@ export function Pagination({
           variant="ghost"
           className="h-7 px-2 text-xs"
           disabled={page >= pages}
+          data-testid="admin-pagination-next"
+          aria-label={t("admin.common.next")}
           onClick={() => onChange(offset + limit)}
         >
           {t("admin.common.next")}

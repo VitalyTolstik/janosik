@@ -19,6 +19,16 @@ export interface ExportCard {
   title: string;
   description?: string;
   labelIds?: string[];
+  priority?: string;
+  dueDate?: number;
+  archivedAt?: number;
+  cover?: { type: string; value: string };
+  checklists?: Array<{
+    id: string;
+    title: string;
+    items: Array<{ id: string; text: string; done: boolean }>;
+  }>;
+  links?: Array<{ id: string; type: string; targetCardId: string }>;
   [key: string]: unknown;
 }
 
@@ -140,7 +150,9 @@ export function oversizedDataFile(): ImportFile {
 
 /** Wait for a toast whose text contains `text`. */
 export async function expectToast(page: Page, text: string): Promise<Locator> {
-  const toast = page.getByRole("status").filter({ hasText: text });
+  // In a dialog several toasts may carry the same message (e.g. a debounced
+  // edit and the close flush both fail offline); the first one is enough.
+  const toast = page.getByRole("status").filter({ hasText: text }).first();
   await expect(toast).toBeVisible();
   return toast;
 }

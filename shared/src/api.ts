@@ -242,6 +242,22 @@ export interface BoardMemberDto {
   avatarPath: string | null;
 }
 
+/**
+ * A pending invitation on `GET /boards/:id/invitations` (ADMIN only): the
+ * inviter can see and cancel a row the invitee has not answered yet.
+ */
+export interface BoardPendingInvitationDto {
+  id: string;
+  userId: string;
+  displayName: string | null;
+  email: string;
+  role: BoardRole;
+  /** Unix ms expiry of a time-limited VIEWER; `null` when unbounded. */
+  expiresAt: number | null;
+  /** Unix ms the invitation was created. */
+  createdAt: number;
+}
+
 /** Body of `POST /boards/:id/members` — ADMIN-only invite (TASK-35). */
 export interface InviteMemberRequest {
   email: string;

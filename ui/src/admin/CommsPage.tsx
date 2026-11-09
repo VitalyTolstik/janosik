@@ -21,6 +21,7 @@ import {
   Badge,
   CharCount,
   ErrorState,
+  Field,
   LoadingState,
   PageHeader,
   Panel,
@@ -351,26 +352,37 @@ export function CommsPage() {
                   </span>
                 ) : null}
               </div>
-              <Input
-                value={draft[template.key]?.subject ?? ""}
-                maxLength={SUBJECT_MAX}
-                placeholder={t("admin.comms.templates.subject")}
-                disabled={!isOwner}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    [template.key]: {
-                      subject: event.target.value,
-                      bodyHtml: current[template.key]?.bodyHtml ?? "",
-                    },
-                  }))
-                }
-              />
+              <Field
+                htmlFor={`admin-template-subject-${template.key}`}
+                label={t("admin.comms.templates.subject")}
+              >
+                <Input
+                  id={`admin-template-subject-${template.key}`}
+                  data-testid={`admin-template-subject-${template.key}`}
+                  aria-label={t("admin.comms.templates.subject")}
+                  value={draft[template.key]?.subject ?? ""}
+                  maxLength={SUBJECT_MAX}
+                  placeholder={t("admin.comms.templates.subject")}
+                  disabled={!isOwner}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      [template.key]: {
+                        subject: event.target.value,
+                        bodyHtml: current[template.key]?.bodyHtml ?? "",
+                      },
+                    }))
+                  }
+                />
+              </Field>
               <CharCount
                 value={draft[template.key]?.subject ?? ""}
                 max={SUBJECT_MAX}
               />
               <Textarea
+                id={`admin-template-body-${template.key}`}
+                data-testid={`admin-template-body-${template.key}`}
+                aria-label={t("admin.comms.templates.body")}
                 value={draft[template.key]?.bodyHtml ?? ""}
                 maxLength={BODY_HTML_MAX}
                 placeholder={t("admin.comms.templates.body")}

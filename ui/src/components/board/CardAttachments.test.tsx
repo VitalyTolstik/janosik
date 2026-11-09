@@ -14,8 +14,11 @@ vi.mock("@/api/client", async (importOriginal) => ({
   isApiEnabled: () => true,
 }));
 
+vi.mock("@/utils/download", () => ({ downloadBlob: vi.fn() }));
+
 import { api } from "@/api/client";
 import { AuthProvider } from "@/auth/AuthContext";
+import { downloadBlob } from "@/utils/download";
 
 // The signed-in user (uploader in the fixtures) — the delete affordance
 // depends on ownership.
@@ -161,6 +164,61 @@ describe("CardAttachments", () => {
       }),
     );
     await waitFor(() => expect(screen.getByRole("status")).toBeInTheDocument());
+    expect(screen.getByTestId("card-attachments-empty")).toBeInTheDocument();
+  });
+
+  it("downloads a file through the authenticated blob fetch", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAttachments").mockResolvedValue([attachment()]);
+    const blob = new Blob(["spec"], { type: "application/pdf" });
+    vi.spyOn(api, "fetchAttachment").mockResolvedValue(blob);
+    renderSection();
+
+    await screen.findByTestId("card-attachment-row");
+    await user.click(screen.getByRole("button", { name: "Download" }));
+
+    await waitFor(() =>
+      expect(downloadBlob).toHaveBeenCalledWith("spec.pdf", blob),
+    );
+    expect(api.fetchAttachment).toHaveBeenCalledWith("att-1");
+    expect(
+      screen.queryByText("Could not download the file"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reports a failed authenticated download", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAttachments").mockResolvedValue([attachment()]);
+    vi.spyOn(api, "fetchAttachment").mockRejectedValue(new ApiError(500, null));
+    renderSection();
+
+    await screen.findByTestId("card-attachment-row");
+    await user.click(screen.getByRole("button", { name: "Download" }));
+
+    expect(
+      await screen.findByText("Could not download the file"),
+    ).toBeInTheDocument();
+    expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
+  it("maps a disallowed file type to its toast and does not add the row", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.spyOn(api, "uploadAttachment").mockRejectedValue(
+      new ApiError(400, { message: "File type is not allowed", field: "file" }),
+    );
+    renderSection();
+
+    await screen.findByTestId("card-attachments-empty");
+    await user.upload(
+      screen.getByTestId("card-attachments-input"),
+      new File([new ArrayBuffer(10)], "malware.exe", {
+        type: "application/x-msdownload",
+      }),
+    );
+    expect(
+      await screen.findByText("This file type is not allowed"),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("card-attachments-empty")).toBeInTheDocument();
   });
 

@@ -46,17 +46,26 @@ export function setupApp(app: INestApplication): void {
   // (helmet would otherwise rewrite every subresource to https).
   // `wasm-unsafe-eval` lets Pagefind compile its search index in the docs
   // (a worker wasm module); without it the dialog stays on "Searching...".
+  // The marketing site can opt into a cookieless Plausible script at build
+  // time (`PUBLIC_ANALYTICS_DOMAIN`), so its origin must be allowed here too;
+  // otherwise the script and its event beacon are silently blocked.
+  const analyticsOrigin = "https://plausible.io";
   const scriptHashes = inlineScriptHashes([env.STATIC_DIR, env.SITE_DIR]);
   app.use(
     helmet({
       contentSecurityPolicy: {
         useDefaults: true,
         directives: {
-          "script-src": ["'self'", "'wasm-unsafe-eval'", ...scriptHashes],
+          "script-src": [
+            "'self'",
+            "'wasm-unsafe-eval'",
+            analyticsOrigin,
+            ...scriptHashes,
+          ],
           "style-src": ["'self'", "'unsafe-inline'"],
           "img-src": ["'self'", "data:", "blob:"],
           "media-src": ["'self'", "blob:"],
-          "connect-src": ["'self'"],
+          "connect-src": ["'self'", analyticsOrigin],
           "worker-src": ["'self'", "blob:"],
           "font-src": ["'self'", "data:"],
           "upgrade-insecure-requests": null,

@@ -16,7 +16,19 @@ its containers and volumes on exit. Ports 4300 and 4802 must be free.
 npm run test:docker -w e2e
 npm run test:docker -w e2e -- tests/app/auth
 E2E_MAIL_DISABLED_TEST=1 npm run test:docker -w e2e
+npm run test:admin -w e2e
+npm run test:admin:global -w e2e
 ```
+
+`test:admin` is the master-panel suite (`tests/admin/`) on its own disposable
+stack. `test:admin:global` runs the server-wide settings scenarios in
+`tests/admin/global/`: it opens two one-off stacks, because saving the email
+sandbox transport must be the last mail-dependent test, and always runs with a
+single worker. Never point the global suite at a shared or developer stack —
+it changes email/OAuth/traffic/ops/demo settings and the cleanup restores them
+via the panel/API, not by reverting the database. The core run uses ports
+4300/4802; the global script defaults to 4310/4803 and writes reports to
+`e2e/playwright-report-admin-{core,global}/`.
 
 The last command runs the admin-settings scenario separately: it changes
 global settings and must only target a disposable isolated stack. The
@@ -48,8 +60,15 @@ are skipped when using external development servers. E2E imports use `@/` for
 paths relative to `e2e/`.
 
 `tests/app/sharing/` covers public live and snapshot boards, read-only content,
-link limits and revocation, and iframe themes on a separate local origin. Its
-fixtures create a fresh user and board per test.
+link limits and revocation, iframe themes on a separate local origin, and the
+link lifecycle: a snapshot freezes comments and attachments at capture time,
+refreshing it serves the newer content, an expired link is refused and frees
+its slot, revoking or deleting a board disconnects an already open viewer, and
+unknown/revoked tokens answer 404 without leaking the board. It also covers
+copy-link success and a blocked clipboard, the share row's title/view
+count/flags, snapshot embeds with an unknown theme fallback, attachment
+downloads as attachments, and a public roster without emails. Its fixtures
+create a fresh user and board per test.
 
 `tests/app/filters/` covers the board filter toolbar: title, description, label
 and checklist search; the due, created, label, priority, assignee and link
@@ -79,25 +98,39 @@ the redo stack with a new edit, multi-step replay, per-board stacks, and the
 saved result (but not the stack) surviving reload. It exercises every UI inverse
 for cards, columns, labels, checklists and board rename, including nested
 restores (a deleted card with its checklist, a deleted column with its cards,
-a deleted label with its assignments). Two independent contexts verify that a
-foreign card or board edit marks the overtaken step dead and undo leaves the
-other member's text untouched; an unrelated foreign edit does not block local
-undo. Each test starts from its own user and board.
+a deleted label with its assignments), description edits, card reordering inside
+a column, moving through the dialog's column row and creating a label with its
+first assignment. Two independent contexts verify that a foreign card, column,
+label, checklist or board edit marks the overtaken step dead and undo leaves the
+other member's text untouched, that several dead steps collapse into one toast
+before the next live step, and that an unrelated foreign edit does not block
+local undo. Shortcuts are ignored in inputs, textareas and the description's
+contenteditable editor. Each test starts from its own user and board.
 
 `tests/app/collaboration/` covers the two-account flows: an admin invites an
 account by email, the invitee sees the invitation in the bell with board,
 inviter and role, accepts it (the board appears without a reload) or declines
-it, and a pending invitation grants no access. Roles are exercised end to end:
-a live promotion to ADMIN, a live demotion to a read-only VIEWER, the
-last-ADMIN guard and a live removal that revokes access on an open board. Two
-independent Chrome contexts verify realtime updates in under two seconds, the
-presence roster and its departure within a minute, delta catch-up through
-`?since=` after the stream is closed and reopened, and `commandId` retry
-idempotency. Description conflicts are surfaced rather than silently
-overwritten, «Keep mine» and «Reload» resolve them, and undo skips an edit made
-in the other context. Each test starts from its own owner and board; the
-two-account tests also get their own invited account and an independent browser
-context.
+it, and a pending invitation grants no access. Role and invitation edges are
+covered too: a repeat pending invite revives with the new role, the inviter
+sees and cancels a pending row, an accepted invite appears live in an open
+member list, a lapsed invite leaves the bell and a duplicate accepted invite is
+refused, and a MEMBER cannot invite, change roles, remove members or open the
+share dialog. Roles are exercised end to end:
+a live promotion to ADMIN, a live demotion to a read-only VIEWER whose header,
+card surfaces, members list, share trigger and Undo/Redo disappear, the
+last-ADMIN guard and a live removal or access expiry that revokes an open board.
+Two independent Chrome contexts verify realtime updates in under two seconds,
+the presence roster and its departure within a minute, a heartbeat that keeps
+the session past the 60-second TTL, the sweep of a session whose heartbeat is
+blocked, the presence overflow with roles, delta catch-up through `?since=`
+after the stream is closed and reopened, and `commandId` retry idempotency, plus
+a second tab of the same account whose commands apply once and whose presence
+deduplicates. Description and title conflicts are surfaced rather than silently
+overwritten, «Keep mine» and «Reload» resolve both, an unresolved description
+draft survives closing the card, and undo skips an edit made in the other
+context (title or description). Each test starts from its own owner and board;
+the two-account tests also get their own invited account and an independent
+browser context.
 
 `tests/app/account/` covers the personal account panel: profile name, avatar
 color, photo upload (including a rejected non-image), the digest opt-out and
@@ -119,6 +152,27 @@ refuses (with no success toast). It also checks that restoring a local backup
 stays unavailable in server mode. Each test starts from its own account and
 board; fixtures build import envelopes through the API and delete their source
 boards.
+
+`tests/app/auth/`, `tests/app/account/`, `tests/app/boards/`,
+`tests/app/columns/`, `tests/app/cards/`, `tests/app/data/` and
+`tests/app/pwa/` also carry the coverage-audit follow-up. Auth adds the
+account backoff after repeated wrong passwords and two tabs rotating one
+refresh cookie under simultaneous reloads; account adds a board-scoped
+read-only API key, key expiry/last-used metadata, the 2 MB avatar limit and
+the email-change error paths; boards cover switcher grouping and role icons,
+the ten-board limit and cancelling an archive; columns cover the WIP drop
+refusal (with the card staying put), removing a WIP limit and the twelve-
+column cap; cards cover attachment download through the authenticated blob
+stream and its delete/type/20-file limits, rapid composer entry with
+Shift+Enter and labels, own-comment deletion, Ctrl+Enter/Cancel and comment
+pagination, insert-between cards, delete-forever, duplicate content and
+move-to-column; data covers a full export → import round-trip (description,
+label, priority, due, cover, checklist, link and an archived card), importing
+the same file twice, deleting saved copies and a server-side import failure;
+PWA covers the update banner (waiting worker, dismissal, reload and a second
+tab following `controllerchange`) and rollback of an offline card edit. The
+`mail-disabled` scenario now runs serially and snapshots/restores the global
+email and registration settings per test.
 
 `tests/app/navigation/` covers direct board and card links (including signing in
 on the linked URL and the `/app/` deploy base), the home redirect, the board 404
@@ -151,47 +205,79 @@ screen. `LazyAnimatedIcon` now keeps its static fallback when a chunk cannot
 load, and a failed preload no longer announces a "new version" when no update
 is actually waiting.
 
-`tests/admin/` covers the master panel under `/app/admin`: signing in (a wrong
-password, a regular account, session restore after a reload and sign-out), the
-sidebar sections and direct URLs, the global omnibox and the return to the
-boards app. Owner-only rights are checked from both sides: an operator does not
-see the masters, email and OAuth entries, gets the 403 screen from the masters
-URL, sees the IP allowlist read-only and no owner-only user actions, while the
-operator can still block a user. Owners create a user, block and unblock one,
-delete with the typed confirmation, mint an operator master and open a support
-impersonation session in a new tab. Audit and Security are asserted with events
-the test itself creates: a successful master sign-in, a failed sign-in (matched
-by email and test IP) and user block/delete entries. Every test creates its own
-unique target users and masters (through the admin API or the panel itself),
-and assertions filter by a unique email or id; the shared owner session is used
-only for setup and reading. The suite never changes global email, OAuth,
-traffic or security settings.
+`tests/admin/` covers the master panel under `/app/admin`. The core suite
+(`npm run test:admin`) is split by feature: login/auth-security (lockout,
+TOTP enrollment/login/replay/disable, IP allowlist at login and per request,
+login throttle, admin/user session isolation), shell (all 26 sidebar entries
+in EN and RU, collapse/Ctrl+B, theme, language, six-type omnibox, Back/Forward,
+deep links, unknown-route redirect), permissions (owner-only areas and
+read-only settings for operators), dashboard, users and support actions
+(search/status, create with a chosen password, verify/unverify/resend, change
+email, session/token revocation, reset, promote, blocked impersonation, export,
+detail counters/tabs), masters (create OWNER/OPERATOR, duplicate, block/enable,
+reset, revoke, remove, self/last-owner guards), boards and board detail
+(create/archive/restore/delete, bulk, members/roles/owner transfer), board
+content (columns/cards through the command log), cards and the full card graph,
+content browsers (columns/labels/checklists/links/comments/attachments/
+sessions/tokens/activity/command payload/pagination), settings that do not
+change the global transport (email status, observability), communications
+(announcements, banner+email, template preview), security alerts, public shares,
+audit families and error states. Each test provisions its own users, masters,
+boards, cards and files through the API; assertions search a unique id or
+email, and mutation tests verify their own audit event.
+
+`tests/admin/global/` covers the server-wide settings: email status/test/save,
+OAuth (both providers and the runtime login buttons), the traffic limit, demo
+runner start/stop/live view/cleanup, all feature flags, maintenance mode,
+per-user rate limit, retention purge, scheduled sweeps, one-off email and
+template reset. The folder is only matched with `E2E_ADMIN_GLOBAL_TEST=1`;
+the ordinary `browser-e2e` and `test:admin` runs ignore it. The global stack is
+serial and one-off, and every destructive change is restored in `finally`.
+
+`tests/admin/queue.spec.ts` expects the E2E Compose stack to set
+`QUEUES_DASHBOARD=true` and start Redis; the owner opens Bull Board, the
+operator sees the button disabled.
 
 `tests/site/` covers the public marketing site. The landing checks the hero,
 every section heading, the feature rows and an expandable FAQ answer; pricing
 checks the plan cards with prices and limits, the comparison table, both plan
 CTAs and the closing CTA. Navigation covers the header and footer links to
 home, pricing and documentation (including the home features anchor, the
-self-hosting guide and browser Back), while the CTA suite clicks Sign in,
-Create account, hero and pricing links and verifies that the app really opens
-its login or registration screen under the `/app/` base, with the Russian
-`?lng=ru` handoff. Language tests switch home and pricing between English and
-Russian in place and check `<html lang>` and translated content. The theme test
-toggles light/dark, survives a reload and carries the shared `starlight-theme`
-choice into the documentation; the dual-language 404 page gets its own theme
-test. The 404 tests verify the status, English and Russian copy and the link
-home. The site is public, so these tests need no account, fixture or API setup.
+self-hosting guide, external project URLs and browser Back), while the CTA
+suite clicks Sign in, Create account, hero and pricing links and verifies that
+the app really opens its login or registration screen under the `/app/` base,
+with the Russian `?lng=ru` handoff. Language tests switch home and pricing
+between English and Russian in place and check `<html lang>`, translated
+content and hreflang alternates. The theme tests toggle light/dark, survive a
+reload, follow the system colour scheme until the visitor chooses, and carry
+the shared `starlight-theme` choice into the documentation; the dual-language
+404 page gets its own theme test. SEO tests assert title, description,
+canonical, hreflang, Open Graph, Twitter and JSON-LD on the home, pricing, RU
+and 404 pages, plus sitemap.xml, robots.txt, llms.txt, pricing.md and the
+social cards. A mobile test checks 375px and the 720–879px tablet range (no
+horizontal overflow, both auth CTAs reachable), analytics tests check the
+delegated `dataLayer` event, Do Not Track and the CSP allow-list for the
+optional Plausible script, and reduced-motion/accessibility tests cover paused
+clips, the skip link, landmarks and visible focus. The 404 tests verify the
+status, English and Russian copy, the docs link, language switch and noindex.
+The site is public, so these tests need no account, fixture or API setup.
 
 `tests/docs/` covers the Starlight documentation under `/docs/` and
-`/ru/docs/`: the landing and the five sidebar groups, a key page per group,
+`/ru/docs/`: all 22 English and 22 Russian pages (status, `<html lang>`, one
+H1, title, description and canonical), a full crawl of every internal link and
+`#fragment` across those 44 pages, the landing and the five sidebar groups,
 Pagefind search (header button and Ctrl/Cmd+K, English and Russian indexes,
-opening a result, empty query and no matches), inline link integrity on sampled
-pages in both locales, previous/next pagination, language switching with
-translated content and `<html lang>`, explicit and automatic theme persistence
-between the docs and the marketing site (including after reload), and the
-site ↔ docs ↔ app links (header/footer «Docs», the docs brand, the docs app
-entry point and the app Help menu). Most tests need no account; the app Help
-entry point signs in with its own isolated account. Run just this set with
+opening a result, keyboard navigation and focus return, empty query, no matches
+and a recoverable bundle failure), code-block copy, tables, heading anchors,
+the table of contents and the version badge, previous/next pagination,
+language switching across user-guide, admin and API sections, docs SEO
+(canonical, hreflang, docs social card), the localized 404 for unknown docs
+paths, mobile search/sidebar and skip-link/landmark/keyboard basics. Explicit
+and automatic theme persistence between the docs and the marketing site
+(including after reload) and the site ↔ docs ↔ app links (header/footer
+«Docs», the docs brand, the docs app entry point and the app Help menu) are
+covered too. Most tests need no account; the app Help entry point signs in
+with its own isolated account. Run just this set with
 `npm run test:docker -w e2e -- tests/docs`.
 
 To use already-running development servers instead, provide the site and app
