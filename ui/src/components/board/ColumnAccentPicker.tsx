@@ -198,7 +198,11 @@ export function ColumnAccentPicker({
         align="end"
         className="w-64 space-y-3"
         data-testid="column-style-palette"
-        onPointerDown={stop}
+        // Do NOT stop `pointerdown`: Radix's dismissable layer has to see the
+        // end of the gesture, or its "pointer inside the tree" flag stays set
+        // and the next outside click is swallowed (the popover needed two).
+        // Mouse/touch starts are still stopped so the header's drag handle
+        // (MouseSensor/TouchSensor) never activates from inside the palette.
         onMouseDown={stop}
         onTouchStart={stop}
         onClick={stop}

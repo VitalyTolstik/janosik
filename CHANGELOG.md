@@ -36,6 +36,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rows during background hydration.
 - Saving an announcement now closes the editor before the list refresh, so the
   confirmation toast is not hidden behind the modal's `aria-hidden` subtree.
+- The column accent palette closes on the first outside click after a color or
+  gradient is picked; it used to swallow that click and close only on the next
+  one.
 
 ## [0.2.0] - 2026-11-08
 
