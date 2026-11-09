@@ -48,6 +48,7 @@ import {
   EmptyState,
   ErrorState,
   Field,
+  ForbiddenState,
   IdChip,
   PageHeader,
   Panel,
@@ -453,6 +454,8 @@ export function MastersPage() {
       >
         {list.loading ? (
           <EntityListSkeleton columns={9} testId="admin-masters-skeleton" />
+        ) : list.errorStatus === 403 ? (
+          <ForbiddenState />
         ) : list.error ? (
           <ErrorState onRetry={list.reload} />
         ) : list.items.length === 0 ? (

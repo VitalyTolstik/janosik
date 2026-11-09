@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
   AtSign,
@@ -73,6 +73,7 @@ import { AdminDetailSkeleton } from "./skeletons";
  */
 
 type TabKey =
+  | "overview"
   | "memberships"
   | "cards"
   | "assignedCards"
@@ -85,6 +86,23 @@ type TabKey =
 
 const cardHref = (id: string) => `/admin/cards/${id}`;
 const boardHref = (id: string) => `/admin/boards/${id}`;
+
+const TAB_KEYS: TabKey[] = [
+  "overview",
+  "memberships",
+  "cards",
+  "assignedCards",
+  "comments",
+  "attachments",
+  "sessions",
+  "tokens",
+  "commands",
+  "activity",
+];
+
+function isTabKey(value: string | null): value is TabKey {
+  return value !== null && (TAB_KEYS as string[]).includes(value);
+}
 
 function StatCard({
   icon: Icon,
@@ -113,6 +131,38 @@ function StatCard({
   );
 }
 
+function OverviewRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-3 py-2">
+      <dt className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="min-w-0 truncate text-right text-xs text-foreground">
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+function SummaryTile({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-border/70 bg-background/40 px-2.5 py-2">
+      <p className="truncate text-[9px] uppercase tracking-[0.08em] text-muted-foreground">
+        {label}
+      </p>
+      <p className="tabular-nums text-sm font-semibold text-foreground">
+        {value}
+      </p>
+    </div>
+  );
+}
+
 export function UserDetailPage() {
   const { userId = "" } = useParams();
   const t = useAdminT();
@@ -122,9 +172,20 @@ export function UserDetailPage() {
   // Owner-only support actions: delete, password reset, promote, impersonate
   // and export all answer 403 to an OPERATOR, so the menu hides them.
   const isOwner = useAdminAuth().admin?.role === "OWNER";
+  const [searchParams, setSearchParams] = useSearchParams();
   const [detail, setDetail] = useState<AdminUserDetailDto | null>(null);
   const [error, setError] = useState(false);
-  const [tab, setTab] = useState<TabKey>("memberships");
+  const [tab, setTabState] = useState<TabKey>(() => {
+    const requested = searchParams.get("tab");
+    return isTabKey(requested) ? requested : "overview";
+  });
+
+  const setTab = (next: TabKey) => {
+    setTabState(next);
+    const params = new URLSearchParams(searchParams);
+    params.set("tab", next);
+    setSearchParams(params, { replace: true });
+  };
   const [emailDialog, setEmailDialog] = useState(false);
   const [resetDialog, setResetDialog] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState(false);
@@ -235,7 +296,11 @@ export function UserDetailPage() {
     }
   };
 
-  const tabs: Array<{ key: TabKey; label: string; count: number }> = [
+  const tabs: Array<{ key: TabKey; label: string; count?: number }> = [
+    {
+      key: "overview",
+      label: t("admin.userDetail.tab.overview"),
+    },
     {
       key: "memberships",
       label: t("admin.userDetail.tab.memberships"),
@@ -549,11 +614,19 @@ export function UserDetailPage() {
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div
+        role="tablist"
+        aria-label={t("admin.userDetail.tabs")}
+        className="flex flex-wrap items-center gap-1.5"
+      >
         {tabs.map((entry) => (
           <button
             key={entry.key}
             type="button"
+            role="tab"
+            id={`admin-user-tab-${entry.key}`}
+            aria-selected={tab === entry.key}
+            aria-controls="admin-user-tabpanel"
             data-testid={`admin-user-tab-${entry.key}`}
             onClick={() => setTab(entry.key)}
             className={cn(
@@ -564,14 +637,130 @@ export function UserDetailPage() {
             )}
           >
             {entry.label}
-            <span className="tabular-nums text-[10px] opacity-70">
-              {entry.count}
-            </span>
+            {entry.count === undefined ? null : (
+              <span className="tabular-nums text-[10px] opacity-70">
+                {entry.count}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
-      <Panel className="min-h-0 flex-1">
+      <Panel
+        className="min-h-0 flex-1"
+        role="tabpanel"
+        id="admin-user-tabpanel"
+        aria-labelledby={`admin-user-tab-${tab}`}
+      >
+        {tab === "overview" ? (
+          <div className="grid gap-3 p-4 lg:grid-cols-2">
+            <section className="space-y-2">
+              <h2 className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                {t("admin.userDetail.overview.account")}
+              </h2>
+              <dl className="divide-y divide-border/60 rounded-lg border border-border/70 bg-background/40 text-xs">
+                <OverviewRow label={t("admin.common.id")}>
+                  <IdCell id={user.id} />
+                </OverviewRow>
+                <OverviewRow label={t("admin.users.column.email")}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="truncate">{user.email}</span>
+                  </span>
+                </OverviewRow>
+                <OverviewRow label={t("admin.users.column.name")}>
+                  {user.displayName ?? "—"}
+                </OverviewRow>
+                <OverviewRow label={t("admin.users.column.created")}>
+                  {formatDate(user.createdAt, lang, hour12)}
+                </OverviewRow>
+                <OverviewRow label={t("admin.userDetail.verified")}>
+                  {user.emailVerifiedAt === null ? (
+                    <Badge variant="warning">
+                      {t("admin.userDetail.unverified")}
+                    </Badge>
+                  ) : (
+                    <Badge variant="success">
+                      {t("admin.userDetail.verified")}
+                    </Badge>
+                  )}
+                </OverviewRow>
+              </dl>
+            </section>
+
+            <section className="space-y-2">
+              <h2 className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                {t("admin.userDetail.overview.access")}
+              </h2>
+              <div className="grid grid-cols-3 gap-2">
+                <SummaryTile
+                  label={t("admin.userDetail.stat.boards")}
+                  value={detail.counters.boards}
+                />
+                <SummaryTile
+                  label={t("admin.userDetail.stat.sessions")}
+                  value={detail.counters.sessions}
+                />
+                <SummaryTile
+                  label={t("admin.userDetail.stat.tokens")}
+                  value={detail.counters.tokens}
+                />
+              </div>
+              <h2 className="pt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                {t("admin.userDetail.overview.danger")}
+              </h2>
+              <div className="rounded-lg border border-danger/25 bg-danger/5 px-3 py-2.5 text-[11px] leading-5 text-muted-foreground">
+                <p>{t("admin.userDetail.overview.dangerHint")}</p>
+                {isOwner ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2 border-danger/40 text-danger hover:bg-danger/10"
+                    onClick={() => setDeleteDialog(true)}
+                  >
+                    {t("admin.userDetail.action.deleteUser")}
+                  </Button>
+                ) : (
+                  <p className="mt-1 text-[10px]">
+                    {t("admin.userDetail.overview.ownerOnly")}
+                  </p>
+                )}
+              </div>
+            </section>
+
+            <section className="space-y-2 lg:col-span-2">
+              <h2 className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                {t("admin.userDetail.overview.recent")}
+              </h2>
+              {detail.recentActivity.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">
+                  {t("admin.userDetail.overview.recentEmpty")}
+                </p>
+              ) : (
+                <ul className="divide-y divide-border/60 rounded-lg border border-border/70">
+                  {detail.recentActivity.slice(0, 6).map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[11px]"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                          {entry.type}
+                        </span>
+                        <EntityLink to={boardHref(entry.boardId)}>
+                          {entry.boardTitle}
+                        </EntityLink>
+                      </span>
+                      <time className="tabular-nums text-muted-foreground">
+                        {formatDate(entry.createdAt, lang, hour12)}
+                      </time>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        ) : null}
+
         {tab === "memberships" ? (
           <Table maxHeight="40rem">
             <thead>
