@@ -257,7 +257,7 @@
 | Self-hosting | Docker Compose, установщик и публичный образ GHCR `v0.2.0` для amd64/arm64; документация и MCP | 38a, 38b, 136 |
 
 > **Из открытого:** тач-слой календаря/таблицы (TASK-31), Sentry и полный
-> E2E-набор теперь закрываются в TASK-168 (§7.25); TASK-166–171 —
+> E2E-набор теперь закрываются в TASK-168 (§7.25); TASK-166–172 —
 > release-программа.
 > Полный перечень открытых задач — в §7.7.
 
@@ -422,7 +422,7 @@
 | 34 | TASK-43 `master-admin-panel` | ✅ реализовано вне очереди по запросу — мастер-контур (§7.0/§7.4): `AdminUser` (OWNER/OPERATOR, отдельные cookie/JWT-аудиенция/refresh-таблица), `/admin/auth/*` + `/admin/*` (метрики с runtime, юзеры, доски, **карточки, комментарии, сессии, API-токены**, журнал команд, аудит), **редактор контента доски через командный лог от имени владельца**, модерация (блок юзера + ревок сессий/токенов по одной, архив/soft-delete доски и карточки, удаление комментария), управление мастерами только у OWNER, CLI `admin:create/passwd/list`, аудит каждого действия, lockout и anti-timing логина, ID всех сущностей с копированием, поиск по ID, удаление `User.isSuperAdmin`; **таблицы schema-first** (`Board.id`/`BoardMember.userId`/`Card.columnId`/`Comment.authorId`/…, FK-айди как значения, поиск по айди, без счётчиков, скролл-вьюпорт со sticky-шапкой) | гейты: ui 483, shared 325, backend 22 unit + 100 e2e, build/lint/format, size 204.66/210 KB + ленивый admin-чанк 20.7/30 KB; live-смоук: CLI → браузер (вход мастера, создание мастера из панели, блок юзера, Playwright-смоук) |
 | 35 | TASK-35 `board-members-ui` | ✅ реализовано, PR #74 — участники доски из UI (§7.6.1): модалка «Участники (N)» из шапки (`BoardMembersDialog` + `UserAvatar`), инвайт по email, смена роли, `expiresAt` для VIEWER с бейджем «доступ истёк», исключение с инлайн-подтверждением, последний ADMIN защищён (disabled + тултип-причина), ошибки API → тосты; **VIEWER получает read-only UI** (нет drag/композеров/меню/инлайн-редакторов, диалог карточки только для чтения, `roleOf` → `readOnly` через BoardSection); `GET /boards/:id/members` уже отдавал `userId`/`displayName`/`email` — бэкенд не менялся | гейты: ui 512 (485+27, покрытие выше порогов), shared 325, backend 22 unit + 100 e2e не тронуты, build/lint/format; live-смоук |
 | 30 | TASK-30 `realtime-sse` | ✅ реализовано, ветка `feature/TASK-30-realtime-sse`; доборы — TASK-30.1 ✅ (`touches` в событии + бюджет ленивого чанка) и TASK-30.2 ✅ (audit hardening) — §7.5 — SSE `GET /boards/:id/events` (`{type:"command", seq, action, actorId}`) + догон `?since=`; `X-Board-Seq` на агрегате; UI-мост в ленивом чанке (`fetch`-ридер с Authorization вместо EventSource+ticket), чужие экшены через тот же `boardReducer`, дедуп по seq, defer при in-flight командах, focus refetch остался fallback | два браузера видят правки без перезагрузки; обрыв догоняется дельтой (live-смоук 8/8, включая `setOffline`) |
-| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-40/41, TASK-31, TASK-159, TASK-161 — сведены в TASK-168 (§7.25); TASK-131 (отложено). TASK-166–171 запланированы (§7.23–§7.25). TASK-32 и TASK-39 отменены; TASK-140/141 и TASK-158 завершены |
+| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-40/41, TASK-31, TASK-159, TASK-161 — сведены в TASK-168 (§7.25); TASK-131 (отложено). TASK-166–172 запланированы (§7.23–§7.25). TASK-32 и TASK-39 отменены; TASK-140/141 и TASK-158 завершены |
 
 ### 6.0.1. Укрепление фундамента перед бэкендом (TASK-21.1…21.11)
 
@@ -1651,8 +1651,9 @@ TASK-36 и TASK-37.)*
 | 98 | TASK-167 `marketing-site-redesign` | `docs/TASK-167-site-redesign` → отдельные `feat/TASK-167.x-*` | §7.24: редизайн маркетингового сайта под новую реальность — agent-first с контролем человека, workflow, approvals/scopes/pause/audit, новая админка, self-host/AGPL; новая IA, копирайт EN/RU, реальные медиа, docs, SEO/AI-SEO, a11y/perf, E2E | **Запланировано:** 9 потоков в 4 волнах (W0–W3); копирайт/IA можно начинать после TASK-166.0, экраны и медиа — после `feat/admin-redesign` + TASK-166.13–15; каждый поток — отдельный worktree/PR; все утверждения на сайте соответствуют отгруженному продукту, EN/RU паритет. См. §7.24 |
 | 99 | TASK-168 `launch-tail` | отдельные `feat/TASK-168.x-*` | §7.25: закрыть хвосты вне TASK-166/167 — TASK-40 (Sentry + pino), TASK-31 (тач-слой и 390 px), TASK-161 (события безопасности), TASK-159/41 (тестовое покрытие и формальная ревизия) | **Запланировано:** 4 потока; 168.1/168.2 можно начинать сразу, 168.3/168.4 — после редизайна админки; каждый хвост получает финальный статус, тесты и docs, без «висящих открытыми» задач. См. §7.25 |
 | 100 | TASK-169 `docs-audit` | отдельные `feat/TASK-169.x-*` | §7.25: README и документация под 1.0 — инвентаризация кода против docs, поиск недобавленного/устаревшего, README, docs EN/RU, ссылки, версия, changelog | **Запланировано:** 4 потока; аудит можно начинать сразу, фиксы — после TASK-166.16 и TASK-167.5; gap-отчёт с «fixed/deferred/issue»; docs-сайт собирается, ссылки живые, EN/RU паритет. См. §7.25 |
-| 101 | TASK-170 `docker-release` | отдельные `feat/TASK-170.x-*` | §7.25: обновление Docker-образа — базовые образы, multi-arch, SBOM/provenance, CVE, размер, compose/.env, upgrade/rollback, публикация RC в GHCR | **Запланировано:** 4 потока; после 168–169 и до 171; clean install amd64/arm64, миграции, health, upgrade с 0.2.x, rollback; без critical/high CVE; образ — кандидат для 1.0.0. См. §7.25 |
-| 102 | TASK-171 `pre-cloud-1.0` | отдельные `feat/TASK-171.x-*` | §7.25: полное ревью перед облаком и релиз 1.0.0 — security, data/backup/DR, perf/scale, cloud readiness, release engineering, независимый review board | **Запланировано:** 6 потоков; зависит от 166–170; 0 P0/P1, P2 закрыты или приняты с owner/date; 1.0.0 во всех пакетах/образе/доках; clean install + upgrade + rollback + staging dry-run; launch checklist подписан. См. §7.25 |
+| 101 | TASK-170 `docker-release` | отдельные `feat/TASK-170.x-*` | §7.25: обновление Docker-образа — базовые образы, multi-arch, SBOM/provenance, CVE, размер, compose/.env, upgrade/rollback, публикация RC в GHCR | **Запланировано:** 4 потока; после 168, 169 и 172, до 171; clean install amd64/arm64, миграции, health, upgrade с 0.2.x, rollback; без critical/high CVE; образ — кандидат для 1.0.0. См. §7.25 |
+| 102 | TASK-171 `pre-cloud-1.0` | отдельные `feat/TASK-171.x-*` | §7.25: полное ревью перед облаком и релиз 1.0.0 — security, data/backup/DR, perf/scale, cloud readiness, release engineering, независимый review board | **Запланировано:** 6 потоков; зависит от 166–170 и 172; 0 P0/P1, P2 закрыты или приняты с owner/date; 1.0.0 во всех пакетах/образе/доках; clean install + upgrade + rollback + staging dry-run; launch checklist подписан. См. §7.25 |
+| 103 | TASK-172 `mcp-skill-review` | отдельные `feat/TASK-172.x-*` | §7.25: отдельный сквозной ревью MCP и скила после всей новой функциональности — tools/schemas/errors/scopes, live-сценарии approval/pause/rollback/plan, skill и references, README/docs EN/RU, tool count | **Запланировано:** 4 потока; после TASK-166, 167.5 и 169; до Docker RC и 1.0.0; найденные пробелы исправляются в MCP/skill/docs, контракт продукта не меняется. См. §7.25 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -4379,14 +4380,15 @@ launch-гейт держит головной поток.
 
 ---
 
-### 7.25. Релиз 1.0.0 и подготовка к облаку (TASK-168…171)
+### 7.25. Релиз 1.0.0 и подготовка к облаку (TASK-168…172)
 
 > **Статус:** запланировано. Это release-программа после TASK-166/167:
 > сначала закрываются старые хвосты, затем README/docs приводятся в
-> соответствие с продуктом, потом обновляется Docker-образ, и только после
-> этого — независимое ревью и тег `1.0.0`.
+> соответствие с продуктом, отдельно проверяются MCP и скил, потом
+> обновляется Docker-образ, и только после этого — независимое ревью и тег
+> `1.0.0`.
 >
-> **Логика порядка:** 168 → 169 → 170 → 171. Внутри каждой задачи есть
+> **Логика порядка:** 168 → 169 → 172 → 170 → 171. Внутри каждой задачи есть
 > параллельные потоки, но финальный тег ставится только после того, как
 > предыдущая задача закрыта и её результат попал в `main`.
 >
@@ -4412,8 +4414,9 @@ launch-гейт держит головной поток.
 | --- | --- | --- | --- |
 | 1 | TASK-168 `launch-tail` | TASK-40, TASK-31, TASK-161, TASK-159/41 | все старые хвосты закрыты или явно перенесены с причиной |
 | 2 | TASK-169 `docs-audit` | README, docs EN/RU, «что не добавили» | документация соответствует 1.0.0, gap-отчёт закрыт |
-| 3 | TASK-170 `docker-release` | Dockerfile, compose, CI, GHCR | обновлённый multi-arch RC-образ, проверенный на чистой машине |
-| 4 | TASK-171 `pre-cloud-1.0` | security/data/perf/cloud/release | тег `1.0.0`, образы, отчёт ревью, launch checklist |
+| 3 | TASK-172 `mcp-skill-review` | MCP tools/schemas, skill, references, MCP docs | MCP и скил проверены на живых сценариях, пробелы исправлены |
+| 4 | TASK-170 `docker-release` | Dockerfile, compose, CI, GHCR | обновлённый multi-arch RC-образ, проверенный на чистой машине |
+| 5 | TASK-171 `pre-cloud-1.0` | security/data/perf/cloud/release | тег `1.0.0`, образы, отчёт ревью, launch checklist |
 
 #### TASK-168 — `launch-tail` · Закрыть хвосты прошлых задач
 
@@ -4469,6 +4472,30 @@ launch-гейт держит головной поток.
 - **Не входит:** полная переделка несвязанных docs-страниц, блог/CMS,
   маркетинговый копирайт (это TASK-167).
 
+#### TASK-172 — `mcp-skill-review` · Сквозной ревью MCP и скила
+
+- **Зачем:** TASK-166 меняет identity, scopes, approvals, pause, rollback,
+  plan/apply и контракт ошибок; TASK-167/169 меняют docs и skill. Если не
+  пройти MCP и `skills/janosik` целиком после этого, агент продолжит работать
+  по старым инструкциям, часть tools останется без новых полей, а
+  README/docs/skill разъедутся. Это отдельная задача, а не хвост 166: она
+  проверяет весь продукт на живых сценариях, а не только backend-потоки.
+- **Потоки:**
+
+| ID | Поток | Что делаем | DoD |
+| --- | --- | --- | --- |
+| 172.1 | Tool & schema audit | все tools/schemas/descriptions/errors/`structuredContent`, новые поля, scope/destructive-аннотации, идемпотентность, `retryable`/`requestId` | матрица tools × scopes × destructive; ни один tool не обходит gate; схемы и описания актуальны |
+| 172.2 | Live scenario matrix | claim → workflow block → approval → move → pause → resume → rollback; scoped/read-only/batch/plan; негативные сценарии | сценарии проходят через реальный MCP-клиент; ошибки понятны; нет обхода прав |
+| 172.3 | Skill & references | `skills/janosik/SKILL.md`, `references/*`: новые lifecycle-сценарии, approval/pause/rollback/plan, scopes, reviewer flow; убрать устаревшее | skill не обещает несуществующего; агент проходит сценарии без подсказок из кода |
+| 172.4 | MCP docs & release | `mcp/README.md`, `site/.../docs/mcp.md` EN/RU, tool count/pinned-тест, examples, `@janosik/mcp` version bump, CHANGELOG | README/docs/skill/tool count синхронны; version bump; examples рабочие |
+
+- **Зависимости:** TASK-166 (166.1–166.16), TASK-167.5, TASK-169.3;
+  запускать после TASK-169 и до TASK-170.
+- **DoD:** полный матричный прогон; живой сценарий; tool count; README/docs/
+  skill; version bump; найденные баги исправлены; новых фич нет.
+- **Не входит:** новые backend-фичи; изменение контракта продукта; повторный
+  ревью TASK-166 (это TASK-171).
+
 #### TASK-170 — `docker-release` · Обновление Docker-образа
 
 - **Зачем:** образ — то, что получает самохосетер. Сейчас база — Node 24,
@@ -4485,8 +4512,8 @@ launch-гейт держит головной поток.
 | 170.3 | Install / upgrade / rollback | clean install на amd64 и arm64; `docker compose up`; миграции на старте; upgrade с 0.2.x после бэкапа; rollback на предыдущий digest; volume-совместимость | три сценария пройдены на чистой машине; данные/вложения целы; rollback возвращает рабочий инстанс |
 | 170.4 | Compose / env / docs | обновить `docker-compose.yml`, `.env.example`, `docs/SELF-HOSTING.md`, `README`, CHANGELOG; не ломать env-имена без миграции | compose/env валидны; документация по установке/обновлению/откату; upgrade-notes для 0.x → 1.0 |
 
-- **Зависимости:** TASK-168 и TASK-169; запускать до TASK-171. Финальный
-  `1.0.0`-тег ставит 171, 170 готовит RC и проверяет артефакт.
+- **Зависимости:** TASK-168, TASK-169 и TASK-172; запускать до TASK-171.
+  Финальный `1.0.0`-тег ставит 171, 170 готовит RC и проверяет артефакт.
 - **DoD:** RC-образ опубликован в GHCR; clean install/upgrade/rollback
   зелёные; SBOM/provenance/CVE-отчёт приложены; compose/.env/docs обновлены;
   образ — единственный кандидат для 1.0.0.
@@ -4521,7 +4548,7 @@ launch-гейт держит головной поток.
   классификацией; все гейты пройдены; launch checklist и rollback runbook
   подписаны; после тега — мониторинг первых 72 часов и горячая линия
   исправлений.
-- **Зависимости:** TASK-166, 167, 168, 169, 170.
+- **Зависимости:** TASK-166, 167, 168, 169, 170, 172.
 - **Не входит:** billing/планы (TASK-131), полный multi-tenant SaaS,
   SOC2/ISO-сертификация, 24/7-поддержка, Kubernetes/Helm, переписывание
   продукта «к 1.0».
