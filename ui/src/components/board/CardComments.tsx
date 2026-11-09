@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Loader2, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Loader2, Trash2 } from "lucide-react";
 import type {
   ActivitySseEvent,
   AuthUserDto,
@@ -22,7 +22,13 @@ import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { LimitCounter } from "@/components/ui/limit-counter";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useToast } from "@/components/Toast";
 import { formatDate, formatRelative, useHour12, useI18n } from "@/i18n";
@@ -347,6 +353,74 @@ function kindLabel(
 }
 
 /**
+ * Structured comment kind: an outline trigger opening the project's
+ * radio-list popover. A native `<select>` was used here first, but its
+ * option list is drawn by the browser — it ignores the app theme and breaks
+ * the dialog's visual language (and cannot be styled at all). The popover
+ * keeps keyboard semantics: the trigger is a button, Escape closes, and each
+ * option exposes `role="radio"` + `aria-checked`.
+ */
+function CommentKindPicker({
+  kind,
+  disabled,
+  onChange,
+}: {
+  kind: CommentKind;
+  disabled: boolean;
+  onChange: (kind: CommentKind) => void;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const label = t("comment.kindLabel");
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          aria-label={label}
+          data-testid="comment-kind"
+          className="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground"
+        >
+          {kindLabel(kind, t)}
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-40 p-1">
+        <div role="radiogroup" aria-label={label}>
+          {COMMENT_KINDS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={option === kind}
+              data-testid={`comment-kind-option-${option}`}
+              onClick={() => {
+                setOpen(false);
+                onChange(option);
+              }}
+              className={cn(
+                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover",
+                option === kind
+                  ? "font-medium text-foreground"
+                  : "text-foreground/90",
+              )}
+            >
+              {kindLabel(option, t)}
+              {option === kind && (
+                <Check className="h-3.5 w-3.5 text-primary" />
+              )}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
  * Jira's comment box: avatar on the left, the markdown field that grows
  * with the text, and the primary Save on the left with a quiet Cancel
  * next to it — both rendered at once, both disabled until the draft has
@@ -402,26 +476,11 @@ function CommentComposer({
         </Suspense>
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
-            <label className="sr-only" htmlFor="comment-kind">
-              {t("comment.kindLabel")}
-            </label>
-            <select
-              id="comment-kind"
-              data-testid="comment-kind"
-              aria-label={t("comment.kindLabel")}
-              value={kind}
+            <CommentKindPicker
+              kind={kind}
               disabled={sending}
-              onChange={(event) =>
-                onKindChange(event.target.value as CommentKind)
-              }
-              className="h-8 rounded-md border border-border bg-background px-2 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-            >
-              {COMMENT_KINDS.map((option) => (
-                <option key={option} value={option}>
-                  {kindLabel(option, t)}
-                </option>
-              ))}
-            </select>
+              onChange={onKindChange}
+            />
             <Button
               variant="premium"
               size="sm"

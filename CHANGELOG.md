@@ -39,6 +39,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The column accent palette closes on the first outside click after a color or
   gradient is picked; it used to swallow that click and close only on the next
   one.
+- Comment kinds use a themed picker instead of the browser-native `<select>`
+  popup, so the option list follows the dialog in dark and light mode. The
+  same `kind` field is already accepted by the REST API and MCP tools for
+  API-key clients; a personal-token E2E test now locks that in.
 
 ## [0.2.0] - 2026-11-08
 
