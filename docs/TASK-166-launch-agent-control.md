@@ -1,179 +1,183 @@
-# ADR-166 / TASK-166: политика agent control, scopes, approvals и run safety
+# ADR-166 / TASK-166: Launch readiness — agent-first with human control
 
-- **Статус:** Accepted / заморожено (2026-11-09)
-- **Задача:** TASK-166.0 «Policy & ADR»
-- **Нормативный источник программы:** `ROADMAP.md` §7.23 (цели, волны,
-  зависимости) и этот ADR (замороженные решения, схема, матрица, коды).
-- **Ненормативные локальные материалы:** `audits/launch-gaps-agent-experience.md`
-  и `audits/launch-gaps-human-control.md` — исследовательские заметки, не
-  входящие в git; они использованы как контекст, но не являются контрактом.
-  Если аудит или код противоречат ADR/ROADMAP, действует ADR; противоречие
-  исправляется через owner 166.0.
+- **Status:** Accepted / frozen (2026-11-09)
+- **Task:** TASK-166.0 "Policy & ADR"
+- **Normative program source:** `ROADMAP.md` §7.23 (goals, waves,
+  dependencies) and this ADR (frozen decisions, schema, matrix, codes).
+- **Non-normative local materials:** `audits/launch-gaps-agent-experience.md`
+  and `audits/launch-gaps-human-control.md` are research notes that are not
+  tracked in git; they are context, not a contract. If an audit or the code
+  conflicts with the ADR/ROADMAP, the ADR controls; resolve the conflict
+  through the 166.0 owner.
 
-Документ не меняет продуктовый код, Prisma-схему, тесты или UI. Он фиксирует
-решения, точную схему данных, матрицу действий, коды ошибок и границы run,
-чтобы потоки 166.1–166.16 могли стартовать без переделок.
-
----
-
-## 1. Контекст и цель
-
-Janosik уже имеет командный лог, детерминированный reducer, `ifMatch`,
-атомарный batch до 100 команд, claim с lease, типизированные комментарии,
-scoped API-токены, SSE, share-ссылки и MCP. Это не нужно переделывать.
-
-Чего не хватает для позиционирования «Kanban в первую очередь для AI-агентов,
-с контролем человека»:
-
-- агент различается только как `actorType: "agent"` и человеческий email;
-  два PAT одного аккаунта неразличимы в истории, SSE и Watch;
-- нет сущности «запрос согласования»: approval — это комментарий и устная
-  договорённость;
-- destructive-действия агента не закрыты сервером: MEMBER-агент может удалять
-  карточки и колонки;
-- нет pause/kill switch, кроме необратимого отзыва токена;
-- нет run-level аудита и отката: undo — локальный стек браузера на 50 шагов;
-- ошибки записи неполные: нет единых `code`/`retryable`/`requestId`, MCP
-  мутации возвращают текст;
-- лимит «10 досок» противоречит обещанию unlimited и режет импорт;
-- backup-статус в панели вводит в заблуждение.
-
-**Цель TASK-166:** сделать человека владельцем контура «кто из агентов что
-делает, что можно, что требует разрешения, как остановить и как откатить», не
-ломая self-host, старые доски и существующие MCP-сценарии.
-
-**Границы:** только self-host OSS. Managed cloud, billing, DPA, multi-tenant,
-remote MCP/OAuth, webhooks, object storage и SIEM — вне TASK-166 (см. §16).
+This document does not change product code, the Prisma schema, tests, or UI.
+It fixes decisions, the exact data schema, the action matrix, error codes,
+and run boundaries so streams 166.1–166.16 can start without rework.
 
 ---
 
-## 2. Принципы
+## 1. Context and goal
 
-1. **Агент — не boolean, а identity.** Владелец — `User`; исполнитель —
-   `ApiToken` + `AgentSession`; каждая запись несёт `apiTokenId`,
-   `agentSessionId` (если есть), `runId` (если есть) и snapshot `agentName`.
-2. **Сервер — источник истины.** UI pre-check только объясняет. Scopes,
-   destructive gate, WIP, workflow, pause, approval и plan hash проверяются
-   на сервере внутри транзакции/под блокировкой доски.
-3. **Deny by default для destructive.** Прямое destructive-действие агента
-   запрещено; исключения — `ApprovalRequest` или явный `trustedCi` scope.
-   Legacy PAT — отдельное, явно ограниченное исключение (см. §13).
-4. **Один run → один аудит и один rollback.** Batch/plan и одиночное
-   destructive-действие получают `runId`; pre-image хранится для каждой
-   команды run; человек может посмотреть run и откатить его.
-5. **Сначала контракт, потом UI.** Backend-примитивы не зависят от
-   `feat/admin-redesign`. Экраны Agents/Approvals/Audit/Rollback/Scopes
-   делаются в новой админке (W3).
-6. **Не ломать self-host.** Новые поля nullable или с безопасным default;
-   старые доски, экспорты и PAT продолжают работать. Все новые таблицы —
-   additive; существующие поля не переименовываются.
-7. **Человеческий контроль не делегируется агенту.** Pause, resume, scopes,
-   board policy и approval decision — session-only (`browser JWT`), не PAT.
-8. **Никаких «тихих» no-op.** Ошибка всегда имеет машинный `code`; mutation
-   возвращает `structuredContent`; idempotent retry возвращает тот же
-   результат.
+Janosik already has a command log, deterministic reducer, `ifMatch`, atomic
+batches of up to 100 commands, claim with lease, typed comments, scoped API
+tokens, SSE, share links, and MCP. None of that needs to be rewritten.
+
+What is missing for the "Kanban primarily for AI agents, with human control"
+positioning:
+
+- an agent is only `actorType: "agent"` plus a human email; two PATs on one
+  account are indistinguishable in history, SSE, and Watch;
+- there is no "approval request" entity: approval is a comment and an oral
+  agreement;
+- destructive agent actions are not closed on the server: a MEMBER agent can
+  delete cards and columns;
+- there is no pause/kill switch except irreversible token revocation;
+- there is no run-level audit or rollback: undo is a local browser stack of
+  50 steps;
+- write errors are incomplete: no unified `code`/`retryable`/`requestId`; MCP
+  mutations return text;
+- the "10 boards" limit contradicts the unlimited promise and clips import;
+- the backup status in the panel is misleading.
+
+**TASK-166 goal:** make the human the owner of the "which agent does what,
+what is allowed, what needs approval, how to stop it, and how to roll it
+back" contour without breaking self-host, old boards, or existing MCP
+scenarios.
+
+**Boundaries:** self-host OSS only. Managed cloud, billing, DPA, multi-tenant,
+remote MCP/OAuth, webhooks, object storage, and SIEM are outside TASK-166
+(see §16).
 
 ---
 
-## 3. Термины
+## 2. Principles
 
-| Термин | Значение в TASK-166 |
+1. **An agent is an identity, not a boolean.** The owner is `User`; the actor
+   is `ApiToken` + `AgentSession`; every record carries `apiTokenId`,
+   `agentSessionId` (when present), `runId` (when present), and an
+   `agentName` snapshot.
+2. **The server is the source of truth.** UI pre-checks only explain. Scopes,
+   destructive gate, WIP, workflow, pause, approval, and plan hash are checked
+   on the server inside the transaction/under the board lock.
+3. **Deny by default for destructive actions.** A direct destructive agent
+   action is forbidden; exceptions are `ApprovalRequest` or an explicit
+   `trustedCi` scope. Legacy PAT is a separate, explicitly limited exception
+   (see §13).
+4. **One run → one audit and one rollback.** A batch/plan and a single
+   destructive action receive a `runId`; a pre-image is stored for every run
+   command; a human can inspect and revert the run.
+5. **Contract first, UI later.** Backend primitives do not depend on
+   `feat/admin-redesign`. Agents/Approvals/Audit/Rollback/Scopes screens are
+   built in the new admin UI (W3).
+6. **Do not break self-host.** New fields are nullable or have safe defaults;
+   old boards, exports, and PATs keep working. All new tables are additive;
+   existing fields are not renamed.
+7. **Human control is not delegated to an agent.** Pause, resume, scopes,
+   board policy, and approval decision are session-only (`browser JWT`), not
+   PAT.
+8. **No silent no-ops.** Every error has a machine-readable `code`; a mutation
+   returns `structuredContent`; an idempotent retry returns the same result.
+
+---
+
+## 3. Terms
+
+| Term | Meaning in TASK-166 |
 | --- | --- |
-| **Agent** | Не отдельная таблица. Агент — это `ApiToken` пользователя-владельца, действующий через MCP/REST. Владелец всегда человек (`User`). |
-| **Agent session** | `AgentSession` — ограниченный доской контекст работы одного токена: start/heartbeat/end, статус, текущая карточка, pause. Сессия не является аккаунтом и не даёт прав сверх токена. |
-| **Run** | `AgentRun` — группа команд одного batch/plan/одиночного destructive-действия агента на одной доске. Единица аудита и отката. |
-| **Approval** | `ApprovalRequest` — запрос владельцу PAT/board ADMIN на точный план действий с `planHash` и TTL. Approval разрешает применение, но не применяет план сам. Handoff остаётся типизированным комментарием `handoff`; отдельной сущности Handoff в MVP нет, а `kind: "done"` approval — формальное разрешение перехода в Done. |
-| **Pause** | Обратимая остановка: новые записи агента получают `403 agent_paused`, in-flight завершаются, SSE закрывается. Уровни: session, token, board. |
-| **Kill** | Необратимый отзыв PAT (`DELETE /users/me/tokens/:id`): все сессии `cancelled`, claims освобождаются, новые запросы `401`. Отдельного «kill session» в MVP нет. |
-| **Destructive action** | Действие, которое удаляет/скрывает существующий контент, массово архивирует, отзывает доступ или меняет состав участников/видимость доски. Точный список — §7. |
-| **Legacy token** | `ApiToken`, существовавший до миграции TASK-166. При миграции получает `scopePreset = "admin"` и `trustedCi = true` (кроме `readOnly`), чтобы работать как раньше. |
-| **Board policy** | `Board.agentPolicy` (JSONB) — политика destructive/done/approval для агентов на доске. `NULL` = безопасные defaults. |
-| **trustedCi** | Явный boolean-scope токена (в тексте задачи — `trusted_ci`; DB/API — `trustedCi`): разрешает destructive/sensitive-действия без approval. Не даёт account-прав и не отменяет board pause/`destructive: "deny"`. |
-| **Pre-image** | Снимок состояния сущностей до команды (`CommandPreimage`), достаточный для построения inverse-команды. |
-| **Plan hash** | `sha256` канонического JSON исполняемого плана (`boardId` + `commands`/`operations`), 64 hex-символа. |
-| **Effective token scope** | `scopePreset` ∩ `readOnly` (Observer). Это свойство токена, а не авторизационное решение: сервер дополнительно применяет board-роль, workflow и pause. Поле DTO называется `effectiveTokenScope`. |
+| **Agent** | Not a separate table. An agent is the owner's `ApiToken` acting through MCP/REST. The owner is always a human (`User`). |
+| **Agent session** | `AgentSession` is the board-scoped work context of one token: start/heartbeat/end, status, current card, pause. A session is not an account and grants no rights beyond the token. |
+| **Run** | `AgentRun` is a group of commands from one batch/plan/single destructive agent action on one board. The unit of audit and rollback. |
+| **Approval** | `ApprovalRequest` is a request to the PAT owner/board ADMIN for an exact action plan with `planHash` and TTL. Approval authorizes application but does not apply the plan itself. Handoff remains a typed `handoff` comment; there is no separate Handoff entity in the MVP, and `kind: "done"` approval is the formal permission to enter Done. |
+| **Pause** | A reversible stop: new agent writes receive `403 agent_paused`, in-flight requests finish, SSE closes. Levels: session, token, board. |
+| **Kill** | Irreversible PAT revocation (`DELETE /users/me/tokens/:id`): all sessions become `cancelled`, claims are released, new requests get `401`. There is no separate "kill session" in the MVP. |
+| **Destructive action** | An action that deletes/hides existing content, bulk-archives, revokes access, or changes board membership/visibility. The exact list is in §7. |
+| **Legacy token** | An `ApiToken` that existed before the TASK-166 migration. It receives `scopePreset = "admin"` and `trustedCi = true` (unless `readOnly`) to keep working as before. |
+| **Board policy** | `Board.agentPolicy` (JSONB) is the board's destructive/done/approval policy for agents. `NULL` means safe defaults. |
+| **trustedCi** | An explicit boolean token scope (the task text calls it `trusted_ci`; DB/API use `trustedCi`): allows destructive/sensitive actions without approval. It grants no account rights and does not override board pause/`destructive: "deny"`. |
+| **Pre-image** | A snapshot of entity state before a command (`CommandPreimage`), sufficient to build an inverse command. |
+| **Plan hash** | `sha256` of the canonical JSON of the executable plan (`boardId` + `commands`/`operations`), 64 hex characters. |
+| **Effective token scope** | `scopePreset` ∩ `readOnly` (Observer). This is a token property, not an authorization decision: the server also applies board role, workflow, and pause. The DTO field is named `effectiveTokenScope`. |
 
 ---
 
-## 4. Зафиксированные решения
+## 4. Frozen decisions
 
-### 4.1. Решения из §7.23.1
+### 4.1. Decisions from §7.23.1
 
-| # | Вопрос | Решение | Обоснование | Последствия и что запрещено |
+| # | Question | Decision | Rationale | Consequences and prohibitions |
 | --- | --- | --- | --- | --- |
-| D1 | Self-host или managed cloud? | Self-host OSS — единственная форма поставки TASK-166. Cloud — отдельная программа. | Продукт уже self-host, AGPL, Docker; cloud-требования (billing, DPA, tenant isolation) не должны блокировать agent-control. | Запрещено добавлять в TASK-166 billing, DPA, status page, multi-tenant org, обязательный remote MCP/OAuth. |
-| D2 | Агент = user+PAT или отдельная сущность? | Владелец — `User`; исполнитель — `AgentSession` + `ApiToken` (`apiTokenId`). Отдельную таблицу `Agent` в MVP не вводим. | Не нужна вторая система аккаунтов; PAT уже аутентифицирует и имеет scopes. `AgentSession` даёт идентичность запуска без миграции аккаунтов. | Запрещено делать «agent user» с отдельным email как обязательный сценарий. `AgentSession` не может быть владельцем доски, токена или приглашения. |
-| D3 | Default destructive-действий | **Deny by default означает запрет прямого исполнения:** destructive-запрос агента без approval получает `approval_required`; штатный путь — человек утверждает точный план. `trustedCi` — явное исключение для доверенного CI. Жёсткий запрет (`destructive: "deny"`) — opt-in политики доски для всех, включая `trustedCi`. | Это главный launch-блокер human control. Approval-by-default не зависит от роли MEMBER/ADMIN; hard deny — отдельный, более строгий режим. | Запрещено трактовать board-роль ADMIN как разрешение на destructive без approval/`trustedCi`. Запрещено смешивать `deny` (hard block) и `approval` (штатный путь) в одном default. `trustedCi` не отменяет `destructive: "deny"` и board pause. |
-| D4 | Что такое run? | Один `AgentRun` = один board-scoped batch/plan/одиночная destructive-команда PAT + один `agentSessionId?`. Cross-board run запрещён. | Один batch уже одна транзакция и один lock; run — естественная единица аудита/отката. | Запрещено объединять в один run команды разных досок. Запрещено делать run бесконечным окном времени. |
-| D5 | Pause-семантика | Новые записи → `403 agent_paused`; in-flight транзакции завершаются; SSE закрывается на следующем keep-alive; resume возвращает запись; board-level pause и «stop all» обратимы; kill = revoke. | Нельзя обрывать транзакцию посередине и оставлять half-applied batch. Необратимый kill уже существует как revoke. | Запрещено делать pause через отзыв токена. Запрещено агенту вызывать pause/resume. Запрещено очищать claims при pause. |
-| D6 | Retention | Один `OpsSettings.retentionDays`: default 30, пресеты 30/90/365, custom 1–3650. Он покрывает Command, CommandPreimage, Activity, AgentRun, AgentSession, terminal ApprovalRequest и soft-deleted rows. `AdminAuditLog` сохраняет свои 365 дней. | Один понятный срок; 30 дней достаточно для beta, 365 — для расследований. Отдельный SIEM/audit tier — вне TASK-166. | Запрещено удалять `pending` approvals по retention. Запрещено обещать «вечный» аудит. |
-| D7 | Вложения | Локальный диск, как сейчас (`UPLOAD_DIR`), без presigned URL и object storage. | Self-host не требует S3; TASK-166 не про storage backend. | Запрещено добавлять S3/object storage/presigned upload в TASK-166. |
-| D8 | Undo агента | Агент не получает browser undo. Компенсация — обычные неразрушающие команды; run rollback — session-only human API. Browser JWT сохраняет обычный undo: `RESTORE_*` разрешены роли, которая могла выполнить исходную команду (ADMIN/MEMBER), независимо от token-scope. | Browser undo — локальная история человека; нельзя ломать MEMBER-сценарий «delete → undo». Run rollback — управляемый, проверяемый и аудируемый. | Запрещено давать PAT доступ к `RESTORE_*` и к apply run revert. `RESTORE_BOARD` остаётся aggregate-level/local snapshot, `/commands` его не принимает. |
+| D1 | Self-host or managed cloud first? | Self-host OSS is the only delivery form for TASK-166. Cloud is a separate program. | The product is already self-host, AGPL, Docker; cloud requirements (billing, DPA, tenant isolation) must not block agent control. | Do not add billing, DPA, status page, multi-tenant org, or mandatory remote MCP/OAuth to TASK-166. |
+| D2 | Agent = user+PAT or a separate entity? | The owner is `User`; the actor is `AgentSession` + `ApiToken` (`apiTokenId`). We do not introduce a separate `Agent` table in the MVP. | No second account system is needed; a PAT already authenticates and carries scopes. `AgentSession` provides run identity without account migration. | Do not make an "agent user" with a separate email a required scenario. `AgentSession` cannot own a board, token, or invitation. |
+| D3 | Default for destructive actions | **Deny by default means direct execution is forbidden:** a destructive agent request without approval receives `approval_required`; the standard path is a human approving the exact plan. `trustedCi` is the explicit exception for trusted CI. A hard block (`destructive: "deny"`) is an opt-in board policy for everyone, including `trustedCi`. | This is the main human-control launch blocker. Approval-by-default does not depend on the MEMBER/ADMIN role; hard deny is a separate, stricter mode. | Do not treat the board ADMIN role as permission for destructive actions without approval/`trustedCi`. Do not mix `deny` (hard block) and `approval` (standard path) in one default. `trustedCi` does not override `destructive: "deny"` or board pause. |
+| D4 | What is a run? | One `AgentRun` = one board-scoped batch/plan/single destructive PAT command + one `agentSessionId?`. Cross-board runs are forbidden. | One batch is already one transaction and one lock; a run is the natural unit of audit/rollback. | Do not combine commands from different boards in one run. Do not make a run an unbounded time window. |
+| D5 | Pause semantics | New writes → `403 agent_paused`; in-flight transactions finish; SSE closes on the next keep-alive; resume restores writes; board-level pause and "stop all" are reversible; kill = revoke. | A transaction must not be cut in the middle and leave a half-applied batch. Irreversible kill already exists as revoke. | Do not implement pause by revoking a token. Do not let an agent call pause/resume. Do not clear claims on pause. |
+| D6 | Retention | One `OpsSettings.retentionDays`: default 30, presets 30/90/365, custom 1–3650. It covers Command, CommandPreimage, Activity, AgentRun, AgentSession, terminal ApprovalRequest, and soft-deleted rows. `AdminAuditLog` keeps its 365 days. | One understandable window; 30 days is enough for beta, 365 for investigations. A separate SIEM/audit tier is outside TASK-166. | Do not delete `pending` approvals by retention. Do not promise "forever" audit. |
+| D7 | Attachments | Local disk as today (`UPLOAD_DIR`), with no presigned URL or object storage. | Self-host does not need S3; TASK-166 is not about the storage backend. | Do not add S3/object storage/presigned upload to TASK-166. |
+| D8 | Agent undo | An agent does not get browser undo. Compensation is ordinary non-destructive commands; run rollback is a session-only human API. Browser JWT keeps normal undo: `RESTORE_*` is allowed for the role that could perform the original command (ADMIN/MEMBER), regardless of token scope. | Browser undo is the human's local history; the MEMBER "delete → undo" scenario must not break. Run rollback is controlled, checked, and audited. | Do not give PAT access to `RESTORE_*` or to apply run revert. `RESTORE_BOARD` remains an aggregate-level/local snapshot; `/commands` does not accept it. |
 
-### 4.2. Дополнительные замороженные решения
+### 4.2. Additional frozen decisions
 
-| # | Решение | Обоснование | Последствия и что запрещено |
+| # | Decision | Rationale | Consequences and prohibitions |
 | --- | --- | --- | --- |
-| D9 | **Grandfathering PAT.** Существующие токены при миграции получают `scopePreset = "admin"`, `trustedCi = true` (если `readOnly = false`). `readOnly = true` сохраняет флаг и эффективно означает Observer. Новые токены создаются с `scopePreset = "worker"` и `trustedCi = false`. | Это единственный способ одновременно закрыть destructive по умолчанию и не сломать текущие MCP-сценарии старых PAT. | Старые PAT сохраняют board-поведение, но account-маршруты (`profile`, `tokens`, `invitations`) им закрываются как security fix. `trustedCi` нельзя включить через PAT. |
-| D10 | **Пресеты scope:** `observer`, `worker`, `reviewer`, `admin`; отдельный boolean `trustedCi`. Пресет не повышает board-роль. | Простая, объяснимая модель; `readOnly` остаётся для совместимости. | `admin` не даёт account-прав; `trustedCi` не даёт member/share/board-admin прав; `observer` не пишет. |
-| D11 | **Scopes токена неизменяемы после создания.** Менять scope = создать новый токен и отозвать старый. | Иммутабельность исключает самоповышение и делает аудит однозначным. | Запрещён `PATCH /users/me/tokens/:id` для scope/trustedCi. Разрешены только pause/resume/revoke. |
-| D12 | **Approval разрешает, но не применяет.** Approve переводит запрос в `approved`; применение делает агент тем же планом с `X-Approval-Id`. | Один путь применения, одна транзакция, идемпотентные `commandId`; человек не исполняет устаревший план, если агент уже умер. | Запрещено auto-apply внутри decision endpoint. Approval одноразовый: после apply — `consumed`. |
-| D13 | **Human control plane — session-only.** Board policy, pause/resume, token pause, approval decision, run revert, self-service export/delete — только `browser JWT`. | Агент не должен ослаблять ограничения, снимать паузу или утверждать свой план. | PAT получает `403 pat_forbidden` на этих маршрутах; MCP не регистрирует соответствующие tools для агента. |
-| D14 | **Board policy** — `Board.agentPolicy` JSONB + `Board.agentPolicyVersion`; правка через `PATCH /boards/:id/agent-policy` с CAS. `NULL` = defaults. | Конфигурация доски, а не контент; не нужно добавлять `BoardAction` и трогать reducer. CAS защищает от двух админов. | Запрещено агенту менять policy. `destructive: "deny"` — жёсткий запрет, не обходится даже `trustedCi`. |
-| D15 | **Сессия board-scoped и необязательна для обычной записи.** Указывается заголовком `X-Agent-Session`; batch/plan/approval/destructive run её используют, если она есть. Legacy PAT может работать без сессии. | Совместимость с текущими REST/MCP-клиентами; сессия даёт атрибуцию и per-session pause, но не является единственным kill switch. | Запрещено сессии писать в другую доску. Запрещено считать отсутствие сессии обходом token/board pause. |
-| D16 | **Run создаётся только для PAT:** batch, plan/apply и одиночная destructive-команда `BoardAction`. Non-command REST-действия и обычная одиночная неразрушающая команда `runId = null`. | Не раздувать лог; browser undo человека не меняется. | Запрещён cross-board run. Человеческий batch через API не создаёт `AgentRun`; его undo остаётся UI-механизмом. |
-| D17 | **Run revert — только человек** (board ADMIN, browser JWT). Агент может получить dry-run/preview, но не применить revert. | Откат destructive-действий — опасная операция; человек видит конфликты и подтверждает. | Запрещён `POST .../revert` с PAT. MCP даёт только `janosik_preview_run_revert`. |
-| D18 | **Ошибки — additive-контракт.** Сохраняются текущие `{conflict, currentVersion, workflow}` и `field`; добавляются `code`, `retryable`, `requestId`; `currentVersion` — на state-конфликтах. | Не ломать текущие клиенты и docs; новые агенты получают машинную ветку. | Запрещено переименовывать `conflict`-категории и `pat_read_only`/`pat_forbidden`/`board_write_timeout`. |
-| D19 | **Лимит 10 досок убирается в server mode.** `MAX_BOARDS_PER_USER` (env) default `0` = без лимита; оператор может задать положительный cap. Local/offline mode сохраняет 10 как localStorage guard. | Pricing обещает unlimited; 10 — технический guard offline, а не продукт. | Запрещено резать импорт на 10 досках. Импорт больше cap отклоняется атомарно с `limit_exceeded`. |
-| D20 | **Import/export:** `EXPORT_SCHEMA_VERSION = 3` (добавляет `Board.agentPolicy`); `MAX_IMPORT_BYTES = MAX_BOARD_EXPORT_BYTES = 25 MB`; command/plan body — отдельный `MAX_COMMAND_BODY_BYTES = 10 MB`; export больше лимита — явная ошибка, не обрезка. | «Импорт ≥ экспорт» без streaming и object storage; команды не должны наследовать import-лимит. | Запрещён молчаливый truncate. Старые v1/v2 импортируются; старые клиенты v3 отвергают. |
-| D21 | **Backup status честный.** Janosik не делает backup. API отдаёт `{mode: "external" or "unconfigured", automatic: false, lastBackupAt: null, verified: false}`; UI не показывает «Automatic backups»/«Save a copy now» в server mode. | `BACKUP_DIR` сейчас только отображается; нельзя продавать несуществующий backup. | Запрещено писать «backup healthy». Runbook — `pg_dump` + uploads volume (166.16). |
-| D22 | **Account-маршруты недоступны PAT.** Session-only — account **writes** (profile/avatar `PATCH`, token create/revoke/pause, invitation accept/decline, account delete) **и чувствительные account reads**: `GET /users/me/tokens`, `GET /invitations`, `GET /users/me/export/:id`/`download`. PAT остаются только identity/avatar reads: `GET /auth/me`, `GET /users/:userId/avatar`, `janosik_whoami`. MCP tools `janosik_update_profile`, `janosik_list_invitations`, `janosik_accept_invitation`, `janosik_decline_invitation` удаляются. | PAT с board scope мог читать чужие приглашения, список ключей и export, а также менять профиль. Это security fix, а не совместимость. | Старые PAT теряют write-вызовы и чувствительные reads; identity/avatar reads сохраняются. Board-scoped токен не может принимать инвайты. |
-| D23 | **Claim attribution.** `Card.claimedBy` (user id) остаётся; добавляются `claimedByTokenId`, `claimedBySessionId`. Сервер ставит их из principal, клиент не может подделать. | Два PAT одного аккаунта должны различаться; legacy UI продолжает работать. | Запрещено доверять token/session id из payload `CLAIM_CARD`. Конфликт claim сравнивает session, затем token, затем legacy user id. |
-| D24 | **SSE attribution и pause.** Command/Activity кадры несут `apiTokenId`, `agentSessionId`, `runId`, `agentName`; добавляются `approval` и `agent` события. PAT-SSE закрывается при pause. | Watch и человек должны видеть, кто действует; pause должен останавливать поток. | Запрещено терять `actorType` в SSE. Human SSE при pause не закрывается. |
-| D25 | **Идемпотентность REST.** `Idempotency-Key` (8–128 `[A-Za-z0-9_-]`) для create board/import/share/upload; `add_comment` использует существующий body `commandId`; `duplicate_card` и остальные команды — `commandId`. Повтор с тем же ключом и телом возвращает сохранённый ответ; другое тело — `idempotency_conflict`. | Ретраи агентов не должны создавать дубли. | Ключ живёт 24 часа. `in_progress`-повтор получает `idempotency_in_progress` с `retryable: true`. |
+| D9 | **PAT grandfathering.** Existing tokens receive `scopePreset = "admin"`, `trustedCi = true` (when `readOnly = false`). `readOnly = true` keeps the flag and effectively means Observer. New tokens are created with `scopePreset = "worker"` and `trustedCi = false`. | This is the only way to close destructive actions by default without breaking current MCP scenarios of old PATs. | Old PATs keep board behavior, but account routes (`profile`, `tokens`, `invitations`) are closed to them as a security fix. `trustedCi` cannot be enabled through a PAT. |
+| D10 | **Scope presets:** `observer`, `worker`, `reviewer`, `admin`; separate boolean `trustedCi`. A preset does not raise the board role. | Simple, explainable model; `readOnly` remains for compatibility. | `admin` grants no account rights; `trustedCi` grants no member/share/board-admin rights; `observer` cannot write. |
+| D11 | **Token scopes are immutable after creation.** Changing scope means creating a new token and revoking the old one. | Immutability prevents self-escalation and makes audit unambiguous. | `PATCH /users/me/tokens/:id` is forbidden for scope/trustedCi. Only pause/resume/revoke are allowed. |
+| D12 | **Approval authorizes but does not apply.** Approve moves the request to `approved`; the agent applies the same plan with `X-Approval-Id`. | One apply path, one transaction, idempotent `commandId`; a human does not execute a stale plan if the agent has died. | Do not auto-apply inside the decision endpoint. Approval is one-time: after apply it is `consumed`. |
+| D13 | **Human control plane is session-only.** Board policy, pause/resume, token pause, approval decision, run revert, self-service export/delete are `browser JWT` only. | An agent must not weaken limits, clear pause, or approve its own plan. | PAT receives `403 pat_forbidden` on these routes; MCP does not register the corresponding tools for an agent. |
+| D14 | **Board policy** is `Board.agentPolicy` JSONB + `Board.agentPolicyVersion`, edited through `PATCH /boards/:id/agent-policy` with CAS. `NULL` means defaults. | Board configuration, not content; no need to add a `BoardAction` or touch the reducer. CAS protects against two admins. | An agent must not change policy. `destructive: "deny"` is a hard block that even `trustedCi` cannot bypass. |
+| D15 | **A session is board-scoped and optional for ordinary writes.** It is passed in the `X-Agent-Session` header; batch/plan/approval/destructive runs use it when present. A legacy PAT can work without a session. | Compatibility with current REST/MCP clients; a session adds attribution and per-session pause but is not the only kill switch. | A session must not write to another board. Do not treat a missing session as a bypass of token/board pause. |
+| D16 | **A run is created only for PAT:** batch, plan/apply, and a single destructive `BoardAction` command. Non-command REST actions and an ordinary single non-destructive command have `runId = null`. | Do not grow the log; human browser undo is unchanged. | Cross-board runs are forbidden. A human batch through the API does not create `AgentRun`; its undo remains a UI mechanism. |
+| D17 | **Run revert is human-only** (board ADMIN, browser JWT). An agent may get a dry-run/preview but cannot apply revert. | Reverting destructive actions is dangerous; a human sees conflicts and confirms. | `POST .../revert` with a PAT is forbidden. MCP exposes only `janosik_preview_run_revert`. |
+| D18 | **Errors are an additive contract.** Current `{conflict, currentVersion, workflow}` and `field` are preserved; add `code`, `retryable`, `requestId`; `currentVersion` on state conflicts. | Do not break current clients and docs; new agents get a machine-readable branch. | Do not rename `conflict` categories or `pat_read_only`/`pat_forbidden`/`board_write_timeout`. |
+| D19 | **The 10-board limit is removed in server mode.** `MAX_BOARDS_PER_USER` (env) defaults to `0` = no limit; an operator may set a positive cap. Local/offline mode keeps 10 as a localStorage guard. | Pricing promises unlimited; 10 is a technical offline guard, not the product. | Do not clip import at 10 boards. An import above the cap is rejected atomically with `limit_exceeded`. |
+| D20 | **Import/export:** `EXPORT_SCHEMA_VERSION = 3` (adds `Board.agentPolicy`); `MAX_IMPORT_BYTES = MAX_BOARD_EXPORT_BYTES = 25 MB`; command/plan body has a separate `MAX_COMMAND_BODY_BYTES = 10 MB`; an export above the limit is an explicit error, not truncation. | "Import ≥ export" without streaming or object storage; commands must not inherit the import limit. | No silent truncate. Old v1/v2 imports work; old clients reject v3. |
+| D21 | **Backup status is honest.** Janosik does not create backups. The API returns `{mode: "external" or "unconfigured", automatic: false, lastBackupAt: null, verified: false}`; the UI does not show "Automatic backups"/"Save a copy now" in server mode. | `BACKUP_DIR` is only displayed today; do not sell a backup that does not exist. | Do not write "backup healthy". Runbook: `pg_dump` + uploads volume (166.16). |
+| D22 | **Account routes are unavailable to PAT.** Session-only covers account **writes** (profile/avatar `PATCH`, token create/revoke/pause, invitation accept/decline, account delete) **and sensitive account reads**: `GET /users/me/tokens`, `GET /invitations`, `GET /users/me/export/:id`/`download`. PAT keeps only identity/avatar reads: `GET /auth/me`, `GET /users/:userId/avatar`, `janosik_whoami`. MCP tools `janosik_update_profile`, `janosik_list_invitations`, `janosik_accept_invitation`, `janosik_decline_invitation` are removed. | A board-scoped PAT could read other invitations, the key list, and exports, and could change the profile. This is a security fix, not compatibility. | Old PATs lose write calls and sensitive reads; identity/avatar reads remain. A board-scoped token cannot accept invitations. |
+| D23 | **Claim attribution.** `Card.claimedBy` (user id) remains; add `claimedByTokenId` and `claimedBySessionId`. The server fills them from the principal; a client cannot forge them. | Two PATs on one account must be distinguishable; legacy UI keeps working. | Do not trust token/session ids from the `CLAIM_CARD` payload. Claim conflict compares session, then token, then legacy user id. |
+| D24 | **SSE attribution and pause.** Command/Activity frames carry `apiTokenId`, `agentSessionId`, `runId`, `agentName`; add `approval` and `agent` events. PAT-SSE closes on pause. | Watch and humans must see who acts; pause must stop the stream. | Do not lose `actorType` in SSE. Human SSE does not close on pause. |
+| D25 | **REST idempotency.** `Idempotency-Key` (8–128 `[A-Za-z0-9_-]`) for create board/import/share/upload; `add_comment` uses the existing body `commandId`; `duplicate_card` and other commands use `commandId`. A repeat with the same key and body returns the stored response; a different body gets `idempotency_conflict`. | Agent retries must not create duplicates. | The key lives for 24 hours. An `in_progress` repeat gets `idempotency_in_progress` with `retryable: true`. |
 
 ---
 
-## 5. Модель scope
+## 5. Scope model
 
-### 5.1. Пресеты
+### 5.1. Presets
 
-| Пресет | Чтение | Обычная запись контента | Destructive | Board administration | Account |
+| Preset | Read | Ordinary content write | Destructive | Board administration | Account |
 | --- | --- | --- | --- | --- | --- |
-| `observer` | да | нет | нет | нет | нет |
-| `worker` | да | да | нет (только approval/`trustedCi`) | нет | нет |
-| `reviewer` | да | да | нет (только approval/`trustedCi`) | нет | нет |
-| `admin` | да | да | да, но только approval/`trustedCi` | да | нет |
+| `observer` | yes | no | no | no | no |
+| `worker` | yes | yes | no (approval/`trustedCi` only) | no | no |
+| `reviewer` | yes | yes | no (approval/`trustedCi` only) | no | no |
+| `admin` | yes | yes | yes, but approval/`trustedCi` only | yes | no |
 
-Пресеты упорядочены: `observer` ⊂ `worker` ⊂ `reviewer` ⊂ `admin`;
-матрица ниже указывает минимальный пресет, старший пресет наследует
-разрешение.
+Presets are ordered: `observer` ⊂ `worker` ⊂ `reviewer` ⊂ `admin`; the matrix
+below states the minimum preset, and a higher preset inherits the permission.
 
-Дополнительно:
+Additional rules:
 
-- `reviewer` = `worker` + право переводить карточку в done-колонку.
-  `doneColumnIds = Board.workflow?.doneColumnIds ?? []`; без workflow
-  колонок done нет, и `reviewer` практически равен `worker`.
-- `admin` не получает destructive напрямую: destructive проходит через
-  approval, если не включён `trustedCi`.
-- `readOnly = true` всегда даёт эффективный `observer`, даже если
-  `scopePreset = "admin"` (так мигрируют старые read-only PAT).
-- `trustedCi` — ортогональный boolean. Он не меняет пресет и не даёт
-  member/share/board-admin прав. `trustedCi` можно включить только при
-  создании токена из browser session.
-- Роль на доске (`ADMIN`/`MEMBER`/`VIEWER`) применяется первой. Токен
-  `admin` у MEMBER не может управлять участниками; токен `worker` у ADMIN
-  не может удалять карточки без approval.
+- `reviewer` = `worker` + permission to move a card into a done column.
+  `doneColumnIds = Board.workflow?.doneColumnIds ?? []`; without a workflow
+  there are no done columns, and `reviewer` is effectively `worker`.
+- `admin` does not get destructive actions directly: destructive actions go
+  through approval unless `trustedCi` is enabled.
+- `readOnly = true` always yields an effective `observer`, even when
+  `scopePreset = "admin"` (this is how old read-only PATs migrate).
+- `trustedCi` is an orthogonal boolean. It does not change the preset and
+  grants no member/share/board-admin rights. `trustedCi` can be enabled only
+  when creating a token from a browser session.
+- The board role (`ADMIN`/`MEMBER`/`VIEWER`) is applied first. An `admin`
+  token owned by a MEMBER cannot manage members; a `worker` token owned by an
+  ADMIN cannot delete cards without approval.
 
-### 5.2. Эффективный scope
+### 5.2. Effective scope
 
-Порядок вычисления для каждого запроса:
+Evaluation order for every request:
 
 ```
 if token.revokedAt or token.expiresAt <= now: 401
 if token.individualPausedAt or token.stopAllPausedAt: pause = "token"
-if board.agentsPausedAt: pause = "board"          // только board-scoped маршруты
-if session.pausedAt: pause = "session"            // только если сессия указана
+if board.agentsPausedAt: pause = "board"          // board-scoped routes only
+if session.pausedAt: pause = "session"            // only when a session is named
 if readOnly: effectiveTokenScope = observer
 else: effectiveTokenScope = scopePreset
 if boardRole == VIEWER: write = false
@@ -181,7 +185,7 @@ if action requires ADMIN and boardRole != ADMIN: deny
 if action requires scope > effectiveTokenScope: deny
 ```
 
-`trustedCi` проверяется только после scope и destructive-политики:
+`trustedCi` is checked only after scope and the destructive policy:
 
 ```
 if destructive:
@@ -191,27 +195,27 @@ if destructive:
   else: approval required
 ```
 
-Default board policy — `destructive: "approval"`: прямое исполнение
-запрещено, approval является штатным путём. `destructive: "deny"` —
-осознанный hard block, который не обходится даже `trustedCi`.
+The default board policy is `destructive: "approval"`: direct execution is
+forbidden, and approval is the standard path. `destructive: "deny"` is a
+deliberate hard block that even `trustedCi` cannot bypass.
 
-Approval **не повышает scope**: `worker`, которому нужен `admin` для
-member/share/board delete, получает `scope_denied`, а не `approval_required`.
+Approval **does not raise scope**: a `worker` that needs `admin` for
+member/share/board delete receives `scope_denied`, not `approval_required`.
 
-Browser JWT человека не проходит preset/destructive gate: для него
-действуют существующие board-роли и правила маршрута. Approval и `trustedCi`
-относятся только к PAT (`actorType: "agent"`); человек не обязан утверждать
-собственные действия.
+A human browser JWT does not pass through the preset/destructive gate:
+existing board roles and route rules apply. Approval and `trustedCi` apply
+only to PATs (`actorType: "agent"`); a human is not required to approve their
+own actions.
 
-### 5.3. Токен в API
+### 5.3. Token in the API
 
-`UserTokenDto` и `CreateUserTokenRequest` расширяются:
+`UserTokenDto` and `CreateUserTokenRequest` are extended:
 
 ```ts
 type ScopePreset = "observer" | "worker" | "reviewer" | "admin";
 
 interface UserTokenDto {
-  // существующие поля не меняются
+  // existing fields are unchanged
   scopePreset: ScopePreset;
   trustedCi: boolean;
   individualPausedAt: number | null;
@@ -220,44 +224,47 @@ interface UserTokenDto {
   stopAllPausedAt: number | null;
   stopAllPausedBy: string | null;
   paused: boolean; // individualPausedAt != null || stopAllPausedAt != null
-  effectiveTokenScope: ScopePreset; // observer при readOnly; не авторизация
+  effectiveTokenScope: ScopePreset; // observer when readOnly; not authorization
 }
 
 interface CreateUserTokenRequest {
-  // существующие поля не меняются
+  // existing fields are unchanged
   scopePreset?: ScopePreset; // default "worker"
-  trustedCi?: boolean; // default false; только session JWT
+  trustedCi?: boolean; // default false; session JWT only
 }
 ```
 
-`readOnly` остаётся в DTO на один релизный цикл как deprecated-совместимость;
-новый UI пишет `scopePreset`. Сервер принимает оба поля, `readOnly` побеждает.
+`readOnly` remains in the DTO for one release cycle as deprecated
+compatibility; the new UI writes `scopePreset`. The server accepts both
+fields; `readOnly` wins.
 
 ---
 
-## 6. Схема данных
+## 6. Data schema
 
-### 6.1. Общие правила
+### 6.1. General rules
 
-- Все новые поля в существующих таблицах — nullable или с безопасным
-  default; ни одно существующее поле не переименовывается.
-- Новые audit-таблицы (`AgentSession`, `AgentRun`, `ApprovalRequest`,
-  `CommandPreimage`, `SecurityAuditLog`, `IdempotencyRecord`) хранят id
-  скалярами, без FK на `Board`/`User`/`Card`. Причина: запись должна
-  переживать soft-delete и purge; каскадное удаление не должно стирать
-  аудит раньше retention. Это тот же приём, что `BoardShareAuditLog`.
-- `Command`/`Activity`/`Card`/`Board`/`ApiToken` получают только nullable
-  поля или поля с default.
-- `CommandPreimage` — 1:1 к `Command`, но без FK; очищается тем же sweep.
-- Все `DateTime` — UTC; id — `cuid()`/клиентские id, как в текущей схеме.
+- All new fields in existing tables are nullable or have a safe default; no
+  existing field is renamed.
+- New audit tables (`AgentSession`, `AgentRun`, `ApprovalRequest`,
+  `CommandPreimage`, `SecurityAuditLog`, `IdempotencyRecord`) store ids as
+  scalars, without FKs to `Board`/`User`/`Card`. Reason: a record must survive
+  soft-delete and purge; a cascade must not erase audit before retention. This
+  is the same approach as `BoardShareAuditLog`.
+- `Command`/`Activity`/`Card`/`Board`/`ApiToken` receive only nullable fields
+  or fields with defaults.
+- `CommandPreimage` is 1:1 with `Command`, but without an FK; it is cleaned by
+  the same sweep.
+- All `DateTime` values are UTC; ids are `cuid()`/client ids, as in the
+  current schema.
 
 ### 6.2. `ApiToken`
 
-Добавить:
+Add:
 
 ```prisma
 model ApiToken {
-  // ...существующие поля без изменений...
+  // ...existing fields unchanged...
   scopePreset String  @default("worker") // observer|worker|reviewer|admin
   trustedCi   Boolean @default(false)
   // Two independent pause sources: resume-all touches only stopAll*.
@@ -272,15 +279,15 @@ model ApiToken {
 }
 ```
 
-`boardId`, `readOnly`, `rateLimitPerMinute`, `lastUsedAt`, `expiresAt`,
-`revokedAt` остаются. `lastUsedAt` по-прежнему обновляется не чаще раза в
-60 секунд.
+`boardId`, `readOnly`, `rateLimitPerMinute`, `lastUsedAt`, `expiresAt`, and
+`revokedAt` remain. `lastUsedAt` is still updated at most once every 60
+seconds.
 
 ### 6.3. `Board`
 
 ```prisma
 model Board {
-  // ...существующие поля без изменений...
+  // ...existing fields unchanged...
   agentPolicy        Json?
   agentPolicyVersion Int       @default(1)
   agentsPausedAt     DateTime?
@@ -289,7 +296,7 @@ model Board {
 }
 ```
 
-`agentPolicy = NULL` означает defaults:
+`agentPolicy = NULL` means defaults:
 
 ```json
 {
@@ -314,33 +321,33 @@ model Board {
 }
 ```
 
-Правила валидации policy:
+Policy validation rules:
 
 - `schemaVersion` = 1;
 - `destructive` ∈ `{ "approval", "deny" }`;
-- `requireApprovalFor` — подмножество фиксированного списка:
+- `requireApprovalFor` is a subset of the fixed list:
   `move_to_done`, `delete_card`, `delete_column`, `delete_label`,
   `delete_checklist`, `delete_checklist_item`, `archive_column_cards`,
   `delete_board`, `member.invite`, `member.update`, `member.remove`,
   `share.create`, `share.update`, `share.revoke`, `share.delete`,
   `attachment.delete`, `workflow.update`;
-- `approverRoles` в MVP строго `["ADMIN"]`; другие значения — 400;
+- `approverRoles` in the MVP is strictly `["ADMIN"]`; other values get 400;
 - `maxCommandsPerRun` 1–100, `maxCardsPerRun` 1–50, `approvalTtlMinutes`
-  5–1440; policy может только **понижать** глобальные лимиты, значения выше
-  жёстких лимитов отклоняются, а не клампятся молча;
-- `SET_BOARD_WORKFLOW` остаётся отдельной `BoardAction` и не является
-  destructive-классификацией; её approval регулируется записью
-  `workflow.update` в `requireApprovalFor` (по default policy включена).
+  5–1440; policy may only **lower** the global limits; values above the hard
+  limits are rejected, not silently clamped;
+- `SET_BOARD_WORKFLOW` remains a separate `BoardAction` and is not a
+  destructive classification; its approval is governed by the
+  `workflow.update` entry in `requireApprovalFor` (enabled by default policy).
 
-`PATCH /boards/:id/agent-policy` — session-only board ADMIN:
-`{ "policy": { ... } | null, "version": 1 }`. `null` возвращает defaults.
-`agentPolicyVersion` увеличивается на каждом PATCH; старая версия →
-`409 version_conflict` с `details.currentVersion`.
+`PATCH /boards/:id/agent-policy` is session-only board ADMIN:
+`{ "policy": { ... } | null, "version": 1 }`. `null` restores the defaults.
+`agentPolicyVersion` increments on every PATCH; an old version gets
+`409 version_conflict` with `details.currentVersion`.
 
-`agentsPausedAt` — операционное состояние, **не** экспортируется и не
-импортируется. Пауза не переживает перенос доски.
+`agentsPausedAt` is operational state, **not** exported or imported. Pause
+does not survive a board transfer.
 
-Effective-лимиты для batch/plan/approval:
+Effective limits for batch/plan/approval:
 
 ```
 maxCommands = min(COMMAND_BATCH_MAX=100, policy.maxCommandsPerRun)
@@ -350,15 +357,15 @@ effectiveTtlMinutes =
             policy.approvalTtlMinutes), 5, policy.approvalTtlMinutes)
 ```
 
-Превышение `maxCommands`/`maxCards` — `409 limit_exceeded` с `limit` и
-`current`; TTL меньше 5 минут поднимается до 5, больше policy — урезается до
-policy. Запрос TTL не может обойти policy.
+Exceeding `maxCommands`/`maxCards` returns `409 limit_exceeded` with `limit`
+and `current`; a TTL below 5 minutes is raised to 5, and a TTL above policy
+is cut to policy. A TTL request cannot bypass policy.
 
 ### 6.4. `Card`
 
 ```prisma
 model Card {
-  // ...существующие поля без изменений...
+  // ...existing fields unchanged...
   claimedByTokenId   String?
   claimedBySessionId String?
 
@@ -367,17 +374,17 @@ model Card {
 }
 ```
 
-`claimedBy` (user id) сохраняется для старого UI и старых claim. Сервер
-записывает все три поля из principal; payload `CLAIM_CARD` не может задать
-token/session. Конфликт: сначала сравнивается `claimedBySessionId`, затем
-`claimedByTokenId`, затем legacy `claimedBy`; lease остаётся источником
-истины по времени.
+`claimedBy` (user id) remains for the old UI and old claims. The server writes
+all three fields from the principal; the `CLAIM_CARD` payload cannot set
+token/session. Conflict resolution compares `claimedBySessionId` first, then
+`claimedByTokenId`, then legacy `claimedBy`; the lease remains the source of
+truth for time.
 
-Вложения тоже получают token-атрибуцию для правила «свой upload»:
+Attachments also get token attribution for the "own upload" rule:
 
 ```prisma
 model Attachment {
-  // ...существующие поля без изменений...
+  // ...existing fields unchanged...
   uploadedByTokenId   String?
   uploadedBySessionId String?
 
@@ -386,8 +393,8 @@ model Attachment {
 }
 ```
 
-`Comment.apiTokenId` уже добавлен в §6.9. Для обеих таблиц старые строки
-имеют `NULL`: self-правило для них падает обратно на совпадение `userId`.
+`Comment.apiTokenId` is added in §6.9. Old rows in both tables have `NULL`:
+the self rule falls back to matching `userId` for them.
 
 ### 6.5. `AgentSession`
 
@@ -421,13 +428,13 @@ model AgentSession {
 }
 ```
 
-- `pausedAt` — индивидуальная пауза сессии; общая пауза токена/доски
-  вычисляется наложением и не пишется в сессию.
-- `lastHeartbeatAt` обновляется явным heartbeat и (не чаще раза в 60 с)
-  успешной записью с `X-Agent-Session`.
-- Сессия считается `stale` в API, если `lastHeartbeatAt` старше 5 минут;
-  это вычисляемое поле, а не отдельный статус БД.
-- `currentCardId`/`currentRunId` — подсказки для UI; не заменяют `Command`.
+- `pausedAt` is the session's individual pause; token/board pause is computed
+  as an overlay and is not written into the session.
+- `lastHeartbeatAt` is updated by an explicit heartbeat and (at most once
+  every 60 s) by a successful write with `X-Agent-Session`.
+- The API marks a session `stale` when `lastHeartbeatAt` is older than 5
+  minutes; this is a computed field, not a separate DB status.
+- `currentCardId`/`currentRunId` are UI hints; they do not replace `Command`.
 
 ### 6.6. `AgentRun`
 
@@ -458,14 +465,14 @@ model AgentRun {
 }
 ```
 
-- `id` — канонический `runId`, генерирует сервер. `clientRunId` — optional
-  ключ идемпотентности клиента; уникален в пределах доски.
-- `kind = "single"` — одиночная destructive-команда PAT.
-- `status = "reverted"` ставится исходному run при успешном revert; revert
-  создаёт новый run `kind = "revert"` с `revertsRunId`.
-- `approvalId` заполняется при применении approved-плана; уникальность
-  гарантирует одноразовость.
-- `firstSeq`/`lastSeq` — диапазон `Command.seq`; nullable для неуспешного run.
+- `id` is the canonical `runId`, generated by the server. `clientRunId` is an
+  optional client idempotency key, unique within the board.
+- `kind = "single"` is a single destructive PAT command.
+- `status = "reverted"` is set on the original run after a successful revert;
+  revert creates a new run with `kind = "revert"` and `revertsRunId`.
+- `approvalId` is filled when an approved plan is applied; uniqueness
+  guarantees one-time use.
+- `firstSeq`/`lastSeq` are the `Command.seq` range; nullable for a failed run.
 
 ### 6.7. `ApprovalRequest`
 
@@ -474,11 +481,11 @@ model ApprovalRequest {
   id               String    @id @default(cuid())
   boardId          String
   cardId           String?
-  requestedBy      String    // userId владельца PAT
+  requestedBy      String    // PAT owner userId
   requestedByTokenId String
   agentSessionId   String?
   kind             String // destructive|done|custom
-  actionType       String // BoardAction.type | "batch" | operation (например "share.create")
+  actionType       String // BoardAction.type | "batch" | operation (e.g. "share.create")
   summary          String    @db.VarChar(500)
   risk             String    @default("medium") // low|medium|high
   plan             Json
@@ -489,7 +496,7 @@ model ApprovalRequest {
   decidedBy        String?
   decidedAt        DateTime?
   decisionComment  String?   @db.Text
-  runId            String?   // AgentRun.id, заполняется при consume
+  runId            String?   // AgentRun.id, filled on consume
   consumedAt       DateTime?
   createdAt        DateTime  @default(now())
 
@@ -500,7 +507,7 @@ model ApprovalRequest {
 }
 ```
 
-`plan` — точный исполняемый план:
+`plan` is the exact executable plan:
 
 ```json
 {
@@ -517,8 +524,8 @@ model ApprovalRequest {
 }
 ```
 
-Для lifecycle-действий, которые не являются `BoardAction`, план содержит
-`operations` вместо `commands` (ровно одна операция в MVP):
+For lifecycle actions that are not `BoardAction`, the plan contains
+`operations` instead of `commands` (exactly one operation in the MVP):
 
 ```json
 {
@@ -536,46 +543,46 @@ model ApprovalRequest {
 
 Whitelist: `board.delete`, `member.invite`, `member.update`,
 `member.remove`, `share.create`, `share.update`, `share.revoke`,
-`share.delete`, `attachment.delete`. `commands` и `operations` взаимоисключающие.
-Отображение policy keys и lifecycle operations:
+`share.delete`, `attachment.delete`. `commands` and `operations` are mutually
+exclusive. Policy-key to lifecycle-operation mapping:
 
 | Policy key | Operation | Endpoint |
 | --- | --- | --- |
 | `delete_board` | `board.delete` | `DELETE /boards/:id` |
-| `attachment.delete` | `attachment.delete` | `DELETE /attachments/:id` (чужой upload) |
-| `member.invite` / `member.update` / `member.remove` | те же | `/boards/:id/members...` |
-| `share.create` / `share.update` / `share.revoke` | те же | `/boards/:id/shares...` |
+| `attachment.delete` | `attachment.delete` | `DELETE /attachments/:id` (another user's upload) |
+| `member.invite` / `member.update` / `member.remove` | same | `/boards/:id/members...` |
+| `share.create` / `share.update` / `share.revoke` | same | `/boards/:id/shares...` |
 | `share.delete` | `share.delete` | `DELETE /boards/:id/shares/:shareId/permanent` |
 
-`delete_board` — историческое имя policy-key для `BoardAction`-стиля; на
-проводе operation называется `board.delete`. `attachment.delete` и
-`delete_board` входят в default `requireApprovalFor`; даже при удалении
-ключа из policy destructive-режим всё равно требует approval, потому что
-`destructive: "approval"` — базовый gate.
+`delete_board` is the historical policy-key name in `BoardAction` style; on
+the wire the operation is `board.delete`. `attachment.delete` and
+`delete_board` are in the default `requireApprovalFor`; even if a key is
+removed from policy, the destructive mode still requires approval because
+`destructive: "approval"` is the base gate.
 
 `planHash = sha256(utf8(canonicalJson({ schemaVersion, boardId, commands, operations })))`,
-где `canonicalJson` рекурсивно сортирует ключи объектов, сохраняет порядок
-массивов, не содержит пробелов и **опускает отсутствующие** `commands`/
-`operations` (валиден ровно один из них). `summary`/`risk`/`expiresAt` в
-hash не входят. `planHash` считает сервер и возвращает клиенту; клиентский
-hash не принимается как истина.
+where `canonicalJson` recursively sorts object keys, preserves array order,
+contains no spaces, and **omits absent** `commands`/`operations` (exactly one
+of them is valid). `summary`/`risk`/`expiresAt` are not part of the hash. The
+server computes `planHash` and returns it; a client hash is not accepted as
+truth.
 
-`action.at` **исключается** из плана и `planHash` — как в существующем
-`actionFingerprint` (`commands.service`). `at` — серверные часы, а не часть
-намерения; при apply сервер ставит/клэмпит `at` сам. Поэтому план не
-протухает из-за 5-минутного `COMMAND_AT_MAX_SKEW_MS`, а повтор с тем же
-`commandId` остаётся идемпотентным. `commandId` и остальные поля action
-входят в hash без изменений.
+`action.at` is **excluded** from the plan and `planHash`, as in the existing
+`actionFingerprint` (`commands.service`). `at` is server time, not part of the
+intent; on apply the server sets/clamps `at` itself. The plan therefore does
+not expire because of the 5-minute `COMMAND_AT_MAX_SKEW_MS`, and a retry with
+the same `commandId` remains idempotent. `commandId` and the other action
+fields are hashed unchanged.
 
-### 6.8. `Command` и `CommandPreimage`
+### 6.8. `Command` and `CommandPreimage`
 
 ```prisma
 model Command {
-  // ...существующие поля без изменений...
+  // ...existing fields unchanged...
   apiTokenId     String?
   agentSessionId String?
   runId          String?
-  agentName      String? // snapshot ApiToken.name на момент записи
+  agentName      String? // ApiToken.name snapshot at write time
 
   @@index([apiTokenId, createdAt])
   @@index([agentSessionId, createdAt])
@@ -606,7 +613,7 @@ model CommandPreimage {
       "id": "card-…",
       "exists": true,
       "version": 7,
-      "snapshot": { "...": "полная сущность до команды" },
+      "snapshot": { "...": "full entity state before the command" },
       "postVersion": 8,
       "postDeletedAt": null
     }
@@ -614,22 +621,22 @@ model CommandPreimage {
 }
 ```
 
-- Для `ADD_*`/`DUPLICATE_*` создаваемая сущность записывается с
-  `exists: false`; inverse — удалить созданный id.
-- Для `DELETE_CARD`, `DELETE_COLUMN`, `ARCHIVE_COLUMN_CARDS`,
-  `DELETE_LABEL`, `DELETE_CHECKLIST`, `DELETE_CHECKLIST_ITEM` snapshot
-  включает вложенные сущности (колонка + карточки, label + assignments,
-  checklist + items), достаточные для точного restore.
-- Preimage пишется для **каждой** команды, входящей в `AgentRun`; для
-  одиночных неразрушающих команд вне run preimage не пишется.
-- Retention preimage = retention `Command`; sweep удаляет preimage раньше
-  или вместе с командой.
+- For `ADD_*`/`DUPLICATE_*`, the created entity is recorded with
+  `exists: false`; the inverse deletes the created id.
+- For `DELETE_CARD`, `DELETE_COLUMN`, `ARCHIVE_COLUMN_CARDS`,
+  `DELETE_LABEL`, `DELETE_CHECKLIST`, `DELETE_CHECKLIST_ITEM`, the snapshot
+  includes nested entities (column + cards, label + assignments, checklist +
+  items) sufficient for an exact restore.
+- A preimage is written for **every** command in an `AgentRun`; a single
+  non-destructive command outside a run gets no preimage.
+- Preimage retention = `Command` retention; sweep deletes the preimage before
+  or together with the command.
 
 ### 6.9. `Activity`
 
 ```prisma
 model Activity {
-  // ...существующие поля без изменений...
+  // ...existing fields unchanged...
   apiTokenId     String?
   agentSessionId String?
   runId          String?
@@ -641,7 +648,7 @@ model Activity {
 }
 ```
 
-Новые `Activity.type`:
+New `Activity.type` values:
 
 - `approval_requested`, `approval_approved`, `approval_rejected`,
   `approval_cancelled`, `approval_expired`, `approval_consumed`;
@@ -650,21 +657,20 @@ model Activity {
 - `agents_paused`, `agents_resumed`, `agent_policy_changed`;
 - `run_reverted`.
 
-Существующие `member_*`, `comment_*`, `attachment_deleted` не меняются.
-`Activity` остаётся board-scoped; account-level события идут в
+Existing `member_*`, `comment_*`, `attachment_deleted` are unchanged.
+`Activity` remains board-scoped; account-level events go to
 `SecurityAuditLog`.
 
-`GET /boards/:id/activity` и `GET /cards/:id/activity` получают фильтры
+`GET /boards/:id/activity` and `GET /cards/:id/activity` gain filters
 `actorType`, `apiTokenId`, `agentSessionId`, `runId`, `type`, `from`, `to`;
-`GET /boards/:id/commands` — `runId`/`apiTokenId` для аудита. Это контракт
-166.1/166.7 для Watch/Audit UI (166.13/166.15).
+`GET /boards/:id/commands` gains `runId`/`apiTokenId` for audit. This is the
+166.1/166.7 contract for Watch/Audit UI (166.13/166.15).
 
-Комментарии живут вне командного лога, поэтому attribution хранится в самой
-строке:
+Comments live outside the command log, so attribution is stored on the row:
 
 ```prisma
 model Comment {
-  // ...существующие поля без изменений...
+  // ...existing fields unchanged...
   actorType      String  @default("human") // human|agent
   apiTokenId     String?
   agentSessionId String?
@@ -675,9 +681,8 @@ model Comment {
 }
 ```
 
-Старые комментарии получают `actorType = "human"`; token/session остаются
-`NULL`. Это позволяет `CommentDto` показывать агента, а не только email
-владельца.
+Old comments receive `actorType = "human"`; token/session remain `NULL`. This
+lets `CommentDto` show the agent, not just the owner's email.
 
 ### 6.10. `SecurityAuditLog`
 
@@ -702,20 +707,21 @@ model SecurityAuditLog {
 }
 ```
 
-Минимальные события:
+Minimum events:
 
 - `token.created`, `token.revoked`, `token.paused`, `token.resumed`;
 - `agents.paused_all`, `agents.resumed_all`;
 - `board.deleted`, `board.restored`;
 - `account.exported`, `account.delete_scheduled`, `account.deleted`;
-- `run.reverted`, `approval.decided` (дублируется в `Activity` для доски).
+- `run.reverted`, `approval.decided` (also duplicated in board
+  `Activity`).
 
-`details` хранит snapshots `{ name, boardTitle, scopePreset, trustedCi }`, но
-никогда не хранит plaintext токена, hash токена или пароль.
+`details` stores snapshots `{ name, boardTitle, scopePreset, trustedCi }`, but
+never stores a plaintext token, token hash, or password.
 
-`BoardShareAuditLog` получает nullable `apiTokenId`, `agentSessionId`,
-`agentName` (старые строки — `NULL`), чтобы share-аудит различал два PAT
-одного аккаунта.
+`BoardShareAuditLog` gains nullable `apiTokenId`, `agentSessionId`, and
+`agentName` (old rows are `NULL`) so share audit can distinguish two PATs on
+one account.
 
 ### 6.11. `IdempotencyRecord`
 
@@ -723,7 +729,7 @@ model SecurityAuditLog {
 model IdempotencyRecord {
   id             String   @id @default(cuid())
   scope          String // create_board|import_boards|create_share|upload_attachment|<operation>
-  actorKey       String   // "user:<id>" или "token:<id>"
+  actorKey       String   // "user:<id>" or "token:<id>"
   key            String
   requestHash    String
   status         String   @default("in_progress") // in_progress|completed
@@ -738,29 +744,29 @@ model IdempotencyRecord {
 }
 ```
 
-TTL 24 часа. Повтор с тем же `scope + actorKey + key` и тем же
-`requestHash` возвращает сохранённый status/body; другое тело —
-`409 idempotency_conflict`; пока первая запись `in_progress` —
-`409 idempotency_in_progress` (`retryable: true`).
+TTL is 24 hours. A repeat with the same `scope + actorKey + key` and the same
+`requestHash` returns the stored status/body; a different body gets
+`409 idempotency_conflict`; while the first record is `in_progress`, the
+repeat gets `409 idempotency_in_progress` (`retryable: true`).
 
-### 6.12. DTO, заголовки и SSE
+### 6.12. DTOs, headers, and SSE
 
-| Контракт | Добавить |
+| Contract | Add |
 | --- | --- |
 | `CommandDeltaEntry`, `CommandSseEvent` | `apiTokenId?`, `agentSessionId?`, `runId?`, `agentName?` |
 | `ActivityFeedEntry`, `ActivitySseEvent` | `apiTokenId?`, `agentSessionId?`, `runId?`, `agentName?`; `ActivitySseEvent.actorType` |
 | `CommentDto` | `actorType`, `apiTokenId?`, `agentSessionId?`, `agentName?` |
-| `AttachmentDto` | `uploadedByTokenId?`, `uploadedBySessionId?` (author attribution; blob DTO fields не меняются) |
+| `AttachmentDto` | `uploadedByTokenId?`, `uploadedBySessionId?` (author attribution; blob DTO fields unchanged) |
 | `UserTokenDto` | `scopePreset`, `trustedCi`, `individualPausedAt`, `individualPausedBy`, `individualPausedReason`, `stopAllPausedAt`, `stopAllPausedBy`, `paused`, `effectiveTokenScope` |
 | `CreateUserTokenRequest` | `scopePreset?`, `trustedCi?` |
-| `Board` | `agentPolicy?`, `agentPolicyVersion?`, `agentsPausedAt?`, `agentsPausedBy?`, `agentsPauseReason?` (pause — только UI, не export) |
+| `Board` | `agentPolicy?`, `agentPolicyVersion?`, `agentsPausedAt?`, `agentsPausedBy?`, `agentsPauseReason?` (pause is UI-only, not export) |
 | `Card` | `claimedByTokenId?`, `claimedBySessionId?` |
 | `CommandBatchRequest` | `clientRunId?` |
-| `CommandBatchResponse` | `runId?` (`string`/`null`), см. DTO ниже |
+| `CommandBatchResponse` | `runId?` (`string`/`null`), see DTO below |
 | `CommandResponse` | `runId?`, `approvalId?` (`string`/`null`) |
 | `BoardSseEvent` | `ApprovalSseEvent`, `AgentSseEvent` |
 
-Минимальные response-контракты:
+Minimum response contracts:
 
 ```ts
 type AgentSessionStatus =
@@ -837,7 +843,7 @@ interface ApprovalRequestDto {
   runId: string | null;
   consumedAt: number | null;
   createdAt: number;
-  plan?: Record<string, unknown>; // только ADMIN detail
+  plan?: Record<string, unknown>; // ADMIN detail only
 }
 
 interface BoardAgentPolicyDto {
@@ -855,12 +861,12 @@ interface BoardPolicyResponse {
   version: number;
 }
 
-type RunSummaryDto = AgentRunDto; // GET /runs: без commands/preimages
+type RunSummaryDto = AgentRunDto; // GET /runs: no commands/preimages
 
 interface RunDetailDto {
   run: AgentRunDto;
   commands: CommandDeltaEntry[];
-  preimages: Record<string, unknown>; // только board ADMIN
+  preimages: Record<string, unknown>; // board ADMIN only
 }
 
 interface RevertConflictDto {
@@ -875,7 +881,7 @@ interface RevertPreviewDto {
   run: RunSummaryDto;
   conflicts: RevertConflictDto[];
   canRevert: boolean;
-  diff?: Record<string, unknown>; // только board ADMIN
+  diff?: Record<string, unknown>; // board ADMIN only
 }
 
 interface CommandBatchResponse {
@@ -891,7 +897,7 @@ interface CommandResponse {
 }
 ```
 
-Новые SSE-события:
+New SSE events:
 
 ```ts
 type ApprovalSseEvent = {
@@ -911,253 +917,253 @@ type AgentSseEvent = {
 };
 ```
 
-Заголовки:
+Headers:
 
-| Header | Где | Смысл |
+| Header | Where | Meaning |
 | --- | --- | --- |
-| `X-Agent-Session` | write-запросы PAT | id сессии; проверяется ownership/board |
-| `X-Approval-Id` | commands/batch/plans/apply/lifecycle REST | id approval для точного плана |
-| `Idempotency-Key` | create board/import/share/upload | REST-идемпотентность, 24 ч |
-| `X-Request-Id` | все ответы | correlation id (уже есть) |
-| `X-RateLimit-*`, `Retry-After` | все ответы/429 | 166.10 |
-| `X-Board-Seq`, `X-Delta-Resync` | board read/delta | уже есть |
+| `X-Agent-Session` | PAT write requests | session id; ownership/board is checked |
+| `X-Approval-Id` | commands/batch/plans/apply/lifecycle REST | approval id for the exact plan |
+| `Idempotency-Key` | create board/import/share/upload | REST idempotency, 24 h |
+| `X-Request-Id` | all responses | correlation id (already exists) |
+| `X-RateLimit-*`, `Retry-After` | all responses/429 | 166.10 |
+| `X-Board-Seq`, `X-Delta-Resync` | board read/delta | already exists |
 
-SSE `?session=<sessionId>` — optional; используется для session pause
-(§9.3). `?presence=0` остаётся.
+SSE `?session=<sessionId>` is optional; it is used for session pause (§9.3).
+`?presence=0` remains.
 
-### 6.13. Миграция и обратное заполнение
+### 6.13. Migration and backfill
 
-Одна миграция, один schema owner — поток **166.1** (см. §14.1). Порядок:
+One migration, one schema owner: stream **166.1** (see §14.1). Order:
 
-1. Добавить `ApiToken.scopePreset` как **nullable** (без default), чтобы
-   default `worker` не затронул существующие строки.
+1. Add `ApiToken.scopePreset` as **nullable** (no default) so the `worker`
+   default does not touch existing rows.
 2. `UPDATE "ApiToken" SET "scopePreset" = 'admin' WHERE "scopePreset" IS NULL;`
-3. Добавить `trustedCi Boolean NOT NULL DEFAULT false`;
+3. Add `trustedCi Boolean NOT NULL DEFAULT false`;
    `UPDATE "ApiToken" SET "trustedCi" = true WHERE "readOnly" = false;`
-4. Поставить `scopePreset` `NOT NULL DEFAULT 'worker'`.
-5. Добавить все token pause-поля:
-   `ApiToken.individualPausedAt`, `individualPausedBy`,
-   `individualPausedReason`, `stopAllPausedAt`, `stopAllPausedBy`
-   и индексы `[userId, individualPausedAt]`, `[userId, stopAllPausedAt]`.
-6. Добавить nullable-поля `Board`, `Card`, `Command`, `Activity`:
+4. Set `scopePreset` to `NOT NULL DEFAULT 'worker'`.
+5. Add all token pause fields: `ApiToken.individualPausedAt`,
+   `individualPausedBy`, `individualPausedReason`, `stopAllPausedAt`,
+   `stopAllPausedBy` and indexes `[userId, individualPausedAt]`,
+   `[userId, stopAllPausedAt]`.
+6. Add nullable fields to `Board`, `Card`, `Command`, `Activity`:
    - `Board.agentPolicy`, `Board.agentPolicyVersion`,
      `Board.agentsPausedAt/By/Reason`;
    - `Card.claimedByTokenId/SessionId`;
    - `Command`/`Activity` attribution (`apiTokenId`, `agentSessionId`,
      `runId`, `agentName`).
-7. Добавить `Comment.actorType` (`NOT NULL DEFAULT 'human'`),
-   `Comment.apiTokenId`, `agentSessionId`, `agentName` и индексы
+7. Add `Comment.actorType` (`NOT NULL DEFAULT 'human'`),
+   `Comment.apiTokenId`, `agentSessionId`, `agentName` and indexes
    `[apiTokenId, createdAt]`, `[agentSessionId, createdAt]`.
-8. Добавить `Attachment.uploadedByTokenId`, `uploadedBySessionId` и индексы
+8. Add `Attachment.uploadedByTokenId`, `uploadedBySessionId` and indexes
    `[uploadedByTokenId]`, `[uploadedBySessionId]`.
-9. Добавить attribution-поля `BoardShareAuditLog`.
-10. Создать новые таблицы и индексы.
-11. Не переименовывать и не удалять существующие поля.
-12. На больших `Command`/`Activity` индексы создавать отдельным
-    операторским шагом `CREATE INDEX CONCURRENTLY`, если миграция иначе
-    держит таблицу; в обычной self-host установке допустима одна миграция.
+9. Add attribution fields to `BoardShareAuditLog`.
+10. Create new tables and indexes.
+11. Do not rename or delete existing fields.
+12. On large `Command`/`Activity` tables, create indexes in a separate
+    operator step with `CREATE INDEX CONCURRENTLY` if the migration would
+    otherwise hold the table; a single migration is acceptable for a normal
+    self-host install.
 
-Обратное заполнение:
+Backfill:
 
-- `Command`/`Activity`: новые поля остаются `NULL`; UI трактует `NULL` как
-  «legacy/unknown», `actorType` уже есть.
-- `Card`: `claimedByTokenId`/`claimedBySessionId` остаются `NULL`; claim
-  продолжает работать по legacy `claimedBy` до истечения lease.
-- `ApiToken`: `individualPausedAt`/`stopAllPausedAt` = `NULL`;
-  pause-поля не заполняются задним числом.
+- `Command`/`Activity`: new fields stay `NULL`; the UI treats `NULL` as
+  "legacy/unknown"; `actorType` already exists.
+- `Card`: `claimedByTokenId`/`claimedBySessionId` stay `NULL`; claim continues
+  to work through legacy `claimedBy` until the lease expires.
+- `ApiToken`: `individualPausedAt`/`stopAllPausedAt` = `NULL`; pause fields
+  are not backfilled.
 - `Board`: `agentPolicy = NULL`, `agentPolicyVersion = 1`,
   `agentsPausedAt = NULL`.
 - `AgentSession`, `AgentRun`, `ApprovalRequest`, `CommandPreimage`,
-  `SecurityAuditLog`, `IdempotencyRecord` — пустые.
-- `Board.version` не трогаем; `agentPolicyVersion` отдельный.
+  `SecurityAuditLog`, `IdempotencyRecord` are empty.
+- `Board.version` is untouched; `agentPolicyVersion` is separate.
 
-### 6.14. Очистка и порядок purge
+### 6.14. Cleanup and purge order
 
-- `sweepCommands`: сначала `CommandPreimage` по `createdAt < cutoff`, затем
+- `sweepCommands`: first `CommandPreimage` by `createdAt < cutoff`, then
   `Command`.
-- `sweepRuns`: `AgentRun` старше cutoff, у которых нет команд; исходные
-  `reverted` run удаляются вместе с revert-run по тому же cutoff.
-- `sweepAgentSessions`: завершённые/просроченные сессии старше cutoff.
-- `sweepApprovals`: `rejected|expired|cancelled|consumed` старше cutoff;
-  `pending` и `approved` **не** удаляются по возрасту, только по expiry.
-- `sweepSecurityAudit`: `SecurityAuditLog` старше cutoff.
+- `sweepRuns`: `AgentRun` older than cutoff with no commands; original
+  `reverted` runs are deleted together with the revert run at the same
+  cutoff.
+- `sweepAgentSessions`: completed/expired sessions older than cutoff.
+- `sweepApprovals`: `rejected|expired|cancelled|consumed` older than cutoff;
+  `pending` and `approved` are **not** deleted by age, only by expiry.
+- `sweepSecurityAudit`: `SecurityAuditLog` older than cutoff.
 - `sweepIdempotency`: `expiresAt < now`.
-- Purge доски/пользователя вызывает те же sweep-функции; ordering:
+- Board/user purge calls the same sweep functions; ordering:
   preimages → commands → runs → sessions → approvals → board rows.
 
 ---
 
-## 7. Матрица действий
+## 7. Action matrix
 
-Легенда:
+Legend:
 
-- **Preset** — минимальный эффективный scope (роль на доске применяется
-  отдельно).
-- **Destructive** — требуется destructive gate.
-- **Approval** — что происходит без `trustedCi`, если board policy не
-  запрещает жёстко.
-- **Legacy PAT** — поведение старого токена (`admin` + `trustedCi`, кроме
+- **Preset** — minimum effective scope (board role is applied separately).
+- **Destructive** — destructive gate required.
+- **Approval** — what happens without `trustedCi` when board policy is not a
+  hard block.
+- **Legacy PAT** — behavior of an old token (`admin` + `trustedCi`, except
   `readOnly`).
 
 ### 7.1. `BoardAction` (REST `/commands`, `/commands/batch`, `/plans/apply`)
 
-| Действия | Preset | Destructive | Approval | Legacy PAT |
+| Actions | Preset | Destructive | Approval | Legacy PAT |
 | --- | --- | --- | --- | --- |
-| `ADD_CARD`, `UPDATE_CARD`, `TOUCH_CARD`, `MOVE_CARD`, `ARCHIVE_CARD`, `UNARCHIVE_CARD`, `DUPLICATE_CARD`, `SET_CARD_DUE_DATE`, `SET_CARD_PRIORITY`, `SET_CARD_ASSIGN`, `SET_CARD_TASK_SPEC`, `SET_CARD_LABEL`, `SET_CARD_COVER`, `CLAIM_CARD`, `ADD_CARD_LINK`, `REMOVE_CARD_LINK` | `worker` | нет | нет | как раньше |
-| `MOVE_CARD` или `UNARCHIVE_CARD` в `doneColumnIds` | `reviewer` | нет | только если policy содержит `move_to_done` | как раньше |
-| `ADD_COLUMN`, `RENAME_COLUMN`, `MOVE_COLUMN`, `SORT_COLUMN`, `SET_COLUMN_CARD_ORDER`, `SET_COLUMN_WIP_LIMIT`, `SET_COLUMN_ACCENT`, `DUPLICATE_COLUMN`, `RENAME_BOARD`, `SET_BOARD_COLUMN_STYLE` | `worker` | нет | нет | как раньше |
-| `ADD_LABEL`, `RENAME_LABEL`, `SET_LABEL_COLOR`, `ADD_CHECKLIST`, `RENAME_CHECKLIST`, `ADD_CHECKLIST_ITEM`, `SET_CHECKLIST_ITEM_DONE`, `RENAME_CHECKLIST_ITEM` | `worker` | нет | нет | как раньше |
-| `DELETE_CARD` | `worker` | да | `approval` | bypass approval |
-| `DELETE_COLUMN` | `worker` | да | `approval` | bypass approval |
-| `ARCHIVE_COLUMN_CARDS` | `worker` | да | `approval` | bypass approval |
-| `DELETE_LABEL` | `worker` | да | `approval` | bypass approval |
-| `DELETE_CHECKLIST`, `DELETE_CHECKLIST_ITEM` | `worker` | да | `approval` | bypass approval |
-| `SET_BOARD_WORKFLOW` | `admin` | нет (конфиг) | `approval` по default policy (`workflow.update`); человек-ADMIN может убрать пункт из policy | как раньше |
-| `ARCHIVE_BOARD`, `UNARCHIVE_BOARD` | `admin` | нет (обратимо) | нет | как раньше |
-| `RESTORE_CARD`, `RESTORE_COLUMN`, `RESTORE_COLUMN_CARDS`, `RESTORE_LABEL`, `RESTORE_CHECKLIST`, `RESTORE_CHECKLIST_ITEM` | browser JWT с ролью, которая могла выполнить исходную команду (`ADMIN`/`MEMBER`); серверный run-revert | нет | нет | любой PAT → `scope_denied` (undo не делегируется) |
-| `RESTORE_BOARD` (aggregate-level/local snapshot) | не команда `/commands` | — | — | не принимается ни JWT, ни PAT; browser использует refetch/local rollback |
+| `ADD_CARD`, `UPDATE_CARD`, `TOUCH_CARD`, `MOVE_CARD`, `ARCHIVE_CARD`, `UNARCHIVE_CARD`, `DUPLICATE_CARD`, `SET_CARD_DUE_DATE`, `SET_CARD_PRIORITY`, `SET_CARD_ASSIGN`, `SET_CARD_TASK_SPEC`, `SET_CARD_LABEL`, `SET_CARD_COVER`, `CLAIM_CARD`, `ADD_CARD_LINK`, `REMOVE_CARD_LINK` | `worker` | no | no | same as before |
+| `MOVE_CARD` or `UNARCHIVE_CARD` into `doneColumnIds` | `reviewer` | no | only when policy contains `move_to_done` | same as before |
+| `ADD_COLUMN`, `RENAME_COLUMN`, `MOVE_COLUMN`, `SORT_COLUMN`, `SET_COLUMN_CARD_ORDER`, `SET_COLUMN_WIP_LIMIT`, `SET_COLUMN_ACCENT`, `DUPLICATE_COLUMN`, `RENAME_BOARD`, `SET_BOARD_COLUMN_STYLE` | `worker` | no | no | same as before |
+| `ADD_LABEL`, `RENAME_LABEL`, `SET_LABEL_COLOR`, `ADD_CHECKLIST`, `RENAME_CHECKLIST`, `ADD_CHECKLIST_ITEM`, `SET_CHECKLIST_ITEM_DONE`, `RENAME_CHECKLIST_ITEM` | `worker` | no | no | same as before |
+| `DELETE_CARD` | `worker` | yes | `approval` | bypass approval |
+| `DELETE_COLUMN` | `worker` | yes | `approval` | bypass approval |
+| `ARCHIVE_COLUMN_CARDS` | `worker` | yes | `approval` | bypass approval |
+| `DELETE_LABEL` | `worker` | yes | `approval` | bypass approval |
+| `DELETE_CHECKLIST`, `DELETE_CHECKLIST_ITEM` | `worker` | yes | `approval` | bypass approval |
+| `SET_BOARD_WORKFLOW` | `admin` | no (config) | `approval` per default policy (`workflow.update`); a human ADMIN may remove the key from policy | same as before |
+| `ARCHIVE_BOARD`, `UNARCHIVE_BOARD` | `admin` | no (reversible) | no | same as before |
+| `RESTORE_CARD`, `RESTORE_COLUMN`, `RESTORE_COLUMN_CARDS`, `RESTORE_LABEL`, `RESTORE_CHECKLIST`, `RESTORE_CHECKLIST_ITEM` | browser JWT with the role that could perform the original command (`ADMIN`/`MEMBER`); server-side run-revert | no | no | any PAT → `scope_denied` (undo is not delegated) |
+| `RESTORE_BOARD` (aggregate-level/local snapshot) | not a `/commands` command | — | — | not accepted from JWT or PAT; browser uses refetch/local rollback |
 
-Примечания:
+Notes:
 
-- `REMOVE_CARD_LINK` — редактирование связи, не destructive: ссылку можно
-  добавить заново; MCP annotation меняется с `DESTRUCTIVE` на `WRITE`.
-- `ARCHIVE_CARD`/`UNARCHIVE_CARD` не destructive: карточка остаётся,
-  восстанавливается штатно. `UNARCHIVE_CARD` в done-колонку подчиняется
-  тому же `reviewer`/`move_to_done` gate, что и `MOVE_CARD`; иначе это
-  обход review.
-- `ADD_CARD`/`DUPLICATE_CARD`, создающие карточку сразу в done-колонке,
-  тоже считаются done-переходом и требуют `reviewer` (+ approval, если
-  policy содержит `move_to_done`).
-- `RESTORE_*` — это browser undo, а не agent undo: browser JWT с ролью
-  `ADMIN`/`MEMBER` может отправить inverse-команду через `/commands`, как и
-  раньше; VIEWER — нет, любой PAT — `scope_denied`. Серверный run-revert
-  выполняет inverse от имени человека-ADMIN.
-- `RESTORE_BOARD` существует в reducer, но `commands.service` относит его к
-  aggregate-level и **не принимает** через `/commands`; это локальный
-  snapshot/refetch, не серверная команда. Browser undo board-level действий
-  использует их собственные inverse-команды (`UNARCHIVE_BOARD` и т. п.).
-- Регрессионный тест: MEMBER удаляет карточку/колонку/метку/чек-лист →
-  browser undo отправляет соответствующий `RESTORE_*` → 200; тот же вызов
-  с PAT → 403 `scope_denied`; VIEWER → 403.
-- Любая команда в batch/plan проверяется по этой таблице; если хотя бы
-  одна destructive — approval требуется на весь batch/plan, частичного
-  применения нет.
+- `REMOVE_CARD_LINK` is a relationship edit, not destructive: the link can be
+  added again; the MCP annotation changes from `DESTRUCTIVE` to `WRITE`.
+- `ARCHIVE_CARD`/`UNARCHIVE_CARD` are not destructive: the card remains and
+  is restored normally. `UNARCHIVE_CARD` into a done column obeys the same
+  `reviewer`/`move_to_done` gate as `MOVE_CARD`; otherwise it bypasses review.
+- `ADD_CARD`/`DUPLICATE_CARD` that create a card directly in a done column
+  are also considered a done transition and require `reviewer` (+ approval
+  when policy contains `move_to_done`).
+- `RESTORE_*` is browser undo, not agent undo: a browser JWT with the
+  `ADMIN`/`MEMBER` role may send an inverse command through `/commands` as
+  before; VIEWER may not, and any PAT gets `scope_denied`. Server-side
+  run-revert performs the inverse as a human ADMIN.
+- `RESTORE_BOARD` exists in the reducer, but `commands.service` classifies it
+  as aggregate-level and **does not accept** it through `/commands`; it is a
+  local snapshot/refetch, not a server command. Browser undo of board-level
+  actions uses their own inverse commands (`UNARCHIVE_BOARD`, etc.).
+- Regression test: a MEMBER deletes a card/column/label/checklist → browser
+  undo sends the matching `RESTORE_*` → 200; the same call with a PAT → 403
+  `scope_denied`; VIEWER → 403.
+- Every command in a batch/plan is checked against this table; if at least one
+  is destructive, approval is required for the whole batch/plan, with no
+  partial apply.
 
 ### 7.2. REST endpoints
 
-Новые в TASK-166 маршруты: `/agent-sessions`, `/agents/*`,
+New TASK-166 routes: `/agent-sessions`, `/agents/*`,
 `/boards/:id/agents/*`, `/users/me/tokens/:id/pause|resume`, `/approvals`,
-`/plans`, `/runs`, `/agent-policy`, `/users/me/export`, `/users/me/delete/request-code`,
-`DELETE /users/me`.
-Остальные строки описывают существующие контроллеры и их будущие проверки;
-ни один новый маршрут не считается уже отгруженным.
+`/plans`, `/runs`, `/agent-policy`, `/users/me/export`,
+`/users/me/delete/request-code`, `DELETE /users/me`. The remaining rows
+describe existing controllers and their future checks; no new route is
+considered shipped yet.
 
-| Endpoint / группа | Preset | Destructive | Approval | Legacy PAT |
+| Endpoint / group | Preset | Destructive | Approval | Legacy PAT |
 | --- | --- | --- | --- | --- |
-| `GET /boards`, `GET /boards/:id`, `GET /boards/:id/search`, `GET /boards/:id/export`, `GET /boards/:id/commands`, `GET /boards/:id/events`, `GET /boards/:id/activity`, `GET /cards/:id/activity`, `GET /cards/:id/comments`, `GET /cards/:id/attachments`, `GET /attachments/:id/content` | `observer` | нет | нет | как раньше |
-| `GET /boards/:id/members` | `observer` | нет | нет | как раньше |
-| `GET /auth/me`, `GET /users/:userId/avatar` | any authenticated PAT (identity/avatar read) | нет | нет | как раньше, включая `janosik_whoami` |
-| `GET /boards/:id/invitations` | `admin` | нет | нет | как раньше |
-| `GET /boards/:id/shares` | `admin` | нет | нет | как раньше |
-| `POST /boards/:id/commands` | `worker` | по действию | по действию | как раньше |
-| `POST /boards/:id/commands/batch` | `worker` | по действию | approval на весь batch | как раньше |
-| `POST /boards/:id/plans`, `POST /boards/:id/plans/apply` | `worker` | по действию | approval на весь plan | как раньше |
-| `POST /boards` | `admin` + account-wide token | нет | нет | как раньше; board-scoped → `scope_denied` |
-| `POST /boards/import` (+ `?dryRun=1`) | `admin` + account-wide token | нет | нет | как раньше |
-| `DELETE /boards/:id` | `admin` | да | `approval` | bypass approval |
+| `GET /boards`, `GET /boards/:id`, `GET /boards/:id/search`, `GET /boards/:id/export`, `GET /boards/:id/commands`, `GET /boards/:id/events`, `GET /boards/:id/activity`, `GET /cards/:id/activity`, `GET /cards/:id/comments`, `GET /cards/:id/attachments`, `GET /attachments/:id/content` | `observer` | no | no | same as before |
+| `GET /boards/:id/members` | `observer` | no | no | same as before |
+| `GET /auth/me`, `GET /users/:userId/avatar` | any authenticated PAT (identity/avatar read) | no | no | same as before, including `janosik_whoami` |
+| `GET /boards/:id/invitations` | `admin` | no | no | same as before |
+| `GET /boards/:id/shares` | `admin` | no | no | same as before |
+| `POST /boards/:id/commands` | `worker` | per action | per action | same as before |
+| `POST /boards/:id/commands/batch` | `worker` | per action | approval for the whole batch | same as before |
+| `POST /boards/:id/plans`, `POST /boards/:id/plans/apply` | `worker` | per action | approval for the whole plan | same as before |
+| `POST /boards` | `admin` + account-wide token | no | no | same as before; board-scoped → `scope_denied` |
+| `POST /boards/import` (+ `?dryRun=1`) | `admin` + account-wide token | no | no | same as before |
+| `DELETE /boards/:id` | `admin` | yes | `approval` | bypass approval |
 | `POST /boards/:id/members` (invite) | `admin` | sensitive | `approval` | bypass approval |
 | `PATCH /boards/:id/members/:userId` | `admin` | sensitive | `approval` | bypass approval |
-| `DELETE /boards/:id/members/:userId` | `admin` | да | `approval` | bypass approval |
+| `DELETE /boards/:id/members/:userId` | `admin` | yes | `approval` | bypass approval |
 | `POST /boards/:id/shares`, `PATCH /boards/:id/shares/:shareId` | `admin` | sensitive (exposure) | `approval` | bypass approval |
-| `POST /boards/:id/shares/:shareId/refresh` | `admin` | нет | нет | как раньше |
-| `DELETE /boards/:id/shares/:shareId`, `DELETE .../permanent` | `admin` | да | `approval` | bypass approval |
-| `POST /cards/:id/comments` | `worker` | нет | нет | как раньше |
-| `DELETE /comments/:id` | `worker` (только свой комментарий) | да, но self-authored exempt | нет для своего; чужой — `scope_denied` | как раньше; PAT по-прежнему только автор |
-| `POST /cards/:id/attachments`, `?inline=1` | `worker` | нет | нет | как раньше |
-| `DELETE /attachments/:id` | `worker` (свой upload) / `admin` (чужой) | да | нет для своего; чужой — `approval` | как раньше |
+| `POST /boards/:id/shares/:shareId/refresh` | `admin` | no | no | same as before |
+| `DELETE /boards/:id/shares/:shareId`, `DELETE .../permanent` | `admin` | yes | `approval` | bypass approval |
+| `POST /cards/:id/comments` | `worker` | no | no | same as before |
+| `DELETE /comments/:id` | `worker` (own comment only) | yes, but self-authored exempt | no for own; another user's → `scope_denied` | same as before; PAT still author-only |
+| `POST /cards/:id/attachments`, `?inline=1` | `worker` | no | no | same as before |
+| `DELETE /attachments/:id` | `worker` (own upload) / `admin` (another user's) | yes | no for own; another user's → `approval` | same as before |
 | `POST /users/me/tokens`, `GET /users/me/tokens`, `DELETE /users/me/tokens/:id` | session-only | — | — | `pat_forbidden` (security fix) |
 | `POST /users/me/tokens/:id/pause`, `/resume` | session-only | — | — | `pat_forbidden` |
 | `PATCH /users/me`, `PATCH /users/me/avatar` | session-only | — | — | `pat_forbidden` |
 | `GET /invitations`, `POST /invitations/:id/accept`, `/decline` | session-only | — | — | `pat_forbidden` (security fix) |
 | `POST /users/me/export`, `GET /users/me/export/:id`, `GET /users/me/export/:id/download` | session-only | — | — | `pat_forbidden` |
 | `POST /users/me/delete/request-code` | session-only | — | OAuth proof; email code | `pat_forbidden` |
-| `DELETE /users/me` | session-only | да (аккаунт) | пароль или OAuth re-auth + `emailCode`; не approval | `pat_forbidden` |
-| `POST /boards/:id/agent-sessions`, `.../:sessionId/heartbeat`, `.../:sessionId/end` | `observer`+ (control-plane) | нет | нет | legacy может не использовать |
-| `GET /boards/:id/agent-sessions`, `GET /boards/:id/agent-sessions/:id` | `observer` | нет | нет | как раньше |
-| `POST /boards/:id/agent-sessions/:id/pause`, `/resume` | session-only board ADMIN | нет | — | `pat_forbidden` |
-| `POST /boards/:id/agents/pause`, `/resume` | session-only board ADMIN | нет | — | `pat_forbidden` |
-| `POST /agents/pause-all`, `POST /agents/resume-all` | session-only owner | нет | — | `pat_forbidden` |
-| `POST /boards/:id/approvals` | preset планируемого действия (`worker` для destructive, `reviewer` для done, `admin` для member/share/board) | control-plane | нет | legacy trustedCi: approval не требуется, endpoint доступен |
-| `GET /boards/:id/approvals`, `GET .../:approvalId` | `admin` или requester `apiTokenId` | нет | нет | как раньше для requester token |
+| `DELETE /users/me` | session-only | yes (account) | password or OAuth re-auth + `emailCode`; not approval | `pat_forbidden` |
+| `POST /boards/:id/agent-sessions`, `.../:sessionId/heartbeat`, `.../:sessionId/end` | `observer`+ (control-plane) | no | no | legacy may not use it |
+| `GET /boards/:id/agent-sessions`, `GET /boards/:id/agent-sessions/:id` | `observer` | no | no | same as before |
+| `POST /boards/:id/agent-sessions/:id/pause`, `/resume` | session-only board ADMIN | no | — | `pat_forbidden` |
+| `POST /boards/:id/agents/pause`, `/resume` | session-only board ADMIN | no | — | `pat_forbidden` |
+| `POST /agents/pause-all`, `POST /agents/resume-all` | session-only owner | no | — | `pat_forbidden` |
+| `POST /boards/:id/approvals` | planned action preset (`worker` for destructive, `reviewer` for done, `admin` for member/share/board) | control-plane | no | legacy trustedCi: approval not required, endpoint available |
+| `GET /boards/:id/approvals`, `GET .../:approvalId` | `admin` or requester `apiTokenId` | no | no | same as before for requester token |
 | `POST /boards/:id/approvals/:id/decision` | session-only board ADMIN | — | — | `pat_forbidden` |
-| `POST /boards/:id/approvals/:id/cancel` | requester `apiTokenId` или session-only board ADMIN | нет | — | как раньше для requester token |
-| `GET /boards/:id/runs` | `observer` — summary без pre-image | нет | нет | как раньше |
-| `GET /boards/:id/runs/:runId` | board ADMIN JWT — full detail + pre-image; observer — только summary/attribution | нет | нет | как раньше для summary; PAT full detail → `scope_denied` |
-| `POST /boards/:id/runs/:runId/revert` (`dryRun: true`) | observer — conflict summary без snapshot; board ADMIN — полный diff/pre-image | нет | нет | как раньше для summary |
-| `POST /boards/:id/runs/:runId/revert` (`dryRun: false`) | session-only board ADMIN | да (откат) | — | `pat_forbidden` |
-| `PATCH /boards/:id/agent-policy` | session-only board ADMIN | нет | — | `pat_forbidden` |
-| `GET /share/:token`, `GET /share/:token/*` | public share token | — | — | PAT не участвует |
-| `/admin/*` | master session | — | — | вне TASK-166 |
+| `POST /boards/:id/approvals/:id/cancel` | requester `apiTokenId` or session-only board ADMIN | no | — | same as before for requester token |
+| `GET /boards/:id/runs` | `observer` — summary without pre-image | no | no | same as before |
+| `GET /boards/:id/runs/:runId` | board ADMIN JWT — full detail + pre-image; observer — summary/attribution only | no | no | same as before for summary; PAT full detail → `scope_denied` |
+| `POST /boards/:id/runs/:runId/revert` (`dryRun: true`) | observer — conflict summary without snapshot; board ADMIN — full diff/pre-image | no | no | same as before for summary |
+| `POST /boards/:id/runs/:runId/revert` (`dryRun: false`) | session-only board ADMIN | yes (revert) | — | `pat_forbidden` |
+| `PATCH /boards/:id/agent-policy` | session-only board ADMIN | no | — | `pat_forbidden` |
+| `GET /share/:token`, `GET /share/:token/*` | public share token | — | — | PAT does not participate |
+| `/admin/*` | master session | — | — | outside TASK-166 |
 
-Для строк с `approval` REST-вызов повторяется с заголовком
-`X-Approval-Id: <approvalId>`; без него сервер создаёт approval и отвечает
-`409 approval_required`. Это относится и к lifecycle-операциям
+For rows with `approval`, the REST call is repeated with
+`X-Approval-Id: <approvalId>`; without it the server creates an approval and
+responds `409 approval_required`. This also applies to lifecycle operations
 (`board.delete`, `member.*`, `share.*`, `attachment.delete`).
 
-«Свой» комментарий/вложение: для PAT — совпадение `apiTokenId`/
-`uploadedByTokenId`; для browser JWT — совпадение `userId`; legacy-строка с
-`NULL` — fallback на `userId`. Два PAT одного владельца не удаляют контент
-друг друга.
+"Own" comment/attachment: for PAT it is a match on `apiTokenId`/
+`uploadedByTokenId`; for browser JWT it is a match on `userId`; a legacy row
+with `NULL` falls back to `userId`. Two PATs of one owner do not delete each
+other's content.
 
 ### 7.3. MCP tools
 
-Существующие tools сохраняют имена, кроме перечисленных удалений. В таблице
-имена без префикса `janosik_`; полный tool id = `janosik_` + имя. Таблица
-покрывает **все** toolsets текущего MCP: boards (включая
-`janosik_rename_board` и `janosik_export_board`), columns, cards, labels,
-checklists, links, comments, activity, attachments (включая
-`janosik_upload_attachment`), members, invitations (удаляется), shares,
+Existing tools keep their names except for the removals listed. In the table,
+names omit the `janosik_` prefix; the full tool id is `janosik_` + name. The
+table covers **all** current MCP toolsets: boards (including
+`janosik_rename_board` and `janosik_export_board`), columns, cards, labels,
+checklists, links, comments, activity, attachments (including
+`janosik_upload_attachment`), members, invitations (removed), shares, and
 account (`whoami`).
 
-| Группа / tools | Preset | Destructive | Approval | Legacy PAT |
+| Group / tools | Preset | Destructive | Approval | Legacy PAT |
 | --- | --- | --- | --- | --- |
-| Чтение: `list_boards`, `get_board`, `get_card`, `search_cards`, `list_ready_cards`, `wait_for_work`, `list_labels`, `list_comments`, `list_members`, `list_attachments`, `download_attachment`, `board_activity`, `card_activity`, `get_workflow`, `export_board`, `whoami` | `observer` | нет | нет | как раньше; `export_board.outputPath` — локальная запись только при включённом FS |
-| `list_shares` | `admin` | нет | нет | как раньше |
-| Контент: `create_card`, `update_card`, `move_card`, `archive_card`, `unarchive_card`, `duplicate_card`, `set_card_priority`, `set_card_assignee`, `set_card_due_date`, `set_card_cover`, `set_card_label`, `set_card_task_spec`, `claim_card`, `release_card`, `create_column`, `rename_column`, `move_column`, `sort_column`, `duplicate_column`, `set_column_wip_limit`, `set_column_accent`, `create_label`, `rename_label`, `set_label_color`, `add_checklist`, `rename_checklist`, `add_checklist_item`, `set_checklist_item_done`, `rename_checklist_item`, `add_card_link`, `remove_card_link`, `add_comment`, `rename_board`, `upload_attachment` | `worker` | нет | нет | как раньше |
-| `move_card` в done | `reviewer` | нет | `move_to_done` policy | как раньше |
-| `delete_card`, `clear_column`, `delete_column`, `delete_label`, `delete_checklist`, `delete_checklist_item` | `worker` | да | `approval` | bypass approval |
-| `delete_board` | `admin` | да | `approval` | bypass approval |
-| `delete_comment` (свой), `delete_attachment` (свой upload) | `worker` | да, self-authored exempt | нет для своего | как раньше |
-| `delete_attachment` (чужой) | `admin` | да | `approval` | bypass approval |
+| Reads: `list_boards`, `get_board`, `get_card`, `search_cards`, `list_ready_cards`, `wait_for_work`, `list_labels`, `list_comments`, `list_members`, `list_attachments`, `download_attachment`, `board_activity`, `card_activity`, `get_workflow`, `export_board`, `whoami` | `observer` | no | no | same as before; `export_board.outputPath` writes locally only when FS is enabled |
+| `list_shares` | `admin` | no | no | same as before |
+| Content: `create_card`, `update_card`, `move_card`, `archive_card`, `unarchive_card`, `duplicate_card`, `set_card_priority`, `set_card_assignee`, `set_card_due_date`, `set_card_cover`, `set_card_label`, `set_card_task_spec`, `claim_card`, `release_card`, `create_column`, `rename_column`, `move_column`, `sort_column`, `duplicate_column`, `set_column_wip_limit`, `set_column_accent`, `create_label`, `rename_label`, `set_label_color`, `add_checklist`, `rename_checklist`, `add_checklist_item`, `set_checklist_item_done`, `rename_checklist_item`, `add_card_link`, `remove_card_link`, `add_comment`, `rename_board`, `upload_attachment` | `worker` | no | no | same as before |
+| `move_card` into done | `reviewer` | no | `move_to_done` policy | same as before |
+| `delete_card`, `clear_column`, `delete_column`, `delete_label`, `delete_checklist`, `delete_checklist_item` | `worker` | yes | `approval` | bypass approval |
+| `delete_board` | `admin` | yes | `approval` | bypass approval |
+| `delete_comment` (own), `delete_attachment` (own upload) | `worker` | yes, self-authored exempt | no for own | same as before |
+| `delete_attachment` (another user's) | `admin` | yes | `approval` | bypass approval |
 | `create_share`, `update_share`, `revoke_share` | `admin` | sensitive/destructive | `approval` | bypass approval |
-| `refresh_share` | `admin` | нет | нет | как раньше |
-| `archive_board`, `unarchive_board` | `admin` | нет | нет | как раньше |
-| `create_board`, `import_board` | `admin` + account-wide | нет | нет | как раньше |
+| `refresh_share` | `admin` | no | no | same as before |
+| `archive_board`, `unarchive_board` | `admin` | no | no | same as before |
+| `create_board`, `import_board` | `admin` + account-wide | no | no | same as before |
 | `invite_member`, `update_member`, `remove_member` | `admin` | sensitive/destructive | `approval` | bypass approval |
-| `update_profile`, `list_invitations`, `accept_invitation`, `decline_invitation` | — | — | — | **удалены из MCP**: PAT не имеет account-маршрутов |
-| Новые: `start_session`, `heartbeat`, `end_session` | `observer`+ | нет | нет | — |
-| Новые: `request_approval`, `get_approval`, `wait_for_decision`, `cancel_approval` | preset планируемого действия | control-plane | нет | — |
-| Новые: `plan_changes`, `apply_plan` | `worker` | по плану | по плану | — |
-| Новые: `list_runs`, `get_run`, `preview_run_revert` | `observer` | нет | нет | — |
+| `update_profile`, `list_invitations`, `accept_invitation`, `decline_invitation` | — | — | — | **removed from MCP**: PAT has no account routes |
+| New: `start_session`, `heartbeat`, `end_session` | `observer`+ | no | no | — |
+| New: `request_approval`, `get_approval`, `wait_for_decision`, `cancel_approval` | planned action preset | control-plane | no | — |
+| New: `plan_changes`, `apply_plan` | `worker` | per plan | per plan | — |
+| New: `list_runs`, `get_run`, `preview_run_revert` | `observer` | no | no | — |
 
-Обязательные новые tools:
+Required new tools:
 
 - `janosik_start_session`, `janosik_heartbeat`, `janosik_end_session`;
 - `janosik_request_approval`, `janosik_get_approval`,
   `janosik_wait_for_decision`, `janosik_cancel_approval`;
-  `wait_for_decision` — повторяемый poll до 60 с на вызов, общий дедлайн —
-  `expiresAt` approval;
+  `wait_for_decision` is a repeatable poll of up to 60 s per call; the overall
+  deadline is the approval `expiresAt`;
 - `janosik_plan_changes`, `janosik_apply_plan`;
 - `janosik_list_runs`, `janosik_get_run`, `janosik_preview_run_revert`.
 
-Мутирующие tools, которым нужен approval, принимают optional `approvalId` и
-передают его как `X-Approval-Id`; tools с идемпотентностью принимают
-`idempotencyKey`/`commandId`. Это часть write-контракта 166.4. Для
-`delete_comment`/`delete_attachment` «свой» считается по `apiTokenId`
-(`uploadedByTokenId`), а не по user id; legacy-строка без token id —
-fallback на user id.
+Mutating tools that need approval accept optional `approvalId` and pass it as
+`X-Approval-Id`; tools with idempotency accept `idempotencyKey`/`commandId`.
+This is part of the 166.4 write contract. For `delete_comment`/
+`delete_attachment`, "own" is determined by `apiTokenId`
+(`uploadedByTokenId`), not by user id; a legacy row without a token id falls
+back to user id.
 
-`janosik_whoami` возвращает:
+`janosik_whoami` returns:
 
 ```json
 {
@@ -1180,69 +1186,68 @@ fallback на user id.
 }
 ```
 
-Новые toolsets: `sessions`, `approvals`, `plans`, `runs` — входят в default
-набор MCP. `members` и `shares` остаются opt-in; `invitations` удаляется;
-`account` содержит только `whoami` (profile-инструмент удалён). Точное число
-tools не фиксируется в 166.0: 166.11 обновляет pinned-тест после мержа всех
-tools; до этого тест фиксирует список toolsets, а не одно число.
+New toolsets: `sessions`, `approvals`, `plans`, `runs` are part of the
+default MCP set. `members` and `shares` remain opt-in; `invitations` is
+removed; `account` contains only `whoami` (the profile tool is removed). The
+exact tool count is not fixed in 166.0: 166.11 updates the pinned test after
+all tools merge; until then the test pins the toolset list, not one number.
 
-### 7.4. Batch, plan, import, share, undo/restore, вложения, комментарии
+### 7.4. Batch, plan, import, share, undo/restore, attachments, comments
 
-- **Batch.** Все команды одной доски, all-or-nothing; лимит
-  `min(100, policy.maxCommandsPerRun)`, создание карточек —
-  `min(50, policy.maxCardsPerRun)`. Если есть destructive — approval на
-  весь batch; `approvalId` передаётся заголовком `X-Approval-Id`. Ответ
-  содержит `runId` и результаты в порядке команд.
-- **Plan/apply.** `POST /plans` — dry-run: тот же validator, diff, warnings,
-  конфликты, `planHash`; ничего не пишет и не создаёт `run`.
-  `POST /plans/apply` — та же атомарная семантика batch, но обязателен
-  `planHash`; план с изменённым hash → `approval_mismatch`. 50 карточек =
-  до 100 команд (create + update), это верхняя граница одного plan.
-  `/plans` работает только с `commands`; lifecycle-операции
-  (`board.delete`, `member.*`, `share.*`, `attachment.delete`) идут через
-  `POST /approvals` + исходный REST-маршрут, а не через `/plans`. План
-  больше 100 команд — `409 limit_exceeded`; клиент делит работу на
-  несколько plan/run, атомарность между чанками не обещается.
-- **Import.** `POST /boards/import` — account-wide `admin`; `?dryRun=1`
-  валидирует файл и возвращает количество досок/карточек и конфликты без
-  записи. Импорт не является run. Лимит досок — `MAX_BOARDS_PER_USER`
-  (0 = без лимита); local mode — 10.
-- **Share.** Создание/изменение share — `admin` + approval, потому что это
-  публикация доски. `refresh` снимка не меняет доступ и approval не требует.
-  Revoke/permanent delete — destructive + approval.
-- **Undo/restore.** Browser undo не меняется: JWT роли ADMIN/MEMBER
-  отправляет inverse-команды (`RESTORE_*`) через `/commands`, как сегодня.
-  Агент не вызывает `RESTORE_*`; он делает компенсирующие неразрушающие
-  команды или просит человека откатить run. Любой PAT → `scope_denied`;
-  серверный run-revert выполняет inverse от имени человека-ADMIN.
-  `RESTORE_BOARD` — aggregate-level/local snapshot, `/commands` его не
-  принимает.
-- **Вложения.** Upload — `worker`, лимиты 20/25 MB не меняются. Delete:
-  свой upload — `worker` без approval; чужой — `admin` + approval.
-  «Свой» для PAT = совпадение `uploadedByTokenId`; для browser JWT = тот же
-  `userId`; legacy-строка с `NULL` падает обратно на `userId`. Presigned/
-  object storage не вводятся.
-- **Комментарии.** Create — `worker`; `kind` сохраняется. Delete — только
-  автор (существующее правило `comments.service`); «свой» для PAT =
-  совпадение `Comment.apiTokenId`, иначе `scope_denied`; для browser JWT =
-  тот же `userId`; legacy `NULL` — fallback на `userId`. Модерация чужих
-  комментариев — вне TASK-166.
-- **Идемпотентность.** `create_board`, `import_board`, `create_share`,
-  `upload_attachment` принимают `Idempotency-Key` (MCP — optional
-  `idempotencyKey`); `add_comment` принимает `commandId`;
-  `duplicate_card`/остальные команды — `commandId`.
-- **Токены/профиль/инвайты.** PAT не имеет доступа; только browser JWT.
-  Это относится и к `trustedCi`, и к legacy PAT.
-- **Board policy/pause.** Только browser JWT board ADMIN; агент не может
-  ослабить политику или снять паузу.
+- **Batch.** All commands on one board, all-or-nothing; limit
+  `min(100, policy.maxCommandsPerRun)`, card creation
+  `min(50, policy.maxCardsPerRun)`. If any action is destructive, approval
+  covers the whole batch; `approvalId` is passed in the `X-Approval-Id`
+  header. The response contains `runId` and results in command order.
+- **Plan/apply.** `POST /plans` is a dry-run: same validator, diff, warnings,
+  conflicts, `planHash`; it writes nothing and creates no `run`.
+  `POST /plans/apply` has the same atomic semantics as batch but requires
+  `planHash`; a changed hash → `approval_mismatch`. 50 cards = up to 100
+  commands (create + update), the upper bound for one plan. `/plans` works
+  with `commands` only; lifecycle operations (`board.delete`, `member.*`,
+  `share.*`, `attachment.delete`) go through `POST /approvals` + the original
+  REST route, not `/plans`. A plan over 100 commands → `409 limit_exceeded`;
+  the client splits work into several plans/runs, with no cross-chunk
+  atomicity.
+- **Import.** `POST /boards/import` is account-wide `admin`; `?dryRun=1`
+  validates the file and returns board/card counts and conflicts without
+  writing. Import is not a run. The board limit is `MAX_BOARDS_PER_USER`
+  (0 = no limit); local mode is 10.
+- **Share.** Creating/changing a share is `admin` + approval because it
+  publishes the board. Refreshing a snapshot does not change access and needs
+  no approval. Revoke/permanent delete is destructive + approval.
+- **Undo/restore.** Browser undo is unchanged: an ADMIN/MEMBER JWT sends
+  inverse commands (`RESTORE_*`) through `/commands`, as today. An agent does
+  not call `RESTORE_*`; it makes compensating non-destructive commands or asks
+  a human to revert the run. Any PAT → `scope_denied`; server-side run-revert
+  performs the inverse as a human ADMIN. `RESTORE_BOARD` is an
+  aggregate-level/local snapshot; `/commands` does not accept it.
+- **Attachments.** Upload is `worker`; limits of 20/25 MB are unchanged.
+  Delete: own upload is `worker` without approval; another user's is `admin` +
+  approval. "Own" for PAT = matching `uploadedByTokenId`; for browser JWT =
+  the same `userId`; a legacy row with `NULL` falls back to `userId`.
+  Presigned/object storage is not introduced.
+- **Comments.** Create is `worker`; `kind` is preserved. Delete is author-only
+  (existing `comments.service` rule); "own" for PAT = matching
+  `Comment.apiTokenId`, otherwise `scope_denied`; for browser JWT = the same
+  `userId`; legacy `NULL` falls back to `userId`. Moderation of other users'
+  comments is outside TASK-166.
+- **Idempotency.** `create_board`, `import_board`, `create_share`, and
+  `upload_attachment` accept `Idempotency-Key` (MCP: optional
+  `idempotencyKey`); `add_comment` accepts `commandId`;
+  `duplicate_card`/other commands use `commandId`.
+- **Tokens/profile/invitations.** PAT has no access; browser JWT only. This
+  applies to `trustedCi` and legacy PAT as well.
+- **Board policy/pause.** Browser JWT board ADMIN only; an agent cannot
+  weaken policy or clear pause.
 
 ---
 
-## 8. Таксономия ошибок
+## 8. Error taxonomy
 
 ### 8.1. Envelope
 
-Все ошибки API (новые и изменённые в 166.4) возвращают:
+Every API error (new and changed in 166.4) returns:
 
 ```json
 {
@@ -1255,94 +1260,95 @@ tools; до этого тест фиксирует список toolsets, а н�
 }
 ```
 
-- `code` — стабильный машинный идентификатор, snake_case.
-- `message` — английский fallback; UI/MCP локализуют по `code`.
-- `retryable` — присутствует всегда. `true` означает: тот же запрос можно
-  повторить без изменения после `Retry-After`/короткой паузы.
-- `requestId` — тот же id, что в `X-Request-Id`; уже существует в
+- `code` is a stable machine identifier in snake_case.
+- `message` is an English fallback; UI/MCP localize by `code`.
+- `retryable` is always present. `true` means the same request may be retried
+  without changes after `Retry-After`/a short pause.
+- `requestId` is the same id as `X-Request-Id`; it already exists in
   `request-context`.
-- `currentVersion` — текущая версия ресурса, который проверялся. Для
-  команд это `currentSeq(boardId) = max(Command.seq)` (0 без команд), **не**
-  `Board.version`; для policy CAS — `Board.agentPolicyVersion`; для
-  `run_conflict` — состояние run. `details.versionOf` называет ресурс; иначе
-  `null`. `Board.version` остаётся entity-версией для title/`ifMatchVersions`
-  и с `ifMatch`/seq не смешивается.
-- `details` — опциональный объект. Существующие top-level `field`,
-  `conflict`, `workflow`, `retryAfter` **сохраняются** для совместимости.
+- `currentVersion` is the current version of the checked resource. For
+  commands it is `currentSeq(boardId) = max(Command.seq)` (0 without
+  commands), **not** `Board.version`; for policy CAS it is
+  `Board.agentPolicyVersion`; for `run_conflict` it is the run state.
+  `details.versionOf` names the resource; otherwise `null`. `Board.version`
+  remains the entity version for title/`ifMatchVersions` and is not mixed with
+  `ifMatch`/seq.
+- `details` is an optional object. Existing top-level `field`, `conflict`,
+  `workflow`, and `retryAfter` are **preserved** for compatibility.
 
-### 8.2. Коды
+### 8.2. Codes
 
-| `code` | HTTP | `retryable` | Когда | Дополнительно |
+| `code` | HTTP | `retryable` | When | Extra |
 | --- | --- | --- | --- | --- |
-| `scope_denied` | 403 | false | preset/board-role не разрешает действие | `requiredScope`, `action` |
+| `scope_denied` | 403 | false | preset/board role does not allow the action | `requiredScope`, `action` |
 | `destructive_denied` | 403 | false | board policy `destructive: "deny"` | `reason: "board_policy"` |
 | `agent_paused` | 403 | false | session/token/board pause | `pauseScope`, `pausedAt` |
-| `agent_session_closed` | 403 | false | сессия завершена/отменена | `sessionId` |
-| `agent_session_invalid` | 403 | false | сессия не принадлежит токену/доске | `sessionId` |
-| `approval_required` | 409 | false | destructive без approval | `approvalId`, `planHash`, `expiresAt` |
-| `approval_expired` | 409 | false | approval истёк до decision/apply | `approvalId`, `expiresAt` |
-| `approval_mismatch` | 409 | false | planHash/plan не совпал | `approvalId`, expected/actual hash prefix |
-| `approval_owner_mismatch` | 403 | false | approval выдан другому `apiTokenId`/session | `approvalId`, `requestedByTokenId` |
-| `approval_not_pending` | 409 | false | decision по approved/rejected/cancelled/consumed | `approvalId`, `status` |
-| `approval_rejected` | 409 | false | approval отклонён | `approvalId`, `decidedAt` |
-| `approval_cancelled` | 409 | false | approval отменён | `approvalId` |
-| `approval_consumed` | 409 | false | approval уже применён (consume) | `approvalId`, `runId` |
+| `agent_session_closed` | 403 | false | session completed/cancelled | `sessionId` |
+| `agent_session_invalid` | 403 | false | session does not belong to the token/board | `sessionId` |
+| `approval_required` | 409 | false | destructive action without approval | `approvalId`, `planHash`, `expiresAt` |
+| `approval_expired` | 409 | false | approval expired before decision/apply | `approvalId`, `expiresAt` |
+| `approval_mismatch` | 409 | false | planHash/plan mismatch | `approvalId`, expected/actual hash prefix |
+| `approval_owner_mismatch` | 403 | false | approval belongs to another `apiTokenId`/session | `approvalId`, `requestedByTokenId` |
+| `approval_not_pending` | 409 | false | decision on approved/rejected/cancelled/consumed | `approvalId`, `status` |
+| `approval_rejected` | 409 | false | approval rejected | `approvalId`, `decidedAt` |
+| `approval_cancelled` | 409 | false | approval cancelled | `approvalId` |
+| `approval_consumed` | 409 | false | approval already applied (consumed) | `approvalId`, `runId` |
 | `version_conflict` | 409 | false | `ifMatch`/`ifMatchVersions`/policy CAS | `conflict: "version"`, `currentVersion`, `field` |
-| `id_conflict` | 409 | false | id принадлежит другой доске | `conflict: "id"`, `currentVersion` |
-| `workflow_conflict` | 409 | false | workflow запретил переход | `conflict: "workflow"`, `workflow` (текущий формат) |
-| `run_conflict` | 409 | false | `clientRunId`/run уже занят другим планом; run уже откачен; revert of revert | `runId`, `currentVersion` |
-| `run_expired` | 409 | false | pre-images/run удалены retention | `runId`, `retentionDays` |
-| `limit_exceeded` | 409 | false | WIP/collection/board/run limit | `conflict: "wip"` для WIP, `limit`, `current` |
-| `idempotency_conflict` | 409 | false | тот же ключ, другое тело | `key` |
-| `idempotency_in_progress` | 409 | true | первая запись ещё выполняется | `key`, `retryAfter` |
+| `id_conflict` | 409 | false | id belongs to another board | `conflict: "id"`, `currentVersion` |
+| `workflow_conflict` | 409 | false | workflow forbade the transition | `conflict: "workflow"`, `workflow` (current format) |
+| `run_conflict` | 409 | false | `clientRunId`/run already used by another plan; run already reverted; revert of revert | `runId`, `currentVersion` |
+| `run_expired` | 409 | false | pre-images/run removed by retention | `runId`, `retentionDays` |
+| `limit_exceeded` | 409 | false | WIP/collection/board/run limit | `conflict: "wip"` for WIP, `limit`, `current` |
+| `idempotency_conflict` | 409 | false | same key, different body | `key` |
+| `idempotency_in_progress` | 409 | true | first record is still running | `key`, `retryAfter` |
 | `payload_too_large` | 413 | false | command/import/attachment body | `limit` |
-| `rate_limited` | 429 | true | глобальный/per-token/per-agent лимит | `retryAfter`, `limit` |
-| `board_write_timeout` | 503 | true | lock/transaction timeout | текущий код сохраняется |
-| `not_found` | 404 | false | сущность/доска/approval/run не найдены | `resource` |
+| `rate_limited` | 429 | true | global/per-token/per-agent limit | `retryAfter`, `limit` |
+| `board_write_timeout` | 503 | true | lock/transaction timeout | current code is preserved |
+| `not_found` | 404 | false | entity/board/approval/run not found | `resource` |
 | `validation_failed` | 400 | false | class-validator/shape | `field`, `message` |
 
-`limit_exceeded` — семантический лимит (WIP, доски, run). Слишком длинный
-batch/DTO — `validation_failed` (400); слишком большое тело —
+`limit_exceeded` is a semantic limit (WIP, boards, run). An overlong
+batch/DTO is `validation_failed` (400); an oversized body is
 `payload_too_large` (413).
 
-### 8.3. Совместимость с текущим контрактом
+### 8.3. Compatibility with the current contract
 
-- Тело `409` с `conflict` ∈ `version`/`wip`/`id`/`workflow`,
-  `currentVersion` и опциональным `workflow` остаётся. Добавляется `code`:
+- The `409` body with `conflict` ∈ `version`/`wip`/`id`/`workflow`,
+  `currentVersion`, and optional `workflow` remains. Add `code`:
   `version_conflict` / `limit_exceeded` / `id_conflict` /
   `workflow_conflict`.
-- `403 { code: "pat_read_only" }` остаётся для `readOnly`; preset-denial —
-  `scope_denied`. `pat_forbidden` остаётся для account-маршрутов.
-- `503 { code: "board_write_timeout" }` остаётся.
-- `login_backoff` и `retryAfter` на auth-маршрутах не меняются.
+- `403 { code: "pat_read_only" }` remains for `readOnly`; preset denial is
+  `scope_denied`. `pat_forbidden` remains for account routes.
+- `503 { code: "board_write_timeout" }` remains.
+- `login_backoff` and `retryAfter` on auth routes are unchanged.
 - `workflow.code` (`transition_not_allowed`, `role_not_allowed`,
-  `condition_failed`) не переименовывается.
-- `field` в 400 остаётся.
-- `requestId` дублирует `X-Request-Id`; заголовок уже существует.
+  `condition_failed`) is not renamed.
+- `field` on 400 remains.
+- `requestId` duplicates `X-Request-Id`; the header already exists.
 
 ### 8.4. Rate-limit headers
 
-166.10 добавляет на все аутентифицированные ответы:
+166.10 adds these to all authenticated responses:
 
-- `X-RateLimit-Limit` — потолок текущего bucket;
-- `X-RateLimit-Remaining` — остаток;
-- `X-RateLimit-Reset` — Unix-время сброса (секунды);
-- `Retry-After` — секунды, обязателен на `429 rate_limited`.
+- `X-RateLimit-Limit` — current bucket ceiling;
+- `X-RateLimit-Remaining` — remaining budget;
+- `X-RateLimit-Reset` — reset time as Unix seconds;
+- `Retry-After` — seconds, required on `429 rate_limited`.
 
-Bucket определяется principal: user, token, IP для анонимных. Per-token
-лимит и глобальный лимит применяются оба.
+The bucket is keyed by principal: user, token, or IP for anonymous requests.
+Both the per-token limit and the global limit apply.
 
 ### 8.5. MCP
 
-`describeError` и tool results обязаны показывать:
+`describeError` and tool results must show:
 
 - `code`, `retryable`, `requestId`;
-- `approvalId`/`expiresAt` для `approval_required`;
-- `currentVersion` для `version_conflict`;
-- следующий шаг: «wait for human», «re-read board», «request approval»,
-  «stop — paused», «do not retry same destination».
+- `approvalId`/`expiresAt` for `approval_required`;
+- `currentVersion` for `version_conflict`;
+- the next step: "wait for human", "re-read board", "request approval",
+  "stop — paused", "do not retry same destination".
 
-MCP mutation results (166.4) возвращают `structuredContent`:
+MCP mutation results (166.4) return `structuredContent`:
 
 ```json
 {
@@ -1354,121 +1360,122 @@ MCP mutation results (166.4) возвращают `structuredContent`:
 }
 ```
 
-Текстовый `content` остаётся для человека, но агент не обязан его парсить.
-Ошибки MCP остаются `isError: true` с `structuredContent` и кодом.
+The text `content` remains for humans, but an agent does not have to parse
+it. MCP errors remain `isError: true` with `structuredContent` and a code.
 
 ---
 
 ## 9. Pause / kill
 
-### 9.1. Уровни
+### 9.1. Levels
 
-| Уровень | Поле | Кто ставит | Область | Восстановление |
+| Level | Field | Set by | Scope | Recovery |
 | --- | --- | --- | --- | --- |
-| Session | `AgentSession.pausedAt` | browser JWT board ADMIN | одна сессия | resume |
-| Token | `ApiToken.individualPausedAt` + `ApiToken.stopAllPausedAt` | browser JWT owner | все PAT-write + PAT-SSE; GET-чтение разрешено | resume |
-| Board | `Board.agentsPausedAt` | browser JWT board ADMIN | все PAT на доске | resume |
-| Kill | `ApiToken.revokedAt` | browser JWT owner | токен навсегда | новый токен |
+| Session | `AgentSession.pausedAt` | browser JWT board ADMIN | one session | resume |
+| Token | `ApiToken.individualPausedAt` + `ApiToken.stopAllPausedAt` | browser JWT owner | all PAT writes + PAT SSE; GET reads allowed | resume |
+| Board | `Board.agentsPausedAt` | browser JWT board ADMIN | all PATs on the board | resume |
+| Kill | `ApiToken.revokedAt` | browser JWT owner | token forever | new token |
 
-Два независимых источника token pause:
+Two independent token pause sources:
 
-- `individualPausedAt` — пауза конкретного токена через
-  `POST /users/me/tokens/:id/pause`; снимается только его `/resume`;
-- `stopAllPausedAt` — массовая пауза через `POST /agents/pause-all`;
-  `resume-all` снимает только stop-all и не трогает individual.
-  Токен остаётся на паузе, пока активен хотя бы один источник.
+- `individualPausedAt` is the pause of a specific token through
+  `POST /users/me/tokens/:id/pause`; only its `/resume` clears it;
+- `stopAllPausedAt` is the bulk pause through `POST /agents/pause-all`;
+  `resume-all` clears only stop-all and leaves individual pause untouched.
+  A token stays paused while at least one source is active.
 
-### 9.2. Что блокируется
+### 9.2. What is blocked
 
-- Любая запись контента, команда, batch/plan/apply, approval create,
-  attachment upload/delete, comment create/delete, claim.
-- Reads (GET) остаются разрешены. Открытие нового PAT-SSE запрещено при
-  token/board pause. Session pause закрывает записи с этой сессией и SSE,
-  если поток открыт с `?session=<sessionId>`; без session-параметра поток
-  считается token-level и session pause его не закрывает.
-- Исключения control-plane: `heartbeat`, `end_session`, `GET`-чтение
-  собственной сессии. Они позволяют агенту корректно завершиться.
-- `pause` не освобождает claim. `kill`/`end_session` освобождают claims,
-  принадлежащие этой сессии/токену.
+- Any content write, command, batch/plan/apply, approval create, attachment
+  upload/delete, comment create/delete, or claim.
+- GET reads remain allowed. Opening a new PAT-SSE is forbidden during
+  token/board pause. Session pause closes writes with that session and SSE if
+  the stream was opened with `?session=<sessionId>`; without the session
+  parameter the stream is token-level and session pause does not close it.
+- Control-plane exceptions: `heartbeat`, `end_session`, and `GET` reads of
+  the session itself. They let an agent finish cleanly.
+- `pause` does not release a claim. `kill`/`end_session` release claims owned
+  by that session/token.
 
-### 9.3. In-flight и SSE
+### 9.3. In-flight and SSE
 
-- Запрос, который уже прошёл проверку и держит board lock, **завершается**
-  и коммитится. Pause не делает rollback посередине.
-- Проверка pause выполняется дважды: в guard/начале запроса и внутри
-  board-write транзакции после advisory lock. Если pause закоммичен до
-  второго чтения — запись отменяется; если после — in-flight завершается.
-- SSE keep-alive 25 с. На следующем tick сервер отправляет (best effort)
-  `{ type: "agent", op: "paused", scope, at }` и закрывает поток при
-  token/board pause или при session pause, если поток открыт с
-  `?session=<sessionId>`. Без session-параметра session pause блокирует
-  только записи с этим `X-Agent-Session`. Человеческие SSE не закрываются.
-- Reconnect во время активной паузы → `403 agent_paused`; после resume —
-  обычный stream с `?since=`.
-- Отклонённые записи не ставятся в очередь и не повторяются сервером.
+- A request that has passed checks and holds the board lock **finishes** and
+  commits. Pause does not roll back in the middle.
+- Pause is checked twice: in the guard/request start and inside the
+  board-write transaction after the advisory lock. If pause committed before
+  the second read, the write is cancelled; if after, the in-flight request
+  finishes.
+- SSE keep-alive is 25 s. On the next tick the server sends (best effort)
+  `{ type: "agent", op: "paused", scope, at }` and closes the stream on
+  token/board pause, or on session pause when the stream was opened with
+  `?session=<sessionId>`. Without the session parameter, session pause blocks
+  only writes with that `X-Agent-Session`. Human SSE is not closed.
+- Reconnect during an active pause → `403 agent_paused`; after resume, a
+  normal stream with `?since=`.
+- Rejected writes are not queued and are not retried by the server.
 
 ### 9.4. API
 
 - `POST /boards/:id/agent-sessions` — start; body `{name?, clientName?, model?}`;
-  PAT; board-scoped; ответ `AgentSessionDto`.
+  PAT; board-scoped; response `AgentSessionDto`.
 - `POST /boards/:id/agent-sessions/:sessionId/heartbeat` — body
-  `{status?, currentCardId?, summary?}`; только тот же `apiTokenId`, что у
-  сессии; разрешён при pause.
+  `{status?, currentCardId?, summary?}`; only the same `apiTokenId` as the
+  session; allowed during pause.
 - `POST /boards/:id/agent-sessions/:sessionId/end` — body
-  `{status?:"completed"|"failed"|"cancelled", summary?}`; тот же
-  `apiTokenId` или board ADMIN-человек; освобождает claims сессии.
-- `GET /boards/:id/agent-sessions?active=1` — список; `stale` вычисляется.
+  `{status?:"completed"|"failed"|"cancelled", summary?}`; the same
+  `apiTokenId` or a board ADMIN human; releases the session's claims.
+- `GET /boards/:id/agent-sessions?active=1` — list; `stale` is computed.
 - `POST /boards/:id/agent-sessions/:sessionId/pause|resume` — session-only
-  board ADMIN; body `{reason?}`. Сокращение ROADMAP `/agents/:id/pause|resume`
-  означает именно `agent-sessions/:sessionId`; отдельного account-level
-  `/agents/:id` API нет.
+  board ADMIN; body `{reason?}`. The ROADMAP shorthand
+  `/agents/:id/pause|resume` means exactly `agent-sessions/:sessionId`; there
+  is no separate account-level `/agents/:id` API.
 - `POST /boards/:id/agents/pause|resume` — session-only board ADMIN;
-  body `{reason?}`; пишет `agentsPausedAt/By/Reason` и Activity.
-- `POST /users/me/tokens/:id/pause|resume` — session-only owner; ставит/
-  снимает `individualPausedAt`; `resume-all` его не трогает.
-- `POST /agents/pause-all|resume-all` — session-only owner; ставит/снимает
-  `stopAllPausedAt` у всех неотозванных токенов, не меняя
+  body `{reason?}`; writes `agentsPausedAt/By/Reason` and Activity.
+- `POST /users/me/tokens/:id/pause|resume` — session-only owner; sets/clears
+  `individualPausedAt`; `resume-all` does not touch it.
+- `POST /agents/pause-all|resume-all` — session-only owner; sets/clears
+  `stopAllPausedAt` on all non-revoked tokens without changing
   `individualPausedAt`.
-- `DELETE /users/me/tokens/:id` — kill/revoke; сессии `cancelled`,
-  claims с `claimedByTokenId` освобождаются, SSE закроется на следующем
-  tick. Legacy claims без token id ждут lease.
+- `DELETE /users/me/tokens/:id` — kill/revoke; sessions become `cancelled`,
+  claims with `claimedByTokenId` are released, and SSE closes on the next
+  tick. Legacy claims without a token id wait for lease expiry.
 
 ### 9.5. Kill vs end session
 
-- `end_session` — штатное завершение run-контекста; токен продолжает
-  работать, новая сессия может стартовать.
-- `revoke` — единственный настоящий kill: токен недействителен, все его
-  сессии отменены. Отдельный `POST /agents/:id/kill` не вводится, чтобы не
-  дублировать revoke с неясной семантикой.
+- `end_session` is a normal end of the run context; the token keeps working
+  and a new session may start.
+- `revoke` is the only real kill: the token is invalid and all its sessions
+  are cancelled. A separate `POST /agents/:id/kill` is not introduced because
+  it would duplicate revoke with unclear semantics.
 
 ---
 
 ## 10. Approval lifecycle
 
-### 10.1. Состояния
+### 10.1. States
 
 ```
 pending ──approve──> approved ──apply──> consumed
    │                    │
    ├──reject──> rejected│
    ├──cancel──> cancelled
-   └──expiresAt──> expired  (из pending или approved)
+   └──expiresAt──> expired  (from pending or approved)
 ```
 
-- `pending` — ждёт человека.
-- `approved` — разрешён точный план; ещё не применён.
-- `consumed` — план применён; `runId` заполнен.
-- `rejected`/`cancelled`/`expired` — применять нельзя.
-- Переходы атомарны через `updateMany where status=…`; повторный approve
-  уже approved идемпотентен; конфликтующий decision получает
-  `approval_not_pending`; `approval_consumed` — только после apply.
+- `pending` — waiting for a human.
+- `approved` — the exact plan is authorized; not applied yet.
+- `consumed` — the plan is applied; `runId` is filled.
+- `rejected`/`cancelled`/`expired` — cannot be applied.
+- Transitions are atomic through `updateMany where status=…`; a repeated
+  approve on an already approved request is idempotent; a conflicting
+  decision gets `approval_not_pending`; `approval_consumed` only after apply.
 
-### 10.2. Создание
+### 10.2. Creation
 
-`POST /boards/:id/approvals` — только PAT (агент создаёт запрос; browser
-JWT не создаёт approvals). Пресет должен позволять планируемое действие
-после approval: `worker` для destructive, `reviewer` для done, `admin` для
-member/share/board delete:
+`POST /boards/:id/approvals` is PAT-only (an agent creates the request;
+browser JWT does not create approvals). The preset must allow the planned
+action after approval: `worker` for destructive, `reviewer` for done, `admin`
+for member/share/board delete:
 
 ```json
 {
@@ -1485,42 +1492,42 @@ member/share/board delete:
 }
 ```
 
-Если destructive-команда/batch или operation приходит **без** approval и
-policy требует approval, сервер не применяет её, а создаёт
-`ApprovalRequest` для точного плана и возвращает
-`409 approval_required` с `approvalId`, `planHash`, `expiresAt`. Это тот же
-запрос, что и явный `POST /approvals`; частичного применения нет. Выбран
-`409`, а не `202`: запрос не принят в работу и не будет применён без
-человеческого решения.
+If a destructive command/batch or operation arrives **without** approval and
+policy requires approval, the server does not apply it; it creates an
+`ApprovalRequest` for the exact plan and returns `409 approval_required` with
+`approvalId`, `planHash`, and `expiresAt`. This is the same request as an
+explicit `POST /approvals`; there is no partial apply. `409` is chosen over
+`202`: the request is not accepted for work and will not be applied without a
+human decision.
 
-Сервер:
+Server:
 
-1. Валидирует план: для `commands` — тем же validator, что batch/plan
-   (≤`min(100, policy.maxCommandsPerRun)`, карточки ≤
-   `min(50, policy.maxCardsPerRun)`, одна доска, все id/предусловия); для
-   `operations` — ровно одна операция из whitelist, её target/body и
-   board-scope. Превышение — `409 limit_exceeded`.
-2. Считает `planHash` и `summary`/`risk`; `summary`/`risk`/`expiresAt`
-   не входят в hash.
-3. Проверяет, что preset в принципе мог бы выполнить действие после
-   approval (не пытается повысить scope).
-4. Если `destructive: "deny"` — `403 destructive_denied`, запрос не
-   создаётся.
-5. Если уже есть `pending`/`approved` запрос этого токена с тем же
-   `planHash` — вернуть его (идемпотентность), а не создавать второй.
-   `rejected`/`cancelled`/`expired` позволяют создать новый pending;
-   `consumed` при уже применённых командах — идемпотентный replay, иначе
+1. Validate the plan: for `commands`, use the same validator as
+   batch/plan (≤`min(100, policy.maxCommandsPerRun)`, cards ≤
+   `min(50, policy.maxCardsPerRun)`, one board, all ids/preconditions); for
+   `operations`, exactly one whitelisted operation, its target/body, and board
+   scope. Exceeding the limits → `409 limit_exceeded`.
+2. Compute `planHash` and `summary`/`risk`; `summary`/`risk`/`expiresAt` are
+   not part of the hash.
+3. Verify that the preset could perform the action after approval (it does
+   not try to raise scope).
+4. If `destructive: "deny"` → `403 destructive_denied`; no request is
+   created.
+5. If a `pending`/`approved` request from this token already exists with the
+   same `planHash`, return it (idempotency) instead of creating a second one.
+   `rejected`/`cancelled`/`expired` allow a new pending request; `consumed`
+   with already applied commands is an idempotent replay, otherwise
    `approval_consumed`.
-6. Создаёт `ApprovalRequest` с `expiresAt = now + effectiveTtlMinutes`;
+6. Create `ApprovalRequest` with `expiresAt = now + effectiveTtlMinutes`;
    effective TTL = `min(request.ttlMinutes ?? policy, policy.approvalTtlMinutes)`,
-   floor 5 минут. Пишет Activity `approval_requested`, уведомляет board
+   floor 5 minutes. Write Activity `approval_requested` and notify board
    ADMIN.
 
 `kind`:
 
 - `destructive` — delete/bulk archive/member/share/board delete;
-- `done` — переход в done-колонку при `move_to_done` policy;
-- `custom` — прочие планы, требующие человеческого решения.
+- `done` — transition to a done column when `move_to_done` policy applies;
+- `custom` — other plans that need a human decision.
 
 `summary`/`risk`:
 
@@ -1530,151 +1537,157 @@ policy требует approval, сервер не применяет её, а с
 
 ### 10.3. Decision
 
-`POST /boards/:id/approvals/:approvalId/decision` — **session-only** board
+`POST /boards/:id/approvals/:approvalId/decision` is **session-only** board
 ADMIN:
 
 ```json
 { "decision": "approve", "planHash": "…", "comment": "ok" }
 ```
 
-- `planHash` обязателен и должен совпасть; иначе `approval_mismatch`.
-- Для `pending` требуется `expiresAt > now`; истёкший — `approval_expired`.
-  Для `rejected`/`cancelled`/`consumed` — `approval_not_pending`.
-- Повторный `approve` уже `approved` с тем же `planHash` — идемпотентный
-  `200` с текущим состоянием, не ошибка и не второй approval. Иной
-  `decision` для `approved` — `approval_not_pending`.
-- `approval_consumed` возвращается только после успешного apply (consume),
-  не на decision.
-- `approve` → `approved`; `reject` → `rejected`. Apply не выполняется.
-- `decidedBy` — user id; `decisionComment`.
-- Activity `approval_approved`/`approval_rejected`; уведомление requester.
-- Самоодобрение: PAT не может вызывать decision. Владелец токена-человек
-  **может** утвердить запрос своего агента — это и есть human control
-  boundary; «нельзя approving own request» относится к агенту, а не к
-  человеку-владельцу. Browser не создаёт approvals, поэтому отдельного
-  сценария «человек утверждает свой browser-created запрос» нет.
+- `planHash` is required and must match; otherwise `approval_mismatch`.
+- For `pending`, `expiresAt > now` is required; expired → `approval_expired`.
+  For `rejected`/`cancelled`/`consumed` → `approval_not_pending`.
+- A repeated `approve` on an already `approved` request with the same
+  `planHash` is an idempotent `200` with the current state, not an error and
+  not a second approval. A different `decision` on `approved` →
+  `approval_not_pending`.
+- `approval_consumed` is returned only after a successful apply (consume),
+  not on decision.
+- `approve` → `approved`; `reject` → `rejected`. Apply is not performed.
+- `decidedBy` is the user id; `decisionComment`.
+- Activity `approval_approved`/`approval_rejected`; notify requester.
+- Self-approval: PAT cannot call decision. The human token owner **may**
+  approve their agent's request — this is the human control boundary; "cannot
+  approve own request" applies to the agent, not the human owner. Browser does
+  not create approvals, so there is no separate "human approves own
+  browser-created request" scenario.
 
-`POST /boards/:id/approvals/:id/cancel` — requester `apiTokenId` или
-session-only board ADMIN; только `pending`; Activity `approval_cancelled`.
-Попытка применить отменённый approval — `approval_cancelled`.
+`POST /boards/:id/approvals/:id/cancel` — requester `apiTokenId` or
+session-only board ADMIN; `pending` only; Activity `approval_cancelled`.
+Applying a cancelled approval → `approval_cancelled`.
 
-### 10.4. Apply и одноразовость
+### 10.4. Apply and one-time use
 
-- Агент повторяет **тот же** план (тот же `commands`/`operations`, те же
-  `commandId`) с заголовком `X-Approval-Id: <approvalId>`.
-- Владелец approval: `requestedByTokenId` должен совпасть с текущим
-  `apiTokenId`; если `agentSessionId` задан — текущая `X-Agent-Session`
-  должна совпасть. Иначе `403 approval_owner_mismatch` (нельзя потребить
-  чужой approval даже токеном того же пользователя). Browser JWT approval
-  не потребляет; для человека approval не нужен. То же для
-  lifecycle-операций.
-- Для `commands` — `POST /commands/batch` или `POST /plans/apply`.
-- Для `operations` — исходный REST-маршрут (`POST/DELETE ...`) с
-  `X-Approval-Id`; сервер сверяет операцию, target и body с планом.
-- Для `commands` сервер в одной транзакции:
-  1. загружает approval `FOR UPDATE`;
-  2. проверяет `status = approved`, `expiresAt > now`, `planHash`;
-  3. проверяет, что plan совпадает побайтово по канонической форме;
-  4. проверяет, что approval не `consumed`;
-  5. применяет план как batch под board lock;
-  6. создаёт `AgentRun` с `approvalId`, ставит `status = consumed`,
+- The agent repeats **the same** plan (same `commands`/`operations`, same
+  `commandId`) with the `X-Approval-Id: <approvalId>` header.
+- Approval ownership: `requestedByTokenId` must match the current `apiTokenId`;
+  if `agentSessionId` is set, the current `X-Agent-Session` must match.
+  Otherwise `403 approval_owner_mismatch` (another token, even from the same
+  user, cannot consume it). Browser JWT does not consume an approval; a human
+  does not need one. The same applies to lifecycle operations.
+- For `commands`: `POST /commands/batch` or `POST /plans/apply`.
+- For `operations`: the original REST route (`POST/DELETE ...`) with
+  `X-Approval-Id`; the server compares the operation, target, and body with
+  the plan.
+- For `commands`, the server in one transaction:
+  1. loads the approval `FOR UPDATE`;
+  2. checks `status = approved`, `expiresAt > now`, `planHash`;
+  3. checks that the plan matches byte-for-byte in canonical form;
+  4. checks that the approval is not `consumed`;
+  5. applies the plan as a batch under the board lock;
+  6. creates `AgentRun` with `approvalId`, sets `status = consumed`,
      `runId`, `consumedAt`;
-  7. пишет Activity `approval_consumed` и `runId`.
-- Для `operations` сервер в транзакции endpoint'а проверяет approval так же,
-  выполняет ровно одну операцию, ставит `status = consumed`, `consumedAt`,
-  пишет Activity/SecurityAuditLog; `AgentRun` не создаётся, `runId`
-  остаётся `null`.
-- Retry операции идёт с тем же `Idempotency-Key`; `IdempotencyRecord`
-  возвращает сохранённый ответ даже после `consumed`. Без ключа повтор
-  после успеха получает `approval_consumed`.
-- Если plan не совпал — `approval_mismatch`; approval остаётся `approved`
-  до TTL, но применить другой план нельзя.
-- Если approval истёк между approve и apply — `approval_expired`, нужен
-  новый запрос.
-- При apply сервер сам ставит `action.at` (с обычным skew-clamp) для каждой
-  команды; hash от этого не меняется, потому что `at` в план/hash не входит.
-- Идемпотентный retry: если все `commandId` уже применены этим run,
-  вернуть сохранённый результат даже после `consumed`; новых записей нет.
-- Approval нельзя использовать для плана, который не требует approval по
-  policy, или для другого board/plan. `kind` должен соответствовать плану
-  (`destructive`/`done`/`custom`); несовпадение — `approval_mismatch`.
+  7. writes Activity `approval_consumed` and `runId`.
+- For `operations`, the server in the endpoint transaction checks approval the
+  same way, performs exactly one operation, sets `status = consumed`,
+  `consumedAt`, and writes Activity/SecurityAuditLog; no `AgentRun` is
+  created, and `runId` stays `null`.
+- Operation retry uses the same `Idempotency-Key`; `IdempotencyRecord` returns
+  the stored response even after `consumed`. Without a key, a repeat after
+  success gets `approval_consumed`.
+- If the plan does not match — `approval_mismatch`; the approval stays
+  `approved` until TTL, but a different plan cannot be applied.
+- If approval expired between approve and apply — `approval_expired`; create
+  a new request.
+- On apply the server sets `action.at` itself (with normal skew clamp) for
+  each command; the hash does not change because `at` is not part of the
+  plan/hash.
+- Idempotent retry: if all `commandId`s are already applied by this run,
+  return the stored result even after `consumed`; no new records.
+- An approval cannot be used for a plan that does not require approval by
+  policy, or for another board/plan. `kind` must match the plan
+  (`destructive`/`done`/`custom`); a mismatch is `approval_mismatch`.
 
-### 10.5. Уведомления и аудит
+### 10.5. Notifications and audit
 
-- `approval_requested` → in-app bell + email всем board ADMIN (включая
-  владельца токена), localized by `User.locale`.
-- `approval_approved`/`rejected`/`cancelled`/`expired`/`consumed` →
-  requester token owner + decision actor.
-- Дедупликация: один event на `(approvalId, recipientId, type)`.
-- Activity хранит `approvalId`, `planHash` (полный), `risk`, `decision`.
-- Expiry проверяется лениво на read/decision/apply и sweep'ом maintenance;
-  `pending`/`approved` с `expiresAt <= now` → `expired`, уведомление.
-- Email/in-app delivery — 166.9; approval API не ждёт SMTP.
-  Attention-события 166.9: `approval.requested`, `approval.decided`,
+- `approval_requested` → in-app bell + email to all board ADMINs (including
+  the token owner), localized by `User.locale`.
+- `approval_approved`/`rejected`/`cancelled`/`expired`/`consumed` → requester
+  token owner + decision actor.
+- Deduplication: one event per `(approvalId, recipientId, type)`.
+- Activity stores `approvalId`, `planHash` (full), `risk`, and `decision`.
+- Expiry is checked lazily on read/decision/apply and by the maintenance
+  sweep; `pending`/`approved` with `expiresAt <= now` → `expired` plus a
+  notification.
+- Email/in-app delivery is 166.9; the approval API does not wait for SMTP.
+  Attention events for 166.9: `approval.requested`, `approval.decided`,
   `agent.blocked`, `agent.needs_human`, `claim.expired`, `quota.exceeded`,
   `token.revoked`.
 
 ---
 
-## 11. Run и rollback
+## 11. Run and rollback
 
-### 11.1. Границы
+### 11.1. Boundaries
 
-- Run создаётся сервером при:
-  - `POST /boards/:id/commands/batch` от PAT;
-  - `POST /boards/:id/plans/apply` от PAT;
-  - одиночной destructive-команде PAT из `BoardAction` (например,
+- The server creates a run for:
+  - `POST /boards/:id/commands/batch` from a PAT;
+  - `POST /boards/:id/plans/apply` from a PAT;
+  - a single destructive PAT command from `BoardAction` (for example,
     `DELETE_CARD`, `DELETE_COLUMN`, `ARCHIVE_COLUMN_CARDS`).
-- Обычная одиночная неразрушающая команда PAT не создаёт run.
-- Non-command REST-действия (`DELETE /boards/:id`, member/share/
-  attachment/comment delete) **не** создают `AgentRun`: у них своя
-  audit/restore-семантика (§11.3).
-- Человеческие batch/plan/undo **не** создают `AgentRun`; их история —
-  существующий UI undo. Исключение — session-only run-revert, который
-  создаёт `kind: "revert"` run для аудита.
-- Run строго одной доски: endpoint board-scoped; `AgentRun.boardId` один;
-  plan/batch не может содержать команду другой доски.
-- Один run = один `agentSessionId` (может быть `NULL` для legacy) + один
-  `apiTokenId` (может быть `NULL` только у системного run-revert человека).
-- Несколько run у одной сессии разрешены; `AgentSession.currentRunId` —
-  последний.
+- An ordinary single non-destructive PAT command does not create a run.
+- Non-command REST actions (`DELETE /boards/:id`, member/share/
+  attachment/comment delete) do **not** create `AgentRun`: they have their own
+  audit/restore semantics (§11.3).
+- Human batch/plan/undo does **not** create `AgentRun`; its history is the
+  existing UI undo. The exception is session-only run-revert, which creates a
+  `kind: "revert"` run for audit.
+- A run belongs to exactly one board: the endpoint is board-scoped;
+  `AgentRun.boardId` is one value; a plan/batch cannot contain a command for
+  another board.
+- One run = one `agentSessionId` (may be `NULL` for legacy) + one
+  `apiTokenId` (may be `NULL` only for a human system run-revert).
+- Multiple runs per session are allowed; `AgentSession.currentRunId` is the
+  latest.
 
-### 11.2. Идентификаторы и идемпотентность
+### 11.2. Identifiers and idempotency
 
-- `runId` — серверный `AgentRun.id` (`cuid`), возвращается в ответе.
-- Клиент может прислать `clientRunId` (8–64 `[A-Za-z0-9_-]`); сервер
-  использует его только для идемпотентности в пределах доски.
-- Повтор с тем же `clientRunId` и тем же набором `commandId` возвращает
-  существующий run. Тот же `clientRunId` с другим планом/сессией —
+- `runId` is the server `AgentRun.id` (`cuid`) and is returned in the
+  response.
+- A client may send `clientRunId` (8–64 `[A-Za-z0-9_-]`); the server uses it
+  only for idempotency within the board.
+- A repeat with the same `clientRunId` and the same `commandId` set returns
+  the existing run. The same `clientRunId` with another plan/session gets
   `409 run_conflict`.
-- Если `clientRunId` не передан, но все `commandId` уже существуют с тем
-  же payload, сервер возвращает их сохранённые результаты и `runId`
-  исходного run; новый run не создаётся. Смесь существующих и новых
-  команд с другим run — `409 run_conflict`.
-- Response batch/plan: `{ runId, results: CommandResponse[] }`.
-- `Command.runId` заполняется для всех команд run; `AgentRun.firstSeq`/
-  `lastSeq` — диапазон.
+- If `clientRunId` is not sent but all `commandId`s already exist with the
+  same payload, the server returns their stored results and the original
+  run's `runId`; it does not create a new run. A mix of existing commands and
+  new commands on another run gets `409 run_conflict`.
+- Batch/plan response: `{ runId, results: CommandResponse[] }`.
+- `Command.runId` is filled for every command in the run;
+  `AgentRun.firstSeq`/`lastSeq` are the range.
 
 ### 11.3. Pre-image
 
-- Для **каждой** команды в run пишется `CommandPreimage`:
+- A `CommandPreimage` is written for **every** command in a run:
   - creates (`ADD_*`, `DUPLICATE_*`) — `exists: false`;
-  - updates/moves/sets — полный before-snapshot затронутых сущностей;
-  - deletes/bulk archive — полный snapshot с вложенными сущностями.
-- Preimage также хранит `version` до и `postVersion`/`postDeletedAt`
-  после, чтобы rollback мог проверить, не изменил ли кто-то сущность после
-  run.
-- Preimage не отдаётся в обычном activity feed. `GET /runs` для observer —
-  только summary/attribution; `GET /runs/:runId` с pre-image и полным
-  diff — только board ADMIN (browser JWT). `dryRun` для observer возвращает
-  conflict summary без snapshot'ов; полный diff — только ADMIN.
-- Для non-command destructive REST-действий preimage-таблицы нет:
+  - updates/moves/sets — full before-snapshot of the affected entities;
+  - deletes/bulk archive — full snapshot with nested entities.
+- The preimage also stores the `version` before and `postVersion`/
+  `postDeletedAt` after, so rollback can check whether someone changed the
+  entity after the run.
+- The preimage is not exposed in the ordinary activity feed. `GET /runs` for
+  an observer is summary/attribution only; `GET /runs/:runId` with pre-image
+  and full diff is board ADMIN (browser JWT) only. `dryRun` for an observer
+  returns conflict summary without snapshots; full diff is ADMIN only.
+- Non-command destructive REST actions have no preimage table:
   - `DELETE /boards/:id` — soft-delete + admin restore + `SecurityAuditLog`;
-  - share revoke — `BoardShareAuditLog`; повторное создание даёт новый токен;
-  - member remove — Activity details + повторный invite;
+  - share revoke — `BoardShareAuditLog`; recreating the share issues a new
+    token;
+  - member remove — Activity details + a new invite;
   - comment/attachment delete — soft-delete + Activity details + admin
-    restore (attachment blob сохраняется до purge).
-  Эти действия не входят в run rollback; это осознанная граница MVP.
+    restore (the attachment blob is kept until purge).
+  These actions are outside run rollback; this is a deliberate MVP boundary.
 
 ### 11.4. Revert
 
@@ -1684,104 +1697,104 @@ session-only board ADMIN; только `pending`; Activity `approval_cancelled`.
 { "dryRun": true }
 ```
 
-- `dryRun: true` — board member (observer) получает `RevertPreviewDto`:
-  `{ dryRun, run: RunSummaryDto, conflicts, canRevert }` без
-  commands/pre-image/snapshot. Board ADMIN получает тот же `RevertPreviewDto`
-  с `diff`; полный `RunDetailDto` (commands + preimages) — только ADMIN.
-  Ничего не пишет.
-- `dryRun: false` — session-only board ADMIN; body дополнительно требует
-  `commandId` (идемпотентность). PAT → `403 pat_forbidden`.
-- Алгоритм:
-  1. загрузить run и команды в обратном порядке;
-  2. для каждого `touch` взять **последнее** состояние в run (последняя
-     команда, писавшая сущность) и сравнить текущее состояние с её
-     `postVersion`/`postDeletedAt`; промежуточные версии того же run
-     конфликтом не считаются и разворачиваются в обратном порядке;
-  3. если сущность изменена/восстановлена/пересоздана — conflict
+- `dryRun: true` — a board member (observer) receives `RevertPreviewDto`:
+  `{ dryRun, run: RunSummaryDto, conflicts, canRevert }` without
+  commands/pre-image/snapshot. Board ADMIN receives the same
+  `RevertPreviewDto` with `diff`; the full `RunDetailDto` (commands +
+  preimages) is ADMIN only. It writes nothing.
+- `dryRun: false` — session-only board ADMIN; the body additionally requires
+  `commandId` (idempotency). PAT → `403 pat_forbidden`.
+- Algorithm:
+  1. load the run and commands in reverse order;
+  2. for each `touch`, take the **last** state in the run (the last command
+     that wrote the entity) and compare the current state with its
+     `postVersion`/`postDeletedAt`; intermediate versions of the same run are
+     not conflicts and are unwound in reverse order;
+  3. if the entity was changed/restored/recreated — conflict
      `{ touch, expectedVersion, currentVersion, reason }`;
-  4. построить inverse из preimage (restore/update/delete);
-  5. применить все inverse в одной транзакции под board lock;
-  6. создать новый `AgentRun` (`kind: "revert"`, `revertsRunId = runId`,
-     actor — человек), записать команды/preimages;
-  7. исходный run → `status: "reverted"`, `revertedAt`;
+  4. build the inverse from the preimage (restore/update/delete);
+  5. apply all inverses in one transaction under the board lock;
+  6. create a new `AgentRun` (`kind: "revert"`, `revertsRunId = runId`,
+     actor is human), record commands/preimages;
+  7. original run → `status: "reverted"`, `revertedAt`;
   8. Activity `run_reverted`.
-- Любой конфликт → весь revert отменяется, `409 run_conflict` (или
-  `version_conflict`, если причина в версии) с `details.conflicts`;
-  partial revert запрещён.
-- Revert of revert в MVP запрещён (`409 run_conflict`); повторный revert
-  уже откаченного run — `409 run_conflict`.
-- Если preimage/run удалены retention — `409 run_expired`.
-- Revert не ломает обычный UI undo: созданные им команды приходят по SSE
-  как обычные foreign-команды; стек человека обрабатывает их по текущим
-  правилам.
+- Any conflict cancels the whole revert, `409 run_conflict` (or
+  `version_conflict` when the cause is a version) with `details.conflicts`;
+  partial revert is forbidden.
+- Revert of revert is forbidden in the MVP (`409 run_conflict`); a second
+  revert of an already reverted run gets `409 run_conflict`.
+- If preimage/run were removed by retention — `409 run_expired`.
+- Revert does not break ordinary UI undo: the commands it creates arrive via
+  SSE as ordinary foreign commands; the human stack processes them by the
+  current rules.
 
-### 11.5. Retention и dry-run
+### 11.5. Retention and dry-run
 
-- Run/preimage живут столько же, сколько `Command` (retention).
-- Dry-run доступен, пока живы команды/preimages; после — `run_expired`.
-- Dry-run не создаёт `IdempotencyRecord` и не пишет команды;
-  `lastUsedAt` обновляется обычной аутентификацией (не чаще раза в 60 с).
-- Revert-run хранится как обычный run; его можно посмотреть в аудите, но
-  не откатить (см. выше).
+- Run/preimage live as long as `Command` (retention).
+- Dry-run is available while commands/preimages exist; after that —
+  `run_expired`.
+- Dry-run does not create an `IdempotencyRecord` and does not write commands;
+  `lastUsedAt` is updated by normal authentication (at most once every 60 s).
+- A revert-run is stored as an ordinary run; it can be inspected in audit but
+  not reverted (see above).
 
 ---
 
-## 12. Лимиты и data safety
+## 12. Limits and data safety
 
-### 12.1. «10 досок»
+### 12.1. "10 boards"
 
-- `LIMITS.boardsCount = 10` остаётся только для local/offline mode как
-  защита localStorage.
-- Server mode: `MAX_BOARDS_PER_USER` (env, default `0` = без лимита).
-  Положительное значение — операторский safety cap, не тариф.
-- `GET /auth/config` расширяется полем
-  `limits: { boards: number | null, importBytes }`; UI показывает лимит
-  только если он задан. Отдельный `GET /limits` не вводится.
-- `POST /boards` и `POST /boards/import` проверяют cap атомарно; превышение
-  → `409 limit_exceeded` (импорт не создаёт ни одной доски).
-- Убирается рассинхронизация empty-state/switcher/reducer: сервер — источник
-  истины, reducer в server mode не режет по 10.
+- `LIMITS.boardsCount = 10` remains only for local/offline mode as a
+  localStorage guard.
+- Server mode: `MAX_BOARDS_PER_USER` (env, default `0` = no limit). A
+  positive value is an operator safety cap, not a pricing tier.
+- `GET /auth/config` is extended with
+  `limits: { boards: number | null, importBytes }`; the UI shows the limit
+  only when one is set. A separate `GET /limits` is not introduced.
+- `POST /boards` and `POST /boards/import` check the cap atomically; exceeding
+  it → `409 limit_exceeded` (import creates no boards).
+- The empty-state/switcher/reducer mismatch is removed: the server is the
+  source of truth, and the reducer in server mode does not cut at 10.
 
 ### 12.2. Retention
 
-- Default 30 дней; пресеты 30/90/365; custom 1–3650.
-- Один `retentionDays` для Command, CommandPreimage, Activity, AgentRun,
-  AgentSession, terminal ApprovalRequest и soft-deleted rows.
-- `pending`/`approved` approvals не удаляются по возрасту; только по
-  `expiresAt` (и затем sweep).
-- `AdminAuditLog` — существующие 365 дней, не меняется.
-- Run revert после retention невозможен; это честно документируется.
+- Default 30 days; presets 30/90/365; custom 1–3650.
+- One `retentionDays` for Command, CommandPreimage, Activity, AgentRun,
+  AgentSession, terminal ApprovalRequest, and soft-deleted rows.
+- `pending`/`approved` approvals are not deleted by age, only by `expiresAt`
+  (then swept).
+- `AdminAuditLog` keeps its existing 365 days and is unchanged.
+- Run revert after retention is impossible; this is documented honestly.
 
-### 12.3. Import/export и лимиты тела
+### 12.3. Import/export and body limits
 
-- `EXPORT_SCHEMA_VERSION = 3`: добавлено optional `Board.agentPolicy`.
-  `agentsPausedAt/By/Reason`, `agentPolicyVersion`, сессии, approvals и runs
-  **не** экспортируются. v3 — осознанный client compatibility break: старые
-  клиенты отвергают файл, а не теряют policy молча; release notes 166.6 и
-  166.16 обязаны это повторить.
-- `parseExport` принимает v1/v2/v3; v1/v2 → `agentPolicy = null`.
-- `validateImportedBoards` принимает `maxBoards`:
+- `EXPORT_SCHEMA_VERSION = 3`: adds optional `Board.agentPolicy`.
+  `agentsPausedAt/By/Reason`, `agentPolicyVersion`, sessions, approvals, and
+  runs are **not** exported. v3 is a deliberate client compatibility break:
+  old clients reject the file instead of silently losing policy; release notes
+  166.6 and 166.16 must repeat this.
+- `parseExport` accepts v1/v2/v3; v1/v2 → `agentPolicy = null`.
+- `validateImportedBoards` accepts `maxBoards`:
   - local/offline — 10;
-  - server — `MAX_BOARDS_PER_USER` (0 = без ограничения).
-- `MAX_IMPORT_BYTES = MAX_BOARD_EXPORT_BYTES = 25 MB` — только
-  import/export envelope. Это **не** лимит команд.
-- `MAX_COMMAND_BODY_BYTES = 10 MB` — тело одного `/commands`,
-  `/commands/batch`, `/plans` или `/plans/apply` запроса; per-action
-  `MAX_COMMAND_BYTES = 2 MB` сохраняется. Body parser настраивается
-  route-specific: import — 25 MB, command/plan — 10 MB, остальное —
-  обычный JSON-лимит. Превышение — `413 payload_too_large`; экспорт больше
-  25 MB — тот же код с советом использовать `pg_dump`, без молчаливой
-  обрезки.
-- `POST /boards/import?dryRun=1` — preview: доски/карточки/конфликты,
-  ничего не пишет. Импорт не является run.
-- Импорт применяет policy из v3 после валидации; paused-состояние не
-  переносится.
-- Вложения в export не входят (как сейчас); это документируется.
+  - server — `MAX_BOARDS_PER_USER` (0 = no limit).
+- `MAX_IMPORT_BYTES = MAX_BOARD_EXPORT_BYTES = 25 MB` — import/export
+  envelope only. This is **not** the command limit.
+- `MAX_COMMAND_BODY_BYTES = 10 MB` — the body of one `/commands`,
+  `/commands/batch`, `/plans`, or `/plans/apply` request; per-action
+  `MAX_COMMAND_BYTES = 2 MB` remains. The body parser is route-specific:
+  import — 25 MB, command/plan — 10 MB, everything else — the normal JSON
+  limit. Exceeding it → `413 payload_too_large`; an export over 25 MB gets
+  the same code with advice to use `pg_dump`, with no silent truncation.
+- `POST /boards/import?dryRun=1` — preview: boards/cards/conflicts, writes
+  nothing. Import is not a run.
+- Import applies policy from v3 after validation; paused state is not
+  transferred.
+- Attachments are not part of export (as today); this is documented.
 
 ### 12.4. Backup
 
-- Janosik **не** создаёт и не проверяет backup.
-- `GET /admin/retention` (и UI) отдаёт:
+- Janosik **does not** create or verify backups.
+- `GET /admin/retention` (and the UI) returns:
 
 ```json
 {
@@ -1797,224 +1810,227 @@ session-only board ADMIN; только `pending`; Activity `approval_cancelled`.
 }
 ```
 
-- `mode: "unconfigured"`, если `BACKUP_DIR` не задан; `location: null`.
-- UI server mode не показывает «Automatic backups»/«Save a copy now»;
-  local mode backup остаётся локальным.
-- Runbook 166.16: `pg_dump` + uploads volume + restore drill; статус
-  «external» не означает «healthy».
+- `mode: "unconfigured"` when `BACKUP_DIR` is not set; `location: null`.
+- UI server mode does not show "Automatic backups"/"Save a copy now"; local
+  mode backup remains local.
+- Runbook 166.16: `pg_dump` + uploads volume + restore drill; "external" does
+  not mean "healthy".
 
 ### 12.5. Self-service export/delete
 
-- `POST /users/me/export` — session-only, ставит `DataExport` job; ответ
-  `202 {id, status}`. `GET /users/me/export/:id` — статус;
-  `GET /users/me/export/:id/download` — TTL-ссылка (7 дней).
-- Bundle: профиль, token metadata (без hash/plaintext), memberships,
-  authored comments/activity/commands, attachments metadata и board
-  envelopes досок, доступных пользователю. Blob-файлы не встраиваются;
-  они доступны по существующим attachment routes.
-- `POST /users/me/delete/request-code` — session-only, только для OAuth-only
-  аккаунта (`passwordHash = null`): body `{oauthProof}`; отправляет
-  6-значный `emailCode` на email аккаунта, TTL 10 минут, одноразовый.
-- `oauthProof` — access token, выданный OAuth-логином
-  (`/auth/oauth/:provider/callback`) не более 10 минут назад. Сервер
-  проверяет подпись, `sub`, `iat` и claim `authMethod: "oauth"`; обычный
-  JWT-пароль-логин и PAT его не заменяют.
-- `DELETE /users/me` — session-only; body
-  `{password?, oauthProof?, emailCode?, confirmEmail}`. Для аккаунта с
-  `passwordHash != null` обязателен текущий пароль. Для OAuth-only
-  (`passwordHash = null`) нужны `oauthProof` и `emailCode` из
-  `POST /users/me/delete/request-code`; пароль не требуется.
-  Немедленно disable + revoke tokens + cancel sessions, затем hard delete
-  через 7 дней (maintenance), повторяя семантику admin delete. Hard delete
-  дополнительно удаляет `AgentSession`, `ApprovalRequest` пользователя как
-  requester и его `IdempotencyRecord`; `SecurityAuditLog` сохраняет opaque
-  id без email. Ответ `{status: "scheduled", deleteAfter}`.
+- `POST /users/me/export` is session-only and queues a `DataExport` job;
+  response `202 {id, status}`. `GET /users/me/export/:id` gives status;
+  `GET /users/me/export/:id/download` gives a TTL link (7 days).
+- Bundle: profile, token metadata (without hash/plaintext), memberships,
+  authored comments/activity/commands, attachment metadata, and board
+  envelopes for boards the user can access. Blob files are not embedded; they
+  are available through the existing attachment routes.
+- `POST /users/me/delete/request-code` is session-only and applies only to an
+  OAuth-only account (`passwordHash = null`): body `{oauthProof}`; it sends a
+  6-digit `emailCode` to the account email, TTL 10 minutes, one-time.
+- `oauthProof` is an access token issued by OAuth login
+  (`/auth/oauth/:provider/callback`) no more than 10 minutes ago. The server
+  checks the signature, `sub`, `iat`, and the `authMethod: "oauth"` claim; a
+  normal password JWT and a PAT do not replace it.
+- `DELETE /users/me` is session-only; body
+  `{password?, oauthProof?, emailCode?, confirmEmail}`. For an account with
+  `passwordHash != null`, the current password is required. For OAuth-only
+  (`passwordHash = null`), `oauthProof` and `emailCode` from
+  `POST /users/me/delete/request-code` are required; no password is needed.
+  Immediately disable + revoke tokens + cancel sessions, then hard delete
+  after 7 days (maintenance), repeating admin delete semantics. Hard delete
+  additionally removes `AgentSession`, the user's `ApprovalRequest` as
+  requester, and their `IdempotencyRecord`; `SecurityAuditLog` keeps opaque
+  ids without email. Response `{status: "scheduled", deleteAfter}`.
 - `SecurityAuditLog`: `account.exported`, `account.delete_scheduled`,
   `account.deleted`; board delete — `board.deleted`.
 
-### 12.6. Вложения и лимиты
+### 12.6. Attachments and limits
 
-- 20 вложений на карточку, 25 MB на файл, MIME allowlist — без изменений.
-- Object storage/presigned URL — phase 2, не TASK-166.
-- Per-board storage quota и token count cap — вне TASK-166 (не блокируют
-  agent control); отмечаются как future work в 166.16.
+- 20 attachments per card, 25 MB per file, MIME allowlist — unchanged.
+- Object storage/presigned URL — phase 2, not TASK-166.
+- Per-board storage quota and token count cap are outside TASK-166 (they do
+  not block agent control); they are recorded as future work in 166.16.
 
 ---
 
-## 13. Совместимость
+## 13. Compatibility
 
-### 13.1. Старые PAT
+### 13.1. Old PATs
 
-- Миграция: `scopePreset = "admin"`, `trustedCi = true` для
-  `readOnly = false`; `readOnly = true` сохраняет флаг и эффективно
+- Migration: `scopePreset = "admin"`, `trustedCi = true` when
+  `readOnly = false`; `readOnly = true` keeps the flag and effectively means
   Observer.
-- Старый PAT сохраняет board-поведение: destructive без approval,
-  member/share/board admin, batch, export/import (если account-wide).
-- `trustedCi` не отменяет:
+- An old PAT keeps board behavior: destructive without approval,
+  member/share/board admin, batch, export/import (when account-wide).
+- `trustedCi` does not override:
   - `Board.agentPolicy.destructive = "deny"`;
   - board/token pause;
-  - account-маршруты (profile/tokens/invitations) — теперь `pat_forbidden`;
-  - scope по boardId (board-scoped токен по-прежнему не видит чужие доски).
-- Legacy read-only PAT: любые write → `pat_read_only`, как раньше.
-- Legacy PAT без сессии: `agentSessionId = NULL`, `apiTokenId` пишется;
-  run создаётся для batch/destructive.
+  - account routes (profile/tokens/invitations) — now `pat_forbidden`;
+  - boardId scope (a board-scoped token still cannot see other boards).
+- Legacy read-only PAT: any write → `pat_read_only`, as before.
+- Legacy PAT without a session: `agentSessionId = NULL`, `apiTokenId` is
+  written; a run is created for batch/destructive.
 
-### 13.2. Старые доски и экспорты
+### 13.2. Old boards and exports
 
-- `Board.agentPolicy = NULL` → defaults; старые доски не меняют поведение.
-- `agentsPausedAt = NULL`; старые доски не на паузе.
-- `EXPORT_SCHEMA_VERSION = 3`; v1/v2 импортируются, policy = null.
-- `Board` aggregate получает optional `agentPolicy`; старые клиенты его
-  игнорируют.
-- Новые поля `Card`/`Command`/`Activity` nullable; старые строки читаются.
-- `Board.version` не меняется; `agentPolicyVersion` отдельный.
+- `Board.agentPolicy = NULL` → defaults; old boards do not change behavior.
+- `agentsPausedAt = NULL`; old boards are not paused.
+- `EXPORT_SCHEMA_VERSION = 3`; v1/v2 are imported, policy = null.
+- The `Board` aggregate gains optional `agentPolicy`; old clients ignore it.
+- New `Card`/`Command`/`Activity` fields are nullable; old rows are readable.
+- `Board.version` is unchanged; `agentPolicyVersion` is separate.
 
-### 13.3. Старые клиенты и MCP
+### 13.3. Old clients and MCP
 
-- Старый MCP без sessions продолжает работать с legacy PAT.
-- Новый MCP с новым токеном `worker` получает `approval_required` на
-  destructive (или `scope_denied` на admin-only member/share/board delete);
-  это ожидаемое поведение, а не поломка.
+- An old MCP without sessions keeps working with a legacy PAT.
+- A new MCP with a new `worker` token gets `approval_required` for destructive
+  actions (or `scope_denied` for admin-only member/share/board delete); this
+  is expected behavior, not a breakage.
 - `janosik_update_profile`, `janosik_list_invitations`,
-  `janosik_accept_invitation`, `janosik_decline_invitation` удалены:
-  account **writes и чувствительные account reads** недоступны PAT
+  `janosik_accept_invitation`, `janosik_decline_invitation` are removed:
+  account **writes and sensitive account reads** are unavailable to PAT
   (`GET /users/me/tokens`, `GET /invitations`, export status/download).
-  `janosik_whoami` и чтение identity/avatar (`GET /auth/me`,
-  `GET /users/:userId/avatar`) остаются. README/skill/docs обновляются в
-  166.11 и 166.16.
+  `janosik_whoami` and identity/avatar reads (`GET /auth/me`,
+  `GET /users/:userId/avatar`) remain. README/skill/docs are updated in
+  166.11 and 166.16.
 - `create_share`, `invite_member`, `update_member`, `remove_member`,
-  `delete_board` и удаление чужого вложения требуют `admin` + approval;
-  удаление контента — `worker` + approval. Legacy PAT обходит approval.
-- Tool count и `mcp/README` обновляются в 166.11; до этого не фиксируем
-  число в этом документе.
+  `delete_board`, and deleting another user's attachment require `admin` +
+  approval; content deletion requires `worker` + approval. Legacy PAT bypasses
+  approval.
+- Tool count and `mcp/README` are updated in 166.11; until then this document
+  does not pin the number.
 
-### 13.4. Осознанные breaking changes
+### 13.4. Deliberate breaking changes
 
-1. PAT больше не может менять профиль/аватар, управлять токенами,
-   принимать/отклонять приглашения.
-2. Новый токен по умолчанию `worker`, а не «всё, что может MEMBER».
-3. Новый admin-токен не получает destructive без approval/`trustedCi`.
-4. Board policy/pause/approval decision/run revert недоступны PAT.
-5. `RESTORE_*`-команды недоступны любому PAT; browser undo для
-   ADMIN/MEMBER сохранён, восстановление агентом — через компенсацию или
+1. PAT can no longer change profile/avatar, manage tokens, or accept/decline
+   invitations.
+2. A new token defaults to `worker`, not "everything a MEMBER can do".
+3. A new admin token does not get destructive actions without
+   approval/`trustedCi`.
+4. Board policy/pause/approval decision/run revert are unavailable to PAT.
+5. `RESTORE_*` commands are unavailable to any PAT; browser undo for
+   ADMIN/MEMBER is preserved, and agent recovery goes through compensation or
    human run-revert.
-6. `janosik_remove_card_link` больше не считается destructive; annotation
-   меняется на WRITE.
-7. `EXPORT_SCHEMA_VERSION = 3`: старые клиенты не импортируют новый файл;
-   v1/v2 продолжают импортироваться новым сервером.
+6. `janosik_remove_card_link` is no longer considered destructive; its
+   annotation changes to WRITE.
+7. `EXPORT_SCHEMA_VERSION = 3`: old clients cannot import the new file; v1/v2
+   continue to import on the new server.
 
-Все они фиксируются в CHANGELOG и release notes 166.6/166.16; для export v3
-release note обязателен отдельно.
+All of them are recorded in CHANGELOG and release notes 166.6/166.16; export
+v3 needs a separate release note.
 
 ---
 
-## 14. Карта потоков и волн
+## 14. Stream and wave map
 
-### 14.1. Волны и зависимости
+### 14.1. Waves and dependencies
 
-Детальные зоны файлов и DoD каждого потока — в `ROADMAP.md` §7.23.3; ADR
-не дублирует 16 строк. Здесь фиксируются только волны и зависимости:
+Detailed file zones and DoD for every stream are in `ROADMAP.md` §7.23.3;
+the ADR does not duplicate the 16 rows. Only waves and dependencies are
+recorded here:
 
-| Волна | Потоки | Зависимость / условие |
+| Wave | Streams | Dependency / condition |
 | --- | --- | --- |
-| W0 | 166.0 | —; выполнена, W1 разблокирована |
-| W1 | 166.1–166.6 | после 166.0; 166.1 владеет schema+migration; 166.3/166.5 зависят от 166.1; остальные стартуют параллельно |
-| W2 | 166.7–166.12 | после W1; 166.7 — после 166.1+166.4; 166.8 — после 166.4+166.5; 166.9 — после 166.5 |
-| W3 | 166.13–166.15 | после `feat/admin-redesign` и соответствующих backend-потоков |
-| W4 | 166.16 | после W1–W3 |
+| W0 | 166.0 | —; completed, W1 unblocked |
+| W1 | 166.1–166.6 | after 166.0; 166.1 owns schema+migration; 166.3/166.5 depend on 166.1; the rest start in parallel |
+| W2 | 166.7–166.12 | after W1; 166.7 — after 166.1+166.4; 166.8 — after 166.4+166.5; 166.9 — after 166.5 |
+| W3 | 166.13–166.15 | after `feat/admin-redesign` and the corresponding backend streams |
+| W4 | 166.16 | after W1–W3 |
 
-Точные ID, названия, file zones и DoD:
-[`ROADMAP.md` §7.23.3](../ROADMAP.md) (локальный путь `ROADMAP.md`); при
-расхождении приоритет у ROADMAP по составу потоков и у этого ADR по
-контрактам/схеме/матрице.
+Exact IDs, names, file zones, and DoD:
+[`ROADMAP.md` §7.23.3](../ROADMAP.md) (local path `ROADMAP.md`); if there is a
+conflict, ROADMAP wins for stream composition and this ADR wins for
+contracts/schema/matrix.
 
-### 14.2. Владение файлами и порядок мержа
+### 14.2. File ownership and merge order
 
-- **Prisma schema/migrations** — единственный owner 166.1: он добавляет
-  **все** таблицы/поля TASK-166 одной миграцией (включая `ApprovalRequest`,
-  `AgentRun`, `CommandPreimage`, `SecurityAuditLog`, `IdempotencyRecord`).
-  166.3/166.5/166.7 **не редактируют** `schema.prisma` и не создают свои
-  миграции. Если нужна правка — follow-up от 166.1.
-- **`shared/src/api.ts`**: 166.4 — owner error envelope/write contract;
-  166.1 добавляет attribution, 166.2 — token DTO, 166.5 — approval DTO,
-  166.7 — run DTO. Правило: append-only секции, без переформатирования
-  файла; конфликт решает 166.4.
-- **`backend/src/commands/*`**: 166.1 (attribution), 166.4 (errors),
-  166.7 (run/preimage) — 166.7 мержится после 166.1+166.4.
+- **Prisma schema/migrations** — sole owner 166.1: it adds **all** TASK-166
+  tables/fields in one migration (including `ApprovalRequest`, `AgentRun`,
+  `CommandPreimage`, `SecurityAuditLog`, `IdempotencyRecord`). 166.3/166.5/
+  166.7 do **not** edit `schema.prisma` and do not create their own
+  migrations. If a change is needed, it is a follow-up from 166.1.
+- **`shared/src/api.ts`**: 166.4 owns the error envelope/write contract;
+  166.1 adds attribution, 166.2 token DTOs, 166.5 approval DTOs, 166.7 run
+  DTOs. Rule: append-only sections, no file reformatting; 166.4 resolves
+  conflicts.
+- **`backend/src/commands/*`**: 166.1 (attribution), 166.4 (errors), 166.7
+  (run/preimage) — 166.7 merges after 166.1+166.4.
 - **Guards**: 166.2 — scopes; 166.3 — pause hook; 166.1 — session header.
-  166.3 добавляет проверку после 166.2; 166.2 не реализует pause.
-- **MCP `mcp/src/tools/*`**: каждый поток добавляет свой файл/секцию;
-  166.4 меняет `format/errors`; 166.11 обновляет README/OpenAPI/счётчик.
-- **UI-потоки 166.13–15** не начинаются до мержа `feat/admin-redesign`;
-  backend-потоки от него не зависят.
-- Если два потока всё же трогают один файл, действует правило ROADMAP:
-  развести по времени или один worktree с явным owner.
+  166.3 adds the check after 166.2; 166.2 does not implement pause.
+- **MCP `mcp/src/tools/*`**: each stream adds its own file/section; 166.4
+  changes `format/errors`; 166.11 updates README/OpenAPI/count.
+- **UI streams 166.13–15** do not start before `feat/admin-redesign` merges;
+  backend streams do not depend on it.
+- If two streams still touch one file, the ROADMAP rule applies: separate
+  them in time or use one worktree with an explicit owner.
 
-### 14.3. Порядок разблокировки W1
+### 14.3. W1 unblock order
 
-1. 166.0 (этот документ) мержится.
-2. 166.1 первым lands schema+migration; 166.2/166.3/166.5 могут начинать
-   реализацию параллельно на своих ветках, но rebase-ят schema-часть после
-   166.1. Это единственная зависимость, которую 166.0 не может убрать без
-   изменения продуктового кода.
-3. 166.4 стартует сразу (error contract не зависит от schema).
-4. 166.6 стартует сразу; использует `SecurityAuditLog` из 166.1.
-5. W2 стартует после соответствующих W1 DoD; 166.7 — после 166.1+166.4,
-   166.8 — после 166.4+166.5, 166.9 — после 166.5.
-
----
-
-## 15. Общий Definition of Done
-
-- **Безопасность:** ни один агентский путь (REST, MCP, batch, plan, import,
-  share, комментарии, вложения, undo/restore) не обходит scopes,
-  destructive gate, WIP, workflow, pause и approval. Destructive по
-  умолчанию закрыт для новых токенов.
-- **Наблюдаемость:** по любому run видно `apiTokenId`, `agentSessionId`,
-  `runId`, актора-человека, команды, ошибки, approval и решение.
-- **Откат:** run можно посмотреть и откатить с dry-run/conflict-check;
-  обычный человеческий undo не ломается.
-- **Опыт:** EN/RU docs, понятные `403/409` с машинным кодом и человеческим
-  текстом, никаких тихих no-op; mutation возвращает structuredContent.
-- **Совместимость:** старые PAT/доски/экспорты работают по §13; новые поля
-  nullable; self-host не требует облачных сервисов.
-- **Гейты:** shared/ui/backend/mcp typecheck и unit; backend E2E; полный
-  admin browser E2E; новые contract/E2E; lint/format; prettier для docs.
-- **Обязательные регрессии:** MEMBER delete → browser undo (`RESTORE_*`) →
-  200, тот же `RESTORE_*` с PAT → 403; individual pause → pause-all →
-  resume-all → токен остаётся на паузе; approval другого `apiTokenId` → 403
-  `approval_owner_mismatch`; повторный approve approved идемпотентен;
-  observer run preview не содержит pre-image; policy TTL/limits ниже
-  глобальных; два PAT одного владельца не удаляют комментарий/вложение друг
-  друга; OAuth-only `DELETE /users/me` без пароля с `oauthProof` +
-  `emailCode`; export v3 отвергается старым клиентом, v1/v2 импортируются
-  новым; command body 10 MB не путается с import 25 MB.
-- **166.0 DoD:** документ смержен, ROADMAP/CHANGELOG обновлены, W1
-  разблокирована; продуктовый код не изменён.
+1. 166.0 (this document) merges.
+2. 166.1 lands schema+migration first; 166.2/166.3/166.5 may start
+   implementation in parallel on their branches but rebase the schema part
+   after 166.1. This is the only dependency 166.0 cannot remove without
+   changing product code.
+3. 166.4 starts immediately (the error contract does not depend on schema).
+4. 166.6 starts immediately; it uses `SecurityAuditLog` from 166.1.
+5. W2 starts after the corresponding W1 DoD; 166.7 after 166.1+166.4,
+   166.8 after 166.4+166.5, 166.9 after 166.5.
 
 ---
 
-## 16. Осознанно вне TASK-166
+## 15. General Definition of Done
+
+- **Security:** no agent path (REST, MCP, batch, plan, import, share,
+  comments, attachments, undo/restore) bypasses scopes, destructive gate,
+  WIP, workflow, pause, or approval. Destructive actions are closed by default
+  for new tokens.
+- **Observability:** every run shows `apiTokenId`, `agentSessionId`, `runId`,
+  the human actor, commands, errors, approval, and decision.
+- **Rollback:** a run can be inspected and reverted with dry-run/conflict
+  check; ordinary human undo is not broken.
+- **Experience:** EN/RU docs, clear `403/409` with a machine code and human
+  text, no silent no-ops; mutations return structuredContent.
+- **Compatibility:** old PATs/boards/exports work per §13; new fields are
+  nullable; self-host requires no cloud services.
+- **Gates:** shared/ui/backend/mcp typecheck and unit; backend E2E; full admin
+  browser E2E; new contract/E2E; lint/format; prettier for docs.
+- **Required regressions:** MEMBER delete → browser undo (`RESTORE_*`) → 200;
+  the same `RESTORE_*` with a PAT → 403; individual pause → pause-all →
+  resume-all leaves the token paused; another `apiTokenId`'s approval → 403
+  `approval_owner_mismatch`; repeated approve on an approved request is
+  idempotent; observer run preview contains no pre-image; policy TTL/limits
+  below global values; two PATs of one owner cannot delete each other's
+  comment/attachment; OAuth-only `DELETE /users/me` without a password uses
+  `oauthProof` + `emailCode`; export v3 is rejected by an old client while
+  v1/v2 import on the new server; command body 10 MB is distinct from import
+  25 MB.
+- **166.0 DoD:** the document is merged, ROADMAP/CHANGELOG are updated, W1 is
+  unblocked, and product code is unchanged.
+
+---
+
+## 16. Deliberately outside TASK-166
 
 - Managed cloud, billing, DPA, status page, multi-tenant org/workspace.
-- Отдельная сущность `Agent`/service account с собственным email и логином.
-- Remote MCP/OAuth как обязательный канал; webhooks; публичный event API.
-- Object storage/S3/presigned URL; base64/URL upload для удалённых агентов.
-- Автоматический backup, restore UI, storage quota, SIEM/NDJSON export.
-- User 2FA, список сессий пользователя, security-уведомления о входе.
-- Полный Jira-граф workflow, post-functions, шаблоны workflow, bulk force
-  move; это §7.22 phase 2.
-- Маркетинговый редизайн TASK-167 и его claims matrix.
-- Мобильный header/390 px, Sentry/pino, axe, TASK-168-хвосты.
+- A separate `Agent`/service account entity with its own email and login.
+- Remote MCP/OAuth as a required channel; webhooks; public event API.
+- Object storage/S3/presigned URL; base64/URL upload for remote agents.
+- Automatic backup, restore UI, storage quota, SIEM/NDJSON export.
+- User 2FA, a user session list, security sign-in notifications.
+- Full Jira-style workflow graph, post-functions, workflow templates, bulk
+  force move; that is §7.22 phase 2.
+- TASK-167 marketing redesign and its claims matrix.
+- Mobile header/390 px, Sentry/pino, axe, TASK-168 tails.
 - Machine translation, in-app support/status/changelog.
-- Delegated human reviewer beyond board ADMIN: `approverRoles` в MVP —
-  только `["ADMIN"]`; назначение конкретных reviewer-людей — future work.
+- Delegated human reviewer beyond board ADMIN: `approverRoles` in the MVP is
+  `["ADMIN"]` only; assigning specific reviewer humans is future work.
 
 ---
 
-## 17. Открытые вопросы
+## 17. Open questions
 
-**Нет.** Все вопросы, блокирующие W1, закрыты в §4–§13. Если поток
-обнаружит противоречие, он не открывает вопрос заново, а присылает
-изменение в этот документ через owner 166.0; до мержа действует текущая
-редакция.
+**None.** All questions that block W1 are closed in §4–§13. If a stream finds
+a contradiction, it does not reopen the question; it sends a change to this
+document through the 166.0 owner, and the current revision applies until that
+change merges.
