@@ -307,6 +307,7 @@ aggregate-level actions are listed at the end and are rejected.
 | `SORT_COLUMN`           | `columnId`, `sortBy` `"createdAt" \| "dueDate" \| "title"`                | Sorts the column's cards by the criterion. Dragging restores manual order.                                                                    |
 | `SET_COLUMN_CARD_ORDER` | `columnId`, `cardIds` string[]                                            | Sets the column's card order outright. `cardIds` must be a permutation of the current ids, or the command is ignored.                         |
 | `SET_COLUMN_WIP_LIMIT`  | `columnId`, `wipLimit` number optional                                    | Sets the column WIP limit; omitted or `undefined` removes it.                                                                                 |
+| `SET_COLUMN_ACCENT`     | `columnId`, `accent` `{ type: "color" \| "gradient", value }` optional    | Sets the column accent from the card-cover palette; omitted removes it. Unknown values are rejected.                                         |
 | `ARCHIVE_COLUMN_CARDS`  | `columnId`                                                                | Archives every card of the column in one step.                                                                                                |
 
 ### Cards
@@ -377,6 +378,7 @@ and the inverse-only timestamp overrides.
 | Action            | Fields          | Meaning                                                                                          |
 | ----------------- | --------------- | ------------------------------------------------------------------------------------------------ |
 | `RENAME_BOARD`    | `title`         | Renames the board. Title clamped to `LIMITS.boardTitle` (100). Allowed for `ADMIN` and `MEMBER`. |
+| `SET_BOARD_COLUMN_STYLE` | `columnStyle` `"rail" \| "left" \| "wash" \| "title" \| "glow" \| "glass" \| "band" \| "dot" \| "signature"` optional | Sets the board-wide column accent shape; omitted restores `signature`. |
 | `ARCHIVE_BOARD`   | `boardId`, `at` | Archives the board. `ADMIN` only; a non-`ADMIN` answers `403`.                                   |
 | `UNARCHIVE_BOARD` | `boardId`, `at` | Brings an archived board back. `ADMIN` only; a non-`ADMIN` answers `403`.                        |
 

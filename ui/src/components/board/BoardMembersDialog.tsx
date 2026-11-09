@@ -164,7 +164,12 @@ function RolePicker({
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-44 p-1">
+      <PopoverContent
+        align="end"
+        className="w-44 p-1"
+        // Escape closes this picker only, not the member dialog around it.
+        onEscapeKeyDown={(event) => event.stopPropagation()}
+      >
         <div role="radiogroup" aria-label={label}>
           {ROLES.map((role) => (
             <button
@@ -240,7 +245,12 @@ function ExpiryPicker({
               )}`}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="relative w-auto p-3">
+      <PopoverContent
+        align="end"
+        className="relative w-auto p-3"
+        // Escape closes the calendar only, not the member dialog around it.
+        onEscapeKeyDown={(event) => event.stopPropagation()}
+      >
         {/* Draft state lives here: Radix unmounts the content on close, so
             every open mounts a clean calendar (AGENT.md). */}
         <ExpiryCalendarBody value={value} onChange={onChange} />
@@ -347,7 +357,16 @@ export function BoardMembersDialog() {
       </Tooltip>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-xl">
+        <DialogContent
+          className="w-[calc(100vw-1.5rem)] sm:max-w-xl"
+          onEscapeKeyDown={(event) => {
+            // A nested calendar must consume the first Escape: close only the
+            // picker, keep the member dialog open for the next action.
+            if (document.querySelector('[data-testid="expiry-calendar"]')) {
+              event.preventDefault();
+            }
+          }}
+        >
           <BoardMembersPanel boardId={board.id} canManage={canManage} />
         </DialogContent>
       </Dialog>

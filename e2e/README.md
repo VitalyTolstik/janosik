@@ -77,6 +77,12 @@ matching request, so each spec asserts `aria-busy`/testids without slowing the
 rest of the run. `tests/app/navigation/skeleton.spec.ts` also checks that
 `prefers-reduced-motion: reduce` disables the shimmer.
 
+`tests/app/columns/style.spec.ts` covers column accents: per-column colors and
+gradients, all nine board-wide shapes, reload persistence, undo/redo, the
+palette reset and duplication. `tests/app/collaboration/realtime/accent.spec.ts`
+proves a second Chrome context sees the color and shape live, and
+`tests/app/data/` round-trips both through export/import.
+
 `tests/app/filters/` covers the board filter toolbar: title, description, label
 and checklist search; the due, created, label, priority, assignee and link
 facets; removable chips for every facet (including priority, assignee and

@@ -27,6 +27,11 @@ test("a demoted member's board becomes read-only live", async ({
 }) => {
   const todo = await board.column("Todo");
   await board.card(todo, "Visible card");
+  await board.command({
+    type: "SET_COLUMN_ACCENT",
+    columnId: todo,
+    accent: { type: "color", value: "brand" },
+  });
   await partner.invite("MEMBER");
   await partner.accept();
   await board.open(page);
@@ -47,6 +52,17 @@ test("a demoted member's board becomes read-only live", async ({
   await expect(
     partnerBrowser.page.getByRole("button", { name: "Column options" }),
   ).toHaveCount(0);
+  // The accent is decoration and stays visible; its editor and the
+  // board-wide shape control disappear for a VIEWER.
+  await expect(
+    partnerBrowser.page.getByTestId("column-style-trigger"),
+  ).toHaveCount(0);
+  await expect(
+    partnerBrowser.page.getByTestId("column-style-menu"),
+  ).toHaveCount(0);
+  await expect(
+    partnerBrowser.page.locator('section[data-column-accent="brand"]'),
+  ).toBeVisible();
 
   await openCard(partnerBrowser.page, "Visible card");
   const title = cardDialog(partnerBrowser.page).getByRole("textbox", {

@@ -94,7 +94,7 @@ truncated into JSON that does not parse.
 
 **Columns** — `janosik_create_column`, `janosik_rename_column`,
 `janosik_move_column`, `janosik_duplicate_column`, `janosik_sort_column`,
-`janosik_set_column_wip_limit`, `janosik_clear_column`,
+`janosik_set_column_wip_limit`, `janosik_set_column_accent`, `janosik_clear_column`,
 `janosik_delete_column`
 
 **Cards** — `janosik_create_card`, `janosik_get_card`, `janosik_update_card`,

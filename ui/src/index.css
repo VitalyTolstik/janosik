@@ -1252,3 +1252,165 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Column accent styles (TASK-164) — the 9 shapes from the sandbox design.
+ * The color is per-column (`--column-accent-paint` / `--column-accent-solid`),
+ * the shape is board-wide (`janosik-column-accent-<style>`). Rules stay off
+ * `border-color` so the drag-over/focus border keeps its own semantics.
+ * ------------------------------------------------------------------------ */
+.janosik-column-accent {
+  position: relative;
+  transition:
+    background-color var(--janosik-duration-fast) var(--janosik-ease-out),
+    box-shadow var(--janosik-duration-fast) var(--janosik-ease-out);
+}
+.janosik-column-accent::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  background: var(--column-accent-paint, var(--border));
+}
+.janosik-column-accent-rail::before,
+.janosik-column-accent-glass::before,
+.janosik-column-accent-signature::before {
+  inset: 1px 1px auto;
+  height: 3px;
+  border-radius: 12px 12px 0 0;
+}
+.janosik-column-accent-signature::before {
+  height: 2px;
+}
+.janosik-column-accent-left::before {
+  inset: 1px auto 1px 1px;
+  width: 4px;
+  border-radius: 12px 0 0 12px;
+}
+.janosik-column-accent-dotmark {
+  display: none;
+  background: var(--column-accent-paint, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--card) 70%, transparent);
+}
+.janosik-column-accent-dot .janosik-column-accent-dotmark,
+.janosik-column-accent-signature .janosik-column-accent-dotmark {
+  display: inline-block;
+}
+
+/* Wash: header 14%, body gradient — transparent stops keep the glass and the
+   board background visible underneath. */
+.janosik-column-accent-wash {
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--column-accent-solid) 11%, transparent),
+    color-mix(in oklab, var(--column-accent-solid) 4%, transparent) 48%,
+    transparent
+  );
+}
+.janosik-column-accent-wash .janosik-column-accent-head {
+  background: color-mix(in oklab, var(--column-accent-solid) 14%, transparent);
+}
+.janosik-column-accent-wash .janosik-column-accent-head,
+.janosik-column-accent-glass .janosik-column-accent-head,
+.janosik-column-accent-signature .janosik-column-accent-head {
+  border-radius: 12px 12px 0 0;
+}
+
+/* Title: accent text plus a short underline; light theme mixes toward the
+   foreground so yellow/orange/teal keep their contrast. */
+.janosik-column-accent-title .janosik-column-accent-heading {
+  color: var(--column-accent-solid);
+}
+.light .janosik-column-accent-title .janosik-column-accent-heading {
+  color: color-mix(in oklab, var(--column-accent-solid) 62%, var(--foreground));
+}
+.janosik-column-accent-title .janosik-column-accent-heading::after {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 2px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: var(--column-accent-paint);
+}
+
+/* Glow: inset border ring + soft shadow. No border-color override: drag-over
+   and keyboard focus stay visible. */
+.janosik-column-accent-glow {
+  box-shadow:
+    inset 0 0 0 1px
+      color-mix(in oklab, var(--column-accent-solid) 45%, transparent),
+    0 0 0 1px color-mix(in oklab, var(--column-accent-solid) 18%, transparent),
+    0 18px 44px color-mix(in oklab, var(--column-accent-solid) 16%, transparent);
+}
+.light .janosik-column-accent-glow {
+  box-shadow:
+    inset 0 0 0 1px
+      color-mix(in oklab, var(--column-accent-solid) 34%, transparent),
+    0 0 0 1px color-mix(in oklab, var(--column-accent-solid) 12%, transparent),
+    0 10px 26px color-mix(in oklab, var(--column-accent-solid) 10%, transparent);
+}
+
+/* Glass: a slightly denser translucent surface + header tint + inset ring. */
+.janosik-column-accent-glass .janosik-column-accent-head {
+  background: color-mix(in oklab, var(--column-accent-solid) 7%, transparent);
+}
+.janosik-column-accent-glass {
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklab, var(--column-accent-solid) 26%, transparent);
+}
+
+/* Band: header painted with the accent, a dark scrim keeps the white text
+   readable on every palette color and gradient. */
+.janosik-column-accent-band .janosik-column-accent-head {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px 12px 0 0;
+  background: var(--column-accent-paint);
+}
+.janosik-column-accent-band .janosik-column-accent-head::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(0 0 0 / 0.34), rgb(0 0 0 / 0.16));
+  pointer-events: none;
+}
+.janosik-column-accent-band .janosik-column-accent-head > * {
+  position: relative;
+  z-index: 1;
+}
+.janosik-column-accent-band .janosik-column-accent-heading {
+  color: #fff;
+}
+.janosik-column-accent-band [data-testid="column-wip"],
+.janosik-column-accent-band .janosik-column-accent-count {
+  background: rgb(0 0 0 / 0.28);
+  color: #fff;
+}
+.janosik-column-accent-band [data-testid="column-wip"][class*="bg-warning"] {
+  background: rgb(0 0 0 / 0.42);
+  color: #ffd9a3;
+}
+.janosik-column-accent-band [data-testid="column-wip"][class*="bg-danger"] {
+  background: rgb(0 0 0 / 0.46);
+  color: #ffb4b4;
+}
+.janosik-column-accent-band .janosik-column-accent-head button,
+.janosik-column-accent-band .janosik-column-accent-grip {
+  color: rgb(255 255 255 / 0.82);
+}
+.janosik-column-accent-band .janosik-column-accent-head button:hover {
+  background: rgb(255 255 255 / 0.15);
+  color: #fff;
+}
+
+/* Signature: rail 2px + dot + a 6% header tint. */
+.janosik-column-accent-signature .janosik-column-accent-head {
+  background: color-mix(in oklab, var(--column-accent-solid) 6%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .janosik-column-accent {
+    transition: none;
+  }
+}

@@ -17,10 +17,17 @@ import type {
   CardCover,
   CardLink,
   Checklist,
+  CoverColor,
+  CoverGradient,
   LabelColor,
   UserAvatarColor,
 } from "@janosik/shared";
-import { isCardLinkType } from "@janosik/shared";
+import {
+  COVER_COLORS,
+  COVER_GRADIENTS,
+  isCardLinkType,
+  isColumnAccentStyle,
+} from "@janosik/shared";
 
 /** A card row with the relations the aggregate needs (labels + checklists). */
 export type CardWithRelations = Prisma.CardGetPayload<{
@@ -143,12 +150,14 @@ export function toBoardAggregate(
             card.deletedAt === null,
         )
         .map((card) => card.id);
+      const accent = columnAccent(column);
       return {
         id: column.id,
         title: column.title,
         cardIds,
         // Keep the "omit when unset" invariant of the UI model.
         ...(column.wipLimit !== null ? { wipLimit: column.wipLimit } : {}),
+        ...(accent ? { accent } : {}),
         createdAt: column.createdAt.getTime(),
       };
     }),
@@ -160,8 +169,32 @@ export function toBoardAggregate(
     })),
     createdAt: board.createdAt.getTime(),
     updatedAt: board.updatedAt.getTime(),
+    // Null in the DB = the default `signature` shape; omit it so an old
+    // board's aggregate stays byte-identical to its stored/exported form.
+    ...(isColumnAccentStyle(board.columnStyle)
+      ? { columnStyle: board.columnStyle }
+      : {}),
     ...(board.archivedAt ? { archivedAt: board.archivedAt.getTime() } : {}),
   };
+}
+
+/** The column's accent as a renderable pair, or undefined for garbage. */
+function columnAccent(column: ColumnRow): CardCover | undefined {
+  if (column.accentType === "color") {
+    return (COVER_COLORS as readonly string[]).includes(
+      column.accentValue as string,
+    )
+      ? { type: "color", value: column.accentValue as CoverColor }
+      : undefined;
+  }
+  if (column.accentType === "gradient") {
+    return (COVER_GRADIENTS as readonly string[]).includes(
+      column.accentValue as string,
+    )
+      ? { type: "gradient", value: column.accentValue as CoverGradient }
+      : undefined;
+  }
+  return undefined;
 }
 
 function toCard(

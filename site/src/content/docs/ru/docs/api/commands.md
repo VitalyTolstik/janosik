@@ -312,6 +312,7 @@ GET /api/v1/boards/:id/commands?since=<seq>
 | `SORT_COLUMN`           | `columnId`, `sortBy` `"createdAt" \| "dueDate" \| "title"`                     | Сортирует карточки колонки по критерию. Перетаскивание возвращает ручной порядок.                                                        |
 | `SET_COLUMN_CARD_ORDER` | `columnId`, `cardIds` string[]                                                 | Задаёт порядок карточек колонки напрямую. `cardIds` должна быть перестановкой текущих id, иначе команда игнорируется.                    |
 | `SET_COLUMN_WIP_LIMIT`  | `columnId`, `wipLimit` number необязательно                                    | Задаёт WIP-лимит колонки; пропуск или `undefined` удаляет его.                                                                           |
+| `SET_COLUMN_ACCENT`     | `columnId`, `accent` `{ type: "color" \| "gradient", value }` необязательно    | Задаёт акцент колонки из палитры обложек; пропуск удаляет его. Неизвестные значения отклоняются.                                          |
 | `ARCHIVE_COLUMN_CARDS`  | `columnId`                                                                     | Архивирует каждую карточку колонки за один шаг.                                                                                          |
 
 ### Карточки
@@ -382,6 +383,7 @@ GET /api/v1/boards/:id/commands?since=<seq>
 | Действие          | Поля            | Значение                                                                                                    |
 | ----------------- | --------------- | ----------------------------------------------------------------------------------------------------------- |
 | `RENAME_BOARD`    | `title`         | Переименовывает доску. Заголовок обрезается до `LIMITS.boardTitle` (100). Разрешено для `ADMIN` и `MEMBER`. |
+| `SET_BOARD_COLUMN_STYLE` | `columnStyle` `"rail" \| "left" \| "wash" \| "title" \| "glow" \| "glass" \| "band" \| "dot" \| "signature"` необязательно | Задаёт общую форму акцента колонок доски; пропуск возвращает `signature`. |
 | `ARCHIVE_BOARD`   | `boardId`, `at` | Архивирует доску. Только `ADMIN`; не-`ADMIN` отвечает `403`.                                                |
 | `UNARCHIVE_BOARD` | `boardId`, `at` | Возвращает архивную доску. Только `ADMIN`; не-`ADMIN` отвечает `403`.                                       |
 

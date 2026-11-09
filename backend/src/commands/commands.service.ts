@@ -78,6 +78,7 @@ type CommandActionType = Exclude<
  */
 const SUPPORTED_ACTION_REGISTRY: Record<CommandActionType, true> = {
   RENAME_BOARD: true,
+  SET_BOARD_COLUMN_STYLE: true,
   ARCHIVE_BOARD: true,
   UNARCHIVE_BOARD: true,
   ADD_COLUMN: true,
@@ -87,6 +88,7 @@ const SUPPORTED_ACTION_REGISTRY: Record<CommandActionType, true> = {
   MOVE_COLUMN: true,
   SORT_COLUMN: true,
   SET_COLUMN_WIP_LIMIT: true,
+  SET_COLUMN_ACCENT: true,
   SET_COLUMN_CARD_ORDER: true,
   ADD_CARD: true,
   UPDATE_CARD: true,

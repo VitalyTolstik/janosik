@@ -137,10 +137,25 @@ test("round-trips a workspace exported through the UI", async ({
 }) => {
   const columnId = await board.column("Round-trip column");
   await board.card(columnId, "Round-trip card");
+  await board.command({
+    type: "SET_COLUMN_ACCENT",
+    columnId,
+    accent: { type: "gradient", value: "forest" },
+  });
+  await board.command({ type: "SET_BOARD_COLUMN_STYLE", columnStyle: "glass" });
   await board.open(page);
   const exported = await exportJsonFromMenu(page);
   const title = `Round-trip ${randomUUID().slice(0, 8)}`;
   exported.envelope.boards[0].title = title;
+
+  const exportedColumn = exported.envelope.boards[0].columns.find(
+    (column) => column.title === "Round-trip column",
+  );
+  expect(exportedColumn?.accent).toEqual({
+    type: "gradient",
+    value: "forest",
+  });
+  expect(exported.envelope.boards[0].columnStyle).toBe("glass");
 
   await chooseImportFile(page, data.fileFromEnvelope(exported.envelope));
 
@@ -156,4 +171,10 @@ test("round-trips a workspace exported through the UI", async ({
   expect(
     Object.values(imported.boards[0].cards).map((card) => card.title),
   ).toContain("Round-trip card");
+  expect(imported.boards[0].columnStyle).toBe("glass");
+  expect(
+    imported.boards[0].columns.find(
+      (column) => column.title === "Round-trip column",
+    )?.accent,
+  ).toEqual({ type: "gradient", value: "forest" });
 });

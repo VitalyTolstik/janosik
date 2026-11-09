@@ -480,6 +480,8 @@ async function upsertColumn(
       boardId,
       title: column.title,
       wipLimit: column.wipLimit ?? null,
+      accentType: column.accent?.type ?? null,
+      accentValue: column.accent?.value ?? null,
       position,
       createdAt: new Date(column.createdAt),
       updatedAt: new Date(at),
@@ -487,6 +489,8 @@ async function upsertColumn(
     update: {
       title: column.title,
       wipLimit: column.wipLimit ?? null,
+      accentType: column.accent?.type ?? null,
+      accentValue: column.accent?.value ?? null,
       position,
       deletedAt: null,
       updatedAt: new Date(at),
@@ -551,6 +555,15 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       await tx.board.update({
         where: { id: boardId },
         data: { title: after.title },
+      });
+      return [boardTouch];
+    }
+
+    case "SET_BOARD_COLUMN_STYLE": {
+      // Null = the default `signature` shape (omitted from the aggregate).
+      await tx.board.update({
+        where: { id: boardId },
+        data: { columnStyle: after.columnStyle ?? null },
       });
       return [boardTouch];
     }
@@ -718,6 +731,21 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       return [boardTouch, touch.column(column.id)];
     }
 
+    case "SET_COLUMN_ACCENT": {
+      const column = columnOf(after, action.columnId);
+      if (!column) return [boardTouch];
+      await tx.column.update({
+        where: { id: column.id },
+        data: {
+          accentType: column.accent?.type ?? null,
+          accentValue: column.accent?.value ?? null,
+          updatedAt: new Date(ctx.at),
+          version: { increment: 1 },
+        },
+      });
+      return [boardTouch, touch.column(column.id)];
+    }
+
     case "ADD_CARD": {
       const card = cardOf(after, action.newCardId);
       if (!card) return [boardTouch];
@@ -869,6 +897,8 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           boardId,
           title: action.column.title,
           wipLimit: action.column.wipLimit ?? null,
+          accentType: action.column.accent?.type ?? null,
+          accentValue: action.column.accent?.value ?? null,
           position,
           createdAt: new Date(action.column.createdAt),
           updatedAt: new Date(ctx.at),
@@ -876,6 +906,8 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         update: {
           title: action.column.title,
           wipLimit: action.column.wipLimit ?? null,
+          accentType: action.column.accent?.type ?? null,
+          accentValue: action.column.accent?.value ?? null,
           position,
           deletedAt: null,
           updatedAt: new Date(ctx.at),

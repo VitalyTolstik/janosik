@@ -50,10 +50,12 @@ import type {
   CardCover,
   CardLinkType,
   CardPriority,
+  ColumnAccentStyle,
   Label,
   MembershipChange,
 } from "@janosik/shared";
 import { normalizeBoards } from "@janosik/shared";
+import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
 import { changedEntityIds } from "@/store/board-diff";
 import { hasCard } from "@/utils/card-nav";
 import {
@@ -249,6 +251,10 @@ interface BoardActionsValue {
   moveColumn: (columnId: string, fromIndex: number, toIndex: number) => void;
   /** Sets (or clears, `wipLimit === undefined`) a column's WIP limit. */
   setColumnWipLimit: (columnId: string, wipLimit?: number) => void;
+  /** Sets (or clears, `accent === undefined`) a column's accent. */
+  setColumnAccent: (columnId: string, accent?: CardCover) => void;
+  /** Sets the board-wide column accent shape (`undefined` = signature). */
+  setBoardColumnStyle: (columnStyle?: ColumnAccentStyle) => void;
   /** Sorts a column's cards (createdAt / dueDate / title). */
   sortColumn: (columnId: string, sortBy: ColumnSortBy) => void;
   /* Board management (multi-board) */
@@ -1753,6 +1759,8 @@ function createBoardActions(
   | "moveCard"
   | "moveColumn"
   | "setColumnWipLimit"
+  | "setColumnAccent"
+  | "setBoardColumnStyle"
   | "sortColumn"
 > {
   /** `n` fresh ids, for the activity events (or copies) a command produces. */
@@ -2054,6 +2062,36 @@ function createBoardActions(
         wipLimit,
         at: Date.now(),
       }),
+    setColumnAccent: (columnId: string, accent?: CardCover) => {
+      const current = getBoard()?.columns.find(
+        (c) => c.id === columnId,
+      )?.accent;
+      const same =
+        current === undefined
+          ? accent === undefined
+          : accent !== undefined &&
+            current.type === accent.type &&
+            current.value === accent.value;
+      if (same) return;
+      dispatch({
+        type: "SET_COLUMN_ACCENT",
+        columnId,
+        accent,
+        at: Date.now(),
+      });
+    },
+    setBoardColumnStyle: (columnStyle?: ColumnAccentStyle) => {
+      // Selecting the implicit default again is not an edit: avoid a
+      // command/activity entry that reads signature -> signature.
+      const current = getBoard()?.columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE;
+      const next = columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE;
+      if (current === next) return;
+      dispatch({
+        type: "SET_BOARD_COLUMN_STYLE",
+        columnStyle,
+        at: Date.now(),
+      });
+    },
     sortColumn: (columnId: string, sortBy: ColumnSortBy) =>
       dispatch({ type: "SORT_COLUMN", columnId, sortBy, at: Date.now() }),
   };
@@ -2160,6 +2198,8 @@ function createReadOnlyBoardActions(): BoardActionsValue {
     moveCard: noop,
     moveColumn: noop,
     setColumnWipLimit: noop,
+    setColumnAccent: noop,
+    setBoardColumnStyle: noop,
     sortColumn: noop,
     addBoard: () => "",
     removeBoard: noop,

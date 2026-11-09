@@ -14,6 +14,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   lazy calendar/table/watch views, card comments/history/attachments and
   description, admin entity tables, dashboard, details and settings, public
   boards and cards, notifications, sharing, members, API keys and admin search.
+- Column accents: give any column a card-cover color or gradient and choose
+  one of nine board-wide shapes (top rail, left rail, wash, title, glow,
+  glass, header band, dot, signature). The accent is a normal undoable
+  command, survives reloads and imports, and appears in other participants'
+  boards live.
 
 ### Changed
 

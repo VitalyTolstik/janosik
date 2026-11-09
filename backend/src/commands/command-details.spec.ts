@@ -106,6 +106,32 @@ describe("commandDetails", () => {
     ]);
   });
 
+  it("captures the column accent and the board shape", () => {
+    const before = makeBoard();
+    const after = makeBoard();
+    const accentAction = {
+      ...base,
+      type: "SET_COLUMN_ACCENT",
+      columnId: "col-1",
+      accent: { type: "gradient", value: "ocean" },
+    } as BoardAction;
+    after.columns[0]!.accent = { type: "gradient", value: "ocean" };
+    expect(commandDetails(accentAction, before, after)).toEqual({
+      detail: "Todo",
+      changes: [{ field: "accent", from: null, to: "gradient:ocean" }],
+    });
+
+    const styleAction = {
+      ...base,
+      type: "SET_BOARD_COLUMN_STYLE",
+      columnStyle: "band",
+    } as BoardAction;
+    const styled = { ...after, columnStyle: "band" as const };
+    expect(commandDetails(styleAction, before, styled)).toEqual({
+      changes: [{ field: "columnStyle", from: "signature", to: "band" }],
+    });
+  });
+
   it("captures actual positions for a move within the same column", () => {
     const before = makeBoard();
     const after = makeBoard();

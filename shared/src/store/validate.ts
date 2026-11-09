@@ -6,6 +6,7 @@ import {
   CLAIM_LEASE_MAX_MS,
   COVER_COLORS,
   COVER_GRADIENTS,
+  isColumnAccentStyle,
   LABEL_COLORS,
   LIMITS,
   MAX_CARD_ACTIVITY,
@@ -546,6 +547,9 @@ function validateColumn(value: unknown, field: string): Json {
     fail(`${field}.wipLimit`, `must be at most ${LIMITS.wipLimitMax}`);
   }
   put(out, "wipLimit", wipLimit);
+  if (!absent(column.accent)) {
+    out.accent = validateCover(column.accent, `${field}.accent`);
+  }
   return out;
 }
 
@@ -740,6 +744,23 @@ function parseAction(action: Json): BoardAction {
         fail("action.wipLimit", `must be at most ${LIMITS.wipLimitMax}`);
       }
       put(result, "wipLimit", wipLimit);
+      break;
+    }
+    case "SET_COLUMN_ACCENT":
+      result = out();
+      result.columnId = id("columnId");
+      if (!absent(action.accent)) {
+        result.accent = validateCover(action.accent, "action.accent");
+      }
+      break;
+    case "SET_BOARD_COLUMN_STYLE": {
+      result = out();
+      if (!absent(action.columnStyle)) {
+        if (!isColumnAccentStyle(action.columnStyle)) {
+          fail("action.columnStyle", "must be a known column style");
+        }
+        result.columnStyle = action.columnStyle;
+      }
       break;
     }
     case "ADD_CARD":
@@ -1137,6 +1158,10 @@ function checkImportedBoard(value: unknown, field: string): string {
   readTimestamp(board, "createdAt", `${field}.createdAt`);
   readTimestamp(board, "updatedAt", `${field}.updatedAt`);
   readOptionalTimestamp(board, "archivedAt", `${field}.archivedAt`);
+  // Column style is optional. Unknown names are dropped by normalization
+  // rather than failing the import: the field is decorative and a newer
+  // export may carry a shape this client has not learned yet.
+  readOptionalString(board, "columnStyle", `${field}.columnStyle`);
 
   const labelIds = new Set<string>();
   readArray(board, "labels", `${field}.labels`, LIMITS.labelsPerBoard).forEach(
@@ -1176,6 +1201,9 @@ function checkImportedBoard(value: unknown, field: string): string {
     columnIds.add(columnId);
     readString(column, "title", `${columnField}.title`);
     readTimestamp(column, "createdAt", `${columnField}.createdAt`);
+    // `accent` is decorative and optional. Like a card cover, an unknown
+    // future palette value is dropped by normalization instead of rejecting
+    // a whole import on a client that predates that color.
     const cardIds = readIdArray(
       column,
       "cardIds",

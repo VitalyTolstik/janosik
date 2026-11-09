@@ -1643,6 +1643,7 @@ TASK-36 и TASK-37.)*
 | 92 | TASK-161 `admin-security-events` | `feature/TASK-161-admin-security-events` | §7.20: журналирование отказов доступа и понятная лента подозрительной активности в админке | причины отказов, IP и этап видны в ленте и аудите; повторные события ограничены без потери счётчика; en+ru; тесты |
 | 93 | TASK-162 `browser-e2e` | `feature/TASK-41-e2e-chrome` | Декомпозиция TASK-41 по частям продукта и инфраструктуре, §7.8 | TASK-162.0–162.17 выполнены; общий DoD TASK-41 соблюдён |
 | 94 | TASK-163 `watch-activity-audit` ✅ | `feature/TASK-162.5-views-e2e` | §7.21: полнота и точность ленты Watch, диффы, границы аудита и права; [issue #171](https://github.com/VitalyTolstik/janosik/issues/171) | матрица событий и доступа документирована; одновременная смена роли и срока не теряет значения; согласованные события и диффы проверены браузерными и серверными тестами |
+| 95 | TASK-164 `column-accent-styles` | `feat/column-accent-styles` | Стиль колонок: per-column accent из палитры card cover + board-wide форма (9 вариантов), палитра в шапке, команда, БД, realtime, импорт/экспорт и MCP-тул | 9 форм рендерятся в light/dark; цвет per-column переживает reload, undo/redo и realtime; VIEWER не управляет; shared/ui/backend/e2e зелёные |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`

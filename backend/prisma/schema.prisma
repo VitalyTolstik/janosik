@@ -177,6 +177,7 @@ model DemoRun {
 model Board {
   id         String        @id @default(cuid())
   title      String        @db.VarChar(100) // LIMITS.boardTitle
+  columnStyle String? // TASK-164: column accent shape; null = signature
   archivedAt DateTime?
   deletedAt  DateTime? // soft-delete (§7.0)
   version    Int           @default(0) // ifMatch → 409 (title editable)
@@ -332,6 +333,8 @@ model Column {
   boardId   String
   title     String    @db.VarChar(100)
   wipLimit  Int? // TASK-13
+  accentType String? // TASK-164: color | gradient
+  accentValue String?
   position  Int
   deletedAt DateTime? // soft-delete (§7.0)
   version   Int       @default(0) // ifMatch → 409 (§7.0)

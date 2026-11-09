@@ -31,6 +31,7 @@ export async function persistBoard(
   const created = await tx.board.create({
     data: {
       title: board.title,
+      columnStyle: board.columnStyle ?? null,
       archivedAt: board.archivedAt ? new Date(board.archivedAt) : null,
       createdAt: new Date(board.createdAt),
       updatedAt: new Date(board.updatedAt),
@@ -73,6 +74,8 @@ export async function persistBoard(
         boardId: created.id,
         title: column.title,
         wipLimit: column.wipLimit ?? null,
+        accentType: column.accent?.type ?? null,
+        accentValue: column.accent?.value ?? null,
         position: index,
         createdAt,
         updatedAt: createdAt,

@@ -148,6 +148,24 @@ function build(before: Board, action: BoardAction): BoardAction | null {
       };
     }
 
+    case "SET_COLUMN_ACCENT": {
+      const column = before.columns.find((c) => c.id === action.columnId);
+      if (!column) return null;
+      return {
+        ...head,
+        type: "SET_COLUMN_ACCENT",
+        columnId: column.id,
+        accent: column.accent,
+      };
+    }
+
+    case "SET_BOARD_COLUMN_STYLE":
+      return {
+        ...head,
+        type: "SET_BOARD_COLUMN_STYLE",
+        columnStyle: before.columnStyle,
+      };
+
     case "DUPLICATE_COLUMN":
       return { ...head, type: "DELETE_COLUMN", columnId: action.newColumnId };
 

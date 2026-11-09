@@ -517,6 +517,59 @@ describe("normalizeBoards — card links", () => {
  * data with the wrong types is repaired, never thrown out as a TypeError
  * (which would take the whole board list down on load).
  */
+describe("normalizeBoards — column accent and board style (TASK-164)", () => {
+  const boardWithColumn = (column: Record<string, unknown>) =>
+    ({
+      id: "b",
+      title: "B",
+      columns: [
+        { id: "col", title: "C", cardIds: [], createdAt: 1, ...column },
+      ],
+      cards: {},
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    }) as unknown as Board;
+
+  it("keeps a valid accent and drops malformed ones", () => {
+    const valid = normalizeBoards([
+      boardWithColumn({ accent: { type: "color", value: "brand" } }),
+    ])[0];
+    expect(valid.columns[0].accent).toEqual({
+      type: "color",
+      value: "brand",
+    });
+
+    for (const accent of [
+      "brand",
+      { type: "photo", value: "brand" },
+      { type: "color", value: "chartreuse" },
+    ]) {
+      const next = normalizeBoards([boardWithColumn({ accent })])[0];
+      expect(next.columns[0].accent, JSON.stringify(accent)).toBeUndefined();
+      expect("accent" in next.columns[0]).toBe(false);
+    }
+  });
+
+  it("keeps a valid board style and drops an unknown one", () => {
+    const valid = normalizeBoards([
+      { ...boardWithColumn({}), columnStyle: "band" },
+    ])[0];
+    expect(valid.columnStyle).toBe("band");
+
+    const dirty = normalizeBoards([
+      { ...boardWithColumn({}), columnStyle: "neon" } as unknown as Board,
+    ])[0];
+    expect(dirty.columnStyle).toBeUndefined();
+    expect("columnStyle" in dirty).toBe(false);
+  });
+
+  it("leaves an untouched board without style fields as the same reference", () => {
+    const board = boardWithColumn({});
+    expect(normalizeBoards([board])[0]).toBe(board);
+  });
+});
+
 describe("normalizeBoards — wrong types do not crash", () => {
   it("drops a null label and blanks non-string titles", () => {
     const board = {

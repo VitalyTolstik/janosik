@@ -13,6 +13,7 @@ import {
   CARD_PRIORITIES,
   COVER_COLORS,
   COVER_GRADIENTS,
+  isColumnAccentStyle,
   LABEL_COLORS,
 } from "../types/kanban";
 import type { BoardState } from "./board-reducer";
@@ -298,6 +299,11 @@ function isWipLimitCurrent(value: unknown): boolean {
   return n === value && n >= 1 && n <= LIMITS.wipLimitMax;
 }
 
+/** True when the stored board column style is absent or a known shape. */
+function isColumnStyleCurrent(value: unknown): boolean {
+  return value === undefined || isColumnAccentStyle(value);
+}
+
 function normalizeCard(card: LegacyCard): Card {
   const {
     labelId,
@@ -407,18 +413,23 @@ function isLabelRecord(value: unknown): value is Label {
 }
 
 function normalizeBoard(board: Board): Board {
+  // Destructure so a stored garbage value never survives `...board`.
+  const { columnStyle, ...rest } = board;
+  const cleanStyle = isColumnAccentStyle(columnStyle) ? columnStyle : undefined;
   return {
-    ...board,
+    ...rest,
     title: toText(board.title, LIMITS.boardTitle),
     columns: board.columns.map((column) => {
-      // Destructure so a stored garbage limit never survives `...column`.
-      const { wipLimit, ...rest } = column;
+      // Destructure so a stored garbage limit/accent never survives.
+      const { wipLimit, accent, ...columnRest } = column;
       const clean = toWipLimit(wipLimit);
+      const cleanAccent = toCover(accent);
       return {
-        ...rest,
+        ...columnRest,
         title: toText(column.title, LIMITS.columnTitle),
-        // Keep the "omit when unset" invariant (no `wipLimit: undefined`).
+        // Keep the "omit when unset" invariant (no `undefined` keys).
         ...(clean !== undefined ? { wipLimit: clean } : {}),
+        ...(cleanAccent !== undefined ? { accent: cleanAccent } : {}),
       };
     }),
     labels: board.labels
@@ -438,6 +449,9 @@ function normalizeBoard(board: Board): Board {
           .map(([id, card]) => [id, normalizeCard(card)]),
       ),
     ),
+    // Preserve any known style (an explicit `signature` included); drop
+    // garbage so old boards keep their stored shape.
+    ...(cleanStyle !== undefined ? { columnStyle: cleanStyle } : {}),
   };
 }
 
@@ -448,10 +462,12 @@ export function normalizeBoards(state: BoardState): BoardState {
     // types, and a property read off `null` must not escape as a TypeError.
     const needsFix =
       !isTextCurrent(board.title, LIMITS.boardTitle) ||
+      !isColumnStyleCurrent(board.columnStyle) ||
       board.columns.some(
         (column) =>
           !isTextCurrent(column.title, LIMITS.columnTitle) ||
-          !isWipLimitCurrent(column.wipLimit),
+          !isWipLimitCurrent(column.wipLimit) ||
+          !isCoverCurrent(column.accent),
       ) ||
       board.labels.length > LIMITS.labelsPerBoard ||
       board.labels.some(

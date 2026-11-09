@@ -43,7 +43,11 @@ async function openPendingTitle(
 ): Promise<Locator> {
   await openCard(partnerBrowser, "Shared card");
   await partnerBrowser.clock.install();
-  await partnerBrowser.clock.pauseAt(new Date());
+  // A wall-clock `new Date()` can be a hair behind the clock the browser
+  // installed, which makes `pauseAt` throw "cannot fast-forward to the past"
+  // on a loaded CI runner. Pause a minute ahead instead; no timer can run
+  // while the clock is paused.
+  await partnerBrowser.clock.pauseAt(new Date(Date.now() + 60_000));
   const input = cardTitleInput(partnerBrowser);
   await input.fill("Mine");
   await expect(input).toHaveValue("Mine");

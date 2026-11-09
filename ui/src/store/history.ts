@@ -76,9 +76,12 @@ function touchedIds(action: BoardAction): string[] {
     const value = (action as unknown as Record<string, unknown>)[key];
     if (typeof value === "string") ids.push(value);
   }
-  // A board rename is the only board-level command with an undo step; the
-  // server's `touches` list already uses the plain board id for it.
-  if (action.type === "RENAME_BOARD") {
+  // Board-level commands with an undo step: the server's `touches` list
+  // already uses the plain board id for these.
+  if (
+    action.type === "RENAME_BOARD" ||
+    action.type === "SET_BOARD_COLUMN_STYLE"
+  ) {
     const boardId = (action as unknown as Record<string, unknown>).boardId;
     if (typeof boardId === "string") ids.push(boardId);
   }

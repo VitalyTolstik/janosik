@@ -63,6 +63,20 @@ const validActions: BoardAction[] = [
   action({ type: "SET_COLUMN_WIP_LIMIT", columnId: "col-1", wipLimit: 3 }),
   action({ type: "SET_COLUMN_WIP_LIMIT", columnId: "col-1" }),
   action({
+    type: "SET_COLUMN_ACCENT",
+    columnId: "col-1",
+    accent: { type: "color", value: "brand" },
+  }),
+  action({
+    type: "SET_COLUMN_ACCENT",
+    columnId: "col-1",
+    accent: { type: "gradient", value: "ocean" },
+  }),
+  action({ type: "SET_COLUMN_ACCENT", columnId: "col-1" }),
+  action({ type: "SET_BOARD_COLUMN_STYLE", columnStyle: "signature" }),
+  action({ type: "SET_BOARD_COLUMN_STYLE", columnStyle: "band" }),
+  action({ type: "SET_BOARD_COLUMN_STYLE" }),
+  action({
     type: "ADD_CARD",
     newCardId: "card-2",
     columnId: "col-1",
@@ -386,6 +400,29 @@ describe("validateBoardAction — rejected shapes", () => {
         wipLimit: LIMITS.wipLimitMax + 1,
       }),
       "action.wipLimit",
+    ],
+    [
+      "an unknown column accent type",
+      action({
+        type: "SET_COLUMN_ACCENT",
+        columnId: "c",
+        accent: { type: "photo", value: "x" },
+      }),
+      "action.accent.type",
+    ],
+    [
+      "an unknown column accent value",
+      action({
+        type: "SET_COLUMN_ACCENT",
+        columnId: "c",
+        accent: { type: "color", value: "chartreuse" },
+      }),
+      "action.accent.value",
+    ],
+    [
+      "an unknown column style",
+      action({ type: "SET_BOARD_COLUMN_STYLE", columnStyle: "neon" }),
+      "action.columnStyle",
     ],
     [
       "a blank card title",
