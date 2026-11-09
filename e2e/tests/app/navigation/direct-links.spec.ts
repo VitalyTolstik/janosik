@@ -154,6 +154,26 @@ test("redirects a direct link to an archived board to an active board", async ({
   );
 });
 
+test("keeps a dead archived-card deep link inert and explains the redirect", async ({
+  page,
+  board,
+  navigation,
+}) => {
+  const archived = await createExtraBoard(
+    board.api,
+    `Archived board ${randomUUID()}`,
+  );
+  await archived.command({ type: "ARCHIVE_BOARD" });
+  const deadCard = randomUUID();
+
+  await navigation.signInAt(page, `${boardLink(archived.id)}?card=${deadCard}`);
+
+  await expect(page).toHaveURL(new RegExp(`/board/${board.id}$`));
+  await expectToast(page, "Card not found");
+  await expect(cardDialog(page)).toBeHidden();
+  expect(new URL(page.url()).searchParams.get("card")).toBeNull();
+});
+
 test("shows a board not found page for an unknown direct link", async ({
   page,
   navigation,

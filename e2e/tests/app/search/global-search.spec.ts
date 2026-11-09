@@ -373,3 +373,76 @@ test("ranks active boards before archived boards", async ({ page, board }) => {
   await expect(boards.nth(1)).toContainText("Rank archived");
   await expect(boards.nth(1)).toContainText("Archived");
 });
+
+test("ranks active-board cards before archived-board cards", async ({
+  page,
+  board,
+}) => {
+  const active = await createSearchBoard(board.api, "Rank cards active");
+  const activeColumn = await active.column("Todo");
+  const activeCard = await active.card(activeColumn, "Rank hit");
+  const archived = await createSearchBoard(board.api, "Rank cards archived");
+  const archivedColumn = await archived.column("Todo");
+  await archived.card(archivedColumn, "Rank hit");
+  await archiveBoard(archived);
+  await board.open(page);
+  await openGlobalSearch(page);
+
+  await searchGlobally(page, "Rank hit");
+
+  const cards = globalSearchSection(page, "Cards").getByRole("option");
+  await expect(cards).toHaveCount(2);
+  await expect(cards.nth(0)).toContainText("Rank cards active");
+  await expect(cards.nth(0)).not.toContainText("Archived");
+  await expect(cards.nth(1)).toContainText("Rank cards archived");
+  await expect(cards.nth(1)).toContainText("Archived");
+
+  await page.keyboard.press("Enter");
+
+  await expect(page).toHaveURL(
+    new RegExp(`/board/${active.id}\\?card=${activeCard}$`),
+  );
+  const dialog = page.getByRole("dialog", { name: "Card details" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("textbox", { name: "Title" })).toHaveValue(
+    "Rank hit",
+  );
+});
+
+test("handles whitespace-only, max length and ArrowUp", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  await board.card(todo, "Arrow one");
+  await board.card(todo, "Arrow two");
+  await board.open(page);
+  await openGlobalSearch(page);
+
+  await searchGlobally(page, "   ");
+  await expect(globalSearchResults(page)).toContainText(
+    "Type to search titles, descriptions, labels and checklists across all boards.",
+  );
+  await expect(globalSearchResults(page)).not.toContainText("Nothing found.");
+
+  await searchGlobally(page, "x".repeat(200));
+  await globalSearchInput(page).press("x");
+  await expect(globalSearchInput(page)).toHaveValue("x".repeat(200));
+  await expect(page.getByTestId("search-query-limit")).toBeVisible();
+
+  await searchGlobally(page, "Arrow");
+  const options = globalSearchResults(page).getByRole("option");
+  await expect(options).toHaveCount(2);
+  await page.keyboard.press("ArrowDown");
+  await expect(options.nth(1)).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await expect(options.nth(0)).toHaveAttribute("aria-selected", "true");
+
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Card details" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("textbox", { name: "Title" })).toHaveValue(
+    "Arrow one",
+  );
+});

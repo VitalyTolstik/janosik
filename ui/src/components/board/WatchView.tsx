@@ -80,6 +80,9 @@ export function WatchView({ boardId }: WatchViewProps) {
   const [maxPage, setMaxPage] = useState(0);
   const [atEnd, setAtEnd] = useState(false);
   const [loading, setLoading] = useState(false);
+  // A failed feed request is visible and retryable — a watch wall silently
+  // showing stale or empty data is worse than an error (TASK-162 review).
+  const [error, setError] = useState(false);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [activeAgents, setActiveAgents] = useState<AgentActivity[]>([]);
   // Last action time per agent, kept across page loads so membership is a
@@ -166,7 +169,9 @@ export function WatchView({ boardId }: WatchViewProps) {
         setItems(targetItems);
         setPage(target);
       } catch {
-        /* keep the current page; the next click retries */
+        // Keep the current page visible but make the failure explicit; the
+        // Retry control re-enters this path.
+        setError(true);
       } finally {
         setLoading(false);
       }
@@ -192,6 +197,7 @@ export function WatchView({ boardId }: WatchViewProps) {
       rememberAgents(result.items);
       setPage(0);
       pageRef.current = 0;
+      setError(false);
     },
     [boardId, rememberAgents],
   );
@@ -204,7 +210,9 @@ export function WatchView({ boardId }: WatchViewProps) {
     try {
       await loadFirst(pageSize);
     } catch {
-      /* best effort — the next tick retries */
+      // Best effort — the next tick retries, but the user sees the failure
+      // and can force a retry now.
+      setError(true);
     } finally {
       inFlight.current = false;
     }
@@ -229,11 +237,18 @@ export function WatchView({ boardId }: WatchViewProps) {
       setPageSize(size);
       setLoading(true);
       void loadFirst(size)
-        .catch(() => undefined)
+        .catch(() => setError(true))
         .finally(() => setLoading(false));
     },
     [loadFirst, pageSize],
   );
+
+  /** Re-request the current page after a failed load. */
+  const retryFeed = useCallback(() => {
+    setError(false);
+    if (pageRef.current === 0) void refreshNewest();
+    else void goToPage(pageRef.current);
+  }, [goToPage, refreshNewest]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the page lands after the await, not synchronously
@@ -288,7 +303,9 @@ export function WatchView({ boardId }: WatchViewProps) {
     (sum, column) => sum + column.cardIds.length,
     0,
   );
-  const totalCards = Math.max(cardCount, Object.keys(board.cards).length);
+  // Only active cards: archived cards live in `board.cards` but not in any
+  // column, and a status wall must agree with the column sums next to it.
+  const totalCards = cardCount;
   const lastPage = atEnd ? maxPage : maxPage + 1;
 
   return (
@@ -427,14 +444,32 @@ export function WatchView({ boardId }: WatchViewProps) {
             {t("watch.feed")}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+            {error ? (
+              <div
+                data-testid="watch-error"
+                className="flex items-center gap-3 border-b border-danger/30 bg-danger/10 px-5 py-3 text-sm text-danger"
+              >
+                <span>{t("watch.feedError")}</span>
+                <button
+                  type="button"
+                  data-testid="watch-retry"
+                  onClick={retryFeed}
+                  className="rounded-sm border border-danger/40 px-2 py-0.5 text-xs font-medium hover:bg-danger/10"
+                >
+                  {t("sync.retry")}
+                </button>
+              </div>
+            ) : null}
             {!serverMode ? (
               <p className="px-5 py-4 text-sm text-muted-foreground/70">
                 {t("watch.feedLocal")}
               </p>
             ) : items.length === 0 ? (
-              <p className="px-5 py-4 text-sm text-muted-foreground/70">
-                {t("watch.feedEmpty")}
-              </p>
+              error ? null : (
+                <p className="px-5 py-4 text-sm text-muted-foreground/70">
+                  {t("watch.feedEmpty")}
+                </p>
+              )
             ) : (
               <ol data-testid="watch-feed">
                 {items.filter(hasStory).map((entry) => (
