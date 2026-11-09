@@ -2,7 +2,10 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { UpdatePrompt } from "@/components/notifications/UpdatePrompt";
+import {
+  UpdateAvailabilityProvider,
+  UpdatePrompt,
+} from "@/components/notifications/UpdatePrompt";
 import { I18nProvider } from "@/i18n";
 
 const { applyServiceWorkerUpdate } = vi.hoisted(() => ({
@@ -80,5 +83,24 @@ describe("UpdatePrompt", () => {
     const prompt = screen.getByTestId("update-prompt");
     expect(prompt).toHaveTextContent("A new version is ready.");
     expect(prompt).not.toHaveTextContent("Reload the page to get the latest");
+  });
+
+  it("keeps the announcement when the prompt moves between placements", () => {
+    const Harness = ({ variant }: { variant: "inline" | "floating" }) => (
+      <I18nProvider>
+        <UpdateAvailabilityProvider>
+          <UpdatePrompt variant={variant} />
+        </UpdateAvailabilityProvider>
+      </I18nProvider>
+    );
+    const { rerender } = render(<Harness variant="floating" />);
+    announceUpdate();
+    expect(screen.getByTestId("update-prompt")).toBeInTheDocument();
+
+    rerender(<Harness variant="inline" />);
+
+    expect(screen.getByTestId("update-prompt")).toHaveTextContent(
+      "Reload the page to get the latest",
+    );
   });
 });
