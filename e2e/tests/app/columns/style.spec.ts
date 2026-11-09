@@ -70,6 +70,29 @@ test("sets a color on one column only, survives reload and resets", async ({
   );
 });
 
+test("closes the palette on the first outside click after picking a color", async ({
+  page,
+  board,
+}) => {
+  await board.column("Todo");
+  await board.column("Done");
+  await board.open(page);
+
+  await openPalette(page, "Todo");
+  await chooseColor(page, "blue");
+  await expect(columnSection(page, "Todo")).toHaveAttribute(
+    "data-column-accent",
+    "blue",
+  );
+
+  // Regression: the palette used to stop `pointerdown`, so Radix's
+  // dismissable layer never saw the gesture end and swallowed the first
+  // outside click — the palette only closed on the second one.
+  const outside = columnSection(page, "Done").getByTestId("column-card-scroll");
+  await outside.click();
+  await expect(page.getByTestId("column-style-palette")).toBeHidden();
+});
+
 test("applies all nine board-wide shapes and persists the choice", async ({
   page,
   board,
@@ -206,6 +229,28 @@ test("the accent brush does not start a column drag", async ({
   await page.mouse.up();
 
   // A drag would move Todo after Done; a stopped pointer keeps the order.
+  await expect.poll(() => columnOrder(page)).toEqual(["Todo", "Done"]);
+
+  // The portaled palette still bubbles React pointer events to the header's
+  // drag handle — dragging from a swatch must not reorder the columns either.
+  await openPalette(page, "Todo");
+  const swatch = page.getByTestId("column-style-option-teal");
+  const swatchBox = await swatch.boundingBox();
+  if (!swatchBox) throw new Error("Accent swatch is not visible");
+  await page.mouse.move(
+    swatchBox.x + swatchBox.width / 2,
+    swatchBox.y + swatchBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    swatchBox.x + swatchBox.width / 2 + 140,
+    swatchBox.y + 120,
+    {
+      steps: 12,
+    },
+  );
+  await page.mouse.up();
+
   await expect.poll(() => columnOrder(page)).toEqual(["Todo", "Done"]);
   await expect(columnSection(page, "Todo")).toHaveAttribute(
     "data-column-accent",
