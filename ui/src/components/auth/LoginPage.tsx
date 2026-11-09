@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 
 import { api, ApiError } from "@/api/client";
+import { AuthBackground } from "./AuthBackground";
 import { PasswordRecovery } from "./PasswordRecovery";
 import { BrandMark } from "@/components/BrandMark";
 import { Button } from "@/components/ui/button";
@@ -175,24 +176,27 @@ export function LoginPage() {
   };
 
   return (
-    <main className="relative flex flex-1 items-center justify-center p-6">
+    <main className="relative flex flex-1 items-center justify-center overflow-hidden p-6">
+      <AuthBackground />
       {siteUrl && (
         <a
           href={siteUrl}
           data-testid="auth-back-to-site"
-          className="absolute top-6 left-6 inline-flex items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="absolute top-6 left-6 z-10 inline-flex items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
           {t("auth.backToSite")}
         </a>
       )}
       {recovering ? (
-        <PasswordRecovery
-          initialEmail={email}
-          onBack={() => setRecovering(false)}
-        />
+        <div className="relative z-10">
+          <PasswordRecovery
+            initialEmail={email}
+            onBack={() => setRecovering(false)}
+          />
+        </div>
       ) : (
-        <div className="w-full max-w-sm">
+        <div className="relative z-10 w-full max-w-sm">
           <div className="mb-6 flex flex-col items-center gap-2 text-center">
             <span aria-hidden className="group">
               <BrandMark size="large" />

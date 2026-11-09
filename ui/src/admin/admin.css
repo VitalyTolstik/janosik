@@ -234,6 +234,7 @@
   justify-content: center;
   min-height: 100vh;
   min-height: 100dvh;
+  overflow: hidden;
   padding: 48px 20px;
   background: var(--background);
   color: var(--foreground);
@@ -243,12 +244,15 @@
   position: absolute;
   top: 20px;
   right: 24px;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .admin-login-pane {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 24rem;
   padding: 0;

@@ -9,6 +9,7 @@ import {
   Sun,
 } from "lucide-react";
 
+import { AuthBackground } from "@/components/auth/AuthBackground";
 import { BrandMark } from "@/components/BrandMark";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { Button } from "@/components/ui/button";
@@ -168,6 +169,7 @@ export function AdminLoginPage() {
 
   return (
     <div className="admin-login">
+      <AuthBackground />
       <div className="admin-login-tools">
         <LanguageSwitcher />
         <button

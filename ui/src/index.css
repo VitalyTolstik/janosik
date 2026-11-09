@@ -1414,3 +1414,45 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
     transition: none;
   }
 }
+
+/* ---------------------------------------------------- auth background ---- */
+
+/*
+ * Concentric square field behind the sign-in / registration / master-login
+ * screens. Pure CSS/SVG, no raster assets. The layer is intentionally quiet:
+ * it sits under the form and only breathes via transform + opacity.
+ */
+.auth-background {
+  position: absolute;
+  inset: -5%;
+  z-index: 0;
+  overflow: hidden;
+  color: color-mix(in oklab, var(--foreground) 9%, transparent);
+  pointer-events: none;
+  transform-origin: center;
+  animation: auth-concentric 9s ease-in-out infinite;
+}
+
+.auth-background__pattern {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+@keyframes auth-concentric {
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.06);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-background {
+    animation: none;
+  }
+}
