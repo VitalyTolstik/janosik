@@ -35,6 +35,7 @@ import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
+import { EntityListSkeleton } from "./skeletons";
 import { useAdminList } from "./use-admin-list";
 import { TextCell } from "./cells";
 import { fieldError, isValid } from "./validation";
@@ -48,7 +49,6 @@ import {
   ErrorState,
   Field,
   IdChip,
-  LoadingState,
   PageHeader,
   Panel,
   Table,
@@ -447,9 +447,12 @@ export function MastersPage() {
         }
       />
 
-      <Panel className="flex min-h-0 flex-1 flex-col">
+      <Panel
+        className="flex min-h-0 flex-1 flex-col"
+        aria-busy={list.loading || list.refreshing}
+      >
         {list.loading ? (
-          <LoadingState />
+          <EntityListSkeleton columns={9} testId="admin-masters-skeleton" />
         ) : list.error ? (
           <ErrorState onRetry={list.reload} />
         ) : list.items.length === 0 ? (

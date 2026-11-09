@@ -13,14 +13,8 @@ import { appShareUrl } from "@/utils/app-path";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
-import {
-  Badge,
-  ConfirmDialog,
-  ErrorState,
-  LoadingState,
-  PageHeader,
-  Panel,
-} from "./ui";
+import { Badge, ConfirmDialog, ErrorState, PageHeader, Panel } from "./ui";
+import { SettingsSkeleton } from "./skeletons";
 
 /**
  * Demo runner (TASK-57) — start a swarm of AI agents on a throwaway board,
@@ -143,7 +137,8 @@ export function DemoPage() {
     load();
   }, [load]);
 
-  if (phase === "loading") return <LoadingState />;
+  if (phase === "loading")
+    return <SettingsSkeleton testId="admin-demo-skeleton" panels={2} />;
   if (phase === "error") return <ErrorState onRetry={retry} />;
 
   const running = demo?.running ?? false;

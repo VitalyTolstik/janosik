@@ -24,7 +24,10 @@ export const PERIOD_WINDOWS_MS: Record<string, number> = {
 export interface AdminListState<T> {
   items: T[];
   total: number;
+  /** First response has not arrived yet — show the table skeleton. */
   loading: boolean;
+  /** A newer request is in flight while the previous rows stay on screen. */
+  refreshing: boolean;
   error: boolean;
   search: string;
   setSearch: (value: string) => void;
@@ -98,7 +101,11 @@ export function useAdminList<T>(
     };
   }, [requestKey, search, status, period, limit, offset]);
 
-  const loading = result === null || result.key !== requestKey;
+  // Keep the last successful page while a search/page request is in flight
+  // (SKELETON-AUDIT §4.11): the table header and rows must not vanish on
+  // every keystroke. Only the very first answer gets a skeleton.
+  const loading = result === null;
+  const refreshing = result !== null && result.key !== requestKey;
 
   const setSearchInput = useCallback((value: string) => {
     setRawSearch(value);
@@ -119,10 +126,13 @@ export function useAdminList<T>(
   }, []);
 
   return {
-    items: loading ? [] : (result?.items ?? []),
-    total: loading ? 0 : (result?.total ?? 0),
+    items: result?.items ?? [],
+    total: result?.total ?? 0,
     loading,
-    error: !loading && (result?.error ?? false),
+    refreshing,
+    // Keep a previous failure on screen while its retry is in flight; the
+    // retry must not masquerade as an empty result.
+    error: result?.error ?? false,
     search: rawSearch,
     setSearch: setSearchInput,
     status,

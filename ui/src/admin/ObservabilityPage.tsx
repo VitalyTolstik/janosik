@@ -12,16 +12,8 @@ import {
   type ServiceWorkerStatus,
 } from "@/hooks/use-client-state";
 import { useAppVersion } from "@/utils/app-version";
-import {
-  Badge,
-  ErrorState,
-  LoadingState,
-  PageHeader,
-  Panel,
-  Table,
-  Td,
-  Th,
-} from "./ui";
+import { Badge, ErrorState, PageHeader, Panel, Table, Td, Th } from "./ui";
+import { SettingsSkeleton } from "./skeletons";
 
 /** Localised labels for the "frontend" panel's enumerated states. */
 const THEME_LABEL: Record<"light" | "dark", AdminMessageKey> = {
@@ -76,7 +68,10 @@ export function ObservabilityPage() {
     fetchData();
   }, [fetchData]);
 
-  if (phase === "loading") return <LoadingState />;
+  if (phase === "loading")
+    return (
+      <SettingsSkeleton testId="admin-observability-skeleton" panels={3} wide />
+    );
   if (phase === "error" || !data) {
     return <ErrorState onRetry={load} />;
   }

@@ -113,6 +113,12 @@ interface BoardStateValue {
   board: Board | undefined;
   /** Every board in storage (export/import target). */
   boards: Board[];
+  /**
+   * Boards that are still streaming in after the shell became ready (U-9).
+   * The switcher renders pending rows while this is positive; zero once the
+   * background hydration finished (or gave up).
+   */
+  pendingBoardCount: number;
   /** Non-null while the data is at risk — rendered as a banner. */
   dataIssue: DataIssue | null;
   /**
@@ -343,6 +349,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const [syncStatus, setSyncStatus] = useState<BoardStateValue["syncStatus"]>(
     serverMode ? "loading" : "ready",
   );
+  const [pendingBoardCount, setPendingBoardCount] = useState(0);
   const [roles, setRoles] = useState<Record<string, BoardRole>>({});
 
   /* eslint-enable react-hooks/refs */
@@ -870,61 +877,72 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const loadRemainingBoards = useCallback(
     async (ids: string[], order: string[], gen: number): Promise<void> => {
       const loaded = new Map<string, { board: Board; seq: number }>();
-      let missing = ids;
-      for (let attempt = 0; missing.length > 0 && attempt < 4; attempt += 1) {
-        if (attempt > 0) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1_000 * 2 ** (attempt - 1)),
+      try {
+        let missing = ids;
+        for (let attempt = 0; missing.length > 0 && attempt < 4; attempt += 1) {
+          if (attempt > 0) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 1_000 * 2 ** (attempt - 1)),
+            );
+          }
+          if (!aliveRef.current || hydrationGenRef.current !== gen) return;
+          const results = await Promise.allSettled(
+            missing.map((id) => api.getBoardSnapshot(id)),
           );
+          missing = missing.filter((id, index) => {
+            const result = results[index];
+            if (result.status !== "fulfilled") return true;
+            loaded.set(id, result.value);
+            return false;
+          });
         }
-        if (!aliveRef.current || hydrationGenRef.current !== gen) return;
-        const results = await Promise.allSettled(
-          missing.map((id) => api.getBoardSnapshot(id)),
-        );
-        missing = missing.filter((id, index) => {
-          const result = results[index];
-          if (result.status !== "fulfilled") return true;
-          loaded.set(id, result.value);
-          return false;
-        });
-      }
-      if (
-        !aliveRef.current ||
-        hydrationGenRef.current !== gen ||
-        loaded.size === 0
-      ) {
-        return;
-      }
-      const current = stateRef.current;
-      const byId = new Map(current.map((board) => [board.id, board]));
-      const merged: Board[] = [];
-      const now = Date.now();
-      for (const id of order) {
-        const existing = byId.get(id);
-        if (existing !== undefined) {
-          merged.push(existing);
-          byId.delete(id);
-          continue;
+        if (
+          !aliveRef.current ||
+          hydrationGenRef.current !== gen ||
+          loaded.size === 0
+        ) {
+          return;
         }
-        const fresh = loaded.get(id);
-        if (fresh === undefined) continue;
-        merged.push(fresh.board);
-        live.attribution.seed(fresh.board);
-        seqsRef.current.set(
-          id,
-          Math.max(seqsRef.current.get(id) ?? 0, fresh.seq),
-        );
-        syncedAtRef.current.set(id, now);
+        const current = stateRef.current;
+        const byId = new Map(current.map((board) => [board.id, board]));
+        const merged: Board[] = [];
+        const now = Date.now();
+        for (const id of order) {
+          const existing = byId.get(id);
+          if (existing !== undefined) {
+            merged.push(existing);
+            byId.delete(id);
+            continue;
+          }
+          const fresh = loaded.get(id);
+          if (fresh === undefined) continue;
+          merged.push(fresh.board);
+          live.attribution.seed(fresh.board);
+          seqsRef.current.set(
+            id,
+            Math.max(seqsRef.current.get(id) ?? 0, fresh.seq),
+          );
+          syncedAtRef.current.set(id, now);
+        }
+        // Boards created while the list was loading.
+        for (const board of byId.values()) merged.push(board);
+        apply({ type: "IMPORT_BOARDS", boards: merged });
+      } finally {
+        // Pending rows must clear even when a board was dropped after the
+        // retry budget; a newer hydration owns the counter otherwise.
+        if (aliveRef.current && hydrationGenRef.current === gen) {
+          setPendingBoardCount((count) => Math.max(0, count - ids.length));
+        }
       }
-      // Boards created while the list was loading.
-      for (const board of byId.values()) merged.push(board);
-      apply({ type: "IMPORT_BOARDS", boards: merged });
     },
     [apply, live],
   );
 
   const runHydration = useCallback(async (): Promise<void> => {
     const gen = ++hydrationGenRef.current;
+    // A failed re-hydration must not leave the previous generation's pending
+    // rows counting forever; this generation owns the counter from here.
+    setPendingBoardCount(0);
     const summaries = await api.listBoards();
     const nextRoles: Record<string, BoardRole> = {};
     for (const summary of summaries) nextRoles[summary.id] = summary.role;
@@ -970,6 +988,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       nextSynced.set(board.id, now);
     }
     setRoles(nextRoles);
+    // The switcher shows pending rows until the background phase settles.
+    setPendingBoardCount(rest.length);
     // The hydrated state is exactly what the aggregates showed: replacing
     // the seq map keeps the realtime resume point in sync with it.
     seqsRef.current = nextSeqs;
@@ -1642,8 +1662,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   );
 
   const stateValue = useMemo<BoardStateValue>(
-    () => ({ board, boards: state, dataIssue, syncStatus }),
-    [board, state, dataIssue, syncStatus],
+    () => ({
+      board,
+      boards: state,
+      pendingBoardCount,
+      dataIssue,
+      syncStatus,
+    }),
+    [board, state, pendingBoardCount, dataIssue, syncStatus],
   );
 
   const identity = useMemo<BoardIdentityValue>(
@@ -2190,7 +2216,13 @@ export function ShareBoardProvider({
     [board.id, board.title],
   );
   const stateValue = useMemo<BoardStateValue>(
-    () => ({ board, boards: [board], dataIssue: null, syncStatus: "ready" }),
+    () => ({
+      board,
+      boards: [board],
+      pendingBoardCount: 0,
+      dataIssue: null,
+      syncStatus: "ready",
+    }),
     [board],
   );
 

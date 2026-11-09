@@ -69,6 +69,15 @@
   --janosik-logo-from: #2563eb;
   --janosik-logo-to: #38bdf8;
 
+  /* Loading skeletons — surfaces derived from the active theme so the
+   * placeholder reads as part of the card rather than a grey overlay. */
+  --janosik-skeleton-base: color-mix(in oklab, var(--hover) 74%, var(--card));
+  --janosik-skeleton-highlight: color-mix(
+    in oklab,
+    var(--foreground) 9%,
+    var(--janosik-skeleton-base)
+  );
+
   /* Wordmark / display font (self-hosted via Fontsource). */
   --janosik-font-display:
     "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
@@ -147,6 +156,13 @@
   --input: #e2e8f0;
   --ring: #2563eb;
   --janosik-brand-accent: #3b82f6;
+  /* Lighter placeholders on paper-white cards. */
+  --janosik-skeleton-base: color-mix(in oklab, var(--hover) 70%, var(--card));
+  --janosik-skeleton-highlight: color-mix(
+    in oklab,
+    var(--foreground) 6%,
+    var(--janosik-skeleton-base)
+  );
 }
 
 /* Rarely-used shadcn aliases, resolved from the tokens above. */

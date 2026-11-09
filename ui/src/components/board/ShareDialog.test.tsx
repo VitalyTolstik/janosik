@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import type { Board, BoardShareDto } from "@janosik/shared";
@@ -150,6 +156,37 @@ afterEach(() => {
 });
 
 describe("ShareDialog", () => {
+  it("shows a busy list skeleton while the links load", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), "http://api.test");
+        if (
+          url.pathname === "/api/v1/boards/b1/shares" &&
+          (init?.method ?? "GET") === "GET"
+        ) {
+          await gate;
+        }
+        return router(input, init);
+      },
+    );
+
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+
+    const skeleton = await screen.findByTestId("share-list-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+
+    act(() => release());
+
+    expect(await screen.findByText("No links yet")).toBeInTheDocument();
+    expect(screen.queryByTestId("share-list-skeleton")).toBeNull();
+  });
+
   it("does not offer copying an expired link", async () => {
     shares = [share({ expiresAt: Date.now() - 1000 })];
     renderDialog();

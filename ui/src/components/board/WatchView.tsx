@@ -7,6 +7,8 @@ import type {
 } from "@janosik/shared";
 
 import { api, isApiEnabled } from "@/api/client";
+import { WatchFeedSkeleton } from "@/components/board/ViewSkeleton";
+import { SkeletonRegion } from "@/components/ui/skeleton";
 import { useHour12, useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
 import {
@@ -76,6 +78,9 @@ export function WatchView({ boardId }: WatchViewProps) {
   const serverMode = isApiEnabled();
 
   const [items, setItems] = useState<ActivityFeedEntry[]>([]);
+  // Empty means "no activity" only after the first page has arrived; before
+  // that the feed is loading (the old code briefly claimed today was quiet).
+  const [loaded, setLoaded] = useState(!serverMode);
   const [page, setPage] = useState(0);
   const [maxPage, setMaxPage] = useState(0);
   const [atEnd, setAtEnd] = useState(false);
@@ -215,6 +220,9 @@ export function WatchView({ boardId }: WatchViewProps) {
       setError(true);
     } finally {
       inFlight.current = false;
+      // Even a failed first poll ends the wait: the pager/error path is more
+      // useful than an endless skeleton.
+      setLoaded(true);
     }
   }, [loadFirst, pageSize, serverMode]);
 
@@ -443,7 +451,10 @@ export function WatchView({ boardId }: WatchViewProps) {
           <div className="border-b border-muted-foreground/40 px-5 py-2 text-[11px] uppercase tracking-widest text-muted-foreground">
             {t("watch.feed")}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+          <div
+            className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+            aria-busy={!loaded}
+          >
             {error ? (
               <div
                 data-testid="watch-error"
@@ -464,6 +475,13 @@ export function WatchView({ boardId }: WatchViewProps) {
               <p className="px-5 py-4 text-sm text-muted-foreground/70">
                 {t("watch.feedLocal")}
               </p>
+            ) : !loaded ? (
+              <SkeletonRegion
+                label={t("watch.feedLoading")}
+                testId="watch-feed-skeleton"
+              >
+                <WatchFeedSkeleton rows={8} />
+              </SkeletonRegion>
             ) : items.length === 0 ? (
               error ? null : (
                 <p className="px-5 py-4 text-sm text-muted-foreground/70">

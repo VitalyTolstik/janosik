@@ -21,14 +21,8 @@ import { pollWhileFocused } from "@/lib/visible-poll";
 import { routes } from "@/routes";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
-import {
-  ConfirmDialog,
-  ErrorState,
-  IdChip,
-  LoadingState,
-  PageHeader,
-  Panel,
-} from "./ui";
+import { ConfirmDialog, ErrorState, IdChip, PageHeader, Panel } from "./ui";
+import { BoardEditorSkeleton } from "./skeletons";
 
 /**
  * Board content editor (TASK-43) — create and tidy columns/cards without
@@ -128,7 +122,7 @@ export function BoardContentPage() {
     [boardId, t, toast],
   );
 
-  if (state === "loading") return <LoadingState />;
+  if (state === "loading") return <BoardEditorSkeleton />;
   if (state === "error" || board === null) return <ErrorState onRetry={load} />;
 
   const selected = board.columns.find(

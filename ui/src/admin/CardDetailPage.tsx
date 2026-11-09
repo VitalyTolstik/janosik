@@ -31,13 +31,13 @@ import {
   ConfirmDialog,
   EmptyState,
   ErrorState,
-  LoadingState,
   PageHeader,
   Panel,
   Table,
   Td,
   Th,
 } from "./ui";
+import { AdminDetailSkeleton } from "./skeletons";
 
 /**
  * Card detail (TASK-48) — the full card graph: meta, labels, checklists,
@@ -105,7 +105,7 @@ export function CardDetailPage() {
     );
   }
   if (detail === null) {
-    return <LoadingState />;
+    return <AdminDetailSkeleton variant="card" />;
   }
 
   const { card } = detail;

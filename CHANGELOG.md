@@ -6,12 +6,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A shared skeleton UI system: one `Skeleton`/`SkeletonRegion` primitive on
+  brand tokens (dark and light), with a 180 ms reveal delay, `aria-busy` and
+  reduced-motion support. Content skeletons now cover the first board paint,
+  lazy calendar/table/watch views, card comments/history/attachments and
+  description, admin entity tables, dashboard, details and settings, public
+  boards and cards, notifications, sharing, members, API keys and admin search.
+
 ### Changed
 
 - Top-of-page notifications now share one frosted "quiet glass" stack under
   the header: announcements, impersonation, data-safety and update prompts no
   longer cover the board or each other, and toasts follow the same visual
   language in their bottom-right corner.
+
+### Fixed
+
+- Admin tables keep the last successful page while a search or pagination
+  request is in flight instead of clearing the header and rows.
+- Card comments/history/attachments and the watch feed no longer show a false
+  empty state before the first page arrives; the board switcher shows pending
+  rows during background hydration.
+- Saving an announcement now closes the editor before the list refresh, so the
+  confirmation toast is not hidden behind the modal's `aria-hidden` subtree.
 
 ## [0.2.0] - 2026-11-08
 

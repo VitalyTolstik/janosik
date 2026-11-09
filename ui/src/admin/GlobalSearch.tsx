@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
+import { SearchSkeleton } from "./skeletons";
 import { Badge } from "./ui";
 
 /**
@@ -219,11 +220,14 @@ export function GlobalSearchDialog({
             }}
             className="h-full flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
-          {loading ? (
-            <span className="text-[11px] text-muted-foreground">…</span>
-          ) : null}
         </label>
-        <div className="max-h-80 overflow-y-auto border-t border-border">
+        <div
+          className="max-h-80 overflow-y-auto border-t border-border"
+          aria-busy={loading}
+        >
+          {loading && lines.length === 0 && query.trim() !== "" ? (
+            <SearchSkeleton rows={4} />
+          ) : null}
           {query.trim() !== "" && lines.length === 0 && !loading ? (
             <p className="px-3 py-6 text-center text-xs text-muted-foreground">
               {t("admin.search.empty")}

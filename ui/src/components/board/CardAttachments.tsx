@@ -16,9 +16,11 @@ import type { ActivitySseEvent, AttachmentDto } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 
 import { api, isApiEnabled, ApiError } from "@/api/client";
+import { CardSectionSkeleton } from "@/components/board/CardSectionSkeleton";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { Button } from "@/components/ui/button";
+import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
 import { formatDateOnly, useI18n } from "@/i18n";
 import { useAuth } from "@/auth/AuthContext";
@@ -84,8 +86,11 @@ function AttachmentPreview({ attachment }: { attachment: AttachmentDto }) {
   }
   if (url === null) {
     return (
-      <span
-        className="inline-block h-6 w-6 shrink-0 animate-pulse rounded bg-muted/50"
+      <Skeleton
+        width={24}
+        height={24}
+        className="shrink-0 rounded"
+        data-testid="attachment-thumbnail-skeleton"
         aria-label={t("card.attachments.title")}
       />
     );
@@ -130,6 +135,12 @@ export function CardAttachments({
 
   const [items, setItems] = useState<AttachmentDto[]>([]);
   const [detachedItems, setDetachedItems] = useState<AttachmentDto[]>([]);
+  // The first response decides between an empty list and a loading list.
+  const [loaded, setLoaded] = useState(!serverMode);
+  const aliveRef = useRef(true);
+  // A newer card/fetch supersedes an older answer; the dialog also remounts
+  // this section with `key={card.id}`, so stale rows can never leak across.
+  const loadGenRef = useRef(0);
   const [uploading, setUploading] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<AttachmentDto | null>(
     null,
@@ -138,17 +149,35 @@ export function CardAttachments({
 
   const load = useCallback(async () => {
     if (!serverMode) return;
-    try {
-      setItems(await api.listAttachments(cardId));
-      setDetachedItems(await api.listDetachedAttachments(cardId));
-    } catch {
+    const gen = ++loadGenRef.current;
+    const current = () => aliveRef.current && loadGenRef.current === gen;
+    const [nextItems, nextDetached] = await Promise.allSettled([
+      api.listAttachments(cardId),
+      api.listDetachedAttachments(cardId),
+    ]);
+    if (!current()) return;
+    // A partial failure must not throw away the half that did arrive.
+    if (nextItems.status === "fulfilled") setItems(nextItems.value);
+    if (nextDetached.status === "fulfilled") {
+      setDetachedItems(nextDetached.value);
+    } else if (nextItems.status === "fulfilled") {
+      // The detached bin is supplementary: keep the main list visible and
+      // report the failure without turning it into a false empty state.
       toast.error(t("card.attachments.loadError"));
     }
+    if (nextItems.status === "rejected") {
+      toast.error(t("card.attachments.loadError"));
+    }
+    setLoaded(true);
   }, [cardId, serverMode, t, toast]);
 
   useEffect(() => {
+    aliveRef.current = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the list lands after the await, not synchronously
     void load();
+    return () => {
+      aliveRef.current = false;
+    };
   }, [load]);
 
   useEffect(() => {
@@ -246,7 +275,16 @@ export function CardAttachments({
       badge={items.length > 0 ? items.length : undefined}
       contentClassName="mt-1.5 space-y-1.5"
     >
-      {items.length === 0 ? (
+      {/* Live data always wins: an SSE-added row must not be hidden by the
+          initial-load skeleton. */}
+      {!loaded && items.length === 0 ? (
+        <SkeletonRegion
+          label={t("card.attachments.loading")}
+          testId="card-attachments-skeleton"
+        >
+          <CardSectionSkeleton kind="attachments" rows={2} />
+        </SkeletonRegion>
+      ) : items.length === 0 ? (
         <p
           className="px-0.5 text-xs text-muted-foreground"
           data-testid="card-attachments-empty"

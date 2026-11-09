@@ -34,6 +34,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import { LimitCounter } from "@/components/ui/limit-counter";
+import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import {
   Popover,
   PopoverContent,
@@ -86,6 +87,28 @@ type Translate = ReturnType<typeof useI18n>["t"];
  * an account exists — so a `409` (already a member) is the only invite-
  * specific refusal.
  */
+/** Four roster rows: the invite form below must not jump into place. */
+function BoardMembersSkeleton() {
+  return (
+    <div className="divide-y divide-border/60" aria-hidden="true">
+      {Array.from({ length: 4 }, (_, index) => (
+        <div
+          key={index}
+          className="flex h-[52px] items-center gap-2.5 px-3"
+          data-testid="board-members-skeleton-row"
+        >
+          <Skeleton variant="circle" width={28} height={28} />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton width={120} height={14} />
+            <Skeleton width={180} height={10} />
+          </div>
+          <Skeleton width={64} height={20} className="rounded" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function membershipError(error: unknown, t: Translate): string {
   if (error instanceof ApiError) {
     if (error.offline) return t("board.members.errors.offline");
@@ -540,9 +563,13 @@ export function BoardMembersPanel({
       </DialogHeader>
 
       {members === null && !loadFailed ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">
-          {t("board.members.loading")}
-        </p>
+        <SkeletonRegion
+          label={t("board.members.loading")}
+          testId="board-members-skeleton"
+          delayMs={150}
+        >
+          <BoardMembersSkeleton />
+        </SkeletonRegion>
       ) : members === null ? (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm">
           <span>{t("board.members.loadFailed")}</span>
@@ -558,6 +585,7 @@ export function BoardMembersPanel({
         <div
           className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border"
           data-testid="board-members-box"
+          aria-busy={members === null}
         >
           <div className="relative flex shrink-0 items-center gap-2 border-b px-3 py-2.5">
             <Search size={15} className="shrink-0 text-muted-foreground" />

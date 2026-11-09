@@ -58,13 +58,13 @@ import {
   ConfirmDialog,
   EmptyState,
   ErrorState,
-  LoadingState,
   PageHeader,
   Panel,
   Table,
   Td,
   Th,
 } from "./ui";
+import { AdminDetailSkeleton } from "./skeletons";
 
 /**
  * User detail (TASK-48) — the whole user graph a support agent needs:
@@ -163,7 +163,7 @@ export function UserDetailPage() {
     );
   }
   if (detail === null) {
-    return <LoadingState />;
+    return <AdminDetailSkeleton variant="user" />;
   }
 
   const { user, counters } = detail;

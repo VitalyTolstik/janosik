@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
@@ -167,6 +168,13 @@ export function DataMenu() {
             {backupCount !== null && backupCount > 0
               ? `${t("data.backupTitle")} · ${backupCount}`
               : t("data.backupTitle")}
+            {menuOpen && backupCount === null ? (
+              <Skeleton
+                width={18}
+                height={10}
+                data-testid="data-backup-count-skeleton"
+              />
+            ) : null}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

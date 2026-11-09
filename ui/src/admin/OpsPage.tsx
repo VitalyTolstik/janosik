@@ -15,11 +15,11 @@ import {
   CharCount,
   ConfirmDialog,
   ErrorState,
-  LoadingState,
   PageHeader,
   Panel,
   Toggle,
 } from "./ui";
+import { SettingsSkeleton } from "./skeletons";
 
 /**
  * Operations (TASK-61/63): behaviour flags, the maintenance switch, the
@@ -196,7 +196,8 @@ export function OpsPage() {
     retentionDays.trim() === "" ? 30 : Number(retentionDays);
   const daysValid = Number.isFinite(effectiveDays) && effectiveDays >= 1;
 
-  if (phase === "loading") return <LoadingState />;
+  if (phase === "loading")
+    return <SettingsSkeleton testId="admin-ops-skeleton" panels={3} wide />;
   if (phase === "error") {
     return (
       <ErrorState

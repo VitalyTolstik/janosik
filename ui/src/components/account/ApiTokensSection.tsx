@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { NumberStepper } from "@/components/ui/number-stepper";
+import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
 import { formatDateOnly, useI18n } from "@/i18n";
 import type { MessageKey } from "@/i18n/i18n";
@@ -176,7 +177,11 @@ export function ApiTokensSection() {
   };
 
   return (
-    <section className="space-y-5" data-testid="account-tokens">
+    <section
+      className="space-y-5"
+      data-testid="account-tokens"
+      aria-busy={tokens === null && !loadError}
+    >
       <header className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <h3 className="flex items-center gap-2 text-sm font-semibold">
@@ -199,6 +204,28 @@ export function ApiTokensSection() {
 
       {loadError ? (
         <p className="text-xs text-danger">{t("account.tokens.loadError")}</p>
+      ) : null}
+
+      {tokens === null && !loadError ? (
+        <SkeletonRegion
+          label={t("account.tokens.loading")}
+          testId="account-tokens-skeleton"
+        >
+          <div className="space-y-2" aria-hidden="true">
+            {Array.from({ length: 3 }, (_, index) => (
+              <div
+                key={index}
+                className="flex h-16 items-center gap-3 rounded-lg border px-3"
+              >
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton width={160} height={14} />
+                  <Skeleton width={100} height={10} />
+                </div>
+                <Skeleton width={56} height={20} className="rounded" />
+              </div>
+            ))}
+          </div>
+        </SkeletonRegion>
       ) : null}
 
       {tokens !== null && tokens.length === 0 && !loadError ? (

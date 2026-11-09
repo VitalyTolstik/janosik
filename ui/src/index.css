@@ -34,6 +34,9 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  /* Loading placeholders (brand/src/tokens.css). */
+  --color-skeleton: var(--janosik-skeleton-base);
+  --color-skeleton-highlight: var(--janosik-skeleton-highlight);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
@@ -1191,5 +1194,61 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
 @media (prefers-reduced-motion: no-preference) {
   .card-copy-success {
     animation: card-copy-success 180ms ease-out;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Loading skeletons (SKELETON-AUDIT §4.1). The shimmer is one pseudo-element
+ * over a themed base; the region fades in after 180 ms so a fast response
+ * never flashes a placeholder, while its layout box exists from frame one.
+ * -------------------------------------------------------------------------- */
+.janosik-skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--janosik-skeleton-base);
+}
+
+.janosik-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--janosik-skeleton-highlight),
+    transparent
+  );
+  animation: janosik-skeleton-shimmer 1.4s linear infinite;
+}
+
+.janosik-skeleton-region {
+  animation: janosik-skeleton-reveal 1ms linear
+    var(--janosik-skeleton-delay, 180ms) both;
+}
+
+@keyframes janosik-skeleton-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes janosik-skeleton-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .janosik-skeleton::after {
+    display: none;
+    animation: none;
+  }
+  .janosik-skeleton-region {
+    opacity: 1;
+    animation: none;
   }
 }

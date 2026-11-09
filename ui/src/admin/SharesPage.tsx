@@ -8,15 +8,9 @@ import { formatDate, useHour12, useI18n } from "@/i18n";
 import { appPath, appShareUrl } from "@/utils/app-path";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
+import { EntityListSkeleton } from "./skeletons";
 import { useAdminList } from "./use-admin-list";
-import {
-  Badge,
-  ErrorState,
-  LoadingState,
-  PageHeader,
-  Panel,
-  SearchInput,
-} from "./ui";
+import { Badge, ErrorState, PageHeader, Panel, SearchInput } from "./ui";
 
 /**
  * Public shares (TASK-58) — every read-only link minted against any board,
@@ -72,11 +66,6 @@ export function SharesPage() {
     [reload, t, toast],
   );
 
-  if (list.loading && rows.length === 0) return <LoadingState />;
-  if (list.error) {
-    return <ErrorState onRetry={reload} />;
-  }
-
   return (
     <div className="w-full max-w-5xl space-y-4 p-4">
       <PageHeader
@@ -85,8 +74,14 @@ export function SharesPage() {
         actions={<SearchInput value={list.search} onChange={list.setSearch} />}
       />
 
-      <Panel className="p-0">
-        {rows.length === 0 ? (
+      <Panel className="p-0" aria-busy={list.loading || list.refreshing}>
+        {list.loading ? (
+          <EntityListSkeleton columns={6} testId="admin-shares-skeleton" />
+        ) : list.error ? (
+          <div className="p-4">
+            <ErrorState onRetry={reload} />
+          </div>
+        ) : rows.length === 0 ? (
           <p className="p-4 text-sm text-muted-foreground">
             {t("admin.shares.empty")}
           </p>

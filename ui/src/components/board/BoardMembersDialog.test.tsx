@@ -69,6 +69,24 @@ function renderPanel(canManage: boolean, children?: ReactNode) {
 }
 
 describe("BoardMembersPanel (TASK-35)", () => {
+  it("shows a busy roster skeleton while the members load", async () => {
+    let release!: (members: BoardMemberDto[]) => void;
+    vi.spyOn(api, "listMembers").mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    renderPanel(true);
+
+    const skeleton = await screen.findByTestId("board-members-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+    expect(screen.getAllByTestId("board-members-skeleton-row")).toHaveLength(4);
+
+    act(() => release([ADMIN, MEMBER]));
+    expect(await screen.findByText("Boris")).toBeInTheDocument();
+    expect(screen.queryByTestId("board-members-skeleton")).toBeNull();
+  });
+
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.spyOn(api, "listPendingInvitations").mockResolvedValue([]);

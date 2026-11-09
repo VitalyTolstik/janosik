@@ -1,5 +1,11 @@
 import * as React from "react";
 
+import {
+  CalendarSkeleton,
+  TableSkeleton,
+  WatchSkeleton,
+} from "@/components/board/ViewSkeleton";
+
 // Calendar and table views are only rendered after the user switches views
 // in the ViewSwitcher (the default view is the kanban board) — keep them out
 // of the critical path and load each module on first switch (TASK-34; the
@@ -41,11 +47,7 @@ type WatchViewProps = Parameters<WatchViewComponent>[0];
  */
 function CalendarView(props: CalendarViewProps) {
   return (
-    <React.Suspense
-      fallback={
-        <div className="min-h-0 flex-1 animate-pulse rounded-lg bg-muted/40" />
-      }
-    >
+    <React.Suspense fallback={<CalendarSkeleton />}>
       <CalendarViewImpl {...props} />
     </React.Suspense>
   );
@@ -53,20 +55,15 @@ function CalendarView(props: CalendarViewProps) {
 
 function TableView(props: TableViewProps) {
   return (
-    <React.Suspense
-      fallback={
-        <div className="min-h-0 flex-1 animate-pulse rounded-lg bg-muted/40" />
-      }
-    >
+    <React.Suspense fallback={<TableSkeleton />}>
       <TableViewImpl {...props} />
     </React.Suspense>
   );
 }
 
 function WatchView(props: WatchViewProps) {
-  // The watch view is deliberately bare: no pulsing skeleton either.
   return (
-    <React.Suspense fallback={<div className="min-h-0 flex-1 bg-muted/20" />}>
+    <React.Suspense fallback={<WatchSkeleton />}>
       <WatchViewImpl {...props} />
     </React.Suspense>
   );

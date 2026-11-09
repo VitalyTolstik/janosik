@@ -13,7 +13,8 @@ import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { Chart } from "./chart/chart";
 import { useAdminAuth } from "./AdminAuthContext";
-import { Badge, ErrorState, LoadingState, PageHeader, Panel } from "./ui";
+import { SettingsSkeleton } from "./skeletons";
+import { Badge, ErrorState, PageHeader, Panel } from "./ui";
 
 /**
  * Traffic & limits (TASK-57) — the live API request rate and the global rate
@@ -100,7 +101,8 @@ export function TrafficSettingsPage() {
     load();
   }, [load]);
 
-  if (phase === "loading") return <LoadingState />;
+  if (phase === "loading")
+    return <SettingsSkeleton testId="admin-traffic-skeleton" panels={2} />;
   if (phase === "error") return <ErrorState onRetry={retry} />;
 
   const perSecond = traffic?.perSecond ?? new Array<number>(60).fill(0);

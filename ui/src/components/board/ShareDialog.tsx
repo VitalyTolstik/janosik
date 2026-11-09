@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
+import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import {
   Popover,
   PopoverContent,
@@ -159,12 +160,18 @@ function SharePanel({ boardId }: { boardId: string }) {
         }}
       />
 
-      <div className="space-y-2">
+      <div className="space-y-2" aria-busy={shares === null}>
         <p className="text-xs font-medium uppercase text-muted-foreground">
           {t("share.active")}
         </p>
         {shares === null ? (
-          <p className="text-sm text-muted-foreground">{t("share.loading")}</p>
+          <SkeletonRegion
+            label={t("share.loading")}
+            testId="share-list-skeleton"
+            delayMs={150}
+          >
+            <ShareListSkeleton />
+          </SkeletonRegion>
         ) : !shares.some((share) => share.mode === mode) ? (
           <p className="text-sm text-muted-foreground">{t("share.empty")}</p>
         ) : (
@@ -183,6 +190,28 @@ function SharePanel({ boardId }: { boardId: string }) {
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Two active-link rows, 76 px each — the real `ShareRow` rhythm. */
+function ShareListSkeleton() {
+  return (
+    <div className="space-y-2" aria-hidden="true">
+      {[0, 1].map((index) => (
+        <div key={index} className="h-[76px] space-y-2 rounded-md border p-2">
+          <div className="flex items-center gap-2">
+            <Skeleton width={48} height={16} className="rounded" />
+            <Skeleton width={120} height={12} />
+            <div className="ml-auto flex items-center gap-1">
+              <Skeleton width={24} height={24} className="rounded-md" />
+              <Skeleton width={24} height={24} className="rounded-md" />
+            </div>
+          </div>
+          <Skeleton width={180} height={10} />
+          <Skeleton width={140} height={10} />
+        </div>
+      ))}
     </div>
   );
 }

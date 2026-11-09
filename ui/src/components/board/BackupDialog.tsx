@@ -3,6 +3,7 @@ import { Check, RotateCcw, Trash2, X } from "lucide-react";
 
 import { useToast } from "@/components/Toast";
 import { Button } from "@/components/ui/button";
+import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -116,8 +117,27 @@ function BackupContent() {
       <div
         className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6"
         data-testid="backup-list"
+        aria-busy={backups === null}
       >
-        {backups === null || backups.length === 0 ? (
+        {backups === null ? (
+          <SkeletonRegion
+            label={t("common.loading")}
+            testId="backup-list-skeleton"
+          >
+            <div className="space-y-1.5 py-1" aria-hidden="true">
+              {Array.from({ length: 3 }, (_, index) => (
+                <div
+                  key={index}
+                  className="flex h-9 items-center gap-2 rounded-lg border border-border/60 px-2.5"
+                >
+                  <Skeleton width={120} height={12} />
+                  <Skeleton width={60} height={10} />
+                  <Skeleton width={48} height={24} className="ml-auto" />
+                </div>
+              ))}
+            </div>
+          </SkeletonRegion>
+        ) : backups.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
             {t("data.backupEmpty")}
           </p>

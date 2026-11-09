@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 
+import { BoardListSkeleton } from "@/components/board/BoardSkeleton";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -126,6 +127,7 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
     archiveBoard,
     unarchiveBoard,
     roleOf,
+    pendingBoardCount,
   } = useBoard();
 
   const [query, setQuery] = useState("");
@@ -298,12 +300,17 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
         ref={listRef}
         role="listbox"
         aria-label={t("board.switcher.aria")}
+        aria-busy={pendingBoardCount > 0}
         className="max-h-[300px] overflow-y-auto p-1.5"
       >
         {groups.flat.length === 0 ? (
-          <p className="px-2.5 py-6 text-center text-sm text-muted-foreground">
-            {t("board.switcher.empty")}
-          </p>
+          pendingBoardCount > 0 ? (
+            <BoardListSkeleton pending={pendingBoardCount} />
+          ) : (
+            <p className="px-2.5 py-6 text-center text-sm text-muted-foreground">
+              {t("board.switcher.empty")}
+            </p>
+          )
         ) : (
           groups.flat.map((b, index) => {
             const isActive = b.id === board?.id;
@@ -466,6 +473,11 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
             );
           })
         )}
+        {/* Remaining aggregates are still streaming in — two pending rows
+            keep the list honest instead of "no boards" or a silent gap. */}
+        {pendingBoardCount > 0 && groups.flat.length > 0 ? (
+          <BoardListSkeleton pending={pendingBoardCount} />
+        ) : null}
         {/* Archived boards: kept out of navigation, restorable. */}
         {filteredArchived.length > 0 ? (
           <div className="mt-1 border-t pt-1.5" data-testid="archived-section">

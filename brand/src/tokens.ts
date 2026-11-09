@@ -195,6 +195,20 @@ export const logo = {
 } as const;
 
 /**
+ * Loading-placeholder surfaces. Base is a blend of the card and hover
+ * surfaces; highlight is the moving shimmer stripe mixed from the text
+ * colour, so both themes stay legible without hard-coded greys.
+ */
+export const skeleton = {
+  base: "color-mix(in oklab, var(--hover) 74%, var(--card))",
+  highlight:
+    "color-mix(in oklab, var(--foreground) 9%, var(--janosik-skeleton-base))",
+  lightBase: "color-mix(in oklab, var(--hover) 70%, var(--card))",
+  lightHighlight:
+    "color-mix(in oklab, var(--foreground) 6%, var(--janosik-skeleton-base))",
+} as const;
+
+/**
  * Marketing-site theme — light, airy white/blue (no violet, no pink). The
  * product app keeps its own dark themes (`themes`); the site imports
  * `@janosik/brand/site-tokens.css`, which overrides the colour roles below.
