@@ -133,6 +133,13 @@ describe("ApiTokensSection (TASK-36.1)", () => {
       "aria-describedby",
       "token-rate-error",
     );
+
+    const rate = screen.getByTestId("token-rate");
+    await userEvent.clear(rate);
+    await userEvent.type(rate, "120");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(rate).not.toHaveAttribute("aria-invalid");
+    expect(rate).not.toHaveAttribute("aria-describedby");
     expect(
       server.requests.some(
         (request) =>

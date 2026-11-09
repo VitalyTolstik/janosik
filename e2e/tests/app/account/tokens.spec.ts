@@ -73,6 +73,10 @@ test("the create dialog uses themed controls in light and dark", async ({
   dialog = await openCreate();
 
   await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
+  await expect(
+    dialog.getByRole("checkbox", { name: "Read-only (writes refused)" }),
+  ).toBeVisible();
+  await expect(dialog.locator('input[type="number"]')).toHaveCount(0);
 });
 
 test("copying a new key puts the plaintext on the clipboard", async ({
