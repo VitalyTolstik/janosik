@@ -41,6 +41,10 @@ export default defineConfig({
   ...filter,
   fullyParallel: !globalAdmin,
   workers: globalAdmin ? 1 : process.env.CI ? 4 : undefined,
+  // The lifecycle flows in cards/ and boards/ are long (create, archive,
+  // restore and reload in one user journey); 30 s left no headroom on a
+  // loaded CI runner once the shared stack warms up.
+  timeout: 60_000,
   forbidOnly: !!process.env.CI,
   retries: globalAdmin ? 0 : process.env.CI ? 1 : 0,
   reporter: [

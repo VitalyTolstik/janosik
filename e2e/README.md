@@ -132,6 +132,27 @@ stays unavailable in server mode. Each test starts from its own account and
 board; fixtures build import envelopes through the API and delete their source
 boards.
 
+`tests/app/auth/`, `tests/app/account/`, `tests/app/boards/`,
+`tests/app/columns/`, `tests/app/cards/`, `tests/app/data/` and
+`tests/app/pwa/` also carry the coverage-audit follow-up. Auth adds the
+account backoff after repeated wrong passwords and two tabs rotating one
+refresh cookie under simultaneous reloads; account adds a board-scoped
+read-only API key, key expiry/last-used metadata, the 2 MB avatar limit and
+the email-change error paths; boards cover switcher grouping and role icons,
+the ten-board limit and cancelling an archive; columns cover the WIP drop
+refusal (with the card staying put), removing a WIP limit and the twelve-
+column cap; cards cover attachment download through the authenticated blob
+stream and its delete/type/20-file limits, rapid composer entry with
+Shift+Enter and labels, own-comment deletion, Ctrl+Enter/Cancel and comment
+pagination, insert-between cards, delete-forever, duplicate content and
+move-to-column; data covers a full export → import round-trip (description,
+label, priority, due, cover, checklist, link and an archived card), importing
+the same file twice, deleting saved copies and a server-side import failure;
+PWA covers the update banner (waiting worker, dismissal, reload and a second
+tab following `controllerchange`) and rollback of an offline card edit. The
+`mail-disabled` scenario now runs serially and snapshots/restores the global
+email and registration settings per test.
+
 `tests/app/navigation/` covers direct board and card links (including signing in
 on the linked URL and the `/app/` deploy base), the home redirect, the board 404
 and its recovery, archived-board redirects (a dead archived-card link explains
