@@ -41,6 +41,13 @@ development servers. E2E imports use `@/` for paths relative to `e2e/`.
 link limits and revocation, and iframe themes on a separate local origin. Its
 fixtures create a fresh user and board per test.
 
+Loading skeletons are covered where the state is observable in Chrome: board
+boot, card comments/history/attachments, public board and card, account API
+keys, admin entity tables/search. `helpers/network.ts` delays only the next
+matching request, so each spec asserts `aria-busy`/testids without slowing the
+rest of the run. `tests/app/navigation/skeleton.spec.ts` also checks that
+`prefers-reduced-motion: reduce` disables the shimmer.
+
 `tests/app/filters/` covers the board filter toolbar: title, description, label
 and checklist search; the due, created, label, priority, assignee and link
 facets; removable chips; reset; the active-facet count; per-column empty states;

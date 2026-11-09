@@ -11,7 +11,9 @@ import { CARD_PRIORITIES } from "@janosik/shared";
 import { priorityLabel } from "@/utils/priority";
 
 import { api, isApiEnabled } from "@/api/client";
+import { CardSectionSkeleton } from "@/components/board/CardSectionSkeleton";
 import { Button } from "@/components/ui/button";
+import { SkeletonRegion } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { useToast } from "@/components/Toast";
@@ -59,23 +61,34 @@ export function CardHistory({
 
   const [entries, setEntries] = useState<ActivityFeedEntry[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  // Distinguishes a real empty history from the first page still in flight.
+  const [loaded, setLoaded] = useState(!serverMode);
+  const aliveRef = useRef(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
 
   const loadFirst = useCallback(async () => {
     if (!serverMode) return;
     try {
       const page = await api.cardActivity(cardId, undefined, PAGE_SIZE);
+      if (!aliveRef.current) return;
       setEntries(page.items);
       setNextCursor(page.nextCursor);
     } catch {
+      if (!aliveRef.current) return;
       toast.error(t("history.loadError"));
+    } finally {
+      if (aliveRef.current) setLoaded(true);
     }
   }, [cardId, serverMode, t, toast]);
 
   // Threads are keyed by card id upstream, so mount state is the reset.
   useEffect(() => {
+    aliveRef.current = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the page lands after the await, not synchronously
     void loadFirst();
+    return () => {
+      aliveRef.current = false;
+    };
   }, [loadFirst]);
 
   const refreshNewest = useCallback(async () => {
@@ -147,8 +160,15 @@ export function CardHistory({
   }, [visible.length, onCountChange]);
 
   return (
-    <div className="space-y-2">
-      {visible.length === 0 ? (
+    <div className="space-y-2" aria-busy={!loaded}>
+      {!loaded ? (
+        <SkeletonRegion
+          label={t("history.loading")}
+          testId="card-history-skeleton"
+        >
+          <CardSectionSkeleton kind="history" rows={4} />
+        </SkeletonRegion>
+      ) : visible.length === 0 ? (
         <p className="py-1 text-sm text-muted-foreground/70">
           {t("history.empty")}
         </p>

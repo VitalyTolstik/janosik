@@ -17,7 +17,8 @@ import { cn } from "@/lib/utils";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { Chart } from "./chart/chart";
-import { ErrorState, LoadingState, PageHeader, Panel } from "./ui";
+import { DashboardSkeleton } from "./skeletons";
+import { ErrorState, PageHeader, Panel } from "./ui";
 
 /**
  * Dashboard (TASK-36): platform counters, 14-day sparklines and the latest
@@ -104,7 +105,7 @@ export function DashboardPage() {
     load();
   }, [load]);
 
-  if (state === "loading") return <LoadingState />;
+  if (state === "loading") return <DashboardSkeleton />;
   if (state === "error" || metrics === null)
     return <ErrorState onRetry={load} />;
 

@@ -15,14 +15,8 @@ import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
-import {
-  CharCount,
-  ErrorState,
-  Field,
-  LoadingState,
-  PageHeader,
-  Panel,
-} from "./ui";
+import { CharCount, ErrorState, Field, PageHeader, Panel } from "./ui";
+import { SettingsSkeleton } from "./skeletons";
 import { fieldError } from "./validation";
 
 /**
@@ -236,7 +230,8 @@ export function EmailSettingsPage() {
     }
   }, [t, testTo, toast]);
 
-  if (phase === "loading") return <LoadingState />;
+  if (phase === "loading")
+    return <SettingsSkeleton testId="admin-email-skeleton" panels={3} />;
   if (phase === "error" || settings === null || draft === null) {
     return <ErrorState onRetry={retry} />;
   }

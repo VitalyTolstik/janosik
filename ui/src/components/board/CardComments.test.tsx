@@ -77,8 +77,17 @@ function comment(overrides: Partial<CommentDto> = {}): CommentDto {
   };
 }
 
-function renderComments(server: FakeServer, readOnly = false) {
-  vi.stubGlobal("fetch", server.handle);
+type FetchHandler = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
+function renderComments(
+  server: FakeServer,
+  readOnly = false,
+  handler: FetchHandler = server.handle,
+) {
+  vi.stubGlobal("fetch", handler);
   return render(
     <I18nProvider>
       <ToastProvider>
@@ -129,6 +138,33 @@ afterEach(() => {
 });
 
 describe("CardComments", () => {
+  it("shows a busy skeleton until the first page arrives", async () => {
+    const server = new FakeServer();
+    server.commentsByCard.set("card-1", [comment()]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler: FetchHandler = async (input, init) => {
+      await gate;
+      return server.handle(input, init);
+    };
+
+    renderComments(server, false, handler);
+
+    const skeleton = await screen.findByTestId("card-comments-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+    expect(skeleton).toHaveAttribute("role", "status");
+    expect(screen.queryByText("No comments yet")).not.toBeInTheDocument();
+
+    act(() => release());
+
+    expect(await screen.findByTestId("comment")).toHaveTextContent("First!");
+    expect(
+      screen.queryByTestId("card-comments-skeleton"),
+    ).not.toBeInTheDocument();
+  });
+
   it("lists the thread and sends a comment via Save, optimistically", async () => {
     const server = new FakeServer([seedBoard()]);
     server.seedComments("card-1", [comment({ text: "Old note" })]);

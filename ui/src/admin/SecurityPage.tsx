@@ -8,14 +8,8 @@ import { formatDate, useHour12, useI18n } from "@/i18n";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
-import {
-  Badge,
-  CharCount,
-  ErrorState,
-  LoadingState,
-  PageHeader,
-  Panel,
-} from "./ui";
+import { Badge, CharCount, ErrorState, PageHeader, Panel } from "./ui";
+import { SettingsSkeleton } from "./skeletons";
 
 /**
  * Security (TASK-65): TOTP two-factor enrollment, the login IP allowlist and
@@ -108,7 +102,8 @@ export function SecurityPage() {
     }
   }, [allowlist, t, toast]);
 
-  if (phase === "loading") return <LoadingState />;
+  if (phase === "loading")
+    return <SettingsSkeleton testId="admin-security-skeleton" panels={2} />;
   if (phase === "error" || !security) {
     return (
       <ErrorState

@@ -1,4 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Loader2, Trash2 } from "lucide-react";
 import type {
   ActivitySseEvent,
@@ -10,10 +17,12 @@ import { COMMENT_KINDS, DEFAULT_COMMENT_KIND, LIMITS } from "@janosik/shared";
 
 import { api, isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
+import { CardSectionSkeleton } from "@/components/board/CardSectionSkeleton";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { LimitCounter } from "@/components/ui/limit-counter";
 import { Button } from "@/components/ui/button";
+import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useToast } from "@/components/Toast";
 import { formatDate, formatRelative, useHour12, useI18n } from "@/i18n";
@@ -69,6 +78,10 @@ export function CardComments({
 
   const [items, setItems] = useState<CommentDto[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  // `loaded` separates "no comments yet" from "the first page has not
+  // arrived": the section must not claim an empty thread before the answer.
+  const [loaded, setLoaded] = useState(!serverMode);
+  const aliveRef = useRef(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [draft, setDraft] = useState("");
   // Structured comment kind (TASK-157, D10) — a swarm vocabulary the reader
@@ -84,18 +97,28 @@ export function CardComments({
     if (!serverMode) return;
     try {
       const page = await api.listComments(cardId, undefined, PAGE_SIZE);
+      if (!aliveRef.current) return;
       setItems(page.items);
       setNextCursor(page.nextCursor);
     } catch {
+      if (!aliveRef.current) return;
       toast.error(t("comment.loadError"));
+    } finally {
+      // A failed request still ends the wait: the skeleton must not spin
+      // forever over an error toast.
+      if (aliveRef.current) setLoaded(true);
     }
   }, [cardId, serverMode, t, toast]);
 
   // A different card means a different thread: the parent remounts this
   // component with `key={cardId}`, so the initial state is the reset.
   useEffect(() => {
+    aliveRef.current = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the thread lands after the await, not synchronously
     void loadFirst();
+    return () => {
+      aliveRef.current = false;
+    };
   }, [loadFirst]);
 
   useEffect(() => {
@@ -215,7 +238,7 @@ export function CardComments({
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" aria-busy={!loaded}>
       {!readOnly && serverMode && user !== null ? (
         <CommentComposer
           user={user}
@@ -233,7 +256,14 @@ export function CardComments({
       ) : null}
 
       {/* An editable empty thread already has the composer as its prompt. */}
-      {items.length === 0 && (readOnly || !serverMode || user === null) ? (
+      {!loaded ? (
+        <SkeletonRegion
+          label={t("comment.loading")}
+          testId="card-comments-skeleton"
+        >
+          <CardSectionSkeleton kind="comments" rows={3} />
+        </SkeletonRegion>
+      ) : items.length === 0 && (readOnly || !serverMode || user === null) ? (
         <p className="py-1 pl-[36px] text-sm text-muted-foreground/70">
           {t("comment.empty")}
         </p>
@@ -351,7 +381,7 @@ function CommentComposer({
           fallback={
             /* Same footprint as the single-line editor so the thread
                doesn't jump while the chunk streams in. */
-            <div className="h-9 animate-pulse rounded-md bg-muted/40" />
+            <Skeleton className="h-9 rounded-md" />
           }
         >
           <CommentComposerEditor

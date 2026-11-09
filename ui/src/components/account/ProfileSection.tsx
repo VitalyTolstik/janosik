@@ -7,6 +7,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { EmailChangeDialog } from "@/components/account/EmailChangeDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
 import { useAvatarObjectUrl } from "@/hooks/use-avatar-object-url";
 import { useI18n } from "@/i18n";
@@ -292,7 +293,12 @@ function AvatarImage({
           draggable={false}
         />
       ) : (
-        <span className="h-full w-full animate-pulse rounded-full bg-muted" />
+        <Skeleton
+          variant="circle"
+          width={64}
+          height={64}
+          data-testid="account-avatar-skeleton"
+        />
       )}
     </span>
   );

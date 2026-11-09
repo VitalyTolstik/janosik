@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
+import { CardDescriptionSkeleton } from "@/components/board/CardSectionSkeleton";
 import { CardActivity } from "@/components/board/CardActivity";
 import { CardChecklists } from "@/components/board/CardChecklists";
 import { CardAttachments } from "@/components/board/CardAttachments";
@@ -62,6 +63,7 @@ import {
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { SkeletonRegion } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -1116,9 +1118,15 @@ export function CardDialog({
                   oversized pastes are clamped here with a visible toast. */}
                   <Suspense
                     fallback={
-                      /* Same footprint as the empty editor so the dialog rows
-                     don't jump while the chunk streams in (first open only). */
-                      <div className="h-32 animate-pulse rounded-md bg-muted/40" />
+                      /* Same footprint as the empty editor (toolbar + body)
+                     so the dialog rows don't jump while the chunk streams
+                     in (first open only). */
+                      <SkeletonRegion
+                        label={t("card.description.loading")}
+                        testId="card-description-skeleton"
+                      >
+                        <CardDescriptionSkeleton />
+                      </SkeletonRegion>
                     }
                   >
                     {/* The blur wrapper closes the staging window: leaving the

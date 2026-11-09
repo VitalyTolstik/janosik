@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,8 +14,16 @@ import { FakeServer } from "@/test/fake-server";
  * immediate.
  */
 
-function renderTokens(server: FakeServer) {
-  vi.stubGlobal("fetch", server.handle);
+type FetchHandler = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
+function renderTokens(
+  server: FakeServer,
+  handler: FetchHandler = server.handle,
+) {
+  vi.stubGlobal("fetch", handler);
   return render(
     <I18nProvider>
       <ToastProvider>
@@ -44,6 +52,33 @@ describe("ApiTokensSection (TASK-36.1)", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
+  });
+
+  it("shows a busy list skeleton until the first response", async () => {
+    const server = new FakeServer();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler: FetchHandler = async (input, init) => {
+      await gate;
+      return server.handle(input, init);
+    };
+
+    renderTokens(server, handler);
+
+    const section = screen.getByTestId("account-tokens");
+    expect(section).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByTestId("account-tokens-skeleton")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+
+    act(() => release());
+
+    expect(await screen.findByText("No API keys yet")).toBeInTheDocument();
+    expect(screen.queryByTestId("account-tokens-skeleton")).toBeNull();
+    expect(section).toHaveAttribute("aria-busy", "false");
   });
 
   it("shows the empty state", async () => {

@@ -1,5 +1,7 @@
 import * as React from "react";
 
+import { Skeleton } from "@/components/ui/skeleton";
+
 // react-day-picker is only needed when a date popover opens (due date in the
 // card dialog / table row, created-date filter) — keep it out of the critical
 // path and load the module on first mount (TASK-19). The `ru` locale lives in
@@ -40,9 +42,7 @@ function Calendar<P extends CalendarProps>(props: P & { localeTag?: string }) {
   const resolvedLocale = useRdpLocale(localeTag);
   return (
     <React.Suspense
-      fallback={
-        <div className="h-80 w-72 animate-pulse rounded-md bg-muted/40" />
-      }
+      fallback={<Skeleton width={288} height={320} className="rounded-md" />}
     >
       <CalendarImpl
         {...(rest as CalendarProps)}

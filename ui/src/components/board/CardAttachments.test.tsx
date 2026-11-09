@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -71,6 +71,28 @@ describe("CardAttachments", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(api, "listDetachedAttachments").mockResolvedValue([]);
+  });
+
+  it("shows a busy skeleton until the first list arrives", async () => {
+    let release!: (items: AttachmentDto[]) => void;
+    const gate = new Promise<AttachmentDto[]>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(api, "listAttachments").mockReturnValue(gate);
+    renderSection();
+
+    const skeleton = await screen.findByTestId("card-attachments-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByTestId("card-attachments-empty")).toBeNull();
+
+    act(() => release([attachment()]));
+
+    expect(
+      await screen.findByTestId("card-attachment-row"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("card-attachments-skeleton"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders the list with size and offers upload", async () => {

@@ -35,13 +35,13 @@ import {
   ConfirmDialog,
   ErrorState,
   Field,
-  LoadingState,
   PageHeader,
   Panel,
   Table,
   Td,
   Th,
 } from "./ui";
+import { AdminDetailSkeleton } from "./skeletons";
 import { fieldError } from "./validation";
 
 /**
@@ -127,7 +127,7 @@ export function BoardDetailPage() {
     );
   }
   if (detail === null) {
-    return <LoadingState />;
+    return <AdminDetailSkeleton variant="board" />;
   }
 
   const { board } = detail;

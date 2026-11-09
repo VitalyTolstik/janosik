@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Lock } from "lucide-react";
+import { Lock } from "lucide-react";
 import { useParams, useSearchParams } from "react-router-dom";
 
 import type {
@@ -16,6 +16,7 @@ import { useI18n } from "@/i18n";
 import { ShareBoardProvider } from "@/store/BoardContext";
 import { BoardRealtime } from "@/store/realtime";
 import { PublicCardDialog } from "@/share/PublicCardDialog";
+import { PublicBoardSkeleton } from "@/share/PublicBoardSkeleton";
 import { ShareUnavailable } from "@/share/ShareUnavailable";
 import {
   fetchPublicBoard,
@@ -194,9 +195,7 @@ export function PublicBoardPage() {
         {!embed ? <PublicHeaderChrome /> : null}
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {status === "loading" ? (
-            <div className="flex flex-1 items-center justify-center p-10 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-            </div>
+            <PublicBoardSkeleton />
           ) : (
             <ShareUnavailable
               variant={

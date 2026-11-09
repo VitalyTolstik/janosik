@@ -17,14 +17,8 @@ import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
 import { useAdminAuth } from "./AdminAuthContext";
 import { useAdminT } from "./admin-i18n";
-import {
-  Badge,
-  CharCount,
-  ErrorState,
-  LoadingState,
-  PageHeader,
-  Panel,
-} from "./ui";
+import { Badge, CharCount, ErrorState, PageHeader, Panel } from "./ui";
+import { SettingsSkeleton } from "./skeletons";
 import { fieldError } from "./validation";
 
 /** Length caps mirroring the backend DTOs (AdminCreateAnnouncementDto / email). */
@@ -213,7 +207,8 @@ export function CommsPage() {
     [t, toast],
   );
 
-  if (phase === "loading") return <LoadingState />;
+  if (phase === "loading")
+    return <SettingsSkeleton testId="admin-comms-skeleton" panels={3} wide />;
   if (phase === "error") {
     return (
       <ErrorState

@@ -9,6 +9,7 @@ import {
 import { Archive, Loader2, Plus } from "lucide-react";
 
 import { BoardSection } from "@/components/BoardSection";
+import { BoardShellSkeleton } from "@/components/board/BoardSkeleton";
 import { NotFoundPage } from "@/components/errors/NotFoundPage";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
@@ -126,28 +127,23 @@ function BoardShell() {
   const { board, syncStatus } = useBoard();
   const { t } = useI18n();
 
-  if (syncStatus !== "ready") {
+  if (syncStatus === "loading") {
+    return <BoardShellSkeleton />;
+  }
+
+  if (syncStatus === "error") {
     return (
       <main className="flex flex-1 items-center justify-center p-6">
         <div className="flex max-w-sm flex-col items-center gap-3 text-center text-muted-foreground">
-          {syncStatus === "loading" ? (
-            <>
-              <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-              <p className="text-sm">{t("sync.loading")}</p>
-            </>
-          ) : (
-            <>
-              <p className="text-sm">{t("sync.loadFailed")}</p>
-              <button
-                type="button"
-                data-testid="sync-retry"
-                onClick={() => window.location.reload()}
-                className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-              >
-                {t("sync.retry")}
-              </button>
-            </>
-          )}
+          <p className="text-sm">{t("sync.loadFailed")}</p>
+          <button
+            type="button"
+            data-testid="sync-retry"
+            onClick={() => window.location.reload()}
+            className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+          >
+            {t("sync.retry")}
+          </button>
         </div>
       </main>
     );
@@ -205,7 +201,10 @@ function AppGate() {
       ) : status === "anonymous" ? (
         <LoginPage />
       ) : (
-        <main className="flex flex-1 items-center justify-center gap-2 p-6 text-muted-foreground">
+        <main
+          data-testid="app-boot-splash"
+          className="flex flex-1 items-center justify-center gap-2 p-6 text-muted-foreground"
+        >
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
           <span className="text-sm">{t("auth.restoring")}</span>
         </main>
@@ -217,7 +216,10 @@ function AppGate() {
 /** Suspense fallback while the master-panel chunk is fetched. */
 function RouteSplash() {
   return (
-    <div className="flex h-screen items-center justify-center bg-background">
+    <div
+      data-testid="route-splash"
+      className="flex h-screen items-center justify-center bg-background"
+    >
       <Loader2
         className="h-5 w-5 animate-spin text-muted-foreground"
         aria-hidden

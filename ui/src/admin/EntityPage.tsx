@@ -18,13 +18,13 @@ import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
+import { EntityListSkeleton } from "./skeletons";
 import { useAdminList } from "./use-admin-list";
 import {
   ConfirmDialog,
   EmptyState,
   ErrorState,
   FilterTabs,
-  LoadingState,
   PageHeader,
   Pagination,
   Panel,
@@ -306,9 +306,21 @@ export function EntityPage<E extends AdminEntity>({
           </>
         }
       />
-      <Panel className="flex min-h-0 flex-1 flex-col">
+      <Panel
+        className="flex min-h-0 flex-1 flex-col"
+        data-testid="admin-entity-panel"
+        aria-busy={list.loading || list.refreshing}
+      >
         {list.loading ? (
-          <LoadingState />
+          <EntityListSkeleton
+            columns={
+              config.columns.length +
+              (bulkEnabled ? 1 : 0) +
+              (config.actions || !config.skipActions ? 1 : 0)
+            }
+            bulk={bulkEnabled}
+            testId={`admin-${config.entity}-skeleton`}
+          />
         ) : list.error ? (
           <ErrorState onRetry={list.reload} />
         ) : list.items.length === 0 ? (
