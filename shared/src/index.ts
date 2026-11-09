@@ -20,3 +20,4 @@ export * from "./utils/storage-keys";
 export * from "./api";
 export * from "./share";
 export * from "./admin";
+export * from "./announcements";
