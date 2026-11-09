@@ -164,7 +164,7 @@ export function Notice({
       {actions ? (
         <div
           className={cn(
-            "flex shrink-0 items-center gap-1.5 max-sm:order-last max-sm:basis-full max-sm:justify-end",
+            "flex shrink-0 flex-wrap items-center gap-1.5 max-sm:order-last max-sm:basis-full max-sm:justify-end",
             Icon && "max-sm:pl-[46px]",
           )}
         >

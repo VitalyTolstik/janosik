@@ -16,7 +16,10 @@ import { DataSafetyBanner } from "@/components/DataSafetyBanner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Header } from "@/components/Header";
 import { NoticeStack } from "@/components/notifications/NoticeStack";
-import { UpdatePrompt } from "@/components/notifications/UpdatePrompt";
+import {
+  UpdateAvailabilityProvider,
+  UpdatePrompt,
+} from "@/components/notifications/UpdatePrompt";
 import { UserProfileProvider } from "@/components/board/UserProfileDialog";
 import { LoginPage } from "@/components/auth/LoginPage";
 import { EmailVerificationGate } from "@/components/auth/EmailVerificationGate";
@@ -276,38 +279,40 @@ export default function App() {
               <ErrorBoundary>
                 <TooltipProvider delayDuration={150}>
                   <BrowserRouter basename={APP_BASE.replace(/\/$/, "") || "/"}>
-                    <Suspense fallback={<RouteSplash />}>
-                      <Routes>
-                        <Route
-                          path={routes.adminPattern}
-                          element={
-                            <>
-                              <AdminApp />
-                              {/* No notice stack in the master panel — the
-                                  compact fallback is the only copy. */}
-                              <UpdatePrompt />
-                            </>
-                          }
-                        />
-                        <Route
-                          path={routes.sharePattern}
-                          element={
-                            <>
-                              <PublicBoardPage />
-                              <UpdatePrompt />
-                            </>
-                          }
-                        />
-                        <Route
-                          path="*"
-                          element={
-                            <AuthProvider>
-                              <AppGate />
-                            </AuthProvider>
-                          }
-                        />
-                      </Routes>
-                    </Suspense>
+                    <UpdateAvailabilityProvider>
+                      <Suspense fallback={<RouteSplash />}>
+                        <Routes>
+                          <Route
+                            path={routes.adminPattern}
+                            element={
+                              <>
+                                <AdminApp />
+                                {/* No notice stack in the master panel — the
+                                    compact fallback is the only copy. */}
+                                <UpdatePrompt />
+                              </>
+                            }
+                          />
+                          <Route
+                            path={routes.sharePattern}
+                            element={
+                              <>
+                                <PublicBoardPage />
+                                <UpdatePrompt />
+                              </>
+                            }
+                          />
+                          <Route
+                            path="*"
+                            element={
+                              <AuthProvider>
+                                <AppGate />
+                              </AuthProvider>
+                            }
+                          />
+                        </Routes>
+                      </Suspense>
+                    </UpdateAvailabilityProvider>
                   </BrowserRouter>
                 </TooltipProvider>
               </ErrorBoundary>

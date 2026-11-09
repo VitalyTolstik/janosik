@@ -1,4 +1,12 @@
-import { useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { RefreshCw, Sparkles } from "lucide-react";
 
 import { Notice } from "@/components/notifications/Notice";
@@ -14,12 +22,27 @@ import { UPDATE_EVENT, applyServiceWorkerUpdate } from "@/pwa/register-sw";
  * compact fallback for login, verification, admin and public share screens,
  * where no stack exists — the two variants are never mounted together.
  */
-export function UpdatePrompt({
-  variant = "floating",
+
+interface UpdateAvailability {
+  available: boolean;
+  dismiss: () => void;
+}
+
+const UpdateAvailabilityContext = createContext<UpdateAvailability | null>(
+  null,
+);
+
+/**
+ * The pending update is app-wide state, not screen state: boot → login →
+ * board and loading → ready swap the prompt between its floating and inline
+ * placements, and a local flag would forget the announcement on every swap.
+ * The provider sits above the route branches and survives them.
+ */
+export function UpdateAvailabilityProvider({
+  children,
 }: {
-  variant?: "inline" | "floating";
+  children: ReactNode;
 }) {
-  const { t } = useI18n();
   const [available, setAvailable] = useState(false);
 
   useEffect(() => {
@@ -27,6 +50,43 @@ export function UpdatePrompt({
     window.addEventListener(UPDATE_EVENT, onUpdate);
     return () => window.removeEventListener(UPDATE_EVENT, onUpdate);
   }, []);
+
+  const dismiss = useCallback(() => setAvailable(false), []);
+  const value = useMemo(() => ({ available, dismiss }), [available, dismiss]);
+
+  return (
+    <UpdateAvailabilityContext.Provider value={value}>
+      {children}
+    </UpdateAvailabilityContext.Provider>
+  );
+}
+
+/**
+ * Standalone fallback for tests or an isolated embed without the provider;
+ * the real app always reads the shared provider above its route branches.
+ */
+function useUpdateAvailability(): UpdateAvailability {
+  const shared = useContext(UpdateAvailabilityContext);
+  const [localAvailable, setLocalAvailable] = useState(false);
+
+  useEffect(() => {
+    if (shared) return;
+    const onUpdate = () => setLocalAvailable(true);
+    window.addEventListener(UPDATE_EVENT, onUpdate);
+    return () => window.removeEventListener(UPDATE_EVENT, onUpdate);
+  }, [shared]);
+
+  const dismissLocal = useCallback(() => setLocalAvailable(false), []);
+  return shared ?? { available: localAvailable, dismiss: dismissLocal };
+}
+
+export function UpdatePrompt({
+  variant = "floating",
+}: {
+  variant?: "inline" | "floating";
+}) {
+  const { t } = useI18n();
+  const { available, dismiss } = useUpdateAvailability();
 
   if (!available) return null;
 
@@ -45,7 +105,7 @@ export function UpdatePrompt({
         </Button>
       }
       close={{
-        onClick: () => setAvailable(false),
+        onClick: dismiss,
         label: t("common.dismissNotification"),
       }}
     />
