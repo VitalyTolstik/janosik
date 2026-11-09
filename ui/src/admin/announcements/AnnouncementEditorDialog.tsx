@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/notifications/Notice";
+import { SelectField } from "@/components/ui/select-field";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDate, useI18n } from "@/i18n";
 import { useToast } from "@/components/Toast";
@@ -32,7 +33,6 @@ import { useAdminT, type AdminMessageKey } from "../admin-i18n";
 import { Badge, CharCount, Field } from "../ui";
 import { DateTimeField } from "./DateTimeField";
 import { RecipientPicker } from "./RecipientPicker";
-import { SelectField } from "./SelectField";
 
 const TITLE_MAX = 200;
 const BODY_MAX = 2000;

@@ -11,7 +11,6 @@ import { HelpMenu } from "@/components/HelpMenu";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import { Button } from "@/components/ui/button";
-import { Settings } from "lucide-react";
 import { useState } from "react";
 import {
   Tooltip,
@@ -63,7 +62,7 @@ export function Header() {
                   data-testid="board-settings-trigger"
                   onClick={() => setSettingsOpen(true)}
                 >
-                  <Settings className="h-4 w-4" />
+                  <LazyAnimatedIcon name="settings" size={20} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{t("board.settings.button")}</TooltipContent>

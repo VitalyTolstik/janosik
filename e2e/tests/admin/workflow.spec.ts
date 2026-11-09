@@ -29,7 +29,8 @@ test("a master edits the workflow on behalf of the owner and the change is audit
 
   await page.getByTestId("admin-workflow-enabled").click();
   await page.getByTestId(`admin-workflow-cell-${backlog}-${doing}`).click();
-  await page.getByTestId("admin-workflow-initial").selectOption(backlog);
+  await page.getByTestId("admin-workflow-initial").click();
+  await page.getByTestId(`admin-workflow-initial-option-${backlog}`).click();
   await page.getByTestId("admin-workflow-save").click();
   await expectToast(page, "Workflow saved");
 
