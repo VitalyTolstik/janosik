@@ -228,87 +228,46 @@
 /* --------------------------------------------------------------- login ---- */
 
 .admin-login {
-  display: grid;
-  grid-template-columns: minmax(0, 42fr) minmax(0, 58fr);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-height: 100vh;
   min-height: 100dvh;
+  padding: 48px 20px;
   background: var(--background);
   color: var(--foreground);
 }
 
-.admin-login-brand {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 32px;
-  background:
-    radial-gradient(
-      900px 460px at 8% -12%,
-      color-mix(in oklab, var(--primary) 30%, transparent),
-      transparent 62%
-    ),
-    radial-gradient(
-      720px 420px at 106% 110%,
-      color-mix(in oklab, var(--secondary) 18%, transparent),
-      transparent 60%
-    ),
-    #081120;
-  color: #e8eef7;
-}
-
-.admin-login-brand::after {
+.admin-login-tools {
   position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgb(255 255 255 / 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(255 255 255 / 0.035) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(circle at 30% 20%, #000, transparent 72%);
-  content: "";
-  pointer-events: none;
+  top: 20px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.admin-login-brand > * {
-  position: relative;
-  z-index: 1;
+.admin-login-pane {
+  width: 100%;
+  max-width: 372px;
+  padding: 0;
 }
 
 .admin-login-form-wrap {
   width: 100%;
-  max-width: 372px;
-}
-
-.admin-login-pane {
-  padding: 32px;
-}
-
-@media (max-width: 900px) {
-  .admin-login {
-    grid-template-columns: 1fr;
-  }
-  .admin-login-brand {
-    min-height: 168px;
-    padding: 24px;
-  }
-  .admin-login-brand .admin-login-brand-mid,
-  .admin-login-brand .admin-login-brand-foot {
-    display: none;
-  }
-  .admin-login-pane {
-    padding: 24px 20px 48px;
-  }
+  max-width: none;
 }
 
 @media (max-width: 520px) {
-  .admin-login-brand {
-    min-height: 76px;
-    padding: 16px;
+  .admin-login {
+    padding: 64px 16px 32px;
+  }
+  .admin-login-tools {
+    top: 12px;
+    right: 12px;
   }
   .admin-login-pane {
-    padding: 20px 16px 40px;
-  }
-  .admin-login-form-wrap {
     max-width: none;
   }
 }

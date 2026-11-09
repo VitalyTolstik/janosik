@@ -539,8 +539,6 @@ const en = {
     "Stop the demo and delete its board, cards and demo users?",
 
   "admin.login.title": "Sign in to Janosik",
-  "admin.login.subtitle":
-    "Master access · restricted to platform operators. Regular Janosik accounts cannot sign in here.",
   "admin.login.email": "Work email",
   "admin.login.password": "Password",
   "admin.login.totpCode": "Two-factor code",
@@ -571,17 +569,7 @@ const en = {
   "admin.login.offline": "No connection to the server",
   "admin.login.offlineBody":
     "Check your network connection and try again. Your session was not created.",
-  "admin.login.hint":
-    "Master accounts are created on the server via the admin CLI.",
   "admin.login.back": "Back to the app",
-  "admin.login.brandKicker": "Restricted operations",
-  "admin.login.brandTitle": "Run the platform with a clear head.",
-  "admin.login.brandBody":
-    "One console for users, boards, moderation, audit and every owner-only control. Built for support work at 3 a.m.",
-  "admin.login.brandSignal": "Master console · password + optional 2FA",
-  "admin.login.brandFoot": "Self-hosted · Master access only",
-  "admin.login.environment": "Environment",
-  "admin.login.version": "Version",
   "admin.login.emailPlaceholder": "you@company.com",
   "admin.login.passwordPlaceholder": "Enter your password",
   "admin.login.show": "Show",
@@ -591,11 +579,6 @@ const en = {
   "admin.login.capsLock": "Caps Lock is on",
   "admin.login.lostDevice":
     "Lost your authenticator? Ask an owner for a reset.",
-  "admin.login.ssoTitle": "Single sign-on is not configured",
-  "admin.login.ssoBody":
-    "Master accounts are issued by an owner or the server CLI. This installation signs in with a password plus an optional authenticator code — no external identity provider is connected.",
-  "admin.login.protected":
-    "Protected by rate limiting and a separate master session.",
   "admin.login.theme": "Switch light or dark theme",
   "admin.login.language": "Change language",
 
@@ -1738,8 +1721,6 @@ const ru: Record<AdminMessageKey, string> = {
     "Остановить демо и удалить его доску, карточки и демо-аккаунты?",
 
   "admin.login.title": "Вход в Janosik",
-  "admin.login.subtitle":
-    "Доступ мастера · только для операторов платформы. Обычные аккаунты Janosik сюда не входят.",
   "admin.login.email": "Рабочий email",
   "admin.login.password": "Пароль",
   "admin.login.totpCode": "Код двухфакторной аутентификации",
@@ -1770,16 +1751,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.login.offline": "Нет соединения с сервером",
   "admin.login.offlineBody":
     "Проверьте сеть и повторите попытку. Сеанс не был создан.",
-  "admin.login.hint": "Мастер-аккаунт создаётся на сервере через admin CLI.",
   "admin.login.back": "Вернуться в приложение",
-  "admin.login.brandKicker": "Закрытые операции",
-  "admin.login.brandTitle": "Управляйте платформой со спокойной головой.",
-  "admin.login.brandBody":
-    "Одна консоль для пользователей, досок, модерации, аудита и всех owner-настроек. Создана для поддержки в три часа ночи.",
-  "admin.login.brandSignal": "Консоль мастера · пароль + опциональная 2FA",
-  "admin.login.brandFoot": "Self-hosted · только доступ мастера",
-  "admin.login.environment": "Окружение",
-  "admin.login.version": "Версия",
   "admin.login.emailPlaceholder": "you@company.com",
   "admin.login.passwordPlaceholder": "Введите пароль",
   "admin.login.show": "Показать",
@@ -1789,11 +1761,6 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.login.capsLock": "Включён Caps Lock",
   "admin.login.lostDevice":
     "Потеряли аутентификатор? Попросите владельца сбросить доступ.",
-  "admin.login.ssoTitle": "Single sign-on не настроен",
-  "admin.login.ssoBody":
-    "Мастер-аккаунты выдаёт владелец или серверный CLI. В этой установке вход — пароль и опциональный код аутентификатора; внешний провайдер идентификации не подключён.",
-  "admin.login.protected":
-    "Защищено ограничением частоты и отдельной мастер-сессией.",
   "admin.login.theme": "Переключить светлую или тёмную тему",
   "admin.login.language": "Сменить язык",
 

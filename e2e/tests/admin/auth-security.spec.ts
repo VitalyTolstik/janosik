@@ -121,10 +121,8 @@ test("A6: the master login offers no registration, recovery or social entry", as
   await expect(page.getByTestId("login-oauth-google")).toHaveCount(0);
   await expect(page.getByTestId("login-oauth-yandex")).toHaveCount(0);
   await expect(
-    page.getByText(
-      "Master accounts are created on the server via the admin CLI.",
-    ),
-  ).toBeVisible();
+    page.getByText("Master accounts are created", { exact: false }),
+  ).toHaveCount(0);
 });
 
 test("A7: TOTP enrollment shows a secret, confirms a code and turns 2FA on", async ({

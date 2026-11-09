@@ -13,7 +13,7 @@ import {
  * redirects, command palette, density and the responsive shell.
  */
 
-test("REDESIGN-1: login is a split screen with an honest SSO note and show/hide", async ({
+test("REDESIGN-1: login is a centered form with show/hide", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -25,7 +25,10 @@ test("REDESIGN-1: login is a split screen with an honest SSO note and show/hide"
   await expect(page.getByTestId("admin-login-form")).toBeVisible();
   await expect(
     page.getByText("Single sign-on is not configured", { exact: false }),
-  ).toBeVisible();
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Master accounts are created", { exact: false }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: /Continue with Google/i }),
   ).toHaveCount(0);
