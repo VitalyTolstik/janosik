@@ -1646,7 +1646,7 @@ TASK-36 и TASK-37.)*
 | 94 | TASK-163 `watch-activity-audit` ✅ | `feature/TASK-162.5-views-e2e` | §7.21: полнота и точность ленты Watch, диффы, границы аудита и права; [issue #171](https://github.com/VitalyTolstik/janosik/issues/171) | матрица событий и доступа документирована; одновременная смена роли и срока не теряет значения; согласованные события и диффы проверены браузерными и серверными тестами |
 | 95 | TASK-164 `column-accent-styles` | `feat/column-accent-styles` | Стиль колонок: per-column accent из палитры card cover + board-wide форма (9 вариантов), палитра в шапке, команда, БД, realtime, импорт/экспорт и MCP-тул | 9 форм рендерятся в light/dark; цвет per-column переживает reload, undo/redo и realtime; VIEWER не управляет; shared/ui/backend/e2e зелёные |
 | 96 | TASK-165 `card-workflow` | `feat/card-workflow` | §7.22: настраиваемый workflow карточек над колонками (ADMIN, матрица переходов, роли, условия, глобальные переходы, initial/done), enforcement UI→reducer→server, `409 conflict:"workflow"`, мастер-панель, MCP, импорт/экспорт, E2E и docs | MVP реализован в ветке; исправления по ревью внесены, ожидает CI/merge; phase 2 (граф, post-functions, шаблоны платформы, bulk/force move, ifMatch) явно вынесен в §7.22 |
-| 97 | TASK-166 `launch-agent-control` | `docs/TASK-166-launch-agent-control` → отдельные `feat/TASK-166.x-*` | §7.23: launch-readiness «agent-first с контролем человека» — идентичность и сессии агентов, scopes, pause/kill, approvals/handoff, надёжный write-контракт, run-level rollback, plan/apply/bulk, attention-inbox, лимиты и data safety, observability, DX и UI-экраны после редизайна админки | **Запланировано:** 17 параллельных потоков в 5 волнах; backend/security-примитивы не зависят от редизайна, UI-волна стартует после `feat/admin-redesign`; у каждого потока отдельный worktree/PR и DoD; общий launch-blocker список закрыт, тесты и docs en/ru обновлены. См. §7.23 |
+| 97 | TASK-166 `launch-agent-control` | `docs/TASK-166-launch-agent-control` → отдельные `feat/TASK-166.x-*` | §7.23: launch-readiness «agent-first с контролем человека» — идентичность и сессии агентов, scopes, pause/kill, approvals/handoff, надёжный write-контракт, run-level rollback, plan/apply/bulk, attention-inbox, лимиты и data safety, observability, DX и UI-экраны после редизайна админки | **Запланировано:** 18 параллельных потоков в 6 волнах (W0–W5); backend/security-примитивы не зависят от редизайна, UI-волна стартует после `feat/admin-redesign`; у каждого потока отдельный worktree/PR и DoD; общий launch-blocker список закрыт, тесты и docs en/ru обновлены; финальный поток — сквозной ревью MCP и скила под весь новый функционал. См. §7.23 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -4199,6 +4199,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 | W2 | 166.7–166.12 | после W1 (166.7 — после 166.1+166.4; 166.8 — после 166.4+166.5; 166.9 — после 166.5) | 6 потоков, но с указанными зависимостями |
 | W3 | 166.13–166.15 | после `feat/admin-redesign` + соответствующих backend-потоков | 3 UI-потока параллельно |
 | W4 | 166.16 | после W1–W3 | документация, runbook и launch checklist |
+| W5 | 166.17 | после W1–W4 | полный прогон MCP и скила на живых сценариях, фикс найденных пробелов |
 
 Каждый поток — отдельная ветка `feat/TASK-166.x-<slug>` и отдельный PR.
 Если два потока трогают один файл, они либо разводятся по времени, либо
@@ -4226,6 +4227,7 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 | 166.14 | Approvals + pause/kill UI | admin-redesign, 166.3, 166.5 | очередь approvals, approve/reject, reason, TTL, board-level pause | человек утверждает/отклоняет, видит контекст и аудит; browser E2E |
 | 166.15 | Audit/rollback + scopes/limits UI | admin-redesign, 166.2, 166.7 | run timeline, revert, pre-image diff, token presets, limits dashboard | run можно откатить из UI с conflict-check; scopes/лимиты редактируются по правам |
 | 166.16 | Docs / runbook / launch checklist | W1–W3 | `site/.../docs` EN+RU, `README`, `docs/`, ROADMAP/CHANGELOG | администратор/агентский разработчик проходят сценарии; launch checklist и rollback runbook готовы |
+| 166.17 | MCP & skill full review | W1–W4 | `mcp/src/**` (tools/schemas/format/errors/server), `mcp/README.md`, `skills/janosik/**` (`SKILL.md`, `references/*`), `site/.../docs/mcp.md` EN+RU, smoke/E2E | полный матричный прогон всех tools × scopes × destructive; новый функционал (identity, approvals, pause, rollback, plan/apply, error contract) есть в схемах, описаниях и скиле; живой сценарий «claim → workflow block → approval → move → pause → resume → rollback» проходит; tool count/pinned-тест, README/docs/skill синхронны; найденные баги исправлены, `@janosik/mcp` version bump |
 
 #### 7.23.4. Общий Definition of Done
 
@@ -4240,6 +4242,10 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
   текстом, никаких «тихих» no-op.
 - **Совместимость:** старые PAT/доски/экспорты работают; новые поля nullable;
   self-host не требует облачных сервисов.
+- **MCP и скил:** у каждого tool актуальные схема/описание/ошибки; skill
+  `skills/janosik` описывает новые сценарии (scopes, approvals, pause,
+  rollback, plan/apply) и не обещает несуществующего; живой прогон с реальным
+  MCP-клиентом зелёный.
 - **Гейты:** shared/ui/backend/mcp typecheck и unit; backend E2E; полный
   admin browser E2E; новые contract/E2E; lint/format.
 
