@@ -27,6 +27,7 @@ import {
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { SelectField } from "@/components/ui/select-field";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { createId } from "@/utils/id";
@@ -559,21 +560,21 @@ export function WorkflowEditor({
             <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
               <p className="text-xs font-semibold">{t("workflow.global")}</p>
               <div className="flex items-center gap-1.5">
-                <select
+                <SelectField<string>
                   value={globalTarget}
                   disabled={!canEdit}
-                  aria-label={t("workflow.globalTarget")}
-                  data-testid={`${testIdPrefix}-global-target`}
-                  onChange={(event) => setGlobalTarget(event.target.value)}
-                  className="h-7 max-w-40 rounded-md border border-input bg-transparent px-1.5 text-[11px]"
-                >
-                  <option value="">{t("workflow.globalTarget")}</option>
-                  {columns.map((column) => (
-                    <option key={column.id} value={column.id}>
-                      {column.title}
-                    </option>
-                  ))}
-                </select>
+                  ariaLabel={t("workflow.globalTarget")}
+                  testId={`${testIdPrefix}-global-target`}
+                  onChange={setGlobalTarget}
+                  className="h-7 max-w-40 px-1.5 text-[11px]"
+                  options={[
+                    { value: "", label: t("workflow.globalTarget") },
+                    ...columns.map((column) => ({
+                      value: column.id,
+                      label: column.title,
+                    })),
+                  ]}
+                />
                 <Button
                   type="button"
                   size="sm"
@@ -631,25 +632,26 @@ export function WorkflowEditor({
                 <span className="block text-muted-foreground">
                   {t("workflow.initialColumn")}
                 </span>
-                <select
+                <SelectField<string>
                   value={draft.initialColumnId ?? ""}
                   disabled={!canEdit}
-                  data-testid={`${testIdPrefix}-initial`}
-                  onChange={(event) =>
+                  ariaLabel={t("workflow.initialColumn")}
+                  testId={`${testIdPrefix}-initial`}
+                  onChange={(next) =>
                     setDraft((current) => ({
                       ...current,
-                      initialColumnId: event.target.value || undefined,
+                      initialColumnId: next || undefined,
                     }))
                   }
-                  className="mt-1 h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs"
-                >
-                  <option value="">{t("workflow.initialFallback")}</option>
-                  {columns.map((column) => (
-                    <option key={column.id} value={column.id}>
-                      {column.title}
-                    </option>
-                  ))}
-                </select>
+                  className="mt-1 h-8 px-2 text-xs"
+                  options={[
+                    { value: "", label: t("workflow.initialFallback") },
+                    ...columns.map((column) => ({
+                      value: column.id,
+                      label: column.title,
+                    })),
+                  ]}
+                />
               </label>
               <div className="text-[11px]">
                 <span className="block text-muted-foreground">
@@ -744,23 +746,22 @@ export function WorkflowEditor({
                       <span className="block text-muted-foreground">
                         {t("workflow.globalTarget")}
                       </span>
-                      <select
+                      <SelectField
                         value={selected.toColumnId}
                         disabled={!canEdit}
-                        data-testid={`${testIdPrefix}-global-edit-target`}
-                        onChange={(event) =>
+                        ariaLabel={t("workflow.globalTarget")}
+                        testId={`${testIdPrefix}-global-edit-target`}
+                        onChange={(next) =>
                           updateTransition(selected.id, {
-                            toColumnId: event.target.value,
+                            toColumnId: next,
                           })
                         }
-                        className="mt-1 h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs"
-                      >
-                        {columns.map((column) => (
-                          <option key={column.id} value={column.id}>
-                            {column.title}
-                          </option>
-                        ))}
-                      </select>
+                        className="mt-1 h-8 px-2 text-xs"
+                        options={columns.map((column) => ({
+                          value: column.id,
+                          label: column.title,
+                        }))}
+                      />
                     </label>
                   ) : null}
 
@@ -864,19 +865,17 @@ export function WorkflowEditor({
             <div className="space-y-2 p-3">
               {previewCard ? (
                 <>
-                  <select
+                  <SelectField
                     value={previewCard.id}
-                    onChange={(event) => setPreviewCardId(event.target.value)}
-                    aria-label={t("workflow.previewCard")}
-                    data-testid={`${testIdPrefix}-preview-card`}
-                    className="h-8 w-full rounded-md border border-input bg-transparent px-2 text-[11px]"
-                  >
-                    {cardList.map((card) => (
-                      <option key={card.id} value={card.id}>
-                        {card.title}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setPreviewCardId}
+                    ariaLabel={t("workflow.previewCard")}
+                    testId={`${testIdPrefix}-preview-card`}
+                    className="h-8 px-2 text-[11px]"
+                    options={cardList.map((card) => ({
+                      value: card.id,
+                      label: card.title,
+                    }))}
+                  />
                   {previewFrom ? (
                     <ul className="space-y-1">
                       {columns

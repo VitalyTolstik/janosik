@@ -70,6 +70,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   picker for scheduling, so the option sheet and date popup follow the dark
   theme and the UI language. The preview now mirrors the selected level tone
   and the fallback policy.
+- The board workflow editor uses the same themed select menus for global
+  targets, the initial column and the card preview, and the board-settings
+  gear is the animated settings icon already used by the app.
 
 ## [0.2.0] - 2026-11-08
 

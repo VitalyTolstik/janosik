@@ -19,9 +19,11 @@ interface SelectFieldProps<T extends string> {
   options: readonly SelectOption<T>[];
   onChange: (value: T) => void;
   disabled?: boolean;
-  /** Accessible name when the visible `<Field>` label is not attached. */
+  /** Accessible name when the visible label is not attached. */
   ariaLabel?: string;
   testId: string;
+  /** Size/spacing overrides for the trigger (the h-9 default stays). */
+  className?: string;
 }
 
 /**
@@ -39,6 +41,7 @@ export function SelectField<T extends string>({
   disabled = false,
   ariaLabel,
   testId,
+  className,
 }: SelectFieldProps<T>) {
   const [open, setOpen] = useState(false);
   const selected = options.find((option) => option.value === value);
@@ -54,7 +57,10 @@ export function SelectField<T extends string>({
           aria-haspopup="listbox"
           aria-expanded={open}
           data-testid={testId}
-          className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-2 text-left text-sm text-foreground transition-colors hover:border-ring/50 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          className={cn(
+            "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-2 text-left text-sm text-foreground transition-colors hover:border-ring/50 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50",
+            className,
+          )}
         >
           <span className="truncate">{selected?.label ?? ""}</span>
           <ChevronDown

@@ -23,6 +23,17 @@ test("configure transitions, save them and keep them after reload", async ({
   await board.open(page);
 
   const dialog = await openBoardSettings(page);
+  // The editor never falls back to browser-native select popups: every
+  // picker is the themed popover list.
+  await expect(dialog.locator("select")).toHaveCount(0);
+  await expect(dialog.getByTestId("workflow-initial")).toHaveJSProperty(
+    "tagName",
+    "BUTTON",
+  );
+  await expect(dialog.getByTestId("workflow-preview-card")).toHaveJSProperty(
+    "tagName",
+    "BUTTON",
+  );
   await expect(dialog.getByTestId("workflow-enabled")).toHaveAttribute(
     "aria-checked",
     "false",
