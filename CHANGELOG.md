@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Bilingual announcements: one logical announcement with EN/RU translations,
+  a strict `require_all` publishing policy (default), an explicit
+  `allow_fallback` mode with a localized "available only in …" notice, a
+  per-language admin editor with banner/email preview, and localized email
+  resolved from the recipient's new account-wide `User.locale`. Legacy
+  announcements keep working with their original text and an unknown language.
 - A shared skeleton UI system: one `Skeleton`/`SkeletonRegion` primitive on
   brand tokens (dark and light), with a 180 ms reveal delay, `aria-busy` and
   reduced-motion support. Content skeletons now cover the first board paint,

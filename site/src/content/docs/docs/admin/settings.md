@@ -279,19 +279,35 @@ is `Announcements, mail and templates`. Writes are owner-only.
 
 ### Announcements
 
-`New announcement` opens a dialog:
+`New announcement` opens the bilingual editor:
 
 | Field | Notes |
 | --- | --- |
-| Title | at most 200 characters |
-| Body | at most 2000 characters |
+| English / Russian tabs | one logical announcement, one text per language |
+| Source language | the original version; used as the fallback text |
+| Title | at most 200 characters per language |
+| Body | at most 2000 characters per language |
+| If a translation is missing | `Require both languages` (default) blocks publishing until EN and RU exist; `Allow one language with a notice` publishes the source and shows every other viewer an explicit "available only in …" notice |
 | Level | `Info`, `Warning` or `Alert` |
 | Audience | all users or selected users |
 | Recipients | for selected users, an autocomplete over the user directory |
-| Also send by email | queues the letter to the recipients' inbox |
+| Also send by email | queues a localized letter to the recipients' inbox |
+| Schedule | optional start and end times for the banner |
 
-An announcement with `Also send by email` is shown as an in-app banner and also
-emailed to the resolved recipients.
+The editor shows completeness per language and a banner/email preview for both
+audiences. `Save draft` stores an unfinished announcement without emailing;
+`Publish` applies the selected policy. A published announcement cannot be
+published again by editing — the letter is queued only on the draft → active
+transition, and `Email sent` records that it went out.
+
+Announcement text is part of the product communication, not board data, so it
+is translated. Every banner is rendered in the viewer's language. If a
+translation is missing under the fallback policy, the original text is shown
+with a localized notice and the correct `lang` attribute for screen readers.
+Email is sent per recipient in their language, with the same notice in the
+subject and body when the translation is missing. Accounts without a stored
+language receive the browser/app language and adopt it on the next sign-in;
+stored accounts keep their chosen language across devices.
 
 ### One-off email
 
@@ -324,23 +340,26 @@ subtitle is `{total} broadcasts, the full announcement history`.
 
 | Column | Value |
 | --- | --- |
-| Title | the announcement title |
+| Title | the source (or legacy) title |
 | Message | the body |
+| Languages | filled `EN`/`RU` chips, or `Legacy` when the language is unknown |
+| Policy | `EN+RU` for strict, `Fallback` for one-language publishing |
 | Level | info, warning or alert |
 | Audience | all users or the segment |
-| Email | an `email` badge when the letter is also emailed |
+| Email | an `email` badge plus `email sent`/`email pending` |
 | Active | on or off |
 | Created | creation time |
 | Author | the creating master |
 
-The page has a search box and status tabs (active, inactive). Row actions:
+The page has a search box and status tabs (active, inactive). Search covers
+every translation, not just the source text. Row actions:
 
 | Action | Effect |
 | --- | --- |
-| Edit | opens a dialog to change title, body, level, audience, segment, start and end times, active and send-by-email |
+| Edit | opens the bilingual editor (tabs, policy, preview, draft/publish) |
 | Activate | sets `active` true |
-| Deactivate | sets `active` false |
-| Delete | deletes the announcement |
+| Deactivate | sets `active` false (the banner disappears; sent mail cannot be recalled) |
+| Delete | deletes the announcement and its translations |
 
 ## Observability
 
@@ -364,11 +383,16 @@ The page has a search box and status tabs (active, inactive). Row actions:
 Active announcements reach signed-in users as a banner under the app header.
 The endpoint is `GET /announcements/active`, protected by standard user
 authentication, so a signed-out visitor gets nothing and a user sees only
-announcements addressed to them.
+announcements addressed to them. The banner requests the viewer's current
+interface language and re-fetches when it changes.
 
 Each banner is styled by level (info, warning, danger) and can be dismissed.
 A dismissal is remembered per announcement in `localStorage`, so a user sees
-each one once.
+each one once; switching the interface language does not bring a dismissed
+banner back. When the announcement has no translation in the viewer's
+language, the fallback policy decides: strict announcements are not published
+in that state, while a fallback announcement shows the original text with a
+localized "This announcement is available in … only" notice.
 
 ## Where to go next
 

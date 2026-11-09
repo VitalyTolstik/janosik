@@ -94,9 +94,10 @@ mint a longer-lived one or lock you out of your account.
 
 ![The Preferences section: language, time format, theme and board background.](/screens/account-preferences.png)
 
-Preferences are personal and apply to this browser:
+Preferences are personal. The language is stored on your account, so it follows
+you across devices; the remaining display options apply to this browser:
 
-- `Language` — English or Русский.
+- `Language` — English or Русский; also used for announcement banners and email.
 - `Time format` — `Auto` (follows the language), `12-hour (AM/PM)` or
   `24-hour`.
 - `Theme` — `Light` or `Dark`.
