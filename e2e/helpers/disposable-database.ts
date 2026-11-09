@@ -71,3 +71,18 @@ export async function clearCommandSnapshot(boardId: string, commandId: string) {
     `UPDATE "Command" SET details = NULL WHERE id = '${commandId}' AND "boardId" = '${boardId}';`,
   );
 }
+
+function assertUuid(value: string, label: string) {
+  if (!/^[a-f0-9-]{36}$/i.test(value)) throw new Error(`Invalid ${label}`);
+}
+
+/** Backdate a soft-deleted card so the retention sweep can purge it. */
+export async function ageDeletedCard(cardId: string, days: number) {
+  assertUuid(cardId, "card id");
+  if (!Number.isInteger(days) || days < 1 || days > 3650) {
+    throw new Error("Invalid age in days");
+  }
+  await runSql(
+    `UPDATE "Card" SET "deletedAt" = NOW() - INTERVAL '${days} days' WHERE id = '${cardId}' AND "deletedAt" IS NOT NULL;`,
+  );
+}

@@ -16,7 +16,19 @@ its containers and volumes on exit. Ports 4300 and 4802 must be free.
 npm run test:docker -w e2e
 npm run test:docker -w e2e -- tests/app/auth
 E2E_MAIL_DISABLED_TEST=1 npm run test:docker -w e2e
+npm run test:admin -w e2e
+npm run test:admin:global -w e2e
 ```
+
+`test:admin` is the master-panel suite (`tests/admin/`) on its own disposable
+stack. `test:admin:global` runs the server-wide settings scenarios in
+`tests/admin/global/`: it opens two one-off stacks, because saving the email
+sandbox transport must be the last mail-dependent test, and always runs with a
+single worker. Never point the global suite at a shared or developer stack —
+it changes email/OAuth/traffic/ops/demo settings and the cleanup restores them
+via the panel/API, not by reverting the database. The core run uses ports
+4300/4802; the global script defaults to 4310/4803 and writes reports to
+`e2e/playwright-report-admin-{core,global}/`.
 
 The last command runs the admin-settings scenario separately: it changes
 global settings and must only target a disposable isolated stack. The
@@ -132,21 +144,38 @@ screen. `LazyAnimatedIcon` now keeps its static fallback when a chunk cannot
 load, and a failed preload no longer announces a "new version" when no update
 is actually waiting.
 
-`tests/admin/` covers the master panel under `/app/admin`: signing in (a wrong
-password, a regular account, session restore after a reload and sign-out), the
-sidebar sections and direct URLs, the global omnibox and the return to the
-boards app. Owner-only rights are checked from both sides: an operator does not
-see the masters, email and OAuth entries, gets the 403 screen from the masters
-URL, sees the IP allowlist read-only and no owner-only user actions, while the
-operator can still block a user. Owners create a user, block and unblock one,
-delete with the typed confirmation, mint an operator master and open a support
-impersonation session in a new tab. Audit and Security are asserted with events
-the test itself creates: a successful master sign-in, a failed sign-in (matched
-by email and test IP) and user block/delete entries. Every test creates its own
-unique target users and masters (through the admin API or the panel itself),
-and assertions filter by a unique email or id; the shared owner session is used
-only for setup and reading. The suite never changes global email, OAuth,
-traffic or security settings.
+`tests/admin/` covers the master panel under `/app/admin`. The core suite
+(`npm run test:admin`) is split by feature: login/auth-security (lockout,
+TOTP enrollment/login/replay/disable, IP allowlist at login and per request,
+login throttle, admin/user session isolation), shell (all 26 sidebar entries
+in EN and RU, collapse/Ctrl+B, theme, language, six-type omnibox, Back/Forward,
+deep links, unknown-route redirect), permissions (owner-only areas and
+read-only settings for operators), dashboard, users and support actions
+(search/status, create with a chosen password, verify/unverify/resend, change
+email, session/token revocation, reset, promote, blocked impersonation, export,
+detail counters/tabs), masters (create OWNER/OPERATOR, duplicate, block/enable,
+reset, revoke, remove, self/last-owner guards), boards and board detail
+(create/archive/restore/delete, bulk, members/roles/owner transfer), board
+content (columns/cards through the command log), cards and the full card graph,
+content browsers (columns/labels/checklists/links/comments/attachments/
+sessions/tokens/activity/command payload/pagination), settings that do not
+change the global transport (email status, observability), communications
+(announcements, banner+email, template preview), security alerts, public shares,
+audit families and error states. Each test provisions its own users, masters,
+boards, cards and files through the API; assertions search a unique id or
+email, and mutation tests verify their own audit event.
+
+`tests/admin/global/` covers the server-wide settings: email status/test/save,
+OAuth (both providers and the runtime login buttons), the traffic limit, demo
+runner start/stop/live view/cleanup, all feature flags, maintenance mode,
+per-user rate limit, retention purge, scheduled sweeps, one-off email and
+template reset. The folder is only matched with `E2E_ADMIN_GLOBAL_TEST=1`;
+the ordinary `browser-e2e` and `test:admin` runs ignore it. The global stack is
+serial and one-off, and every destructive change is restored in `finally`.
+
+`tests/admin/queue.spec.ts` expects the E2E Compose stack to set
+`QUEUES_DASHBOARD=true` and start Redis; the owner opens Bull Board, the
+operator sees the button disabled.
 
 `tests/site/` covers the public marketing site. The landing checks the hero,
 every section heading, the feature rows and an expandable FAQ answer; pricing

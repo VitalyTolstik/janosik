@@ -98,6 +98,7 @@ export function BoardDetailPage() {
 
   const [reloadKey, setReloadKey] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
 
   const load = () => {
     setError(false);
@@ -190,19 +191,17 @@ export function BoardDetailPage() {
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="outline">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    data-testid="admin-board-detail-actions"
+                  >
                     {t("admin.common.actions")}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   {board.archivedAt === null ? (
-                    <DropdownMenuItem
-                      onSelect={() =>
-                        void run(t("admin.boards.action.archive"), () =>
-                          adminApi.archiveBoard(board.id),
-                        )
-                      }
-                    >
+                    <DropdownMenuItem onSelect={() => setConfirmArchive(true)}>
                       {t("admin.boards.action.archive")}
                     </DropdownMenuItem>
                   ) : (
@@ -232,15 +231,24 @@ export function BoardDetailPage() {
       <div className="flex flex-wrap items-center gap-2">
         <IdCell id={board.id} />
         {board.deletedAt !== null ? (
-          <Badge variant="danger">{t("admin.status.deleted")}</Badge>
+          <Badge variant="danger" data-testid="admin-board-status">
+            {t("admin.status.deleted")}
+          </Badge>
         ) : board.archivedAt !== null ? (
-          <Badge variant="warning">{t("admin.status.archived")}</Badge>
+          <Badge variant="warning" data-testid="admin-board-status">
+            {t("admin.status.archived")}
+          </Badge>
         ) : (
-          <Badge variant="success">{t("admin.status.active")}</Badge>
+          <Badge variant="success" data-testid="admin-board-status">
+            {t("admin.status.active")}
+          </Badge>
         )}
       </div>
 
-      <Panel className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-4 lg:grid-cols-6">
+      <Panel
+        className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-4 lg:grid-cols-6"
+        data-testid="admin-board-detail-meta"
+      >
         <MetaItem label={t("admin.boardDetail.owner")}>
           {board.userId ? (
             <EntityLink to={userHref(board.userId)}>
@@ -261,7 +269,10 @@ export function BoardDetailPage() {
         </MetaItem>
       </Panel>
 
-      <Panel className="grid grid-cols-3 gap-3 p-3 sm:grid-cols-5 lg:grid-cols-9">
+      <Panel
+        className="grid grid-cols-3 gap-3 p-3 sm:grid-cols-5 lg:grid-cols-9"
+        data-testid="admin-board-detail-counters"
+      >
         <CountItem
           label={t("admin.boardDetail.count.members")}
           value={board.counts.members}
@@ -300,7 +311,7 @@ export function BoardDetailPage() {
         />
       </Panel>
 
-      <Panel>
+      <Panel data-testid="admin-board-detail-members">
         <div className="flex items-center justify-between px-3 pt-2.5">
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
             {t("admin.boardDetail.members")}
@@ -475,7 +486,7 @@ export function BoardDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Panel>
+      <Panel data-testid="admin-board-detail-columns">
         <p className="px-3 pt-2.5 text-[10px] uppercase tracking-wide text-muted-foreground">
           {t("admin.boardDetail.columns")}
         </p>
@@ -516,7 +527,10 @@ export function BoardDetailPage() {
       </Panel>
 
       {detail.labels.length > 0 ? (
-        <Panel className="flex flex-wrap items-center gap-1.5 p-3">
+        <Panel
+          className="flex flex-wrap items-center gap-1.5 p-3"
+          data-testid="admin-board-detail-labels"
+        >
           <p className="w-full text-[10px] uppercase tracking-wide text-muted-foreground">
             {t("admin.boardDetail.labels")}
           </p>
@@ -525,6 +539,22 @@ export function BoardDetailPage() {
           ))}
         </Panel>
       ) : null}
+
+      <ConfirmDialog
+        open={confirmArchive}
+        title={t("admin.boards.confirm.archive.title", {
+          title: board.title,
+        })}
+        body={t("admin.boards.confirm.archive.body")}
+        confirmLabel={t("admin.boards.action.archive")}
+        onConfirm={() => {
+          setConfirmArchive(false);
+          void run(t("admin.boards.action.archive"), () =>
+            adminApi.archiveBoard(board.id),
+          );
+        }}
+        onClose={() => setConfirmArchive(false)}
+      />
 
       <ConfirmDialog
         open={confirmDelete}
