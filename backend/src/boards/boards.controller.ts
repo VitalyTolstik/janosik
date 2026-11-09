@@ -121,6 +121,14 @@ export class BoardsController {
     return this.boards.listMembers(id);
   }
 
+  /** Pending invitations (ADMIN only), so a wrong invite can be cancelled. */
+  @UseGuards(MembershipGuard)
+  @BoardRoles(Role.ADMIN)
+  @Get(":id/invitations")
+  pendingInvitations(@Param("id") id: string) {
+    return this.boards.listPendingInvitations(id);
+  }
+
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
   @Post(":id/members")

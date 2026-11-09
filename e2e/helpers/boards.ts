@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, type APIRequestContext } from "@playwright/test";
+import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
 /** A second board on the same account, with API setup wrappers. */
 export interface ExtraBoard {
@@ -43,4 +43,80 @@ export async function createExtraBoard(
     return labelId;
   };
   return { id, title, command, column, card, label };
+}
+
+/** The column section whose header group carries `name`. */
+export function boardColumn(page: Page, name: string) {
+  return page
+    .locator("section")
+    .filter({ has: page.getByRole("group", { name, exact: true }) });
+}
+
+/**
+ * Drag a card onto a column body with the same pointer sequence a user
+ * performs. dnd-kit needs a small move after pointerdown to start the drag,
+ * then a slow path over the target so `dragOver` commits the hover slot.
+ */
+export async function dragCardToColumn(
+  page: Page,
+  cardTitle: string,
+  columnName: string,
+): Promise<void> {
+  const source = page
+    .getByTestId("card-title")
+    .filter({ hasText: cardTitle })
+    .first();
+  const target = boardColumn(page, columnName).getByTestId(
+    "column-card-scroll",
+  );
+  await source.scrollIntoViewIfNeeded();
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  if (!sourceBox || !targetBox) {
+    throw new Error(`Card "${cardTitle}" or column "${columnName}" is hidden`);
+  }
+  await page.mouse.move(
+    sourceBox.x + sourceBox.width / 2,
+    sourceBox.y + sourceBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    sourceBox.x + sourceBox.width / 2 + 10,
+    sourceBox.y + sourceBox.height / 2,
+    { steps: 3 },
+  );
+  await page.mouse.move(
+    targetBox.x + targetBox.width / 2,
+    targetBox.y + Math.min(48, targetBox.height / 2),
+    { steps: 25 },
+  );
+  await page.mouse.up();
+}
+
+/** The subset of the board aggregate the view tests assert against. */
+export interface BoardSnapshot {
+  id: string;
+  columns: { id: string; title: string; cardIds: string[] }[];
+  cards: Record<
+    string,
+    {
+      id: string;
+      title: string;
+      dueDate?: number;
+      labelIds: string[];
+      assigneeId?: string;
+      priority?: string;
+      archivedAt?: number;
+    }
+  >;
+}
+
+/** Read the current board aggregate through the API (setup/assertion only). */
+export async function getBoard(
+  api: APIRequestContext,
+  boardId: string,
+): Promise<BoardSnapshot> {
+  const response = await api.get(`/api/v1/boards/${boardId}`);
+  expect(response.ok(), await response.text()).toBeTruthy();
+  return (await response.json()) as BoardSnapshot;
 }

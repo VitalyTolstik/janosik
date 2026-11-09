@@ -63,8 +63,22 @@ export function NotificationsBell() {
     if (!isApiEnabled() || user === null) return;
     void load();
     const onFocus = () => void load();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    // Invitations have no per-user SSE channel yet: a low-frequency poll
+    // keeps a long-lived tab from hiding a pending invitation until the user
+    // switches windows. Focus/visibility still answer immediately.
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 30_000);
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [load, user]);
 
   if (!isApiEnabled() || user === null) return null;

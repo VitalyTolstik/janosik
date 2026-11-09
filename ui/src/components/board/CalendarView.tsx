@@ -90,6 +90,9 @@ interface CalendarViewProps {
   onCardClick: (cardId: string) => void;
   /** VIEWER mode (TASK-35): no drag-to-reschedule, no composers. */
   readOnly?: boolean;
+  /** True while a board filter is active — drag & drop must stay disabled,
+   *  exactly as on the board (TASK-162 review, C-02). */
+  isFiltering?: boolean;
 }
 
 /** One calendar entry: a card with a due date plus resolved context. */
@@ -244,6 +247,7 @@ export function CalendarView({
   filteredCardIds,
   onCardClick,
   readOnly = false,
+  isFiltering = false,
 }: CalendarViewProps) {
   const { board, addCard, setCardDueDate } = useBoard();
   const resolveLabels = useCardLabels(board?.labels ?? NO_LABELS);
@@ -381,7 +385,7 @@ export function CalendarView({
 
   const handleDrop = (event: React.DragEvent, day: Date) => {
     event.preventDefault();
-    if (readOnly) return;
+    if (readOnly || isFiltering) return;
     setDragOverKey(null);
     const cardId = event.dataTransfer.getData("text/plain");
     if (!cardId || !board.cards[cardId]) return;
@@ -396,8 +400,11 @@ export function CalendarView({
   };
 
   // Read-only days accept nothing: no preventDefault, no highlight, no drop.
+  // A filtered board is read-only for drag & drop for the same documented
+  // reason as the kanban view: the displayed set is a projection, not the
+  // board, so moving a chip could hide or reveal cards unpredictably.
   const dragProps = (key: string) =>
-    readOnly
+    readOnly || isFiltering
       ? {}
       : {
           onDragOver: (event: React.DragEvent) => {
@@ -520,9 +527,11 @@ export function CalendarView({
     >
       <button
         type="button"
-        draggable={!readOnly}
+        draggable={!readOnly && !isFiltering}
         onDragStart={
-          readOnly ? undefined : (event) => chipDragStart(event, card.id)
+          readOnly || isFiltering
+            ? undefined
+            : (event) => chipDragStart(event, card.id)
         }
         onAuxClick={(event) => chipAuxOpen(event, card.id)}
         title={`${columnTitle} · ${card.title}`}
@@ -551,9 +560,11 @@ export function CalendarView({
     >
       <button
         type="button"
-        draggable={!readOnly}
+        draggable={!readOnly && !isFiltering}
         onDragStart={
-          readOnly ? undefined : (event) => chipDragStart(event, entry.card.id)
+          readOnly || isFiltering
+            ? undefined
+            : (event) => chipDragStart(event, entry.card.id)
         }
         onAuxClick={(event) => chipAuxOpen(event, entry.card.id)}
         onClick={(event) => {
@@ -601,11 +612,13 @@ export function CalendarView({
       >
         <button
           type="button"
-          draggable={!readOnly}
+          draggable={!readOnly && !isFiltering}
           data-testid="calendar-chip"
           data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
           onDragStart={
-            readOnly ? undefined : (event) => chipDragStart(event, card.id)
+            readOnly || isFiltering
+              ? undefined
+              : (event) => chipDragStart(event, card.id)
           }
           onAuxClick={(event) => chipAuxOpen(event, card.id)}
           title={`${

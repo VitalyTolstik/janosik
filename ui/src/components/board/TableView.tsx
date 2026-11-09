@@ -24,6 +24,7 @@ import {
   OPTIONAL_COLUMNS,
   SortHeader,
   checklistProgress,
+  compareTableRows,
   readStoredColumns,
   writeStoredColumns,
   type OptionalColumn,
@@ -67,7 +68,6 @@ import {
   useEntityAttribution,
 } from "@/store/board-live";
 import { userAvatarVar, userLabel } from "@/utils/avatar";
-import { priorityRank } from "@/utils/priority";
 import { isColumnFull } from "@janosik/shared";
 import { cn } from "@/lib/utils";
 import { createId } from "@/utils/id";
@@ -242,51 +242,15 @@ export function TableView({
     const columnIndex = new Map(
       board.columns.map((col, index) => [col.id, index]),
     );
-    // `dir` multiplies only the numeric comparison of each key. The
-    // due-date null handling lives outside it, so undated cards stay last
-    // in BOTH sort directions (the reducer's sortColumn semantics).
-    const cmp = (a: (typeof rows)[number], b: (typeof rows)[number]) => {
-      switch (sort.key) {
-        case "title":
-          return (
-            a.card.title.localeCompare(b.card.title, lang, {
-              sensitivity: "base",
-            }) * sort.dir
-          );
-        case "column":
-          return (
-            ((columnIndex.get(a.column.id) ?? 0) -
-              (columnIndex.get(b.column.id) ?? 0)) *
-            sort.dir
-          );
-        case "due": {
-          const aDue =
-            typeof a.card.dueDate === "number" ? a.card.dueDate : null;
-          const bDue =
-            typeof b.card.dueDate === "number" ? b.card.dueDate : null;
-          if (aDue === null && bDue === null) return 0;
-          if (aDue === null) return 1;
-          if (bDue === null) return -1;
-          return (aDue - bDue) * sort.dir;
-        }
-        case "priority":
-          return (
-            (priorityRank(a.card.priority) - priorityRank(b.card.priority)) *
-            sort.dir
-          );
-        case "assignee": {
-          // Unassigned rows sort last regardless of direction (Jira).
-          if (!a.card.assigneeId && !b.card.assigneeId) return 0;
-          if (!a.card.assigneeId) return 1;
-          if (!b.card.assigneeId) return -1;
-          const aName = assigneeNameById.get(a.card.assigneeId) ?? "";
-          const bName = assigneeNameById.get(b.card.assigneeId) ?? "";
-          return aName.localeCompare(bName) * sort.dir;
-        }
-        case "createdAt":
-          return (a.card.createdAt - b.card.createdAt) * sort.dir;
-      }
-    };
+    const cmp = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
+      compareTableRows(
+        a,
+        b,
+        sort,
+        columnIndex,
+        (userId) => assigneeNameById.get(userId) ?? "",
+        lang,
+      );
     return [...rows].sort(cmp);
   }, [board, rows, sort, lang, assigneeNameById]);
 
@@ -666,6 +630,24 @@ function TableRowBody({
     attribution?.userId ?? "",
     authorMember?.avatarColor,
   );
+  // A title click must be able to become a double-click: opening the row
+  // dialog on the first click would make the inline title editor unreachable
+  // in a real browser (the unit test fired `doubleClick` without the clicks).
+  // Only title-cell single clicks wait for the second click; every other cell
+  // opens immediately. (TASK-162 review, T-02.)
+  const openTimer = useRef<number | null>(null);
+  const cancelPendingOpen = () => {
+    if (openTimer.current !== null) {
+      window.clearTimeout(openTimer.current);
+      openTimer.current = null;
+    }
+  };
+  useEffect(
+    () => () => {
+      if (openTimer.current !== null) window.clearTimeout(openTimer.current);
+    },
+    [],
+  );
   return (
     <CardContextMenu
       cardId={card.id}
@@ -687,7 +669,20 @@ function TableRowBody({
             }
             return;
           }
-          onOpen(card.id);
+          const target = event.target as HTMLElement;
+          if (target.closest('[data-testid="table-title-cell"]') === null) {
+            onOpen(card.id);
+            return;
+          }
+          if (event.detail > 1) {
+            cancelPendingOpen();
+            return;
+          }
+          cancelPendingOpen();
+          openTimer.current = window.setTimeout(() => {
+            openTimer.current = null;
+            onOpen(card.id);
+          }, 220);
         }}
         onAuxClick={(event) => {
           // Wheel-click (middle button) opens the card in a new tab — the
@@ -728,12 +723,13 @@ function TableRowBody({
               className="h-7 text-sm"
             />
           ) : (
-            <span className="group/title block">
+            <span data-testid="table-title-cell" className="group/title block">
               <span
                 onDoubleClick={
                   readOnly
                     ? undefined
                     : (event) => {
+                        cancelPendingOpen();
                         event.stopPropagation();
                         onStartTitleEdit(card.id);
                       }

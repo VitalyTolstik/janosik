@@ -174,8 +174,19 @@ export function GlobalSearchDialog({
     navigate(href);
   };
 
+  const close = () => {
+    setQuery("");
+    setResults(null);
+    setLoading(false);
+    setActive(0);
+    onOpenChange(false);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={(next) => onOpenChange(next)}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => (next ? onOpenChange(true) : close())}
+    >
       <DialogContent className="max-w-xl gap-0 overflow-hidden p-0">
         <DialogTitle className="sr-only">{t("admin.search.title")}</DialogTitle>
         <label className="flex h-11 items-center gap-2 px-3">

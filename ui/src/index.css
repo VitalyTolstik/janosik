@@ -94,6 +94,17 @@
     @apply antialiased;
   }
 
+  /* Native controls (checkbox, select, number/date pickers) must follow the
+     app theme, not the OS preference. Without this a light-themed dialog on a
+     dark-preference OS renders black native checkboxes and chevrons. The
+     preflight in index.html mirrors these rules before the stylesheet loads. */
+  :root {
+    color-scheme: dark;
+  }
+  html.light {
+    color-scheme: light;
+  }
+
   body {
     @apply bg-background text-foreground font-sans;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
@@ -327,6 +338,24 @@
     var(--janosik-ease-out) both;
 }
 
+/* Notice stack entrance — a quiet rise from the header, opacity-first so a
+ * stack of several cards never looks like a bounce. */
+.janosik-notice {
+  animation: janosik-notice-in var(--janosik-duration-slow)
+    var(--janosik-ease-out) both;
+}
+
+@keyframes janosik-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes janosik-toast-in {
   from {
     opacity: 0;
@@ -339,7 +368,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .janosik-toast {
+  .janosik-toast,
+  .janosik-notice {
     animation: none;
   }
   /* Card entry animation (TASK-150, C20). */

@@ -32,15 +32,17 @@ function StatCard({
   value,
   hint,
   accent = "text-primary",
+  testId,
 }: {
   icon: typeof Users;
   label: string;
   value: number | string;
   hint?: string;
   accent?: string;
+  testId: string;
 }) {
   return (
-    <Panel className="flex items-start gap-3 p-3.5">
+    <Panel className="flex items-start gap-3 p-3.5" data-testid={testId}>
       <span
         className={cn(
           "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background/60",
@@ -119,12 +121,14 @@ export function DashboardPage() {
           label={t("admin.dashboard.users")}
           value={metrics.users.total}
           hint={t("admin.dashboard.usersHint", { count: metrics.users.last7d })}
+          testId="admin-stat-users"
         />
         <StatCard
           icon={UserX}
           label={t("admin.dashboard.disabled")}
           value={metrics.users.disabled}
           accent="text-danger"
+          testId="admin-stat-disabled"
         />
         <StatCard
           icon={KanbanSquare}
@@ -134,6 +138,7 @@ export function DashboardPage() {
             archived: metrics.boards.archived,
           })}
           accent="text-secondary"
+          testId="admin-stat-boards"
         />
         <StatCard
           icon={CreditCard}
@@ -143,6 +148,7 @@ export function DashboardPage() {
             archived: metrics.cards.archived,
           })}
           accent="text-secondary"
+          testId="admin-stat-cards"
         />
         <StatCard
           icon={Activity}
@@ -152,23 +158,27 @@ export function DashboardPage() {
             count: metrics.commands.last7d,
           })}
           accent="text-warning"
+          testId="admin-stat-commands"
         />
         <StatCard
           icon={Database}
           label={t("admin.dashboard.sessions")}
           value={metrics.sessions.active}
           accent="text-success"
+          testId="admin-stat-sessions"
         />
         <StatCard
           icon={MessageSquare}
           label={t("admin.dashboard.comments")}
           value={metrics.comments.total}
+          testId="admin-stat-comments"
         />
         <StatCard
           icon={ShieldCheck}
           label={t("admin.dashboard.admins")}
           value={metrics.admins.total}
           accent="text-primary"
+          testId="admin-stat-admins"
         />
       </div>
 

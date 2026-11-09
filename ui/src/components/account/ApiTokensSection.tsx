@@ -12,6 +12,7 @@ import {
 import { api } from "@/api/client";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { NumberStepper } from "@/components/ui/number-stepper";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
 import { formatDateOnly, useI18n } from "@/i18n";
@@ -291,7 +293,10 @@ export function ApiTokensSection() {
                         EXPIRY_PRESETS.find((item) => item.id === preset)!
                           .labelKey,
                       )}
-                      <ChevronDown className="h-3.5 w-3.5 opacity-50" />
+                      <ChevronDown
+                        className="h-3.5 w-3.5 text-muted-foreground"
+                        aria-hidden
+                      />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-56">
@@ -317,30 +322,45 @@ export function ApiTokensSection() {
                 >
                   {t("account.tokens.boardLabel")}
                 </label>
-                <select
-                  id="token-board"
-                  data-testid="token-board"
-                  value={boardId}
-                  onChange={(event) => setBoardId(event.target.value)}
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                >
-                  <option value="">{t("account.tokens.boardAll")}</option>
-                  {boards.map((board) => (
-                    <option key={board.id} value={board.id}>
-                      {board.title}
-                    </option>
-                  ))}
-                </select>
+                {/* Keep the native <select> semantics (value + change events)
+                    but hide the UA chevron, which rendered black regardless
+                    of the theme, and draw the app's own icon instead. */}
+                <div className="relative">
+                  <select
+                    id="token-board"
+                    data-testid="token-board"
+                    value={boardId}
+                    onChange={(event) => setBoardId(event.target.value)}
+                    className="h-9 w-full appearance-none rounded-md border border-input bg-transparent pl-3 pr-9 text-sm text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="">{t("account.tokens.boardAll")}</option>
+                    {boards.map((board) => (
+                      <option key={board.id} value={board.id}>
+                        {board.title}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden
+                  />
+                </div>
               </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="token-read-only"
                   data-testid="token-read-only"
+                  aria-label={t("account.tokens.readOnlyLabel")}
                   checked={readOnly}
-                  onChange={(event) => setReadOnly(event.target.checked)}
+                  onCheckedChange={setReadOnly}
                 />
-                {t("account.tokens.readOnlyLabel")}
-              </label>
+                <label
+                  htmlFor="token-read-only"
+                  className="cursor-pointer text-sm"
+                >
+                  {t("account.tokens.readOnlyLabel")}
+                </label>
+              </div>
               <div className="space-y-1.5">
                 <label
                   htmlFor="token-rate"
@@ -348,24 +368,26 @@ export function ApiTokensSection() {
                 >
                   {t("account.tokens.rateLabel")}
                 </label>
-                <Input
+                <NumberStepper
                   id="token-rate"
-                  data-testid="token-rate"
+                  testId="token-rate"
+                  value={rateLimit}
+                  onChange={(value) => {
+                    setRateLimit(value);
+                    setRateError(false);
+                  }}
+                  min={API_TOKEN_RATE_MIN}
+                  max={API_TOKEN_RATE_MAX}
                   invalid={rateError && rateLimit !== ""}
-                  aria-describedby={
+                  ariaDescribedBy={
                     rateError && rateLimit !== ""
                       ? "token-rate-error"
                       : undefined
                   }
-                  type="number"
-                  min={API_TOKEN_RATE_MIN}
-                  max={API_TOKEN_RATE_MAX}
-                  value={rateLimit}
                   placeholder={t("account.tokens.ratePlaceholder")}
-                  onChange={(event) => {
-                    setRateLimit(event.target.value);
-                    setRateError(false);
-                  }}
+                  ariaLabel={t("account.tokens.rateLabel")}
+                  increaseLabel={t("account.tokens.rateIncrease")}
+                  decreaseLabel={t("account.tokens.rateDecrease")}
                 />
                 {rateError && rateLimit !== "" && (
                   <p

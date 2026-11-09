@@ -7,7 +7,12 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { LIMITS, type BoardMemberDto, type BoardRole } from "@janosik/shared";
+import {
+  LIMITS,
+  type BoardMemberDto,
+  type BoardPendingInvitationDto,
+  type BoardRole,
+} from "@janosik/shared";
 
 import { api, ApiError, isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
@@ -257,6 +262,11 @@ function ExpiryCalendarBody({
     value === null ? "12:00" : formatTimeOfDay(new Date(value)),
   );
   const due = value === null ? undefined : new Date(value);
+  // A deadline in the past can never be met: offering yesterday only ends in
+  // a successful invite the bell hides again. The invite form refuses an
+  // already-lapsed deadline before it reaches the API.
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   const applyTime = (next: string) => {
     setTime(next);
@@ -281,6 +291,7 @@ function ExpiryCalendarBody({
         mode="single"
         localeTag={lang}
         selected={due}
+        disabled={{ before: today }}
         onSelect={(date) => {
           if (date) onChange(composeTimestamp(date, time));
         }}
@@ -360,6 +371,7 @@ export function BoardMembersPanel({
   const openProfile = useOpenProfile();
 
   const [members, setMembers] = useState<BoardMemberDto[] | null>(null);
+  const [pending, setPending] = useState<BoardPendingInvitationDto[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
@@ -370,6 +382,7 @@ export function BoardMembersPanel({
   // Invite draft — remount-reset (see the file header), never `open`-reset.
   const [email, setEmail] = useState("");
   const [inviteEmailError, setInviteEmailError] = useState(false);
+  const [inviteExpiryError, setInviteExpiryError] = useState(false);
   const [role, setRole] = useState<BoardRole>("MEMBER");
   const [expiry, setExpiry] = useState<number | null>(null);
   const [inviting, setInviting] = useState(false);
@@ -390,12 +403,19 @@ export function BoardMembersPanel({
 
   const load = useCallback(async () => {
     try {
-      setMembers(await api.listMembers(boardId));
+      const [nextMembers, nextPending] = await Promise.all([
+        api.listMembers(boardId),
+        canManage
+          ? api.listPendingInvitations(boardId).catch(() => [])
+          : Promise.resolve([]),
+      ]);
+      setMembers(nextMembers);
+      setPending(nextPending);
       setLoadFailed(false);
     } catch {
       setLoadFailed(true);
     }
-  }, [boardId]);
+  }, [boardId, canManage]);
 
   // The directory is rewritten on every membership event (someone accepted
   // an invitation, a role moved, another admin removed someone) — reload so
@@ -429,7 +449,12 @@ export function BoardMembersPanel({
       input?.focus();
       return;
     }
+    if (role === "VIEWER" && expiry !== null && expiry <= Date.now()) {
+      setInviteExpiryError(true);
+      return;
+    }
     setInviteEmailError(false);
+    setInviteExpiryError(false);
     setInviting(true);
     try {
       const address = email.trim();
@@ -448,6 +473,7 @@ export function BoardMembersPanel({
       setEmail("");
       setRole("MEMBER");
       setExpiry(null);
+      setInviteExpiryError(false);
       // The invitation is pending until the invitee accepts — it must not
       // show up as a member yet (and the masked answer is no member row),
       // so the list is refetched.
@@ -502,6 +528,20 @@ export function BoardMembersPanel({
       );
       setConfirmRemoveId(null);
       toast.success(t("board.members.removed"));
+    } catch (error) {
+      toast.error(membershipError(error, t));
+    } finally {
+      setPendingUserId(null);
+    }
+  }
+
+  /** Cancel a pending invitation; the invitee's bell loses it on next load. */
+  async function handleCancelInvitation(invitation: BoardPendingInvitationDto) {
+    setPendingUserId(invitation.userId);
+    try {
+      await api.removeMember(boardId, invitation.userId);
+      setPending((prev) => prev.filter((row) => row.id !== invitation.id));
+      toast.success(t("board.members.pending.cancelled"));
     } catch (error) {
       toast.error(membershipError(error, t));
     } finally {
@@ -722,6 +762,46 @@ export function BoardMembersPanel({
         </div>
       )}
 
+      {canManage && pending.length > 0 ? (
+        <div
+          className="shrink-0 space-y-1 rounded-lg border border-dashed bg-muted/20 p-3"
+          data-testid="board-pending-list"
+        >
+          <p className="text-xs font-medium uppercase text-muted-foreground">
+            {t("board.members.pending.title", { count: pending.length })}
+          </p>
+          <ul className="space-y-1">
+            {pending.map((invitation) => (
+              <li
+                key={invitation.id}
+                data-testid="board-pending-row"
+                className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm"
+              >
+                <span className="min-w-0 flex-1 truncate">
+                  {invitation.email}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {t(ROLE_KEYS[invitation.role])}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground hover:text-danger"
+                  aria-label={t("board.members.pending.cancel", {
+                    email: invitation.email,
+                  })}
+                  data-testid="board-pending-cancel"
+                  disabled={pendingUserId === invitation.userId}
+                  onClick={() => void handleCancelInvitation(invitation)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {canManage ? (
         <form
           noValidate
@@ -765,14 +845,24 @@ export function BoardMembersPanel({
             </p>
           )}
           {role === "VIEWER" ? (
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              {t("board.members.invite.expires")}
-              <ExpiryPicker
-                value={expiry}
-                label={t("board.members.invite.expires")}
-                onChange={setExpiry}
-              />
-            </label>
+            <div className="space-y-1">
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                {t("board.members.invite.expires")}
+                <ExpiryPicker
+                  value={expiry}
+                  label={t("board.members.invite.expires")}
+                  onChange={(value) => {
+                    setExpiry(value);
+                    setInviteExpiryError(false);
+                  }}
+                />
+              </label>
+              {inviteExpiryError ? (
+                <p role="alert" className="text-sm text-danger">
+                  {t("board.members.expires.past")}
+                </p>
+              ) : null}
+            </div>
           ) : null}
           <Button
             type="submit"

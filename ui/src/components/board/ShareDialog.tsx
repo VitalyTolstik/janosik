@@ -136,8 +136,14 @@ function SharePanel({ boardId }: { boardId: string }) {
           setCreating(true);
           try {
             const created = await api.createShare(boardId, request);
-            await copy(shareLink(created.token));
-            toast.success(t("share.created"));
+            // A refused clipboard is not a created-and-copied success: the
+            // user would walk away without the link. Keep the row (it is in
+            // the list) and say exactly what failed.
+            if (await copy(shareLink(created.token))) {
+              toast.success(t("share.created"));
+            } else {
+              toast.error(t("share.copyError"));
+            }
             await load();
           } catch (error) {
             toast.error(
@@ -312,7 +318,13 @@ function ShareRow({
               variant="outline"
               size="sm"
               className="h-7 gap-1 px-2 text-xs"
-              onClick={() => void copy(shareLink(share.token))}
+              onClick={async () => {
+                if (await copy(shareLink(share.token))) {
+                  toast.success(t("share.copied"));
+                } else {
+                  toast.error(t("share.copyError"));
+                }
+              }}
             >
               <Copy className="h-3.5 w-3.5" aria-hidden />
               {t("share.copy")}
@@ -579,6 +591,7 @@ function CreateForm({
       <Input
         value={title}
         maxLength={100}
+        aria-label={t("share.titlePlaceholder")}
         placeholder={t("share.titlePlaceholder")}
         onChange={(event) => setTitle(event.target.value)}
       />

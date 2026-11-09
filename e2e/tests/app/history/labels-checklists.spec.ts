@@ -12,6 +12,8 @@ import {
 } from "@/helpers/history.js";
 import { addChecklistItem } from "@/helpers/search.js";
 
+test.describe.configure({ timeout: 60_000 });
+
 /** A checklist row, not a feed entry that happens to quote the same text. */
 function checklistItem(dialog: Locator, text: string): Locator {
   return dialog
@@ -19,6 +21,72 @@ function checklistItem(dialog: Locator, text: string): Locator {
     .filter({ hasText: text })
     .first();
 }
+
+test("undo and redo creating a label with its first assignment", async ({
+  page,
+  board,
+}) => {
+  const column = await board.column("Work");
+  await board.card(column, "Task");
+  await board.open(page);
+
+  await openCard(page, "Task");
+  const dialog = cardDialog(page);
+  await dialog.getByRole("button", { name: "Labels" }).click();
+  await page.getByRole("button", { name: "New label" }).click();
+  await page.locator('[name="label-create"]').fill("Brand new");
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  const chip = page
+    .getByRole("button", { name: "Brand new", exact: true })
+    .last();
+  await expect(chip).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await closeCardDialog(page);
+
+  const aggregate = async (): Promise<{
+    labels: { name: string }[];
+    labelIds: string[];
+  }> => {
+    const snapshot = await board.api.get(`/api/v1/boards/${board.id}`);
+    const body = (await snapshot.json()) as {
+      labels: { id: string; name: string }[];
+      cards: Record<string, { labelIds: string[] }>;
+    };
+    return {
+      labels: body.labels,
+      labelIds: body.cards[Object.keys(body.cards)[0]].labelIds,
+    };
+  };
+
+  // The label is created and then attached: two independent undo steps.
+  await expectHistory(page, { undo: true, redo: false });
+  await undo(page);
+  await expectHistory(page, { undo: true, redo: true });
+  await undo(page);
+  await expectHistory(page, { undo: false, redo: true });
+  await expect
+    .poll(async () => (await aggregate()).labels.map((label) => label.name))
+    .toEqual([]);
+
+  await openCard(page, "Task");
+  await dialog.getByRole("button", { name: "Labels" }).click();
+  await expect(
+    page.getByRole("button", { name: "Brand new", exact: true }),
+  ).toHaveCount(0);
+  await closeCardDialog(page);
+
+  await redo(page);
+  await redo(page);
+  await expectHistory(page, { undo: true, redo: false });
+  await expect
+    .poll(async () => (await aggregate()).labels.map((label) => label.name))
+    .toEqual(["Brand new"]);
+  await openCard(page, "Task");
+  await dialog.getByRole("button", { name: "Labels" }).click();
+  await expect(
+    page.getByRole("button", { name: "Brand new", exact: true }).last(),
+  ).toHaveAttribute("aria-pressed", "true");
+});
 
 test("undo and redo attaching a label", async ({ page, board }) => {
   const column = await board.column("Work");

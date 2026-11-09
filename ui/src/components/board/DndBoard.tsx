@@ -709,7 +709,7 @@ export function DndBoard({
         {readOnly ? null : (
           <AddColumnControl
             disabled={board.columns.length >= LIMITS.columnsPerBoard}
-            disabledReason={t("limits.maxItems", {
+            disabledReason={t("limits.maxColumns", {
               limit: LIMITS.columnsPerBoard,
             })}
             onSubmit={addColumn}

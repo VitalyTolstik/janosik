@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -16,6 +16,11 @@ import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { DataSafetyBanner } from "@/components/DataSafetyBanner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Header } from "@/components/Header";
+import { NoticeStack } from "@/components/notifications/NoticeStack";
+import {
+  UpdateAvailabilityProvider,
+  UpdatePrompt,
+} from "@/components/notifications/UpdatePrompt";
 import { UserProfileProvider } from "@/components/board/UserProfileDialog";
 import { LoginPage } from "@/components/auth/LoginPage";
 import { EmailVerificationGate } from "@/components/auth/EmailVerificationGate";
@@ -31,7 +36,6 @@ import { routes } from "@/routes";
 import { useI18n } from "@/i18n";
 import { APP_BASE } from "@/utils/app-path";
 import { allBoardsArchived } from "@/utils/board-list";
-import { UPDATE_EVENT, applyServiceWorkerUpdate } from "@/pwa/register-sw";
 
 /**
  * The master panel lives on its own route tree and its own chunk: regular
@@ -117,6 +121,22 @@ function BoardRoute() {
 }
 
 /**
+ * Every top-of-page message in the authenticated app, in priority order.
+ * One component so the loading screen and the ready shell cannot drift into
+ * two different stacks.
+ */
+function BoardNotices() {
+  return (
+    <NoticeStack>
+      <ImpersonationBanner />
+      <AnnouncementBanner />
+      <DataSafetyBanner />
+      <UpdatePrompt variant="inline" />
+    </NoticeStack>
+  );
+}
+
+/**
  * The authenticated shell. In server mode the boards are still being
  * fetched on the first paint — showing the empty state then would claim
  * "no boards" when the truth is "not loaded yet", so the shell waits; a
@@ -128,47 +148,54 @@ function BoardShell() {
   const { t } = useI18n();
 
   if (syncStatus === "loading") {
-    return <BoardShellSkeleton />;
+    return (
+      <>
+        <BoardNotices />
+        <BoardShellSkeleton />
+      </>
+    );
   }
 
   if (syncStatus === "error") {
     return (
-      <main className="flex flex-1 items-center justify-center p-6">
-        <div className="flex max-w-sm flex-col items-center gap-3 text-center text-muted-foreground">
-          <p className="text-sm">{t("sync.loadFailed")}</p>
-          <button
-            type="button"
-            data-testid="sync-retry"
-            onClick={() => window.location.reload()}
-            className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-          >
-            {t("sync.retry")}
-          </button>
-        </div>
-      </main>
+      <>
+        <BoardNotices />
+        <main className="flex flex-1 items-center justify-center p-6">
+          <div className="flex max-w-sm flex-col items-center gap-3 text-center text-muted-foreground">
+            <p className="text-sm">{t("sync.loadFailed")}</p>
+            <button
+              type="button"
+              data-testid="sync-retry"
+              onClick={() => window.location.reload()}
+              className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+            >
+              {t("sync.retry")}
+            </button>
+          </div>
+        </main>
+      </>
     );
   }
 
   return (
-    <>
-      {/* Above the header: a data-at-risk warning outranks everything else
-          on the screen (TASK-21.2). */}
-      <DataSafetyBanner />
-      <UserProfileProvider boardId={board?.id}>
-        <Header />
-        <Routes>
-          <Route path={routes.home} element={<NoBoardRoute />} />
-          <Route path={routes.boardPattern} element={<BoardRoute />} />
-          {/* The support "view as" entry (U-8): the token was taken from
-              the hash at boot; the session lands on the home redirect. */}
-          <Route
-            path={routes.impersonate}
-            element={<Navigate to={routes.home} replace />}
-          />
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </UserProfileProvider>
-    </>
+    <UserProfileProvider boardId={board?.id}>
+      <Header />
+      {/* The single notification surface: topbar → notices → board. Every
+          top-of-page message lives here, so none of them can cover the
+          header or fight another banner for the same corner. */}
+      <BoardNotices />
+      <Routes>
+        <Route path={routes.home} element={<NoBoardRoute />} />
+        <Route path={routes.boardPattern} element={<BoardRoute />} />
+        {/* The support "view as" entry (U-8): the token was taken from
+            the hash at boot; the session lands on the home redirect. */}
+        <Route
+          path={routes.impersonate}
+          element={<Navigate to={routes.home} replace />}
+        />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </UserProfileProvider>
   );
 }
 
@@ -188,16 +215,26 @@ function AppGate() {
   const needsVerification =
     status === "authenticated" && user !== null && user.emailVerifiedAt == null;
 
-  return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
-      <ImpersonationBanner />
-      {needsVerification ? (
-        <EmailVerificationGate />
-      ) : status === "authenticated" ? (
+  if (status === "authenticated" && !needsVerification) {
+    return (
+      <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
         <BoardProvider>
-          <AnnouncementBanner />
           <BoardShell />
         </BoardProvider>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      {needsVerification ? (
+        <>
+          {/* No header yet, but the support session still has to be visible. */}
+          <NoticeStack>
+            <ImpersonationBanner />
+          </NoticeStack>
+          <EmailVerificationGate />
+        </>
       ) : status === "anonymous" ? (
         <LoginPage />
       ) : (
@@ -209,6 +246,9 @@ function AppGate() {
           <span className="text-sm">{t("auth.restoring")}</span>
         </main>
       )}
+      {/* Login, verification and the boot splash have no notice stack; this
+          compact floating copy is the single fallback for those screens. */}
+      <UpdatePrompt />
     </div>
   );
 }
@@ -224,45 +264,6 @@ function RouteSplash() {
         className="h-5 w-5 animate-spin text-muted-foreground"
         aria-hidden
       />
-    </div>
-  );
-}
-
-/**
- * "A new version is ready" banner (TASK-151, C5). The service worker now
- * waits instead of seizing open tabs; the user decides when to apply it.
- */
-function UpdatePrompt() {
-  const { t } = useI18n();
-  const [available, setAvailable] = useState(false);
-  useEffect(() => {
-    const onUpdate = () => setAvailable(true);
-    window.addEventListener(UPDATE_EVENT, onUpdate);
-    return () => window.removeEventListener(UPDATE_EVENT, onUpdate);
-  }, []);
-  if (!available) return null;
-  return (
-    <div
-      role="status"
-      data-testid="update-prompt"
-      className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-2.5 text-sm shadow-xl"
-    >
-      <span>{t("app.updateAvailable")}</span>
-      <button
-        type="button"
-        onClick={applyServiceWorkerUpdate}
-        className="inline-flex h-8 items-center rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-      >
-        {t("app.updateReload")}
-      </button>
-      <button
-        type="button"
-        aria-label={t("common.dismissNotification")}
-        onClick={() => setAvailable(false)}
-        className="text-muted-foreground transition-colors hover:text-foreground"
-      >
-        ✕
-      </button>
     </div>
   );
 }
@@ -285,30 +286,43 @@ export default function App() {
               <ErrorBoundary>
                 <TooltipProvider delayDuration={150}>
                   <BrowserRouter basename={APP_BASE.replace(/\/$/, "") || "/"}>
-                    <Suspense fallback={<RouteSplash />}>
-                      <Routes>
-                        <Route
-                          path={routes.adminPattern}
-                          element={<AdminApp />}
-                        />
-                        <Route
-                          path={routes.sharePattern}
-                          element={<PublicBoardPage />}
-                        />
-                        <Route
-                          path="*"
-                          element={
-                            <AuthProvider>
-                              <AppGate />
-                            </AuthProvider>
-                          }
-                        />
-                      </Routes>
-                    </Suspense>
+                    <UpdateAvailabilityProvider>
+                      <Suspense fallback={<RouteSplash />}>
+                        <Routes>
+                          <Route
+                            path={routes.adminPattern}
+                            element={
+                              <>
+                                <AdminApp />
+                                {/* No notice stack in the master panel — the
+                                    compact fallback is the only copy. */}
+                                <UpdatePrompt />
+                              </>
+                            }
+                          />
+                          <Route
+                            path={routes.sharePattern}
+                            element={
+                              <>
+                                <PublicBoardPage />
+                                <UpdatePrompt />
+                              </>
+                            }
+                          />
+                          <Route
+                            path="*"
+                            element={
+                              <AuthProvider>
+                                <AppGate />
+                              </AuthProvider>
+                            }
+                          />
+                        </Routes>
+                      </Suspense>
+                    </UpdateAvailabilityProvider>
                   </BrowserRouter>
                 </TooltipProvider>
               </ErrorBoundary>
-              <UpdatePrompt />
             </ToastProvider>
           </I18nProvider>
         </BoardGlassProvider>

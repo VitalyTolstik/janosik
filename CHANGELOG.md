@@ -15,6 +15,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   description, admin entity tables, dashboard, details and settings, public
   boards and cards, notifications, sharing, members, API keys and admin search.
 
+### Changed
+
+- Top-of-page notifications now share one frosted "quiet glass" stack under
+  the header: announcements, impersonation, data-safety and update prompts no
+  longer cover the board or each other, and toasts follow the same visual
+  language in their bottom-right corner.
+
 ### Fixed
 
 - Admin tables keep the last successful page while a search or pagination

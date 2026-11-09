@@ -1,11 +1,14 @@
 import { Eye } from "lucide-react";
+
+import { Notice } from "@/components/notifications/Notice";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/auth/AuthContext";
 import { useI18n } from "@/i18n";
 
 /**
  * Irremovable "view as" banner (TASK-59): while a master impersonates a user
- * the app shows who is being viewed and offers the only way out. It sits
- * above everything, including the announcement banners.
+ * the app shows who is being viewed and offers the only way out. It leads
+ * the notice stack because it explains why everything else looks different.
  */
 export function ImpersonationBanner() {
   const { impersonating, user, exitImpersonation } = useAuth();
@@ -13,23 +16,25 @@ export function ImpersonationBanner() {
   if (!impersonating) return null;
 
   return (
-    <div
+    <Notice
+      tone="warning"
+      icon={Eye}
+      eyebrow={t("impersonation.eyebrow")}
+      title={t("impersonation.banner", { email: user?.email ?? "" })}
+      testId="impersonation-banner"
       role="status"
-      data-testid="impersonation-banner"
-      className="flex items-center gap-2 bg-warning/15 px-4 py-2 text-sm text-foreground"
-    >
-      <Eye className="h-4 w-4 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1 truncate">
-        {t("impersonation.banner", { email: user?.email ?? "" })}
-      </span>
-      <button
-        type="button"
-        data-testid="impersonation-exit"
-        onClick={exitImpersonation}
-        className="rounded-md border border-border px-2 py-1 text-xs font-medium hover:bg-hover"
-      >
-        {t("impersonation.exit")}
-      </button>
-    </div>
+      live="polite"
+      actions={
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid="impersonation-exit"
+          onClick={exitImpersonation}
+        >
+          {t("impersonation.exit")}
+        </Button>
+      }
+    />
   );
 }
