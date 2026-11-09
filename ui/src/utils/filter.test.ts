@@ -10,8 +10,10 @@ import {
   filterCardIds,
   isFilterActive,
   matchesCardFilter,
+  readFilterParams,
   searchBoards,
   splitHighlight,
+  writeFilterParams,
   type CardFilter,
 } from "@/utils/filter";
 
@@ -744,5 +746,53 @@ describe("card link facets (TASK-46)", () => {
     expect(isFilterActive(f)).toBe(true);
     expect(activeFacetCount(f)).toBe(1);
     expect(activeFacetCount({ ...f, hasLinks: true })).toBe(2);
+  });
+});
+
+describe("filter URL state", () => {
+  it("round-trips every facet and keeps unrelated params", () => {
+    const filter: CardFilter = {
+      ...EMPTY_FILTER,
+      query: " release ",
+      due: "overdue",
+      labelIds: ["l-1", "l-2"],
+      labelMatch: "all",
+      noLabel: true,
+      created: "7d",
+      priorities: ["high", "low"],
+      assignees: ["u-1"],
+      unassigned: true,
+      blocked: true,
+      hasLinks: true,
+    };
+
+    const params = writeFilterParams(filter, new URLSearchParams("card=c-1"));
+
+    expect(params.get("card")).toBe("c-1");
+    expect(params.get("f.q")).toBe(" release ");
+    expect(readFilterParams(params)).toEqual(filter);
+  });
+
+  it("round-trips an exact creation day", () => {
+    const filter: CardFilter = {
+      ...EMPTY_FILTER,
+      createdOn: "2026-11-09",
+    };
+    expect(readFilterParams(writeFilterParams(filter))).toEqual(filter);
+  });
+
+  it("drops inactive facets and ignores invalid URL values", () => {
+    const params = new URLSearchParams(
+      "card=c-1&f.q=&f.due=whenever&f.priority=urgent,low&f.labels=,&f.createdOn=2026-13-40&f.labelMatch=some",
+    );
+
+    expect(readFilterParams(params)).toEqual({
+      ...EMPTY_FILTER,
+      priorities: ["low"],
+    });
+
+    const cleaned = writeFilterParams(EMPTY_FILTER, params);
+    expect(cleaned.get("card")).toBe("c-1");
+    expect(cleaned.toString()).toBe("card=c-1");
   });
 });

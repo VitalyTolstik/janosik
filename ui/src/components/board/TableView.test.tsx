@@ -153,6 +153,22 @@ describe("TableView sorting", () => {
     expect(rowTitles()).toEqual(["Beta task", "Gamma task", "Alpha task"]);
   });
 
+  it("puts aria-sort on the columnheader, not on the sort button", () => {
+    renderTable();
+    const header = screen.getByRole("columnheader", { name: /Title/ });
+    const button = screen.getByTestId("table-sort-title");
+
+    fireEvent.click(button);
+    expect(header).toHaveAttribute("aria-sort", "ascending");
+    expect(button).not.toHaveAttribute("aria-sort");
+
+    fireEvent.click(button);
+    expect(header).toHaveAttribute("aria-sort", "descending");
+
+    fireEvent.click(button);
+    expect(header).toHaveAttribute("aria-sort", "none");
+  });
+
   it("renders the due badge only for dated rows", () => {
     renderTable();
     const table = within(screen.getByRole("table"));
