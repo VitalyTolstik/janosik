@@ -529,7 +529,9 @@ export function CalendarView({
         type="button"
         draggable={!readOnly && !isFiltering}
         onDragStart={
-          readOnly ? undefined : (event) => chipDragStart(event, card.id)
+          readOnly || isFiltering
+            ? undefined
+            : (event) => chipDragStart(event, card.id)
         }
         onAuxClick={(event) => chipAuxOpen(event, card.id)}
         title={`${columnTitle} · ${card.title}`}
@@ -560,7 +562,9 @@ export function CalendarView({
         type="button"
         draggable={!readOnly && !isFiltering}
         onDragStart={
-          readOnly ? undefined : (event) => chipDragStart(event, entry.card.id)
+          readOnly || isFiltering
+            ? undefined
+            : (event) => chipDragStart(event, entry.card.id)
         }
         onAuxClick={(event) => chipAuxOpen(event, entry.card.id)}
         onClick={(event) => {
@@ -612,7 +616,9 @@ export function CalendarView({
           data-testid="calendar-chip"
           data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
           onDragStart={
-            readOnly ? undefined : (event) => chipDragStart(event, card.id)
+            readOnly || isFiltering
+              ? undefined
+              : (event) => chipDragStart(event, card.id)
           }
           onAuxClick={(event) => chipAuxOpen(event, card.id)}
           title={`${
