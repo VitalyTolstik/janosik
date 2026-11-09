@@ -1647,6 +1647,7 @@ TASK-36 и TASK-37.)*
 | 95 | TASK-164 `column-accent-styles` | `feat/column-accent-styles` | Стиль колонок: per-column accent из палитры card cover + board-wide форма (9 вариантов), палитра в шапке, команда, БД, realtime, импорт/экспорт и MCP-тул | 9 форм рендерятся в light/dark; цвет per-column переживает reload, undo/redo и realtime; VIEWER не управляет; shared/ui/backend/e2e зелёные |
 | 96 | TASK-165 `card-workflow` | `feat/card-workflow` | §7.22: настраиваемый workflow карточек над колонками (ADMIN, матрица переходов, роли, условия, глобальные переходы, initial/done), enforcement UI→reducer→server, `409 conflict:"workflow"`, мастер-панель, MCP, импорт/экспорт, E2E и docs | MVP реализован в ветке; исправления по ревью внесены, ожидает CI/merge; phase 2 (граф, post-functions, шаблоны платформы, bulk/force move, ifMatch) явно вынесен в §7.22 |
 | 97 | TASK-166 `launch-agent-control` | `docs/TASK-166-launch-agent-control` → отдельные `feat/TASK-166.x-*` | §7.23: launch-readiness «agent-first с контролем человека» — идентичность и сессии агентов, scopes, pause/kill, approvals/handoff, надёжный write-контракт, run-level rollback, plan/apply/bulk, attention-inbox, лимиты и data safety, observability, DX и UI-экраны после редизайна админки | **Запланировано:** 17 параллельных потоков в 5 волнах; backend/security-примитивы не зависят от редизайна, UI-волна стартует после `feat/admin-redesign`; у каждого потока отдельный worktree/PR и DoD; общий launch-blocker список закрыт, тесты и docs en/ru обновлены. См. §7.23 |
+| 98 | TASK-167 `marketing-site-redesign` | `docs/TASK-167-site-redesign` → отдельные `feat/TASK-167.x-*` | §7.24: редизайн маркетингового сайта под новую реальность — agent-first с контролем человека, workflow, approvals/scopes/pause/audit, новая админка, self-host/AGPL; новая IA, копирайт EN/RU, реальные медиа, docs, SEO/AI-SEO, a11y/perf, E2E | **Запланировано:** 9 потоков в 4 волнах (W0–W3); копирайт/IA можно начинать после TASK-166.0, экраны и медиа — после `feat/admin-redesign` + TASK-166.13–15; каждый поток — отдельный worktree/PR; все утверждения на сайте соответствуют отгруженному продукту, EN/RU паритет. См. §7.24 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -4250,6 +4251,126 @@ video/    Remotion-проект: сценарии клипов фич, ренд�
 - Remote MCP/OAuth как обязательный канал; webhooks — после решения W0.
 - Автоматический machine translation анонсов/комментариев.
 - Полный SIEM/external log export; object storage для вложений — phase 2.
+
+---
+
+### 7.24. Редизайн маркетингового сайта под новые реалии (TASK-167)
+
+> **Статус:** запланировано. Копирайт, IA и структуру страниц можно начинать
+> после TASK-166.0 (зафиксированные решения и матрица фич). Экраны админки,
+> approvals/scopes/audit и новые медиа — только после `feat/admin-redesign` и
+> TASK-166.13–15. Публиковать утверждения о фичах — только после их мержа в
+> `main`; иначе сайт снова начнёт продавать несуществующий продукт.
+>
+> **Источники:**
+> - `audits/launch-gaps-agent-experience.md` + HTML
+> - `audits/launch-gaps-human-control.md` + HTML
+> - `audits/admin-redesign-research.md` + HTML
+> - текущий `site/` (TASK-122…135), `site/src/content/docs/**`
+> - `ROADMAP.md` §7.22 (workflow) и §7.23 (agent control)
+
+**Зачем.** Сайт описывает продукт до workflow, agent-control и редизайна
+админки: герой — «Kanban for your agent swarm», фича-ряды — доска, realtime,
+карточки и шаринг, медиа записаны на старом UI, а документация уже знает про
+workflow, которого нет на лендинге. После TASK-166 обещание меняется: не «рой
+без контроля», а **«агенты работают — человек контролирует»**. Если не
+переупаковать сайт, он будет продавать старую версию, завышать ожидания и
+прятать главное отличие Janosik от обычного канбана с API.
+
+**Позиционирование (ядро).**
+
+- EN: **“Kanban for AI agents. Control stays with you.”**
+- RU: **«Канбан для ИИ-агентов. Контроль остаётся у вас.»**
+- Три уровня истории:
+  1. **Agents do the work** — ключи, сессии, захват карточек, batch/plan;
+  2. **Workflow keeps them honest** — переходы, роли, условия, WIP, DoD;
+  3. **You stay in control** — scopes, approvals, pause/kill, audit, rollback.
+- Честность превыше маркетинга: self-hosted AGPL — основной продукт; cloud —
+  «later» без дат; никаких фейковых логотипов, SSO, SLA, «enterprise» и
+  отзывов до реальной реализации. Каждое утверждение на сайте должно иметь
+  ссылку на docs/changelog и соответствовать отгруженной версии.
+
+**Новая IA маркетинга.**
+
+1. Hero: агент двигает карточку, человек подтверждает действие; CTA в app.
+2. **Control loop** — 3–4 шага: scoped key → agent claims card → workflow
+   проверяет переход → approval/pause/audit при риске.
+3. **Workflow** — матрица переходов, роли, условия, initial/done.
+4. **Admin console** — 8 хабов, Agents, Approvals, Audit & activity,
+   Rollback, Scopes, limits; реальный скрин новой админки.
+5. **Swarm in motion** — существующий watch/realtime-сюжет, но с атрибуцией
+   агентов и «человек рядом».
+6. **Board for humans** — доска, карточки, виды, комментарии, шаринг.
+7. **Self-host & trust** — AGPL, данные на своём сервере, бэкапы, scopes.
+8. **Pricing teaser** — self-hosted free, cloud later.
+9. FAQ, финальный CTA, футер с docs/security/changelog.
+
+Плюс отдельные SEO-страницы (EN/RU), если поток 167.3 успевает без потери
+качества: `/agent-control`, `/workflow`, `/security`. Если нет — те же секции
+живут на лендинге, а страницы выносятся в §7.24.4.
+
+#### 7.24.1. Волны и потоки
+
+| Волна | Потоки | Можно запускать | Условие |
+| --- | --- | --- | --- |
+| W0 | 167.0 | после TASK-166.0 | зафиксированы решения и статус фич |
+| W1 | 167.1, 167.5, 167.6 | параллельно редизайну админки | только shipped-фичи; новые экраны — заглушки/пометка «planned» |
+| W2 | 167.2, 167.3, 167.4 | после `feat/admin-redesign` + TASK-166.13–15 | UI-фичи смержены, экраны и медиа финальны |
+| W3 | 167.7, 167.8 | после W1–W2 | все страницы и медиа заморожены |
+
+Каждый поток — отдельная ветка `feat/TASK-167.x-<slug>` и отдельный PR.
+Если два потока трогают один файл, они разводятся по времени или получают
+явного владельца файла. Финальную интеграцию, навигацию, SEO-паритет и
+launch-гейт держит головной поток.
+
+#### 7.24.2. Потоки
+
+| ID | Поток | Зависит | Зона / ключевые файлы | DoD |
+| --- | --- | --- | --- | --- |
+| 167.0 | Narrative, IA & claims matrix | TASK-166.0 | `site/src/i18n/ui.ts`, `site/src/components/pages/HomePage.astro`, `audits/`, `ROADMAP.md` | таблица «фича → статус (shipped/planned) → где на сайте → docs-ссылка»; ни одного утверждения без подтверждения; EN/RU тексты-основы готовы |
+| 167.1 | Marketing design system refresh | 167.0 | `brand/`, `site/src/styles/global.css`, `site/src/layouts/BaseLayout.astro`, `site/src/components/*` | типографика/сетка/отступы/motion/тёмная тема обновлены на токенах бренда; нет хардкода цветов; reduced-motion; визуальный язык сочетается с новым app, но не копирует плотную админку |
+| 167.2 | Landing rebuild | 167.1, 167.4 | `site/src/components/pages/HomePage.astro`, `site/src/i18n/ui.ts`, `site/src/components/MediaSlot.astro` | новая IA из §7.24; hero/control loop/workflow/admin/swarm/self-host/pricing/FAQ/CTA; EN/RU; 390/768/1280 без гор. скролла; CTA ведут в app с `?lng=` |
+| 167.3 | New marketing pages | 167.1, 167.2 | `site/src/pages/agent-control.astro`, `workflow.astro`, `security.astro`, `site/src/pages/ru/*`, `site/astro.config.mjs` | `/agent-control`, `/workflow`, `/security` + RU-версии; уникальные title/description/canonical/hreflang/OG/JSON-LD; навигация и футер; без дублей контента |
+| 167.4 | Media v2: real UI recordings | 167.2, admin redesign + 166.13–15 | `video/record/seed.mjs`, `record.mjs`, `screenshots.mjs`, `encode.mjs`, `site/public/media`, `site/public/screens` | новые клипы: control loop, workflow, approvals, audit/rollback, admin console; старые клипы перезаписаны на текущем UI; только демо-данные; постеры, reduced-motion, no-CLS, вес в бюджете |
+| 167.5 | Docs & changelog sync | 167.0 | `site/src/content/docs/**` + `ru/**`, `site/astro.config.mjs`, `CHANGELOG.md` | новые страницы Agent control / Approvals / Scopes / Pause / Rollback / Admin redesign map; обновлены workflow, MCP, API, self-hosting; EN/RU паритет; ссылки из маркетинга живые |
+| 167.6 | SEO, AI-SEO & CRO | 167.2, 167.3 | `site/src/i18n/ui.ts`, `site/src/components/SEO.astro`, `site/src/pages/llms.txt.ts`, `site/src/pages/*.md.ts`, `site/src/lib/analytics.ts` | новые ключевые запросы (agent control, AI workflow, approvals, self-hosted agent kanban); JSON-LD/FAQ/SoftwareApplication валидны; `llms.txt` и pricing.md синхронны; события CTA; Lighthouse SEO 100 |
+| 167.7 | A11y, perf & responsive | 167.2–167.4 | `site/src/styles/*`, `site/src/components/*`, `site/src/layouts/BaseLayout.astro` | Lighthouse a11y/perf ≥95 на home/pricing/new pages; контраст, фокус, клавиатура, 390 px; LCP/CLS в бюджете; видео не грузятся до вьюпорта; reduced-motion → постеры |
+| 167.8 | E2E & launch gate | 167.2–167.7 | `e2e/tests/site/**`, `e2e/tests/docs/**` | обновлены 45 site- и 36 docs-тестов; новые секции/страницы/языки/темы/мобилка/SEO/ссылки; полный Chrome-набор зелёный; crawl без 404; claims-audit подписан; CHANGELOG/ROADMAP обновлены |
+
+#### 7.24.3. Общий Definition of Done
+
+- **Честность:** каждое обещание на сайте либо уже в `main`, либо явно
+  помечено «planned/roadmap»; никаких фейковых логотипов, отзывов, SSO, SLA,
+  cloud-доступности и цифр без источника.
+- **Полнота:** новая реальность закрыта — workflow, agent identity/scopes,
+  approvals, pause, audit/rollback, admin console, self-host/AGPL.
+- **Языки:** EN/RU паритет, без непереведённых строк и «русского в английском».
+- **Медиа:** все клипы и скриншоты сняты с текущего UI после UI-freeze; старый
+  UI и старые названия не встречаются; только демо-данные.
+- **Документация:** у каждой новой фичи есть docs-страница EN/RU и ссылка с
+  сайта; API/MCP-примеры рабочие.
+- **Качество:** `npm run build -w site`, `astro check`, lint/format; Lighthouse
+  a11y/perf/SEO/best-practices ≥95; нет CLS и горизонтального скролла на 390 px;
+  reduced-motion учтён.
+- **Тесты:** site/docs Chrome E2E обновлены и зелёные; crawl ссылок без 404;
+  новые страницы покрыты независимыми пользовательскими сценариями.
+- **Релиз:** `CHANGELOG.md`, `ROADMAP.md`, OG/sitemap/robots/llms.txt
+  синхронизированы; launch checklist и rollback сайта (предыдущий образ) готовы.
+
+#### 7.24.4. Осознанно не входит в TASK-167
+
+- Billing, cloud-тарифы и checkout (TASK-131) — только честная заглушка
+  «cloud later».
+- Новая бренд-идентичность, логотип и палитра — это TASK-122, здесь только
+  развитие системы.
+- CMS, блог-движок, редакционный workflow, маркетинговая автоматизация/CRM.
+- Языки сверх EN/RU.
+- Полная переделка docs-IA и всех старых страниц; трогаем только то, что
+  связано с новой реальностью.
+- Сравнительные страницы «Janosik vs …» и programmatic SEO — после запуска,
+  если появится спрос.
+- Фейковые social proof, enterprise-блоки и «как у конкурентов» без реального
+  содержания.
 
 ---
 
