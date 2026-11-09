@@ -12,6 +12,7 @@ import { FakeAdminServer } from "../test/fake-admin-server";
 function renderEditor(options: {
   announcement?: AdminAnnouncementDto;
   onDone?: () => void;
+  readOnly?: boolean;
 }) {
   return render(
     <ThemeProvider>
@@ -19,6 +20,7 @@ function renderEditor(options: {
         <ToastProvider>
           <AnnouncementEditorDialog
             announcement={options.announcement}
+            readOnly={options.readOnly}
             onClose={() => undefined}
             onDone={options.onDone ?? (() => undefined)}
           />
@@ -80,6 +82,7 @@ function announcement(
     emailSentAt: null,
     startsAt: null,
     endsAt: null,
+    version: 1,
     createdBy: "master@example.com",
     createdAt: 1,
     updatedAt: 1,
@@ -213,9 +216,80 @@ describe("AnnouncementEditorDialog", () => {
     const patch = server.requests.find((request) => request.method === "PATCH");
     expect(patch?.body).toMatchObject({
       translations: {
-        en: { title: "Maintenance", body: "Tonight" },
         ru: { title: "Новые работы", body: "Сегодня" },
       },
+      version: 1,
     });
+  });
+
+  it("sends only dirty locales and reports a stale version", async () => {
+    const server = new FakeAdminServer();
+    const stale = announcement();
+    server.announcements = [{ ...stale, version: 2 }];
+    vi.stubGlobal("fetch", server.fetchImpl);
+    const onDone = vi.fn();
+    renderEditor({ announcement: stale, onDone });
+
+    fireEvent.click(screen.getByTestId("announcement-tab-ru"));
+    fireEvent.change(screen.getByTestId("admin-announcement-title-ru"), {
+      target: { value: "Новые работы" },
+    });
+    fireEvent.click(screen.getByTestId("admin-announcement-edit-save"));
+
+    expect(
+      await screen.findByText(/Someone else changed this announcement/),
+    ).toBeInTheDocument();
+    expect(onDone).not.toHaveBeenCalled();
+    expect(server.requests.some((request) => request.method === "PATCH")).toBe(
+      true,
+    );
+  });
+
+  it("blocks the email checkbox on an active announcement", () => {
+    vi.stubGlobal("fetch", new FakeAdminServer().fetchImpl);
+    renderEditor({ announcement: announcement() });
+    const checkbox = screen.getByTestId(
+      "admin-announcement-sendemail",
+    ) as HTMLButtonElement;
+    expect(checkbox.disabled).toBe(true);
+    expect(screen.getByTestId("announcement-email-locked")).toHaveTextContent(
+      "Save it as a draft",
+    );
+  });
+
+  it("warns that a future schedule still sends the letter immediately", () => {
+    vi.stubGlobal("fetch", new FakeAdminServer().fetchImpl);
+    renderEditor({});
+    fireEvent.click(screen.getByTestId("admin-announcement-sendemail"));
+    fireEvent.change(screen.getByTestId("admin-announcement-starts"), {
+      target: { value: "2030-01-01T10:00" },
+    });
+    expect(
+      screen.getByTestId("announcement-email-future-warning"),
+    ).toHaveTextContent("queued immediately");
+  });
+
+  it("blocks the strict preview when either language is missing", () => {
+    vi.stubGlobal("fetch", new FakeAdminServer().fetchImpl);
+    renderEditor({});
+    fireEvent.change(screen.getByTestId("admin-announcement-title"), {
+      target: { value: "Only English" },
+    });
+    fireEvent.change(screen.getByTestId("admin-announcement-body"), {
+      target: { value: "Body" },
+    });
+    expect(
+      screen.getByTestId("announcement-preview-blocked"),
+    ).toHaveTextContent("Russian");
+  });
+
+  it("renders a read-only operator view without save actions", () => {
+    vi.stubGlobal("fetch", new FakeAdminServer().fetchImpl);
+    renderEditor({ announcement: announcement(), readOnly: true });
+    expect(screen.getByTestId("admin-announcement-title")).toBeDisabled();
+    expect(
+      screen.queryByTestId("admin-announcement-edit-save"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("admin-announcement-close")).toBeInTheDocument();
   });
 });

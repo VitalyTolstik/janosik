@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Eye, Globe2, Languages } from "lucide-react";
 import {
   ANNOUNCEMENT_LOCALES,
+  announcementFallbackNotice,
+  announcementFallbackSubjectPrefix,
   completeness,
   resolveAnnouncementContent,
   type AdminAnnouncementDto,
@@ -22,7 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useI18n } from "@/i18n";
+import { formatDate, useI18n } from "@/i18n";
 import { useToast } from "@/components/Toast";
 import { adminApi } from "../admin-client";
 import { useAdminT, type AdminMessageKey } from "../admin-i18n";
@@ -65,7 +67,7 @@ function isLegacyAnnouncement(
   return (
     announcement !== null &&
     announcement.sourceLocale === null &&
-    announcement.translations.length === 0 &&
+    (announcement.translations ?? []).length === 0 &&
     (announcement.title.length > 0 || announcement.body.length > 0)
   );
 }
@@ -87,22 +89,6 @@ function fromLocalInput(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function fallbackSubject(
-  title: string,
-  recipientLocale: AnnouncementLocale,
-  contentLocale: AnnouncementLocale | null,
-): string {
-  if (!contentLocale || contentLocale === recipientLocale) return title;
-  if (recipientLocale === "ru") {
-    return contentLocale === "en"
-      ? `Объявление (только на английском): ${title}`
-      : `Объявление (только на русском): ${title}`;
-  }
-  return contentLocale === "ru"
-    ? `Announcement (Russian only): ${title}`
-    : `Announcement (English only): ${title}`;
-}
-
 /**
  * The single create/edit dialog for bilingual announcements (EN/RU tabs,
  * completeness, fallback policy, banner + email preview, draft/publish).
@@ -113,26 +99,35 @@ export function AnnouncementEditorDialog({
   announcement = null,
   onClose,
   onDone,
+  readOnly = false,
 }: {
   announcement?: AdminAnnouncementDto | null;
   onClose: () => void;
   onDone: () => void;
+  /** OPERATOR support view: every control is disabled, no save actions. */
+  readOnly?: boolean;
 }) {
   const t = useAdminT();
   const toast = useToast();
   const { lang } = useI18n();
   const legacyAtStart = isLegacyAnnouncement(announcement);
-  const [translations, setTranslations] = useState<EditorTranslations>(() =>
+  const [initialTranslationsState] = useState<EditorTranslations>(() =>
     initialTranslations(announcement),
+  );
+  const [translations, setTranslations] = useState<EditorTranslations>(
+    initialTranslationsState,
   );
   const [legacy, setLegacy] = useState<LocaleText | null>(() =>
     legacyAtStart
       ? { title: announcement?.title ?? "", body: announcement?.body ?? "" }
       : null,
   );
+  const initialSourceLocale =
+    announcement?.sourceLocale ?? (announcement ? "" : lang);
   const [sourceLocale, setSourceLocale] = useState<AnnouncementLocale | "">(
-    announcement?.sourceLocale ?? (announcement ? "" : lang),
+    initialSourceLocale,
   );
+  const [sourceTouched, setSourceTouched] = useState(false);
   const [fallbackPolicy, setFallbackPolicy] =
     useState<AnnouncementFallbackPolicy>(
       announcement?.fallbackPolicy ?? "require_all",
@@ -158,13 +153,25 @@ export function AnnouncementEditorDialog({
   const [endsAt, setEndsAt] = useState(
     toLocalInput(announcement?.endsAt ?? null),
   );
-  const [editorLocale, setEditorLocale] = useState<AnnouncementLocale>("en");
+  const [editorLocale, setEditorLocale] = useState<AnnouncementLocale>(
+    initialSourceLocale === "en" || initialSourceLocale === "ru"
+      ? initialSourceLocale
+      : "en",
+  );
   const [previewLocale, setPreviewLocale] = useState<AnnouncementLocale>("en");
   const [busy, setBusy] = useState(false);
   const [validation, setValidation] = useState<string | null>(null);
   const [missingLocales, setMissingLocales] = useState<AnnouncementLocale[]>(
     [],
   );
+  const tabRefs = useRef<Record<AnnouncementLocale, HTMLButtonElement | null>>({
+    en: null,
+    ru: null,
+  });
+  const [openedAt] = useState(() => Date.now());
+  const emailLocked = announcement?.active === true;
+  const startTimestamp = fromLocalInput(startsAt);
+  const futureStart = startTimestamp !== null && startTimestamp > openedAt;
 
   const complete = useMemo(
     () =>
@@ -198,6 +205,12 @@ export function AnnouncementEditorDialog({
 
   const localeLabel = (locale: AnnouncementLocale) =>
     t(`admin.comms.lang.${locale}` as AdminMessageKey);
+
+  const focusLocaleTitle = (locale: AnnouncementLocale) => {
+    window.requestAnimationFrame(() => {
+      document.getElementById(`admin-announcement-title-${locale}`)?.focus();
+    });
+  };
 
   const windowInvalid =
     startsAt.trim() !== "" &&
@@ -254,7 +267,11 @@ export function AnnouncementEditorDialog({
       sourceLocale === "" ||
       (translations[sourceLocale].title.trim() === "" &&
         translations[sourceLocale].body.trim() === "");
-    if (sourceEmpty && (patch.title?.trim() || patch.body?.trim())) {
+    if (
+      !sourceTouched &&
+      sourceEmpty &&
+      (patch.title?.trim() || patch.body?.trim())
+    ) {
       setSourceLocale(locale);
       if (legacy) {
         next[locale] = {
@@ -270,6 +287,7 @@ export function AnnouncementEditorDialog({
   };
 
   const chooseSource = (value: string) => {
+    setSourceTouched(true);
     if (value === "") {
       setSourceLocale("");
       return;
@@ -298,15 +316,22 @@ export function AnnouncementEditorDialog({
     > = {};
     for (const locale of ANNOUNCEMENT_LOCALES) {
       const value = translations[locale];
+      const before = initialTranslationsState[locale];
       const title = value.title.trim();
       const body = value.body.trim();
-      if (title !== "" && body !== "") {
+      const changed =
+        title !== before.title.trim() || body !== before.body.trim();
+      if (title !== "" && body !== "" && changed) {
         payload[locale] = { title, body };
       } else if (
-        announcement?.translations.some(
-          (translation) => translation.locale === locale,
-        )
+        title === "" &&
+        body === "" &&
+        before.title.trim() !== "" &&
+        before.body.trim() !== ""
       ) {
+        // Only a version the admin actually cleared is deleted; untouched
+        // locales stay absent so another editor's concurrent changes survive
+        // this PATCH.
         payload[locale] = null;
       }
     }
@@ -323,7 +348,10 @@ export function AnnouncementEditorDialog({
           : sourceLocale === ""
             ? undefined
             : sourceLocale;
-      if (firstMissing) setEditorLocale(firstMissing);
+      if (firstMissing) {
+        setEditorLocale(firstMissing);
+        focusLocaleTitle(firstMissing);
+      }
       return;
     }
     setBusy(true);
@@ -354,10 +382,10 @@ export function AnnouncementEditorDialog({
                 buildTranslations() as AdminCreateAnnouncementRequest["translations"],
             };
       if (announcement) {
-        await adminApi.updateAnnouncement(
-          announcement.id,
-          payload as AdminUpdateAnnouncementRequest,
-        );
+        await adminApi.updateAnnouncement(announcement.id, {
+          ...(payload as AdminUpdateAnnouncementRequest),
+          version: announcement.version,
+        });
       } else {
         await adminApi.createAnnouncement(payload);
       }
@@ -382,8 +410,14 @@ export function AnnouncementEditorDialog({
         if (missing.length > 0) {
           setMissingLocales(missing);
           setEditorLocale(missing[0] ?? "en");
+          if (missing[0]) focusLocaleTitle(missing[0]);
         }
-        setValidation(cause.messageText);
+        const conflict = (body as { conflict?: unknown } | null)?.conflict;
+        setValidation(
+          conflict === "version"
+            ? t("admin.comms.staleAnnouncement")
+            : cause.messageText,
+        );
       } else {
         setValidation(t("admin.comms.requestFailed"));
       }
@@ -411,21 +445,21 @@ export function AnnouncementEditorDialog({
       }),
     [previewLocale, sourceLocale, previewTranslations, legacy],
   );
-  const previewBlocked =
+  const previewMissingLocales =
     legacy && sourceLocale === ""
-      ? false
+      ? []
       : fallbackPolicy === "require_all"
-        ? !complete[previewLocale]
-        : sourceLocale === "" || !complete[sourceLocale];
+        ? ANNOUNCEMENT_LOCALES.filter((locale) => !complete[locale])
+        : !sourceLocale || !complete[sourceLocale]
+          ? [sourceLocale === "" ? "en" : sourceLocale]
+          : [];
+  const previewBlocked = previewMissingLocales.length > 0;
+  const previewBlockedLocale = previewMissingLocales[0] ?? previewLocale;
   const previewFallback = previewContent?.isFallback ?? false;
-  const previewFallbackText =
-    previewLocale === "ru"
-      ? previewContent?.contentLocale === "en"
-        ? "Это объявление доступно только на английском."
-        : "Это объявление доступно только на русском."
-      : previewContent?.contentLocale === "ru"
-        ? "This announcement is available in Russian only."
-        : "This announcement is available in English only.";
+  const previewFallbackText = announcementFallbackNotice(
+    previewLocale,
+    previewContent?.contentLocale ?? null,
+  );
 
   const tab = (locale: AnnouncementLocale) => (
     <button
@@ -433,18 +467,32 @@ export function AnnouncementEditorDialog({
       type="button"
       role="tab"
       id={`announcement-tab-${locale}`}
+      ref={(element) => {
+        tabRefs.current[locale] = element;
+      }}
       aria-selected={editorLocale === locale}
-      aria-controls={`announcement-panel-${locale}`}
+      aria-controls={
+        editorLocale === locale ? `announcement-panel-${locale}` : undefined
+      }
       aria-invalid={missingLocales.includes(locale) || undefined}
+      tabIndex={editorLocale === locale ? 0 : -1}
       data-testid={`announcement-tab-${locale}`}
       onClick={() => setEditorLocale(locale)}
       onKeyDown={(event) => {
         if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
           event.preventDefault();
-          setEditorLocale((current) => (current === "en" ? "ru" : "en"));
+          const next: AnnouncementLocale = editorLocale === "en" ? "ru" : "en";
+          setEditorLocale(next);
+          tabRefs.current[next]?.focus();
         }
-        if (event.key === "Home") setEditorLocale("en");
-        if (event.key === "End") setEditorLocale("ru");
+        if (event.key === "Home") {
+          setEditorLocale("en");
+          tabRefs.current.en?.focus();
+        }
+        if (event.key === "End") {
+          setEditorLocale("ru");
+          tabRefs.current.ru?.focus();
+        }
       }}
       className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
         editorLocale === locale
@@ -504,6 +552,7 @@ export function AnnouncementEditorDialog({
                   <Input
                     value={legacy.title}
                     maxLength={TITLE_MAX}
+                    disabled={readOnly}
                     aria-label={`${t("admin.comms.field.title")} (${t("admin.comms.legacy")})`}
                     data-testid="admin-announcement-legacy-title"
                     onChange={(event) =>
@@ -517,6 +566,7 @@ export function AnnouncementEditorDialog({
                   <Textarea
                     value={legacy.body}
                     maxLength={BODY_MAX}
+                    disabled={readOnly}
                     aria-label={`${t("admin.comms.field.body")} (${t("admin.comms.legacy")})`}
                     data-testid="admin-announcement-legacy-body"
                     onChange={(event) =>
@@ -534,7 +584,7 @@ export function AnnouncementEditorDialog({
             <div
               className="flex gap-1 rounded-xl border border-border bg-background/40 p-1"
               role="tablist"
-              aria-label={t("admin.comms.completeness")}
+              aria-label={t("admin.comms.languages")}
             >
               {tab("en")}
               {tab("ru")}
@@ -547,6 +597,7 @@ export function AnnouncementEditorDialog({
               <select
                 id="admin-announcement-source"
                 value={sourceLocale}
+                disabled={readOnly}
                 data-testid="admin-announcement-source"
                 className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
                 onChange={(event) => chooseSource(event.target.value)}
@@ -578,6 +629,7 @@ export function AnnouncementEditorDialog({
                   }
                   value={translations[editorLocale].title}
                   maxLength={TITLE_MAX}
+                  disabled={readOnly}
                   aria-invalid={
                     missingLocales.includes(editorLocale) || undefined
                   }
@@ -605,6 +657,7 @@ export function AnnouncementEditorDialog({
                   }
                   value={translations[editorLocale].body}
                   maxLength={BODY_MAX}
+                  disabled={readOnly}
                   aria-invalid={
                     missingLocales.includes(editorLocale) || undefined
                   }
@@ -656,6 +709,9 @@ export function AnnouncementEditorDialog({
                   name="announcement-policy"
                   value="require_all"
                   checked={fallbackPolicy === "require_all"}
+                  disabled={
+                    readOnly || (legacy !== null && sourceLocale === "")
+                  }
                   data-testid="announcement-policy-require_all"
                   onChange={() => {
                     setFallbackPolicy("require_all");
@@ -678,6 +734,7 @@ export function AnnouncementEditorDialog({
                   name="announcement-policy"
                   value="allow_fallback"
                   checked={fallbackPolicy === "allow_fallback"}
+                  disabled={readOnly}
                   data-testid="announcement-policy-allow_fallback"
                   onChange={() => {
                     setFallbackPolicy("allow_fallback");
@@ -705,6 +762,7 @@ export function AnnouncementEditorDialog({
               <Field label={t("admin.comms.field.level")}>
                 <select
                   value={level}
+                  disabled={readOnly}
                   data-testid="admin-announcement-level"
                   className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
                   onChange={(event) =>
@@ -723,6 +781,7 @@ export function AnnouncementEditorDialog({
               <Field label={t("admin.comms.field.audience")}>
                 <select
                   value={audience}
+                  disabled={readOnly}
                   data-testid="admin-announcement-audience"
                   className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
                   onChange={(event) =>
@@ -740,6 +799,7 @@ export function AnnouncementEditorDialog({
               <RecipientPicker
                 recipients={recipients}
                 onChange={setRecipients}
+                readOnly={readOnly}
               />
             ) : null}
 
@@ -747,6 +807,7 @@ export function AnnouncementEditorDialog({
               <Checkbox
                 checked={sendEmail}
                 onCheckedChange={setSendEmail}
+                disabled={emailLocked || readOnly}
                 aria-label={t("admin.comms.field.sendEmail")}
                 data-testid="admin-announcement-sendemail"
               />
@@ -754,9 +815,25 @@ export function AnnouncementEditorDialog({
                 {t("admin.comms.field.sendEmail")}
               </span>
             </label>
-            {announcement?.emailSentAt != null ? (
-              <p className="text-[11px] text-muted-foreground">
-                {t("admin.comms.emailSent.hint")}
+            {emailLocked ? (
+              <p
+                className="text-[11px] leading-relaxed text-warning"
+                data-testid="announcement-email-locked"
+              >
+                {announcement?.emailSentAt != null
+                  ? t("admin.comms.emailSent.hint")
+                  : t("admin.comms.emailActiveHint")}
+              </p>
+            ) : null}
+            {!emailLocked && sendEmail && futureStart && startTimestamp ? (
+              <p
+                role="alert"
+                className="rounded-md border border-warning/35 bg-warning/10 px-2 py-1.5 text-[11px] leading-relaxed text-warning"
+                data-testid="announcement-email-future-warning"
+              >
+                {t("admin.comms.emailFutureWarning", {
+                  date: formatDate(startTimestamp, lang),
+                })}
               </p>
             ) : null}
 
@@ -772,6 +849,7 @@ export function AnnouncementEditorDialog({
                   <Input
                     type="datetime-local"
                     value={startsAt}
+                    disabled={readOnly}
                     data-testid="admin-announcement-starts"
                     onChange={(event) => setStartsAt(event.target.value)}
                   />
@@ -780,6 +858,7 @@ export function AnnouncementEditorDialog({
                   <Input
                     type="datetime-local"
                     value={endsAt}
+                    disabled={readOnly}
                     data-testid="admin-announcement-ends"
                     onChange={(event) => setEndsAt(event.target.value)}
                   />
@@ -826,7 +905,7 @@ export function AnnouncementEditorDialog({
               >
                 <Globe2 className="mt-px h-3 w-3 shrink-0" aria-hidden />
                 {t("admin.comms.preview.blocked", {
-                  locale: localeLabel(previewLocale),
+                  locale: localeLabel(previewBlockedLocale),
                 })}
               </p>
             ) : previewContent ? (
@@ -866,11 +945,15 @@ export function AnnouncementEditorDialog({
                   <p className="mt-1 text-[10px] font-semibold">
                     {t("admin.comms.preview.subject")}:{" "}
                     {previewContent
-                      ? fallbackSubject(
-                          previewContent.title,
-                          previewLocale,
-                          previewContent.contentLocale,
-                        )
+                      ? `${
+                          previewContent.isFallback &&
+                          previewContent.contentLocale
+                            ? announcementFallbackSubjectPrefix(
+                                previewLocale,
+                                previewContent.contentLocale,
+                              )
+                            : ""
+                        }${previewContent.title}`
                       : "—"}
                   </p>
                   {previewContent && previewFallback ? (
@@ -905,33 +988,51 @@ export function AnnouncementEditorDialog({
         ) : null}
 
         <DialogFooter className="gap-2">
-          <Button size="sm" variant="ghost" onClick={onClose} disabled={busy}>
-            {t("admin.common.cancel")}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy || draftBlockingReason !== null}
-            data-testid="admin-announcement-save-draft"
-            onClick={() => void submit(false)}
-          >
-            {t("admin.comms.saveDraft")}
-          </Button>
-          <Button
-            size="sm"
-            disabled={busy || blockingReason !== null}
-            data-testid={
-              announcement
-                ? "admin-announcement-edit-save"
-                : "admin-announcement-publish"
-            }
-            onClick={() => void submit(true)}
-          >
-            <Eye className="h-3.5 w-3.5" aria-hidden />
-            {announcement?.active
-              ? t("admin.comms.save")
-              : t("admin.comms.publish")}
-          </Button>
+          {readOnly ? (
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="admin-announcement-close"
+              onClick={onClose}
+            >
+              {t("admin.common.close")}
+            </Button>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onClose}
+                disabled={busy}
+              >
+                {t("admin.common.cancel")}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || draftBlockingReason !== null}
+                data-testid="admin-announcement-save-draft"
+                onClick={() => void submit(false)}
+              >
+                {t("admin.comms.saveDraft")}
+              </Button>
+              <Button
+                size="sm"
+                disabled={busy || blockingReason !== null}
+                data-testid={
+                  announcement
+                    ? "admin-announcement-edit-save"
+                    : "admin-announcement-publish"
+                }
+                onClick={() => void submit(true)}
+              >
+                <Eye className="h-3.5 w-3.5" aria-hidden />
+                {announcement?.active
+                  ? t("admin.comms.save")
+                  : t("admin.comms.publish")}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

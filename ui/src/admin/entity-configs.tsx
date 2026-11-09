@@ -1276,7 +1276,9 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                   {ANNOUNCEMENT_LOCALES.map((locale) => (
                     <Badge
                       key={locale}
-                      variant={row.completeness[locale] ? "success" : "neutral"}
+                      variant={
+                        row.completeness?.[locale] ? "success" : "neutral"
+                      }
                     >
                       {t(`admin.comms.lang.${locale}.short` as AdminMessageKey)}
                     </Badge>
@@ -1327,9 +1329,11 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.comms.col.email"),
             render: (row) =>
-              row.sendEmail ? (
+              row.sendEmail || row.emailSentAt !== null ? (
                 <span className="inline-flex gap-1">
-                  <Badge variant="primary">email</Badge>
+                  {row.sendEmail ? (
+                    <Badge variant="primary">email</Badge>
+                  ) : null}
                   <Badge
                     variant={row.emailSentAt === null ? "warning" : "success"}
                   >
@@ -1362,11 +1366,11 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             ),
           },
         ],
-        // Editing/activating/deleting broadcasts is owner-only server-side
-        // (403 for an OPERATOR), so the row menu is not rendered for them.
-        ...(isOwner
-          ? {
-              actions: (row: AdminAnnouncementDto) => [
+        // Writes are owner-only server-side (403 for an OPERATOR); they still
+        // get a read-only view so support can inspect both translations.
+        actions: (row: AdminAnnouncementDto) =>
+          isOwner
+            ? [
                 {
                   label: t("admin.announcements.action.edit"),
                   run: async () => undefined,
@@ -1388,12 +1392,18 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                   ? {
                       label: t("admin.announcements.action.deactivate"),
                       run: () =>
-                        adminApi.updateAnnouncement(row.id, { active: false }),
+                        adminApi.updateAnnouncement(row.id, {
+                          active: false,
+                          version: row.version,
+                        }),
                     }
                   : {
                       label: t("admin.announcements.action.activate"),
                       run: () =>
-                        adminApi.updateAnnouncement(row.id, { active: true }),
+                        adminApi.updateAnnouncement(row.id, {
+                          active: true,
+                          version: row.version,
+                        }),
                     },
                 {
                   label: t("admin.common.delete"),
@@ -1401,9 +1411,26 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                   confirmTitle: t("admin.common.delete"),
                   run: () => adminApi.deleteAnnouncement(row.id),
                 },
+              ]
+            : [
+                {
+                  label: t("admin.announcements.action.view"),
+                  run: async () => undefined,
+                  renderDialog: ({
+                    close,
+                  }: {
+                    close: () => void;
+                    reload: () => void;
+                  }) => (
+                    <AnnouncementEditorDialog
+                      announcement={row}
+                      readOnly
+                      onClose={close}
+                      onDone={() => undefined}
+                    />
+                  ),
+                },
               ],
-            }
-          : {}),
       };
       return config;
     }

@@ -173,6 +173,22 @@ describe("AnnouncementBanner", () => {
     expect(activeAnnouncements).toHaveBeenCalledWith("ru");
   });
 
+  it("hides stale items when the language changes and the refetch fails", async () => {
+    activeAnnouncements.mockResolvedValueOnce([
+      announcement({ id: "a-1", title: "English" }),
+    ]);
+    renderBanner();
+    await screen.findByText("English");
+
+    activeAnnouncements.mockRejectedValueOnce(new Error("offline"));
+    activeAnnouncements.mockResolvedValue([]);
+    await act(async () => {
+      await defaultI18n.changeLanguage("ru");
+    });
+
+    expect(screen.queryByText("English")).not.toBeInTheDocument();
+  });
+
   it("dismisses one announcement and remembers it in localStorage", async () => {
     activeAnnouncements.mockResolvedValue([
       announcement({ id: "a-1", title: "Maintenance", body: "Tonight" }),

@@ -1283,9 +1283,11 @@ export class FakeAdminServer {
         segment: payload.segment ?? null,
         active: payload.active ?? true,
         sendEmail: payload.sendEmail ?? false,
-        emailSentAt: null,
+        emailSentAt:
+          payload.active !== false && payload.sendEmail === true ? now : null,
         startsAt: payload.startsAt ?? null,
         endsAt: payload.endsAt ?? null,
+        version: 1,
         createdBy: "master@example.com",
         createdAt: now,
         updatedAt: now,
@@ -1313,7 +1315,19 @@ export class FakeAdminServer {
         sendEmail?: boolean;
         startsAt?: number | null;
         endsAt?: number | null;
+        version?: number;
       };
+      if (payload.version !== undefined && payload.version !== row.version) {
+        return this.json(
+          {
+            message: "The announcement was changed by someone else",
+            conflict: "version",
+            currentVersion: row.version,
+          },
+          409,
+        );
+      }
+      const wasActive = row.active;
       const translations = new Map(
         row.translations.map((translation) => [
           translation.locale,
@@ -1344,7 +1358,7 @@ export class FakeAdminServer {
       if (
         payload.title !== undefined &&
         payload.body !== undefined &&
-        payload.translations === undefined
+        payload.translations == null
       ) {
         const locale = payload.sourceLocale ?? row.sourceLocale ?? "en";
         translations.set(locale, {
@@ -1360,6 +1374,10 @@ export class FakeAdminServer {
         });
       }
       const nextTranslations = [...translations.values()];
+      const nextActive = payload.active ?? row.active;
+      const nextSendEmail = payload.sendEmail ?? row.sendEmail;
+      const queued =
+        !wasActive && nextActive && nextSendEmail && row.emailSentAt === null;
       const primary =
         nextTranslations.find(
           (entry) =>
@@ -1375,10 +1393,10 @@ export class FakeAdminServer {
             : payload.sourceLocale,
         translations: nextTranslations,
         completeness: completeness(nextTranslations),
-        emailSentAt:
-          payload.active === true && row.emailSentAt === null && row.sendEmail
-            ? now
-            : row.emailSentAt,
+        active: nextActive,
+        sendEmail: nextSendEmail,
+        emailSentAt: queued ? now : row.emailSentAt,
+        version: row.version + 1,
         updatedAt: now,
       });
       return this.json(row);

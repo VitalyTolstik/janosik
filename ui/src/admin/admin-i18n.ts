@@ -112,6 +112,7 @@ const en = {
   "admin.announcements.action.activate": "Activate",
   "admin.announcements.action.deactivate": "Deactivate",
   "admin.announcements.action.edit": "Edit",
+  "admin.announcements.action.view": "View",
   "admin.comms.field.startsAt": "Starts at",
   "admin.comms.field.endsAt": "Ends at",
   "admin.announcements.send": "Send announcement",
@@ -269,6 +270,7 @@ const en = {
   "admin.comms.lang.en.short": "EN",
   "admin.comms.lang.ru.short": "RU",
   "admin.comms.completeness": "Completeness",
+  "admin.comms.languages": "Languages",
   "admin.comms.ready": "Ready",
   "admin.comms.notFilled": "Not filled",
   "admin.comms.source": "Source",
@@ -299,7 +301,13 @@ const en = {
   "admin.comms.emailSent": "Email sent",
   "admin.comms.emailNotSent": "Email not sent",
   "admin.comms.emailSent.hint":
-    "The letter has already been sent. Edits change only the banner.",
+    "The letter has already been queued. Edits change only the banner.",
+  "admin.comms.emailActiveHint":
+    "An active announcement does not send email on save. Save it as a draft and publish again to send.",
+  "admin.comms.emailFutureWarning":
+    "The letter will be queued immediately when you save; the banner will appear at {date}.",
+  "admin.comms.staleAnnouncement":
+    "Someone else changed this announcement while you were editing. Close and reopen it to continue.",
   "admin.comms.schedule": "Schedule (optional)",
   "admin.comms.validation.missing": "Fill the missing languages: {locales}",
   "admin.comms.validation.source":
@@ -312,7 +320,7 @@ const en = {
   "admin.comms.col.policy": "Policy",
   "admin.comms.policy.require_all.short": "EN+RU",
   "admin.comms.policy.allow_fallback.short": "Fallback",
-  "admin.comms.email.sentBadge": "email sent",
+  "admin.comms.email.sentBadge": "email queued",
   "admin.comms.email.pendingBadge": "email pending",
   "admin.comms.field.schedule": "Schedule",
   "admin.comms.email.title": "Send an email",
@@ -1133,6 +1141,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.announcements.action.activate": "Включить",
   "admin.announcements.action.deactivate": "Отключить",
   "admin.announcements.action.edit": "Изменить",
+  "admin.announcements.action.view": "Просмотр",
   "admin.comms.field.startsAt": "Начало",
   "admin.comms.field.endsAt": "Окончание",
   "admin.announcements.send": "Отправить объявление",
@@ -1289,6 +1298,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.comms.lang.en.short": "EN",
   "admin.comms.lang.ru.short": "RU",
   "admin.comms.completeness": "Полнота",
+  "admin.comms.languages": "Языки",
   "admin.comms.ready": "Готово",
   "admin.comms.notFilled": "Не заполнено",
   "admin.comms.source": "Исходный",
@@ -1320,7 +1330,13 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.comms.emailSent": "Письмо отправлено",
   "admin.comms.emailNotSent": "Письмо не отправлено",
   "admin.comms.emailSent.hint":
-    "Письмо уже отправлено. Правки изменят только баннер.",
+    "Письмо уже поставлено в очередь. Правки изменят только баннер.",
+  "admin.comms.emailActiveHint":
+    "Активное объявление не отправляет письмо при сохранении. Сохраните черновик и опубликуйте снова, чтобы отправить.",
+  "admin.comms.emailFutureWarning":
+    "Письмо будет поставлено в очередь сразу при сохранении; баннер появится {date}.",
+  "admin.comms.staleAnnouncement":
+    "Кто-то изменил объявление, пока вы редактировали. Закройте и откройте его снова, чтобы продолжить.",
   "admin.comms.schedule": "Расписание (необязательно)",
   "admin.comms.validation.missing": "Заполните недостающие языки: {locales}",
   "admin.comms.validation.source":
@@ -1333,7 +1349,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.comms.col.policy": "Политика",
   "admin.comms.policy.require_all.short": "EN+RU",
   "admin.comms.policy.allow_fallback.short": "Fallback",
-  "admin.comms.email.sentBadge": "письмо отправлено",
+  "admin.comms.email.sentBadge": "письмо в очереди",
   "admin.comms.email.pendingBadge": "письмо ожидает",
   "admin.comms.field.schedule": "Расписание",
   "admin.comms.announcements.empty": "Объявлений нет",

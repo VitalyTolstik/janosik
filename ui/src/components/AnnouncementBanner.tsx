@@ -34,6 +34,7 @@ export function AnnouncementBanner() {
   const { status } = useAuth();
   const { t, lang } = useI18n();
   const [items, setItems] = useState<AnnouncementDto[]>([]);
+  const [itemsLocale, setItemsLocale] = useState<string | null>(null);
   const [hidden, setHidden] = useState<string[]>(() => dismissedIds());
 
   useEffect(() => {
@@ -42,7 +43,10 @@ export function AnnouncementBanner() {
     api
       .activeAnnouncements(lang)
       .then((list) => {
-        if (active) setItems(list);
+        if (active) {
+          setItems(list);
+          setItemsLocale(lang);
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -50,7 +54,10 @@ export function AnnouncementBanner() {
     };
   }, [status, lang]);
 
-  const visible = items.filter((item) => !hidden.includes(item.id));
+  const visible =
+    itemsLocale === lang
+      ? items.filter((item) => !hidden.includes(item.id))
+      : [];
   if (visible.length === 0) return null;
 
   const dismiss = (id: string) => {

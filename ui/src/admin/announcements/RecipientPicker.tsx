@@ -12,9 +12,11 @@ import { useAdminT } from "../admin-i18n";
 export function RecipientPicker({
   recipients,
   onChange,
+  readOnly = false,
 }: {
   recipients: string[];
   onChange: (next: string[]) => void;
+  readOnly?: boolean;
 }) {
   const t = useAdminT();
   const [query, setQuery] = useState("");
@@ -57,6 +59,7 @@ export function RecipientPicker({
             <button
               key={email}
               type="button"
+              disabled={readOnly}
               className="inline-flex items-center gap-1 rounded-full bg-hover px-2 py-0.5 text-[11px]"
               onClick={() =>
                 onChange(recipients.filter((entry) => entry !== email))
@@ -67,28 +70,32 @@ export function RecipientPicker({
           ))}
         </div>
       ) : null}
-      <Input
-        value={query}
-        maxLength={200}
-        placeholder={t("admin.comms.recipients.placeholder")}
-        data-testid="admin-announcement-recipients"
-        onChange={(event) => setQuery(event.target.value)}
-      />
-      {visibleMatches.length > 0 ? (
-        <div className="rounded-md border border-border bg-card">
-          {visibleMatches.map((user) => (
-            <button
-              key={user.id}
-              type="button"
-              className="block w-full px-2 py-1 text-left text-xs hover:bg-hover"
-              onClick={() => add(user.email)}
-            >
-              {user.displayName ? `${user.displayName} · ` : ""}
-              {user.email}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      {readOnly ? null : (
+        <>
+          <Input
+            value={query}
+            maxLength={200}
+            placeholder={t("admin.comms.recipients.placeholder")}
+            data-testid="admin-announcement-recipients"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {visibleMatches.length > 0 ? (
+            <div className="rounded-md border border-border bg-card">
+              {visibleMatches.map((user) => (
+                <button
+                  key={user.id}
+                  type="button"
+                  className="block w-full px-2 py-1 text-left text-xs hover:bg-hover"
+                  onClick={() => add(user.email)}
+                >
+                  {user.displayName ? `${user.displayName} · ` : ""}
+                  {user.email}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

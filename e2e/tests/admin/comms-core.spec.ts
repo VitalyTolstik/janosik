@@ -130,7 +130,7 @@ test("S16: announcement history edits, toggles and deletes", async ({
   await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
 
   const dialog = page.getByRole("dialog");
-  await dialog.getByTestId("admin-announcement-title").fill(nextTitle);
+  await dialog.getByTestId("admin-announcement-legacy-title").fill(nextTitle);
   await dialog.getByTestId("admin-announcement-level").selectOption("warning");
   await dialog.getByTestId("admin-announcement-edit-save").click();
   await expectToastText(page, "Saved");

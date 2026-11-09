@@ -239,23 +239,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (impersonating) return;
     if (new URLSearchParams(window.location.search).has("lng")) return;
     const current: Lang = defaultI18n.language.startsWith("ru") ? "ru" : "en";
-    if (user.locale !== undefined) {
-      if (user.locale === current) return;
-      const wanted = user.locale;
-      void ensureLocale(wanted).then((ok) => {
-        if (ok && defaultI18n.language !== wanted) {
-          void defaultI18n.changeLanguage(wanted);
+    const stored = user.locale;
+    if (stored === "en" || stored === "ru") {
+      if (stored === current) return;
+      void ensureLocale(stored).then((ok) => {
+        if (ok && defaultI18n.language !== stored) {
+          void defaultI18n.changeLanguage(stored);
         }
       });
       return;
     }
+    // Defensive: a malformed/legacy DTO must not crash `ensureLocale`.
+    if (stored !== undefined && stored !== null) return;
     const adoptionKey = `${user.id}:${current}`;
     if (localeAdoptionRef.current === adoptionKey) return;
     localeAdoptionRef.current = adoptionKey;
     void api
       .updateProfile({ locale: current })
       .then(updateUser)
-      .catch(() => undefined);
+      .catch(() => {
+        // Offline/best-effort: allow a later render/session to retry.
+        localeAdoptionRef.current = null;
+      });
   }, [serverMode, status, user, impersonating, updateUser]);
 
   const exitImpersonation = useCallback(() => {
