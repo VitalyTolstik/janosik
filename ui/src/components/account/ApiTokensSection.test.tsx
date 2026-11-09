@@ -125,6 +125,21 @@ describe("ApiTokensSection (TASK-36.1)", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Enter a whole number between",
     );
+    expect(screen.getByTestId("token-rate")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(screen.getByTestId("token-rate")).toHaveAttribute(
+      "aria-describedby",
+      "token-rate-error",
+    );
+
+    const rate = screen.getByTestId("token-rate");
+    await userEvent.clear(rate);
+    await userEvent.type(rate, "120");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(rate).not.toHaveAttribute("aria-invalid");
+    expect(rate).not.toHaveAttribute("aria-describedby");
     expect(
       server.requests.some(
         (request) =>
@@ -132,6 +147,37 @@ describe("ApiTokensSection (TASK-36.1)", () => {
           request.path === "/api/v1/users/me/tokens",
       ),
     ).toBe(false);
+  });
+
+  it("renders themed app controls instead of native checkbox/number inputs", async () => {
+    const server = new FakeServer();
+    renderTokens(server);
+    await screen.findByText("No API keys yet");
+    await userEvent.click(screen.getByTestId("token-create"));
+
+    const dialog = await screen.findByTestId("token-dialog");
+    expect(dialog.querySelector('input[type="number"]')).toBeNull();
+    expect(dialog.querySelector('input[type="checkbox"]')).toBeNull();
+    const readOnly = within(dialog).getByRole("checkbox", {
+      name: "Read-only (writes refused)",
+    });
+    expect(readOnly).toHaveAttribute("aria-checked", "false");
+    await userEvent.click(
+      within(dialog).getByText("Read-only (writes refused)"),
+    );
+    expect(readOnly).toHaveAttribute("aria-checked", "true");
+
+    const rate = within(dialog).getByTestId("token-rate");
+    expect(rate.tagName).toBe("INPUT");
+    expect((rate as HTMLInputElement).type).toBe("text");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Increase rate limit" }),
+    );
+    expect(rate).toHaveValue("1");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Decrease rate limit" }),
+    );
+    expect(rate).toHaveValue("1");
   });
 
   it("sends read-only and a rate limit (TASK-157)", async () => {

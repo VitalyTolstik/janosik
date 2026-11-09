@@ -109,6 +109,8 @@
   "account.tokens.namePlaceholder": "e.g. CI pipeline",
   "account.tokens.neverUsed": "never",
   "account.tokens.noExpiry": "No expiry",
+  "account.tokens.rateDecrease": "Decrease rate limit",
+  "account.tokens.rateIncrease": "Increase rate limit",
   "account.tokens.rateLabel": "Rate limit (requests / minute)",
   "account.tokens.ratePlaceholder": "No limit",
   "account.tokens.readOnlyLabel": "Read-only (writes refused)",

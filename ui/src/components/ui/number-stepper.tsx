@@ -20,6 +20,8 @@ export function NumberStepper({
   maxLength,
   placeholder,
   ariaLabel,
+  ariaDescribedBy,
+  invalid,
   increaseLabel,
   decreaseLabel,
   autoFocus,
@@ -38,6 +40,10 @@ export function NumberStepper({
   maxLength?: number;
   placeholder?: string;
   ariaLabel?: string;
+  /** id(s) of the element describing this field (e.g. a validation hint). */
+  ariaDescribedBy?: string;
+  /** Renders the field in its error state (red border + ring). */
+  invalid?: boolean;
   increaseLabel: string;
   decreaseLabel: string;
   autoFocus?: boolean;
@@ -66,6 +72,8 @@ export function NumberStepper({
         data-testid={testId}
         autoFocus={autoFocus}
         disabled={disabled}
+        invalid={invalid}
+        aria-describedby={ariaDescribedBy}
         type="text"
         inputMode="numeric"
         value={value}

@@ -91,6 +91,17 @@
     @apply antialiased;
   }
 
+  /* Native controls (checkbox, select, number/date pickers) must follow the
+     app theme, not the OS preference. Without this a light-themed dialog on a
+     dark-preference OS renders black native checkboxes and chevrons. The
+     preflight in index.html mirrors these rules before the stylesheet loads. */
+  :root {
+    color-scheme: dark;
+  }
+  html.light {
+    color-scheme: light;
+  }
+
   body {
     @apply bg-background text-foreground font-sans;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
