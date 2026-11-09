@@ -953,6 +953,15 @@ export interface AdminCardDetailDto {
 }
 
 /** Board meta line of `GET /admin/boards/:id/meta`. */
+export interface AdminBoardWorkflowSummaryDto {
+  /** The board has a stored workflow config (even a disabled one). */
+  present: boolean;
+  enabled: boolean;
+  transitions: number;
+  initialColumnId: string | null;
+  doneColumnIds: string[];
+}
+
 export interface AdminBoardDetailDto {
   board: AdminBoardRowDto & {
     version: number;
@@ -971,6 +980,8 @@ export interface AdminBoardDetailDto {
   members: AdminBoardMemberRowDto[];
   columns: AdminColumnRowDto[];
   labels: AdminLabelRowDto[];
+  /** Snapshot of the board's optional workflow (master-panel panel). */
+  workflowSummary: AdminBoardWorkflowSummaryDto;
 }
 
 /** `GET /admin/search?q=` — grouped top matches for the omnibox. */

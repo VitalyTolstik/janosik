@@ -12,7 +12,12 @@ import { validateImportedBoards } from "../store/validate";
  */
 
 export const EXPORT_APP = "janosik";
-export const EXPORT_SCHEMA_VERSION = 1;
+/**
+ * Version 2 added the optional `Board.workflow`. The parser still accepts
+ * files written by version 1 clients; an older client refuses a version 2
+ * export instead of silently dropping the workflow rules.
+ */
+export const EXPORT_SCHEMA_VERSION = 2;
 
 export interface BoardExportFile {
   app: typeof EXPORT_APP;

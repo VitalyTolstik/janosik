@@ -1,5 +1,6 @@
 import type { BoardAction, BoardState } from "./board-reducer";
 import { isCardLinkType } from "./card-links";
+import { validateWorkflowShape } from "../workflow";
 import {
   CARD_ACTIVITY_TYPES,
   CARD_PRIORITIES,
@@ -763,6 +764,21 @@ function parseAction(action: Json): BoardAction {
       }
       break;
     }
+    case "SET_BOARD_WORKFLOW": {
+      result = out();
+      // Absent (or null) clears the config; a present config is rebuilt
+      // through the shared shape validator so unknown keys never land in the
+      // board JSON or the command log.
+      if (!absent(action.workflow)) {
+        const checked = validateWorkflowShape(
+          action.workflow,
+          "action.workflow",
+        );
+        if (!checked.ok) fail(checked.field, checked.message);
+        result.workflow = checked.workflow;
+      }
+      break;
+    }
     case "ADD_CARD":
       result = out();
       result.newCardId = id("newCardId");
@@ -1221,6 +1237,14 @@ function checkImportedBoard(value: unknown, field: string): string {
       placed.set(cardId, idField);
     });
   });
+  // The workflow is optional; a board without it keeps the legacy "all moves
+  // allowed" behaviour. Structural errors fail the import with a field path;
+  // dangling column references are tolerated (the editor shows them and the
+  // backend import remapper drops them) so a hand-edited file still loads.
+  if (board.workflow !== undefined && board.workflow !== null) {
+    const checked = validateWorkflowShape(board.workflow, `${field}.workflow`);
+    if (!checked.ok) fail(checked.field, checked.message);
+  }
   return id;
 }
 

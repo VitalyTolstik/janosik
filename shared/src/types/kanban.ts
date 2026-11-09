@@ -553,6 +553,12 @@ export interface Board {
    * boards and old exports keep working unchanged.
    */
   columnStyle?: ColumnAccentStyle;
+  /**
+   * Optional admin-configured card workflow. Absent (or `enabled: false`)
+   * keeps the legacy behaviour: every cross-column move is allowed. The
+   * shape is `BoardWorkflow` from `shared/src/workflow.ts`.
+   */
+  workflow?: import("../workflow").BoardWorkflow;
   /** Set when the board is archived (not deleted) — timestamp in ms. */
   archivedAt?: number;
 }

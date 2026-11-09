@@ -166,6 +166,13 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         columnStyle: before.columnStyle,
       };
 
+    case "SET_BOARD_WORKFLOW":
+      return {
+        ...head,
+        type: "SET_BOARD_WORKFLOW",
+        workflow: before.workflow,
+      };
+
     case "DUPLICATE_COLUMN":
       return { ...head, type: "DELETE_COLUMN", columnId: action.newColumnId };
 

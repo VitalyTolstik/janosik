@@ -207,6 +207,26 @@ const PLANS: Record<BoardAction["type"], Plan> = {
     { type: "SET_BOARD_COLUMN_STYLE", columnStyle: "signature", at: AT },
     { type: "SET_BOARD_COLUMN_STYLE", at: AT },
   ],
+  SET_BOARD_WORKFLOW: [
+    {
+      type: "SET_BOARD_WORKFLOW",
+      workflow: {
+        schemaVersion: 1,
+        enabled: true,
+        initialColumnId: "col-a",
+        doneColumnIds: ["col-c"],
+        transitions: [
+          {
+            id: "tr-1",
+            fromColumnId: "col-a",
+            toColumnId: "col-b",
+            allowedRoles: ["ADMIN", "MEMBER"],
+          },
+        ],
+      },
+      at: AT,
+    },
+  ],
   DUPLICATE_COLUMN: [
     {
       type: "DUPLICATE_COLUMN",
