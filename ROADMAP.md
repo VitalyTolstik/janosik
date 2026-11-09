@@ -258,7 +258,7 @@
 
 > **Из открытого:** тач-слой календаря/таблицы (TASK-31), Sentry и полный
 > E2E-набор теперь закрываются в TASK-168 (§7.25); TASK-166–172 —
-> release-программа.
+> release-программа, TASK-173–175 — post-launch backlog.
 > Полный перечень открытых задач — в §7.7.
 
 ### 1.2. Архитектура (кратко)
@@ -422,7 +422,7 @@
 | 34 | TASK-43 `master-admin-panel` | ✅ реализовано вне очереди по запросу — мастер-контур (§7.0/§7.4): `AdminUser` (OWNER/OPERATOR, отдельные cookie/JWT-аудиенция/refresh-таблица), `/admin/auth/*` + `/admin/*` (метрики с runtime, юзеры, доски, **карточки, комментарии, сессии, API-токены**, журнал команд, аудит), **редактор контента доски через командный лог от имени владельца**, модерация (блок юзера + ревок сессий/токенов по одной, архив/soft-delete доски и карточки, удаление комментария), управление мастерами только у OWNER, CLI `admin:create/passwd/list`, аудит каждого действия, lockout и anti-timing логина, ID всех сущностей с копированием, поиск по ID, удаление `User.isSuperAdmin`; **таблицы schema-first** (`Board.id`/`BoardMember.userId`/`Card.columnId`/`Comment.authorId`/…, FK-айди как значения, поиск по айди, без счётчиков, скролл-вьюпорт со sticky-шапкой) | гейты: ui 483, shared 325, backend 22 unit + 100 e2e, build/lint/format, size 204.66/210 KB + ленивый admin-чанк 20.7/30 KB; live-смоук: CLI → браузер (вход мастера, создание мастера из панели, блок юзера, Playwright-смоук) |
 | 35 | TASK-35 `board-members-ui` | ✅ реализовано, PR #74 — участники доски из UI (§7.6.1): модалка «Участники (N)» из шапки (`BoardMembersDialog` + `UserAvatar`), инвайт по email, смена роли, `expiresAt` для VIEWER с бейджем «доступ истёк», исключение с инлайн-подтверждением, последний ADMIN защищён (disabled + тултип-причина), ошибки API → тосты; **VIEWER получает read-only UI** (нет drag/композеров/меню/инлайн-редакторов, диалог карточки только для чтения, `roleOf` → `readOnly` через BoardSection); `GET /boards/:id/members` уже отдавал `userId`/`displayName`/`email` — бэкенд не менялся | гейты: ui 512 (485+27, покрытие выше порогов), shared 325, backend 22 unit + 100 e2e не тронуты, build/lint/format; live-смоук |
 | 30 | TASK-30 `realtime-sse` | ✅ реализовано, ветка `feature/TASK-30-realtime-sse`; доборы — TASK-30.1 ✅ (`touches` в событии + бюджет ленивого чанка) и TASK-30.2 ✅ (audit hardening) — §7.5 — SSE `GET /boards/:id/events` (`{type:"command", seq, action, actorId}`) + догон `?since=`; `X-Board-Seq` на агрегате; UI-мост в ленивом чанке (`fetch`-ридер с Authorization вместо EventSource+ticket), чужие экшены через тот же `boardReducer`, дедуп по seq, defer при in-flight командах, focus refetch остался fallback | два браузера видят правки без перезагрузки; обрыв догоняется дельтой (live-смоук 8/8, включая `setOffline`) |
-| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-40/41, TASK-31, TASK-159, TASK-161 — сведены в TASK-168 (§7.25); TASK-131 (отложено). TASK-166–172 запланированы (§7.23–§7.25). TASK-32 и TASK-39 отменены; TASK-140/141 и TASK-158 завершены |
+| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-40/41, TASK-31, TASK-159, TASK-161 — сведены в TASK-168 (§7.25); TASK-131 (отложено). TASK-166–172 запланированы, TASK-173–175 отложены (§7.23–§7.25). TASK-32 и TASK-39 отменены; TASK-140/141 и TASK-158 завершены |
 
 ### 6.0.1. Укрепление фундамента перед бэкендом (TASK-21.1…21.11)
 
@@ -1654,6 +1654,9 @@ TASK-36 и TASK-37.)*
 | 101 | TASK-170 `docker-release` | отдельные `feat/TASK-170.x-*` | §7.25: обновление Docker-образа — базовые образы, multi-arch, SBOM/provenance, CVE, размер, compose/.env, upgrade/rollback, публикация RC в GHCR | **Запланировано:** 4 потока; после 168, 169 и 172, до 171; clean install amd64/arm64, миграции, health, upgrade с 0.2.x, rollback; без critical/high CVE; образ — кандидат для 1.0.0. См. §7.25 |
 | 102 | TASK-171 `pre-cloud-1.0` | отдельные `feat/TASK-171.x-*` | §7.25: полное ревью перед облаком и релиз 1.0.0 — security, data/backup/DR, perf/scale, cloud readiness, release engineering, независимый review board | **Запланировано:** 6 потоков; зависит от 166–170 и 172; 0 P0/P1, P2 закрыты или приняты с owner/date; 1.0.0 во всех пакетах/образе/доках; clean install + upgrade + rollback + staging dry-run; launch checklist подписан. См. §7.25 |
 | 103 | TASK-172 `mcp-skill-review` | отдельные `feat/TASK-172.x-*` | §7.25: отдельный сквозной ревью MCP и скила после всей новой функциональности — tools/schemas/errors/scopes, live-сценарии approval/pause/rollback/plan, skill и references, README/docs EN/RU, tool count | **Запланировано:** 4 потока; после TASK-166, 167.5 и 169; до Docker RC и 1.0.0; найденные пробелы исправляются в MCP/skill/docs, контракт продукта не меняется. См. §7.25 |
+| 104 | TASK-173 `agent-experience-phase2` | `feat/TASK-173.x-*` | §7.25: post-1.0 P1/P2 из agent-experience — subscriptions/webhooks, read model, claim/my work, remote attachments, entity versions, remote MCP/OAuth, limits/quotas, UX/analytics | **Отложено:** после 1.0.0; 9 потоков; каждый P1/P2 имеет дом; запуск не блокирует. См. §7.25 |
+| 105 | TASK-174 `human-control-phase2` | `feat/TASK-174.x-*` | §7.25: post-1.0 P1/P2 из human-control — comment moderation, share privacy, 2FA/sessions, token rotation, invite email, limits/a11y, service accounts, legal/SIEM/messaging/templates | **Отложено:** после 1.0.0; 5 потоков; каждый P1/P2 имеет дом; запуск не блокирует. См. §7.25 |
+| 106 | TASK-175 `scale-phase2` | `feat/TASK-175.x-*` | §7.25: post-1.0 масштабирование — глобальный потолок команд и шардинг, multi-node/Redis fan-out, presence после TASK-145 | **Отложено:** после 1.0.0; 3 потока; не блокирует self-host-запуск. См. §7.25 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -4552,6 +4555,174 @@ launch-гейт держит головной поток.
 - **Не входит:** billing/планы (TASK-131), полный multi-tenant SaaS,
   SOC2/ISO-сертификация, 24/7-поддержка, Kubernetes/Helm, переписывание
   продукта «к 1.0».
+
+#### Отложено, но не забыто
+
+> Всё ниже не входит в 1.0.0, но имеет явную задачу или раздел и не теряется.
+> Порядок выполнения — после TASK-171, если не указано иное.
+
+**TASK-131 `billing-subscription` — платное облако** (детали — §7.12)
+
+- Выбор провайдера: Prodamus / ЮKassa / bePaid (Stripe/Paddle/Lemon Squeezy
+  не подходят для РФ/РБ).
+- Планы и лимиты per-plan в backend.
+- Checkout, идемпотентные вебхуки.
+- Статус подписки в UI/админке, аудит.
+- Лицензионная инфраструктура: подписанные офлайн-ключи + back-office.
+- Выдача managed-инстансов.
+- DoD: оформление/отмена, лимиты, вебхуки, статус, e2e.
+
+**TASK-165 workflow — phase 2 (после MVP)** (детали — §7.22)
+
+- Jira-подобный граф-редактор и визуальная карта процесса.
+- Post-functions: авто-поля, уведомления, approvals, evidence/blocking-links
+  conditions, `UNDO_MOVE` с проверяемым `originalCommandId`.
+- Платформенные шаблоны workflow (`WorkflowTemplate`, мастер-панель,
+  «применить к доске»).
+- Полноценный `ifMatch`/version-conflict для `SET_BOARD_WORKFLOW` вместо LWW
+  + MCP write-tool `janosik_set_workflow`.
+- Bulk move с атомарным preflight и force move для ADMIN с подтверждением и
+  аудитом.
+- Ограничение создания карточек только initial-колонкой.
+- Аналитика отказов, счётчик заблокированных переходов в Watch, кэш/ETag.
+- Durable offline-очередь: `409 workflow` как non-retryable, replay по текущим
+  правилам.
+
+**TASK-173 `agent-experience-phase2` — P1/P2 из agent-experience**
+
+- **173.1 Subscriptions & webhooks** — `wait_for_event`, `wait_for_decision`,
+  SSE `Last-Event-ID`/filters, webhooks с HMAC и retries.
+- **173.2 Read model & pagination** — пагинация карточек, `GET /cards/:id`,
+  глобальный поиск с cursor/snippet, board-wide comments by `kind`, `my_work`.
+- **173.3 Claim visibility & my work** — claim/lease в UI, фильтр
+  `claimedBy=me`, восстановление контекста после перезапуска.
+- **173.4 Remote attachments** — base64/URL/presigned upload, MCP image
+  content, 50–100 вложений на карточку.
+- **173.5 Entity versions & create-card contract** — версии в read DTO,
+  `expectedCardVersion`/`ifMatchVersions`, `create_card` с task spec/checklist,
+  URL карточки в ответах.
+- **173.6 Notifications & mentions** — in-app/email, `@mention`, настройки
+  уведомлений (attention-события уже в 166.9).
+- **173.7 Remote MCP/OAuth/OpenAPI** — streamable HTTP/SSE MCP, OAuth,
+  `GET /capabilities`, OpenAPI, compatibility matrix.
+- **173.8 Limits, quotas & retention** — поднять/сделать конфигурируемыми
+  лимиты, серверный board cap/tenant quotas, retention/audit export.
+- **173.9 UX, analytics & token lifecycle** — edit комментариев и board-wide
+  фильтр, короткие ключи/шаблоны, MCP undo/history filters, `X-RateLimit-*`/
+  usage/cost, token rotation/multi-board, agent analytics/budgets,
+  presence/heartbeat.
+- **DoD:** каждый P1/P2 из agent-experience закрыт или явно отклонён с
+  причиной; тесты, docs EN/RU, CHANGELOG.
+
+**TASK-174 `human-control-phase2` — P1/P2 из human-control**
+
+- **174.1 Comment moderation & share privacy** — модерация комментариев
+  агенту board ADMIN, snapshot-share без комментариев по умолчанию + warning.
+- **174.2 Account security & token lifecycle** — user 2FA и список сессий,
+  token default 90 дней + rotation, invite email и notification prefs.
+- **174.3 Limits, a11y & traffic/quota** — limits page и server-driven limits,
+  axe в CI + a11y-фиксы, per-agent traffic/quota dashboard.
+- **174.4 Service accounts & onboarding** — агент без email, провижининг из UI,
+  «подключите первого агента», шаблон доски/демо.
+- **174.5 Legal, SIEM, locales & marketplace** — legal/DPA/status page для
+  cloud, SIEM/webhook export и audit retention, дополнительные локали,
+  agent-to-agent messaging/mentions, board templates marketplace.
+- **DoD:** каждый P1/P2 из human-control закрыт или явно отклонён с причиной;
+  тесты, docs EN/RU, CHANGELOG.
+
+**TASK-175 `scale-phase2` — масштабирование**
+
+- **175.1 Global command ceiling & sharding** — глобальный потолок команд
+  (~290/с, CPU) и шардинг.
+- **175.2 Multi-node & Redis fan-out** — многонодность, Redis pub/sub fan-out,
+  Redis-backed token rate; presence при нескольких нодах — только после
+  TASK-145.
+- **175.3 Capacity & load** — capacity plan, многодоковый/многонодовый
+  нагрузочный отчёт, лимиты и алерты.
+- **Не трогаем:** лимит `/auth/login` 5/мин — это защита by design.
+- **DoD:** нагрузочный отчёт, multi-node проверен, регрессий против baseline
+  нет.
+
+**Осознанно не входит в TASK-166** (с домами, чтобы не потерялось)
+
+- Managed cloud, billing, DPA, status page, multi-tenant org layer —
+  **TASK-131** и **TASK-171.4**.
+- Полный Jira-граф и post-functions — **TASK-165 phase 2**.
+- Remote MCP/OAuth как обязательный канал; webhooks — после решения W0 —
+  **TASK-173.1/173.7**.
+- Автоматический machine translation анонсов/комментариев — **не планируется**
+  (осознанный non-goal, не задача).
+- Полный SIEM/external log export; object storage для вложений — **TASK-174.5**
+  и **TASK-173.4**.
+
+#### Трассировка P0/P1/P2 из launch-gaps аудитов
+
+> Ниже — каждый пункт из `audits/launch-gaps-agent-experience.md` и
+> `audits/launch-gaps-human-control.md`. P0 закрываются в TASK-166/168,
+> P1/P2 — либо в TASK-166/168, либо в TASK-173/174/175 после 1.0.0.
+
+**Agent experience**
+
+| Аудит | Пункт | Где в роадмапе |
+| --- | --- | --- |
+| P0-1 | Agent identity & session | 166.1, 166.13; service account без email — 174.4 |
+| P0-2 | Approval & handoff | 166.5, 166.14 |
+| P0-3 | Reliable write contract | 166.4 |
+| P0-4 | Plan / apply / bulk | 166.8 |
+| P0-5 | Capability scopes + destructive gate | 166.2, 166.15 |
+| P1-6 | Subscriptions / webhooks | 173.1 |
+| P1-7 | Read model / pagination / search | 173.2 |
+| P1-8 | Claim visibility / my work | 166.13, 173.3 |
+| P1-9 | Remote attachments | 173.4 |
+| P1-10 | Workflow / DoD server-side | 165 MVP + 165 phase 2 |
+| P1-11 | Notifications / mentions | 166.9, 173.6 |
+| P1-12 | Entity versions | 173.5 |
+| P1-13 | Create card contract / URLs | 173.5 |
+| P1-14 | Remote MCP / OAuth / OpenAPI | 166.11, 173.7 |
+| P1-15 | Docs / tests drift / MCP e2e | 172 |
+| P2-16 | Limits raise | 173.8 |
+| P2-17 | Board cap / tenant quotas | 166.6, 173.8 |
+| P2-18 | Comment edit / board-wide filter | 173.9 |
+| P2-19 | Short keys / templates | 173.9 |
+| P2-20 | Retention / audit export | 173.8 |
+| P2-21 | Rate headers / usage / cost | 166.10, 173.9 |
+| P2-22 | MCP undo / history filters | 173.9 |
+| P2-23 | SSE Last-Event-ID / filtering / image content | 173.1 |
+| P2-24 | Token rotation / multi-board | 173.9 |
+| P2-25 | Presence / heartbeat | 166.1, 166.13, 173.9 |
+| P2-26 | Agent analytics / budgets | 173.9 |
+
+**Human control**
+
+| Аудит | Пункт | Где в роадмапе |
+| --- | --- | --- |
+| P0-1 | Agent identity & service accounts | 166.1, 166.13; service account без email — 174.4 |
+| P0-2 | Approval policy + queue | 166.5, 166.14 |
+| P0-3 | Pause / kill switch | 166.3, 166.14 |
+| P0-4 | Run grouping + rollback | 166.7, 166.15 |
+| P0-5 | Attention inbox | 166.9, 166.13, 166.14 |
+| P0-6 | Launch consistency & data safety | 166.6; backup automation/restore drill — 171.2 |
+| P1-1 | Per-action token scopes v2 | 166.2 |
+| P1-2 | Comment moderation for board ADMIN | 174.1 |
+| P1-3 | Share privacy defaults | 174.1 |
+| P1-4 | User 2FA + sessions | 174.2 |
+| P1-5 | Token default 90d + rotation | 174.2 |
+| P1-6 | Invite email + notification prefs | 174.2 |
+| P1-7 | Limits page + server-driven limits | 166.6, 166.15, 174.3 |
+| P1-8 | Mobile header + E2E 390px | 168.2 |
+| P1-9 | axe в CI + a11y fixes | 174.3 |
+| P1-10 | Per-agent traffic/quota dashboard | 166.10, 166.15, 174.3 |
+| P1-11 | Digest v2 (agents/attention) | 166.9 |
+| P1-12 | Backup automation + restore drill | 166.6, 171.2 |
+| P2 | Legal pages / DPA / status page | 131, 171.4 |
+| P2 | Billing / plans | 131 |
+| P2 | SIEM / webhook export / audit retention | 174.5 |
+| P2 | Multi-node presence / Redis-backed token rate | 175.2 |
+| P2 | More locales / announcement localization | announcement localization сделана; дополнительные локали — 174.5 |
+| P2 | Admin redesign | в работе (`feat/admin-redesign`) |
+| P2 | Advanced run analytics | 173.9 |
+| P2 | Agent-to-agent messaging / mentions | 174.5 |
+| P2 | Board templates marketplace | 174.5 |
 
 ---
 
