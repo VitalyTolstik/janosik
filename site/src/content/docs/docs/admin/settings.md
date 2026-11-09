@@ -298,7 +298,11 @@ The editor shows completeness per language and a banner/email preview for both
 audiences. `Save draft` stores an unfinished announcement without emailing;
 `Publish` applies the selected policy. A published announcement cannot be
 published again by editing — the letter is queued only on the draft → active
-transition, and `Email sent` records that it went out.
+transition, and `Email queued` records that the queue accepted the broadcast
+(an in-process SMTP failure can still happen later). Enabling email on an
+already-active announcement is blocked; save it as a draft and publish again.
+If the banner start is in the future, the editor warns that saving queues the
+letter immediately.
 
 Announcement text is part of the product communication, not board data, so it
 is translated. Every banner is rendered in the viewer's language. If a
@@ -306,8 +310,9 @@ translation is missing under the fallback policy, the original text is shown
 with a localized notice and the correct `lang` attribute for screen readers.
 Email is sent per recipient in their language, with the same notice in the
 subject and body when the translation is missing. Accounts without a stored
-language receive the browser/app language and adopt it on the next sign-in;
-stored accounts keep their chosen language across devices.
+language adopt the current interface language once after sign-in (unless a
+`?lng=` handoff is present); the save is best-effort while online. Stored
+accounts keep their chosen language across devices.
 
 ### One-off email
 
@@ -346,7 +351,7 @@ subtitle is `{total} broadcasts, the full announcement history`.
 | Policy | `EN+RU` for strict, `Fallback` for one-language publishing |
 | Level | info, warning or alert |
 | Audience | all users or the segment |
-| Email | an `email` badge plus `email sent`/`email pending` |
+| Email | an `email` badge plus `email queued`/`email pending` |
 | Active | on or off |
 | Created | creation time |
 | Author | the creating master |
@@ -357,8 +362,9 @@ every translation, not just the source text. Row actions:
 | Action | Effect |
 | --- | --- |
 | Edit | opens the bilingual editor (tabs, policy, preview, draft/publish) |
+| View | OPERATOR read-only view of the same dialog (no save actions) |
 | Activate | sets `active` true |
-| Deactivate | sets `active` false (the banner disappears; sent mail cannot be recalled) |
+| Deactivate | sets `active` false (the banner disappears; queued mail cannot be recalled) |
 | Delete | deletes the announcement and its translations |
 
 ## Observability

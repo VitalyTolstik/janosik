@@ -103,6 +103,9 @@ you across devices; the remaining display options apply to this browser:
 - `Theme` — `Light` or `Dark`.
 - `Board background` — `Solid`, `Paper`, `Dots` or `Grid`.
 
+Changing the language is saved to your account best-effort while online; a
+`?lng=` handoff from the documentation or marketing site applies for that visit.
+
 Column transparency and blur are set on the board itself, from the column
 appearance menu in the board view.
 
