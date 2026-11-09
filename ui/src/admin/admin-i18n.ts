@@ -31,6 +31,66 @@ const en = {
   "admin.nav.section.security": "Security",
   "admin.nav.section.access": "Access",
   "admin.nav.section.ops": "Operations",
+
+  "admin.hub.overview": "Overview",
+  "admin.hub.users": "Users",
+  "admin.hub.boards": "Boards",
+  "admin.hub.moderation": "Moderation",
+  "admin.hub.audit": "Audit & activity",
+  "admin.hub.communications": "Communications",
+  "admin.hub.access": "Access & security",
+  "admin.hub.settings": "Settings",
+  "admin.settings.readonly":
+    "Owner-only settings are shown read-only. Values come from the server and cannot be changed by an operator.",
+  "admin.hub.group.operate": "Operate",
+  "admin.hub.group.govern": "Govern",
+  "admin.hub.group.configure": "Configure",
+  "admin.hub.allDestinations": "All 26 destinations",
+  "admin.hub.tabNav": "Section",
+  "admin.hub.navLabel": "Admin navigation",
+  "admin.hub.breadcrumb": "Breadcrumb",
+  "admin.hub.openMenu": "Open navigation",
+  "admin.hub.closeMenu": "Close navigation",
+  "admin.hub.railExpand": "Expand navigation",
+  "admin.hub.railCollapse": "Collapse navigation",
+  "admin.hub.ownerOnly": "Owner only",
+  "admin.hub.forbidden.title": "Owner rights required",
+  "admin.hub.forbidden.body":
+    "This area is available to owners only. Ask an owner if you need access.",
+  "admin.hub.forbidden.back": "Back to the panel",
+
+  "admin.density.label": "Density",
+  "admin.density.comfortable": "Comfortable",
+  "admin.density.compact": "Compact",
+  "admin.density.toggle": "Toggle table density",
+
+  "admin.shortcuts.title": "Keyboard shortcuts",
+  "admin.shortcuts.open": "Keyboard shortcuts",
+  "admin.shortcuts.close": "Close",
+  "admin.shortcuts.palette": "Open the command palette",
+  "admin.shortcuts.sidebar": "Collapse or expand the sidebar",
+  "admin.shortcuts.help": "Show this shortcut sheet",
+  "admin.shortcuts.hubs": "Jump to a hub",
+  "admin.shortcuts.hubsHint":
+    "Press g, then d / u / b / m / a / c / s / , for Overview, Users, Boards, Moderation, Audit, Communications, Access, Settings.",
+  "admin.shortcuts.escape": "Close a dialog, drawer or the palette",
+  "admin.shortcuts.enter": "Open the highlighted result",
+
+  "admin.palette.navigate": "Navigate",
+  "admin.palette.actions": "Actions",
+  "admin.palette.recent": "Recent",
+  "admin.palette.emptyQuery":
+    "Type to search people, boards, cards, comments, files and labels — or jump to a hub.",
+  "admin.palette.error":
+    "Search is unavailable. Check your connection and try again.",
+  "admin.palette.retry": "Retry search",
+  "admin.palette.action.theme": "Toggle light or dark theme",
+  "admin.palette.action.density": "Toggle compact density",
+  "admin.palette.action.settings": "Open system settings",
+  "admin.palette.action.shortcuts": "Show keyboard shortcuts",
+  "admin.palette.action.boards": "Back to the boards app",
+  "admin.palette.hint": "↑↓ to move · Enter to open · Esc to close",
+
   "admin.nav.backToBoards": "Back to boards",
   "admin.nav.logout": "Sign out",
   "admin.nav.signedInAs": "Signed in as",
@@ -97,6 +157,9 @@ const en = {
   "admin.shares.copied": "Link copied",
   "admin.shares.open": "Open",
   "admin.shares.revoke": "Revoke",
+  "admin.shares.confirm.title": "Revoke this public link?",
+  "admin.shares.confirm.body":
+    "Anyone with the link loses access immediately. The board itself is not changed.",
   "admin.shares.revoked": "Link revoked",
   "admin.shares.revokedLabel": "revoked",
 
@@ -120,6 +183,17 @@ const en = {
 
   "admin.common.delete": "Delete",
 
+  "admin.userDetail.tabs": "User sections",
+  "admin.userDetail.tab.overview": "Overview",
+  "admin.userDetail.overview.account": "Account",
+  "admin.userDetail.overview.access": "Access summary",
+  "admin.userDetail.overview.recent": "Recent activity",
+  "admin.userDetail.overview.recentEmpty": "No recorded activity yet.",
+  "admin.userDetail.overview.danger": "Danger zone",
+  "admin.userDetail.overview.dangerHint":
+    "Deleting the account erases everything it authored and cannot be undone. Owner rights are required.",
+  "admin.userDetail.overview.ownerOnly":
+    "Read-only for operators. Owner-only actions are hidden and enforced by the server.",
   "admin.userDetail.verified": "Verified",
   "admin.userDetail.unverified": "Unverified",
   "admin.userDetail.verifiedAt": "Verified {date}",
@@ -464,24 +538,66 @@ const en = {
   "admin.demo.confirmStop":
     "Stop the demo and delete its board, cards and demo users?",
 
-  "admin.login.title": "Master sign-in",
-  "admin.login.subtitle": "Restricted area — platform operators only",
-  "admin.login.email": "Email",
+  "admin.login.title": "Sign in to Janosik",
+  "admin.login.subtitle":
+    "Master access · restricted to platform operators. Regular Janosik accounts cannot sign in here.",
+  "admin.login.email": "Work email",
   "admin.login.password": "Password",
   "admin.login.totpCode": "Two-factor code",
-  "admin.login.totpHint": "Enter the 6-digit code from your authenticator app.",
+  "admin.login.totpHint":
+    "Enter the 6-digit code from your authenticator app. The code rotates every 30 seconds.",
   "admin.login.totpInvalid": "Invalid two-factor code",
+  "admin.login.totpTitle": "Two-factor verification",
+  "admin.login.totpSubtitle":
+    "Enter the 6-digit code from your authenticator app, then continue.",
   "admin.login.submit": "Sign in",
   "admin.login.submitting": "Signing in…",
+  "admin.login.verify": "Verify and continue",
+  "admin.login.verifying": "Verifying…",
+  "admin.login.backToPassword": "Back to password",
   "admin.login.error": "Invalid credentials",
+  "admin.login.errorBody":
+    "Check your email and password. The attempt was recorded in the audit trail.",
   "admin.login.ipDenied": "Sign-in from this IP address is not allowed",
   "admin.login.ipDeniedHint":
     "Contact the application owner to add your address to the allowed list.",
   "admin.login.disabled": "This master account is disabled — contact an owner.",
+  "admin.login.disabledTitle": "Master account disabled",
+  "admin.login.disabledBody":
+    "An owner has disabled this account. Contact the owner who created it.",
   "admin.login.locked": "Account is temporarily locked",
+  "admin.login.lockedBody":
+    "Too many failed attempts. Try again in a few minutes or ask an owner to unlock the account.",
+  "admin.login.offline": "No connection to the server",
+  "admin.login.offlineBody":
+    "Check your network connection and try again. Your session was not created.",
   "admin.login.hint":
     "Master accounts are created on the server via the admin CLI.",
   "admin.login.back": "Back to the app",
+  "admin.login.brandKicker": "Restricted operations",
+  "admin.login.brandTitle": "Run the platform with a clear head.",
+  "admin.login.brandBody":
+    "One console for users, boards, moderation, audit and every owner-only control. Built for support work at 3 a.m.",
+  "admin.login.brandSignal": "Master console · password + optional 2FA",
+  "admin.login.brandFoot": "Self-hosted · Master access only",
+  "admin.login.environment": "Environment",
+  "admin.login.version": "Version",
+  "admin.login.emailPlaceholder": "you@company.com",
+  "admin.login.passwordPlaceholder": "Enter your password",
+  "admin.login.show": "Show",
+  "admin.login.hide": "Hide",
+  "admin.login.showPassword": "Show password",
+  "admin.login.hidePassword": "Hide password",
+  "admin.login.capsLock": "Caps Lock is on",
+  "admin.login.lostDevice":
+    "Lost your authenticator? Ask an owner for a reset.",
+  "admin.login.ssoTitle": "Single sign-on is not configured",
+  "admin.login.ssoBody":
+    "Master accounts are issued by an owner or the server CLI. This installation signs in with a password plus an optional authenticator code — no external identity provider is connected.",
+  "admin.login.protected":
+    "Protected by rate limiting and a separate master session.",
+  "admin.login.theme": "Switch light or dark theme",
+  "admin.login.language": "Change language",
 
   "admin.common.search": "Search…",
   "admin.common.loading": "Loading…",
@@ -514,6 +630,22 @@ const en = {
   "admin.common.details": "Details",
   "admin.common.offline": "No connection to the server",
   "admin.common.forbidden": "Access denied",
+  "admin.common.selectAll": "Select all rows on this page",
+  "admin.common.pageSize": "Rows per page",
+  "admin.common.refresh": "Refresh",
+  "admin.common.errorHint":
+    "The request failed before the panel could render it. Retry, or check the server logs with the reference below.",
+  "admin.common.errorReference": "Reference",
+  "admin.common.emptyFiltered": "No rows match this search or filter.",
+  "admin.common.clearFilters": "Clear filters",
+  "admin.common.forbiddenHint":
+    "Your master role does not include this capability. The server refused the request.",
+  "admin.common.backToPanel": "Back to the panel",
+  "admin.crumb.userDetail": "User detail",
+  "admin.crumb.boardDetail": "Board detail",
+  "admin.crumb.boardContent": "Content",
+  "admin.crumb.boardWorkflow": "Workflow",
+  "admin.crumb.cardDetail": "Card detail",
 
   "admin.email.title": "Email service",
   "admin.email.subtitle":
@@ -608,6 +740,22 @@ const en = {
   "admin.dashboard.activity": "Commands · 14 days",
   "admin.dashboard.recentAudit": "Recent admin actions",
   "admin.dashboard.openAudit": "Open the audit trail",
+  "admin.dashboard.eyebrow": "Overview",
+  "admin.dashboard.status.ok": "All systems operational",
+  "admin.dashboard.status.latency": "API latency",
+  "admin.dashboard.attention": "Needs attention",
+  "admin.dashboard.attention.blocked": "Blocked accounts",
+  "admin.dashboard.attention.blockedHint":
+    "Accounts a master has blocked. Review before unblocking.",
+  "admin.dashboard.attention.archived": "Archived boards",
+  "admin.dashboard.attention.archivedHint":
+    "Archived boards stay readable; deleted boards are recoverable for the retention window.",
+  "admin.dashboard.attention.masters": "Master accounts",
+  "admin.dashboard.attention.mastersHint":
+    "Owner and operator accounts with access to this console.",
+  "admin.dashboard.attention.comments": "Comments on the platform",
+  "admin.dashboard.attention.allClear": "Nothing urgent right now.",
+  "admin.dashboard.open": "Open",
 
   "admin.users.title": "Users",
   "admin.users.subtitle": "{total} registered",
@@ -1076,6 +1224,66 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.nav.section.security": "Безопасность",
   "admin.nav.section.access": "Доступ",
   "admin.nav.section.ops": "Эксплуатация",
+
+  "admin.hub.overview": "Обзор",
+  "admin.hub.users": "Пользователи",
+  "admin.hub.boards": "Доски",
+  "admin.hub.moderation": "Модерация",
+  "admin.hub.audit": "Аудит и активность",
+  "admin.hub.communications": "Коммуникации",
+  "admin.hub.access": "Доступ и безопасность",
+  "admin.hub.settings": "Настройки",
+  "admin.settings.readonly":
+    "Owner-настройки показаны только для чтения. Значения приходят с сервера, оператор не может их изменить.",
+  "admin.hub.group.operate": "Работа",
+  "admin.hub.group.govern": "Контроль",
+  "admin.hub.group.configure": "Настройка",
+  "admin.hub.allDestinations": "Все 26 разделов",
+  "admin.hub.tabNav": "Раздел",
+  "admin.hub.navLabel": "Навигация админки",
+  "admin.hub.breadcrumb": "Навигационная цепочка",
+  "admin.hub.openMenu": "Открыть навигацию",
+  "admin.hub.closeMenu": "Закрыть навигацию",
+  "admin.hub.railExpand": "Развернуть навигацию",
+  "admin.hub.railCollapse": "Свернуть навигацию",
+  "admin.hub.ownerOnly": "Только владелец",
+  "admin.hub.forbidden.title": "Нужны права владельца",
+  "admin.hub.forbidden.body":
+    "Этот раздел доступен только владельцам. Обратитесь к владельцу, если нужен доступ.",
+  "admin.hub.forbidden.back": "Назад в панель",
+
+  "admin.density.label": "Плотность",
+  "admin.density.comfortable": "Обычная",
+  "admin.density.compact": "Компактная",
+  "admin.density.toggle": "Переключить плотность таблиц",
+
+  "admin.shortcuts.title": "Горячие клавиши",
+  "admin.shortcuts.open": "Горячие клавиши",
+  "admin.shortcuts.close": "Закрыть",
+  "admin.shortcuts.palette": "Открыть командную палитру",
+  "admin.shortcuts.sidebar": "Свернуть или развернуть боковую панель",
+  "admin.shortcuts.help": "Показать эту шпаргалку",
+  "admin.shortcuts.hubs": "Перейти в раздел",
+  "admin.shortcuts.hubsHint":
+    "Нажмите g, затем d / u / b / m / a / c / s / , для обзора, пользователей, досок, модерации, аудита, коммуникаций, доступа и настроек.",
+  "admin.shortcuts.escape": "Закрыть диалог, панель или палитру",
+  "admin.shortcuts.enter": "Открыть выбранный результат",
+
+  "admin.palette.navigate": "Перейти",
+  "admin.palette.actions": "Действия",
+  "admin.palette.recent": "Недавние",
+  "admin.palette.emptyQuery":
+    "Введите запрос, чтобы найти людей, доски, карточки, комментарии, файлы и метки — или перейдите в раздел.",
+  "admin.palette.error":
+    "Поиск недоступен. Проверьте соединение и повторите попытку.",
+  "admin.palette.retry": "Повторить поиск",
+  "admin.palette.action.theme": "Переключить светлую или тёмную тему",
+  "admin.palette.action.density": "Переключить компактную плотность",
+  "admin.palette.action.settings": "Открыть системные настройки",
+  "admin.palette.action.shortcuts": "Показать горячие клавиши",
+  "admin.palette.action.boards": "Вернуться к доскам",
+  "admin.palette.hint": "↑↓ — выбор · Enter — открыть · Esc — закрыть",
+
   "admin.nav.backToBoards": "К доскам",
   "admin.nav.logout": "Выйти",
   "admin.nav.signedInAs": "Вы вошли как",
@@ -1143,6 +1351,9 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.shares.copied": "Ссылка скопирована",
   "admin.shares.open": "Открыть",
   "admin.shares.revoke": "Отозвать",
+  "admin.shares.confirm.title": "Отозвать публичную ссылку?",
+  "admin.shares.confirm.body":
+    "Доступ по ссылке прекратится сразу. Сама доска не изменится.",
   "admin.shares.revoked": "Ссылка отозвана",
   "admin.shares.revokedLabel": "отозвана",
 
@@ -1166,6 +1377,17 @@ const ru: Record<AdminMessageKey, string> = {
 
   "admin.common.delete": "Удалить",
 
+  "admin.userDetail.tabs": "Разделы пользователя",
+  "admin.userDetail.tab.overview": "Обзор",
+  "admin.userDetail.overview.account": "Аккаунт",
+  "admin.userDetail.overview.access": "Сводка доступа",
+  "admin.userDetail.overview.recent": "Последняя активность",
+  "admin.userDetail.overview.recentEmpty": "Записей об активности пока нет.",
+  "admin.userDetail.overview.danger": "Опасная зона",
+  "admin.userDetail.overview.dangerHint":
+    "Удаление аккаунта стирает всё созданное им и не отменяется. Нужны права владельца.",
+  "admin.userDetail.overview.ownerOnly":
+    "Только чтение для операторов. Owner-действия скрыты, сервер их проверяет.",
   "admin.userDetail.verified": "Подтверждён",
   "admin.userDetail.unverified": "Не подтверждён",
   "admin.userDetail.verifiedAt": "Подтверждён {date}",
@@ -1515,24 +1737,65 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.demo.confirmStop":
     "Остановить демо и удалить его доску, карточки и демо-аккаунты?",
 
-  "admin.login.title": "Вход мастера",
-  "admin.login.subtitle": "Закрытая зона — только операторы платформы",
-  "admin.login.email": "Email",
+  "admin.login.title": "Вход в Janosik",
+  "admin.login.subtitle":
+    "Доступ мастера · только для операторов платформы. Обычные аккаунты Janosik сюда не входят.",
+  "admin.login.email": "Рабочий email",
   "admin.login.password": "Пароль",
   "admin.login.totpCode": "Код двухфакторной аутентификации",
   "admin.login.totpHint":
-    "Введите 6-значный код из приложения-аутентификатора.",
+    "Введите 6-значный код из приложения-аутентификатора. Код обновляется каждые 30 секунд.",
   "admin.login.totpInvalid": "Неверный код двухфакторной аутентификации",
+  "admin.login.totpTitle": "Двухфакторная проверка",
+  "admin.login.totpSubtitle":
+    "Введите 6-значный код из приложения-аутентификатора и продолжите.",
   "admin.login.submit": "Войти",
   "admin.login.submitting": "Входим…",
+  "admin.login.verify": "Подтвердить и продолжить",
+  "admin.login.verifying": "Проверяем…",
+  "admin.login.backToPassword": "Назад к паролю",
   "admin.login.error": "Неверные данные",
+  "admin.login.errorBody":
+    "Проверьте email и пароль. Попытка записана в журнал аудита.",
   "admin.login.ipDenied": "Вход с этого IP-адреса запрещён",
   "admin.login.ipDeniedHint":
     "Обратитесь к владельцу приложения, чтобы он добавил ваш адрес в список разрешённых.",
   "admin.login.disabled": "Мастер-аккаунт отключён — обратитесь к владельцу.",
+  "admin.login.disabledTitle": "Мастер-аккаунт отключён",
+  "admin.login.disabledBody":
+    "Владелец отключил этот аккаунт. Обратитесь к владельцу, который его создал.",
   "admin.login.locked": "Аккаунт временно заблокирован",
+  "admin.login.lockedBody":
+    "Слишком много неудачных попыток. Повторите через несколько минут или попросите владельца разблокировать аккаунт.",
+  "admin.login.offline": "Нет соединения с сервером",
+  "admin.login.offlineBody":
+    "Проверьте сеть и повторите попытку. Сеанс не был создан.",
   "admin.login.hint": "Мастер-аккаунт создаётся на сервере через admin CLI.",
   "admin.login.back": "Вернуться в приложение",
+  "admin.login.brandKicker": "Закрытые операции",
+  "admin.login.brandTitle": "Управляйте платформой со спокойной головой.",
+  "admin.login.brandBody":
+    "Одна консоль для пользователей, досок, модерации, аудита и всех owner-настроек. Создана для поддержки в три часа ночи.",
+  "admin.login.brandSignal": "Консоль мастера · пароль + опциональная 2FA",
+  "admin.login.brandFoot": "Self-hosted · только доступ мастера",
+  "admin.login.environment": "Окружение",
+  "admin.login.version": "Версия",
+  "admin.login.emailPlaceholder": "you@company.com",
+  "admin.login.passwordPlaceholder": "Введите пароль",
+  "admin.login.show": "Показать",
+  "admin.login.hide": "Скрыть",
+  "admin.login.showPassword": "Показать пароль",
+  "admin.login.hidePassword": "Скрыть пароль",
+  "admin.login.capsLock": "Включён Caps Lock",
+  "admin.login.lostDevice":
+    "Потеряли аутентификатор? Попросите владельца сбросить доступ.",
+  "admin.login.ssoTitle": "Single sign-on не настроен",
+  "admin.login.ssoBody":
+    "Мастер-аккаунты выдаёт владелец или серверный CLI. В этой установке вход — пароль и опциональный код аутентификатора; внешний провайдер идентификации не подключён.",
+  "admin.login.protected":
+    "Защищено ограничением частоты и отдельной мастер-сессией.",
+  "admin.login.theme": "Переключить светлую или тёмную тему",
+  "admin.login.language": "Сменить язык",
 
   "admin.common.search": "Поиск…",
   "admin.common.loading": "Загружаем…",
@@ -1565,6 +1828,22 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.common.details": "Детали",
   "admin.common.offline": "Нет связи с сервером",
   "admin.common.forbidden": "Доступ запрещён",
+  "admin.common.selectAll": "Выбрать все строки на этой странице",
+  "admin.common.pageSize": "Строк на странице",
+  "admin.common.refresh": "Обновить",
+  "admin.common.errorHint":
+    "Запрос завершился ошибкой до отрисовки панели. Повторите попытку или проверьте логи сервера по номеру ниже.",
+  "admin.common.errorReference": "Номер",
+  "admin.common.emptyFiltered": "Нет строк по этому запросу или фильтру.",
+  "admin.common.clearFilters": "Сбросить фильтры",
+  "admin.common.forbiddenHint":
+    "У вашей роли мастера нет этого разрешения. Сервер отклонил запрос.",
+  "admin.common.backToPanel": "Назад в панель",
+  "admin.crumb.userDetail": "Пользователь",
+  "admin.crumb.boardDetail": "Доска",
+  "admin.crumb.boardContent": "Содержимое",
+  "admin.crumb.boardWorkflow": "Процесс",
+  "admin.crumb.cardDetail": "Карточка",
 
   "admin.email.title": "Email-рассылка",
   "admin.email.subtitle":
@@ -1660,6 +1939,22 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.dashboard.activity": "Команды · 14 дней",
   "admin.dashboard.recentAudit": "Последние действия админов",
   "admin.dashboard.openAudit": "Открыть аудит",
+  "admin.dashboard.eyebrow": "Обзор",
+  "admin.dashboard.status.ok": "Все системы работают",
+  "admin.dashboard.status.latency": "Задержка API",
+  "admin.dashboard.attention": "Требует внимания",
+  "admin.dashboard.attention.blocked": "Заблокированные аккаунты",
+  "admin.dashboard.attention.blockedHint":
+    "Аккаунты, заблокированные мастером. Проверьте перед разблокировкой.",
+  "admin.dashboard.attention.archived": "Архивные доски",
+  "admin.dashboard.attention.archivedHint":
+    "Архивные доски остаются доступными для чтения; удалённые можно восстановить в течение срока хранения.",
+  "admin.dashboard.attention.masters": "Мастер-аккаунты",
+  "admin.dashboard.attention.mastersHint":
+    "Владельцы и операторы с доступом к этой консоли.",
+  "admin.dashboard.attention.comments": "Комментарии на платформе",
+  "admin.dashboard.attention.allClear": "Срочных задач сейчас нет.",
+  "admin.dashboard.open": "Открыть",
 
   "admin.users.title": "Пользователи",
   "admin.users.subtitle": "Зарегистрировано: {total}",
