@@ -133,13 +133,17 @@ have their own limits (25 MB per attachment, 2 MB per avatar).
 ### Security headers and CSP
 
 Every response runs through helmet. The content security policy is tuned for
-the app shell: `script-src` is `'self'` plus a `'sha256-…'` hash for each
-inline script of the served frontends, `style-src` is `'self' 'unsafe-inline'`,
-`img-src` is `'self' data: blob:`, `media-src` is `'self' blob:`,
-`connect-src` is `'self'`, `worker-src` is `'self' blob:`, and `font-src` is
-`'self' data:`. `upgrade-insecure-requests` is dropped so a plain-HTTP
-self-host works. Public share pages relax `frame-ancestors` so `?embed=1` can
-be embedded, and stay `noindex`.
+the app shell: `script-src` is `'self' 'wasm-unsafe-eval' https://plausible.io`
+plus a `'sha256-…'` hash for each inline script of the served frontends,
+`style-src` is `'self' 'unsafe-inline'`, `img-src` is `'self' data: blob:`,
+`media-src` is `'self' blob:`, `connect-src` is `'self' https://plausible.io`,
+`worker-src` is `'self' blob:`, and `font-src` is `'self' data:`.
+`upgrade-insecure-requests` is dropped so a plain-HTTP self-host works. Public
+share pages relax `frame-ancestors` so `?embed=1` can be embedded, and stay
+`noindex`. `wasm-unsafe-eval` lets the docs search compile Pagefind's WASM
+index; `https://plausible.io` is the optional cookieless analytics script
+(`PUBLIC_ANALYTICS_DOMAIN`). Without them the search hangs on “Searching…” and
+the analytics beacon is silently blocked.
 
 `script-src` has no `'unsafe-inline'`. At startup the server reads the HTML
 files in `STATIC_DIR` and `SITE_DIR`, hashes every inline script it finds,
