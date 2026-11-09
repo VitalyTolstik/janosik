@@ -635,6 +635,12 @@ describe("AdminApp", () => {
         t("admin.nav.users"),
       ),
     ).toBeNull();
+    // The icon-only link keeps an accessible name for screen readers.
+    expect(
+      within(screen.getByTestId("admin-sidebar")).getByRole("link", {
+        name: t("admin.nav.users"),
+      }),
+    ).toBeTruthy();
     expect(localStorage.getItem("janosik.admin.sidebar")).toBe("1");
   });
 

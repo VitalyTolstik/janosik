@@ -286,7 +286,7 @@
   display: none;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 639px) {
   .admin-sidebar,
   .admin-app[data-collapsed] .admin-sidebar {
     position: fixed;
@@ -309,13 +309,13 @@
   }
 }
 
-@media (min-width: 761px) {
+@media (min-width: 640px) {
   .admin-sidebar .admin-mobile-only {
     display: none;
   }
 }
 
-@media (min-width: 761px) and (max-width: 959px) {
+@media (min-width: 640px) and (max-width: 959px) {
   .admin-sidebar {
     width: var(--admin-sidebar-rail-width);
   }

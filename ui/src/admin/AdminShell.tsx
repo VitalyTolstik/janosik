@@ -19,7 +19,32 @@ import "./admin.css";
 const SIDEBAR_KEY = "janosik.admin.sidebar";
 const DENSITY_KEY = "janosik.admin.density";
 
+/** Phone: the sidebar becomes a sheet. Matches the table-card breakpoint. */
+const PHONE_QUERY = "(max-width: 639px)";
+/** Tablet: the sidebar becomes a permanent 64 px icon rail. */
+const RAIL_QUERY = "(max-width: 959px)";
+
 type Density = "comfortable" | "compact";
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => {
+    try {
+      return window.matchMedia?.(query).matches ?? false;
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    const media = window.matchMedia?.(query);
+    if (media === undefined) return;
+    const onChange = (event: MediaQueryListEvent) => setMatches(event.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, [query]);
+
+  return matches;
+}
 
 function readDensity(): Density {
   try {
@@ -50,13 +75,8 @@ export function AdminShell() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [mobile, setMobile] = useState(() => {
-    try {
-      return window.matchMedia?.("(max-width: 760px)").matches ?? false;
-    } catch {
-      return false;
-    }
-  });
+  const mobile = useMediaQuery(PHONE_QUERY);
+  const railViewport = useMediaQuery(RAIL_QUERY);
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_KEY) === "1";
@@ -67,11 +87,16 @@ export function AdminShell() {
   const [density, setDensity] = useState<Density>(readDensity);
   const pendingG = useRef<number | null>(null);
 
+  // The tablet rail is a layout state, not a stored preference: it exists
+  // even when the user asked for the expanded sidebar on a wide screen.
+  const effectiveCollapsed = !mobile && (collapsed || railViewport);
+
   const toggleSidebar = useCallback(() => {
     if (mobile) {
       setMobileOpen((open) => !open);
       return;
     }
+    if (railViewport) return;
     setCollapsed((previous) => {
       const next = !previous;
       try {
@@ -81,7 +106,7 @@ export function AdminShell() {
       }
       return next;
     });
-  }, [mobile]);
+  }, [mobile, railViewport]);
 
   const toggleDensity = useCallback(() => {
     setDensity((previous) => {
@@ -96,16 +121,11 @@ export function AdminShell() {
     });
   }, []);
 
+  // Leaving the phone layout closes the sheet; the rail needs no transient
+  // state, so it never inherits an open drawer from a narrower window.
   useEffect(() => {
-    const media = window.matchMedia?.("(max-width: 760px)");
-    if (media === undefined) return;
-    const onChange = (event: MediaQueryListEvent) => {
-      setMobile(event.matches);
-      if (!event.matches) setMobileOpen(false);
-    };
-    media.addEventListener("change", onChange);
-    return () => media.removeEventListener("change", onChange);
-  }, []);
+    if (!mobile) setMobileOpen(false);
+  }, [mobile]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -162,7 +182,7 @@ export function AdminShell() {
     <div
       className="admin-app admin-shell"
       data-density={density}
-      data-collapsed={collapsed ? "true" : "false"}
+      data-collapsed={effectiveCollapsed ? "true" : "false"}
       data-mobile-open={mobileOpen ? "true" : "false"}
     >
       <a href="#admin-main" className="admin-skip-link">
@@ -170,7 +190,7 @@ export function AdminShell() {
       </a>
 
       <AdminSidebar
-        collapsed={collapsed && !mobile}
+        collapsed={effectiveCollapsed}
         mobileOpen={mobileOpen}
         onNavigate={() => setMobileOpen(false)}
       />
@@ -180,14 +200,14 @@ export function AdminShell() {
           type="button"
           aria-label={t("admin.hub.closeMenu")}
           data-testid="admin-sidebar-scrim"
-          className="admin-scrim fixed inset-0 z-50 border-0 md:hidden"
+          className="admin-scrim fixed inset-0 z-50 border-0 sm:hidden"
           onClick={() => setMobileOpen(false)}
         />
       ) : null}
 
       <div className="admin-main flex flex-1 flex-col overflow-hidden">
         <AdminTopbar
-          collapsed={collapsed}
+          collapsed={effectiveCollapsed}
           mobile={mobile}
           density={density}
           onToggleSidebar={toggleSidebar}

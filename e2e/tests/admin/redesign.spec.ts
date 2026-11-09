@@ -190,6 +190,39 @@ test("REDESIGN-4: the shell is 232 px, a 64 px rail and a 280 px phone sheet", a
   ).toHaveAttribute("data-label", "Email");
 });
 
+test("REDESIGN-4b: the tablet icon rail keeps every hub reachable", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  // 720 px used to fall into the phone sheet; it must stay a 64 px rail.
+  await page.setViewportSize({ width: 720, height: 1000 });
+  await loginAsMaster(page, ownerCredentials());
+
+  const sidebar = page.getByTestId("admin-sidebar");
+  await expect(sidebar).toHaveCSS("width", "64px");
+  await expect(sidebar).toHaveAttribute("data-collapsed", "true");
+
+  const hubs = [
+    { name: "Users", path: "/admin/users" },
+    { name: "Boards", path: "/admin/boards" },
+    { name: "Moderation", path: "/admin/moderation" },
+    { name: "Audit & activity", path: "/admin/audit" },
+    { name: "Communications", path: "/admin/communications" },
+    { name: "Access & security", path: "/admin/access" },
+    { name: "Settings", path: "/admin/settings" },
+    { name: "Overview", path: "/admin" },
+  ];
+  for (const hub of hubs) {
+    const link = sidebar.getByRole("link", { name: hub.name, exact: true });
+    await expect(link).toBeVisible();
+    await expect(link.locator("svg")).toBeVisible();
+    await link.click();
+    await expect(page).toHaveURL((url) =>
+      url.pathname.replace(/\/+$/, "").endsWith(hub.path),
+    );
+  }
+});
+
 test("REDESIGN-6: a table row is keyboard reachable and the migration sheet lists old destinations", async ({
   page,
   admin,

@@ -110,6 +110,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The board workflow editor uses the same themed select menus for global
   targets, the initial column and the card preview, and the board-settings
   gear is the animated settings icon already used by the app.
+- The tablet sidebar (640–959 px) now keeps all eight hubs as a real icon
+  rail: the links stay visible with tooltips and an accessible name. The
+  previous rule hid the whole link, leaving an empty 64 px column.
+- Narrow desktop windows down to 640 px keep the icon rail instead of
+  switching to the phone sheet; the 280 px sheet and labelled table cards now
+  start at the same 639 px breakpoint.
 
 ## [0.2.0] - 2026-11-08
 
