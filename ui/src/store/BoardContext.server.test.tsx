@@ -97,6 +97,13 @@ function Probe() {
       />
       <button
         type="button"
+        data-testid="refresh-boards"
+        onClick={() => {
+          void actions.refreshBoards().catch(() => undefined);
+        }}
+      />
+      <button
+        type="button"
         data-testid="add-board"
         onClick={() => {
           void actions.addBoard("Second");
@@ -1498,6 +1505,57 @@ describe("BoardProvider realtime review fixes (U-1…U-9)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("pending-board-count").textContent).toBe("0"),
     );
+  });
+
+  it("clears pending rows when a re-hydration fails before its own count", async () => {
+    localStorage.removeItem(BOARD_STORAGE_KEY);
+    const server = new FakeServer([
+      seedBoard(),
+      { ...seedBoard(), id: "b-2", title: "Second" },
+      { ...seedBoard(), id: "b-3", title: "Third" },
+    ]);
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    let failList = false;
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), "http://api.test");
+        if (
+          url.pathname === "/api/v1/boards" &&
+          (init?.method ?? "GET") === "GET" &&
+          failList
+        ) {
+          return new Response(JSON.stringify({ message: "down" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (
+          url.pathname === "/api/v1/boards/b-1" ||
+          url.pathname === "/api/v1/boards/b-3"
+        ) {
+          await gate;
+        }
+        return server.handle(input, init);
+      },
+    );
+    renderApp("/board/b-2");
+    await waitReady();
+    expect(screen.getByTestId("pending-board-count").textContent).toBe("2");
+
+    failList = true;
+    fireEvent.click(screen.getByTestId("refresh-boards"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("pending-board-count").textContent).toBe("0"),
+    );
+    // The failed refresh did not drop the already-rendered routed board.
+    expect(screen.getByTestId("board-count").textContent).toBe("1");
+
+    act(() => open());
   });
 
   it("re-reads a long-idle board as one snapshot instead of replaying its backlog (U-9)", async () => {

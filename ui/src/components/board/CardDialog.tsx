@@ -1216,7 +1216,7 @@ export function CardDialog({
                 />
 
                 <CardAttachments
-                  key={card.id}
+                  key={`attachments:${card.id}`}
                   cardId={card.id}
                   boardId={board.id}
                   readOnly={readOnly}
