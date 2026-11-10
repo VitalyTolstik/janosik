@@ -16,18 +16,23 @@ import {
 const prismaMock = {
   apiToken: {
     findUnique: jest.fn(),
+    findUniqueOrThrow: jest.fn(),
     findFirst: jest.fn(),
     findMany: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
   },
+  agentSession: { updateMany: jest.fn() },
+  card: { updateMany: jest.fn() },
   boardMember: {
     findUnique: jest.fn(),
   },
+  $transaction: jest.fn(),
 } as unknown as PrismaService & {
   apiToken: Record<
     | "findUnique"
+    | "findUniqueOrThrow"
     | "findFirst"
     | "findMany"
     | "create"
@@ -35,7 +40,10 @@ const prismaMock = {
     | "updateMany",
     jest.Mock
   >;
+  agentSession: Record<"updateMany", jest.Mock>;
+  card: Record<"updateMany", jest.Mock>;
   boardMember: Record<"findUnique", jest.Mock>;
+  $transaction: jest.Mock;
 };
 
 const sha256 = (value: string): string =>
@@ -83,6 +91,11 @@ describe("ApiTokenService", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    prismaMock.$transaction.mockImplementation(
+      async (fn: (tx: unknown) => unknown) => fn(prismaMock),
+    );
+    prismaMock.agentSession.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.card.updateMany.mockResolvedValue({ count: 0 });
     service = new ApiTokenService(prismaMock, {
       record: jest.fn(),
     } as never);
@@ -431,6 +444,106 @@ describe("ApiTokenService", () => {
       expect(prismaMock.apiToken.updateMany).toHaveBeenCalledWith({
         where: { id: "token-1", revokedAt: null },
         data: { revokedAt: expect.any(Date) },
+      });
+      expect(prismaMock.agentSession.updateMany).toHaveBeenCalledWith({
+        where: { apiTokenId: "token-1", endedAt: null },
+        data: {
+          status: "cancelled",
+          endedAt: expect.any(Date),
+          endReason: "cancelled",
+        },
+      });
+      expect(prismaMock.card.updateMany).toHaveBeenCalledWith({
+        where: { claimedByTokenId: "token-1" },
+        data: {
+          claimedBy: null,
+          claimedByTokenId: null,
+          claimedBySessionId: null,
+          leaseUntil: null,
+        },
+      });
+    });
+  });
+
+  describe("pause / resume", () => {
+    it("sets only the individual pause stamp", async () => {
+      prismaMock.apiToken.findFirst.mockResolvedValue(makeToken());
+      prismaMock.apiToken.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.apiToken.findUniqueOrThrow.mockResolvedValue(
+        makeToken({
+          individualPausedAt: new Date("2026-09-02T00:00:00Z"),
+          individualPausedBy: "user-1",
+          individualPausedReason: "maintenance",
+        }),
+      );
+
+      const dto = await service.pause("user-1", "token-1", " maintenance ");
+      expect(dto).toMatchObject({
+        paused: true,
+        individualPausedAt: expect.any(Number),
+        individualPausedBy: "user-1",
+        individualPausedReason: "maintenance",
+        stopAllPausedAt: null,
+      });
+      expect(prismaMock.apiToken.updateMany).toHaveBeenCalledWith({
+        where: { id: "token-1", userId: "user-1", individualPausedAt: null },
+        data: {
+          individualPausedAt: expect.any(Date),
+          individualPausedBy: "user-1",
+          individualPausedReason: "maintenance",
+        },
+      });
+    });
+
+    it("resume clears only the individual stamp", async () => {
+      prismaMock.apiToken.findFirst.mockResolvedValue(makeToken());
+      prismaMock.apiToken.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.apiToken.findUniqueOrThrow.mockResolvedValue(makeToken());
+
+      await service.resume("user-1", "token-1", undefined);
+      expect(prismaMock.apiToken.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: "token-1",
+          userId: "user-1",
+          individualPausedAt: { not: null },
+        },
+        data: {
+          individualPausedAt: null,
+          individualPausedBy: null,
+          individualPausedReason: null,
+        },
+      });
+    });
+
+    it("pause-all touches only stopAll; resume-all does not clear an individual pause", async () => {
+      prismaMock.apiToken.updateMany.mockResolvedValue({ count: 2 });
+      prismaMock.apiToken.findFirst.mockResolvedValue({
+        stopAllPausedAt: new Date("2026-09-02T00:00:00Z"),
+        stopAllPausedBy: "user-1",
+      });
+
+      await service.pauseAll("user-1", "freeze");
+      expect(prismaMock.apiToken.updateMany).toHaveBeenLastCalledWith({
+        where: {
+          userId: "user-1",
+          revokedAt: null,
+          stopAllPausedAt: null,
+        },
+        data: {
+          stopAllPausedAt: expect.any(Date),
+          stopAllPausedBy: "user-1",
+        },
+      });
+
+      prismaMock.apiToken.updateMany.mockResolvedValue({ count: 2 });
+      await service.resumeAll("user-1", undefined);
+      expect(prismaMock.apiToken.updateMany).toHaveBeenLastCalledWith({
+        where: {
+          userId: "user-1",
+          revokedAt: null,
+          stopAllPausedAt: { not: null },
+        },
+        data: { stopAllPausedAt: null, stopAllPausedBy: null },
       });
     });
   });

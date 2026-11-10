@@ -68,6 +68,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   full approval lifecycle remains 166.5; this stream returns the documented
   error and leaves the seam clean. Docs EN/RU and the MCP error guidance cover
   the new scopes and codes.
+- TASK-166.3 pause / kill switch: a human can pause one agent session
+  (`POST /boards/:id/agent-sessions/:sessionId/pause|resume`), a whole board
+  (`POST /boards/:id/agents/pause|resume`), one token
+  (`POST /users/me/tokens/:id/pause|resume`) or every live token
+  (`POST /agents/pause-all|resume-all`). All routes are browser-session only:
+  a PAT gets `pat_forbidden`. Paused PAT writes answer `403 agent_paused` with
+  `pauseScope` (token → board → session precedence) and `retryable: false`;
+  GET reads, heartbeat, end-session and session reads stay open. Pause is
+  checked at the request boundary and again under the board lock, so a request
+  that passed the second check commits while a later one is refused. Pause
+  does not release claims. PAT SSE announces the pause on the next keep-alive
+  and closes (session pause only with `?session=`); reconnect gets
+  `agent_paused`, human streams stay open. Revoking a token now cancels its
+  sessions, releases claims held by `claimedByTokenId` and closes its SSE on
+  the next tick. Board pause state is exposed in the aggregate but never
+  exported; token/board/session pause writes are audited (SecurityAuditLog for
+  token and stop-all, Activity for board and session). Docs EN/RU and the MCP
+  guidance describe the pause scope; no pause/resume MCP tools are exposed.
 - TASK-166.6 limits and data safety: server mode no longer has a 10-board
   product limit (`MAX_BOARDS_PER_USER` defaults to `0` = unlimited; a positive
   value is an operator cap checked atomically on create/import with

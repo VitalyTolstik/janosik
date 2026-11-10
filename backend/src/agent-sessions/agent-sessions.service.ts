@@ -9,6 +9,7 @@ import {
   AGENT_SESSION_STALE_MS,
   type AgentSessionDto,
   type AgentSessionStatus,
+  type BoardAgentPauseDto,
 } from "@janosik/shared";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -295,6 +296,227 @@ export class AgentSessionsService {
     return this.toDto(result.row, this.tokenPauseContext(principal));
   }
 
+  /**
+   * `POST /boards/:id/agent-sessions/:sessionId/pause` (TASK-166.3) —
+   * session-only board ADMIN. Pausing only stops writes attributed to this
+   * session; it does not release the claims the session holds.
+   */
+  async pauseSession(
+    boardId: string,
+    sessionId: string,
+    actorId: string,
+    reason: string | undefined,
+  ): Promise<AgentSessionDto> {
+    const session = await this.loadOnBoard(boardId, sessionId);
+    if (isTerminal(session)) {
+      throw new ForbiddenException({
+        message: "Agent session is closed",
+        code: "agent_session_closed",
+        sessionId,
+      });
+    }
+    const now = new Date();
+    const result = await this.boardWrite.run(boardId, async (tx) => {
+      const current = await tx.agentSession.findUniqueOrThrow({
+        where: { id: session.id },
+      });
+      if (isTerminal(current)) {
+        throw new ForbiddenException({
+          message: "Agent session is closed",
+          code: "agent_session_closed",
+          sessionId,
+        });
+      }
+      if (current.pausedAt !== null) {
+        return { row: current, changed: false };
+      }
+      const row = await tx.agentSession.update({
+        where: { id: session.id },
+        data: {
+          pausedAt: now,
+          pausedBy: actorId,
+          pausedReason: clean(reason),
+        },
+      });
+      await tx.activity.create({
+        data: {
+          boardId,
+          type: "agent_session_paused",
+          actorId,
+          actorType: "human",
+          details: {
+            sessionId: session.id,
+            reason: row.pausedReason,
+            pausedAt: now.getTime(),
+          },
+        },
+      });
+      return { row, changed: true };
+    });
+    return this.toDto(
+      result.row,
+      await this.tokenPauseContextById(session.apiTokenId),
+    );
+  }
+
+  /** `POST /boards/:id/agent-sessions/:sessionId/resume` — session only. */
+  async resumeSession(
+    boardId: string,
+    sessionId: string,
+    actorId: string,
+    reason: string | undefined,
+  ): Promise<AgentSessionDto> {
+    const session = await this.loadOnBoard(boardId, sessionId);
+    if (isTerminal(session)) {
+      throw new ForbiddenException({
+        message: "Agent session is closed",
+        code: "agent_session_closed",
+        sessionId,
+      });
+    }
+    const result = await this.boardWrite.run(boardId, async (tx) => {
+      const current = await tx.agentSession.findUniqueOrThrow({
+        where: { id: session.id },
+      });
+      if (isTerminal(current)) {
+        throw new ForbiddenException({
+          message: "Agent session is closed",
+          code: "agent_session_closed",
+          sessionId,
+        });
+      }
+      if (current.pausedAt === null) {
+        return { row: current, changed: false };
+      }
+      const row = await tx.agentSession.update({
+        where: { id: session.id },
+        data: { pausedAt: null, pausedBy: null, pausedReason: null },
+      });
+      await tx.activity.create({
+        data: {
+          boardId,
+          type: "agent_session_resumed",
+          actorId,
+          actorType: "human",
+          details: {
+            sessionId: session.id,
+            reason: clean(reason),
+            resumedAt: Date.now(),
+          },
+        },
+      });
+      return { row, changed: true };
+    });
+    return this.toDto(
+      result.row,
+      await this.tokenPauseContextById(session.apiTokenId),
+    );
+  }
+
+  /**
+   * `POST /boards/:id/agents/pause` — session-only board ADMIN. Every PAT on
+   * the board is blocked; the pause stamp lives on the board and is not
+   * exported. Claims are untouched.
+   */
+  async pauseBoard(
+    boardId: string,
+    actorId: string,
+    reason: string | undefined,
+  ): Promise<BoardAgentPauseDto> {
+    const board = await this.prisma.board.findFirst({
+      where: { id: boardId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!board) throw new NotFoundException("Board not found");
+    const now = new Date();
+    const row = await this.boardWrite.run(boardId, async (tx) => {
+      const current = await tx.board.findUniqueOrThrow({
+        where: { id: boardId },
+        select: {
+          agentsPausedAt: true,
+          agentsPausedBy: true,
+          agentsPauseReason: true,
+        },
+      });
+      if (current.agentsPausedAt !== null) return current;
+      const updated = await tx.board.update({
+        where: { id: boardId },
+        data: {
+          agentsPausedAt: now,
+          agentsPausedBy: actorId,
+          agentsPauseReason: clean(reason),
+        },
+        select: {
+          agentsPausedAt: true,
+          agentsPausedBy: true,
+          agentsPauseReason: true,
+        },
+      });
+      await tx.activity.create({
+        data: {
+          boardId,
+          type: "agents_paused",
+          actorId,
+          actorType: "human",
+          details: {
+            reason: updated.agentsPauseReason,
+            pausedAt: now.getTime(),
+          },
+        },
+      });
+      return updated;
+    });
+    return toBoardPauseDto(boardId, row);
+  }
+
+  /** `POST /boards/:id/agents/resume` — session-only board ADMIN. */
+  async resumeBoard(
+    boardId: string,
+    actorId: string,
+    reason: string | undefined,
+  ): Promise<BoardAgentPauseDto> {
+    const board = await this.prisma.board.findFirst({
+      where: { id: boardId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!board) throw new NotFoundException("Board not found");
+    const row = await this.boardWrite.run(boardId, async (tx) => {
+      const current = await tx.board.findUniqueOrThrow({
+        where: { id: boardId },
+        select: {
+          agentsPausedAt: true,
+          agentsPausedBy: true,
+          agentsPauseReason: true,
+        },
+      });
+      if (current.agentsPausedAt === null) return current;
+      const updated = await tx.board.update({
+        where: { id: boardId },
+        data: {
+          agentsPausedAt: null,
+          agentsPausedBy: null,
+          agentsPauseReason: null,
+        },
+        select: {
+          agentsPausedAt: true,
+          agentsPausedBy: true,
+          agentsPauseReason: true,
+        },
+      });
+      await tx.activity.create({
+        data: {
+          boardId,
+          type: "agents_resumed",
+          actorId,
+          actorType: "human",
+          details: { reason: clean(reason), resumedAt: Date.now() },
+        },
+      });
+      return updated;
+    });
+    return toBoardPauseDto(boardId, row);
+  }
+
   /** `GET /boards/:id/agent-sessions?active=1` — any board member. */
   async list(boardId: string, active = false): Promise<AgentSessionDto[]> {
     const board = await this.prisma.board.findFirst({
@@ -525,4 +747,22 @@ function isAgentSessionStatus(value: string): value is AgentSessionStatus {
 function clean(value: string | undefined): string | null {
   const trimmed = value?.trim() ?? "";
   return trimmed === "" ? null : trimmed;
+}
+
+function toBoardPauseDto(
+  boardId: string,
+  row: {
+    agentsPausedAt: Date | null;
+    agentsPausedBy: string | null;
+    agentsPauseReason: string | null;
+  },
+): BoardAgentPauseDto {
+  return {
+    scope: "board",
+    boardId,
+    paused: row.agentsPausedAt !== null,
+    pausedAt: row.agentsPausedAt?.getTime() ?? null,
+    pausedBy: row.agentsPausedBy,
+    reason: row.agentsPauseReason,
+  };
 }

@@ -168,6 +168,65 @@ adds a non-secret `token` identity object (`scopePreset`, `trustedCi`, pause
 stamps, `effectiveTokenScope`) and a `server` block; a browser session gets
 `token: null`.
 
+## Pause and kill
+
+Humans can stop agents without revoking a key. Pause is reversible; kill is
+token revocation. All pause/resume routes are browser-session only: a PAT gets
+`403 pat_forbidden`, so an agent cannot clear the pause that stopped it.
+
+| Method | Path                                                | Auth                  | Request          | Response              |
+| ------ | --------------------------------------------------- | --------------------- | ---------------- | --------------------- |
+| `POST` | `/boards/:id/agent-sessions/:sessionId/pause`       | board `ADMIN` session | `AgentPauseDto`  | `AgentSessionDto`     |
+| `POST` | `/boards/:id/agent-sessions/:sessionId/resume`      | board `ADMIN` session | `AgentPauseDto`  | `AgentSessionDto`     |
+| `POST` | `/boards/:id/agents/pause`                          | board `ADMIN` session | `AgentPauseDto`  | `BoardAgentPauseDto`  |
+| `POST` | `/boards/:id/agents/resume`                         | board `ADMIN` session | `AgentPauseDto`  | `BoardAgentPauseDto`  |
+| `POST` | `/users/me/tokens/:id/pause`                        | owner session         | `AgentPauseDto`  | `UserTokenDto`        |
+| `POST` | `/users/me/tokens/:id/resume`                       | owner session         | `AgentPauseDto`  | `UserTokenDto`        |
+| `POST` | `/agents/pause-all`                                 | owner session         | `AgentPauseDto`  | `AgentStopAllPauseDto` |
+| `POST` | `/agents/resume-all`                                | owner session         | `AgentPauseDto`  | `AgentStopAllPauseDto` |
+
+`AgentPauseDto` is optional `{ reason?: string }` (500 characters). The reason
+is stored on the session/board stamp; the token and stop-all reasons go to
+`SecurityAuditLog`. `pauseScope` precedence is **token → board → session**:
+a token paused by `individualPausedAt` or `stopAllPausedAt` wins over a board
+pause, which wins over a session pause. `resume-all` clears only
+`stopAllPausedAt` and does **not** clear an individual token pause; a token
+stays paused while at least one source is active.
+
+Every PAT write blocked by a pause answers `403` with a stable code:
+
+```json
+{
+  "message": "Agent access is paused at the board level; resume it before writing",
+  "code": "agent_paused",
+  "retryable": false,
+  "pauseScope": "board",
+  "scope": "board",
+  "pausedAt": 1762764000000
+}
+```
+
+The block covers commands (single and batch), comments, attachment upload and
+delete, claims, board member/share changes and other board writes. GET reads
+stay allowed, and the control plane stays open: `heartbeat`, `end` and
+`GET /boards/:id/agent-sessions/:id` work while paused so an agent can finish
+cleanly. Pause does not release a claim. Ending a session or revoking its token
+releases the session/token claims.
+
+Pause is checked at the request boundary and again inside the board-write
+transaction after the advisory lock. A request that passed the second check
+finishes and commits; a pause that committed before it is refused. On the next
+SSE keep-alive a PAT stream receives
+`{ "type": "agent", "op": "paused", "scope": "...", "at": ... }` and closes.
+Session pause closes only a stream opened with `?session=<sessionId>`; a
+reconnect during an active pause gets `403 agent_paused`. Human SSE streams are
+not closed.
+
+`DELETE /users/me/tokens/:id` is the irreversible kill. It revokes the key, marks
+its open sessions `cancelled`, releases the claims held by `claimedByTokenId`
+(legacy claims without a token id wait for their lease) and closes the token's
+SSE on the next tick. New requests with the key get `401`.
+
 ## Token scopes and the destructive gate
 
 Every PAT carries one immutable preset. A new key is `worker`; existing keys
@@ -203,6 +262,7 @@ Error codes are additive and stable:
 | `destructive_denied` | 403 | the board policy is `destructive: "deny"`; `reason: "board_policy"` |
 | `approval_required` | 409 | a destructive action has no approval; the request is refused, nothing is applied |
 | `pat_forbidden` | 403 | an account route is session-only |
+| `agent_paused` | 403 | a session, token or board pause blocks the write; `pauseScope`/`pausedAt`, `retryable: false` |
 | `pat_read_only` | 403 | legacy read-only key refused a write |
 
 The approval request API (`POST /boards/:id/approvals`) and the decision

@@ -523,6 +523,41 @@ export interface AgentSessionDto {
 }
 
 /**
+ * Body of the TASK-166.3 pause/resume routes. `reason` is a human note stored
+ * on the pause stamp (session, board) or in the security audit (token,
+ * stop-all) so the UI can explain why agents were stopped.
+ */
+export interface AgentPauseRequest {
+  reason?: string;
+}
+
+/** The pause state of one level (TASK-166.3). */
+export interface AgentPauseStateDto {
+  scope: "board" | "token" | "session";
+  paused: boolean;
+  pausedAt: number | null;
+  pausedBy: string | null;
+  reason: string | null;
+}
+
+/** `POST /boards/:id/agents/pause|resume` response. */
+export interface BoardAgentPauseDto extends AgentPauseStateDto {
+  scope: "board";
+  boardId: string;
+}
+
+/**
+ * `POST /agents/pause-all|resume-all` response. `affected` is the number of
+ * live tokens whose `stopAllPausedAt` stamp changed in this call.
+ */
+export interface AgentStopAllPauseDto {
+  paused: boolean;
+  pausedAt: number | null;
+  pausedBy: string | null;
+  affected: number;
+}
+
+/**
  * `GET /boards/:id/search?q=` (TASK-157, D11) — the ids of cards whose title,
  * description, a checklist item or a comment contains the query. A server
  * search reaches text that is not in the board aggregate (comments), so the

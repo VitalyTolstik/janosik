@@ -7,6 +7,7 @@ import {
 import { AuthGuard } from "@nestjs/passport";
 import { ThrottlerException } from "@nestjs/throttler";
 import { API_TOKEN_PREFIX } from "@janosik/shared";
+import { assertTokenNotPaused } from "@/auth/agent-pause";
 import { consumeTokenRate } from "@/common/token-rate-limit";
 import { ApiTokenService, type TokenScope } from "./api-token.service";
 import type { AuthPrincipal } from "./auth-principal";
@@ -87,6 +88,13 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
     ) {
       throw new ThrottlerException("Too many requests for this API token");
     }
+    // TASK-166.3: a paused token cannot write anywhere. Board/session pause
+    // is checked later, once the board and optional session are resolved.
+    assertTokenNotPaused(
+      identity,
+      request.method,
+      request.originalUrl ?? request.url,
+    );
     assertPatScopeAllows(request.method, scope);
     request.user = user;
     request.auth = {

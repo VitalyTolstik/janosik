@@ -10,15 +10,18 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { BoardMember } from "@prisma/client";
+import { Role } from "@prisma/client";
 import type { AgentSessionDto } from "@janosik/shared";
 import type { AuthPrincipal } from "@/auth/auth-principal";
-import { CurrentPrincipal } from "@/auth/auth-principal";
+import { CurrentPrincipal, SessionOnlyGuard } from "@/auth/auth-principal";
 import type { AuthUser } from "@/auth/auth.types";
 import { TokenScope } from "@/auth/token-scope.decorator";
 import { CurrentUser } from "@/auth/current-user.decorator";
+import { BoardRoles } from "@/common/board-roles.decorator";
 import { CurrentMembership } from "@/common/current-membership.decorator";
 import { MembershipGuard } from "@/common/membership.guard";
 import { AgentSessionsService } from "./agent-sessions.service";
+import { AgentPauseDto } from "./dto/agent-pause.dto";
 import {
   AgentSessionHeartbeatDto,
   CreateAgentSessionDto,
@@ -93,5 +96,35 @@ export class AgentSessionsController {
     @Param("sessionId") sessionId: string,
   ): Promise<AgentSessionDto> {
     return this.sessions.get(boardId, sessionId);
+  }
+
+  /**
+   * TASK-166.3: session-level pause/resume. Human control plane only — a PAT
+   * gets `403 pat_forbidden`; a paused PAT cannot clear its own pause.
+   */
+  @UseGuards(MembershipGuard, SessionOnlyGuard)
+  @BoardRoles(Role.ADMIN)
+  @Post(":sessionId/pause")
+  @HttpCode(HttpStatus.OK)
+  pause(
+    @Param("id") boardId: string,
+    @Param("sessionId") sessionId: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: AgentPauseDto,
+  ): Promise<AgentSessionDto> {
+    return this.sessions.pauseSession(boardId, sessionId, user.id, dto.reason);
+  }
+
+  @UseGuards(MembershipGuard, SessionOnlyGuard)
+  @BoardRoles(Role.ADMIN)
+  @Post(":sessionId/resume")
+  @HttpCode(HttpStatus.OK)
+  resume(
+    @Param("id") boardId: string,
+    @Param("sessionId") sessionId: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: AgentPauseDto,
+  ): Promise<AgentSessionDto> {
+    return this.sessions.resumeSession(boardId, sessionId, user.id, dto.reason);
   }
 }

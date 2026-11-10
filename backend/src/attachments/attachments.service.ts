@@ -12,6 +12,7 @@ import { LIMITS } from "@janosik/shared";
 
 import type { AuthUser } from "@/auth/auth.types";
 import type { AuthPrincipal } from "@/auth/auth-principal";
+import { pauseGateFor } from "@/auth/agent-pause";
 import { assertAgentRule, LIFECYCLE_ACTIONS } from "@/auth/token-scope";
 import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -83,6 +84,7 @@ export class AttachmentsService {
     isInline = false,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     descriptionEmbed = false,
+    principal?: AuthPrincipal,
   ): Promise<AttachmentDto> {
     // multer streamed the body to a `.tmp-*` file (TASK-155). Every exit path
     // removes it; a successful upload renamed it into the blob tree already.
@@ -100,6 +102,7 @@ export class AttachmentsService {
         isInline,
         attribution,
         descriptionEmbed && !isInline,
+        principal,
       );
     } finally {
       await rm(file.path, { force: true }).catch(() => undefined);
@@ -113,6 +116,7 @@ export class AttachmentsService {
     isInline = false,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     descriptionEmbed = false,
+    principal?: AuthPrincipal,
   ): Promise<AttachmentDto> {
     if (file.size <= 0) {
       throw new BadRequestException({
@@ -261,6 +265,7 @@ export class AttachmentsService {
           }
           return { row, activityId: null };
         },
+        pauseGateFor(principal, attribution.agentSessionId),
       );
 
       // The row (and its blob) are now the attachment; only failures before
@@ -391,39 +396,43 @@ export class AttachmentsService {
       );
     }
 
-    const removed = await this.boardWrite.run(row.boardId, async (tx) => {
-      const current = await tx.attachment.findUnique({
-        where: { id: attachmentId },
-        select: { descriptionDetached: true },
-      });
-      const updated = await tx.attachment.updateMany({
-        where: { id: attachmentId, deletedAt: null },
-        data: { deletedAt: new Date() },
-      });
-      if (updated.count === 0) return null;
-      // TASK-108: inline media never incremented the counter, so they must
-      // not decrement it either — that drift went negative over time.
-      if (!row.isInline && !current?.descriptionDetached) {
-        await tx.card.update({
-          where: { id: row.cardId },
-          data: { attachmentCount: { decrement: 1 } },
+    const removed = await this.boardWrite.run(
+      row.boardId,
+      async (tx) => {
+        const current = await tx.attachment.findUnique({
+          where: { id: attachmentId },
+          select: { descriptionDetached: true },
         });
-      }
-      const activity = await tx.activity.create({
-        data: {
-          boardId: row.boardId,
-          cardId: row.cardId,
-          type: "attachment_deleted",
-          actorId: user.id,
-          actorType: attribution.actorType,
-          apiTokenId: attribution.apiTokenId,
-          agentSessionId: attribution.agentSessionId,
-          agentName: attribution.agentName,
-          details: { attachmentId, fileName: row.fileName },
-        },
-      });
-      return activity.id;
-    });
+        const updated = await tx.attachment.updateMany({
+          where: { id: attachmentId, deletedAt: null },
+          data: { deletedAt: new Date() },
+        });
+        if (updated.count === 0) return null;
+        // TASK-108: inline media never incremented the counter, so they must
+        // not decrement it either — that drift went negative over time.
+        if (!row.isInline && !current?.descriptionDetached) {
+          await tx.card.update({
+            where: { id: row.cardId },
+            data: { attachmentCount: { decrement: 1 } },
+          });
+        }
+        const activity = await tx.activity.create({
+          data: {
+            boardId: row.boardId,
+            cardId: row.cardId,
+            type: "attachment_deleted",
+            actorId: user.id,
+            actorType: attribution.actorType,
+            apiTokenId: attribution.apiTokenId,
+            agentSessionId: attribution.agentSessionId,
+            agentName: attribution.agentName,
+            details: { attachmentId, fileName: row.fileName },
+          },
+        });
+        return activity.id;
+      },
+      pauseGateFor(principal, attribution.agentSessionId),
+    );
     if (!removed) return;
 
     // TASK-88: the blob and its derivatives stay on disk — soft-delete is

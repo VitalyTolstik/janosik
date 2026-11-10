@@ -41,6 +41,7 @@ import { BoardWriteService } from "@/common/board-write.service";
 import { activeMembershipWhere } from "@/common/membership";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import { assertAgentRule, classifyCommandAction } from "@/auth/token-scope";
+import { pauseGateFor } from "@/auth/agent-pause";
 import {
   type RequestAttribution,
   attributionFields,
@@ -425,6 +426,7 @@ export class CommandsService {
         }
         return { responses, events };
       },
+      pauseGateFor(options.principal, attribution.agentSessionId),
     );
 
     // Publish after the batch committed, in order. A failed batch throws

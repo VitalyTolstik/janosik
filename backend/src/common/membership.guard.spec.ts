@@ -26,10 +26,14 @@ function membership(overrides: Partial<BoardMember> = {}): BoardMember {
   };
 }
 
-function context(params: Record<string, string>): ExecutionContext {
+function context(
+  params: Record<string, string>,
+  overrides: Record<string, unknown> = {},
+): ExecutionContext {
   const request: Record<string, unknown> = {
     params,
     user: { id: "user-1", email: "u@example.com" },
+    ...overrides,
   };
   return {
     switchToHttp: () => ({ getRequest: () => request }),
@@ -126,5 +130,96 @@ describe("MembershipGuard", () => {
     expect(prisma.boardMember.deleteMany).toHaveBeenCalledWith({
       where: { id: "member-1" },
     });
+  });
+
+  it("refuses a paused PAT write at the guard boundary", async () => {
+    const prisma = prismaWith(
+      { id: "board-1", agentPolicy: null, agentsPausedAt: null },
+      membership(),
+    );
+    const paused = {
+      via: "pat" as const,
+      apiTokenId: "token-1",
+      tokenIdentity: {
+        id: "token-1",
+        name: "agent",
+        scopePreset: "worker" as const,
+        trustedCi: false,
+        effectiveTokenScope: "worker" as const,
+        boardId: null,
+        readOnly: false,
+        rateLimitPerMinute: null,
+        individualPausedAt: 123,
+        stopAllPausedAt: null,
+        paused: true,
+      },
+    };
+    await expect(
+      build(undefined, prisma).canActivate(
+        context(
+          { id: "board-1" },
+          {
+            method: "POST",
+            originalUrl: "/api/v1/boards/board-1/commands",
+            auth: paused,
+          },
+        ),
+      ),
+    ).rejects.toMatchObject({
+      response: { code: "agent_paused", pauseScope: "token" },
+    });
+  });
+
+  it("refuses a board-paused PAT write but keeps heartbeat open", async () => {
+    const boardPausedAt = new Date("2026-11-10T10:00:00Z");
+    const prisma = prismaWith(
+      { id: "board-1", agentPolicy: null, agentsPausedAt: boardPausedAt },
+      membership(),
+    );
+    const pat = {
+      via: "pat" as const,
+      apiTokenId: "token-1",
+      tokenIdentity: {
+        id: "token-1",
+        name: "agent",
+        scopePreset: "worker" as const,
+        trustedCi: false,
+        effectiveTokenScope: "worker" as const,
+        boardId: null,
+        readOnly: false,
+        rateLimitPerMinute: null,
+        individualPausedAt: null,
+        stopAllPausedAt: null,
+        paused: false,
+      },
+    };
+    await expect(
+      build(undefined, prisma).canActivate(
+        context(
+          { id: "board-1" },
+          {
+            method: "POST",
+            originalUrl: "/api/v1/boards/board-1/commands",
+            auth: pat,
+          },
+        ),
+      ),
+    ).rejects.toMatchObject({
+      response: { code: "agent_paused", pauseScope: "board" },
+    });
+
+    await expect(
+      build(undefined, prisma).canActivate(
+        context(
+          { id: "board-1", sessionId: "session-1" },
+          {
+            method: "POST",
+            originalUrl:
+              "/api/v1/boards/board-1/agent-sessions/session-1/heartbeat",
+            auth: pat,
+          },
+        ),
+      ),
+    ).resolves.toBe(true);
   });
 });

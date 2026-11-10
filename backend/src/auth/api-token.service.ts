@@ -12,6 +12,7 @@ import {
   API_TOKEN_RATE_MAX,
   API_TOKEN_RATE_MIN,
   SCOPE_PRESETS,
+  type AgentStopAllPauseDto,
   type ApiTokenIdentityDto,
   type CreateUserTokenRequest,
   type CreateUserTokenResponse,
@@ -290,11 +291,37 @@ export class ApiTokenService {
     if (!token) {
       throw new NotFoundException("API token not found");
     }
-    const result = await this.prisma.apiToken.updateMany({
-      where: { id: tokenId, revokedAt: null },
-      data: { revokedAt: new Date() },
+    // TASK-166.3 kill semantics: revoke is the irreversible stop. In one
+    // pass, cancel the token's open sessions, release the claims it holds
+    // (legacy claims without `claimedByTokenId` wait for their lease) and
+    // stamp the token. Open PAT SSE closes on its next keep-alive because
+    // `isActive` sees the revocation; there is no separate kill endpoint.
+    const revokedAt = new Date();
+    const result = await this.prisma.$transaction(async (tx) => {
+      const changed = await tx.apiToken.updateMany({
+        where: { id: tokenId, revokedAt: null },
+        data: { revokedAt },
+      });
+      await tx.agentSession.updateMany({
+        where: { apiTokenId: tokenId, endedAt: null },
+        data: {
+          status: "cancelled",
+          endedAt: revokedAt,
+          endReason: "cancelled",
+        },
+      });
+      await tx.card.updateMany({
+        where: { claimedByTokenId: tokenId },
+        data: {
+          claimedBy: null,
+          claimedByTokenId: null,
+          claimedBySessionId: null,
+          leaseUntil: null,
+        },
+      });
+      return changed.count;
     });
-    if (result.count > 0) {
+    if (result > 0) {
       await this.securityAudit.record({
         userId,
         actorId: userId,
@@ -308,6 +335,152 @@ export class ApiTokenService {
         },
       });
     }
+  }
+
+  /**
+   * `POST /users/me/tokens/:id/pause` — the token's own pause source.
+   * `resume-all` deliberately does not clear it (ADR §9.1).
+   */
+  async pause(
+    userId: string,
+    tokenId: string,
+    reason: string | undefined,
+  ): Promise<UserTokenDto> {
+    const token = await this.requireOwnedToken(userId, tokenId);
+    const result = await this.prisma.apiToken.updateMany({
+      where: { id: tokenId, userId, individualPausedAt: null },
+      data: {
+        individualPausedAt: new Date(),
+        individualPausedBy: userId,
+        individualPausedReason: clean(reason),
+      },
+    });
+    if (result.count > 0) {
+      await this.securityAudit.record({
+        userId,
+        actorId: userId,
+        action: "token.paused",
+        targetType: "api_token",
+        targetId: tokenId,
+        details: {
+          name: token.name,
+          scopePreset: token.scopePreset,
+          trustedCi: token.trustedCi,
+          reason: clean(reason),
+        },
+      });
+    }
+    return toUserTokenDto(
+      await this.prisma.apiToken.findUniqueOrThrow({ where: { id: tokenId } }),
+    );
+  }
+
+  /** `POST /users/me/tokens/:id/resume` — clears only the individual pause. */
+  async resume(
+    userId: string,
+    tokenId: string,
+    reason: string | undefined,
+  ): Promise<UserTokenDto> {
+    const token = await this.requireOwnedToken(userId, tokenId);
+    const result = await this.prisma.apiToken.updateMany({
+      where: { id: tokenId, userId, individualPausedAt: { not: null } },
+      data: {
+        individualPausedAt: null,
+        individualPausedBy: null,
+        individualPausedReason: null,
+      },
+    });
+    if (result.count > 0) {
+      await this.securityAudit.record({
+        userId,
+        actorId: userId,
+        action: "token.resumed",
+        targetType: "api_token",
+        targetId: tokenId,
+        details: {
+          name: token.name,
+          scopePreset: token.scopePreset,
+          trustedCi: token.trustedCi,
+          reason: clean(reason),
+        },
+      });
+    }
+    return toUserTokenDto(
+      await this.prisma.apiToken.findUniqueOrThrow({ where: { id: tokenId } }),
+    );
+  }
+
+  /**
+   * `POST /agents/pause-all` — the bulk `stopAllPausedAt` stamp. It never
+   * touches `individualPausedAt`, so a token paused on its own stays paused
+   * after `resume-all`.
+   */
+  async pauseAll(
+    userId: string,
+    reason: string | undefined,
+  ): Promise<AgentStopAllPauseDto> {
+    const now = new Date();
+    const result = await this.prisma.apiToken.updateMany({
+      where: { userId, revokedAt: null, stopAllPausedAt: null },
+      data: { stopAllPausedAt: now, stopAllPausedBy: userId },
+    });
+    const latest = await this.prisma.apiToken.findFirst({
+      where: { userId, revokedAt: null, stopAllPausedAt: { not: null } },
+      orderBy: { stopAllPausedAt: "desc" },
+      select: { stopAllPausedAt: true, stopAllPausedBy: true },
+    });
+    if (result.count > 0) {
+      await this.securityAudit.record({
+        userId,
+        actorId: userId,
+        action: "agents.paused_all",
+        targetType: "api_token",
+        details: { reason: clean(reason), tokens: result.count },
+      });
+    }
+    return {
+      paused: latest !== null,
+      pausedAt: latest?.stopAllPausedAt?.getTime() ?? null,
+      pausedBy: latest?.stopAllPausedBy ?? null,
+      affected: result.count,
+    };
+  }
+
+  /** `POST /agents/resume-all` — clears only the bulk stamp. */
+  async resumeAll(
+    userId: string,
+    reason: string | undefined,
+  ): Promise<AgentStopAllPauseDto> {
+    const result = await this.prisma.apiToken.updateMany({
+      where: { userId, revokedAt: null, stopAllPausedAt: { not: null } },
+      data: { stopAllPausedAt: null, stopAllPausedBy: null },
+    });
+    if (result.count > 0) {
+      await this.securityAudit.record({
+        userId,
+        actorId: userId,
+        action: "agents.resumed_all",
+        targetType: "api_token",
+        details: { reason: clean(reason), tokens: result.count },
+      });
+    }
+    return {
+      paused: false,
+      pausedAt: null,
+      pausedBy: null,
+      affected: result.count,
+    };
+  }
+
+  private async requireOwnedToken(
+    userId: string,
+    tokenId: string,
+  ): Promise<ApiToken> {
+    const token = await this.prisma.apiToken.findFirst({
+      where: { id: tokenId, userId },
+    });
+    if (!token) throw new NotFoundException("API token not found");
+    return token;
   }
 
   /**
@@ -387,4 +560,9 @@ function readScopePreset(value: string): ScopePreset {
   return (SCOPE_PRESETS as readonly string[]).includes(value)
     ? (value as ScopePreset)
     : "worker";
+}
+
+function clean(value: string | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed === "" ? null : trimmed;
 }
