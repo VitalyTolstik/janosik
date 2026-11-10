@@ -33,6 +33,7 @@ export const TOOLSETS = [
   "attachments",
   "sessions",
   "approvals",
+  "plans",
   "runs",
   "members",
   "shares",
@@ -53,6 +54,7 @@ export const DEFAULT_TOOLSETS: readonly Toolset[] = [
   "attachments",
   "sessions",
   "approvals",
+  "plans",
   "runs",
 ];
 

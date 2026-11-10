@@ -173,6 +173,12 @@ export interface ApplyOptions {
   /** TASK-166.7 idempotency key from a single-command body. */
   clientRunId?: string;
   /**
+   * TASK-166.8: a plan stores the intent without `action.at`; the apply
+   * stamps the server clock like an approved plan does. Set by the plan
+   * transport for every caller, not only one carrying an approval.
+   */
+  allowMissingAt?: boolean;
+  /**
    * TASK-166.7: revalidation hook that runs inside the board transaction,
    * after the advisory lock and before any command is applied. The run-revert
    * path uses it to close the TOCTOU gap between its pre-flight conflict
@@ -250,7 +256,13 @@ export class CommandsService {
     // oversized or malformed command is a cheap 400/413, not megabytes
     // serialized through the board writer.
     const prepared = dtos.map((dto) => {
-      const entry = this.prepareCommand(boardId, dto, options);
+      const entry = this.prepareCommand(boardId, dto, {
+        ...(options.allowOversize === true ? { allowOversize: true } : {}),
+        ...(options.approvalId !== undefined
+          ? { approvalId: options.approvalId }
+          : {}),
+        ...(options.allowMissingAt === true ? { allowMissingAt: true } : {}),
+      });
       // TASK-166 (D23): the claim holder is the authenticated actor. A
       // client cannot claim on behalf of another user; token/session fields
       // are written by `command-writers` from the attribution, never from
@@ -665,6 +677,104 @@ export class CommandsService {
   }
 
   /**
+   * TASK-166.8 dry-run guard: run every database-backed precondition a live
+   * command would face, without writing anything. The plan transport calls it
+   * while replaying the reducer in memory; it throws the same exceptions the
+   * apply transaction would, so the preview can report them as conflicts.
+   * `versionOffset` accounts for the commands earlier in the plan: applying
+   * the plan writes one `Command` row per member, so the board `seq` at
+   * command `i` is `current + i`.
+   *
+   * A preview is advisory: entity versions are read from the committed state,
+   * so a plan that pins a version and then edits the same entity within the
+   * plan can look stricter than the real apply. The apply transaction remains
+   * the authority.
+   */
+  async assertWouldApply(params: {
+    boardId: string;
+    actorId: string;
+    actorRole: Role;
+    attribution: RequestAttribution;
+    entry: PreparedCommand;
+    board: Board;
+    versionOffset?: number;
+  }): Promise<void> {
+    const { boardId, entry, board, attribution } = params;
+    const db = this.prisma as unknown as Prisma.TransactionClient;
+    await this.assertAssigneeIsBoardMember(db, boardId, entry.action);
+    await this.assertClaimIsFree(db, boardId, entry.action, attribution);
+    await this.assertBoardManagement(
+      db,
+      boardId,
+      params.actorId,
+      entry.action.type,
+    );
+    const currentVersion =
+      (await this.currentSeq(db, boardId)) + (params.versionOffset ?? 0);
+    await this.assertVersionPreconditions(
+      db,
+      boardId,
+      entry.dto.ifMatchVersions,
+      currentVersion,
+    );
+    if (
+      entry.dto.ifMatch !== undefined &&
+      entry.dto.ifMatch !== currentVersion
+    ) {
+      throw new ConflictException({
+        conflict: "version",
+        currentVersion,
+      } satisfies ConflictError);
+    }
+    await this.assertWorkflowTransition(
+      db,
+      boardId,
+      board,
+      entry.action,
+      params.actorRole,
+      currentVersion,
+    );
+    this.assertWorkflowReferences(board, entry.action);
+    this.assertNoWipConflict(board, entry.action, currentVersion);
+    const state = boardReducer(
+      [board],
+      Object.assign({}, entry.action, { boardId }) as BoardAction,
+      { withActivity: false },
+    );
+    const after = state[0] ?? board;
+    if (
+      stableStringify(board) === stableStringify(after) &&
+      entry.action.type === "ADD_CARD"
+    ) {
+      throw new BadRequestException({
+        message: "Card was not created; check the column and card ids",
+        field: "action.newCardId",
+      });
+    }
+  }
+
+  /**
+   * TASK-166.8: one ownership check for every id a plan references. The live
+   * transport performs it once per batch inside the transaction; the preview
+   * runs the same check so a plan that would rewrite another board's row is
+   * reported as a conflict instead of being discovered on apply.
+   */
+  async assertPlanIds(
+    boardId: string,
+    prepared: PreparedCommand[],
+  ): Promise<void> {
+    const ids = new Set<string>();
+    for (const entry of prepared) {
+      for (const id of referencedEntityIds(entry.action)) ids.add(id);
+    }
+    await this.assertIdsBelongToBoard(
+      this.prisma as unknown as Prisma.TransactionClient,
+      boardId,
+      [...ids],
+    );
+  }
+
+  /**
    * Does `runId` contain exactly the commands of this request (each command
    * id present once, no extra rows)? Used to prove a `clientRunId` replay.
    */
@@ -692,7 +802,11 @@ export class CommandsService {
   private prepareCommand(
     boardId: string,
     dto: CreateCommandDto,
-    options: { allowOversize?: boolean; approvalId?: string },
+    options: {
+      allowOversize?: boolean;
+      approvalId?: string;
+      allowMissingAt?: boolean;
+    },
   ): PreparedCommand {
     // TASK-147 follow-up: the `ifMatchVersions` cap is enforced HERE, before
     // `boardWrite.run` takes the per-board queue and the advisory lock — an
@@ -705,8 +819,11 @@ export class CommandsService {
       boardId,
       ...(options.allowOversize === true ? { allowOversize: true } : {}),
       // An approved plan is stored without `at` (it is server context, not
-      // intent); applying it stamps the server clock here.
-      ...(options.approvalId !== undefined ? { allowMissingAt: true } : {}),
+      // intent); applying it stamps the server clock here. TASK-166.8 also
+      // allows the plan transport to opt in for browser callers.
+      ...(options.approvalId !== undefined || options.allowMissingAt === true
+        ? { allowMissingAt: true }
+        : {}),
     });
   }
 

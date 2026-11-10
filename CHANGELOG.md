@@ -8,6 +8,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-166.8 plan preview and atomic apply: `POST /boards/:id/plans` is a
+  pure dry-run over the same command validator, scope/destructive
+  classification and WIP/workflow/version guards as `/commands/batch`. It
+  replays the reducer in memory and returns the canonical
+  `planHash = sha256(canonicalJson({schemaVersion, boardId, commands}))`
+  (`action.at` and the action-level `boardId` are excluded), a net before/after
+  diff, warnings (`approval_required`, `destructive`, `reviewer_required`,
+  `no_op`) and conflicts (`version`, `wip`, `workflow`, `id`, `scope`,
+  `destructive_denied`, `invalid`), and writes no command, `AgentRun` or
+  approval. `POST /boards/:id/plans/apply` requires that hash; a mismatch is
+  `409 approval_mismatch` with the expected/actual prefixes, and the apply is
+  otherwise the batch transaction: all-or-nothing, one board lock, per-plan
+  caps `min(100, policy.maxCommandsPerRun)` commands and
+  `min(50, policy.maxCardsPerRun)` card creates (`409 limit_exceeded` beyond
+  them, no cross-plan atomicity). A destructive plan without `X-Approval-Id`
+  creates the exact approval request and applies nothing; an approved id is
+  consumed once, and repeating the same applied commands is an idempotent
+  replay. A PAT plan creates one `AgentRun` (`kind: "plan"`, `planHash`,
+  optional `clientRunId`) with a pre-image per command and returns
+  `{ runId, results, planHash }` plus `X-Run-Id`; a browser plan creates no
+  run and keeps ordinary UI undo. New MCP tools `janosik_plan_changes` and
+  `janosik_apply_plan` (tool count 84) expose the same pair, and shared DTOs
+  are additive. e2e/unit/MCP tests cover dry-run no-writes, diff/warnings,
+  hash mismatch, limit boundaries (100/101, 50/51), approval and one-time
+  consumption, replay, plan-run rollback, PAT/browser/VIEWER behavior; docs
+  EN/RU updated.
 - TASK-166.9 attention and notification backend: approvals, agent blockers /
   handoffs, expired claims and refused quota now produce one deduplicated
   in-app `AttentionNotification` per recipient and, unless the account opted

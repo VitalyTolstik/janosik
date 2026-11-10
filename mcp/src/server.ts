@@ -21,6 +21,7 @@ import { registerCommentTools } from "./tools/comments.js";
 import { registerLabelTools } from "./tools/labels.js";
 import { registerLinkTools } from "./tools/links.js";
 import { registerMemberTools } from "./tools/members.js";
+import { registerPlanTools } from "./tools/plans.js";
 import { registerRunTools } from "./tools/runs.js";
 import { registerSessionTools } from "./tools/sessions.js";
 import { restrictToReadOnly } from "./tools/helpers.js";
@@ -51,6 +52,9 @@ tools accept response_format: "markdown" (default) or "json". Your API token's
 preset limits what you may write; destructive tools can answer
 approval_required — create or reuse the approval request, wait for a human
 decision, then repeat the same plan with its approvalId; never work around it.
+For a multi-step or bulk edit, preview it with janosik_plan_changes and apply
+exactly the returned commands and planHash with janosik_apply_plan; a changed
+hash is refused and a destructive plan waits for a human approval.
 Use janosik_list_runs / janosik_preview_run_revert to inspect an agent run and
 its rollback conflicts; applying a revert is a human board-ADMIN action and no
 MCP tool exposes it.
@@ -79,6 +83,7 @@ const GROUPS: Record<
     registerAttachmentTools(server, client, fsOptions(config)),
   sessions: (server, client) => registerSessionTools(server, client),
   approvals: (server, client) => registerApprovalTools(server, client),
+  plans: (server, client) => registerPlanTools(server, client),
   runs: (server, client) => registerRunTools(server, client),
   members: (server, client) => registerMemberTools(server, client),
   shares: (server, client, config) =>

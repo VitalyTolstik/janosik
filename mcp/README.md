@@ -9,7 +9,7 @@ machine-readable task contract, comment with a typed kind, tick checklists,
 assign people and link cards. Writes can be pinned to the board version they
 read when they use the command API (compare-and-set), so a concurrent edit is
 refused. Member and share-link tools are opt-in; agent-session tools are in the
-default set. The server exposes 82 tools across 15 groups.
+default set. The server exposes 84 tools across 16 groups.
 
 Board-content edits go through the command log the UI uses and stream live
 to board viewers. MCP edits do not enter the UI's local undo stack; use
@@ -77,12 +77,12 @@ local checkout, `command` can be `node` with `args: ["/path/to/mcp/dist/index.js
 ## Tools
 
 Tools come in groups. The default set works the board, agent sessions,
-approvals and run inspection; the groups that change _who_ can see a board or expose the account
-identity are opt-in:
+approvals, plans and run inspection; the groups that change _who_ can see a
+board or expose the account identity are opt-in:
 
 | Variable / flag                          | Effect                                                                                                                                                                                                                                 |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `JANOSIK_MCP_TOOLSETS` / `--toolsets`    | Comma-separated groups. Default: `boards,columns,cards,labels,checklists,links,comments,activity,attachments,sessions,approvals,runs`. Opt-in: `members`, `shares`, `account`. `all` enables everything; `default,members` extends the default. The removed `invitations` name is accepted as a no-op with a warning. |
+| `JANOSIK_MCP_TOOLSETS` / `--toolsets`    | Comma-separated groups. Default: `boards,columns,cards,labels,checklists,links,comments,activity,attachments,sessions,approvals,plans,runs`. Opt-in: `members`, `shares`, `account`. `all` enables everything; `default,members` extends the default. The removed `invitations` name is accepted as a no-op with a warning. |
 | `JANOSIK_MCP_READONLY=1` / `--read-only` | Register only tools that never change anything — for an agent that watches and reports.                                                                                                                                                |
 
 In read-only mode, `janosik_export_board` can return an export in the tool
@@ -155,11 +155,17 @@ tool-call retry returns the first result instead of creating a second one.
 `janosik_cancel_approval`. There is deliberately no decide tool: approval is a
 human, session-only action.
 
+**Plans** — `janosik_plan_changes`, `janosik_apply_plan`. Preview a bulk or
+multi-step edit as a dry run (canonical `planHash`, diff, warnings, conflicts),
+then apply exactly those commands and that hash atomically. A destructive plan
+needs a human approval and is then applied once; 100 commands / 50 card creates
+is the per-plan limit.
+
 **Runs** — `janosik_list_runs`, `janosik_get_run`,
-`janosik_preview_run_revert`. A run groups a PAT batch or a single destructive
-PAT command for audit and rollback. The preview is a dry run with conflicts;
-applying a revert is a human board-ADMIN action in the browser, so there is no
-MCP apply tool.
+`janosik_preview_run_revert`. A run groups a PAT batch, a single destructive
+PAT command or a plan apply for audit and rollback. The preview is a dry run
+with conflicts; applying a revert is a human board-ADMIN action in the browser,
+so there is no MCP apply tool.
 
 **Account** (opt-in: `account`) — `janosik_whoami` only. API keys and profile
 writes are managed in the app only: the server refuses those routes to an API

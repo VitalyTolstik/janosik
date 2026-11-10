@@ -114,6 +114,8 @@ const RESERVED_BODY_KEYS = new Set([
   "requiredRoles",
   "approvalId",
   "planHash",
+  "expectedPlanHash",
+  "actualPlanHash",
   "expiresAt",
   "action",
   "reason",
@@ -344,6 +346,14 @@ export function apiErrorEnvelope(
       : {}),
     ...(stringField(body?.planHash) !== undefined
       ? { planHash: stringField(body?.planHash) as string }
+      : {}),
+    ...(stringField(body?.expectedPlanHash) !== undefined
+      ? {
+          expectedPlanHash: stringField(body?.expectedPlanHash) as string,
+        }
+      : {}),
+    ...(stringField(body?.actualPlanHash) !== undefined
+      ? { actualPlanHash: stringField(body?.actualPlanHash) as string }
       : {}),
     ...(numberField(body?.expiresAt) !== undefined
       ? { expiresAt: numberField(body?.expiresAt) as number }
