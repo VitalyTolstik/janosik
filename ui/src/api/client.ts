@@ -1,13 +1,18 @@
 import type {
   ActivityFeedPage,
   AgentSessionDto,
+  AgentStopAllPauseDto,
   AnnouncementDto,
+  ApprovalDecisionRequest,
+  ApprovalListQuery,
+  ApprovalRequestDto,
   AttachmentDto,
   AuthConfigResponse,
   AuthMeResponseDto,
   AuthOAuthProvidersResponse,
   AuthResponseDto,
   AuthUserDto,
+  BoardAgentPauseDto,
   BoardAggregate,
   BoardEnvelope,
   BoardInvitationDto,
@@ -544,6 +549,107 @@ export class ApiClient {
     return this.request<{ status: "ok" }>(
       `/users/me/tokens/${encodeURIComponent(id)}`,
       { method: "DELETE", body: {} },
+    );
+  }
+
+  /** `POST /users/me/tokens/:id/pause` — reversible token-level stop. */
+  pauseToken(id: string, reason?: string): Promise<UserTokenDto> {
+    return this.request<UserTokenDto>(
+      `/users/me/tokens/${encodeURIComponent(id)}/pause`,
+      { method: "POST", body: reason === undefined ? {} : { reason } },
+    );
+  }
+
+  /** `POST /users/me/tokens/:id/resume` — clears only the individual pause. */
+  resumeToken(id: string, reason?: string): Promise<UserTokenDto> {
+    return this.request<UserTokenDto>(
+      `/users/me/tokens/${encodeURIComponent(id)}/resume`,
+      { method: "POST", body: reason === undefined ? {} : { reason } },
+    );
+  }
+
+  /** `POST /agents/pause-all` — account-wide reversible stop. */
+  pauseAllTokens(reason?: string): Promise<AgentStopAllPauseDto> {
+    return this.request<AgentStopAllPauseDto>("/agents/pause-all", {
+      method: "POST",
+      body: reason === undefined ? {} : { reason },
+    });
+  }
+
+  /** `POST /agents/resume-all` — clears the bulk stop, not individual pauses. */
+  resumeAllTokens(reason?: string): Promise<AgentStopAllPauseDto> {
+    return this.request<AgentStopAllPauseDto>("/agents/resume-all", {
+      method: "POST",
+      body: reason === undefined ? {} : { reason },
+    });
+  }
+
+  // --------------------------------------- approvals + agent pause (166.14)
+
+  /** `GET /boards/:id/approvals` — board ADMIN or the requesting token. */
+  listApprovals(
+    boardId: string,
+    query: ApprovalListQuery = {},
+  ): Promise<ApprovalRequestDto[]> {
+    const params = new URLSearchParams();
+    if (query.status !== undefined) params.set("status", query.status);
+    if (query.kind !== undefined) params.set("kind", query.kind);
+    if (query.cardId !== undefined) params.set("cardId", query.cardId);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    const suffix = params.toString() === "" ? "" : `?${params.toString()}`;
+    return this.request<ApprovalRequestDto[]>(
+      `/boards/${boardId}/approvals${suffix}`,
+    );
+  }
+
+  /** `GET /boards/:id/approvals/:approvalId` — includes the exact plan. */
+  getApproval(
+    boardId: string,
+    approvalId: string,
+  ): Promise<ApprovalRequestDto> {
+    return this.request<ApprovalRequestDto>(
+      `/boards/${boardId}/approvals/${encodeURIComponent(approvalId)}`,
+    );
+  }
+
+  /**
+   * `POST /boards/:id/approvals/:approvalId/decision` — session-only board
+   * ADMIN. Approving authorizes the exact `planHash`; the agent still applies
+   * the plan itself.
+   */
+  decideApproval(
+    boardId: string,
+    approvalId: string,
+    body: ApprovalDecisionRequest,
+  ): Promise<ApprovalRequestDto> {
+    return this.request<ApprovalRequestDto>(
+      `/boards/${boardId}/approvals/${encodeURIComponent(approvalId)}/decision`,
+      { method: "POST", body },
+    );
+  }
+
+  /** `POST /boards/:id/agents/pause` — board-level agent stop. */
+  pauseBoardAgents(
+    boardId: string,
+    reason?: string,
+  ): Promise<BoardAgentPauseDto> {
+    return this.request<BoardAgentPauseDto>(`/boards/${boardId}/agents/pause`, {
+      method: "POST",
+      body: reason === undefined ? {} : { reason },
+    });
+  }
+
+  /** `POST /boards/:id/agents/resume` — clears the board-level stop. */
+  resumeBoardAgents(
+    boardId: string,
+    reason?: string,
+  ): Promise<BoardAgentPauseDto> {
+    return this.request<BoardAgentPauseDto>(
+      `/boards/${boardId}/agents/resume`,
+      {
+        method: "POST",
+        body: reason === undefined ? {} : { reason },
+      },
     );
   }
 

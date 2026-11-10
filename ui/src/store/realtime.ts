@@ -1,5 +1,7 @@
 import type {
   ActivitySseEvent,
+  AgentSseEvent,
+  ApprovalSseEvent,
   BoardAction,
   BoardSseEvent,
   CommandSseEvent,
@@ -408,6 +410,10 @@ export interface RealtimeHost {
   onBoardGone?: (boardId: string) => void;
   /** A non-command activity frame — a comment (TASK-37). */
   onActivity: (event: ActivitySseEvent) => void;
+  /** An approval changed state (TASK-166.14). */
+  onApproval?: (boardId: string, event: ApprovalSseEvent) => void;
+  /** An agent session or pause control-plane transition (TASK-166.14). */
+  onAgent?: (boardId: string, event: AgentSseEvent) => void;
   /** Someone else changed these entities: raise the attribution ring. */
   flagForeign: (
     boardId: string,
@@ -650,6 +656,18 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
     // log to catch up from — hand it to the listeners as it arrives.
     if (event.type === "activity") {
       host.onActivity(event);
+      return;
+    }
+    // Approval and agent control-plane frames (TASK-166.14): no seq and no
+    // reducer action — their consumers refetch the queue or the session list.
+    if (event.type === "approval") {
+      const boardId = host.getActiveBoardId();
+      if (boardId !== undefined) host.onApproval?.(boardId, event);
+      return;
+    }
+    if (event.type === "agent") {
+      const boardId = host.getActiveBoardId();
+      if (boardId !== undefined) host.onAgent?.(boardId, event);
       return;
     }
     // The server could not replay the whole gap (the delta was truncated):

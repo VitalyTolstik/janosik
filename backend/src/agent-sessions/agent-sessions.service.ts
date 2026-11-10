@@ -353,6 +353,15 @@ export class AgentSessionsService {
       });
       return { row, changed: true };
     });
+    if (result.changed) {
+      this.realtime.publish(boardId, {
+        type: "agent",
+        op: "paused",
+        sessionId: result.row.id,
+        scope: "session",
+        at: now.getTime(),
+      });
+    }
     return this.toDto(
       result.row,
       await this.tokenPauseContextById(session.apiTokenId),
@@ -407,6 +416,15 @@ export class AgentSessionsService {
       });
       return { row, changed: true };
     });
+    if (result.changed) {
+      this.realtime.publish(boardId, {
+        type: "agent",
+        op: "resumed",
+        sessionId: result.row.id,
+        scope: "session",
+        at: Date.now(),
+      });
+    }
     return this.toDto(
       result.row,
       await this.tokenPauseContextById(session.apiTokenId),
@@ -429,7 +447,7 @@ export class AgentSessionsService {
     });
     if (!board) throw new NotFoundException("Board not found");
     const now = new Date();
-    const row = await this.boardWrite.run(boardId, async (tx) => {
+    const result = await this.boardWrite.run(boardId, async (tx) => {
       const current = await tx.board.findUniqueOrThrow({
         where: { id: boardId },
         select: {
@@ -438,7 +456,9 @@ export class AgentSessionsService {
           agentsPauseReason: true,
         },
       });
-      if (current.agentsPausedAt !== null) return current;
+      if (current.agentsPausedAt !== null) {
+        return { row: current, changed: false };
+      }
       const updated = await tx.board.update({
         where: { id: boardId },
         data: {
@@ -464,9 +484,17 @@ export class AgentSessionsService {
           },
         },
       });
-      return updated;
+      return { row: updated, changed: true };
     });
-    return toBoardPauseDto(boardId, row);
+    if (result.changed) {
+      this.realtime.publish(boardId, {
+        type: "agent",
+        op: "paused",
+        scope: "board",
+        at: now.getTime(),
+      });
+    }
+    return toBoardPauseDto(boardId, result.row);
   }
 
   /** `POST /boards/:id/agents/resume` — session-only board ADMIN. */
@@ -480,7 +508,7 @@ export class AgentSessionsService {
       select: { id: true },
     });
     if (!board) throw new NotFoundException("Board not found");
-    const row = await this.boardWrite.run(boardId, async (tx) => {
+    const result = await this.boardWrite.run(boardId, async (tx) => {
       const current = await tx.board.findUniqueOrThrow({
         where: { id: boardId },
         select: {
@@ -489,7 +517,8 @@ export class AgentSessionsService {
           agentsPauseReason: true,
         },
       });
-      if (current.agentsPausedAt === null) return current;
+      if (current.agentsPausedAt === null)
+        return { row: current, changed: false };
       const updated = await tx.board.update({
         where: { id: boardId },
         data: {
@@ -512,9 +541,17 @@ export class AgentSessionsService {
           details: { reason: clean(reason), resumedAt: Date.now() },
         },
       });
-      return updated;
+      return { row: updated, changed: true };
     });
-    return toBoardPauseDto(boardId, row);
+    if (result.changed) {
+      this.realtime.publish(boardId, {
+        type: "agent",
+        op: "resumed",
+        scope: "board",
+        at: Date.now(),
+      });
+    }
+    return toBoardPauseDto(boardId, result.row);
   }
 
   /** `GET /boards/:id/agent-sessions?active=1` — any board member. */

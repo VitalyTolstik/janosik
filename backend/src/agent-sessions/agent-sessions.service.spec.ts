@@ -1,6 +1,9 @@
 import type { AgentSession } from "@prisma/client";
 import { AGENT_SESSION_STALE_MS } from "@janosik/shared";
-import { toAgentSessionDto } from "./agent-sessions.service";
+import {
+  AgentSessionsService,
+  toAgentSessionDto,
+} from "./agent-sessions.service";
 
 function row(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
@@ -97,5 +100,92 @@ describe("toAgentSessionDto", () => {
         3_000,
       ).status,
     ).toBe("active");
+  });
+});
+
+describe("board pause SSE (TASK-166.14)", () => {
+  const board = {
+    agentsPausedAt: null as Date | null,
+    agentsPausedBy: null as string | null,
+    agentsPauseReason: null as string | null,
+  };
+
+  function service(current: typeof board) {
+    const update = jest.fn(
+      async ({ data }: { data: Partial<typeof board> }) => ({
+        ...current,
+        ...data,
+      }),
+    );
+    const tx = {
+      board: {
+        findUniqueOrThrow: jest.fn(async () => current),
+        update,
+      },
+      activity: { create: jest.fn(async () => undefined) },
+    };
+    const prisma = {
+      board: { findFirst: jest.fn(async () => ({ id: "board-1" })) },
+    };
+    const boardWrite = {
+      run: jest.fn(
+        async (
+          _boardId: string,
+          fn: (transaction: typeof tx) => Promise<unknown>,
+        ) => fn(tx),
+      ),
+    };
+    const realtime = { publish: jest.fn() };
+    const service = new AgentSessionsService(
+      prisma as never,
+      boardWrite as never,
+      realtime as never,
+    );
+    return { service, realtime, update };
+  }
+
+  it("publishes a board-scoped paused frame after the transaction", async () => {
+    const { service: sessions, realtime } = service({ ...board });
+    const result = await sessions.pauseBoard("board-1", "user-1", "freeze");
+
+    expect(result.paused).toBe(true);
+    expect(result.reason).toBe("freeze");
+    expect(realtime.publish).toHaveBeenCalledWith(
+      "board-1",
+      expect.objectContaining({
+        type: "agent",
+        op: "paused",
+        scope: "board",
+      }),
+    );
+  });
+
+  it("does not publish when the board is already paused", async () => {
+    const { service: sessions, realtime } = service({
+      agentsPausedAt: new Date(1_000),
+      agentsPausedBy: "user-2",
+      agentsPauseReason: "already",
+    });
+    await sessions.pauseBoard("board-1", "user-1", "again");
+    expect(realtime.publish).not.toHaveBeenCalled();
+  });
+
+  it("publishes a resumed frame only after an actual resume", async () => {
+    const { service: sessions, realtime } = service({
+      agentsPausedAt: new Date(1_000),
+      agentsPausedBy: "user-2",
+      agentsPauseReason: "freeze",
+    });
+    const result = await sessions.resumeBoard("board-1", "user-1", "done");
+
+    expect(result.paused).toBe(false);
+    expect(realtime.publish).toHaveBeenCalledWith(
+      "board-1",
+      expect.objectContaining({
+        type: "agent",
+        op: "resumed",
+        scope: "board",
+      }),
+    );
   });
 });

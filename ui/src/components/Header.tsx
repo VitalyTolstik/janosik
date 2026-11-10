@@ -3,6 +3,7 @@ import { Bot } from "lucide-react";
 
 import { AccountDialog } from "@/components/account/AccountDialog";
 import { BrandMark } from "@/components/BrandMark";
+import { AgentControlButton } from "@/components/agent-control/AgentControlButton";
 import { BoardMembersDialog } from "@/components/board/BoardMembersDialog";
 import { BoardSettingsDialog } from "@/components/board/BoardSettingsDialog";
 import { ShareDialog } from "@/components/board/ShareDialog";
@@ -14,7 +15,7 @@ import { HelpMenu } from "@/components/HelpMenu";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -29,6 +30,16 @@ import {
   useBoardHistory,
 } from "@/store/BoardContext";
 
+/**
+ * The approvals/pause dialog is its own lazy chunk: the board loads on the
+ * critical path, and most sessions never open agent control at all.
+ */
+const AgentControlDialog = lazy(() =>
+  import("@/components/agent-control/AgentControlDialog").then((module) => ({
+    default: module.AgentControlDialog,
+  })),
+);
+
 /** Header: brand, board switcher, search, undo/redo, data and the account. */
 export function Header() {
   const { t } = useI18n();
@@ -41,6 +52,7 @@ export function Header() {
   // after a live demotion would only offer commands the server refuses.
   const readOnly = role === "VIEWER";
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [agentControlOpen, setAgentControlOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-40 flex min-h-14 shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-3 py-1.5 backdrop-blur-md sm:h-14 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:px-6 sm:py-0">
@@ -69,6 +81,7 @@ export function Header() {
           </TooltipTrigger>
           <TooltipContent>{t("agents.open")}</TooltipContent>
         </Tooltip>
+        <AgentControlButton onOpen={() => setAgentControlOpen(true)} />
         {role === "ADMIN" ? (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -140,6 +153,15 @@ export function Header() {
           open={settingsOpen}
           onOpenChange={setSettingsOpen}
         />
+      ) : null}
+
+      {agentControlOpen ? (
+        <Suspense fallback={null}>
+          <AgentControlDialog
+            open={agentControlOpen}
+            onOpenChange={setAgentControlOpen}
+          />
+        </Suspense>
       ) : null}
     </header>
   );

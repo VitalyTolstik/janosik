@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { UserTokenDto } from "@janosik/shared";
 
 import { api } from "@/api/client";
 import { ApiTokensSection } from "@/components/account/ApiTokensSection";
@@ -40,6 +41,30 @@ function stubClipboard() {
     configurable: true,
   });
   return writeText;
+}
+
+function token(overrides: Partial<UserTokenDto> = {}): UserTokenDto {
+  return {
+    id: "token-1",
+    name: "Release bot",
+    createdAt: Date.UTC(2026, 0, 1),
+    lastUsedAt: null,
+    expiresAt: null,
+    revokedAt: null,
+    boardId: null,
+    readOnly: false,
+    rateLimitPerMinute: null,
+    scopePreset: "worker",
+    trustedCi: false,
+    individualPausedAt: null,
+    individualPausedBy: null,
+    individualPausedReason: null,
+    stopAllPausedAt: null,
+    stopAllPausedBy: null,
+    paused: false,
+    effectiveTokenScope: "worker",
+    ...overrides,
+  };
 }
 
 describe("ApiTokensSection (TASK-36.1)", () => {
@@ -395,5 +420,111 @@ describe("ApiTokensSection (TASK-36.1)", () => {
       expect(screen.getByTestId("token-row")).toHaveTextContent("Revoked"),
     );
     expect(screen.queryByTestId("token-revoke")).toBeNull();
+  });
+
+  it("pauses a token with a reason and resumes it (TASK-166.14)", async () => {
+    const server = new FakeServer();
+    server.apiTokens.push(token());
+    renderTokens(server);
+
+    const row = await screen.findByTestId("token-row");
+    expect(row).toHaveAttribute("data-paused", "false");
+
+    await userEvent.click(within(row).getByTestId("token-pause"));
+    await userEvent.type(
+      await screen.findByTestId("token-pause-reason"),
+      "Release freeze",
+    );
+    await userEvent.click(screen.getByTestId("token-pause-confirm"));
+
+    await waitFor(() =>
+      expect(server.requests).toContainEqual({
+        method: "POST",
+        path: "/api/v1/users/me/tokens/token-1/pause",
+        body: { reason: "Release freeze" },
+      }),
+    );
+    expect(await screen.findByTestId("token-paused-badge")).toHaveTextContent(
+      "Paused",
+    );
+    expect(screen.getByTestId("token-row")).toHaveAttribute(
+      "data-paused",
+      "true",
+    );
+
+    await userEvent.click(screen.getByTestId("token-resume"));
+    await waitFor(() =>
+      expect(server.requests).toContainEqual({
+        method: "POST",
+        path: "/api/v1/users/me/tokens/token-1/resume",
+        body: {},
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("token-row")).toHaveAttribute(
+        "data-paused",
+        "false",
+      ),
+    );
+  });
+
+  it("stops and resumes every live token without clearing individual pauses", async () => {
+    const server = new FakeServer();
+    server.apiTokens.push(
+      token(),
+      token({
+        id: "token-2",
+        name: "Docs bot",
+        individualPausedAt: Date.now() - 60_000,
+        individualPausedBy: "user-1",
+        individualPausedReason: "Review",
+        paused: true,
+      }),
+    );
+    renderTokens(server);
+
+    await screen.findByTestId("token-stop-all-panel");
+    await userEvent.click(screen.getByTestId("token-stop-all"));
+    await userEvent.type(
+      await screen.findByTestId("stop-all-reason"),
+      "Incident",
+    );
+    await userEvent.click(screen.getByTestId("stop-all-confirm"));
+
+    await waitFor(() =>
+      expect(server.requests).toContainEqual({
+        method: "POST",
+        path: "/api/v1/agents/pause-all",
+        body: { reason: "Incident" },
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("token-stop-all-panel")).toHaveAttribute(
+        "data-paused",
+        "true",
+      ),
+    );
+    expect(server.apiTokens[0].paused).toBe(true);
+    expect(server.apiTokens[1].individualPausedAt).not.toBeNull();
+    // The individually paused key keeps its own resume button.
+    expect(screen.getAllByTestId("token-paused-badge")).toHaveLength(2);
+    expect(screen.getByTestId("token-resume")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("token-stop-all-resume"));
+    await waitFor(() =>
+      expect(server.requests).toContainEqual({
+        method: "POST",
+        path: "/api/v1/agents/resume-all",
+        body: {},
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("token-stop-all-panel")).toHaveAttribute(
+        "data-paused",
+        "false",
+      ),
+    );
+    expect(server.apiTokens[0].paused).toBe(false);
+    expect(server.apiTokens[1].paused).toBe(true);
   });
 });

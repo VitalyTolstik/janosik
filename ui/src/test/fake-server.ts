@@ -577,6 +577,61 @@ export class FakeServer {
       token.revokedAt = Date.now();
       return json(200, { status: "ok" });
     }
+    const tokenPauseMatch =
+      /^\/api\/v1\/users\/me\/tokens\/([^/]+)\/(pause|resume)$/.exec(path);
+    if (tokenPauseMatch && method === "POST") {
+      const token = this.apiTokens.find(
+        (item) => item.id === tokenPauseMatch[1],
+      );
+      if (token === undefined) {
+        return json(404, { message: "API token not found" });
+      }
+      const reason =
+        typeof (body as { reason?: unknown } | null)?.reason === "string"
+          ? (body as { reason: string }).reason
+          : null;
+      if (tokenPauseMatch[2] === "pause") {
+        token.individualPausedAt = Date.now();
+        token.individualPausedBy = this.account.id;
+        token.individualPausedReason = reason;
+      } else {
+        token.individualPausedAt = null;
+        token.individualPausedBy = null;
+        token.individualPausedReason = null;
+      }
+      token.paused =
+        token.individualPausedAt !== null || token.stopAllPausedAt !== null;
+      return json(200, structuredClone(token));
+    }
+    if (
+      (path === "/api/v1/agents/pause-all" ||
+        path === "/api/v1/agents/resume-all") &&
+      method === "POST"
+    ) {
+      const paused = path.endsWith("pause-all");
+      const now = paused ? Date.now() : null;
+      let affected = 0;
+      for (const token of this.apiTokens) {
+        if (token.revokedAt !== null) continue;
+        if (paused) {
+          if (token.stopAllPausedAt === null) affected += 1;
+          token.stopAllPausedAt = now;
+          token.stopAllPausedBy = paused ? this.account.id : null;
+        } else {
+          if (token.stopAllPausedAt !== null) affected += 1;
+          token.stopAllPausedAt = null;
+          token.stopAllPausedBy = null;
+        }
+        token.paused =
+          token.individualPausedAt !== null || token.stopAllPausedAt !== null;
+      }
+      return json(200, {
+        paused,
+        pausedAt: now,
+        pausedBy: paused ? this.account.id : null,
+        affected,
+      });
+    }
     if (path === "/api/v1/boards" && method === "GET") {
       return json(
         200,

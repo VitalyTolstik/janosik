@@ -52,6 +52,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ops. Adds unit/e2e coverage for per-token/session/board isolation, headers,
   the 429 envelope, log redaction and queue attribution; docs EN/RU, ADR
   §8.4 and ROADMAP are updated.
+- TASK-166.14 approvals and pause/kill UI: a board ADMIN gets an **Agent
+  control** dialog in the header. **Approvals** lists pending and historical
+  requests with summary, risk, board/card context, requesting token and agent
+  session, the exact command/operation plan, plan hash, TTL/expiry and
+  decision/audit fields; approve/reject sends the required `planHash` plus an
+  optional comment and is available only in a browser session. `approved`,
+  `consumed`, `expired`, `cancelled` and `rejected` stay visible with their
+  audit context. **Pause & sessions** pauses/resumes the whole board or one
+  active session with a reason, explains the in-flight boundary (running
+  requests finish; new writes get `403 agent_paused` and are not retried;
+  reads/heartbeat/end stay available; claims are not released), and lists
+  active sessions with their effective pause scope. The account API-key panel
+  gains per-token pause/resume, account-wide `Stop all`/`Resume all` (which
+  leaves individual pauses intact), and keeps `Revoke` as the irreversible
+  kill switch. Approval changes and agent control-plane transitions arrive
+  through SSE: the pending badge, queue, detail and session list update live
+  without a page reload; the board stream now forwards the documented
+  `approval` frame (it previously dropped it), and board/session
+  pause/resume publish the documented `agent` SSE frame. Full EN/RU strings,
+  loading/empty/error/permission states and a responsive two-pane dialog are
+  included; docs EN/RU cover the human control flow.
 - TASK-166.4 reliable write contract: every REST error now uses one
   machine-readable envelope — stable `code`, human `message`, `retryable`,
   `requestId` (same as `X-Request-Id`), `currentVersion`, optional `field`,
