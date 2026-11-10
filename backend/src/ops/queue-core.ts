@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { env } from "@/config/env";
 
@@ -39,6 +40,98 @@ export interface QueueStats {
   processed: number;
   failed: number;
   backend: "redis" | "memory";
+}
+
+/**
+ * TASK-166.10: who caused a queued job. Optional and additive — a job created
+ * by a scheduler or boot recovery has no request attribution and keeps the
+ * old payload shape. Only opaque server ids ride along; never an email,
+ * filename, comment or card content.
+ */
+export interface JobAttribution {
+  actorType?: "human" | "agent" | "admin" | "system";
+  actorId?: string;
+  boardId?: string;
+  apiTokenId?: string;
+  agentSessionId?: string;
+  runId?: string;
+}
+
+/** A job payload that can name its caller without changing existing jobs. */
+export interface AttributedJob {
+  attribution?: JobAttribution;
+}
+
+/** Drop absent fields so a legacy job payload stays byte-identical. */
+export function jobAttribution(
+  source: JobAttribution | undefined,
+): JobAttribution | undefined {
+  if (source === undefined) return undefined;
+  const attribution: JobAttribution = {};
+  if (source.actorType !== undefined) attribution.actorType = source.actorType;
+  if (source.actorId !== undefined) attribution.actorId = source.actorId;
+  if (source.boardId !== undefined) attribution.boardId = source.boardId;
+  if (source.apiTokenId !== undefined) {
+    attribution.apiTokenId = source.apiTokenId;
+  }
+  if (source.agentSessionId !== undefined) {
+    attribution.agentSessionId = source.agentSessionId;
+  }
+  if (source.runId !== undefined) attribution.runId = source.runId;
+  return Object.keys(attribution).length > 0 ? attribution : undefined;
+}
+
+/** One structured enqueue event, kept for ops/tests (bounded ring). */
+export interface QueueJobEvent {
+  event: "queue.job";
+  queue: QueueName;
+  job: string;
+  at: number;
+  attribution?: JobAttribution;
+}
+
+const queueLogger = new Logger("QueueJob");
+const MAX_RECENT_JOBS = 100;
+const recentJobs: QueueJobEvent[] = [];
+
+/**
+ * Record that a job was accepted with attribution. The same JSON line an
+ * operator sees in the process log is kept in a bounded ring, so tests and a
+ * future ops reader can verify the queue contract without scraping stdout.
+ */
+export function logQueueJob(
+  queue: QueueName,
+  job: string,
+  attribution?: JobAttribution,
+): QueueJobEvent {
+  const event: QueueJobEvent = {
+    event: "queue.job",
+    queue,
+    job,
+    at: Date.now(),
+    ...(attribution !== undefined ? { attribution } : {}),
+  };
+  recentJobs.push(event);
+  if (recentJobs.length > MAX_RECENT_JOBS) recentJobs.shift();
+  if (env.NODE_ENV !== "test") {
+    queueLogger.log(JSON.stringify(event));
+  }
+  return event;
+}
+
+/** Newest-last copy of the enqueue events (TASK-166.10 ops/tests). */
+export function recentQueueJobs(): QueueJobEvent[] {
+  return recentJobs.map((event) => ({
+    ...event,
+    ...(event.attribution !== undefined
+      ? { attribution: { ...event.attribution } }
+      : {}),
+  }));
+}
+
+/** Test hook: forget the ring. */
+export function resetQueueJobLog(): void {
+  recentJobs.length = 0;
 }
 
 /** Counts a BullMQ queue the same way for every consumer (observability). */

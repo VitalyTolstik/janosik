@@ -1,4 +1,5 @@
 import type { ActorType } from "@janosik/shared";
+import type { JobAttribution } from "@/ops/queue-core";
 import type { AuthPrincipal } from "./auth-principal";
 
 /**
@@ -38,6 +39,29 @@ export function requestAttribution(
     agentSessionId: sessionId ?? principal.agentSessionId ?? null,
     runId: null,
     agentName: principal.apiTokenName ?? null,
+  };
+}
+
+/**
+ * TASK-166.10: the queue-safe subset of request attribution. Only opaque ids
+ * travel with a job; the token name, email and any content stay out.
+ */
+export function requestJobAttribution(
+  attribution: RequestAttribution,
+  boardId: string,
+  actorId?: string,
+): JobAttribution {
+  return {
+    actorType: attribution.actorType,
+    ...(actorId !== undefined ? { actorId } : {}),
+    boardId,
+    ...(attribution.apiTokenId !== null
+      ? { apiTokenId: attribution.apiTokenId }
+      : {}),
+    ...(attribution.agentSessionId !== null
+      ? { agentSessionId: attribution.agentSessionId }
+      : {}),
+    ...(attribution.runId !== null ? { runId: attribution.runId } : {}),
   };
 }
 

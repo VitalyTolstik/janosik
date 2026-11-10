@@ -12,8 +12,12 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import {
   DEFAULT_JOB_OPTIONS,
+  jobAttribution,
+  logQueueJob,
   QUEUE_NAMES,
   redisQueueStats,
+  type AttributedJob,
+  type JobAttribution,
   type QueueStats,
 } from "@/ops/queue-core";
 import { StorageService } from "./storage.service";
@@ -68,7 +72,7 @@ const ENCODE_TIMEOUT_MS = 10 * 60 * 1000;
 export const TRANSCODE_QUEUE = QUEUE_NAMES.transcode;
 export const TRANSCODE_JOB = "transcode";
 
-export interface TranscodeJob {
+export interface TranscodeJob extends AttributedJob {
   attachmentId: string;
 }
 
@@ -115,14 +119,19 @@ export class TranscodeService implements OnModuleInit {
   }
 
   /** Queue one attachment for encoding; safe to call twice for the same id. */
-  enqueue(attachmentId: string): void {
+  enqueue(attachmentId: string, source?: JobAttribution): void {
+    const attribution = jobAttribution(source);
+    logQueueJob(TRANSCODE_QUEUE, TRANSCODE_JOB, attribution);
     if (this.queue) {
       // Deterministic id: a second enqueue for the same attachment is a no-op
       // even across processes (BullMQ dedupes by jobId while it is pending).
       void this.queue
         .add(
           TRANSCODE_JOB,
-          { attachmentId },
+          {
+            attachmentId,
+            ...(attribution !== undefined ? { attribution } : {}),
+          },
           { ...DEFAULT_JOB_OPTIONS, jobId: attachmentId },
         )
         .catch((error: unknown) => {

@@ -114,14 +114,66 @@ describe("API token scopes (e2e)", () => {
       .expect(403);
   });
 
-  it("enforces the per-token rate limit", async () => {
+  it("enforces the per-token rate limit with headers and the 429 envelope", async () => {
     const pat = await createToken({
       name: "fast",
       rateLimitPerMinute: 2,
     });
-    await server().get(`/api/v1/boards/${boardA}`).set(auth(pat)).expect(200);
-    await server().get(`/api/v1/boards/${boardA}`).set(auth(pat)).expect(200);
-    await server().get(`/api/v1/boards/${boardA}`).set(auth(pat)).expect(429);
+    const first = await server()
+      .get(`/api/v1/boards/${boardA}`)
+      .set(auth(pat))
+      .expect(200);
+    expect(first.headers["x-ratelimit-limit"]).toBe("2");
+    expect(first.headers["x-ratelimit-remaining"]).toBe("1");
+    expect(first.headers["x-ratelimit-scope"]).toBe("token");
+    expect(first.headers["ratelimit-limit"]).toBe("2");
+    expect(Number(first.headers["x-ratelimit-reset"])).toBeGreaterThan(
+      Math.floor(Date.now() / 1000) - 1,
+    );
+
+    const second = await server()
+      .get(`/api/v1/boards/${boardA}`)
+      .set(auth(pat))
+      .expect(200);
+    expect(second.headers["x-ratelimit-remaining"]).toBe("0");
+
+    const denied = await server()
+      .get(`/api/v1/boards/${boardA}`)
+      .set(auth(pat))
+      .expect(429);
+    expect(denied.headers["retry-after"]).toBeDefined();
+    expect(Number(denied.headers["retry-after"])).toBeGreaterThan(0);
+    expect(denied.headers["x-ratelimit-remaining"]).toBe("0");
+    expect(denied.headers["x-ratelimit-scope"]).toBe("token");
+    expect(denied.body).toMatchObject({
+      code: "rate_limited",
+      retryable: true,
+      retryAfter: Number(denied.headers["retry-after"]),
+      requestId: denied.headers["x-request-id"],
+      limit: 2,
+      scope: "token",
+    });
+  });
+
+  it("isolates per-token budgets", async () => {
+    const exhausted = await createToken({
+      name: "exhausted",
+      rateLimitPerMinute: 1,
+    });
+    await server()
+      .get(`/api/v1/boards/${boardA}`)
+      .set(auth(exhausted))
+      .expect(200);
+    await server()
+      .get(`/api/v1/boards/${boardA}`)
+      .set(auth(exhausted))
+      .expect(429);
+
+    const fresh = await createToken({
+      name: "fresh",
+      rateLimitPerMinute: 1,
+    });
+    await server().get(`/api/v1/boards/${boardA}`).set(auth(fresh)).expect(200);
   });
 
   async function wipe(db: PrismaService): Promise<void> {

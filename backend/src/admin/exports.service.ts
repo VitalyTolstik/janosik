@@ -18,8 +18,11 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { StorageService } from "@/attachments/storage.service";
 import {
   DEFAULT_JOB_OPTIONS,
+  jobAttribution,
+  logQueueJob,
   QUEUE_NAMES,
   redisQueueStats,
+  type AttributedJob,
   type QueueStats,
 } from "@/ops/queue-core";
 import { AdminService } from "./admin.service";
@@ -43,7 +46,7 @@ const EXPORT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
  */
 const SMALL_THRESHOLD = 1_000;
 
-export interface ExportsJob {
+export interface ExportsJob extends AttributedJob {
   exportId: string;
 }
 
@@ -157,7 +160,7 @@ export class ExportsService {
         this.logger.warn(`Inline export failed: ${String(error)}`);
       }
     } else {
-      await this.enqueue(created.id);
+      await this.enqueue(created.id, userId);
     }
     return this.row(created.id);
   }
@@ -204,10 +207,19 @@ export class ExportsService {
     return comments + commands + activity;
   }
 
-  private async enqueue(exportId: string): Promise<void> {
+  private async enqueue(exportId: string, userId: string): Promise<void> {
+    const attribution = jobAttribution({
+      actorType: "human",
+      actorId: userId,
+    });
     if (this.queue) {
       try {
-        await this.queue.add(EXPORTS_JOB, { exportId }, DEFAULT_JOB_OPTIONS);
+        await this.queue.add(
+          EXPORTS_JOB,
+          { exportId, ...(attribution !== undefined ? { attribution } : {}) },
+          DEFAULT_JOB_OPTIONS,
+        );
+        logQueueJob(EXPORTS_QUEUE, EXPORTS_JOB, attribution);
         return;
       } catch (error) {
         this.logger.warn(

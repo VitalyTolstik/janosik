@@ -29,6 +29,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   behaviour is unchanged. A new maintenance `sweep-claims` releases lapsed
   card leases and raises one claim-expiry event; `sweep-attention` applies the
   normal retention window to the inbox.
+- TASK-166.10 observability and per-token rate limits: personal API tokens now
+  have scoped agent budgets on top of the unchanged global per-principal
+  window — the token's own `rateLimitPerMinute`, a per-agent-session bucket
+  (`AGENT_SESSION_RATE_LIMIT`, default = live global limit, min 60) and a
+  per-board bucket (`BOARD_RATE_LIMIT`, default = 2× live global limit, min
+  600). Browser sessions keep their legacy per-user/IP limits. Every applied
+  bucket returns `X-RateLimit-Limit`/`-Remaining`/`-Reset`/`-Scope`, the
+  IETF-style `RateLimit-*` headers and `Retry-After` on `429`; the rejection is
+  the shared envelope with `code: rate_limited`, `retryable: true`,
+  `retryAfter`, `limit`, `scope` and `requestId`. One structured request-log
+  line per finished API response carries `requestId`,
+  method/path/status/duration, `actorType`/`actorId`, `boardId`,
+  `apiTokenId`, `agentSessionId`, `runId`/`approvalId` when available and the
+  classified operation; query strings and public share tokens are redacted,
+  and bodies, headers, token values, comments and card content are never
+  logged. The same fields feed `GET /admin/traffic` under `telemetry`
+  (requests by actor, writes, errors, rate-limit hits by scope,
+  approval/pause/run counters and a bounded latency histogram) with no new
+  admin screen. `media`, `transcode` and `exports` job payloads carry an
+  optional ids-only `attribution` object, and enqueue events are visible to
+  ops. Adds unit/e2e coverage for per-token/session/board isolation, headers,
+  the 429 envelope, log redaction and queue attribution; docs EN/RU, ADR
+  §8.4 and ROADMAP are updated.
 - TASK-166.4 reliable write contract: every REST error now uses one
   machine-readable envelope — stable `code`, human `message`, `retryable`,
   `requestId` (same as `X-Request-Id`), `currentVersion`, optional `field`,
