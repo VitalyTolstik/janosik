@@ -49,6 +49,9 @@ export class UsersService {
     if (typeof dto.notifyDigest === "boolean") {
       data.notifyDigest = dto.notifyDigest;
     }
+    if (typeof dto.notifyAttention === "boolean") {
+      data.notifyAttention = dto.notifyAttention;
+    }
     // `@IsOptional` lets `null` through; the column accepts it, meaning "not
     // chosen yet" (the client re-adopts the current UI language).
     if (dto.locale !== undefined) {

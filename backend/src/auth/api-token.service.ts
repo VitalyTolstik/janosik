@@ -22,6 +22,7 @@ import {
 import { createHash, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
+import { AttentionService } from "@/notifications/attention.service";
 import { forgetPat, rememberValidPat } from "@/common/throttle-tracker";
 import { toAuthUser } from "./auth-user.mapper";
 import type { AuthUser } from "./auth.types";
@@ -77,6 +78,7 @@ export class ApiTokenService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly securityAudit: SecurityAuditService,
+    private readonly attention: AttentionService,
   ) {}
 
   /** Only the sha256 hash is persisted; also reused by the password change. */
@@ -161,9 +163,23 @@ export class ApiTokenService {
    * the old credential.
    */
   async revokeAll(userId: string): Promise<number> {
+    const candidates = await this.prisma.apiToken.findMany({
+      where: { userId, revokedAt: null },
+      select: { id: true, name: true },
+    });
     const result = await this.prisma.$transaction((tx) =>
       revokeApiTokens(tx, { userId, revokedAt: null }),
     );
+    if (result.revokedCount > 0) {
+      for (const token of candidates) {
+        await this.attention.notifyTokenRevoked({
+          userId,
+          tokenId: token.id,
+          tokenName: token.name,
+          reason: "revoke_all",
+        });
+      }
+    }
     return result.revokedCount;
   }
 
@@ -312,6 +328,14 @@ export class ApiTokenService {
           scopePreset: token.scopePreset,
           trustedCi: token.trustedCi,
         },
+      });
+      // TASK-166.9: the human owner hears about the kill, the revoked key
+      // never does. The in-app/e-mail fan-out is best-effort and post-commit.
+      await this.attention.notifyTokenRevoked({
+        userId,
+        tokenId,
+        tokenName: token.name,
+        reason: "revoked",
       });
     }
   }

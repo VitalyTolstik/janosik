@@ -338,6 +338,7 @@ export class AccountDeletionService {
       await tx.emailChangeCode.deleteMany({ where: { userId } });
       await tx.refreshToken.deleteMany({ where: { userId } });
       await tx.apiToken.deleteMany({ where: { userId } });
+      await tx.attentionNotification.deleteMany({ where: { userId } });
       await tx.dataExport.deleteMany({ where: { userId } });
       await tx.attachment.deleteMany({ where: { uploadedById: userId } });
       await tx.comment.deleteMany({ where: { authorId: userId } });

@@ -10,6 +10,7 @@ import {
   BOARD_CLEANUP_FAILED_ACTION,
 } from "@/users/account-deletion.service";
 import { OpsSettingsService } from "./ops-settings.service";
+import { AttentionService } from "@/notifications/attention.service";
 
 /**
  * TASK-68 — regular housekeeping. Everything that used to accumulate
@@ -25,6 +26,7 @@ export const MAINTENANCE_JOBS = [
   "sweep-tokens",
   "sweep-shares",
   "sweep-invitations",
+  "sweep-claims",
   "sweep-exports",
   "sweep-commands",
   "sweep-runs",
@@ -36,6 +38,7 @@ export const MAINTENANCE_JOBS = [
   "sweep-security-audit",
   "sweep-orphan-blobs",
   "sweep-idempotency",
+  "sweep-attention",
 ] as const;
 
 export type MaintenanceJobName = (typeof MAINTENANCE_JOBS)[number] | "all";
@@ -68,6 +71,7 @@ export class MaintenanceService {
     private readonly storage: StorageService,
     private readonly ops: OpsSettingsService,
     private readonly accountDeletion: AccountDeletionService,
+    private readonly attention: AttentionService,
   ) {}
 
   /** Runs one named sweep, or all of them. */
@@ -96,6 +100,8 @@ export class MaintenanceService {
         return this.sweepShares();
       case "sweep-invitations":
         return this.sweepInvitations();
+      case "sweep-claims":
+        return this.sweepClaims();
       case "sweep-exports":
         return this.sweepExports();
       case "sweep-commands":
@@ -118,6 +124,8 @@ export class MaintenanceService {
         return this.sweepOrphanBlobs();
       case "sweep-idempotency":
         return this.sweepIdempotency();
+      case "sweep-attention":
+        return this.sweepAttention();
       default:
         return 0;
     }
@@ -598,6 +606,93 @@ export class MaintenanceService {
       },
     });
     return result.count;
+  }
+
+  /**
+   * TASK-166.9: reclaim lapsed card claims and raise one attention event per
+   * (card, lease, recipient). The conditional `updateMany` is the lock: a
+   * concurrent `CLAIM_CARD` that already installed a fresh lease makes it a
+   * no-op, so a sweep can never clear a live claim. The event is written only
+   * after the row really changed, which also makes a re-run silent.
+   */
+  async sweepClaims(): Promise<number> {
+    const now = new Date();
+    const cards = await this.prisma.card.findMany({
+      where: {
+        deletedAt: null,
+        leaseUntil: { not: null, lte: now },
+        column: { board: { deletedAt: null } },
+        OR: [
+          { claimedBy: { not: null } },
+          { claimedByTokenId: { not: null } },
+          { claimedBySessionId: { not: null } },
+        ],
+      },
+      select: {
+        id: true,
+        title: true,
+        claimedBy: true,
+        claimedByTokenId: true,
+        claimedBySessionId: true,
+        leaseUntil: true,
+        column: { select: { boardId: true } },
+      },
+    });
+    let cleared = 0;
+    for (const card of cards) {
+      if (card.leaseUntil === null) continue;
+      const result = await this.prisma.card.updateMany({
+        where: { id: card.id, leaseUntil: { lte: now } },
+        data: {
+          claimedBy: null,
+          claimedByTokenId: null,
+          claimedBySessionId: null,
+          leaseUntil: null,
+        },
+      });
+      if (result.count === 0) continue;
+      cleared += result.count;
+      const session =
+        card.claimedBySessionId === null
+          ? null
+          : await this.prisma.agentSession.findUnique({
+              where: { id: card.claimedBySessionId },
+              select: { name: true, clientName: true },
+            });
+      await this.attention.notifyClaimExpired({
+        boardId: card.column.boardId,
+        cardId: card.id,
+        cardTitle: card.title,
+        claimedBy: card.claimedBy,
+        agentName: session?.name ?? session?.clientName ?? null,
+        leaseUntil: card.leaseUntil,
+      });
+    }
+    return cleared;
+  }
+
+  /**
+   * TASK-166.9: attention rows follow the same retention window as the board
+   * feed. Read/unread state is not a reason to keep copies forever — the
+   * underlying approval/comment/audit rows remain the durable record.
+   */
+  async sweepAttention(): Promise<number> {
+    const days = await this.retentionDays();
+    const cutoff = new Date(Date.now() - days * 86_400_000);
+    return this.purgeChunks(
+      (take) =>
+        this.prisma.attentionNotification.findMany({
+          where: { createdAt: { lt: cutoff } },
+          select: { id: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.attentionNotification.deleteMany({
+            where: { id: { in: rows.map((row) => row.id) } },
+          })
+        ).count,
+    );
   }
 
   /** Expired background data exports (TASK-71): files + rows. */

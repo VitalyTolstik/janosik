@@ -6,10 +6,15 @@ import {
 } from "@nestjs/common";
 import { InjectQueue } from "@nestjs/bullmq";
 import type { Queue } from "bullmq";
+import {
+  ATTENTION_NOTIFICATION_TYPES,
+  type AttentionNotificationType,
+} from "@janosik/shared";
 import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { activeMembershipWhere } from "@/common/membership";
 import { MailQueueService } from "@/mailer/mail-queue.service";
+import type { DigestAttentionCount } from "@/mailer/templates";
 import { EmailTemplateService } from "./email-template.service";
 import { OpsSettingsService } from "./ops-settings.service";
 import { QUEUE_NAMES, redisQueueStats, type QueueStats } from "./queue-core";
@@ -159,16 +164,41 @@ export class CommsSchedulerService implements OnModuleInit {
     return { sent };
   }
 
-  /** Per-board summary of activity since the digest interval. */
+  /** Per-board summary of activity and undigested attention since the window. */
   private async sendDigests(): Promise<number> {
     const hours = (await this.ops.digestIntervalHours()) ?? 0;
     if (hours <= 0) return 0;
     const now = new Date();
     const since = new Date(now.getTime() - hours * 3_600_000);
+    // TASK-166.9 digest v2: attention rows are collected first so a board
+    // with only an approval/blocker event (and no content change) still
+    // produces a digest. `digestedAt` is the per-recipient bookmark: an event
+    // appears in exactly one scheduled letter, while a failed/interrupted run
+    // leaves it for the next one.
+    const attentionRows = await this.prisma.attentionNotification.findMany({
+      where: {
+        boardId: { not: null },
+        digestedAt: null,
+        createdAt: { gte: since },
+      },
+      select: { id: true, userId: true, boardId: true, type: true },
+    });
+    const attentionBoardIds = [
+      ...new Set(
+        attentionRows
+          .map((row) => row.boardId)
+          .filter((boardId): boardId is string => boardId !== null),
+      ),
+    ];
     const boards = await this.prisma.board.findMany({
       where: {
         deletedAt: null,
-        activity: { some: { createdAt: { gte: since } } },
+        OR: [
+          { activity: { some: { createdAt: { gte: since } } } },
+          ...(attentionBoardIds.length > 0
+            ? [{ id: { in: attentionBoardIds } }]
+            : []),
+        ],
       },
       select: {
         id: true,
@@ -181,6 +211,7 @@ export class CommsSchedulerService implements OnModuleInit {
                 id: true,
                 email: true,
                 notifyDigest: true,
+                locale: true,
                 disabledAt: true,
               },
             },
@@ -196,18 +227,35 @@ export class CommsSchedulerService implements OnModuleInit {
     let sent = 0;
     for (const board of boards) {
       const changes = board._count.activity;
-      if (changes === 0) continue;
-      const message = await this.templates.digestEmail(
-        board.title,
-        changes,
-        hours,
-        "en",
+      const memberIds = new Set(board.members.map((member) => member.user.id));
+      const boardAttention = attentionRows.filter(
+        (row) => row.boardId === board.id && memberIds.has(row.userId),
       );
+      if (changes === 0 && boardAttention.length === 0) continue;
       for (const member of board.members) {
         const user = member.user;
         if (!user.notifyDigest || user.disabledAt !== null) continue;
+        const mine = boardAttention.filter((row) => row.userId === user.id);
+        // A board with content changes still goes to every member (existing
+        // TASK-72 behaviour). With no changes, only members who actually have
+        // an attention event get a letter — no empty "0 changes" digest.
+        if (changes === 0 && mine.length === 0) continue;
+        const locale = user.locale === "ru" ? "ru" : "en";
+        const message = await this.templates.digestEmail(
+          board.title,
+          changes,
+          hours,
+          locale,
+          digestCounts(mine),
+        );
         await this.mail.enqueue({ to: user.email, ...message });
         sent += 1;
+        if (mine.length > 0) {
+          await this.prisma.attentionNotification.updateMany({
+            where: { id: { in: mine.map((row) => row.id) } },
+            data: { digestedAt: now },
+          });
+        }
       }
     }
     return sent;
@@ -372,4 +420,17 @@ function escapeHtml(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+const KNOWN_ATTENTION_TYPES = new Set<string>(ATTENTION_NOTIFICATION_TYPES);
+
+/** Group undigested attention rows into the template's count list. */
+function digestCounts(rows: Array<{ type: string }>): DigestAttentionCount[] {
+  const counts = new Map<AttentionNotificationType, number>();
+  for (const row of rows) {
+    if (!KNOWN_ATTENTION_TYPES.has(row.type)) continue;
+    const type = row.type as AttentionNotificationType;
+    counts.set(type, (counts.get(type) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([type, count]) => ({ type, count }));
 }

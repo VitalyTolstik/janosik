@@ -32,6 +32,10 @@ model User {
   emailVerifiedAt DateTime? // TASK-53; null → the address is not confirmed yet
   // TASK-72: opt-out for scheduled digests/reminders (default on).
   notifyDigest    Boolean                 @default(true)
+  // TASK-166.9: opt-out for immediate attention e-mails (approvals, blocked
+  // agents, expired claims, quota warnings). The in-app attention inbox is
+  // always written; this switch only controls e-mail delivery.
+  notifyAttention Boolean                 @default(true)
   // Announcement localization: the canonical language for the UI, banners and
   // email. Nullable for accounts created before the feature — treated as "not
   // chosen yet" and adopted from the current UI language on the next sign-in.
@@ -911,6 +915,34 @@ model ReminderSent {
   @@unique([cardId, userId, dueDate])
   @@index([sentAt])
   @@index([dueDate]) // reminder retention sweep (TASK-148)
+}
+
+// In-app attention inbox (TASK-166.9). One row per (event, recipient); the
+// unique `dedupKey` is what makes retries, multiple open tabs and repeated
+// maintenance sweeps idempotent. Deliberately relation-free like the other
+// TASK-166 operational tables: recipients are re-checked against live board
+// membership on read, and the retention sweep reclaims old rows without
+// fighting the account/board purge. `boardId` is null for account-level
+// events (the board quota).
+model AttentionNotification {
+  id         String    @id @default(cuid())
+  userId     String
+  boardId    String?
+  type       String // approval.requested|approval.decided|approval.expired|agent.blocked|agent.needs_human|claim.expired|quota.exceeded
+  dedupKey   String    @unique @db.VarChar(300)
+  title      String    @db.VarChar(300)
+  body       String?   @db.Text
+  data       Json?
+  readAt     DateTime?
+  emailedAt  DateTime?
+  digestedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@index([userId, digestedAt])
+  @@index([boardId, createdAt])
+  @@index([createdAt]) // attention retention sweep
 }
 
 // In-app announcement / banner (TASK-62). `audience` "all" shows to every

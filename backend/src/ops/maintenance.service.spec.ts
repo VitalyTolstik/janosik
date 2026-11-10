@@ -22,7 +22,10 @@ function makePrisma(): PrismaService {
     checklist: purgeable(),
     cardLink: purgeable(),
     cardLabel: purgeable(),
-    card: purgeable(),
+    card: {
+      ...purgeable(),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
     column: purgeable(),
     label: purgeable(),
     board: purgeable(),
@@ -55,6 +58,12 @@ function makePrisma(): PrismaService {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     reminderSent: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    attentionNotification: sweepable(0),
+    agentSession: {
+      findUnique: jest
+        .fn()
+        .mockResolvedValue({ name: "agent", clientName: null }),
+    },
     idempotencyRecord: {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
@@ -82,6 +91,10 @@ const accountDeletionMock = {
   reapOrphanBoards: jest.Mock;
 };
 
+const attentionMock = {
+  notifyClaimExpired: jest.fn().mockResolvedValue(undefined),
+} as never;
+
 /** Epoch mtime — unambiguously older than any grace window. */
 const LONG_AGO = 0;
 
@@ -103,12 +116,66 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
     const results = await service.run("all");
     const total = results.reduce((sum, entry) => sum + entry.removed, 0);
     // codes 2+1, tokens 4+1, shares 3, invitations 5.
     expect(total).toBe(16);
     expect(results.map((entry) => entry.job)).toContain("sweep-codes");
+  });
+
+  it("clears a lapsed claim, notifies once and is idempotent on re-run", async () => {
+    const prisma = makePrisma();
+    const leaseUntil = new Date(Date.now() - 60_000);
+    (prisma.card.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: "card-1",
+        title: "Task",
+        claimedBy: "user-1",
+        claimedByTokenId: "token-1",
+        claimedBySessionId: "session-1",
+        leaseUntil,
+        column: { boardId: "board-1" },
+      },
+    ]);
+    (prisma.card.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+    const notify = jest.fn().mockResolvedValue(undefined);
+    (
+      attentionMock as unknown as { notifyClaimExpired: jest.Mock }
+    ).notifyClaimExpired = notify;
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+      attentionMock,
+    );
+
+    expect(await service.sweepClaims()).toBe(1);
+    expect(prisma.card.updateMany).toHaveBeenCalledWith({
+      where: { id: "card-1", leaseUntil: { lte: expect.any(Date) } },
+      data: {
+        claimedBy: null,
+        claimedByTokenId: null,
+        claimedBySessionId: null,
+        leaseUntil: null,
+      },
+    });
+    expect(notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        boardId: "board-1",
+        cardId: "card-1",
+        claimedBy: "user-1",
+        leaseUntil,
+      }),
+    );
+
+    // A concurrent/fresh claim makes the conditional update a no-op: the
+    // sweep reports zero and does not send a second notification.
+    (prisma.card.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
+    expect(await service.sweepClaims()).toBe(0);
+    expect(notify).toHaveBeenCalledTimes(1);
   });
 
   it("sweeps expired idempotency records (TASK-166.4)", async () => {
@@ -121,6 +188,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
     expect(await service.sweepIdempotency()).toBe(2);
     expect(prisma.idempotencyRecord.deleteMany).toHaveBeenCalledWith({
@@ -139,6 +207,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
     const removed = await service.sweepExports();
     expect(removed).toBe(1);
@@ -169,6 +238,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
     const removed = await service.sweepOrphanBlobs();
     expect(removed).toBe(1);
@@ -190,6 +260,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
     const removed = await service.sweepOrphanBlobs();
     expect(removed).toBe(0);
@@ -223,6 +294,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
 
     const removed = await service.purgeSoftDeleted();
@@ -246,6 +318,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
     const removed = await service.sweepCommands();
     expect(removed).toBe(7);
@@ -277,6 +350,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
 
     expect(await service.sweepCommands()).toBe(9);
@@ -319,6 +393,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
 
     expect(await service.sweepRuns()).toBe(1);
@@ -365,6 +440,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
 
     expect(await service.sweepRuns()).toBe(2);
@@ -411,6 +487,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
 
     const removed = await service.purgeSoftDeleted();
@@ -469,6 +546,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
 
     const removed = await service.purgeSoftDeleted();
@@ -515,6 +593,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
 
     const removed = await service.sweepShares();
@@ -539,6 +618,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
 
     const removed = await service.sweepShares();
@@ -574,6 +654,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
 
     const removed = await service.sweepActivity();
@@ -598,6 +679,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
 
     const removed = await service.sweepAudit();
@@ -627,6 +709,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
 
     const removed = await service.sweepOrphanBlobs();

@@ -16,6 +16,7 @@ import {
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
+import { AttentionService } from "@/notifications/attention.service";
 import {
   type RequestAttribution,
   HUMAN_ATTRIBUTION,
@@ -55,6 +56,7 @@ export class CommentsService {
     private readonly prisma: PrismaService,
     private readonly boardWrite: BoardWriteService,
     private readonly realtime: RealtimeService,
+    private readonly attention: AttentionService,
   ) {}
 
   async create(
@@ -207,6 +209,21 @@ export class CommentsService {
       attribution,
     );
     await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
+    // TASK-166.9: only typed, agent-authored blocker/handoff comments raise
+    // the human attention flag. The service is best-effort and never fails
+    // the comment write.
+    if (
+      attribution.actorType === "agent" &&
+      (created.comment.kind === "blocker" || created.comment.kind === "handoff")
+    ) {
+      await this.attention.notifyCommentAttention({
+        boardId,
+        cardId,
+        commentId: created.comment.id,
+        kind: created.comment.kind,
+        agentName: attribution.agentName,
+      });
+    }
     return toCommentDto(created.comment);
   }
 

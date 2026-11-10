@@ -445,6 +445,7 @@ answers `429`).
 | `displayName` | string or null | optional | at most 50 characters; `null` clears it                  |
 | `avatarColor` | string or null | optional | one of `USER_AVATAR_COLORS`; `null` restores the default |
 | `notifyDigest` | boolean       | optional | `false` opts out of scheduled digests and due reminders   |
+| `notifyAttention` | boolean    | optional | `false` opts out of immediate attention e-mails; the in-app inbox is unaffected |
 
 Only provided keys are written.
 
@@ -475,6 +476,34 @@ account. The token DTO also carries `scopePreset`, `trustedCi`,
 `individualPausedAt`/`stopAllPausedAt` (and their `*By` fields), computed
 `paused`, and `effectiveTokenScope` (`observer` when `readOnly` is true).
 `GET /auth/me` with a PAT adds the same non-secret identity as `token`.
+
+## Attention notifications
+
+Approvals, agent blocker/handoff comments, expired card claims and the operator
+board cap produce a deduplicated in-app attention event. The same event is also
+e-mailed to its human audience — active board ADMINs for approvals and blocked
+agents, the requester/decision actor for a decision or expiry, the claimant and
+ADMINs for an expired claim, and the account itself for a quota warning —
+unless that account set `notifyAttention: false`. API tokens are never
+recipients, and events for boards the caller no longer belongs to are hidden.
+
+| Method | Path | Returns |
+| ------ | ---- | ------- |
+| `GET` | `/users/me/notifications?boardId=&unreadOnly=&cursor=&limit=` | `AttentionNotificationPage` |
+| `POST` | `/users/me/notifications/:id/read` | `AttentionNotificationDto` |
+| `POST` | `/users/me/notifications/read-all` | `{ updated }`; body `{ boardId? }` |
+| `GET` | `/users/me/notification-settings` | `NotificationSettingsDto` |
+| `PATCH` | `/users/me/notification-settings` | `NotificationSettingsDto`; body `{ notifyDigest?, notifyAttention? }` |
+
+Every route is session-only; a personal API token answers `403 pat_forbidden`.
+The list is newest-first with an opaque `at:id` cursor and an `unreadCount`.
+`boardId` requires live membership. Event types are `approval.requested`,
+`approval.decided`, `approval.cancelled`, `approval.consumed`,
+`approval.expired`, `agent.blocked`, `agent.needs_human`, `claim.expired`,
+`quota.exceeded` and `token.revoked` (owner only). The scheduled digest also
+includes undigested attention categories once per recipient; immediate
+attention e-mail does not block the approval or comment request that produced
+it.
 
 ## Invitations
 

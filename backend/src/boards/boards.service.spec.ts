@@ -43,7 +43,12 @@ describe("BoardsService.listBoards", () => {
       },
     } as unknown as PrismaService;
 
-    const service = new BoardsService(prisma, {} as never, {} as never);
+    const service = new BoardsService(
+      prisma,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
     const summaries = await service.listBoards("u1");
 
     expect(count).not.toHaveBeenCalled();
@@ -80,7 +85,12 @@ describe("BoardsService.inviteMember — reviving a pending invite", () => {
         fn(tx),
       ),
     };
-    const service = new BoardsService(prisma, boardWrite as never, {} as never);
+    const service = new BoardsService(
+      prisma,
+      boardWrite as never,
+      {} as never,
+      {} as never,
+    );
     return { service, update };
   }
 

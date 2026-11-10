@@ -33,6 +33,7 @@ import {
   isTransactionTimeout,
 } from "@/common/board-write.service";
 import { activeMembershipWhere } from "@/common/membership";
+import { AttentionService } from "@/notifications/attention.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import {
   loadBoardAggregate,
@@ -71,6 +72,7 @@ export class BoardsService {
     private readonly prisma: PrismaService,
     private readonly boardWrite: BoardWriteService,
     private readonly realtime: RealtimeService,
+    private readonly attention: AttentionService,
   ) {}
 
   /** Boards where the caller is a member (§7.4). Pending invitations don't
@@ -156,26 +158,35 @@ export class BoardsService {
     if (title.length === 0) {
       throw new BadRequestException("title must not be blank");
     }
-    const board = await this.prisma.$transaction(
-      async (tx) => {
-        // TASK-166 D19: the count and the insert share one transaction and
-        // one per-account advisory lock, so two parallel creates cannot both
-        // slip past an operator cap.
-        await lockBoardQuota(tx, userId);
-        await assertBoardQuota(tx, userId, 1);
-        const created = await tx.board.create({ data: { title } });
-        await tx.boardMember.create({
-          data: {
-            boardId: created.id,
-            userId,
-            role: Role.ADMIN,
-            acceptedAt: new Date(),
-          },
+    const board = await this.prisma
+      .$transaction(
+        async (tx) => {
+          // TASK-166 D19: the count and the insert share one transaction and
+          // one per-account advisory lock, so two parallel creates cannot both
+          // slip past an operator cap.
+          await lockBoardQuota(tx, userId);
+          await assertBoardQuota(tx, userId, 1);
+          const created = await tx.board.create({ data: { title } });
+          await tx.boardMember.create({
+            data: {
+              boardId: created.id,
+              userId,
+              role: Role.ADMIN,
+              acceptedAt: new Date(),
+            },
+          });
+          return created;
+        },
+        { timeout: 15_000, maxWait: 10_000 },
+      )
+      .catch(async (error: unknown) => {
+        // TASK-166.9: the refusal already carries limit/current; record one
+        // attention row, then rethrow the original 409 unchanged.
+        await this.attention.notifyLimitExceeded(userId, error, {
+          resource: "board",
         });
-        return created;
-      },
-      { timeout: 15_000, maxWait: 10_000 },
-    );
+        throw error;
+      });
     return this.getAggregate(board.id);
   }
 
@@ -841,6 +852,10 @@ export class BoardsService {
       if (isTransactionTimeout(error)) {
         throw new ServiceUnavailableException("Import timed out; please retry");
       }
+      // TASK-166.9: the board cap is also a quota attention event.
+      await this.attention.notifyLimitExceeded(userId, error, {
+        resource: "board",
+      });
       throw error;
     }
     return Promise.all(createdIds.map((id) => this.getAggregate(id)));

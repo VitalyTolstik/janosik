@@ -293,7 +293,12 @@ export class CommandsService {
       );
       // Enforce the run limits even when an approval is supplied: an approval
       // authorizes the action, not an oversized plan.
-      this.approvals.assertPlanLimits(plan, policy);
+      await this.approvals.assertPlanLimitsForUser(
+        plan,
+        policy,
+        actorId,
+        boardId,
+      );
       if (approvalId === undefined) {
         await this.approvals.ensureCommandApproval({
           boardId,
@@ -633,7 +638,7 @@ export class CommandsService {
     );
 
     if (applied.consumedApproval !== null) {
-      this.approvals.publishState(applied.consumedApproval);
+      await this.approvals.publishState(applied.consumedApproval);
     }
     // Publish after the batch committed, in order. A failed batch throws
     // before this, so nothing half-applied is ever announced.

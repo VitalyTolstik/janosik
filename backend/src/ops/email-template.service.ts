@@ -3,6 +3,9 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import type { MailLocale } from "@/mailer/mail.types";
 import {
   EMAIL_TEMPLATE_DEFAULTS,
+  ATTENTION_EMAIL_TEMPLATE_KEYS,
+  attentionEmail,
+  digestAttentionHtml,
   digestEmail,
   dueReminderEmail,
   emailChangeCodeEmail,
@@ -11,7 +14,10 @@ import {
   fillTemplate,
   htmlToText,
   verificationCodeEmail,
+  type AttentionEmailVars,
+  type DigestAttentionCount,
 } from "@/mailer/templates";
+import type { AttentionNotificationType } from "@janosik/shared";
 
 /** Editable mail templates (TASK-62; digest/reminder added in TASK-72). */
 export const EMAIL_TEMPLATE_KEYS = [
@@ -20,6 +26,28 @@ export const EMAIL_TEMPLATE_KEYS = [
   { key: "email_changed_notice", label: "Email changed notice" },
   { key: "digest", label: "Board digest" },
   { key: "due_reminder", label: "Due-date reminder" },
+  {
+    key: "attention_approval_requested",
+    label: "Attention: approval requested",
+  },
+  { key: "attention_approval_decided", label: "Attention: approval decided" },
+  {
+    key: "attention_approval_cancelled",
+    label: "Attention: approval cancelled",
+  },
+  {
+    key: "attention_approval_consumed",
+    label: "Attention: approval applied",
+  },
+  { key: "attention_approval_expired", label: "Attention: approval expired" },
+  { key: "attention_agent_blocked", label: "Attention: agent blocked" },
+  {
+    key: "attention_agent_needs_human",
+    label: "Attention: agent needs a human",
+  },
+  { key: "attention_claim_expired", label: "Attention: card claim expired" },
+  { key: "attention_quota_exceeded", label: "Attention: limit reached" },
+  { key: "attention_token_revoked", label: "Attention: API key revoked" },
 ] as const;
 
 export type EmailTemplateKey = (typeof EMAIL_TEMPLATE_KEYS)[number]["key"];
@@ -153,15 +181,44 @@ export class EmailTemplateService {
     count: number,
     hours: number,
     locale: MailLocale,
+    attention: DigestAttentionCount[] = [],
   ): Promise<RenderedEmail> {
     const row = await this.row("digest");
     if (row) {
-      const vars = { board: escapeHtml(board), count, hours };
+      const vars = {
+        board: escapeHtml(board),
+        count,
+        hours,
+        attention: digestAttentionHtml(attention, locale),
+      };
       const subject = fillTemplate(row.subject, vars);
       const html = fillTemplate(row.bodyHtml, vars);
       return { subject, text: htmlToText(html), html };
     }
-    return digestEmail(board, count, hours, locale);
+    return digestEmail(board, count, hours, locale, attention);
+  }
+
+  /**
+   * TASK-166.9 attention letter. A saved operator override wins; otherwise
+   * the bilingual builder renders the message in the recipient's language.
+   */
+  async attentionEmail(
+    type: AttentionNotificationType,
+    vars: AttentionEmailVars,
+    locale: MailLocale,
+  ): Promise<RenderedEmail> {
+    const key = ATTENTION_EMAIL_TEMPLATE_KEYS[type];
+    const row = await this.prisma.emailTemplate.findUnique({ where: { key } });
+    if (row) {
+      const htmlVars: Record<string, string | number> = {};
+      for (const [name, value] of Object.entries(vars)) {
+        if (value !== undefined) htmlVars[name] = escapeHtml(String(value));
+      }
+      const subject = fillTemplate(row.subject, htmlVars);
+      const html = fillTemplate(row.bodyHtml, htmlVars);
+      return { subject, text: htmlToText(html), html };
+    }
+    return attentionEmail(type, vars, locale);
   }
 
   /** TASK-72 due-date reminder, honouring an override when one is saved. */
