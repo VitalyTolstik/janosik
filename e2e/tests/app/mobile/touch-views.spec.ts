@@ -363,12 +363,17 @@ test("auto-scrolls a virtualized table to an unmounted far row", async ({
   const todo = await board.column("Todo");
   const doing = await board.column("Doing");
   const cardId = await board.card(todo, "Virtual source");
-  // Enough rows to put the target outside the initial virtualization window,
-  // but few enough that CI can reach it inside the drag timeout.
-  for (let index = 1; index <= 30; index += 1) {
+  // Table virtualization starts above 60 rows; 80 keeps the target outside
+  // the initial window while staying reachable inside the drag timeout.
+  for (let index = 1; index <= 80; index += 1) {
     await board.card(todo, `Virtual filler ${index}`);
   }
   await board.card(doing, "Virtual target");
+  // Leave rows after the target so it can settle inside the viewport instead
+  // of being pinned to the maximum scroll offset.
+  for (let index = 1; index <= 10; index += 1) {
+    await board.card(doing, `Virtual tail ${index}`);
+  }
   await board.open(page);
   await openTable(page);
 
