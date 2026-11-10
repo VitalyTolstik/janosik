@@ -43,6 +43,9 @@ Response `200` (`CommandResponse`):
 `seq` is the board's monotonic sequence number. `versions` holds the version
 counter of every entity the command actually wrote.
 
+The server stamps `boardId` on the action it stores and broadcasts, so callers
+may omit it.
+
 ### Validation and the command clock
 
 The shared validator rebuilds the action from a per-type allow-list instead

@@ -93,8 +93,11 @@ describe("CommandsService.apply size caps", () => {
 
   /** An UPDATE_CARD whose JSON encoding is exactly `bytes` bytes long. */
   const actionOfBytes = (bytes: number) => {
+    // The service stamps the route `boardId` before the size gate, so the
+    // boundary fixture already carries it (same value = same serialized size).
     const skeleton = {
       type: "UPDATE_CARD",
+      boardId: "board-1",
       cardId: "card-1",
       at: 1,
       description: "",
@@ -174,8 +177,11 @@ describe("CommandsService.applyBatch size caps", () => {
 
   /** An `UPDATE_CARD` whose JSON encoding is exactly `bytes` bytes long. */
   const actionOfBytes = (bytes: number) => {
+    // The service stamps the route `boardId` before the size gate, so the
+    // boundary fixture already carries it (same value = same serialized size).
     const skeleton = {
       type: "UPDATE_CARD",
+      boardId: "board-1",
       cardId: "card-1",
       at: 1,
       description: "",

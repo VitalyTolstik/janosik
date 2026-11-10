@@ -20,7 +20,7 @@ interface SseFrame {
   type: string;
   seq?: number;
   actorId?: string;
-  action?: { type: string };
+  action?: { type: string; boardId?: string };
   touches?: string[];
   op?: "sync" | "join" | "leave" | "update";
   user?: {
@@ -384,6 +384,43 @@ describe("Board events SSE (e2e)", () => {
     expect(frames[0].touches).toContain(`card:card-live`);
     expect(frames[0].touches).toContain(`board:${boardId}`);
     expect(frames[1].touches).toContain(`column:col-live`);
+  }, 20_000);
+
+  it("scopes live events by the route board when an agent omits boardId", async () => {
+    const baseline = await boardSeq(ownerToken);
+    const stream = openReader(await openStream(memberToken, baseline));
+
+    // `boardId` is optional on the wire (BoardScopedAction), so a REST caller
+    // may omit it. The route is authoritative: the live frame and the stored
+    // delta must both name the board the command actually ran on, otherwise
+    // the UI's realtime bridge silently drops the event.
+    const seq = await command(
+      ownerToken,
+      {
+        type: "ADD_COLUMN",
+        newColumnId: "col-routed",
+        title: "Routed",
+        at: Date.now(),
+      },
+      "evt-cmd-routed",
+    );
+
+    const [frame] = await stream.next(1, "command");
+    expect(frame.seq).toBe(seq);
+    expect(frame.action).toMatchObject({ type: "ADD_COLUMN", boardId });
+    await stream.close();
+
+    const delta = await server()
+      .get(`/api/v1/boards/${boardId}/commands?since=${baseline}`)
+      .set(auth(ownerToken))
+      .expect(200);
+    const stored = (
+      delta.body as Array<{
+        commandId: string;
+        action: { boardId?: string };
+      }>
+    ).find((entry) => entry.commandId === "evt-cmd-routed");
+    expect(stored?.action.boardId).toBe(boardId);
   }, 20_000);
 
   it("broadcasts comment activity frames: added and deleted (TASK-37)", async () => {
