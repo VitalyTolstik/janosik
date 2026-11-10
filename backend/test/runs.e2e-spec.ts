@@ -281,6 +281,7 @@ describe("Agent runs and rollback (e2e)", () => {
     ).expect(200);
     const body = response.body as CommandBatchResponse;
     expect(body.runId).toEqual(expect.any(String));
+    expect(response.headers["x-run-id"]).toBe(body.runId);
     expect(body.results).toHaveLength(3);
     for (const result of body.results) {
       expect(result.runId).toBe(body.runId);
@@ -375,6 +376,7 @@ describe("Agent runs and rollback (e2e)", () => {
       },
     ]).expect(200);
     expect((human.body as CommandBatchResponse).runId ?? null).toBeNull();
+    expect(human.headers["x-run-id"]).toBeUndefined();
     expect(await prisma.agentRun.count({ where: { boardId } })).toBe(before);
 
     const cardId = randomUUID();
@@ -384,6 +386,7 @@ describe("Agent runs and rollback (e2e)", () => {
       { token: workerToken },
     ).expect(200);
     expect((single.body as CommandResponse).runId ?? null).toBeNull();
+    expect(single.headers["x-run-id"]).toBeUndefined();
     expect(await prisma.agentRun.count({ where: { boardId } })).toBe(before);
   });
 
@@ -398,6 +401,7 @@ describe("Agent runs and rollback (e2e)", () => {
     ).expect(200);
     const body = response.body as CommandResponse;
     expect(body.runId).toEqual(expect.any(String));
+    expect(response.headers["x-run-id"]).toBe(body.runId);
 
     const run = await prisma.agentRun.findUniqueOrThrow({
       where: { id: body.runId! },
@@ -469,10 +473,12 @@ describe("Agent runs and rollback (e2e)", () => {
     expect(cleanPreview.canRevert).toBe(true);
     expect(cleanPreview.diff).toBeDefined();
     expect(cleanPreview.conflicts).toEqual([]);
+    expect(clean.headers["x-run-id"]).toBeUndefined();
 
     const revertCommandId = randomUUID();
     const reverted = await revert(runId, revertCommandId).expect(200);
     const detail = reverted.body as RunDetailDto;
+    expect(reverted.headers["x-run-id"]).toBe(detail.run.id);
     expect(detail.run).toMatchObject({
       kind: "revert",
       status: "applied",

@@ -7,8 +7,10 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import type { BoardMember } from "@prisma/client";
 import type {
   RevertPreviewDto,
@@ -81,13 +83,15 @@ export class RunsController {
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentMembership() membership: BoardMember,
     @Body() dto: RevertRunDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<RunDetailDto | RevertPreviewDto> {
     // ADR §11.4 spells the preview as `revert` + `{dryRun: true}`; the
-    // dedicated `/preview` route above is the friendlier alias.
+    // dedicated `/preview` route above is the friendlier alias. A preview
+    // writes nothing and carries no run header.
     if (dto.dryRun === true) {
       return this.runs.preview(boardId, runId, membership.role, principal);
     }
-    return this.runs.revert(
+    const detail = await this.runs.revert(
       boardId,
       runId,
       user.id,
@@ -95,5 +99,8 @@ export class RunsController {
       principal,
       dto,
     );
+    // TASK-166.7/166.10: attribute the audit run, not the reverted original.
+    res.setHeader("X-Run-Id", detail.run.id);
+    return detail;
   }
 }

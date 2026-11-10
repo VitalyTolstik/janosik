@@ -188,7 +188,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   before their commands, the new `sweep-runs` job removes only empty runs
   older than the window (a `reverted` original goes together with its
   `kind:"revert"` child), and board/account purge paths delete preimages →
-  commands → runs in that order.
+  commands → runs in that order. Command, batch and real-revert responses also
+  expose `X-Run-Id` (only when a run exists) so the structured request log can
+  attribute an operation to its run.
 - Admin console redesign: the 26 flat master-panel links are grouped into
   eight hubs (Overview, Users, Boards, Moderation, Audit & activity,
   Communications, Access & security, Settings). Every capability survives as a
