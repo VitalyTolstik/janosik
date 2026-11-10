@@ -82,19 +82,20 @@ export class AttachmentsController {
   ): Promise<AttachmentDto> {
     const isInline = inline === "1" || inline === "true";
     const isDescription = description === "1" || description === "true";
-    const key = normalizeIdempotencyKey(rawKey);
-    if (key === undefined || file?.path === undefined) {
-      return this.attachments.create(
-        cardId,
-        user,
-        file,
-        isInline,
-        requestAttribution(principal, session?.id),
-        isDescription,
-        principal,
-      );
-    }
+    const tempPath = file?.path;
     try {
+      const key = normalizeIdempotencyKey(rawKey);
+      if (key === undefined || tempPath === undefined) {
+        return await this.attachments.create(
+          cardId,
+          user,
+          file,
+          isInline,
+          requestAttribution(principal, session?.id),
+          isDescription,
+          principal,
+        );
+      }
       // The fingerprint covers the blob bytes too: the same key with another
       // file is a client bug, not a retry, and must not return the first file.
       const requestHash = await hashUploadRequest(
@@ -106,7 +107,7 @@ export class AttachmentsController {
           mimeType: file.mimetype,
           size: file.size,
         },
-        file.path,
+        tempPath,
       );
       const outcome = await this.idempotency.run({
         scope: "upload_attachment",
@@ -128,11 +129,13 @@ export class AttachmentsController {
       });
       return outcome.body;
     } finally {
-      // `attachments.create` deletes the scratch file on a real attempt; a
-      // replay, a conflict or a hashing failure never reaches it, so the
-      // retry's temporary upload must still be dropped here. A successful
-      // create has already renamed it, and `force` makes that a no-op.
-      await rm(file.path, { force: true });
+      // A bad Idempotency-Key, a replay, a conflict or a hashing failure never
+      // reaches the service cleanup, so the retry's temporary upload must
+      // still be dropped here. A successful create has already renamed it,
+      // and `force` makes that a no-op.
+      if (tempPath !== undefined) {
+        await rm(tempPath, { force: true });
+      }
     }
   }
 

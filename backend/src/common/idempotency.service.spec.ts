@@ -136,6 +136,20 @@ describe("IdempotencyService (TASK-166.4)", () => {
     });
   });
 
+  it("keeps the record when storing the response fails after a commit", async () => {
+    const prisma = makePrisma();
+    prisma.idempotencyRecord.create.mockResolvedValue({ id: "rec-1" });
+    prisma.idempotencyRecord.update.mockRejectedValue(new Error("db hiccup"));
+    const service = new IdempotencyService(prisma as unknown as PrismaService);
+    const outcome = await service.run({
+      ...base,
+      run: async () => ({ body: { id: "b1" }, status: 201, resourceId: "b1" }),
+    });
+    expect(outcome).toMatchObject({ replayed: false, resourceId: "b1" });
+    // Deleting here would allow a retry to duplicate the committed write.
+    expect(prisma.idempotencyRecord.delete).not.toHaveBeenCalled();
+  });
+
   it("releases the key when the write fails", async () => {
     const prisma = makePrisma();
     prisma.idempotencyRecord.create.mockResolvedValue({ id: "rec-1" });
@@ -157,11 +171,23 @@ describe("IdempotencyService (TASK-166.4)", () => {
 describe("idempotency helpers", () => {
   it("rejects an unsafe Idempotency-Key", () => {
     expect(() => normalizeIdempotencyKey("a b")).toThrow(BadRequestException);
+    expect(() => normalizeIdempotencyKey("short")).toThrow(BadRequestException);
+    expect(() => normalizeIdempotencyKey("dots.not-allowed")).toThrow(
+      BadRequestException,
+    );
     expect(normalizeIdempotencyKey("  ")).toBeUndefined();
-    expect(normalizeIdempotencyKey(" a.b_c:d-e ")).toBe("a.b_c:d-e");
+    expect(normalizeIdempotencyKey(" a_b-c_d-e ")).toBe("a_b-c_d-e");
   });
 
   it("canonicalizes object keys for a stable hash", () => {
     expect(canonicalJson({ b: 2, a: 1 })).toBe(canonicalJson({ a: 1, b: 2 }));
+  });
+
+  it("normalizes Dates instead of collapsing them to an empty object", () => {
+    const date = new Date("2026-11-10T12:00:00.000Z");
+    expect(canonicalJson({ at: date })).toBe(
+      canonicalJson({ at: "2026-11-10T12:00:00.000Z" }),
+    );
+    expect(canonicalJson({ at: date })).not.toBe(canonicalJson({ at: {} }));
   });
 });

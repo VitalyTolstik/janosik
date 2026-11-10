@@ -56,7 +56,13 @@ export class CommentsController {
       scope: "add_comment",
       key: normalizeIdempotencyKey(rawKey),
       actorKey: idempotencyActorKey(user.id, principal),
-      requestHash: hashIdempotentRequest({ cardId, ...dto }),
+      // `commandId` is the comment-transport idempotency key; the REST-level
+      // key identifies the same intent even if a retry mints a new commandId.
+      requestHash: hashIdempotentRequest({
+        cardId,
+        text: dto.text,
+        kind: dto.kind,
+      }),
       run: async () => {
         const comment = await this.comments.create(
           cardId,

@@ -64,7 +64,17 @@ export class BoardSharesController {
       scope: "create_share",
       key: normalizeIdempotencyKey(rawKey),
       actorKey: idempotencyActorKey(user.id, principal),
-      requestHash: hashIdempotentRequest({ boardId: id, ...dto }),
+      // `expiresAt` is derived by the caller (the MCP tool uses
+      // `Date.now() + expiresInHours`), so it must not change the fingerprint:
+      // a retry of the same share intent replays the first link even a moment
+      // later. The other fields are the actual intent.
+      requestHash: hashIdempotentRequest({
+        boardId: id,
+        mode: dto.mode,
+        title: dto.title,
+        includeComments: dto.includeComments,
+        includeAttachments: dto.includeAttachments,
+      }),
       run: async () => {
         const share = await this.shares.create(
           id,

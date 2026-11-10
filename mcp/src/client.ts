@@ -410,8 +410,16 @@ export class JanosikClient {
     });
   }
 
-  importBoards(envelope: BoardEnvelope): Promise<BoardAggregate[]> {
-    return this.request("/boards/import", { method: "POST", body: envelope });
+  importBoards(
+    envelope: BoardEnvelope,
+    idempotencyKey?: string,
+  ): Promise<BoardAggregate[]> {
+    const headers = idempotencyHeaders(idempotencyKey);
+    return this.request("/boards/import", {
+      method: "POST",
+      body: envelope,
+      ...(headers !== undefined ? { headers } : {}),
+    });
   }
 
   getBoard(id: string): Promise<BoardAggregate> {

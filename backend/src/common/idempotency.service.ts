@@ -51,12 +51,14 @@ interface RunOptions<T> {
   run: () => Promise<RunResult<T>>;
 }
 
-const KEY_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+const KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 
 /**
  * An in-progress row only needs to outlive the request that wrote it; if a
  * process dies mid-write, the key must become usable again without waiting
- * the full 24 h. The completed record gets the full TTL.
+ * the full 24 h. The slowest write path is bounded by a 15 s board-write
+ * transaction and clients cap requests at 30 s, so 5 min leaves a wide margin.
+ * Completed records get the ADR's full 24 h TTL.
  */
 const IN_PROGRESS_TTL_MS = 5 * 60 * 1000;
 
@@ -69,7 +71,7 @@ export function normalizeIdempotencyKey(
   if (!KEY_PATTERN.test(key)) {
     throw new BadRequestException({
       message:
-        "Idempotency-Key must be 1-128 characters from A-Z, a-z, 0-9, '.', '_', ':' or '-'",
+        "Idempotency-Key must be 8-128 characters from A-Z, a-z, 0-9, '_' or '-'",
       code: "validation_failed",
       field: "Idempotency-Key",
     });
@@ -92,6 +94,8 @@ export function canonicalJson(value: unknown): string {
 }
 
 function canonical(value: unknown): unknown {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "bigint") return value.toString();
   if (Array.isArray(value)) return value.map(canonical);
   if (value !== null && typeof value === "object") {
     return Object.fromEntries(
@@ -137,7 +141,10 @@ export class IdempotencyService {
    * Execute `run` once per `(scope, actorKey, key)`. Without a key this is a
    * transparent pass-through, so existing callers need no changes.
    */
-  async run<T>(options: RunOptions<T>): Promise<IdempotencyOutcome<T>> {
+  async run<T>(
+    options: RunOptions<T>,
+    attempt = 0,
+  ): Promise<IdempotencyOutcome<T>> {
     const { scope, key, actorKey, requestHash, run } = options;
     if (key === undefined) {
       const result = await run();
@@ -180,9 +187,21 @@ export class IdempotencyService {
         where: { scope_actorKey_key: { scope, actorKey, key } },
       });
       if (existing === null) {
-        // The row expired/deleted between the failed insert and the read;
-        // retrying is safe because no write has run under this key.
-        return this.run(options);
+        // The row expired/deleted between the failed insert and the read.
+        // One retry is safe because no write has run under this key; a second
+        // loss is a storage anomaly, not a reason to recurse forever.
+        if (attempt >= 1) {
+          throw new ConflictException({
+            message:
+              "A request with this Idempotency-Key is still being recorded; retry shortly",
+            code: "idempotency_in_progress",
+            key,
+            field: "Idempotency-Key",
+            retryable: true,
+            retryAfter: 1,
+          });
+        }
+        return this.run(options, attempt + 1);
       }
       if (existing.requestHash !== requestHash) {
         throw new ConflictException({
@@ -212,9 +231,24 @@ export class IdempotencyService {
       };
     }
 
+    let result: RunResult<T>;
     try {
-      const result = await run();
-      await this.prisma.idempotencyRecord.update({
+      result = await run();
+    } catch (error) {
+      // `run` itself threw, so nothing committed under this key: release it
+      // and let an honest retry execute again.
+      await this.prisma.idempotencyRecord
+        .delete({ where: { id: record.id } })
+        .catch(() => undefined);
+      throw error;
+    }
+
+    // The write has committed. If storing the response fails, deleting the
+    // record would let a retry duplicate the write; keep it `in_progress`
+    // instead. The caller still gets its committed result, and a retry gets
+    // `409 idempotency_in_progress` until the lease/sweep expires.
+    await this.prisma.idempotencyRecord
+      .update({
         where: { id: record.id },
         data: {
           status: "completed",
@@ -225,19 +259,12 @@ export class IdempotencyService {
             Date.now() + IDEMPOTENCY_TTL_HOURS * 60 * 60 * 1000,
           ),
         },
-      });
-      return {
-        body: result.body,
-        resourceId: result.resourceId ?? null,
-        replayed: false,
-      };
-    } catch (error) {
-      // The write failed, so the key is free again: a retry must be allowed
-      // to execute instead of finding a permanently "in progress" record.
-      await this.prisma.idempotencyRecord
-        .delete({ where: { id: record.id } })
-        .catch(() => undefined);
-      throw error;
-    }
+      })
+      .catch(() => undefined);
+    return {
+      body: result.body,
+      resourceId: result.resourceId ?? null,
+      replayed: false,
+    };
   }
 }

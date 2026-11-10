@@ -140,6 +140,24 @@ describe("apiErrorEnvelope", () => {
     expect(JSON.stringify(body)).not.toContain("secret");
   });
 
+  it("promotes announcement missingLocales for the admin editor", () => {
+    const body = apiErrorEnvelope(
+      400,
+      {
+        message: "Both languages are required",
+        code: "announcement_translations_incomplete",
+        missingLocales: ["en"],
+      },
+      "req-8",
+    );
+    expect(body).toMatchObject({
+      code: "announcement_translations_incomplete",
+      missingLocales: ["en"],
+      retryable: false,
+    });
+    expect(body.details?.missingLocales).toBeUndefined();
+  });
+
   it("keeps route-specific extras in details", () => {
     const body = apiErrorEnvelope(
       503,

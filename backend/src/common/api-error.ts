@@ -103,6 +103,7 @@ const RESERVED_BODY_KEYS = new Set([
   "conflict",
   "workflow",
   "allowedToColumnIds",
+  "missingLocales",
   "limit",
   "current",
   "key",
@@ -165,15 +166,32 @@ function messageOf(exception: unknown, status: number): string {
       : "Request failed";
   }
   const raw = exception.getResponse();
-  if (typeof raw === "string" && raw.trim() !== "") return raw;
-  const body = asRecord(raw);
-  const message = body?.message;
-  if (typeof message === "string" && message.trim() !== "") return message;
-  if (Array.isArray(message) && message.length > 0) {
-    return message.map((item) => String(item)).join("; ");
+  let message: string | undefined;
+  if (typeof raw === "string") {
+    message = raw;
+  } else {
+    const value = asRecord(raw)?.message;
+    if (typeof value === "string") message = value;
+    else if (Array.isArray(value) && value.length > 0) {
+      message = value.map((item) => String(item)).join("; ");
+    }
   }
-  if (exception instanceof Error && exception.message.trim() !== "") {
-    return exception.message;
+  if (
+    (message === undefined || message.trim() === "") &&
+    exception instanceof Error
+  ) {
+    message = exception.message;
+  }
+  return sanitizeMessage(message, status);
+}
+
+/** A throttler exception's default text is not a human message. */
+function sanitizeMessage(message: string | undefined, status: number): string {
+  if (message !== undefined && message.trim() !== "") {
+    return status === HttpStatus.TOO_MANY_REQUESTS &&
+      /^ThrottlerException\b/i.test(message)
+      ? "Too many requests"
+      : message;
   }
   return status >= 500 ? "An unexpected error occurred" : "Request failed";
 }
@@ -255,6 +273,7 @@ export function apiErrorEnvelope(
   const allowedToColumnIds =
     stringArray(body?.allowedToColumnIds) ??
     stringArray(workflow?.allowedToColumnIds);
+  const missingLocales = stringArray(body?.missingLocales);
   const explicitDetails = asRecord(body?.details);
   const extras = Object.fromEntries(
     Object.entries(body ?? {}).filter(([key]) => !RESERVED_BODY_KEYS.has(key)),
@@ -285,6 +304,7 @@ export function apiErrorEnvelope(
     ...(conflict !== undefined ? { conflict } : {}),
     ...(workflow !== undefined ? { workflow } : {}),
     ...(allowedToColumnIds !== undefined ? { allowedToColumnIds } : {}),
+    ...(missingLocales !== undefined ? { missingLocales } : {}),
     ...(numberField(body?.limit) !== undefined
       ? { limit: numberField(body?.limit) as number }
       : {}),

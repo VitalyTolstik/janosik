@@ -9,6 +9,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { hashIdempotentRequest } from "@/common/idempotency.service";
 import { OpsSettingsService } from "@/ops/ops-settings.service";
 import { wipeAll } from "./support/wipe";
 
@@ -26,6 +27,7 @@ describe("Reliable write contract (e2e)", () => {
   let prisma: PrismaService;
   let adminToken: string;
   let outsiderToken: string;
+  let adminId: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -39,6 +41,11 @@ describe("Reliable write contract (e2e)", () => {
 
     adminToken = await register(ADMIN_EMAIL, "Admin");
     outsiderToken = await register(OUTSIDER_EMAIL, "Outsider");
+    const me = await server()
+      .get("/api/v1/auth/me")
+      .set(auth(adminToken))
+      .expect(200);
+    adminId = me.body.id as string;
   });
 
   afterAll(async () => {
@@ -282,12 +289,14 @@ describe("Reliable write contract (e2e)", () => {
       if (last.status === 429) break;
     }
     expect(last?.status).toBe(429);
+    const retryAfter = Number(last?.headers["retry-after"]);
+    expect(retryAfter).toBeGreaterThan(0);
     expect(last?.body).toMatchObject({
       code: "rate_limited",
       retryable: true,
       requestId: last?.headers["x-request-id"],
+      retryAfter,
     });
-    expect(last?.headers["retry-after"]).toBeDefined();
   });
 
   it("replays create_board by Idempotency-Key and refuses a different body", async () => {
@@ -318,6 +327,77 @@ describe("Reliable write contract (e2e)", () => {
       field: "Idempotency-Key",
       requestId: conflict.headers["x-request-id"],
     });
+  });
+
+  it("answers an in-progress Idempotency-Key without running the write", async () => {
+    const key = `held-${randomUUID()}`;
+    const title = "Held board";
+    await prisma.idempotencyRecord.create({
+      data: {
+        scope: "create_board",
+        actorKey: `user:${adminId}`,
+        key,
+        requestHash: hashIdempotentRequest({ title }),
+        status: "in_progress",
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    const res = await server()
+      .post("/api/v1/boards")
+      .set(auth(adminToken))
+      .set("Idempotency-Key", key)
+      .send({ title })
+      .expect(409);
+    expect(res.body).toMatchObject({
+      code: "idempotency_in_progress",
+      retryable: true,
+      key,
+    });
+    const board = await prisma.board.findFirst({ where: { title } });
+    expect(board).toBeNull();
+  });
+
+  it("keeps concurrent retries to one board and one stored response", async () => {
+    const key = `concurrent-${randomUUID()}`;
+    const title = "Concurrent board";
+    const send = () =>
+      server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send({ title });
+    const [a, b] = await Promise.all([send(), send()]);
+    for (const res of [a, b]) {
+      expect([201, 409]).toContain(res.status);
+      if (res.status === 409) {
+        expect(res.body).toMatchObject({
+          code: "idempotency_in_progress",
+          retryable: true,
+        });
+      }
+    }
+    if (a.status === 201 && b.status === 201) {
+      expect(a.body.id).toBe(b.body.id);
+    }
+    expect(await prisma.board.count({ where: { title } })).toBe(1);
+  });
+
+  it("does not replay one user's response to another user", async () => {
+    const key = `cross-user-${randomUUID()}`;
+    const first = await server()
+      .post("/api/v1/boards")
+      .set(auth(adminToken))
+      .set("Idempotency-Key", key)
+      .send({ title: "Admin board" })
+      .expect(201);
+    const second = await server()
+      .post("/api/v1/boards")
+      .set(auth(outsiderToken))
+      .set("Idempotency-Key", key)
+      .send({ title: "Outsider board" })
+      .expect(201);
+    expect(second.body.id).not.toBe(first.body.id);
+    expect(second.body.title).toBe("Outsider board");
   });
 
   it("replays import by Idempotency-Key and refuses a different envelope", async () => {
@@ -370,15 +450,20 @@ describe("Reliable write contract (e2e)", () => {
   it("replays create_share and refuses a different share body", async () => {
     const boardId = await createBoard("Share idempotency board");
     const key = `share-${randomUUID()}`;
-    const send = (mode: "live" | "snapshot") =>
+    const send = (mode: "live" | "snapshot", minutes = 60) =>
       server()
         .post(`/api/v1/boards/${boardId}/shares`)
         .set(auth(adminToken))
         .set("Idempotency-Key", key)
-        .send({ mode });
+        .send({
+          mode,
+          expiresAt: new Date(Date.now() + minutes * 60_000).toISOString(),
+        });
 
-    const first = await send("live").expect(201);
-    const replay = await send("live").expect(201);
+    const first = await send("live", 60).expect(201);
+    // A retry a moment later derives a different `expiresAt`; the share
+    // intent is unchanged, so it must replay rather than conflict.
+    const replay = await send("live", 61).expect(201);
     expect(replay.body.id).toBe(first.body.id);
 
     const conflict = await send("snapshot").expect(409);

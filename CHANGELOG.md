@@ -22,7 +22,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `409 idempotency_in_progress` with `retryable: true`. MCP mutations expose
   `structuredContent` (`ok`, `resourceId`, `seq`, `runId`, `approvalId`), MCP
   errors carry the same code/retryable/requestId envelope plus next-step
-  guidance, and the REST writes accept an optional `idempotencyKey`. The UI
+  guidance, and the REST writes accept an optional `idempotencyKey` (8–128
+  `[A-Za-z0-9_-]`). Rate-limit responses keep the limiter's real
+  `Retry-After` and mirror it into `retryAfter`. The UI
   error type reads the new fields; docs EN/RU and CHANGELOG cover the envelope
   and idempotency.
 - TASK-31 mobile UX: the calendar and table now have a real touch layer.

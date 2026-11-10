@@ -116,6 +116,9 @@ Refresh-токен никогда не появляется в теле отве
 поле тела отбрасывается; проваленная проверка class-validator — это
 `400 validation_failed`, а отдельные сообщения лежат в `details.messages`.
 
+Устаревшее поле Nest `error` намеренно не возвращается; его заменяет `code`.
+`statusCode` сохранён для совместимости.
+
 | HTTP | `code` | Значение |
 | --- | --- | --- |
 | `400` | `validation_failed` | форма/поля тела; `field`, когда известно |
@@ -134,6 +137,7 @@ Refresh-токен никогда не появляется в теле отве
 | `409` | `idempotency_in_progress` | первый запрос с этим ключом ещё выполняется; повторите |
 | `413` | `payload_too_large` | тело/файл больше лимита маршрута; см. `limit` |
 | `429` | `rate_limited` | подождите `retryAfter` секунд и повторите |
+| `429` | `login_backoff` | слишком много неудачных входов; подождите `retryAfter` секунд |
 | `503` | `board_write_timeout` | таймаут блокировки записи доски; повтор безопасен |
 | `503` | `service_unavailable` | обслуживание или временный сбой; повторите позже |
 
@@ -153,7 +157,7 @@ stack trace. Полная таблица кодов — в `docs/TASK-166-launch
 REST-операции записи `POST /boards`, `POST /boards/import`,
 `POST /cards/:id/comments`, `POST /boards/:id/shares`,
 `POST /cards/:id/attachments` и команда `DUPLICATE_CARD` принимают заголовок
-`Idempotency-Key` (1–128 символов из `A-Z a-z 0-9 . _ : -`). Первый успешный
+`Idempotency-Key` (8–128 символов из `A-Z a-z 0-9 _ -`). Первый успешный
 ответ сохраняется на 24 часа:
 
 ```http

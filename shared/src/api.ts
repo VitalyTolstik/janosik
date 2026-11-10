@@ -105,9 +105,9 @@ export interface ConflictError {
 }
 
 /**
- * Stable machine-readable error codes (TASK-166.4, ADR §8.2). This is the
- * closed set the server itself emits today; clients must still tolerate an
- * unknown code from a newer server and fall back to the HTTP status.
+ * Machine-readable error codes the server emits today (TASK-166.4, ADR §8.2).
+ * This is a published catalog, not a closed union: clients must still tolerate
+ * an unknown code from a newer server and fall back to the HTTP status.
  */
 export const API_ERROR_CODES = [
   "scope_denied",
@@ -136,6 +136,10 @@ export const API_ERROR_CODES = [
   "idempotency_in_progress",
   "payload_too_large",
   "rate_limited",
+  "login_backoff",
+  "export_in_progress",
+  "announcement_translations_incomplete",
+  "announcement_source_translation_required",
   "board_write_timeout",
   "not_found",
   "validation_failed",
@@ -182,6 +186,8 @@ export interface ApiErrorEnvelope {
   workflow?: WorkflowConflictDetails;
   /** Destinations the card may move to on a workflow conflict. */
   allowedToColumnIds?: string[];
+  /** Announcement locales that still need a translation (admin error). */
+  missingLocales?: string[];
   /** Semantic limit (WIP/collection/board/run) and the observed count. */
   limit?: number;
   current?: number;

@@ -206,6 +206,13 @@ describe("ServerSync", () => {
       [new ApiError(503, { code: "board_write_timeout" }), "busy"],
       [new ApiError(503, { retryable: true }), "busy"],
       [new ApiError(429, { code: "rate_limited", retryable: true }), "busy"],
+      [
+        new ApiError(409, {
+          code: "idempotency_in_progress",
+          retryable: true,
+        }),
+        "busy",
+      ],
       [new ApiError(429, { message: "Too Many Requests" }), "rejected"],
       [new ApiError(503, { message: "Service Unavailable" }), "rejected"],
       [new ApiError(400, { field: "action.title" }), "rejected"],

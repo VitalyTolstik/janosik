@@ -133,9 +133,9 @@ export const detailSchema = z
  */
 export const idempotencyKeySchema = z
   .string()
-  .min(1)
+  .min(8)
   .max(128)
-  .regex(/^[A-Za-z0-9._:-]+$/, "must be a stable idempotency key")
+  .regex(/^[A-Za-z0-9_-]+$/, "must be a stable idempotency key")
   .optional()
   .describe(
     "Optional idempotency key for a safe retry. Reuse the same key with the " +

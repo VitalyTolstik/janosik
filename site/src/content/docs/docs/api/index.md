@@ -112,6 +112,9 @@ body field is stripped; a failed class-validator constraint is
 `400 validation_failed`, with the individual messages in
 `details.messages`.
 
+The legacy Nest `error` field is intentionally not returned; `code` replaces
+it. `statusCode` is kept as a compatibility mirror.
+
 | HTTP | `code` | Meaning |
 | --- | --- | --- |
 | `400` | `validation_failed` | body shape/field validation; `field` when known |
@@ -130,6 +133,7 @@ body field is stripped; a failed class-validator constraint is
 | `409` | `idempotency_in_progress` | the first request with that key is still running; retry |
 | `413` | `payload_too_large` | body/file over the route limit; see `limit` |
 | `429` | `rate_limited` | wait `retryAfter` seconds, then retry |
+| `429` | `login_backoff` | too many failed sign-ins; wait `retryAfter` seconds |
 | `503` | `board_write_timeout` | the board write lock timed out; safe to retry |
 | `503` | `service_unavailable` | maintenance or a transient outage; retry later |
 
@@ -149,7 +153,7 @@ no stack trace. The full code table lives in
 The REST write operations `POST /boards`, `POST /boards/import`,
 `POST /cards/:id/comments`, `POST /boards/:id/shares`,
 `POST /cards/:id/attachments` and a `DUPLICATE_CARD` command accept an
-`Idempotency-Key` header (1–128 characters from `A-Z a-z 0-9 . _ : -`). The
+`Idempotency-Key` header (8–128 characters from `A-Z a-z 0-9 _ -`). The
 first successful response is stored for 24 hours:
 
 ```http

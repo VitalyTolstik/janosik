@@ -159,8 +159,14 @@ describe("Announcements (e2e)", () => {
       translations: { ru: both.ru },
       active: true,
     }).expect(400);
-    expect(res.body.code).toBe("announcement_translations_incomplete");
-    expect(res.body.missingLocales).toEqual(["en"]);
+    expect(res.body).toMatchObject({
+      code: "announcement_translations_incomplete",
+      missingLocales: ["en"],
+      retryable: false,
+      requestId: res.headers["x-request-id"],
+      currentVersion: null,
+    });
+    expect(res.body.details?.missingLocales).toBeUndefined();
   });
 
   it("saves a one-language draft and publishes it after the second language arrives", async () => {

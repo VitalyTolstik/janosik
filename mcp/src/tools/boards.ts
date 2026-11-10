@@ -293,6 +293,7 @@ export function registerBoardTools(
       if (readOnly && outputPath !== undefined) {
         return errorResult(
           "Error: outputPath writes a local file and is unavailable in read-only mode.",
+          { ok: false, code: "forbidden", retryable: false },
         );
       }
       const envelope = await client.exportBoard(boardId);
@@ -328,17 +329,24 @@ export function registerBoardTools(
         envelope: z
           .record(z.string(), z.unknown())
           .describe("The board envelope object to import."),
+        idempotencyKey: idempotencyKeySchema,
         response_format: responseFormatSchema,
       },
       annotations: WRITE,
     },
-    async ({ envelope, response_format }) => {
+    async ({ envelope, idempotencyKey, response_format }) => {
       const boards = await client.importBoards(
         envelope as unknown as Parameters<JanosikClient["importBoards"]>[0],
+        idempotencyKey,
       );
       return respond(
         response_format,
-        { boards },
+        {
+          boards,
+          ok: true,
+          resourceId: boards[0]?.id ?? null,
+          approvalId: null,
+        },
         `Imported ${boards.length} board(s).\n\n${boards
           .map((board) => `- ${board.title} — \`${board.id}\``)
           .join("\n")}`,
