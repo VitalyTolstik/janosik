@@ -361,6 +361,11 @@ export class ApprovalsService {
     }
     if (!requirement.requiresApproval) return;
 
+    // A board policy may cap the plan even when the caller reaches this path
+    // automatically (without an explicit `POST /approvals`).
+    this.assertPlanLimits(plan, policy);
+    await this.expireOverdue(boardId);
+
     const existing = await this.findByIdempotentPlan(
       boardId,
       principal.apiTokenId ?? "",
@@ -449,17 +454,21 @@ export class ApprovalsService {
         }
         throw this.consumed(row);
       }
-      case "approved":
-        // An approval authorizes only work policy still gates. A plan that
-        // is no longer approval-gated (trustedCi, a policy change, or a
-        // non-destructive custom plan) cannot borrow this decision.
+      case "approved": {
+        // An approval authorizes only work policy still gates. A `custom`
+        // approval is an explicit human decision for a non-destructive plan,
+        // so it may authorize a plan the policy does not automatically gate;
+        // it can never authorize a destructive plan.
+        const customOverride =
+          row.kind === "custom" && params.requirement.kind !== "destructive";
         if (
-          row.kind !== params.requirement.kind ||
-          !params.requirement.requiresApproval
+          (row.kind !== params.requirement.kind && !customOverride) ||
+          (!params.requirement.requiresApproval && row.kind !== "custom")
         ) {
           throw this.mismatch(row, params.planHash);
         }
         return { row, replay: false };
+      }
       case "pending":
         throw this.notPending(row);
       case "rejected":
@@ -571,6 +580,7 @@ export class ApprovalsService {
     const plan = planFromOperation(boardId, op, params.target, params.body);
     const planHash = approvalPlanHash(plan);
     if (params.approvalId === undefined) {
+      await this.expireOverdue(boardId);
       const existing = await this.findByIdempotentPlan(
         boardId,
         principal.apiTokenId ?? "",
@@ -615,33 +625,61 @@ export class ApprovalsService {
     if (row.kind !== "destructive") throw this.mismatch(row, planHash);
     if (row.status === "consumed") throw this.consumed(row);
     if (row.status !== "approved") throw this.notPending(row);
-    return row;
+    // Reserve the approval before the lifecycle operation runs. Two
+    // concurrent requests with the same approvalId race on this conditional
+    // update; exactly one wins. A crash after the claim loses the operation
+    // rather than duplicating it (the approval is one-time).
+    return this.claimOperation(row);
   }
 
-  /** Consume a lifecycle approval after its endpoint succeeded. */
+  /**
+   * Atomically reserve an approved lifecycle approval. The operation itself
+   * runs outside this method; `consumeOperation` records the result.
+   */
+  private async claimOperation(row: ApprovalRequest): Promise<ApprovalRequest> {
+    const consumedAt = new Date();
+    const changed = await this.prisma.approvalRequest.updateMany({
+      where: {
+        id: row.id,
+        status: "approved",
+        expiresAt: { gt: consumedAt },
+      },
+      data: { status: "consumed", consumedAt },
+    });
+    if (changed.count === 0) {
+      const fresh = await this.load(row.boardId, row.id);
+      if (fresh.expiresAt.getTime() <= Date.now()) throw this.expired(fresh);
+      throw this.consumed(fresh);
+    }
+    return { ...row, status: "consumed", consumedAt };
+  }
+
+  /** Record a claimed lifecycle approval after its endpoint succeeded. */
   async consumeOperation(
     row: ApprovalRequest,
     actorId: string,
     principal: AuthPrincipal | undefined,
     details: Record<string, unknown> = {},
   ): Promise<void> {
-    const consumedAt = new Date();
-    const changed = await this.prisma.approvalRequest.updateMany({
-      where: { id: row.id, status: "approved" },
-      data: { status: "consumed", consumedAt },
-    });
-    if (changed.count === 0) throw this.consumed(row);
-    const updated: ApprovalRequest = {
-      ...row,
-      status: "consumed",
-      consumedAt,
-    };
-    await this.activity(updated, "approval_consumed", actorId, principal, {
+    await this.activity(row, "approval_consumed", actorId, principal, {
       ...details,
       planHash: row.planHash,
       risk: row.risk,
     });
-    this.publish(updated);
+    this.publish(row);
+  }
+
+  /** Release a claimed lifecycle approval when the operation failed. */
+  async releaseOperation(row: ApprovalRequest): Promise<void> {
+    await this.prisma.approvalRequest.updateMany({
+      where: {
+        id: row.id,
+        status: "consumed",
+        consumedAt: row.consumedAt,
+        runId: null,
+      },
+      data: { status: "approved", consumedAt: null },
+    });
   }
 
   /** Lazily mark overdue rows expired and publish one activity per row. */
@@ -707,7 +745,24 @@ export class ApprovalsService {
   }): Promise<ApprovalRequest> {
     const ttl = effectiveTtlMinutes(params.ttlMinutes, params.policy);
     const expiresAt = new Date(Date.now() + ttl * 60_000);
+    const planHash = approvalPlanHash(params.plan);
     const row = await this.prisma.$transaction(async (tx) => {
+      // Serialize concurrent create/auto-409 requests for the same token and
+      // plan. Without this, two `find -> create` races could leave two
+      // pending approvals for one plan. Re-check inside the lock.
+      const lockKey = `${params.boardId}:${params.principal.apiTokenId}:${planHash}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+      const existing = await tx.approvalRequest.findFirst({
+        where: {
+          boardId: params.boardId,
+          requestedByTokenId: params.principal.apiTokenId!,
+          planHash,
+          status: { in: ["pending", "approved"] },
+        },
+        orderBy: { createdAt: "asc" },
+      });
+      if (existing !== null) return existing;
+
       const created = await tx.approvalRequest.create({
         data: {
           boardId: params.boardId,
@@ -936,7 +991,14 @@ export class ApprovalsService {
     return board;
   }
 
-  private assertPlanLimits(plan: ApprovalPlan, policy: BoardAgentPolicy): void {
+  /**
+   * Enforce the board's run limits on every plan path, including the
+   * automatic 409 seam. `DUPLICATE_CARD` and `DUPLICATE_COLUMN` also create
+   * cards; the latter may create a whole copied column, so it is counted as
+   * at least one card here and the apply transaction still enforces the
+   * per-column hard cap.
+   */
+  assertPlanLimits(plan: ApprovalPlan, policy: BoardAgentPolicy): void {
     const commands = plan.commands;
     if (commands !== undefined) {
       const maxCommands = Math.min(100, policy.maxCommandsPerRun);
@@ -949,8 +1011,10 @@ export class ApprovalsService {
           retryable: false,
         });
       }
-      const creates = commands.filter(
-        (command) => command.action.type === "ADD_CARD",
+      const creates = commands.filter((command) =>
+        ["ADD_CARD", "DUPLICATE_CARD", "DUPLICATE_COLUMN"].includes(
+          command.action.type,
+        ),
       ).length;
       const maxCards = Math.min(50, policy.maxCardsPerRun);
       if (creates > maxCards) {

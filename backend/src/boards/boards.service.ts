@@ -25,6 +25,8 @@ import {
   type RequestAttribution,
   HUMAN_ATTRIBUTION,
 } from "@/auth/request-attribution";
+import { pauseGateFor } from "@/auth/agent-pause";
+import type { AuthPrincipal } from "@/auth/auth-principal";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import {
   BoardWriteService,
@@ -284,6 +286,7 @@ export class BoardsService {
     boardId: string,
     actorId: string,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
   ): Promise<void> {
     const board = await this.prisma.board.findUnique({
       where: { id: boardId },
@@ -301,82 +304,86 @@ export class BoardsService {
       throw new NotFoundException("Board not found");
     }
     const ownerId = board.members[0]?.userId ?? actorId;
-    await this.boardWrite.run(boardId, async (tx) => {
-      const now = new Date();
+    await this.boardWrite.run(
+      boardId,
+      async (tx) => {
+        const now = new Date();
 
-      const cards = await tx.card.findMany({
-        where: { column: { boardId }, deletedAt: null },
-        select: { id: true },
-      });
-      const cardIds = cards.map((card) => card.id);
-      const checklists =
-        cardIds.length === 0
-          ? []
-          : await tx.checklist.findMany({
-              where: { cardId: { in: cardIds }, deletedAt: null },
-              select: { id: true },
-            });
-      const checklistIds = checklists.map((checklist) => checklist.id);
+        const cards = await tx.card.findMany({
+          where: { column: { boardId }, deletedAt: null },
+          select: { id: true },
+        });
+        const cardIds = cards.map((card) => card.id);
+        const checklists =
+          cardIds.length === 0
+            ? []
+            : await tx.checklist.findMany({
+                where: { cardId: { in: cardIds }, deletedAt: null },
+                select: { id: true },
+              });
+        const checklistIds = checklists.map((checklist) => checklist.id);
 
-      if (checklistIds.length > 0) {
-        await tx.checklistItem.updateMany({
-          where: { checklistId: { in: checklistIds }, deletedAt: null },
+        if (checklistIds.length > 0) {
+          await tx.checklistItem.updateMany({
+            where: { checklistId: { in: checklistIds }, deletedAt: null },
+            data: { deletedAt: now },
+          });
+          await tx.checklist.updateMany({
+            where: { id: { in: checklistIds } },
+            data: { deletedAt: now },
+          });
+        }
+        // Card links (TASK-46) carry `deletedAt` like every other child and
+        // must be flagged with them, or the purge job would leave the rows
+        // behind after the board itself is gone.
+        await tx.cardLink.updateMany({
+          where: { boardId, deletedAt: null },
           data: { deletedAt: now },
         });
-        await tx.checklist.updateMany({
-          where: { id: { in: checklistIds } },
+        if (cardIds.length > 0) {
+          await tx.card.updateMany({
+            where: { id: { in: cardIds } },
+            data: { deletedAt: now },
+          });
+        }
+        await tx.column.updateMany({
+          where: { boardId, deletedAt: null },
           data: { deletedAt: now },
         });
-      }
-      // Card links (TASK-46) carry `deletedAt` like every other child and
-      // must be flagged with them, or the purge job would leave the rows
-      // behind after the board itself is gone.
-      await tx.cardLink.updateMany({
-        where: { boardId, deletedAt: null },
-        data: { deletedAt: now },
-      });
-      if (cardIds.length > 0) {
-        await tx.card.updateMany({
-          where: { id: { in: cardIds } },
+        await tx.label.updateMany({
+          where: { boardId, deletedAt: null },
           data: { deletedAt: now },
         });
-      }
-      await tx.column.updateMany({
-        where: { boardId, deletedAt: null },
-        data: { deletedAt: now },
-      });
-      await tx.label.updateMany({
-        where: { boardId, deletedAt: null },
-        data: { deletedAt: now },
-      });
-      // A live share of a deleted board is dead by definition — revoke it so
-      // the master panel shows an explicit "revoked" instead of a link that
-      // silently answers 410. Snapshot shares deliberately survive the board
-      // (a frozen copy), so they are left untouched.
-      await tx.boardShare.updateMany({
-        where: { boardId, mode: "live", revokedAt: null },
-        data: { revokedAt: now },
-      });
-      await tx.board.update({
-        where: { id: boardId },
-        data: { deletedAt: now },
-      });
-      // TASK-166: a board delete is account-contour accountability, not a
-      // board content event. The row survives the soft-delete + purge.
-      await tx.securityAuditLog.create({
-        data: {
-          userId: ownerId,
-          actorId,
-          actorType: attribution.actorType,
-          apiTokenId: attribution.apiTokenId,
-          agentSessionId: attribution.agentSessionId,
-          action: "board.deleted",
-          targetType: "board",
-          targetId: boardId,
-          details: { boardTitle: board.title },
-        },
-      });
-    });
+        // A live share of a deleted board is dead by definition — revoke it so
+        // the master panel shows an explicit "revoked" instead of a link that
+        // silently answers 410. Snapshot shares deliberately survive the board
+        // (a frozen copy), so they are left untouched.
+        await tx.boardShare.updateMany({
+          where: { boardId, mode: "live", revokedAt: null },
+          data: { revokedAt: now },
+        });
+        await tx.board.update({
+          where: { id: boardId },
+          data: { deletedAt: now },
+        });
+        // TASK-166: a board delete is account-contour accountability, not a
+        // board content event. The row survives the soft-delete + purge.
+        await tx.securityAuditLog.create({
+          data: {
+            userId: ownerId,
+            actorId,
+            actorType: attribution.actorType,
+            apiTokenId: attribution.apiTokenId,
+            agentSessionId: attribution.agentSessionId,
+            action: "board.deleted",
+            targetType: "board",
+            targetId: boardId,
+            details: { boardTitle: board.title },
+          },
+        });
+      },
+      pauseGateFor(principal, attribution.agentSessionId),
+    );
   }
 
   /**
@@ -440,6 +447,7 @@ export class BoardsService {
     actorId: string,
     dto: InviteMemberDto,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
   ): Promise<BoardMemberDto> {
     const email = dto.email.trim().toLowerCase();
     const expiresAt = this.resolveExpiresAt(dto.role, dto.expiresAt, null);
@@ -464,67 +472,71 @@ export class BoardsService {
     // would surface a raw P2002 as a 500. The lock serializes them, and the
     // unique constraint is the final backstop.
     await this.boardWrite
-      .run(boardId, async (tx) => {
-        const existing = await tx.boardMember.findUnique({
-          where: { boardId_userId: { boardId, userId: user.id } },
-        });
-        if (existing) {
-          if (existing.acceptedAt === null) {
-            // A pending invite must not swallow a material change
-            // (TASK-156, item 37): an expired one is invisible in the feed
-            // but still blocks a fresh row until the sweep, and a repeat
-            // invite with a different role/TTL used to be a silent no-op —
-            // the invitee never saw the new role. Revive the row with the
-            // new role/TTL/inviter instead. Only a truly identical pending
-            // invite stays an idempotent no-op — a 409 here would tell the
-            // inviter the account exists.
-            const expired =
-              existing.expiresAt !== null &&
-              existing.expiresAt.getTime() <= Date.now();
-            const roleChanged = existing.role !== dto.role;
-            const ttlChanged =
-              (expiresAt?.getTime() ?? null) !==
-              (existing.expiresAt?.getTime() ?? null);
-            if (expired || roleChanged || ttlChanged) {
-              await tx.boardMember.update({
-                where: { id: existing.id },
-                data: { role: dto.role, expiresAt, invitedById: actorId },
-              });
+      .run(
+        boardId,
+        async (tx) => {
+          const existing = await tx.boardMember.findUnique({
+            where: { boardId_userId: { boardId, userId: user.id } },
+          });
+          if (existing) {
+            if (existing.acceptedAt === null) {
+              // A pending invite must not swallow a material change
+              // (TASK-156, item 37): an expired one is invisible in the feed
+              // but still blocks a fresh row until the sweep, and a repeat
+              // invite with a different role/TTL used to be a silent no-op —
+              // the invitee never saw the new role. Revive the row with the
+              // new role/TTL/inviter instead. Only a truly identical pending
+              // invite stays an idempotent no-op — a 409 here would tell the
+              // inviter the account exists.
+              const expired =
+                existing.expiresAt !== null &&
+                existing.expiresAt.getTime() <= Date.now();
+              const roleChanged = existing.role !== dto.role;
+              const ttlChanged =
+                (expiresAt?.getTime() ?? null) !==
+                (existing.expiresAt?.getTime() ?? null);
+              if (expired || roleChanged || ttlChanged) {
+                await tx.boardMember.update({
+                  where: { id: existing.id },
+                  data: { role: dto.role, expiresAt, invitedById: actorId },
+                });
+              }
+              return null;
             }
-            return null;
+            throw new ConflictException("User is already a board member");
           }
-          throw new ConflictException("User is already a board member");
-        }
-        const created = await tx.boardMember.create({
-          data: {
-            boardId,
-            userId: user.id,
-            role: dto.role,
-            expiresAt,
-            acceptedAt: null,
-            invitedById: actorId,
-          },
-          include: { user: true },
-        });
-        await tx.activity.create({
-          data: {
-            boardId,
-            type: "member_invited",
-            actorId,
-            actorType: attribution.actorType,
-            apiTokenId: attribution.apiTokenId,
-            agentSessionId: attribution.agentSessionId,
-            agentName: attribution.agentName,
-            details: {
+          const created = await tx.boardMember.create({
+            data: {
+              boardId,
               userId: user.id,
-              email: user.email,
               role: dto.role,
-              expiresAt: expiresAt ? expiresAt.toISOString() : null,
+              expiresAt,
+              acceptedAt: null,
+              invitedById: actorId,
             },
-          },
-        });
-        return created;
-      })
+            include: { user: true },
+          });
+          await tx.activity.create({
+            data: {
+              boardId,
+              type: "member_invited",
+              actorId,
+              actorType: attribution.actorType,
+              apiTokenId: attribution.apiTokenId,
+              agentSessionId: attribution.agentSessionId,
+              agentName: attribution.agentName,
+              details: {
+                userId: user.id,
+                email: user.email,
+                role: dto.role,
+                expiresAt: expiresAt ? expiresAt.toISOString() : null,
+              },
+            },
+          });
+          return created;
+        },
+        pauseGateFor(principal, attribution.agentSessionId),
+      )
       .catch((error: unknown) => {
         if (
           error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -551,6 +563,7 @@ export class BoardsService {
     targetUserId: string,
     dto: UpdateMemberDto,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
   ): Promise<BoardMemberDto> {
     const member = await this.prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId, userId: targetUserId } },
@@ -575,58 +588,62 @@ export class BoardsService {
     const expiryChanged =
       (expiresAt?.getTime() ?? null) !== (member.expiresAt?.getTime() ?? null);
 
-    const updated = await this.boardWrite.run(boardId, async (tx) => {
-      // Last-ADMIN guard runs inside the board lock (TASK-100): two
-      // concurrent demotes would otherwise both pass and leave the board
-      // adminless. A pending invitation is not a member yet.
-      if (demoting) {
-        await this.assertNotLastAdmin(tx, boardId, targetUserId, "demote");
-      }
-      const row = await tx.boardMember.update({
-        where: { id: member.id },
-        data: { role, expiresAt },
-        include: { user: true },
-      });
-      if (roleChanged) {
-        await tx.activity.create({
-          data: {
-            boardId,
-            type: "member_role_changed",
-            actorId,
-            actorType: attribution.actorType,
-            apiTokenId: attribution.apiTokenId,
-            agentSessionId: attribution.agentSessionId,
-            agentName: attribution.agentName,
-            details: {
-              userId: member.userId,
-              email: member.user.email,
-              from: member.role,
-              to: role,
-            },
-          },
+    const updated = await this.boardWrite.run(
+      boardId,
+      async (tx) => {
+        // Last-ADMIN guard runs inside the board lock (TASK-100): two
+        // concurrent demotes would otherwise both pass and leave the board
+        // adminless. A pending invitation is not a member yet.
+        if (demoting) {
+          await this.assertNotLastAdmin(tx, boardId, targetUserId, "demote");
+        }
+        const row = await tx.boardMember.update({
+          where: { id: member.id },
+          data: { role, expiresAt },
+          include: { user: true },
         });
-      }
-      if (expiryChanged) {
-        await tx.activity.create({
-          data: {
-            boardId,
-            type: "member_expiry_changed",
-            actorId,
-            actorType: attribution.actorType,
-            apiTokenId: attribution.apiTokenId,
-            agentSessionId: attribution.agentSessionId,
-            agentName: attribution.agentName,
-            details: {
-              userId: member.userId,
-              email: member.user.email,
-              from: member.expiresAt?.toISOString() ?? null,
-              to: expiresAt?.toISOString() ?? null,
+        if (roleChanged) {
+          await tx.activity.create({
+            data: {
+              boardId,
+              type: "member_role_changed",
+              actorId,
+              actorType: attribution.actorType,
+              apiTokenId: attribution.apiTokenId,
+              agentSessionId: attribution.agentSessionId,
+              agentName: attribution.agentName,
+              details: {
+                userId: member.userId,
+                email: member.user.email,
+                from: member.role,
+                to: role,
+              },
             },
-          },
-        });
-      }
-      return row;
-    });
+          });
+        }
+        if (expiryChanged) {
+          await tx.activity.create({
+            data: {
+              boardId,
+              type: "member_expiry_changed",
+              actorId,
+              actorType: attribution.actorType,
+              apiTokenId: attribution.apiTokenId,
+              agentSessionId: attribution.agentSessionId,
+              agentName: attribution.agentName,
+              details: {
+                userId: member.userId,
+                email: member.user.email,
+                from: member.expiresAt?.toISOString() ?? null,
+                to: expiresAt?.toISOString() ?? null,
+              },
+            },
+          });
+        }
+        return row;
+      },
+      pauseGateFor(principal, attribution.agentSessionId),
+    );
     // A real role/expiry change rewrites the directory every open member
     // list shows; a no-op PATCH stays silent (mirrors the activity write).
     if ((roleChanged || expiryChanged) && member.acceptedAt !== null) {
@@ -646,6 +663,7 @@ export class BoardsService {
     actorId: string,
     targetUserId: string,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
   ): Promise<void> {
     const member = await this.prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId, userId: targetUserId } },
@@ -660,28 +678,32 @@ export class BoardsService {
     // the board adminless.
     const removingAdmin =
       member.acceptedAt !== null && member.role === Role.ADMIN;
-    await this.boardWrite.run(boardId, async (tx) => {
-      if (removingAdmin) {
-        await this.assertNotLastAdmin(tx, boardId, targetUserId, "remove");
-      }
-      await tx.boardMember.delete({ where: { id: member.id } });
-      await tx.activity.create({
-        data: {
-          boardId,
-          type: "member_removed",
-          actorId,
-          actorType: attribution.actorType,
-          apiTokenId: attribution.apiTokenId,
-          agentSessionId: attribution.agentSessionId,
-          agentName: attribution.agentName,
-          details: {
-            userId: member.userId,
-            email: member.user.email,
-            role: member.role,
+    await this.boardWrite.run(
+      boardId,
+      async (tx) => {
+        if (removingAdmin) {
+          await this.assertNotLastAdmin(tx, boardId, targetUserId, "remove");
+        }
+        await tx.boardMember.delete({ where: { id: member.id } });
+        await tx.activity.create({
+          data: {
+            boardId,
+            type: "member_removed",
+            actorId,
+            actorType: attribution.actorType,
+            apiTokenId: attribution.apiTokenId,
+            agentSessionId: attribution.agentSessionId,
+            agentName: attribution.agentName,
+            details: {
+              userId: member.userId,
+              email: member.user.email,
+              role: member.role,
+            },
           },
-        },
-      });
-    });
+        });
+      },
+      pauseGateFor(principal, attribution.agentSessionId),
+    );
     // An accepted member has an open SSE stream: tell it the membership is
     // gone so it stops following the board (the endpoint closes that
     // stream), instead of leaving a ghost that only notices on reconnect.
@@ -748,8 +770,12 @@ export class BoardsService {
     // `getAggregate` already carries `agentPolicy` (absent = defaults); it is
     // the only TASK-166 field that belongs in an export. Pause state and
     // policy version are operational and never travel.
-    const board = await this.getAggregate(boardId);
-    const serialized = serializeExport([board]);
+    const exportable = { ...(await this.getAggregate(boardId)) };
+    // Operational pause state never travels in an export (ADR §6.3).
+    delete exportable.agentsPausedAt;
+    delete exportable.agentsPausedBy;
+    delete exportable.agentsPauseReason;
+    const serialized = serializeExport([exportable]);
     // TASK-166.6: the guard runs once, on the exact string the controller
     // streams. No JSON.parse → re-serialize round trip.
     assertBoardExportSize(Buffer.byteLength(serialized, "utf8"));

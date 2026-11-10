@@ -361,8 +361,15 @@ export const LIMITS = {
   labelsPerBoard: 50,
   /** Columns on one board. */
   columnsPerBoard: 12,
-  /** Cards in one column. */
-  cardsPerColumn: 200,
+  /**
+   * Active cards in one column. Raised from 200 on 2026-11-10 after the
+   * TASK-139 virtualization and a load test: a 5×1000 board rendered in
+   * ~0.63 s with 50 cards in the DOM and a 76 MB heap, and the API read its
+   * 3.37 MB payload in ~128 ms. A 10k-card board needs 2000/column and still
+   * renders, but writes and memory degrade, so 1000 is the cap. Archived
+   * cards do not count. See `docs/PERF-CAPACITY.md`.
+   */
+  cardsPerColumn: 1000,
   /** WIP limit per column (1…max). */
   wipLimitMax: 99,
   /**
@@ -398,8 +405,11 @@ export const MAX_COMMAND_BODY_BYTES = 10 * 1024 * 1024;
 
 /**
  * One command payload larger than this (bytes) is rejected (TASK-30.2).
- * Sized for the biggest legitimate command — a `RESTORE_COLUMN` snapshot
- * with a full column of large cards — while still bounding abuse.
+ * This is a size guard, not a promise that a full column always fits: at the
+ * current 1000-card cap the budget is only ~2 KB per card. A 1000-card
+ * `RESTORE_COLUMN` at the measured ~500-character description is ~0.67 MB,
+ * but long descriptions or heavy activity can still 413 the undo; chunking
+ * such restores is a follow-up.
  */
 export const MAX_COMMAND_BYTES = 2 * 1024 * 1024;
 
@@ -777,6 +787,13 @@ export interface Board {
    * operational and never travels in an export.
    */
   agentPolicy?: BoardAgentPolicy;
+  /**
+   * TASK-166 board-level agent pause (Unix ms). Operational state only: it is
+   * never part of an export/import and does not survive a board transfer.
+   */
+  agentsPausedAt?: number;
+  agentsPausedBy?: string;
+  agentsPauseReason?: string;
   /** Set when the board is archived (not deleted) — timestamp in ms. */
   archivedAt?: number;
 }

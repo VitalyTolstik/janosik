@@ -1,15 +1,17 @@
 import { Module } from "@nestjs/common";
-import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { BullModule } from "@nestjs/bullmq";
 import { ThrottlerModule, ThrottlerStorageService } from "@nestjs/throttler";
 import { env } from "@/config/env";
 import { throttleLimit } from "@/config/throttle";
 import Redis from "ioredis";
+import { ApiExceptionFilter } from "@/common/api-exception.filter";
 import { RedisThrottlerStorage } from "@/common/redis-throttler-storage";
 import { principalTracker } from "@/common/throttle-tracker";
 import { PrismaModule } from "@/common/prisma/prisma.module";
 import { SecurityAuditModule } from "@/common/security-audit/security-audit.module";
 import { BoardWriteModule } from "@/common/board-write.module";
+import { IdempotencyModule } from "@/common/idempotency.module";
 import { TrafficModule } from "@/common/traffic.module";
 import { HealthModule } from "@/health/health.module";
 import { MailerModule } from "@/mailer/mailer.module";
@@ -65,6 +67,7 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
     PrismaModule,
     SecurityAuditModule,
     BoardWriteModule,
+    IdempotencyModule,
     TrafficModule,
     MailerModule,
     HealthModule,
@@ -101,6 +104,9 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
     { provide: APP_GUARD, useClass: PasswordResetThrottlerGuard },
     { provide: APP_GUARD, useClass: MaintenanceGuard },
     { provide: APP_INTERCEPTOR, useClass: PerUserRateLimitInterceptor },
+    // TASK-166.4: one envelope for every REST error. Registered after the
+    // modules so `TrafficService` is injectable.
+    { provide: APP_FILTER, useClass: ApiExceptionFilter },
   ],
 })
 export class AppModule {}

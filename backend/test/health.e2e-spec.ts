@@ -36,13 +36,16 @@ describe("Health (e2e)", () => {
     expect(res.body).toEqual({ status: "ok", db: "up", redis: "disabled" });
   });
 
-  it("unknown routes use the default Nest error envelope", async () => {
+  it("unknown routes use the shared error envelope", async () => {
     const res = await request(app.getHttpServer())
       .get("/api/v1/definitely-not-a-route")
       .expect(404);
     expect(res.body).toMatchObject({
       statusCode: 404,
-      error: "Not Found",
+      code: "not_found",
+      retryable: false,
+      requestId: res.headers["x-request-id"],
+      currentVersion: null,
     });
   });
 });

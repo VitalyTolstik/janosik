@@ -184,7 +184,12 @@ export class ShareService {
       },
     });
     if (count >= SHARE_LIMITS.activePerBoard[mode]) {
-      throw new ConflictException("Active share limit reached");
+      throw new ConflictException({
+        message: "Active share limit reached",
+        code: "limit_exceeded",
+        limit: SHARE_LIMITS.activePerBoard[mode],
+        current: count,
+      });
     }
   }
 
@@ -705,7 +710,12 @@ export function sanitizePublicBoard(board: BoardAggregate): BoardAggregate {
       return [id, copy];
     }),
   );
-  return { ...board, cards };
+  const copy = { ...board, cards };
+  // Pause is operational and never leaves the member surface (ADR §6.3).
+  delete copy.agentsPausedAt;
+  delete copy.agentsPausedBy;
+  delete copy.agentsPauseReason;
+  return copy;
 }
 
 /** Comments on a public share keep their text/kind, not the agent identity. */

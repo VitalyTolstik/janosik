@@ -103,9 +103,24 @@ export interface PreparedCommand {
  */
 export function validateCommandAction(
   raw: unknown,
-  options: { allowOversize?: boolean; allowMissingAt?: boolean } = {},
+  options: {
+    allowOversize?: boolean;
+    allowMissingAt?: boolean;
+    boardId?: string;
+  } = {},
 ): BoardAction {
-  const bytes = Buffer.byteLength(JSON.stringify(raw), "utf8");
+  // The route is authoritative: overwrite any client-supplied `boardId`
+  // before the size check, validation, fingerprint and storage, so the
+  // command log, delta replay and SSE frame all name the board the command
+  // actually ran on (the UI realtime bridge routes by `action.boardId`).
+  const routed =
+    options.boardId !== undefined &&
+    typeof raw === "object" &&
+    raw !== null &&
+    !Array.isArray(raw)
+      ? { ...(raw as Record<string, unknown>), boardId: options.boardId }
+      : raw;
+  const bytes = Buffer.byteLength(JSON.stringify(routed), "utf8");
   const cap =
     options.allowOversize === true
       ? MAX_COMMAND_BYTES_INTERNAL
@@ -121,12 +136,12 @@ export function validateCommandAction(
   }
   const candidate =
     options.allowMissingAt === true &&
-    typeof raw === "object" &&
-    raw !== null &&
-    !Array.isArray(raw) &&
-    typeof (raw as Record<string, unknown>).at !== "number"
-      ? { ...(raw as Record<string, unknown>), at: 0 }
-      : raw;
+    typeof routed === "object" &&
+    routed !== null &&
+    !Array.isArray(routed) &&
+    typeof (routed as Record<string, unknown>).at !== "number"
+      ? { ...(routed as Record<string, unknown>), at: 0 }
+      : routed;
   const validation = validateBoardAction(candidate);
   if (!validation.ok) {
     throw new BadRequestException({
@@ -150,17 +165,22 @@ export function validateCommandAction(
  */
 export function prepareCommandDto(
   dto: CreateCommandDto,
-  options: { allowOversize?: boolean; allowMissingAt?: boolean } = {},
+  options: {
+    allowOversize?: boolean;
+    allowMissingAt?: boolean;
+    boardId?: string;
+  } = {},
 ): PreparedCommand {
   const action = validateCommandAction(dto.action, {
     ...(options.allowOversize === true ? { allowOversize: true } : {}),
     ...(options.allowMissingAt === true ? { allowMissingAt: true } : {}),
+    ...(options.boardId !== undefined ? { boardId: options.boardId } : {}),
   });
   const clamped = clampActionAt(action, Date.now());
   return {
     dto,
     action: clamped,
-    fingerprint: actionFingerprint(clamped),
+    fingerprint: actionFingerprint(clamped, options.boardId),
   };
 }
 
@@ -182,14 +202,21 @@ function stableStringify(value: unknown): string {
   });
 }
 
-/** Stable identity of an action for the idempotency check, without `at`. */
-export function actionFingerprint(action: unknown): string {
+/**
+ * Stable identity of an action for the idempotency check: canonical JSON
+ * without `at` (the client clock is not part of *what* the command does, and
+ * the stored copy may carry the server-clamped value). `boardId`, when given,
+ * is the route board: taking it for the stored payload too keeps an honest
+ * retry matching a row written before ingress stamping existed.
+ */
+export function actionFingerprint(action: unknown, boardId?: string): string {
   if (action === null || typeof action !== "object") {
     return stableStringify(action);
   }
   const rest: Record<string, unknown> = {
     ...(jsonSafe(action) as Record<string, unknown>),
   };
+  if (boardId !== undefined) rest.boardId = boardId;
   delete rest.at;
   return stableStringify(rest);
 }

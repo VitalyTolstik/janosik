@@ -274,10 +274,15 @@ export function planFromOperation(
   target: Record<string, unknown>,
   body: Record<string, unknown>,
 ): ApprovalPlan {
+  // `expiresAt` is derived from `expiresInHours` by the MCP tool at call time,
+  // so it is transport context, not intent: a retry a moment later must match
+  // the same plan, and the share endpoint's own idempotency hash excludes it.
+  const normalizedBody = { ...body };
+  delete normalizedBody.expiresAt;
   return {
     schemaVersion: 1,
     boardId,
-    operations: [{ op, target: { ...target, boardId }, body }],
+    operations: [{ op, target: { ...target, boardId }, body: normalizedBody }],
   };
 }
 

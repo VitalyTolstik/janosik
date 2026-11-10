@@ -118,6 +118,11 @@ export const expectedVersionSchema = z
  * `409 approval_required` is repeated with the id of the approved request;
  * sent as `X-Approval-Id`.
  */
+export const commandIdSchema = idSchema.describe(
+  "Idempotency key for this exact command. Reuse the value shown in the " +
+    "approval plan when repeating an approved action.",
+);
+
 export const approvalIdSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,128}$/)
@@ -138,6 +143,22 @@ export const detailSchema = z
   .describe(
     "Read projection: 'full' includes each card's description and " +
       "checklists; 'summary' omits them (a size hint is kept).",
+  );
+
+/**
+ * TASK-166.4 REST idempotency key (`Idempotency-Key`, 24 h). Send a stable
+ * key when retrying the same create/share/comment/upload; a different body
+ * with the same key is refused with `idempotency_conflict`.
+ */
+export const idempotencyKeySchema = z
+  .string()
+  .min(8)
+  .max(128)
+  .regex(/^[A-Za-z0-9_-]+$/, "must be a stable idempotency key")
+  .optional()
+  .describe(
+    "Optional idempotency key for a safe retry. Reuse the same key with the " +
+      "same body to get the first result; a different body is refused.",
   );
 
 /** A cursor-paginated page request (comments, activity). */

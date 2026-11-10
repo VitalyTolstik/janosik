@@ -85,6 +85,12 @@ export interface CommandOptions {
    */
   approvalId?: string;
   /**
+   * TASK-166.4: optional REST-level `Idempotency-Key`. Honoured by the
+   * server for `duplicate_card`; other commands are already idempotent by
+   * `commandId`.
+   */
+  idempotencyKey?: string;
+  /**
    * Accept a command the server applied as a no-op. By default an empty
    * `versions` map (nothing changed: an unknown id, or the value was already
    * set) is reported as a {@link NoChangeError}, so an agent never reads
@@ -152,6 +158,8 @@ interface RequestOptions {
   raw?: boolean;
   /** TASK-166.5: send `X-Approval-Id` with a lifecycle REST operation. */
   approvalId?: string;
+  /** Extra request headers (`Idempotency-Key`, TASK-166.4). */
+  headers?: Record<string, string>;
 }
 
 function buildQuery(query?: Record<string, string | number | undefined>) {
@@ -198,12 +206,21 @@ export class JanosikClient {
   }
 
   private async send<T>(path: string, options: RequestOptions): Promise<T> {
-    const { method = "GET", body, query, form, raw, approvalId } = options;
+    const {
+      method = "GET",
+      body,
+      query,
+      form,
+      raw,
+      approvalId,
+      headers: extra,
+    } = options;
     const url = `${this.baseUrl}${API_PREFIX}${path}${buildQuery(query)}`;
 
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.token}`,
       Accept: "application/json",
+      ...extra,
     };
     if (approvalId !== undefined) headers["X-Approval-Id"] = approvalId;
     const boardId = boardIdOfPath(path);
@@ -273,6 +290,7 @@ export class JanosikClient {
       apiPath`/boards/${boardId}/commands`,
       request,
       opts.approvalId,
+      opts.idempotencyKey,
     );
     // A committed change always bumps the board version, so an empty map
     // means the reducer found nothing to do.
@@ -330,13 +348,16 @@ export class JanosikClient {
     path: string,
     body: unknown,
     approvalId?: string,
+    idempotencyKey?: string,
   ): Promise<T> {
+    const headers = idempotencyHeaders(idempotencyKey);
     for (let attempt = 0; ; attempt += 1) {
       try {
         return await this.send<T>(path, {
           method: "POST",
           body,
           ...(approvalId !== undefined ? { approvalId } : {}),
+          ...(headers !== undefined ? { headers } : {}),
         });
       } catch (error) {
         if (attempt >= COMMAND_RETRIES || !isTransientNetworkError(error)) {
@@ -373,12 +394,18 @@ export class JanosikClient {
   async commandOnFreshBoard<R>(
     boardId: string,
     build: (board: Board) =>
-      | { action?: CommandAction; result: R; approvalId?: string }
+      | {
+          action?: CommandAction;
+          result: R;
+          approvalId?: string;
+          commandId?: string;
+        }
       | null
       | Promise<{
           action?: CommandAction;
           result: R;
           approvalId?: string;
+          commandId?: string;
         } | null>,
     attempts = 3,
     expectedVersion?: number,
@@ -396,6 +423,9 @@ export class JanosikClient {
       try {
         await this.command(boardId, plan.action, {
           ifMatch: expectedVersion ?? seq,
+          ...(plan.commandId !== undefined
+            ? { commandId: plan.commandId }
+            : {}),
           ...(plan.approvalId !== undefined
             ? { approvalId: plan.approvalId }
             : {}),
@@ -418,12 +448,25 @@ export class JanosikClient {
     return this.request("/boards");
   }
 
-  createBoard(title: string): Promise<BoardAggregate> {
-    return this.request("/boards", { method: "POST", body: { title } });
+  createBoard(title: string, idempotencyKey?: string): Promise<BoardAggregate> {
+    const headers = idempotencyHeaders(idempotencyKey);
+    return this.request("/boards", {
+      method: "POST",
+      body: { title },
+      ...(headers !== undefined ? { headers } : {}),
+    });
   }
 
-  importBoards(envelope: BoardEnvelope): Promise<BoardAggregate[]> {
-    return this.request("/boards/import", { method: "POST", body: envelope });
+  importBoards(
+    envelope: BoardEnvelope,
+    idempotencyKey?: string,
+  ): Promise<BoardAggregate[]> {
+    const headers = idempotencyHeaders(idempotencyKey);
+    return this.request("/boards/import", {
+      method: "POST",
+      body: envelope,
+      ...(headers !== undefined ? { headers } : {}),
+    });
   }
 
   getBoard(id: string): Promise<BoardAggregate> {
@@ -532,10 +575,13 @@ export class JanosikClient {
     cardId: string,
     text: string,
     kind?: CommentKind,
+    idempotencyKey?: string,
   ): Promise<CommentDto> {
+    const headers = idempotencyHeaders(idempotencyKey);
     return this.request(apiPath`/cards/${cardId}/comments`, {
       method: "POST",
       body: { text, ...(kind ? { kind } : {}) },
+      ...(headers !== undefined ? { headers } : {}),
     });
   }
 
@@ -576,6 +622,7 @@ export class JanosikClient {
     fileName: string,
     mimeType: string,
     data: Buffer,
+    idempotencyKey?: string,
   ): Promise<AttachmentDto> {
     const form = new FormData();
     form.append(
@@ -583,9 +630,11 @@ export class JanosikClient {
       new Blob([new Uint8Array(data)], { type: mimeType }),
       fileName,
     );
+    const headers = idempotencyHeaders(idempotencyKey);
     return this.request(apiPath`/cards/${cardId}/attachments`, {
       method: "POST",
       form,
+      ...(headers !== undefined ? { headers } : {}),
     });
   }
 
@@ -620,11 +669,14 @@ export class JanosikClient {
     boardId: string,
     dto: CreateShareRequest,
     approvalId?: string,
+    idempotencyKey?: string,
   ): Promise<BoardShareDto> {
+    const headers = idempotencyHeaders(idempotencyKey);
     return this.request(apiPath`/boards/${boardId}/shares`, {
       method: "POST",
       body: dto,
       ...(approvalId !== undefined ? { approvalId } : {}),
+      ...(headers !== undefined ? { headers } : {}),
     });
   }
 
@@ -781,6 +833,15 @@ function boardIdOfPath(path: string): string | null {
   } catch {
     return match[1];
   }
+}
+
+/** Extra headers for a REST idempotent write, or `undefined` when absent. */
+function idempotencyHeaders(
+  key: string | undefined,
+): Record<string, string> | undefined {
+  return key !== undefined && key !== ""
+    ? { "Idempotency-Key": key }
+    : undefined;
 }
 
 /** Read a JSON error body, tolerating an empty or non-JSON response. */

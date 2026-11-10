@@ -24,6 +24,7 @@ function columnNotFound(columnId: string, boardId: string) {
   return errorResult(
     `Error: column ${columnId} is not on board ${boardId}. Re-read the ` +
       "board with janosik_get_board for current ids.",
+    { ok: false, code: "not_found", retryable: false, resource: "column" },
   );
 }
 
@@ -75,7 +76,9 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
             : {}),
         },
       );
-      return textOnly(`Created column "${title}" — \`${newColumnId}\`.`);
+      return textOnly(`Created column "${title}" — \`${newColumnId}\`.`, {
+        resourceId: newColumnId,
+      });
     },
   );
 

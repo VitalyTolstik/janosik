@@ -8,10 +8,15 @@ import {
 import { Reflector } from "@nestjs/core";
 import { Role } from "@prisma/client";
 import type { ScopePreset } from "@janosik/shared";
+import {
+  assertAgentNotPaused,
+  isPauseExemptPath,
+  isWriteMethod,
+} from "@/auth/agent-pause";
 import { ApiTokenService } from "@/auth/api-token.service";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
 import type { AuthUser } from "@/auth/auth.types";
-import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
+import { JwtAuthGuard, assertPatScopeAllows } from "@/auth/jwt-auth.guard";
 import {
   assertAgentRule,
   assertPatPreset,
@@ -27,8 +32,8 @@ import { resolveAgentSessionHeader } from "@/agent-sessions/agent-session-contex
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BOARD_ROLES_KEY } from "./board-roles.decorator";
 
-/** HTTP methods that mutate state and therefore validate `X-Agent-Session`. */
-const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+/** A PAT SSE stream can opt into session-level pause with `?session=`. */
+const SSE_PATH = /\/events\/?$/;
 
 /** Shape of the express request bits the guards read (params only). */
 export interface GuardedRequest {
@@ -112,7 +117,7 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
 
     const board = await this.prisma.board.findFirst({
       where: { id: boardId, deletedAt: null },
-      select: { id: true, agentPolicy: true },
+      select: { id: true, agentPolicy: true, agentsPausedAt: true },
     });
     if (!board) {
       throw new NotFoundException("Board not found");
@@ -136,6 +141,82 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
       throw new ForbiddenException("Board membership expired");
     }
 
+    const write = isWriteMethod(method);
+    const isSse = method === "GET" && SSE_PATH.test(path);
+    request.boardMembership = membership;
+
+    // TASK-166.3 pause precedence (ADR §5.2): token → board → session comes
+    // before the role, preset and destructive/approval gates. A paused agent
+    // must see `agent_paused`, not a role or scope error.
+    const pauseChecked =
+      request.auth?.via === "pat" &&
+      (write || isSse) &&
+      !isPauseExemptPath(path);
+    if (pauseChecked) {
+      assertAgentNotPaused({
+        tokenIndividualPausedAt:
+          request.auth?.tokenIdentity?.individualPausedAt ?? null,
+        tokenStopAllPausedAt:
+          request.auth?.tokenIdentity?.stopAllPausedAt ?? null,
+        boardPausedAt: board.agentsPausedAt,
+      });
+    }
+
+    // TASK-166: a PAT write may name an optional board-scoped session. The
+    // check is skipped for reads and for the session control routes, whose
+    // controller owns the path-session check: start must accept a stale/old
+    // header so a new run can begin, and heartbeat/end must stay idempotent
+    // on an already closed session. Query strings are stripped first — a
+    // cache-buster must not change route matching.
+    if (write && !SESSION_HEADER_EXEMPT.test(path)) {
+      const header = headerValue(request.headers?.["x-agent-session"]);
+      const session = await resolveAgentSessionHeader(
+        this.prisma,
+        header,
+        request.auth,
+        user.id,
+        boardId,
+      );
+      if (session !== null) {
+        request.agentSession = session;
+      }
+    }
+
+    // A PAT SSE stream can opt into session-level pause with `?session=`.
+    // Without it the stream is token-level and a session pause does not
+    // close it (ADR §9.3).
+    if (isSse && request.auth?.via === "pat") {
+      const sessionId = queryParam(
+        request.originalUrl ?? request.url,
+        "session",
+      );
+      if (sessionId !== undefined && sessionId !== "") {
+        const session = await resolveAgentSessionHeader(
+          this.prisma,
+          sessionId,
+          request.auth,
+          user.id,
+          boardId,
+        );
+        if (session !== null) {
+          request.agentSession = session;
+        }
+      }
+    }
+
+    if (pauseChecked) {
+      assertAgentNotPaused({
+        sessionPausedAt: request.agentSession?.pausedAt ?? null,
+      });
+    }
+
+    // The legacy read-only refusal is deferred here for board-scoped writes,
+    // after pause, so an observer/read-only PAT sees `agent_paused` while a
+    // board is paused. Non-board routes already enforced it in `JwtAuthGuard`.
+    if (write) {
+      assertPatScopeAllows(method, request.auth?.tokenScope);
+    }
+
     const required: Role[] = this.reflector.getAllAndOverride<Role[]>(
       BOARD_ROLES_KEY,
       [context.getHandler(), context.getClass()],
@@ -148,11 +229,9 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
       });
     }
 
-    const write = WRITE_METHODS.has(method);
-
     // TASK-166: board role first, then token scope. `readOnly` is already
-    // refused in `JwtAuthGuard` with the legacy `pat_read_only` code; this
-    // check covers an explicit `observer` preset and the admin-only routes.
+    // refused above with the legacy `pat_read_only` code; this check covers
+    // an explicit `observer` preset and the admin-only routes.
     const requiredScope =
       this.reflector.getAllAndOverride<ScopePreset>(TOKEN_SCOPE_KEY, [
         context.getHandler(),
@@ -174,27 +253,6 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
         LIFECYCLE_ACTIONS[agentAction],
       );
     }
-
-    request.boardMembership = membership;
-    // TASK-166: a PAT write may name an optional board-scoped session. The
-    // check is skipped for reads and for the session control routes, whose
-    // controller owns the path-session check: start must accept a stale/old
-    // header so a new run can begin, and heartbeat/end must stay idempotent
-    // on an already closed session. Query strings are stripped first — a
-    // cache-buster must not change route matching.
-    if (write && !SESSION_HEADER_EXEMPT.test(path)) {
-      const header = headerValue(request.headers?.["x-agent-session"]);
-      const session = await resolveAgentSessionHeader(
-        this.prisma,
-        header,
-        request.auth,
-        user.id,
-        boardId,
-      );
-      if (session !== null) {
-        request.agentSession = session;
-      }
-    }
     return true;
   }
 }
@@ -204,8 +262,15 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
  * `/boards/:id/agent-sessions/:sessionId/heartbeat|end`.
  */
 const SESSION_HEADER_EXEMPT =
-  /\/agent-sessions(?:\/[^/]+\/(?:heartbeat|end))?\/?$/;
+  /\/agent-sessions(?:\/[^/]+\/(?:heartbeat|end|pause|resume))?\/?$|\/agents\/(?:pause|resume)\/?$/;
 
 function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function queryParam(url: string | undefined, name: string): string | undefined {
+  if (url === undefined) return undefined;
+  const query = url.split("?")[1];
+  if (query === undefined || query === "") return undefined;
+  return new URLSearchParams(query).get(name) ?? undefined;
 }

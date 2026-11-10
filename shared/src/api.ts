@@ -105,6 +105,141 @@ export interface ConflictError {
 }
 
 /**
+ * Machine-readable error codes the server emits today (TASK-166.4, ADR §8.2).
+ * This is a published catalog, not a closed union: clients must still tolerate
+ * an unknown code from a newer server and fall back to the HTTP status.
+ */
+export const API_ERROR_CODES = [
+  "scope_denied",
+  "destructive_denied",
+  "agent_paused",
+  "agent_session_closed",
+  "agent_session_invalid",
+  "pat_required",
+  "pat_forbidden",
+  "pat_read_only",
+  "approval_required",
+  "approval_expired",
+  "approval_mismatch",
+  "approval_owner_mismatch",
+  "approval_not_pending",
+  "approval_rejected",
+  "approval_cancelled",
+  "approval_consumed",
+  "version_conflict",
+  "id_conflict",
+  "workflow_conflict",
+  "run_conflict",
+  "run_expired",
+  "limit_exceeded",
+  "idempotency_conflict",
+  "idempotency_in_progress",
+  "payload_too_large",
+  "rate_limited",
+  "login_backoff",
+  "export_in_progress",
+  "announcement_translations_incomplete",
+  "announcement_source_translation_required",
+  "board_write_timeout",
+  "not_found",
+  "validation_failed",
+  "unauthorized",
+  "forbidden",
+  "conflict",
+  "method_not_allowed",
+  "gone",
+  "unsupported_media_type",
+  "range_not_satisfiable",
+  "service_unavailable",
+  "internal_error",
+] as const;
+
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number] | (string & {});
+
+/**
+ * The one error body every REST route returns (TASK-166.4, ADR §8.1).
+ *
+ * `code` and `retryable` are the parts an agent branches on; `message` is an
+ * English fallback, localizable by `code`. `requestId` is the same value as
+ * the `X-Request-Id` response header. `currentVersion` is always present as a
+ * number or `null` — for a command conflict it is `max(Command.seq)`, not
+ * `Board.version`.
+ *
+ * The legacy top-level `field`, `conflict`, `workflow` and `retryAfter`
+ * fields remain for existing clients; `statusCode` is kept as a compatibility
+ * mirror of the HTTP status. Unknown extra keys must be ignored.
+ */
+export interface ApiErrorEnvelope {
+  code: ApiErrorCode;
+  message: string;
+  retryable: boolean;
+  requestId: string;
+  currentVersion: number | null;
+  statusCode?: number;
+  /** The request field a validation or idempotency error points at. */
+  field?: string;
+  /** Optional machine-readable context (`messages`, `versionOf`, …). */
+  details?: Record<string, unknown>;
+  /** Legacy conflict category — same value as the matching `*_conflict` code. */
+  conflict?: CommandConflict;
+  /** Only for a workflow conflict; unchanged from `ConflictError`. */
+  workflow?: WorkflowConflictDetails;
+  /** Destinations the card may move to on a workflow conflict. */
+  allowedToColumnIds?: string[];
+  /** Announcement locales that still need a translation (admin error). */
+  missingLocales?: string[];
+  /** Semantic limit (WIP/collection/board/run) and the observed count. */
+  limit?: number;
+  current?: number;
+  /** Idempotency key that caused `idempotency_conflict`/`_in_progress`. */
+  key?: string;
+  /** Seconds to wait before retrying a retryable error. */
+  retryAfter?: number;
+  /** Resource name for `not_found` (`board`, `card`, `share`, …). */
+  resource?: string;
+  /** Required and actual preset for a scope denial. */
+  requiredScope?: ScopePreset;
+  effectiveTokenScope?: ScopePreset;
+  requiredRoles?: string[];
+  /** Approval seam: filled in by 166.5 when an approval exists. */
+  approvalId?: string;
+  planHash?: string;
+  expiresAt?: number;
+  /** Action name for scope/policy/approval errors (`DELETE_CARD`, …). */
+  action?: string;
+  /** `board_policy`, `board_scope`, … */
+  reason?: string;
+  /** Pause scope for `agent_paused` (`session`, `board`, `token`). */
+  pauseScope?: string;
+  /** Mirror of `pauseScope` used by the agent-pause contract. */
+  scope?: string;
+  /** When the pause/approval state was set (Unix ms). */
+  pausedAt?: number;
+  /** Approval state for `approval_not_pending`/`approval_consumed`. */
+  status?: string;
+  /** Run that consumed an approval. */
+  runId?: string | null;
+}
+
+/** Header carrying a REST idempotency key (ADR §6.12). */
+export const IDEMPOTENCY_HEADER = "Idempotency-Key";
+
+/** Idempotency record lifetime in hours (ADR §6.11). */
+export const IDEMPOTENCY_TTL_HOURS = 24;
+
+/**
+ * REST write operations that honour `Idempotency-Key` (ADR §6.11/§7.2).
+ * Command writes are idempotent through `CommandRequest.commandId` instead.
+ */
+export type IdempotencyScope =
+  | "create_board"
+  | "import_boards"
+  | "duplicate_card"
+  | "add_comment"
+  | "create_share"
+  | "upload_attachment";
+
+/**
  * Who performed a command (TASK-157): a person at a browser session
  * (`"human"`) or an agent/integration authenticating with a personal API
  * token (`"agent"`), or a platform administrator (`"admin"`). Administrative
@@ -530,6 +665,34 @@ export interface AgentSessionDto {
   endedAt: number | null;
   endReason: string | null;
   summary: string | null;
+}
+
+/**
+ * The pause state of one level (TASK-166.3).
+ */
+export interface AgentPauseStateDto {
+  scope: "board" | "token" | "session";
+  paused: boolean;
+  pausedAt: number | null;
+  pausedBy: string | null;
+  reason: string | null;
+}
+
+/** `POST /boards/:id/agents/pause|resume` response. */
+export interface BoardAgentPauseDto extends AgentPauseStateDto {
+  scope: "board";
+  boardId: string;
+}
+
+/**
+ * `POST /agents/pause-all|resume-all` response. `affected` is the number of
+ * live tokens whose `stopAllPausedAt` stamp changed in this call.
+ */
+export interface AgentStopAllPauseDto {
+  paused: boolean;
+  pausedAt: number | null;
+  pausedBy: string | null;
+  affected: number;
 }
 
 /**

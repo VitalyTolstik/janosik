@@ -20,6 +20,8 @@ import {
   type RequestAttribution,
   HUMAN_ATTRIBUTION,
 } from "@/auth/request-attribution";
+import { pauseGateFor } from "@/auth/agent-pause";
+import type { AuthPrincipal } from "@/auth/auth-principal";
 import { touchAgentSessionAfterWrite } from "@/agent-sessions/agent-session-context";
 import { RealtimeService } from "@/realtime/realtime.service";
 import type { CreateCommentDto } from "./dto/create-comment.dto";
@@ -60,6 +62,7 @@ export class CommentsService {
     authorId: string,
     dto: CreateCommentDto,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
   ): Promise<CommentDto> {
     const text = dto.text.trim();
     if (text.length === 0) {
@@ -93,7 +96,12 @@ export class CommentsService {
           (existing.apiTokenId !== null &&
             existing.apiTokenId !== attribution.apiTokenId)
         ) {
-          throw new ConflictException("commandId already used");
+          throw new ConflictException({
+            message: "commandId already used",
+            code: "idempotency_conflict",
+            key: id,
+            field: "commandId",
+          });
         }
         return toCommentDto(existing);
       }
@@ -101,48 +109,52 @@ export class CommentsService {
 
     let created: { comment: Comment; activityId: string; boardId: string };
     try {
-      created = await this.boardWrite.run(boardId, async (tx) => {
-        const comment = await tx.comment.create({
-          data: {
-            ...(id !== undefined ? { id } : {}),
-            cardId,
-            authorId,
-            text,
-            kind: dto.kind ?? DEFAULT_COMMENT_KIND,
-            actorType: attribution.actorType,
-            apiTokenId: attribution.apiTokenId,
-            agentSessionId: attribution.agentSessionId,
-            agentName: attribution.agentName,
-          },
-        });
-        await reconcileDescriptionAttachments(tx, boardId, undefined, text);
-        // The comment changes the card face as well (TASK-36 attribution):
-        // the commenter becomes `Card.lastActorId`, so a reload seeds the
-        // same face the live SSE stamp just showed. `updatedAt` follows
-        // automatically (`@updatedAt`).
-        await tx.card.update({
-          where: { id: cardId },
-          data: { lastActorId: authorId },
-        });
-        const activity = await tx.activity.create({
-          data: {
+      created = await this.boardWrite.run(
+        boardId,
+        async (tx) => {
+          const comment = await tx.comment.create({
+            data: {
+              ...(id !== undefined ? { id } : {}),
+              cardId,
+              authorId,
+              text,
+              kind: dto.kind ?? DEFAULT_COMMENT_KIND,
+              actorType: attribution.actorType,
+              apiTokenId: attribution.apiTokenId,
+              agentSessionId: attribution.agentSessionId,
+              agentName: attribution.agentName,
+            },
+          });
+          await reconcileDescriptionAttachments(tx, boardId, undefined, text);
+          // The comment changes the card face as well (TASK-36 attribution):
+          // the commenter becomes `Card.lastActorId`, so a reload seeds the
+          // same face the live SSE stamp just showed. `updatedAt` follows
+          // automatically (`@updatedAt`).
+          await tx.card.update({
+            where: { id: cardId },
+            data: { lastActorId: authorId },
+          });
+          const activity = await tx.activity.create({
+            data: {
+              boardId,
+              cardId,
+              type: "comment_added",
+              actorId: authorId,
+              actorType: attribution.actorType,
+              apiTokenId: attribution.apiTokenId,
+              agentSessionId: attribution.agentSessionId,
+              agentName: attribution.agentName,
+              details: { commentId: comment.id, text },
+            },
+          });
+          return {
+            comment,
+            activityId: activity.id,
             boardId,
-            cardId,
-            type: "comment_added",
-            actorId: authorId,
-            actorType: attribution.actorType,
-            apiTokenId: attribution.apiTokenId,
-            agentSessionId: attribution.agentSessionId,
-            agentName: attribution.agentName,
-            details: { commentId: comment.id, text },
-          },
-        });
-        return {
-          comment,
-          activityId: activity.id,
-          boardId,
-        };
-      });
+          };
+        },
+        pauseGateFor(principal, attribution.agentSessionId),
+      );
     } catch (error) {
       // A concurrent retry won the insert race: return its row.
       if (
@@ -162,14 +174,24 @@ export class CommentsService {
             (existing.apiTokenId !== null &&
               existing.apiTokenId !== attribution.apiTokenId)
           ) {
-            throw new ConflictException("Comment idempotency key is in use");
+            throw new ConflictException({
+              message: "Comment idempotency key is in use",
+              code: "idempotency_conflict",
+              key: id,
+              field: "commandId",
+            });
           }
           return toCommentDto(existing);
         }
         // The id exists but on another card: a collision, not a retry. A raw
         // P2002 here used to surface as a 500 (review follow-up).
         if (existing) {
-          throw new ConflictException("Comment idempotency key is in use");
+          throw new ConflictException({
+            message: "Comment idempotency key is in use",
+            code: "idempotency_conflict",
+            key: id,
+            field: "commandId",
+          });
         }
       }
       throw error;
@@ -233,6 +255,7 @@ export class CommentsService {
     commentId: string,
     userId: string,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
   ): Promise<void> {
     const comment = await this.prisma.comment.findFirst({
       where: { id: commentId, deletedAt: null },
@@ -305,6 +328,7 @@ export class CommentsService {
           at: activity.createdAt.getTime(),
         };
       },
+      pauseGateFor(principal, attribution.agentSessionId),
     );
     this.publishActivity(
       removed.boardId,

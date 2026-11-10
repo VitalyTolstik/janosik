@@ -23,3 +23,12 @@ export function stableCommandId(entityId: string, operation: string): string {
     .digest("hex");
   return `mcp-${digest.slice(0, 60)}`;
 }
+
+/**
+ * A stable entity id derived from an idempotency key (TASK-166.4). A tool
+ * that mints an id internally (`duplicate_card`) must mint the same one on a
+ * retry, or the retried body no longer matches the stored request hash.
+ */
+export function stableId(seed: string): string {
+  return `mcp-${createHash("sha256").update(seed).digest("hex").slice(0, 32)}`;
+}

@@ -39,6 +39,12 @@ export function respond(
     return errorResult(
       `Error: the JSON response would be ${jsonText.length} characters, over ` +
         `the ${CHARACTER_LIMIT}-character limit. ${narrowHint}`,
+      {
+        ok: false,
+        code: "payload_too_large",
+        retryable: false,
+        limit: CHARACTER_LIMIT,
+      },
     );
   }
   return {
@@ -49,14 +55,45 @@ export function respond(
   };
 }
 
-/** A confirmation response with no structured payload (mutations). */
-export function textOnly(text: string): ToolResult {
-  return { content: [{ type: "text", text: cap(text) }] };
+/** Extra fields a mutation may return to an agent (ADR §8.5, TASK-166.4). */
+export interface MutationStructuredContent {
+  resourceId?: string | null;
+  seq?: number;
+  runId?: string | null;
+  approvalId?: string | null;
+  [key: string]: unknown;
+}
+
+/**
+ * A confirmation response for a mutation. It always carries
+ * `structuredContent: { ok: true, … }` (TASK-166.4), so an MCP client can
+ * read the resource id/seq without parsing the human sentence. The text
+ * stays for people.
+ */
+export function textOnly(
+  text: string,
+  structured: MutationStructuredContent = {},
+): ToolResult {
+  return {
+    content: [{ type: "text", text: cap(text) }],
+    structuredContent: { ok: true, ...structured },
+  };
 }
 
 /** An error response — the message must already be actionable. */
-export function errorResult(message: string): ToolResult {
-  return { isError: true, content: [{ type: "text", text: message }] };
+export function errorResult(
+  message: string,
+  structured: Record<string, unknown> = {
+    ok: false,
+    code: "validation_failed",
+    retryable: false,
+  },
+): ToolResult {
+  return {
+    isError: true,
+    content: [{ type: "text", text: message }],
+    structuredContent: structured,
+  };
 }
 
 /** Clamp a response to the character budget with a visible note. */

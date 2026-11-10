@@ -7,6 +7,8 @@ import {
 import { AuthGuard } from "@nestjs/passport";
 import { ThrottlerException } from "@nestjs/throttler";
 import { API_TOKEN_PREFIX } from "@janosik/shared";
+import { assertTokenNotPaused } from "@/auth/agent-pause";
+import { PAT_FORBIDDEN_MESSAGE } from "@/auth/auth-principal";
 import { consumeTokenRate } from "@/common/token-rate-limit";
 import { ApiTokenService, type TokenScope } from "./api-token.service";
 import type { AuthPrincipal } from "./auth-principal";
@@ -14,6 +16,30 @@ import { assertImpersonationAllows } from "./impersonation-policy";
 
 /** HTTP methods that mutate state — refused for a read-only PAT. */
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * TASK-166.3 human-only pause routes. These are checked here, before the
+ * board membership/role guard, so a MEMBER or read-only PAT gets the
+ * documented `pat_forbidden` rather than a role/scope error.
+ */
+const PAT_SESSION_ONLY_PATHS = [
+  /\/boards\/[^/]+\/agents\/(?:pause|resume)\/?$/,
+  /\/boards\/[^/]+\/agent-sessions\/[^/]+\/(?:pause|resume)\/?$/,
+  /\/users\/me\/tokens\/[^/]+\/(?:pause|resume)\/?$/,
+  /\/agents\/(?:pause-all|resume-all)\/?$/,
+];
+
+/**
+ * Board-scoped PAT writes defer the legacy `pat_read_only` refusal to
+ * `MembershipGuard`, which can check pause first (ADR §5.2 evaluation order).
+ * Account routes such as `POST /boards/import` are not deferred.
+ */
+const BOARD_SCOPED_WRITE_PATHS = [
+  /\/boards\/(?!import(?:\/|$))[^/]+(?:\/|$)/,
+  /\/cards\/[^/]+(?:\/|$)/,
+  /\/comments\/[^/]+(?:\/|$)/,
+  /\/attachments\/[^/]+(?:\/|$)/,
+];
 
 /** Shape of the request bits the guard reads (auth header + resolved user). */
 interface GuardedRequest {
@@ -87,7 +113,22 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
     ) {
       throw new ThrottlerException("Too many requests for this API token");
     }
-    assertPatScopeAllows(request.method, scope);
+    // TASK-166.3: human control-plane routes are session-only. Run before
+    // membership/role/read-only checks so every PAT gets `pat_forbidden`.
+    assertPatNotOnSessionOnlyPath(request.originalUrl ?? request.url);
+    // TASK-166.3: a paused token cannot write anywhere. Board/session pause
+    // is checked later, once the board and optional session are resolved.
+    assertTokenNotPaused(
+      identity,
+      request.method,
+      request.originalUrl ?? request.url,
+    );
+    if (
+      !isBoardScopedWritePath(request.originalUrl ?? request.url) ||
+      !isWriteMethod(request.method)
+    ) {
+      assertPatScopeAllows(request.method, scope);
+    }
     request.user = user;
     request.auth = {
       via: "pat",
@@ -101,17 +142,39 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
 }
 
 /** Refuse a write for a read-only PAT (TASK-157). */
-function assertPatScopeAllows(
+export function assertPatScopeAllows(
   method: string | undefined,
-  scope: TokenScope,
+  scope: TokenScope | undefined,
 ): void {
-  if (scope.readOnly && WRITE_METHODS.has((method ?? "GET").toUpperCase())) {
+  if (scope?.readOnly && WRITE_METHODS.has((method ?? "GET").toUpperCase())) {
     throw new ForbiddenException({
       message:
         "This API token is read-only — writes require a read/write token",
       code: "pat_read_only",
     });
   }
+}
+
+function isWriteMethod(method: string | undefined): boolean {
+  return WRITE_METHODS.has((method ?? "GET").toUpperCase());
+}
+
+function pathOf(url: string | undefined): string {
+  return (url ?? "").split("?")[0];
+}
+
+function assertPatNotOnSessionOnlyPath(url: string | undefined): void {
+  const path = pathOf(url);
+  if (!PAT_SESSION_ONLY_PATHS.some((pattern) => pattern.test(path))) return;
+  throw new ForbiddenException({
+    message: PAT_FORBIDDEN_MESSAGE,
+    code: "pat_forbidden",
+  });
+}
+
+function isBoardScopedWritePath(url: string | undefined): boolean {
+  const path = pathOf(url);
+  return BOARD_SCOPED_WRITE_PATHS.some((pattern) => pattern.test(path));
 }
 
 function bearerToken(header: string | undefined): string | undefined {

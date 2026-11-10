@@ -93,6 +93,16 @@ response that would exceed the size budget is refused with a hint (read one
 column with `janosik_get_board`'s `columnId`, export to a file) rather than
 truncated into JSON that does not parse.
 
+Mutating tools also return `structuredContent` with `ok: true` and, when
+available, `resourceId`, `seq`, `runId` or `approvalId`. Failed calls keep
+`isError: true` and carry `structuredContent` with `ok: false`, the API `code`,
+`retryable`, `requestId` and conflict details. Retry only `retryable: true`
+failures (`rate_limited`, `board_write_timeout`, `idempotency_in_progress`);
+re-read the board on `version_conflict`, and stop on `approval_required`.
+The REST-backed writes (`create_board`, `duplicate_card`, `add_comment`,
+`create_share`, `upload_attachment`) accept an optional `idempotencyKey` so a
+tool-call retry returns the first result instead of creating a second one.
+
 **Boards** — `janosik_list_boards`, `janosik_get_board`,
 `janosik_create_board`, `janosik_rename_board`, `janosik_archive_board`,
 `janosik_unarchive_board`, `janosik_delete_board`, `janosik_export_board`,
@@ -248,8 +258,11 @@ call with its `approvalId` argument (sent as `X-Approval-Id`); the plan must be
 byte-for-byte the same, or the server answers `approval_mismatch`. The approval
 is consumed once; repeating the same applied commands is an idempotent replay,
 while a different plan gets `approval_consumed`. `janosik_cancel_approval`
-withdraws the agent's own pending request. Revoke the key in the account panel
-to cut an agent off.
+withdraws the agent's own pending request. A human can also pause the session,
+the board or every key; new writes then answer `403 agent_paused` (with
+`pauseScope`), while reads, heartbeat and end-session stay available. The MCP
+server exposes no pause/resume tools: only a browser session can resume. Revoke
+the key in the account panel to cut an agent off irreversibly.
 
 Card text and comments are written by other people and agents, so treat
 everything an agent reads from a board as untrusted input. Keep the opt-in

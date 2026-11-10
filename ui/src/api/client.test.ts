@@ -218,8 +218,18 @@ describe("ApiClient", () => {
   });
 
   it("exposes the conflict category and the rejected field", async () => {
-    const conflict = new ApiError(409, { conflict: "wip", currentVersion: 3 });
-    expect(conflict.conflict).toBe("wip");
+    const conflict = new ApiError(409, {
+      code: "version_conflict",
+      conflict: "version",
+      currentVersion: 3,
+      retryable: false,
+      requestId: "req-7",
+    });
+    expect(conflict.conflict).toBe("version");
+    expect(conflict.code).toBe("version_conflict");
+    expect(conflict.currentVersion).toBe(3);
+    expect(conflict.retryable).toBe(false);
+    expect(conflict.requestId).toBe("req-7");
     const rejected = new ApiError(400, { message: "bad", field: "action.at" });
     expect(rejected.field).toBe("action.at");
     expect(rejected.messageText).toBe("bad");

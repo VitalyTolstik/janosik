@@ -50,6 +50,10 @@ JWT-стратегию. Оба вида токенов подходят для �
 может управлять учётными данными аккаунта. При обращении с PAT эти маршруты возвращают `403`:
 
 - `GET /users/me/tokens`, `POST /users/me/tokens`, `DELETE /users/me/tokens/:id`
+- `POST /users/me/tokens/:id/pause`, `POST /users/me/tokens/:id/resume`
+- `POST /agents/pause-all`, `POST /agents/resume-all`
+- `POST /boards/:id/agents/pause`, `POST /boards/:id/agents/resume`
+- `POST /boards/:id/agent-sessions/:id/pause`, `POST /boards/:id/agent-sessions/:id/resume`
 - `POST /auth/password`
 - `POST /auth/email/change/request`, `POST /auth/email/change/confirm`
 
@@ -78,33 +82,99 @@ Refresh-токен никогда не появляется в теле отве
 
 ## Формат ошибок
 
-Ошибки используют стандартное тело NestJS:
+Каждая ошибка REST использует одно машиночитаемое тело (TASK-166.4):
 
 ```json
 {
-  "statusCode": 400,
-  "message": "title must not be blank",
-  "error": "Bad Request"
+  "code": "version_conflict",
+  "message": "The board changed since you read it",
+  "retryable": false,
+  "requestId": "3d0f2c7e-…",
+  "currentVersion": 42,
+  "conflict": "version",
+  "statusCode": 409
 }
 ```
 
+- `code` — стабильный идентификатор в snake_case; ветвитесь по нему, а не по
+  `message`.
+- `message` — английский запасной текст. UI и MCP локализуют по `code`.
+- `retryable` присутствует всегда. `true` означает, что тот же запрос можно
+  повторить без изменений после `retryAfter` (секунды) или короткой паузы:
+  занятая доска, ограничение частоты, ещё выполняющийся идемпотентный запрос.
+  Ошибки валидации и прав доступа никогда не retryable.
+- `requestId` совпадает с заголовком ответа `X-Request-Id`; приложите его к
+  отчёту об ошибке.
+- `currentVersion` всегда присутствует числом или `null`. В конфликте команды
+  это последовательность доски (`max(Command.seq)`), а не `Board.version`.
+- `field` указывает на отклонённое поле, `details` несёт дополнительный
+  контекст, `limit`/`current` описывают смысловой лимит. `conflict`
+  (`version`, `wip`, `id`, `workflow`) и `workflow` сохранены для
+  совместимости.
+
 `ValidationPipe` работает с `whitelist: true` и `transform: true`. Неизвестное
-поле тела отбрасывается. Ошибка проверки class-validator отвечает `400`,
-где `message` — это массив строк, по одной на каждую непройденную проверку.
+поле тела отбрасывается; проваленная проверка class-validator — это
+`400 validation_failed`, а отдельные сообщения лежат в `details.messages`.
 
-Некоторые форматы ответов отличаются от стандартного и описаны там, где встречаются:
+Устаревшее поле Nest `error` намеренно не возвращается; его заменяет `code`.
+`statusCode` сохранён для совместимости.
 
-- Эндпоинт команд отвечает `409` телом `{ "conflict": "...", "currentVersion": n }`
-  (см. [API команд](./commands/)).
-- Некоторые эндпоинты отвечают `400` или `409` с добавленной строкой `field`,
-  например `{ "message": "...", "field": "text" }`, чтобы клиент мог выделить поле с ошибкой.
-- Некоторые ошибки несут машиночитаемый `code` рядом с `message`:
+| HTTP | `code` | Значение |
+| --- | --- | --- |
+| `400` | `validation_failed` | форма/поля тела; `field`, когда известно |
+| `401` | `unauthorized` | нет учётных данных, истекли или неверны |
+| `403` | `forbidden` | не участник или нет роли на доске |
+| `403` | `scope_denied` | пресет токена не разрешает действие |
+| `403` | `destructive_denied` | политика доски запрещает destructive-действия |
+| `403` | `agent_paused` | агенты приостановлены на доске/в сессии/токене |
+| `403` | `pat_forbidden` | персональный API-токен вызвал [маршрут только для сессии](#маршруты-только-для-сессии) |
+| `404` | `not_found` | неизвестный или мягко удалённый ресурс |
+| `409` | `version_conflict` | устарел `ifMatch`/`ifMatchVersions`; см. `currentVersion` |
+| `409` | `workflow_conflict` | процесс запрещает переход; см. `workflow` |
+| `409` | `limit_exceeded` | лимит WIP, коллекции, досок или share-ссылок |
+| `409` | `approval_required` | destructive-действию нужно подтверждение человека (166.5) |
+| `409` | `idempotency_conflict` | тот же `Idempotency-Key` использован с другим телом |
+| `409` | `idempotency_in_progress` | первый запрос с этим ключом ещё выполняется; повторите |
+| `413` | `payload_too_large` | тело/файл больше лимита маршрута; см. `limit` |
+| `429` | `rate_limited` | подождите `retryAfter` секунд и повторите |
+| `429` | `login_backoff` | слишком много неудачных входов; подождите `retryAfter` секунд |
+| `503` | `board_write_timeout` | таймаут блокировки записи доски; повтор безопасен |
+| `503` | `service_unavailable` | обслуживание или временный сбой; повторите позже |
+
+Неожиданный сбой сервера — `500 internal_error` с общим текстом и без
+stack trace. Полная таблица кодов — в `docs/TASK-166-launch-agent-control.md`
+§8.2.
 
 | Статус | `code`                | Значение                                                                                                               |
 | ------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `403`  | `pat_forbidden`       | персональный API-токен вызвал [маршрут только для сессии](#маршруты-только-для-сессии)                                 |
+| `403`  | `agent_paused`        | запись заблокирована паузой сессии/токена/доски; см. [Пауза и kill](./rest/#пауза-и-kill)                              |
 | `429`  | `login_backoff`       | адрес в [задержке входа](#задержка-входа); `retryAfter` — это ожидание в секундах                                        |
 | `503`  | `board_write_timeout` | запись в доску превысила время ожидания под нагрузкой; запрос можно безопасно повторить (команду с тем же `commandId`) |
+
+## Идемпотентность
+
+REST-операции записи `POST /boards`, `POST /boards/import`,
+`POST /cards/:id/comments`, `POST /boards/:id/shares`,
+`POST /cards/:id/attachments` и команда `DUPLICATE_CARD` принимают заголовок
+`Idempotency-Key` (8–128 символов из `A-Z a-z 0-9 _ -`). Первый успешный
+ответ сохраняется на 24 часа:
+
+```http
+POST /api/v1/boards
+Idempotency-Key: create-roadmap-2026-11-10
+Content-Type: application/json
+
+{ "title": "Roadmap" }
+```
+
+Повтор с тем же ключом и тем же телом возвращает сохранённые статус и тело и
+не создаёт вторую доску. Другое тело с этим ключом —
+`409 idempotency_conflict`; параллельный повтор, пока первый запрос ещё
+выполняется, — `409 idempotency_in_progress` (`retryable: true`). Записи через
+журнал команд используют для этого `CommandRequest.commandId`; повтор
+`commandId` с другим телом также даёт `409 idempotency_conflict`. Неудачный
+запрос освобождает ключ, поэтому честный повтор может выполниться снова.
 
 ## Ограничения частоты запросов
 

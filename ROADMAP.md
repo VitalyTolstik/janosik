@@ -1083,10 +1083,11 @@ model Comment {
 `@janosik/shared` (`LIMITS`)**, включая `@db.VarChar(N)` в схеме выше:
 TASK-21.5 (`limits-rebalance`) меняет `cardsPerColumn`, `description` и
 `boardsCount`, и любой захардкоженный здесь дубль сразу разъедется.
-Актуальные значения после калибровки (§6.0.1 «Решённые вопросы» п.4,
-внедряет TASK-21.5): чеклистов ≤ 20/карточка, пунктов ≤ 100, меток ≤ 20 на
-карточке и ≤ 50 на доске, **колонок ≤ 12, карточек ≤ 200 в колонке, досок
-≤ 10 на юзера**, `description` ≤ 10000, `comment` ≤ 2000 (TASK-37).
+Исторический снимок калибровки TASK-21.5 (§6.0.1 «Решённые вопросы» п.4;
+актуальные значения — в `shared/src/types/kanban.ts`): чеклистов
+≤ 20/карточка, пунктов ≤ 100, меток ≤ 20 на карточке и ≤ 50 на доске,
+**колонок ≤ 12, карточек ≤ 200 в колонке, досок ≤ 10 на юзера**,
+`description` ≤ 10000, `comment` ≤ 2000 (TASK-37).
 
 **Soft-delete — семантика (§7.0):** все `DELETE`-endpoint'ы проставляют
 `deletedAt` у сущности **и её детей** (каскад — кодом сервиса или
@@ -4259,8 +4260,8 @@ W1 разблокирована.
 | 166.0 | Policy & ADR ✅ | — | `docs/`, этот раздел | **Выполнено:** решения, схема данных и матрица действий заморожены в [`docs/TASK-166-launch-agent-control.md`](docs/TASK-166-launch-agent-control.md); W1 разблокирована |
 | 166.1 | Agent identity & sessions | 166.0 | Prisma `Command`/`Activity`/`AgentSession`; `auth/api-token.service`; command writers; SSE; `shared/src/types`; `mcp/src` | два PAT одного аккаунта различимы по `apiTokenId`/`agentSessionId` в БД, API, SSE, Watch; start/heartbeat/end; тесты |
 | 166.2 | Scopes & destructive gate | 166.0 | `auth/jwt-auth.guard`, `common/membership.guard`, `api-token.service`, controllers, `shared/src/api`, MCP; минимальный UI токенов не в админке | пресеты Observer/Worker/Reviewer/Admin; board-scoped токен не читает чужие доски/не принимает инвайты/не меняет профиль; destructive denied/approval; матрица тестов |
-| 166.3 | Pause / kill switch | 166.0, 166.1 | `AgentSession.paused*`, `ApiToken.individualPaused*`/`stopAllPaused*`, `Board.agentsPaused*`, `POST /boards/:id/agent-sessions/:sessionId/pause` / `resume`, `POST /boards/:id/agents/pause`, guards, SSE | обратимая пауза; `403 agent_paused`; «stop all»; in-flight семантика; тесты |
-| 166.4 | Reliable write contract | 166.0 | backend exception filter, `shared` error types, `api` client, MCP `format/schemas`; все write endpoints/tools | `code`/`retryable`/`requestId`/`currentVersion`, `structuredContent` у мутаций, идемпотентность create_board/duplicate_card/add_comment/create_share/upload; контрактные тесты |
+| 166.3 | Pause / kill switch ✅ | 166.0, 166.1 | `AgentSession.paused*`, `ApiToken.individualPaused*`/`stopAllPaused*`, `Board.agentsPaused*`, `POST /boards/:id/agent-sessions/:sessionId/pause` / `resume`, `POST /boards/:id/agents/pause`, guards, SSE | **Выполнено:** обратимая пауза сессии/токена/доски и stop-all; `403 agent_paused` с приоритетом token → board → session (проверяется до role/scope/destructive); проверка на границе и под блокировкой доски (in-flight завершается, а поставленные в очередь записи после revoke/end отклоняются); GET, heartbeat и end остаются доступны; claims не освобождаются паузой; PAT SSE получает событие и закрывается на следующем keep-alive (session — только с `?session=`); reconnect → `403`; kill отзывает токен, отменяет сессии и освобождает claims под блокировкой доски; Activity/SecurityAudit и docs EN/RU; e2e/unit-тесты. Отметка ✅ относится только к 166.3; строки 166.1/166.2 закрываются своими PR и здесь не переписываются. |
+| 166.4 | Reliable write contract ✅ | 166.0 | backend exception filter, `shared` error types, `api` client, MCP `format/schemas`; все write endpoints/tools | **Выполнено:** единый конверт ошибок (`code`/`retryable`/`requestId`/`currentVersion`, legacy `conflict`/`field`/`workflow`), фильтр покрывает REST/админку/SSE-ошибки; `Idempotency-Key` для create_board/import/duplicate_card/add_comment/create_share/upload (24 ч, replay/`idempotency_conflict`/`idempotency_in_progress`); MCP `structuredContent` у мутаций и коды в ошибках; UI читает новые поля; контрактные e2e + unit |
 | 166.5 | Approval & handoff API ✅ | 166.0, 166.1 | `ApprovalRequest` endpoints, activity/SSE/audit hook; MCP approval tools | **Выполнено:** PAT создаёт запрос с каноническим `planHash`, summary/risk и TTL (floor 5 мин); destructive-команды/батчи/lifecycle без `X-Approval-Id` создают тот же запрос и отвечают `409 approval_required` с `approvalId`/`planHash`/`expiresAt` без частичного применения; решение — только сессия board ADMIN (идемпотентный approve), отмена — токен-заявитель или ADMIN; expiry ленивый; применение с `X-Approval-Id` одноразовое и атомарное с командами/`AgentRun`, повтор тех же команд идемпотентен, ошибки `approval_mismatch`/`owner_mismatch`/`consumed`; Activity/SSE/`approval.decided`; MCP request/list/get/wait/cancel; EN/RU docs и e2e/unit/MCP-тесты |
 | 166.6 | Limits & data safety | 166.0 | UI-лимит 10 досок, board/token audit, import/export limits, backup/retention status, self-service export/delete | 10-board противоречие убрано/честно объяснено; удаление доски/токена в аудите; импорт ≥ экспорта; статус backup честный; тесты и docs |
 | 166.7 | Run grouping & rollback foundation | 166.1, 166.4 | batch `runId`, pre-images destructive commands, run list API, revert dry-run/conflict | run виден в БД/API; revert проверяет конфликты; не ломает обычный undo; тесты |
@@ -4644,6 +4645,9 @@ launch-гейт держит головной поток.
   `GET /capabilities`, OpenAPI, compatibility matrix.
 - **173.8 Limits, quotas & retention** — поднять/сделать конфигурируемыми
   лимиты, серверный board cap/tenant quotas, retention/audit export.
+  **2026-11-10:** `cardsPerColumn` 200→**1000** вынесено вперёд после
+  TASK-139 (виртуализация) и нагрузочного теста (`docs/PERF-CAPACITY.md`);
+  остальное — конфигурируемые лимиты, quotas, retention — остаётся post-1.0.
 - **173.9 UX, analytics & token lifecycle** — edit комментариев и board-wide
   фильтр, короткие ключи/шаблоны, MCP undo/history filters, `X-RateLimit-*`/
   usage/cost, token rotation/multi-board, agent analytics/budgets,
@@ -4718,7 +4722,7 @@ launch-гейт держит головной поток.
 | P1-13 | Create card contract / URLs | 173.5 |
 | P1-14 | Remote MCP / OAuth / OpenAPI | 166.11, 173.7 |
 | P1-15 | Docs / tests drift / MCP e2e | 172 |
-| P2-16 | Limits raise | 173.8 |
+| P2-16 | Limits raise | 173.8 — `cardsPerColumn=1000` pulled forward 2026-11-10; the rest post-1.0 |
 | P2-17 | Board cap / tenant quotas | 166.6, 173.8 |
 | P2-18 | Comment edit / board-wide filter | 173.9 |
 | P2-19 | Short keys / templates | 173.9 |

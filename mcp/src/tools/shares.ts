@@ -15,6 +15,7 @@ import {
   approvalIdSchema,
   boardIdSchema,
   responseFormatSchema,
+  idempotencyKeySchema,
   idSchema,
 } from "../schemas.js";
 import { DESTRUCTIVE, READ, WRITE, defineTool } from "./helpers.js";
@@ -101,6 +102,7 @@ export function registerShareTools(
           .optional()
           .describe("Expire the link after this many hours (default: never)."),
         approvalId: approvalIdSchema,
+        idempotencyKey: idempotencyKeySchema,
       },
       annotations: WRITE,
     },
@@ -112,6 +114,7 @@ export function registerShareTools(
       includeAttachments,
       expiresInHours,
       approvalId,
+      idempotencyKey,
     }) => {
       const share = await client.createShare(
         boardId,
@@ -129,9 +132,11 @@ export function registerShareTools(
             : {}),
         },
         approvalId,
+        idempotencyKey,
       );
       return textOnly(
         `Created a ${mode} share link: ${shareUrl(baseUrl, appBase, share.token)}`,
+        { resourceId: share.id },
       );
     },
   );

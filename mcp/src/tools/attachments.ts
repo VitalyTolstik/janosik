@@ -26,6 +26,7 @@ import { renderAttachments } from "../render.js";
 import {
   approvalIdSchema,
   cardIdSchema,
+  idempotencyKeySchema,
   responseFormatSchema,
   idSchema,
 } from "../schemas.js";
@@ -124,10 +125,11 @@ export function registerAttachmentTools(
             "Path of the file to upload (relative paths resolve against " +
               "JANOSIK_MCP_FS_ROOT when set).",
           ),
+        idempotencyKey: idempotencyKeySchema,
       },
       annotations: WRITE,
     },
-    async ({ cardId, filePath }) => {
+    async ({ cardId, filePath, idempotencyKey }) => {
       const { path: resolved, data } = await readSandboxedFile(
         filePath,
         options,
@@ -139,9 +141,11 @@ export function registerAttachmentTools(
         fileName,
         mimeFor(fileName),
         data,
+        idempotencyKey,
       );
       return textOnly(
         `Uploaded "${fileName}" (${attachment.sizeBytes} bytes) — \`${attachment.id}\`.`,
+        { resourceId: attachment.id },
       );
     },
   );

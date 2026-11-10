@@ -20,9 +20,9 @@ import {
   workflowInitialColumnId,
 } from "@janosik/shared";
 import type { BatchCommandItem, JanosikClient } from "../client.js";
-import { ApiError, describeError } from "../errors.js";
+import { ApiError, describeError, errorStructuredContent } from "../errors.js";
 import { errorResult, respond, textOnly } from "../format.js";
-import { newId, stableCommandId } from "../ids.js";
+import { newId, stableCommandId, stableId } from "../ids.js";
 import { findCardLocation } from "../locate.js";
 import { blockedIds } from "../project.js";
 import { renderCard } from "../render.js";
@@ -31,10 +31,12 @@ import {
   boardIdSchema,
   cardIdSchema,
   columnIdSchema,
+  commandIdSchema,
   coverSchema,
   detailSchema,
   expectedVersionSchema,
   idSchema,
+  idempotencyKeySchema,
   prioritySchema,
   responseFormatSchema,
 } from "../schemas.js";
@@ -71,6 +73,7 @@ function cardNotFound(cardId: string, boardId: string) {
   return errorResult(
     `Error: card ${cardId} is not on board ${boardId}. Re-read the board ` +
       "with janosik_get_board for current ids.",
+    { ok: false, code: "not_found", retryable: false, resource: "card" },
   );
 }
 
@@ -250,9 +253,11 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       } catch (error) {
         // The batch is atomic: the card was not created, so a plain retry is
         // safe (the same ids would otherwise leave a duplicate behind).
-        return errorResult(describeError(error));
+        return errorResult(describeError(error), errorStructuredContent(error));
       }
-      return textOnly(`Created card "${title}" — \`${newCardId}\`.`);
+      return textOnly(`Created card "${title}" — \`${newCardId}\`.`, {
+        resourceId: newCardId,
+      });
     },
   );
 
@@ -395,6 +400,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .optional()
           .describe("Zero-based insert position in the destination column."),
         expectedVersion: expectedVersionSchema,
+        commandId: commandIdSchema.optional(),
         approvalId: approvalIdSchema,
       },
       annotations: WRITE,
@@ -405,6 +411,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       toColumnId,
       position,
       expectedVersion,
+      commandId,
       approvalId,
     }) => {
       // Definition-of-Done gate (TASK-157, D12). This MCP tool uses the
@@ -461,6 +468,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
               toIndex,
             },
             result: { title: destination.title, toIndex },
+            ...(commandId !== undefined ? { commandId } : {}),
             ...(approvalId !== undefined ? { approvalId } : {}),
           };
         },
@@ -497,13 +505,36 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .max(LIMITS.cardTitle)
           .optional()
           .describe("Title for the copy."),
+        idempotencyKey: idempotencyKeySchema,
+        newCardId: idSchema
+          .optional()
+          .describe(
+            "Id for the copy. Reuse the id from the approval plan when " +
+              "repeating an approved duplicate.",
+          ),
+        commandId: commandIdSchema.optional(),
         expectedVersion: expectedVersionSchema,
         approvalId: approvalIdSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, title, expectedVersion, approvalId }) => {
-      const newCardId = newId();
+    async ({
+      boardId,
+      cardId,
+      title,
+      idempotencyKey,
+      newCardId: requestedCardId,
+      commandId,
+      expectedVersion,
+      approvalId,
+    }) => {
+      // A retry with the same key must send the identical action, including
+      // the copy's id and commandId, or the server sees another request.
+      const newCardId =
+        requestedCardId ??
+        (idempotencyKey !== undefined
+          ? stableId(`duplicate:${idempotencyKey}`)
+          : newId());
       await client.command(
         boardId,
         {
@@ -515,9 +546,17 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         {
           ifMatch: expectedVersion,
           ...(approvalId !== undefined ? { approvalId } : {}),
+          idempotencyKey,
+          ...(commandId !== undefined
+            ? { commandId }
+            : idempotencyKey !== undefined
+              ? { commandId: stableCommandId(idempotencyKey, "duplicate") }
+              : {}),
         },
       );
-      return textOnly(`Duplicated card ${cardId} — \`${newCardId}\`.`);
+      return textOnly(`Duplicated card ${cardId} — \`${newCardId}\`.`, {
+        resourceId: newCardId,
+      });
     },
   );
 
@@ -910,16 +949,18 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         boardId: boardIdSchema,
         cardId: cardIdSchema,
         expectedVersion: expectedVersionSchema,
+        commandId: commandIdSchema.optional(),
         approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, cardId, expectedVersion, approvalId }) => {
+    async ({ boardId, cardId, expectedVersion, commandId, approvalId }) => {
       await client.command(
         boardId,
         { type: "DELETE_CARD", cardId },
         {
           ifMatch: expectedVersion,
+          ...(commandId !== undefined ? { commandId } : {}),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );

@@ -64,6 +64,13 @@ export class ShareThrottlerGuard implements CanActivate {
     }
     bucket.count += 1;
     if (bucket.count > limit) {
+      const response = context
+        .switchToHttp()
+        .getResponse<{ setHeader(name: string, value: string): void }>();
+      response.setHeader(
+        "Retry-After",
+        String(Math.max(1, Math.ceil((bucket.resetAt - now) / 1000))),
+      );
       throw new ThrottlerException();
     }
     // Refresh the insertion order so eviction is true LRU (TASK-147

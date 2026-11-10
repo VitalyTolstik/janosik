@@ -58,6 +58,23 @@ function renderApproval(approval: ApprovalRequestDto): string {
         ]
       : []),
     ...(approval.runId ? [`- consumed by run: ${code(approval.runId)}`] : []),
+    ...(approval.plan?.commands
+      ? [
+          "- planned commands:",
+          ...approval.plan.commands.map(
+            (command) =>
+              `  - ${code(command.commandId)}: ${command.action.type}`,
+          ),
+        ]
+      : []),
+    ...(approval.plan?.operations
+      ? [
+          "- planned operations:",
+          ...approval.plan.operations.map(
+            (operation) => `  - ${operation.op}`,
+          ),
+        ]
+      : []),
   ].join("\n");
 }
 

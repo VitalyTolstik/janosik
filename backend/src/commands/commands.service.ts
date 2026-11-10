@@ -49,6 +49,7 @@ import {
   classifyCommandAction,
   readBoardAgentPolicy,
 } from "@/auth/token-scope";
+import { pauseGateFor } from "@/auth/agent-pause";
 import {
   type RequestAttribution,
   attributionFields,
@@ -73,6 +74,7 @@ import type { CreateCommandDto } from "./dto/create-command.dto";
 export {
   COMMAND_AT_MAX_SKEW_MS,
   MAX_COMMAND_BYTES_INTERNAL,
+  actionFingerprint,
 } from "./command-validation";
 
 /**
@@ -206,18 +208,7 @@ export class CommandsService {
     // oversized or malformed command is a cheap 400/413, not megabytes
     // serialized through the board writer.
     const prepared = dtos.map((dto) => {
-      const entry = this.prepareCommand(dto, options);
-      // An approved plan is stored at plan level (`boardId` is not part of
-      // the hash), but the command row keeps the normal wire shape. Stamp
-      // the route board so a later plain retry of the same commandId matches
-      // the stored payload fingerprint.
-      if (
-        options.approvalId !== undefined &&
-        (entry.action as { boardId?: string }).boardId === undefined
-      ) {
-        entry.action = { ...entry.action, boardId } as BoardAction;
-        entry.fingerprint = actionFingerprint(entry.action);
-      }
+      const entry = this.prepareCommand(boardId, dto, options);
       // TASK-166 (D23): the claim holder is the authenticated actor. A
       // client cannot claim on behalf of another user; token/session fields
       // are written by `command-writers` from the attribution, never from
@@ -229,7 +220,7 @@ export class CommandsService {
         entry.action = { ...entry.action, claimedBy: actorId };
         // The stored payload carries the server-normalized holder, so the
         // retry fingerprint must be taken from that same canonical action.
-        entry.fingerprint = actionFingerprint(entry.action);
+        entry.fingerprint = actionFingerprint(entry.action, boardId);
       }
       return entry;
     });
@@ -258,6 +249,9 @@ export class CommandsService {
         policy,
         options.principal.tokenIdentity?.trustedCi === true,
       );
+      // Enforce the run limits even when an approval is supplied: an approval
+      // authorizes the action, not an oversized plan.
+      this.approvals.assertPlanLimits(plan, policy);
       if (approvalId === undefined) {
         await this.approvals.ensureCommandApproval({
           boardId,
@@ -342,15 +336,20 @@ export class CommandsService {
             throw new ConflictException({
               message: "commandId already used on another board",
               field: "commandId",
+              code: "id_conflict",
+              conflict: "id",
             });
           }
           // A reused key with a different body is a client bug (or a key
           // collision), not a retry: answering with the first command's
           // result would tell the caller its *new* action was applied.
-          if (actionFingerprint(existing.payload) !== entry.fingerprint) {
+          if (
+            actionFingerprint(existing.payload, boardId) !== entry.fingerprint
+          ) {
             throw new ConflictException({
               message: "commandId already used with a different payload",
               field: "commandId",
+              code: "idempotency_conflict",
             });
           }
         }
@@ -447,6 +446,7 @@ export class CommandsService {
         }
         return { responses, events, consumedApproval: null };
       },
+      pauseGateFor(options.principal, attribution.agentSessionId),
     );
 
     if (applied.consumedApproval !== null) {
@@ -484,6 +484,7 @@ export class CommandsService {
    * retry (same body, later wall clock) still matches the stored command.
    */
   private prepareCommand(
+    boardId: string,
     dto: CreateCommandDto,
     options: { allowOversize?: boolean; approvalId?: string },
   ): PreparedCommand {
@@ -495,6 +496,7 @@ export class CommandsService {
     // helper, so an approval plan and the live transport agree.
     this.assertIfMatchVersionsSize(dto.ifMatchVersions);
     return prepareCommandDto(dto, {
+      boardId,
       ...(options.allowOversize === true ? { allowOversize: true } : {}),
       // An approved plan is stored without `at` (it is server context, not
       // intent); applying it stamps the server clock here.
@@ -717,7 +719,12 @@ export class CommandsService {
     return {
       entries: (truncated ? rows.slice(0, max) : rows).map((row) => ({
         seq: Number(row.seq),
-        action: row.payload as unknown as BoardAction,
+        // Rows written before ingress stamping may lack `boardId`; replay them
+        // scoped to the queried board so the UI's realtime bridge keeps them.
+        action: {
+          ...(row.payload as Record<string, unknown>),
+          boardId,
+        } as BoardAction,
         actorId: row.actorId,
         actorType: row.actorType as ActorType,
         commandId: row.id,

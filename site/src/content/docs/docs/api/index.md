@@ -48,6 +48,10 @@ A personal API token acts as its owner for board work, but it cannot manage
 the account's credentials. These routes refuse a PAT with `403`:
 
 - `GET /users/me/tokens`, `POST /users/me/tokens`, `DELETE /users/me/tokens/:id`
+- `POST /users/me/tokens/:id/pause`, `POST /users/me/tokens/:id/resume`
+- `POST /agents/pause-all`, `POST /agents/resume-all`
+- `POST /boards/:id/agents/pause`, `POST /boards/:id/agents/resume`
+- `POST /boards/:id/agent-sessions/:id/pause`, `POST /boards/:id/agent-sessions/:id/resume`
 - `POST /auth/password`
 - `POST /auth/email/change/request`, `POST /auth/email/change/confirm`
 
@@ -75,33 +79,98 @@ admin token never authenticates a user route.
 
 ## Error envelope
 
-Errors use the NestJS default body:
+Every REST error uses one machine-readable body (TASK-166.4):
 
 ```json
 {
-  "statusCode": 400,
-  "message": "title must not be blank",
-  "error": "Bad Request"
+  "code": "version_conflict",
+  "message": "The board changed since you read it",
+  "retryable": false,
+  "requestId": "3d0f2c7e-…",
+  "currentVersion": 42,
+  "conflict": "version",
+  "statusCode": 409
 }
 ```
 
+- `code` is a stable snake_case identifier; branch on it, not on `message`.
+- `message` is an English fallback. The UI and MCP localize by `code`.
+- `retryable` is always present. `true` means the same request may be retried
+  unchanged after `retryAfter` (seconds) or a short pause — a busy board, a
+  rate limit, an idempotent request still running. Validation and permission
+  errors are never retryable.
+- `requestId` is the same value as the `X-Request-Id` response header; include
+  it in a bug report.
+- `currentVersion` is always present as a number or `null`. On a command
+  conflict it is the board sequence (`max(Command.seq)`), not `Board.version`.
+- `field` points at a rejected input, `details` carries extra context, and
+  `limit`/`current` describe a semantic limit. `conflict` (`version`, `wip`,
+  `id`, `workflow`) and `workflow` remain for compatibility.
+
 `ValidationPipe` runs with `whitelist: true` and `transform: true`. An unknown
-body field is stripped. A failed class-validator constraint answers `400` with
-`message` as an array of strings, one per failed constraint.
+body field is stripped; a failed class-validator constraint is
+`400 validation_failed`, with the individual messages in
+`details.messages`.
 
-Some shapes deviate from the default and are documented where they occur:
+The legacy Nest `error` field is intentionally not returned; `code` replaces
+it. `statusCode` is kept as a compatibility mirror.
 
-- The command endpoint answers `409` with `{ "conflict": "...", "currentVersion": n }`
-  (see [Command API](./commands/)).
-- Some endpoints answer `400` or `409` with an added `field` string, e.g.
-  `{ "message": "...", "field": "text" }`, so a client can point at the input.
-- Some errors carry a machine-readable `code` next to `message`:
+| HTTP | `code` | Meaning |
+| --- | --- | --- |
+| `400` | `validation_failed` | body shape/field validation; `field` when known |
+| `401` | `unauthorized` | missing, expired or invalid credentials |
+| `403` | `forbidden` | not a member or no board role |
+| `403` | `scope_denied` | the token preset does not allow the action |
+| `403` | `destructive_denied` | board policy blocks destructive actions |
+| `403` | `agent_paused` | agents are paused for the board/session/token |
+| `403` | `pat_forbidden` | a personal API token called a [session-only route](#session-only-routes) |
+| `404` | `not_found` | unknown or soft-deleted resource |
+| `409` | `version_conflict` | `ifMatch`/`ifMatchVersions` is stale; see `currentVersion` |
+| `409` | `workflow_conflict` | workflow forbids the transition; see `workflow` |
+| `409` | `limit_exceeded` | WIP, collection, board or share limit |
+| `409` | `approval_required` | a destructive action needs a human approval (166.5) |
+| `409` | `idempotency_conflict` | the same `Idempotency-Key` was used with another body |
+| `409` | `idempotency_in_progress` | the first request with that key is still running; retry |
+| `413` | `payload_too_large` | body/file over the route limit; see `limit` |
+| `429` | `rate_limited` | wait `retryAfter` seconds, then retry |
+| `429` | `login_backoff` | too many failed sign-ins; wait `retryAfter` seconds |
+| `503` | `board_write_timeout` | the board write lock timed out; safe to retry |
+| `503` | `service_unavailable` | maintenance or a transient outage; retry later |
+
+An unexpected server failure is `500 internal_error` with a generic message and
+no stack trace. The full code table lives in
+`docs/TASK-166-launch-agent-control.md` §8.2.
 
 | Status | `code`                | Meaning                                                                                     |
 | ------ | --------------------- | ------------------------------------------------------------------------------------------- |
 | `403`  | `pat_forbidden`       | a personal API token called a [session-only route](#session-only-routes)                    |
+| `403`  | `agent_paused`        | a session/token/board pause blocks the write; see [Pause and kill](./rest/#pause-and-kill)   |
 | `429`  | `login_backoff`       | the address is in [login backoff](#login-backoff); `retryAfter` is the wait in seconds      |
 | `503`  | `board_write_timeout` | the board's write lock timed out under load; safe to retry (a command with its `commandId`) |
+
+## Idempotency
+
+The REST write operations `POST /boards`, `POST /boards/import`,
+`POST /cards/:id/comments`, `POST /boards/:id/shares`,
+`POST /cards/:id/attachments` and a `DUPLICATE_CARD` command accept an
+`Idempotency-Key` header (8–128 characters from `A-Z a-z 0-9 _ -`). The
+first successful response is stored for 24 hours:
+
+```http
+POST /api/v1/boards
+Idempotency-Key: create-roadmap-2026-11-10
+Content-Type: application/json
+
+{ "title": "Roadmap" }
+```
+
+A retry with the same key and the same body returns the stored status/body and
+does not create a second board. A different body with that key is
+`409 idempotency_conflict`; a concurrent retry while the first request is still
+running is `409 idempotency_in_progress` (`retryable: true`). Command-log writes
+use `CommandRequest.commandId` for the same purpose; a duplicate `commandId`
+with another payload is also `409 idempotency_conflict`. A failed request
+releases its key, so an honest retry may execute it again.
 
 ## Rate limits
 

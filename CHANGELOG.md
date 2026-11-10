@@ -8,6 +8,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-166.4 reliable write contract: every REST error now uses one
+  machine-readable envelope — stable `code`, human `message`, `retryable`,
+  `requestId` (same as `X-Request-Id`), `currentVersion`, optional `field`,
+  `details`, `limit`, `conflict`, `allowedToColumnIds` and the approval seam —
+  while preserving the existing HTTP statuses and legacy `conflict`/
+  `workflow`/`field`/`retryAfter` fields. Unexpected exceptions become
+  `500 internal_error` without a stack trace or secrets. The ADR's REST writes
+  (`POST /boards`, import, `add_comment`, `create_share`, attachment upload and
+  a `DUPLICATE_CARD` command) honour `Idempotency-Key` for 24 h: the same key
+  and body replay the stored response, another body is
+  `409 idempotency_conflict`, and a concurrent retry is
+  `409 idempotency_in_progress` with `retryable: true`. MCP mutations expose
+  `structuredContent` (`ok`, `resourceId`, `seq`, `runId`, `approvalId`), MCP
+  errors carry the same code/retryable/requestId envelope plus next-step
+  guidance, and the REST writes accept an optional `idempotencyKey` (8–128
+  `[A-Za-z0-9_-]`). Rate-limit responses keep the limiter's real
+  `Retry-After` and mirror it into `retryAfter`. The UI
+  error type reads the new fields; docs EN/RU and CHANGELOG cover the envelope
+  and idempotency.
 - TASK-31 mobile UX: the calendar and table now have a real touch layer.
   A long press lifts a calendar chip (month, week and the unscheduled panel)
   and a table row; dropping reschedules the chip with its time-of-day kept,
@@ -68,6 +87,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   full approval lifecycle remains 166.5; this stream returns the documented
   error and leaves the seam clean. Docs EN/RU and the MCP error guidance cover
   the new scopes and codes.
+- TASK-166.3 pause / kill switch: a human can pause one agent session
+  (`POST /boards/:id/agent-sessions/:sessionId/pause|resume`), a whole board
+  (`POST /boards/:id/agents/pause|resume`), one token
+  (`POST /users/me/tokens/:id/pause|resume`) or every live token
+  (`POST /agents/pause-all|resume-all`). All routes are browser-session only:
+  a PAT gets `pat_forbidden`. Paused PAT writes answer `403 agent_paused` with
+  `pauseScope` (token → board → session precedence) and `retryable: false`;
+  GET reads, heartbeat, end-session and session reads stay open. Pause is
+  checked at the request boundary and again under the board lock, so a request
+  that passed the second check commits while a later one is refused. Pause
+  does not release claims. PAT SSE announces the pause on the next keep-alive
+  and closes (session pause only with `?session=`); reconnect gets
+  `agent_paused`, human streams stay open. Pause is evaluated before role,
+  scope and destructive/approval gates; the in-transaction recheck also rejects
+  a token revoked/expired (or a disabled owner) and a session that ended before
+  the board lock. Revoking a token now cancels its sessions, releases claims
+  held by `claimedByTokenId` under the board lock and closes its SSE on the next
+  tick; password change/reset and OAuth takeover use the same shared revocation
+  helper. Board pause state is exposed in the aggregate but never exported or
+  published through a public share; token/board/session pause writes are audited
+  (SecurityAuditLog for token and stop-all, Activity for board and session).
+  Docs EN/RU and the MCP guidance describe the pause scope; no pause/resume MCP
+  tools are exposed.
 - TASK-166.6 limits and data safety: server mode no longer has a 10-board
   product limit (`MAX_BOARDS_PER_USER` defaults to `0` = unlimited; a positive
   value is an operator cap checked atomically on create/import with
@@ -182,6 +224,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The per-column card cap is now 1000 active cards (was 200), decided after
+  the 2026-11-10 load test: a 5×1000 board renders in ~0.63 s with 50 cards in
+  the DOM and 76 MB of JS heap, and the API reads its 3.37 MB payload in
+  ~128 ms. A 10k-card board on five columns needs 2000/column and is heavier on
+  writes and memory, so it was not chosen; archived cards do not count. See
+  [`docs/PERF-CAPACITY.md`](docs/PERF-CAPACITY.md).
 - The admin omnibox is now a command palette: `Ctrl/Cmd+K` still opens it and
   entity result test ids are unchanged, but it also offers the eight hubs,
   theme/density actions, recent pages and shortcut help. `?` opens a shortcut
@@ -226,6 +274,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Narrow desktop windows down to 640 px keep the icon rail instead of
   switching to the phone sheet; the 280 px sheet and labelled table cards now
   start at the same 639 px breakpoint.
+- The server now stamps the route board id on every command action it stores
+  and broadcasts, so SSE and delta events reach the open board in the UI even
+  when a REST caller omits `boardId` from the action.
 
 ## [0.2.0] - 2026-11-08
 

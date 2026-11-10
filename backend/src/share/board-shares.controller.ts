@@ -22,6 +22,12 @@ import { ApprovalsService } from "@/approvals/approvals.service";
 import { plainRecord } from "@/approvals/approval-plan";
 import { BoardRoles } from "@/common/board-roles.decorator";
 import { CurrentMembership } from "@/common/current-membership.decorator";
+import {
+  hashIdempotentRequest,
+  idempotencyActorKey,
+  IdempotencyService,
+  normalizeIdempotencyKey,
+} from "@/common/idempotency.service";
 import { MembershipGuard } from "@/common/membership.guard";
 import { CreateShareDto, UpdateShareDto } from "./dto/share.dto";
 import { ShareService } from "./share.service";
@@ -40,6 +46,7 @@ export class BoardSharesController {
   constructor(
     private readonly shares: ShareService,
     private readonly approvals: ApprovalsService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   @Get()
@@ -56,32 +63,58 @@ export class BoardSharesController {
     @CurrentMembership() membership: BoardMember,
     @Headers("x-approval-id") approvalId: string | undefined,
     @Body() dto: CreateShareDto,
+    @Headers("idempotency-key") rawKey?: string,
   ): Promise<BoardShareDto> {
-    const approval = await this.approvals.authorizeOperation({
-      boardId: id,
-      userId: user.id,
-      role: membership.role,
-      principal,
-      agentSessionId: session?.id ?? null,
-      op: "share.create",
-      target: { boardId: id },
-      body: plainRecord(dto),
-      ...(approvalId !== undefined ? { approvalId } : {}),
-    });
-    const result = await this.shares.create(
-      id,
-      user.id,
-      dto,
-      "user",
-      requestAttribution(principal, session?.id),
-    );
-    if (approval !== null) {
-      await this.approvals.consumeOperation(approval, user.id, principal, {
-        operation: "share.create",
-        shareId: result.id,
+    const create = async (): Promise<BoardShareDto> => {
+      const approval = await this.approvals.authorizeOperation({
+        boardId: id,
+        userId: user.id,
+        role: membership.role,
+        principal,
+        agentSessionId: session?.id ?? null,
+        op: "share.create",
+        target: { boardId: id },
+        body: plainRecord(dto),
+        ...(approvalId !== undefined ? { approvalId } : {}),
       });
-    }
-    return result;
+      const result = await this.shares.create(
+        id,
+        user.id,
+        dto,
+        "user",
+        requestAttribution(principal, session?.id),
+      );
+      if (approval !== null) {
+        await this.approvals.consumeOperation(approval, user.id, principal, {
+          operation: "share.create",
+          shareId: result.id,
+        });
+      }
+      return result;
+    };
+    const key = normalizeIdempotencyKey(rawKey);
+    if (key === undefined) return create();
+    const outcome = await this.idempotency.run({
+      scope: "create_share",
+      key,
+      actorKey: idempotencyActorKey(user.id, principal),
+      // `expiresAt` is derived by the caller (the MCP tool uses
+      // `Date.now() + expiresInHours`), so it must not change the fingerprint:
+      // a retry of the same share intent replays the first link even a moment
+      // later. The other fields are the actual intent.
+      requestHash: hashIdempotentRequest({
+        boardId: id,
+        mode: dto.mode,
+        title: dto.title,
+        includeComments: dto.includeComments,
+        includeAttachments: dto.includeAttachments,
+      }),
+      run: async () => {
+        const share = await create();
+        return { body: share, status: 201, resourceId: share.id };
+      },
+    });
+    return outcome.body;
   }
 
   @Post(":shareId/refresh")

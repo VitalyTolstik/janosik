@@ -73,6 +73,46 @@ describe("JanosikClient.command", () => {
   });
 });
 
+describe("JanosikClient REST idempotency", () => {
+  it("forwards Idempotency-Key on import, share, comment and upload", async () => {
+    const { calls } = stubFetch(({ url }) =>
+      url.includes("/boards/import")
+        ? json([{ id: "b-import" }], 201)
+        : url.includes("/shares")
+          ? json({ id: "s1", token: "t" }, 201)
+          : url.includes("/comments")
+            ? json({ id: "c1" }, 201)
+            : json({ id: "a1" }, 201),
+    );
+    const client = new JanosikClient("http://api.test", "t");
+
+    await client.importBoards(
+      { app: "janosik", schemaVersion: 3, exportedAt: 0, boards: [] },
+      "import-key-1",
+    );
+    await client.createShare("b1", { mode: "live" }, undefined, "share-key-1");
+    await client.addComment("c1", "hi", undefined, "comment-key-1");
+    await client.uploadAttachment(
+      "c1",
+      "probe.txt",
+      "text/plain",
+      Buffer.from("hello"),
+      "upload-key-1",
+    );
+
+    const headers = calls.map(
+      (call) =>
+        (call.init.headers as Record<string, string>)["Idempotency-Key"],
+    );
+    expect(headers).toEqual([
+      "import-key-1",
+      "share-key-1",
+      "comment-key-1",
+      "upload-key-1",
+    ]);
+  });
+});
+
 describe("JanosikClient.commandBatch", () => {
   it("posts every command in one request and returns the results in order", async () => {
     const { calls } = stubFetch(() =>

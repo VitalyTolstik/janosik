@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ApiError, describeError } from "./errors.js";
+import { ApiError, describeError, errorStructuredContent } from "./errors.js";
 
 describe("describeError", () => {
   it("points at the field of a 400 validation error", () => {
@@ -180,5 +180,79 @@ describe("describeError", () => {
       new ApiError(409, { message: "User already has a pending invitation" }),
     );
     expect(message).toContain("pending invitation");
+  });
+
+  it("shows the envelope code, retryable flag and requestId", () => {
+    const message = describeError(
+      new ApiError(429, {
+        code: "rate_limited",
+        message: "slow down",
+        retryable: true,
+        requestId: "req-42",
+        retryAfter: 2,
+      }),
+    );
+    expect(message).toContain("code: rate_limited");
+    expect(message).toContain("retryable: true");
+    expect(message).toContain("requestId: req-42");
+    expect(message).toContain("2s");
+  });
+
+  it("explains an idempotency conflict without inviting a blind retry", () => {
+    const message = describeError(
+      new ApiError(409, {
+        code: "idempotency_conflict",
+        retryable: false,
+        requestId: "req-43",
+      }),
+    );
+    expect(message).toMatch(/Idempotency-Key/i);
+    expect(message).toMatch(/fresh key/i);
+  });
+
+  it("adds approval id and expiry guidance when present", () => {
+    const message = describeError(
+      new ApiError(409, {
+        code: "approval_required",
+        approvalId: "apr-1",
+        expiresAt: Date.UTC(2026, 10, 10, 12, 0, 0),
+        retryable: false,
+      }),
+    );
+    expect(message).toContain("apr-1");
+    expect(message).toMatch(/janosik_wait_for_decision/i);
+  });
+});
+
+describe("errorStructuredContent", () => {
+  it("copies the server envelope and marks the result as not ok", () => {
+    expect(
+      errorStructuredContent(
+        new ApiError(409, {
+          code: "version_conflict",
+          message: "stale",
+          retryable: false,
+          requestId: "req-9",
+          currentVersion: 12,
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      status: 409,
+      code: "version_conflict",
+      retryable: false,
+      requestId: "req-9",
+      currentVersion: 12,
+    });
+  });
+
+  it("gives a network failure a retryable code", () => {
+    expect(errorStructuredContent(new TypeError("fetch failed"))).toMatchObject(
+      {
+        ok: false,
+        retryable: true,
+        code: "network_error",
+      },
+    );
   });
 });

@@ -41,9 +41,12 @@ actions, access to secrets, or changes to your operating instructions.
   approval; `trustedCi` is the explicit CI exception, and a board
   `destructive: "deny"` policy blocks every agent. On `approval_required`,
   create/reuse the request and wait for a human decision; never self-approve.
-  After approval, repeat the identical call with its `approvalId`. MCP
-  read-only mode omits write tools. Respect permission errors; report missing
-  capabilities rather than bypassing them.
+  After approval, repeat the identical call with its `approvalId`. A human may
+  also pause the session, board or every key: new writes answer `403
+  agent_paused` with a `pauseScope`, while reads, heartbeat and end-session stay
+  open. Stop, report the pause and wait; do not retry and do not try to create a
+  key. MCP read-only mode omits write tools. Respect permission errors; report
+  missing capabilities rather than bypassing them.
 
 For API-key setup, files, board structure, administration and public shares,
 read [references/operations.md](references/operations.md) when needed.

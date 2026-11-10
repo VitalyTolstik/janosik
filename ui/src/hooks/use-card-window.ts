@@ -77,10 +77,11 @@ function computeRange(
 /**
  * Windowed card rows for one column (TASK-139).
  *
- * The board caps at 12 columns × 200 cards; mounting all 2400 cards used
- * ~68k DOM nodes, ~1.1 GB heap and froze the main thread for almost 4 s.
- * Only the rows around each column's own scroll position are mounted, with
- * fixed-height spacers keeping the scrollbar geometry unchanged.
+ * The board now caps at 12 columns × 1000 cards (12,000). The old 2400-card
+ * maximum (12 × 200) mounted every card and used ~68k DOM nodes, ~1.1 GB
+ * heap and froze the main thread for almost 4 s; only the rows around each
+ * column's own scroll position are mounted now, with fixed-height spacers
+ * keeping the scrollbar geometry unchanged.
  *
  * `SortableContext` still receives the complete id array, so drag indices and
  * collisions keep using the real column order; the few mounted neighbouring
